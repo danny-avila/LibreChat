@@ -356,6 +356,46 @@ describe('getLLMConfig', () => {
       expect(result.llmConfig.promptCache).toBe(true);
     });
 
+    it('should pass promptCacheTtl to llmConfig when configured', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+          promptCacheTtl: '1h',
+        },
+      });
+
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('1h');
+    });
+
+    it('should omit promptCacheTtl when unset so the agents SDK applies its default', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+        },
+      });
+
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
+    });
+
+    it('should drop promptCacheTtl when promptCache is dropped via dropParams', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+          promptCacheTtl: '1h',
+        },
+        dropParams: ['promptCache'],
+      });
+
+      /** A dropped cache must not leave an orphaned TTL on the request. */
+      expect(result.llmConfig.promptCache).toBeUndefined();
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
+    });
+
     it('should handle thinking and thinkingBudget options', () => {
       const result = getLLMConfig('test-api-key', {
         modelOptions: {
@@ -1859,6 +1899,57 @@ describe('getLLMConfig', () => {
           expect(result.llmConfig.stopSequences).toEqual(expected);
         });
       });
+    });
+  });
+
+  describe('custom headers', () => {
+    it('attaches admin-configured headers while preserving native Anthropic formatting', () => {
+      const result = getLLMConfig('test-key', {
+        modelOptions: { model: 'claude-sonnet-4-5' },
+        reverseProxyUrl: 'https://gateway.example.com',
+        headers: {
+          'cf-aig-metadata': '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}',
+        },
+      });
+
+      const clientOptions = result.llmConfig.clientOptions;
+      /** Provider-managed beta header is preserved */
+      expect((clientOptions?.defaultHeaders as Record<string, string>)['anthropic-beta']).toBe(
+        FINE_GRAINED_TOOL_STREAMING_BETA,
+      );
+      /** Custom header is attached, placeholders kept intact for request-time resolution */
+      expect((clientOptions?.defaultHeaders as Record<string, string>)['cf-aig-metadata']).toBe(
+        '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}',
+      );
+      /** Native request shaping is untouched */
+      expect(result.llmConfig).toHaveProperty('model', 'claude-sonnet-4-5');
+      expect(result.llmConfig).toHaveProperty('stream', true);
+      expect(result.llmConfig.invocationKwargs?.metadata).toEqual({ user_id: undefined });
+      expect(result.llmConfig).toHaveProperty('anthropicApiUrl', 'https://gateway.example.com');
+    });
+
+    it('does not let custom headers override the provider-managed anthropic-beta header', () => {
+      const result = getLLMConfig('test-key', {
+        modelOptions: { model: 'claude-3-5-sonnet' },
+        headers: { 'anthropic-beta': 'custom-beta' },
+      });
+
+      const beta = (result.llmConfig.clientOptions?.defaultHeaders as Record<string, string>)[
+        'anthropic-beta'
+      ];
+      /** Custom beta is unioned with managed betas rather than clobbering them */
+      expect(beta).toContain(FINE_GRAINED_TOOL_STREAMING_BETA);
+      expect(beta).toContain('custom-beta');
+    });
+
+    it('does not attach custom headers when clientOptions are dropped', () => {
+      const result = getLLMConfig('test-key', {
+        modelOptions: { model: 'claude-3-opus' },
+        dropParams: ['clientOptions'],
+        headers: { 'cf-aig-metadata': 'x' },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('clientOptions');
     });
   });
 });

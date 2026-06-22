@@ -35,6 +35,15 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn().mockReturnValue(false),
   GenerationJobManager: mockGenerationJobManager,
+  getReferencedQuotes: jest.fn((quotes) => {
+    if (!Array.isArray(quotes)) {
+      return null;
+    }
+    const normalized = quotes
+      .filter((quote) => typeof quote === 'string' && quote.trim().length > 0)
+      .map((quote) => quote.trim());
+    return normalized.length > 0 ? normalized : null;
+  }),
   checkAndIncrementPendingRequest: jest.fn().mockResolvedValue({ allowed: true }),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   getViolationInfo: jest.fn(),

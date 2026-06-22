@@ -9,7 +9,6 @@ const {
   getCodeApiAuthHeaders,
   buildImageToolContext,
   buildWebSearchContext,
-  requiresEphemeralUserConnection,
   buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
@@ -495,9 +494,7 @@ const loadTools = async ({
         }
         if (!availableTools) {
           try {
-            availableTools = requiresEphemeralUserConnection(config.config)
-              ? null
-              : await getMCPServerTools(safeUser.id, serverName);
+            availableTools = await getMCPServerTools(safeUser.id, serverName, config.config);
           } catch (error) {
             logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
           }

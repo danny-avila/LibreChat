@@ -11,7 +11,7 @@ jest.mock('@librechat/agents', () => ({
     parameters: {
       type: 'object',
       properties: {
-        file_path: {
+        path: {
           type: 'string',
           description: 'For skill files: "{skillName}/{path}".',
         },
@@ -662,6 +662,31 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
 
     expect(result.instructions).toBeUndefined();
     expect(result.additional_instructions).toBe('Conversation opened at 2023-12-31T23:59:58.000Z');
+  });
+
+  it('resolves temporal special vars in the request timezone', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'It is currently {{current_datetime}}.';
+    req.conversationCreatedAt = '2024-01-15T18:30:00.000Z';
+    req.body = { timezone: 'America/New_York' };
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.instructions).toBeUndefined();
+    expect(result.additional_instructions).toBe(
+      'It is currently 2024-01-15 13:30:00 -05:00 (Monday).',
+    );
   });
 
   it('keeps non-temporal special vars in stable instructions', async () => {
@@ -2066,5 +2091,56 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe('initializeAgent — run-scoped MCP tool definitions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('carries mcpAvailableTools from the loadTools result onto the initialized agent', async () => {
+    /** Regression guard for the request-scoped MCP/PTC handoff: dropping this
+     *  field at the destructure boundary forces per-call reinitialization
+     *  downstream and can storm the MCP circuit breaker. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const mcpTool = 'list_tables_mcp_ClickHouse';
+    const mcpAvailableTools = {
+      ClickHouse: {
+        [mcpTool]: {
+          type: 'function' as const,
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object' as const, properties: {} },
+          },
+        },
+      },
+    };
+    loadTools.mockResolvedValue({
+      tools: [],
+      toolContextMap: {},
+      dynamicToolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [],
+      hasDeferredTools: false,
+      mcpAvailableTools,
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.mcpAvailableTools).toEqual(mcpAvailableTools);
   });
 });

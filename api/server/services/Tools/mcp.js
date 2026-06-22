@@ -232,7 +232,7 @@ async function reinitMCPServer({
         userId: user.id,
         serverName,
         tools,
-        skipCache: ephemeralServer,
+        serverConfig,
       });
     }
 

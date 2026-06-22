@@ -332,6 +332,7 @@ export default function SharedLinks() {
           <DataTable
             columns={columns}
             data={allLinks}
+            className="scrollbar-gutter-stable"
             onDelete={handleDelete}
             filterColumn="title"
             hasNextPage={hasNextPage}

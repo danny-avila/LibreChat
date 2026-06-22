@@ -1,12 +1,12 @@
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import {
   AuthType,
   EModelEndpoint,
   BEDROCK_OUTPUT_128K_BETA,
   BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
 } from 'librechat-data-provider';
-import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
-import { initializeBedrock } from './initialize';
 import type { BaseInitializeParams, BedrockLLMConfigResult } from '~/types';
+import { initializeBedrock } from './initialize';
 import { checkUserKeyExpiry } from '~/utils';
 
 jest.mock('https-proxy-agent', () => ({
@@ -80,6 +80,13 @@ describe('initializeBedrock', () => {
     delete process.env.BEDROCK_AWS_SESSION_TOKEN;
     delete process.env.BEDROCK_REVERSE_PROXY;
     delete process.env.PROXY;
+    delete process.env.proxy;
+    delete process.env.HTTP_PROXY;
+    delete process.env.HTTPS_PROXY;
+    delete process.env.NO_PROXY;
+    delete process.env.http_proxy;
+    delete process.env.https_proxy;
+    delete process.env.no_proxy;
     process.env.BEDROCK_AWS_ACCESS_KEY_ID = 'test-access-key';
     process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'test-secret-key';
     process.env.BEDROCK_AWS_DEFAULT_REGION = 'us-east-1';
@@ -395,6 +402,17 @@ describe('initializeBedrock', () => {
         'endpoint',
         'https://custom-bedrock-endpoint.com',
       );
+    });
+
+    it('should honor NO_PROXY for reverse proxy endpoints when PROXY is set', async () => {
+      process.env.PROXY = 'http://proxy:8080';
+      process.env.NO_PROXY = 'custom-bedrock-endpoint.com';
+      process.env.BEDROCK_REVERSE_PROXY = 'custom-bedrock-endpoint.com';
+      const params = createMockParams();
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig).not.toHaveProperty('client');
+      expect(result.llmConfig).toHaveProperty('endpointHost', 'custom-bedrock-endpoint.com');
     });
 
     it('should use AWS profile provider when PROXY is set and static credentials are unset', async () => {

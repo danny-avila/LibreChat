@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, redactMessage } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
@@ -16,7 +16,6 @@ const {
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
-  requiresEphemeralUserConnection,
   buildToolClassification,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
@@ -73,7 +72,6 @@ const { createMCPPermissionContext, resolveConfigServers } = require('~/server/s
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -755,12 +753,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       return null;
     }
 
-    const requestScoped = requiresEphemeralUserConnection(serverConfig);
     if (mcpAvailableTools[serverName]) {
       return mcpAvailableTools[serverName];
     }
 
-    const cached = requestScoped ? null : await getMCPServerTools(userId, serverName);
+    const cached = await getMCPServerTools(userId, serverName, serverConfig);
     if (cached) {
       rememberMCPAvailableTools(serverName, cached);
       await addPendingOAuthServer();

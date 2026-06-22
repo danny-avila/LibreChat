@@ -8,15 +8,22 @@ import {
   getBedrockModels,
   getAnthropicModels,
 } from './models';
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from './keys';
 
 jest.mock('axios');
 
 const mockCacheGet = jest.fn().mockResolvedValue(undefined);
 const mockCacheSet = jest.fn().mockResolvedValue(true);
+const mockTokenConfigGet = jest.fn().mockResolvedValue(undefined);
+const mockTokenConfigSet = jest.fn().mockResolvedValue(true);
 jest.mock('~/cache', () => ({
   standardCache: jest.fn().mockImplementation(() => ({
     get: mockCacheGet,
     set: mockCacheSet,
+  })),
+  tokenConfigCache: jest.fn().mockImplementation(() => ({
+    get: mockTokenConfigGet,
+    set: mockTokenConfigSet,
   })),
 }));
 
@@ -51,6 +58,8 @@ mockedAxios.get.mockResolvedValue({
 beforeEach(() => {
   mockCacheGet.mockReset().mockResolvedValue(undefined);
   mockCacheSet.mockReset().mockResolvedValue(true);
+  mockTokenConfigGet.mockReset().mockResolvedValue(undefined);
+  mockTokenConfigSet.mockReset().mockResolvedValue(true);
 });
 
 describe('fetchModels', () => {
@@ -263,6 +272,7 @@ describe('fetchModels with createTokenConfig true', () => {
   };
 
   beforeEach(() => {
+    mockedAxios.get.mockClear();
     mockedAxios.get.mockResolvedValue({ data });
   });
 
@@ -277,6 +287,59 @@ describe('fetchModels with createTokenConfig true', () => {
     const { processModelData } = jest.requireMock('~/utils');
     expect(processModelData).toHaveBeenCalled();
     expect(processModelData).toHaveBeenCalledWith(data);
+  });
+
+  it('backfills requested token config when model cache hits', async () => {
+    const endpointTokenConfig = {
+      'model-1': { prompt: 2000, completion: 1000, context: 1024 },
+    };
+    mockCacheGet.mockResolvedValue(['model-1']);
+    mockTokenConfigGet.mockResolvedValue(endpointTokenConfig);
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      tokenKey: `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000abc123`,
+    });
+
+    expect(models).toEqual(['model-1']);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(
+      mockTokenConfigGet.mock.calls[0][0].startsWith(`${SCOPED_TOKEN_CONFIG_KEY_PREFIX}models`),
+    ).toBe(true);
+    expect(mockTokenConfigSet).toHaveBeenCalledWith(
+      `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000abc123`,
+      endpointTokenConfig,
+    );
+  });
+
+  it('fetches and writes token config when scoped token key is missing on model cache hit', async () => {
+    mockCacheGet.mockResolvedValue(['cached-model']);
+    mockTokenConfigGet.mockResolvedValue(undefined);
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      tokenKey: `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000def456`,
+    });
+
+    expect(models).toEqual(['model-1', 'model-2']);
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.any(Object),
+    );
+    expect(mockTokenConfigSet).toHaveBeenCalledWith(
+      `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000def456`,
+      expect.objectContaining({
+        'model-1': expect.objectContaining({ context: 1024 }),
+      }),
+    );
+    const sourceSetCall = mockTokenConfigSet.mock.calls.find(([key]) =>
+      key.startsWith(`${SCOPED_TOKEN_CONFIG_KEY_PREFIX}models`),
+    );
+    expect(sourceSetCall).toBeDefined();
   });
 });
 
@@ -341,6 +404,24 @@ describe('getOpenAIModels', () => {
       }),
     );
     expect(models).toEqual(['gpt-env-key']);
+  });
+
+  it('forwards configured custom headers to the OpenAI model fetch', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-x' }] } });
+    process.env.OPENAI_API_KEY = 'sk-env';
+
+    await getOpenAIModels({
+      user: 'user456',
+      headers: { 'cf-aig-token': 'tok' },
+      userObject: { id: 'user456' },
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'cf-aig-token': 'tok' }),
+      }),
+    );
   });
 
   it('returns `AZURE_OPENAI_MODELS` with `azure` flag (and fetch fails)', async () => {
@@ -737,7 +818,7 @@ describe('getAnthropicModels', () => {
     );
   });
 
-  it('should pass custom headers for Anthropic endpoint', async () => {
+  it('forwards custom headers for the Anthropic endpoint alongside managed auth', async () => {
     const customHeaders = {
       'X-Custom-Header': 'custom-value',
     };
@@ -760,9 +841,29 @@ describe('getAnthropicModels', () => {
       expect.any(String),
       expect.objectContaining({
         headers: {
+          'X-Custom-Header': 'custom-value',
           'x-api-key': 'test-anthropic-key',
           'anthropic-version': expect.any(String),
         },
+      }),
+    );
+  });
+
+  it('threads configured headers through getAnthropicModels to the fetch', async () => {
+    delete process.env.ANTHROPIC_MODELS;
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'claude-3' }] } });
+
+    await getAnthropicModels({
+      user: 'user123',
+      headers: { 'cf-aig-token': 'tok' },
+      userObject: { id: 'user123' },
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'cf-aig-token': 'tok' }),
       }),
     );
   });

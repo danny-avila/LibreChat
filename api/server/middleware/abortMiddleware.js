@@ -7,6 +7,7 @@ const {
   GenerationJobManager,
   recordCollectedUsage,
   sanitizeMessageForTransmit,
+  buildAbortedResponseMetadata,
 } = require('@librechat/api');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
@@ -110,6 +111,14 @@ async function abortMessage(req, res) {
     tokenCount: completionTokens,
   };
 
+  /** Persist the usage/cost rollup + context breakdown for the stopped response
+   *  so its branch/total cost and granular rows survive a reload, matching the
+   *  normal completion path. */
+  const abortMetadata = buildAbortedResponseMetadata(jobData);
+  if (abortMetadata) {
+    responseMessage.metadata = abortMetadata;
+  }
+
   // Spend tokens for ALL models from collectedUsage (handles parallel agents/addedConvo)
   if (collectedUsage && collectedUsage.length > 0) {
     await spendCollectedUsage({
@@ -150,6 +159,7 @@ async function abortMessage(req, res) {
           parentMessageId: jobData.userMessage.parentMessageId,
           conversationId: jobData.userMessage.conversationId,
           text: jobData.userMessage.text,
+          quotes: jobData.userMessage.quotes,
           isCreatedByUser: true,
         })
       : null,

@@ -40,7 +40,11 @@ jest.mock('~/auth', () => ({
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0, USER_CONNECTION_IDLE_TIMEOUT: 30 * 60 * 1000 },
+  mcpConfig: {
+    CONNECTION_CHECK_TTL: 0,
+    USER_CONNECTION_IDLE_TIMEOUT: 30 * 60 * 1000,
+    TOOLS_LIST_MAX_PAGES: 50,
+  },
 }));
 
 const SERVER_NAME = 'sdk-oauth-server';

@@ -920,6 +920,46 @@ describe('getOpenAIConfig', () => {
       expect(result.provider).toBe('openrouter');
     });
 
+    it('should honor a TTL-only selection for OpenRouter (promptCache defaulted on)', () => {
+      /**
+       * Reproduces selecting only the promptCacheTtl dropdown without toggling
+       * the promptCache switch: modelOptions carries the TTL but not promptCache.
+       * OPENROUTER_DEFAULT_PARAMS still resolves caching on, so the TTL survives.
+       */
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'anthropic/claude-sonnet-4.6',
+            promptCacheTtl: '1h',
+          } as Record<string, unknown>,
+        },
+        'openrouter',
+      );
+
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('1h');
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should drop the OpenRouter TTL when promptCache is explicitly disabled', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'anthropic/claude-sonnet-4.6',
+            promptCache: false,
+            promptCacheTtl: '1h',
+          } as Record<string, unknown>,
+        },
+        'openrouter',
+      );
+
+      expect(result.llmConfig.promptCache).toBeUndefined();
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
+      expect(result.provider).toBe('openrouter');
+    });
+
     it('should handle web_search with OpenRouter using plugins format', () => {
       const modelOptions = {
         model: 'gpt-4',

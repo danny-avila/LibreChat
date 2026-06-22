@@ -1,4 +1,5 @@
 import { SystemCapabilities } from '@librechat/data-schemas';
+import type { ISkillSyncStatus } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
 import { createAdminSkillsSyncAccess, createAdminSkillsSyncHandlers } from './skills';
 
@@ -17,6 +18,36 @@ function createNext(): NextFunction & jest.Mock {
   return jest.fn() as NextFunction & jest.Mock;
 }
 
+type SourceStatus = ISkillSyncStatus & { credentialPresent: boolean };
+
+function createSourceStatus(overrides: Partial<SourceStatus> = {}): SourceStatus {
+  return {
+    provider: 'github',
+    sourceId: 'tenant-skills',
+    tenantId: 'tenant-a',
+    status: 'idle',
+    credentialKey: 'github-skills-prod',
+    credentialPresent: true,
+    owner: 'LibreChat',
+    repo: 'skills',
+    ref: 'main',
+    paths: ['skills'],
+    syncedSkillCount: 0,
+    syncedFileCount: 0,
+    deletedSkillCount: 0,
+    deletedFileCount: 0,
+    errorCode: undefined,
+    errorMessage: undefined,
+    startedAt: undefined,
+    finishedAt: undefined,
+    lastSuccessAt: undefined,
+    lastFailureAt: undefined,
+    createdAt: undefined,
+    updatedAt: undefined,
+    ...overrides,
+  };
+}
+
 function createHandlers({
   statusErrorCode,
   statusErrorMessage,
@@ -27,30 +58,10 @@ function createHandlers({
       intervalMinutes: 60,
       runOnStartup: false,
       sources: [
-        {
-          provider: 'github' as const,
-          sourceId: 'tenant-skills',
-          tenantId: 'tenant-a',
-          status: 'idle' as const,
-          credentialKey: 'github-skills-prod',
-          credentialPresent: true,
-          owner: 'LibreChat',
-          repo: 'skills',
-          ref: 'main',
-          paths: ['skills'],
-          syncedSkillCount: 0,
-          syncedFileCount: 0,
-          deletedSkillCount: 0,
-          deletedFileCount: 0,
+        createSourceStatus({
           errorCode: statusErrorCode,
           errorMessage: statusErrorMessage,
-          startedAt: undefined,
-          finishedAt: undefined,
-          lastSuccessAt: undefined,
-          lastFailureAt: undefined,
-          createdAt: undefined,
-          updatedAt: undefined,
-        },
+        }),
       ],
       credentials: [
         {
@@ -65,26 +76,13 @@ function createHandlers({
     runOnce: jest.fn(async () => ({
       status: 'completed' as const,
       sources: [
-        {
-          provider: 'github' as const,
-          sourceId: 'tenant-skills',
-          tenantId: 'tenant-a',
-          status: 'succeeded' as const,
-          credentialKey: 'github-skills-prod',
-          credentialPresent: true,
+        createSourceStatus({
+          status: 'succeeded',
           syncedSkillCount: 1,
           syncedFileCount: 2,
-          deletedSkillCount: 0,
-          deletedFileCount: 0,
           errorCode: statusErrorCode,
           errorMessage: statusErrorMessage,
-          startedAt: undefined,
-          finishedAt: undefined,
-          lastSuccessAt: undefined,
-          lastFailureAt: undefined,
-          createdAt: undefined,
-          updatedAt: undefined,
-        },
+        }),
       ],
     })),
   };
@@ -101,7 +99,13 @@ describe('createAdminSkillsSyncHandlers', () => {
     const { handlers } = createHandlers();
     const res = createResponse();
 
-    await handlers.getSyncStatus({ skillSyncCanReadCredentials: false } as never, res);
+    await handlers.getSyncStatus(
+      {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        skillSyncCanReadCredentials: false,
+      } as never,
+      res,
+    );
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
@@ -121,6 +125,87 @@ describe('createAdminSkillsSyncHandlers', () => {
     );
   });
 
+  it('filters tenant-scoped status reads to the request tenant and unscoped sources', async () => {
+    const runner = {
+      getStatus: jest.fn(async () => ({
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: false,
+        sources: [
+          createSourceStatus({
+            sourceId: 'tenant-a-source',
+            tenantId: 'tenant-a',
+            status: 'succeeded',
+            syncedSkillCount: 4,
+            syncedFileCount: 8,
+          }),
+          createSourceStatus({
+            sourceId: 'shared-source',
+            tenantId: undefined,
+            status: 'succeeded',
+            syncedSkillCount: 2,
+            syncedFileCount: 3,
+          }),
+          createSourceStatus({
+            sourceId: 'tenant-b-source',
+            tenantId: 'tenant-b',
+            status: 'failed',
+            errorCode: 'PARSE_ERROR',
+            errorMessage: 'Failed to parse skills/private-b/SKILL.md',
+            syncedSkillCount: 7,
+            syncedFileCount: 11,
+            deletedSkillCount: 1,
+            deletedFileCount: 2,
+          }),
+        ],
+        credentials: [],
+        fineGrainedTokenRecommendation: 'Use a fine-grained token.',
+      })),
+      runOnce: jest.fn(),
+    };
+    const handlers = createAdminSkillsSyncHandlers({
+      runner,
+      upsertCredential: jest.fn(),
+      deleteCredential: jest.fn(),
+    });
+    const res = createResponse();
+
+    await handlers.getSyncStatus(
+      {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        skillSyncCanReadCredentials: false,
+      } as never,
+      res,
+    );
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          expect.objectContaining({
+            sourceId: 'tenant-a-source',
+            tenantId: 'tenant-a',
+            status: 'succeeded',
+            syncedSkillCount: 4,
+            syncedFileCount: 8,
+          }),
+          expect.objectContaining({
+            sourceId: 'shared-source',
+            tenantId: undefined,
+            status: 'succeeded',
+            syncedSkillCount: 2,
+            syncedFileCount: 3,
+          }),
+        ],
+      }),
+    );
+    const response = res.json.mock.calls[0]?.[0] as { sources: Array<{ tenantId?: string }> };
+    expect(response.sources).toHaveLength(2);
+    expect(response.sources).toEqual([
+      expect.objectContaining({ sourceId: 'tenant-a-source' }),
+      expect.objectContaining({ sourceId: 'shared-source', tenantId: undefined }),
+    ]);
+  });
+
   it('redacts credential-related errors from tenant-scoped status reads', async () => {
     const { handlers } = createHandlers({
       statusErrorCode: 'MISSING_CREDENTIAL',
@@ -128,7 +213,13 @@ describe('createAdminSkillsSyncHandlers', () => {
     });
     const res = createResponse();
 
-    await handlers.getSyncStatus({ skillSyncCanReadCredentials: false } as never, res);
+    await handlers.getSyncStatus(
+      {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        skillSyncCanReadCredentials: false,
+      } as never,
+      res,
+    );
 
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({

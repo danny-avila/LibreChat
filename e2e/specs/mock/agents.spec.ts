@@ -157,7 +157,9 @@ test.describe('agent builder', () => {
       const createdAgent = (await createResponse.json()) as AgentDetail;
       createdAgentId = createdAgent.id;
 
-      await expect(page.getByText(`Successfully created ${agentName}`)).toBeVisible();
+      await expect(
+        page.getByText(`Successfully created ${agentName}`, { exact: true }),
+      ).toBeVisible();
 
       const persistedAgent = await waitForPersistedAgent(page, agentName, DESCRIPTION);
       expect(persistedAgent).toMatchObject({
