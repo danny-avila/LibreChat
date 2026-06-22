@@ -1,7 +1,11 @@
 import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IConversation, IMessage } from '~/types';
-import { cascadeForcedConversationRetention, createFallbackRetentionDate } from '~/utils/retention';
+import {
+  capForcedRetentionToParent,
+  cascadeForcedConversationRetention,
+  createFallbackRetentionDate,
+} from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
@@ -172,17 +176,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         metadata?.capExpiryToConversation === true
       ) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
-        const parent = await Conversation.findOne(
-          { conversationId, user: userId },
-          'isTemporary expiredAt',
-        ).lean<{ isTemporary?: boolean | null; expiredAt?: Date | null } | null>();
-        if (
-          parent?.isTemporary === true &&
-          parent.expiredAt != null &&
-          parent.expiredAt.getTime() < forcedExpiredAt.getTime()
-        ) {
-          update.expiredAt = parent.expiredAt;
-        }
+        update.expiredAt = await capForcedRetentionToParent(
+          Conversation,
+          Message,
+          userId,
+          conversationId,
+          forcedExpiredAt,
+        );
       }
 
       const message = await Message.findOneAndUpdate(
@@ -547,17 +547,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
 
     if (metadata?.capExpiryToConversation === true) {
-      const parent = await Conversation.findOne(
-        { conversationId, user: userId },
-        'isTemporary expiredAt',
-      ).lean<{ isTemporary?: boolean | null; expiredAt?: Date | null } | null>();
-      if (
-        parent?.isTemporary === true &&
-        parent.expiredAt != null &&
-        parent.expiredAt.getTime() < forcedExpiredAt.getTime()
-      ) {
-        forcedExpiredAt = parent.expiredAt;
-      }
+      forcedExpiredAt = await capForcedRetentionToParent(
+        Conversation,
+        Message,
+        userId,
+        conversationId,
+        forcedExpiredAt,
+      );
     }
 
     await Message.updateOne(
