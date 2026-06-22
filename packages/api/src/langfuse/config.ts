@@ -2,7 +2,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
-import { isTrueEnv } from './utils';
+import { isEnabled } from '~/utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
@@ -12,7 +12,7 @@ const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
 const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
 
 function isTenantExportEnabled(): boolean {
-  return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
+  return !isEnabled(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
 }
 
 function mergeTraceMetadata(
@@ -70,7 +70,7 @@ export function buildLangfuseConfig({
   const fanout = config?.fanout;
   const fanoutEnabled =
     fanout?.enabled !== false &&
-    (fanout?.enabled === true || process.env.LANGFUSE_FANOUT_ENABLED === 'true');
+    (fanout?.enabled === true || isEnabled(process.env.LANGFUSE_FANOUT_ENABLED));
   const fanoutCollectorUrl =
     normalizeString(fanout?.collectorUrl) ??
     normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
