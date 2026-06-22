@@ -76,6 +76,7 @@ endpoints:
       - 'context'
       - 'ocr'
       - 'file_search'
+      - 'chain'
 
 # We explicitly spec our models (since we only have a few models and this makes the selector simpler)
 modelSpecs:

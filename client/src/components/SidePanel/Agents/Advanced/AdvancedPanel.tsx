@@ -61,12 +61,14 @@ export default function AdvancedPanel() {
             render={({ field }) => <AgentSubagents field={field} currentAgentId={currentAgentId} />}
           />
         )}
+        {/* NJ: Handoffs seems a bit half-baked atm, going to let it cook more before we let people use it
         <Controller
           name="edges"
           control={control}
           defaultValue={[]}
           render={({ field }) => <AgentHandoffs field={field} currentAgentId={currentAgentId} />}
         />
+        */}
         {chainEnabled && (
           <Controller
             name="agent_ids"
