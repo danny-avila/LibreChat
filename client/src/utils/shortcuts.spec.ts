@@ -6,6 +6,7 @@ import {
   normalizeKey,
   parseBinding,
   isModifierKey,
+  isValidBinding,
   bindingTokens,
   bindingToString,
   bindingFromEvent,
@@ -142,6 +143,31 @@ describe('hasModifier', () => {
   it('is false for shift-only or unmodified bindings', () => {
     expect(hasModifier(makeBinding({ shift: true, key: 'T' }))).toBe(false);
     expect(hasModifier(makeBinding({ key: 'T' }))).toBe(false);
+  });
+});
+
+describe('isValidBinding', () => {
+  it('accepts any key combined with a non-shift modifier', () => {
+    expect(isValidBinding(makeBinding({ meta: true, key: 'T' })).valid).toBe(true);
+    expect(isValidBinding(makeBinding({ ctrl: true, key: 'Tab' })).valid).toBe(true);
+    expect(isValidBinding(makeBinding({ alt: true, shift: true, key: 'Enter' })).valid).toBe(true);
+  });
+
+  it('accepts shift with a known-safe key', () => {
+    expect(isValidBinding(makeBinding({ shift: true, key: 'Escape' })).valid).toBe(true);
+  });
+
+  it('rejects shift-only chords on focus/navigation keys', () => {
+    for (const key of ['Tab', 'ArrowUp', 'ArrowDown', 'Backspace', 'Enter', 'Space']) {
+      const result = isValidBinding(makeBinding({ shift: true, key }));
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('noModifier');
+    }
+  });
+
+  it('rejects unmodified and shift-only printable keys', () => {
+    expect(isValidBinding(makeBinding({ key: 'A' })).valid).toBe(false);
+    expect(isValidBinding(makeBinding({ shift: true, key: 'A' })).valid).toBe(false);
   });
 });
 

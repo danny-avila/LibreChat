@@ -149,6 +149,26 @@ export function hasModifier(binding: ShortcutBinding): boolean {
   return binding.meta || binding.ctrl || binding.alt;
 }
 
+/**
+ * Keys allowed as a shift-only chord. Limited to keys whose native behavior is safe to
+ * override; combos like Shift+Tab, Shift+Arrow, or Shift+Backspace would otherwise hijack
+ * browser focus/navigation on non-text controls.
+ */
+const SHIFT_SAFE_KEYS = new Set(['Escape']);
+
+export function isValidBinding(binding: ShortcutBinding): {
+  valid: boolean;
+  reason?: 'noModifier';
+} {
+  if (hasModifier(binding)) {
+    return { valid: true };
+  }
+  if (binding.shift && SHIFT_SAFE_KEYS.has(binding.key)) {
+    return { valid: true };
+  }
+  return { valid: false, reason: 'noModifier' };
+}
+
 export function isCancelKey(e: KeyboardEvent): boolean {
   return e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
 }

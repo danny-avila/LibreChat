@@ -7,6 +7,7 @@ import {
   bindingHash,
   isCancelKey,
   isModifierKey,
+  isValidBinding,
   normalizeKey,
 } from '~/utils/shortcuts';
 import { isMac } from '~/hooks/useKeyboardShortcuts';
@@ -41,17 +42,6 @@ type Options = {
   onSave: (binding: ShortcutBinding) => void;
   onCancel: () => void;
 };
-
-function isValidBinding(binding: ShortcutBinding): { valid: boolean; reason?: 'noModifier' } {
-  if (binding.meta || binding.ctrl || binding.alt) {
-    return { valid: true };
-  }
-  const isPrintable = binding.key.length === 1 && binding.key !== ' ';
-  if (!isPrintable && binding.shift) {
-    return { valid: true };
-  }
-  return { valid: false, reason: 'noModifier' };
-}
 
 export function useShortcutRecorder({
   initial,
