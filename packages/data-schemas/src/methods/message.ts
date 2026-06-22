@@ -1,6 +1,6 @@
 import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
-import type { AppConfig, IConversation, IMessage } from '~/types';
+import type { AppConfig, IConversation, IMessage, ISharedLink } from '~/types';
 import {
   capForcedRetentionToParent,
   cascadeForcedConversationRetention,
@@ -176,9 +176,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         metadata?.capExpiryToConversation === true
       ) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
         update.expiredAt = await capForcedRetentionToParent(
           Conversation,
           Message,
+          SharedLink,
           userId,
           conversationId,
           forcedExpiredAt,
@@ -206,9 +208,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
       if (isForcedRetention && forcedExpiredAt instanceof Date) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
         await cascadeForcedConversationRetention(
           Conversation,
           Message,
+          SharedLink,
           userId,
           conversationId,
           forcedExpiredAt,
@@ -547,11 +551,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
     const Message = mongoose.models.Message as Model<IMessage>;
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
 
     if (metadata?.capExpiryToConversation === true) {
       forcedExpiredAt = await capForcedRetentionToParent(
         Conversation,
         Message,
+        SharedLink,
         userId,
         conversationId,
         forcedExpiredAt,
@@ -565,6 +571,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     await cascadeForcedConversationRetention(
       Conversation,
       Message,
+      SharedLink,
       userId,
       conversationId,
       forcedExpiredAt,

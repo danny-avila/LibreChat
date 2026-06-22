@@ -12,6 +12,7 @@ import type { MessageMethods } from './message';
 import {
   activeExpirationFilter,
   buildRetentionVisibilityFilter,
+  capConversationSharedLinks,
   conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
@@ -358,7 +359,9 @@ export function createConversationMethods(
         conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
       ) {
         const Message = mongoose.models.Message as Model<IMessage>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
         await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
+        await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
       }
 
       if (
