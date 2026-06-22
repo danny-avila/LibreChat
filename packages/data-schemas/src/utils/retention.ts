@@ -92,6 +92,36 @@ export const forceConversationMessagesTemporary = async (
 };
 
 /**
+ * Caps a message-only forced save to a parent that already expires sooner than the freshly
+ * computed window. Returns the parent's earlier deadline (so the message cannot outlive it)
+ * and backfills the conversation's lagging messages to that deadline — the cascade leaves
+ * an already-conforming parent untouched, so older `expiredAt: null`/later messages would
+ * otherwise survive the parent's TTL. Returns the forced window unchanged when no earlier
+ * parent deadline applies.
+ */
+export const capForcedRetentionToParent = async (
+  Conversation: Model<IConversation>,
+  Message: Model<IMessage>,
+  userId: string,
+  conversationId: string,
+  forcedExpiredAt: Date,
+): Promise<Date> => {
+  const parent = await Conversation.findOne(
+    { conversationId, user: userId },
+    'isTemporary expiredAt',
+  ).lean<{ isTemporary?: boolean | null; expiredAt?: Date | null } | null>();
+  if (
+    parent?.isTemporary === true &&
+    parent.expiredAt instanceof Date &&
+    parent.expiredAt.getTime() < forcedExpiredAt.getTime()
+  ) {
+    await forceConversationMessagesTemporary(Message, userId, conversationId, parent.expiredAt);
+    return parent.expiredAt;
+  }
+  return forcedExpiredAt;
+};
+
+/**
  * Converts or re-caps a parent conversation to the forced deadline and, when that first
  * brings the conversation into the forced window, backfills its lagging messages. Shared
  * by every forced-retention message-write path so a single conversation/message rule is
