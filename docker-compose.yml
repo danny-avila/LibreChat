@@ -36,7 +36,7 @@ services:
       - ./logs:/app/logs
       - ./skill:/app/skill
   admin-panel:
-    container_name: LibreChat-Admin
+    container_name: admin-panel
     image: registry.librechat.ai/clickhouse/librechat-admin-panel:latest
     ports:
       - "${ADMIN_PANEL_PORT:-3000}:3000"
