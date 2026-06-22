@@ -1127,7 +1127,7 @@ describe('Message Operations', () => {
       }
     });
 
-    it('caps a message to a sooner parent expiry instead of orphaning it', async () => {
+    it('caps a message-only save to a sooner parent expiry instead of orphaning it', async () => {
       const conversationId = uuidv4();
       const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
       await Conversation().create({
@@ -1145,6 +1145,7 @@ describe('Message Operations', () => {
           interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
         },
         { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
       );
 
       expect(saved?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
@@ -1152,6 +1153,29 @@ describe('Message Operations', () => {
       const convo = await Conversation().findOne({ conversationId }).lean();
       expect(convo?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
       expect(saved?.expiredAt?.getTime()).toBeLessThanOrEqual(convo?.expiredAt?.getTime() ?? 0);
+    });
+
+    it('does not cap a normal send save so a following conversation refresh stays aligned', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Ephemeral chat expiring soon',
+        isTemporary: true,
+        expiredAt: parentExpiry,
+      });
+
+      const saved = await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'follow-up', user: 'user123' },
+      );
+
+      expect(saved?.expiredAt?.getTime()).toBeGreaterThan(parentExpiry.getTime());
     });
 
     it('does not touch the parent conversation outside forced retention', async () => {
