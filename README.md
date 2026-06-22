@@ -137,6 +137,11 @@
   - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
   - Built-in Moderation, and Token spend tools
 
+- 🎛️ **[Admin Panel](https://www.librechat.ai/docs/features/admin_panel)**:
+  - Browser-based UI to manage users, groups, roles, and configuration overrides
+  - Edit settings and per-role/group permissions live, without redeploying
+  - Bundled with the Docker Compose stacks for one-command setup
+
 - ⚙️ **Configuration & Deployment**:  
   - Configure Proxy, Reverse Proxy, Docker, & many Deployment options  
   - Use [S3 with CloudFront](https://www.librechat.ai/docs/configuration/cdn/cloudfront) for stable media links, edge delivery, signed cookies, and secured downloads
