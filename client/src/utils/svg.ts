@@ -38,8 +38,13 @@ const PAINT_PROPS = ['fill', 'stroke', 'stop-color'];
 /** Area shapes that render with SVG's default black fill when none is supplied. */
 const FILLABLE_SHAPES = 'path, rect, circle, ellipse, polygon, text';
 
-/** Containers whose descendants are templates and never render on their own. */
-const NON_RENDERING = new Set(['defs', 'clippath', 'mask', 'symbol', 'marker', 'pattern']);
+/**
+ * Containers whose descendants supply functional paint (clipping, masking,
+ * markers, tiles) that never appears as a visible tone. Their colors are ignored.
+ * `defs`/`symbol` are intentionally excluded: their content renders as-is when
+ * pulled in via `<use>`, so those colors must still be scanned.
+ */
+const FUNCTIONAL_CONTAINERS = new Set(['clippath', 'mask', 'marker', 'pattern']);
 
 /** Matches color declarations inside a `<style>` block. */
 const CSS_COLOR_REGEX = /(?:fill|stroke|stop-color|color)\s*:\s*([^;}]+)/gi;
@@ -196,7 +201,7 @@ function isOpaqueRect(rect: Element): boolean {
 function hasOpaqueBackground(root: Element): boolean {
   const { width, height } = canvasSize(root);
   for (const rect of Array.from(root.querySelectorAll('rect'))) {
-    if (!isOpaqueRect(rect) || inNonRenderingContainer(rect, root)) {
+    if (!isOpaqueRect(rect) || inFunctionalContainer(rect, root)) {
       continue;
     }
     if ((readDimension(rect, 'x') ?? 0) > 0 || (readDimension(rect, 'y') ?? 0) > 0) {
@@ -229,7 +234,7 @@ function colorsFromStyleBlocks(root: Element): string[] {
 function collectColors(root: Element): string[] {
   const colors: string[] = [];
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
-    if (el.nodeName.toLowerCase() === 'style' || inNonRenderingContainer(el, root)) {
+    if (el.nodeName.toLowerCase() === 'style' || inFunctionalContainer(el, root)) {
       continue;
     }
     for (const prop of PAINT_PROPS) {
@@ -261,10 +266,10 @@ function inheritsExplicitFill(el: Element): boolean {
   return false;
 }
 
-function inNonRenderingContainer(el: Element, root: Element): boolean {
+function inFunctionalContainer(el: Element, root: Element): boolean {
   let current = el.parentElement;
   while (current != null && current !== root) {
-    if (NON_RENDERING.has(current.nodeName.toLowerCase())) {
+    if (FUNCTIONAL_CONTAINERS.has(current.nodeName.toLowerCase())) {
       return true;
     }
     current = current.parentElement;
@@ -310,7 +315,7 @@ function hasDefaultBlackShape(root: Element): boolean {
     if (readPaint(el, 'fill') != null) {
       continue;
     }
-    if (inheritsExplicitFill(el) || inNonRenderingContainer(el, root)) {
+    if (inheritsExplicitFill(el) || inFunctionalContainer(el, root)) {
       continue;
     }
     if (rendersFillArea(el)) {
