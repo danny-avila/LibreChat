@@ -1,4 +1,6 @@
 export * from './app';
+/* Billing */
+export * from './billing/plans';
 /* Admin */
 export * from './admin';
 export * from './cdn';

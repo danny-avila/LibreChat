@@ -29,6 +29,7 @@ export * from './types/queries';
 export * from './types/skills';
 export * from './types/runs';
 export * from './types/web';
+export * from './types/billing';
 /* access permissions */
 export * from './accessPermissions';
 /* query/mutation keys */
