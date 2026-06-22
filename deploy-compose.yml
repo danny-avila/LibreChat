@@ -48,7 +48,7 @@ services:
     restart: always
     environment:
       - PORT=3000
-      - SESSION_SECRET=${ADMIN_PANEL_SESSION_SECRET}
+      - SESSION_SECRET=${ADMIN_PANEL_SESSION_SECRET:-${CREDS_KEY}}
       - API_SERVER_URL=http://api:3080
       - VITE_API_BASE_URL=${DOMAIN_CLIENT:-http://localhost}
       - SESSION_COOKIE_SECURE=${ADMIN_PANEL_SESSION_COOKIE_SECURE:-false}
