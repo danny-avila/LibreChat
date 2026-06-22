@@ -872,6 +872,33 @@ describe('Message Operations', () => {
       }
     });
 
+    it('caps a message to a sooner parent expiry instead of orphaning it', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Ephemeral chat expiring soon',
+        isTemporary: true,
+        expiredAt: parentExpiry,
+      });
+
+      const saved = await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+      );
+
+      expect(saved?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+      expect(saved?.expiredAt?.getTime()).toBeLessThanOrEqual(convo?.expiredAt?.getTime() ?? 0);
+    });
+
     it('does not touch the parent conversation outside forced retention', async () => {
       const conversationId = uuidv4();
       await Conversation().create({

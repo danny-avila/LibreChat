@@ -2,6 +2,7 @@ import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provid
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IConversation, IMessage } from '~/types';
 import {
+  conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
   forcedRetentionGapFilter,
@@ -147,6 +148,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
         update.tokenCount = 0;
       }
+
+      const forcedExpiredAt = update.expiredAt;
+      const isForcedRetention = isForcedTemporaryRetention(interfaceConfig?.retentionMode);
+      let parentRetention: { isTemporary?: boolean | null; expiredAt?: Date | null } | null = null;
+      if (isForcedRetention && forcedExpiredAt instanceof Date) {
+        const Conversation = mongoose.models.Conversation as Model<IConversation>;
+        parentRetention = await Conversation.findOne(
+          { conversationId, user: userId },
+          'isTemporary expiredAt',
+        ).lean<{ isTemporary?: boolean | null; expiredAt?: Date | null } | null>();
+        if (
+          parentRetention?.isTemporary === true &&
+          parentRetention.expiredAt != null &&
+          parentRetention.expiredAt.getTime() < forcedExpiredAt.getTime()
+        ) {
+          update.expiredAt = parentRetention.expiredAt;
+        }
+      }
+
       const message = await Message.findOneAndUpdate(
         { messageId: params.messageId, user: userId },
         update,
@@ -166,10 +186,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         message.isTemporary = false;
       }
 
-      const forcedExpiredAt = update.expiredAt;
       if (
-        isForcedTemporaryRetention(interfaceConfig?.retentionMode) &&
-        forcedExpiredAt instanceof Date
+        isForcedRetention &&
+        forcedExpiredAt instanceof Date &&
+        conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
       ) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
         const convoResult = await Conversation.updateOne(
