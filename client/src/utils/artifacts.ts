@@ -180,7 +180,7 @@ export const sharedOptions: SandpackProviderProps['options'] = {
 
 export function buildSandpackOptions(
   template: SandpackProviderProps['template'],
-  startupConfig?: TStartupConfig,
+  startupConfig?: Partial<TStartupConfig>,
 ): SandpackProviderProps['options'] {
   if (!startupConfig) {
     return sharedOptions;

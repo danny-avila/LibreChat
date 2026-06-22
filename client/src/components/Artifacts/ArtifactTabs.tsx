@@ -6,7 +6,8 @@ import type { Artifact } from '~/common';
 import { useCodeState } from '~/Providers/EditorContext';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
-import { useGetStartupConfig } from '~/data-provider';
+import { useShareContext } from '~/Providers';
+import { useGetSharedStartupConfig, useGetStartupConfig } from '~/data-provider';
 import { ArtifactPreview } from './ArtifactPreview';
 
 export default function ArtifactTabs({
@@ -19,7 +20,14 @@ export default function ArtifactTabs({
   isSharedConvo?: boolean;
 }) {
   const { currentCode, setCurrentCode } = useCodeState();
-  const { data: startupConfig } = useGetStartupConfig();
+  const { shareId } = useShareContext();
+  const shouldUseSharedConfig =
+    isSharedConvo === true && typeof shareId === 'string' && shareId.length > 0;
+  const { data: startupConfig } = useGetStartupConfig({ enabled: !shouldUseSharedConfig });
+  const { data: sharedStartupConfig } = useGetSharedStartupConfig(shareId, {
+    enabled: shouldUseSharedConfig,
+  });
+  const resolvedStartupConfig = shouldUseSharedConfig ? sharedStartupConfig : startupConfig;
   const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const lastIdRef = useRef<string | null>(null);
 
@@ -55,7 +63,7 @@ export default function ArtifactTabs({
           previewRef={previewRef}
           sharedProps={sharedProps}
           currentCode={currentCode}
-          startupConfig={startupConfig}
+          startupConfig={resolvedStartupConfig}
         />
       </Tabs.Content>
     </div>

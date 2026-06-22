@@ -23,7 +23,7 @@ export const ArtifactPreview = memo(function ({
   sharedProps: Partial<SandpackProviderProps>;
   previewRef: MutableRefObject<SandpackPreviewRef>;
   currentCode?: string;
-  startupConfig?: TStartupConfig;
+  startupConfig?: Partial<TStartupConfig>;
 }) {
   const artifactFiles = useMemo(() => {
     if (Object.keys(files).length === 0) {

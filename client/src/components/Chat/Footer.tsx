@@ -8,7 +8,7 @@ import { useLocalize } from '~/hooks';
 
 type FooterProps = {
   className?: string;
-  startupConfig?: TStartupConfig | null;
+  startupConfig?: Partial<TStartupConfig> | null;
 };
 
 function Footer({ className, startupConfig }: FooterProps) {

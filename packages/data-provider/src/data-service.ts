@@ -64,6 +64,10 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
   return request.get(endpoints.shareMessages(shareId));
 }
 
+export function getSharedStartupConfig(shareId: string): Promise<config.TSharedLinkStartupConfig> {
+  return request.get(endpoints.sharedStartupConfig(shareId));
+}
+
 export const listSharedLinks = async (
   params: q.SharedLinksListParams,
 ): Promise<q.SharedLinksResponse> => {
