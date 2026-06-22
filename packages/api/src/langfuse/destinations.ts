@@ -1,8 +1,8 @@
 import type { AppConfig } from '@librechat/data-schemas';
+import { isLangfuseFanoutEnabled, isLangfuseTenantExportEnabled } from './config';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
-import { toBasicAuthorization } from './utils';
+import { isFalseEnv, toBasicAuthorization } from './utils';
 import { normalizeString } from '~/utils/text';
-import { isEnabled } from '~/utils';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
@@ -22,7 +22,7 @@ function isSampleRateEnabled(value?: string): boolean {
 
 function isTracingEnabled(): boolean {
   return (
-    process.env.LANGFUSE_TRACING_ENABLED?.trim().toLowerCase() !== 'false' &&
+    !isFalseEnv(process.env.LANGFUSE_TRACING_ENABLED) &&
     isSampleRateEnabled(process.env.LANGFUSE_SAMPLE_RATE)
   );
 }
@@ -67,12 +67,21 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   if (!isTracingEnabled()) {
     return undefined;
   }
-  if (isEnabled(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED)) {
+  if (!isLangfuseTenantExportEnabled()) {
     return undefined;
   }
 
   const config = appConfig?.langfuse;
   if (config?.enabled === false) {
+    return undefined;
+  }
+  if (!isLangfuseFanoutEnabled(config?.fanout)) {
+    return undefined;
+  }
+  const fanoutCollectorUrl =
+    normalizeString(config?.fanout?.collectorUrl) ??
+    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+  if (!fanoutCollectorUrl) {
     return undefined;
   }
 

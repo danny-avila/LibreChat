@@ -2,7 +2,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
-import { isEnabled } from '~/utils';
+import { isTrueEnv } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
@@ -10,9 +10,17 @@ type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
 };
 const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
 const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
+const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
-function isTenantExportEnabled(): boolean {
-  return !isEnabled(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
+export function isLangfuseTenantExportEnabled(): boolean {
+  return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
+}
+
+export function isLangfuseFanoutEnabled(fanout?: AppConfig['langfuse']['fanout']): boolean {
+  return (
+    fanout?.enabled !== false &&
+    (fanout?.enabled === true || isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED))
+  );
 }
 
 function mergeTraceMetadata(
@@ -33,6 +41,20 @@ function mergeTags(tags: string[] | undefined, tenantId?: string): string[] | un
     return tags;
   }
   return [...new Set([...(tags ?? []), `tenant:${tenantId}`])];
+}
+
+function applyCentralEnvConfig(langfuse: LangfuseRunConfigWithTraceAttributes): void {
+  const publicKey = normalizeString(process.env.LANGFUSE_PUBLIC_KEY);
+  const secretKey = normalizeString(process.env.LANGFUSE_SECRET_KEY);
+  if (publicKey && secretKey) {
+    langfuse.publicKey = publicKey;
+    langfuse.secretKey = secretKey;
+    langfuse.baseUrl =
+      normalizeString(process.env.LANGFUSE_BASE_URL) ??
+      normalizeString(process.env.LANGFUSE_HOST) ??
+      normalizeString(process.env.LANGFUSE_BASEURL) ??
+      DEFAULT_BASE_URL;
+  }
 }
 
 export function buildLangfuseConfig({
@@ -68,34 +90,31 @@ export function buildLangfuseConfig({
   const secretKey = normalizeString(config?.secretKey);
   const hasTenantCredentials = Boolean(publicKey && secretKey);
   const fanout = config?.fanout;
-  const fanoutEnabled =
-    fanout?.enabled !== false &&
-    (fanout?.enabled === true || isEnabled(process.env.LANGFUSE_FANOUT_ENABLED));
+  const fanoutEnabled = isLangfuseFanoutEnabled(fanout);
   const fanoutCollectorUrl =
     normalizeString(fanout?.collectorUrl) ??
     normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   const tenantDestination = resolveLangfuseTenantDestination(config?.baseUrl);
   const tenantExportEnabled =
-    hasTenantCredentials && fanoutEnabled && isTenantExportEnabled() && Boolean(tenantDestination);
-
-  const directTenantExportEnabled = hasTenantCredentials && !fanoutEnabled;
-  if (directTenantExportEnabled || tenantExportEnabled) {
-    langfuse.publicKey = publicKey;
-    langfuse.secretKey = secretKey;
-  }
-
-  const baseUrl =
-    fanoutEnabled && fanoutCollectorUrl ? fanoutCollectorUrl : normalizeString(config?.baseUrl);
-  if (baseUrl) {
-    langfuse.baseUrl = baseUrl;
-  }
+    hasTenantCredentials &&
+    fanoutEnabled &&
+    isLangfuseTenantExportEnabled() &&
+    Boolean(tenantDestination) &&
+    Boolean(fanoutCollectorUrl);
 
   if (tenantExportEnabled) {
+    langfuse.publicKey = publicKey;
+    langfuse.secretKey = secretKey;
+    langfuse.baseUrl = fanoutCollectorUrl;
     langfuse.librechatTraceAttributes = {
       ...(langfuse.librechatTraceAttributes ?? {}),
       [TENANT_EXPORT_ATTRIBUTE]: 'true',
       [TENANT_DESTINATION_ATTRIBUTE]: tenantDestination?.key,
     };
+  } else if (fanoutEnabled && fanoutCollectorUrl) {
+    langfuse.baseUrl = fanoutCollectorUrl;
+  } else {
+    applyCentralEnvConfig(langfuse);
   }
 
   return langfuse;

@@ -20,6 +20,8 @@ const langfuseEnvKeys = [
   'LANGFUSE_TRACING_ENABLED',
   'LANGFUSE_SAMPLE_RATE',
   'LANGFUSE_TRACING_ENVIRONMENT',
+  'LANGFUSE_FANOUT_ENABLED',
+  'LANGFUSE_FANOUT_COLLECTOR_URL',
   'LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER',
   'LANGFUSE_FANOUT_CENTRAL_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_BASE_URL',
@@ -41,6 +43,11 @@ function clearLangfuseEnv() {
 function setLangfuseCredentials() {
   process.env.LANGFUSE_PUBLIC_KEY = 'public-key';
   process.env.LANGFUSE_SECRET_KEY = 'secret-key';
+}
+
+function enableTenantFanout() {
+  process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+  process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
 }
 
 async function loadFeedback(): Promise<typeof import('./feedback')> {
@@ -144,6 +151,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('posts feedback scores to central fanout and tenant Langfuse projects', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
@@ -197,6 +205,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('posts tenant feedback scores to the configured destination for the tenant base URL', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
@@ -250,6 +259,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('deletes feedback scores from central and tenant Langfuse projects', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
@@ -288,6 +298,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('posts feedback scores to tenant Langfuse when no central destination is configured', async () => {
+    enableTenantFanout();
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
@@ -313,6 +324,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('skips tenant scores when tenant Langfuse is disabled but keeps central scores', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
@@ -338,6 +350,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('skips tenant scores when tenant fanout export is disabled but keeps central scores', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
@@ -364,6 +377,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('does not disable tenant scores for a blank emergency toggle', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = '  ';
@@ -396,10 +410,69 @@ describe('Langfuse feedback scores', () => {
     );
   });
 
-  it('only disables tenant scores when the emergency toggle is true', async () => {
+  it.each(['true', '1', 'yes', 'on'])(
+    'disables tenant scores when the emergency toggle is %s',
+    async (value) => {
+      enableTenantFanout();
+      process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
+      process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
+      process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = value;
+      const { sendFeedbackScore } = await loadFeedback();
+
+      await sendFeedbackScore({
+        traceId: 'trace-id',
+        feedback: { rating: 'thumbsUp' },
+        appConfig: appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: 'tenant-secret-key',
+          baseUrl: 'https://cloud.langfuse.com',
+        }),
+      });
+
+      expect(getFetchMock()).toHaveBeenCalledTimes(1);
+      expect(getFetchMock()).toHaveBeenCalledWith(
+        'http://central-langfuse:3000/api/public/scores',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: 'Basic central-auth' }),
+        }),
+      );
+    },
+  );
+
+  it.each(['false', '0', 'no', 'off'])(
+    'does not disable tenant scores when the emergency toggle is %s',
+    async (value) => {
+      enableTenantFanout();
+      process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
+      process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
+      process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = value;
+      const { sendFeedbackScore } = await loadFeedback();
+
+      await sendFeedbackScore({
+        traceId: 'trace-id',
+        feedback: { rating: 'thumbsUp' },
+        appConfig: appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: 'tenant-secret-key',
+          baseUrl: 'https://cloud.langfuse.com',
+        }),
+      });
+
+      expect(getFetchMock()).toHaveBeenCalledTimes(2);
+      expect(getFetchMock()).toHaveBeenCalledWith(
+        'https://cloud.langfuse.com/api/public/scores',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: getTenantAuthorization() }),
+        }),
+      );
+    },
+  );
+
+  it('skips tenant scores when global fanout is disabled', async () => {
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = '1';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -412,7 +485,7 @@ describe('Langfuse feedback scores', () => {
       }),
     });
 
-    expect(getFetchMock()).toHaveBeenCalledTimes(2);
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
     expect(getFetchMock()).toHaveBeenCalledWith(
       'http://central-langfuse:3000/api/public/scores',
       expect.objectContaining({
@@ -420,18 +493,12 @@ describe('Langfuse feedback scores', () => {
         headers: expect.objectContaining({ Authorization: 'Basic central-auth' }),
       }),
     );
-    expect(getFetchMock()).toHaveBeenCalledWith(
-      'https://cloud.langfuse.com/api/public/scores',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: getTenantAuthorization() }),
-      }),
-    );
   });
 
-  it('deduplicates matching central and tenant score destinations', async () => {
-    process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = getTenantAuthorization();
-    process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://shared-langfuse:3000';
+  it('skips tenant scores when tenant fanout is disabled in app config', async () => {
+    enableTenantFanout();
+    process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
+    process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -440,18 +507,72 @@ describe('Langfuse feedback scores', () => {
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
         secretKey: 'tenant-secret-key',
-        baseUrl: 'http://shared-langfuse:3000',
+        baseUrl: 'https://cloud.langfuse.com',
+        fanout: { enabled: false },
       }),
     });
 
     expect(getFetchMock()).toHaveBeenCalledTimes(1);
     expect(getFetchMock()).toHaveBeenCalledWith(
-      'http://shared-langfuse:3000/api/public/scores',
+      'http://central-langfuse:3000/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Basic central-auth' }),
+      }),
+    );
+  });
+
+  it('skips tenant scores when fanout has no collector URL', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
+    process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        publicKey: 'tenant-public-key',
+        secretKey: 'tenant-secret-key',
+        baseUrl: 'https://cloud.langfuse.com',
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'http://central-langfuse:3000/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Basic central-auth' }),
+      }),
+    );
+  });
+
+  it('deduplicates matching central and tenant score destinations', async () => {
+    enableTenantFanout();
+    process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = getTenantAuthorization();
+    process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'https://cloud.langfuse.com';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        publicKey: 'tenant-public-key',
+        secretKey: 'tenant-secret-key',
+        baseUrl: 'https://cloud.langfuse.com',
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://cloud.langfuse.com/api/public/scores',
       expect.objectContaining({ method: 'POST' }),
     );
   });
 
   it('attempts every destination and reports partial feedback score failures', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
@@ -480,6 +601,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('reports tenant feedback score failures after central succeeds', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
@@ -511,6 +633,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('aggregates feedback score failures when every destination fails', async () => {
+    enableTenantFanout();
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
@@ -535,17 +658,80 @@ describe('Langfuse feedback scores', () => {
     expect(getFetchMock()).toHaveBeenCalledTimes(2);
   });
 
-  it('skips scores when Langfuse tracing is disabled', async () => {
-    process.env.LANGFUSE_TRACING_ENABLED = 'false';
-    const { sendFeedbackScore } = await loadFeedback();
+  it.each(['false', '0', 'no', 'off'])(
+    'skips scores when Langfuse tracing is disabled with %s',
+    async (value) => {
+      process.env.LANGFUSE_TRACING_ENABLED = value;
+      const { sendFeedbackScore } = await loadFeedback();
 
-    await sendFeedbackScore({
-      traceId: 'trace-id',
-      feedback: { rating: 'thumbsDown' },
-    });
+      await sendFeedbackScore({
+        traceId: 'trace-id',
+        feedback: { rating: 'thumbsDown' },
+      });
 
-    expect(getFetchMock()).not.toHaveBeenCalled();
-  });
+      expect(getFetchMock()).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['true', '1', 'yes', 'on'])(
+    'enables tenant scores when global fanout is %s',
+    async (value) => {
+      process.env.LANGFUSE_FANOUT_ENABLED = value;
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
+      process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
+      process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
+      const { sendFeedbackScore } = await loadFeedback();
+
+      await sendFeedbackScore({
+        traceId: 'trace-id',
+        feedback: { rating: 'thumbsUp' },
+        appConfig: appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: 'tenant-secret-key',
+          baseUrl: 'https://cloud.langfuse.com',
+        }),
+      });
+
+      expect(getFetchMock()).toHaveBeenCalledTimes(2);
+      expect(getFetchMock()).toHaveBeenCalledWith(
+        'https://cloud.langfuse.com/api/public/scores',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: getTenantAuthorization() }),
+        }),
+      );
+    },
+  );
+
+  it.each(['false', '0', 'no', 'off'])(
+    'keeps tenant scores disabled when global fanout is %s',
+    async (value) => {
+      process.env.LANGFUSE_FANOUT_ENABLED = value;
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
+      process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
+      process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
+      const { sendFeedbackScore } = await loadFeedback();
+
+      await sendFeedbackScore({
+        traceId: 'trace-id',
+        feedback: { rating: 'thumbsUp' },
+        appConfig: appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: 'tenant-secret-key',
+          baseUrl: 'https://cloud.langfuse.com',
+        }),
+      });
+
+      expect(getFetchMock()).toHaveBeenCalledTimes(1);
+      expect(getFetchMock()).toHaveBeenCalledWith(
+        'http://central-langfuse:3000/api/public/scores',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: 'Basic central-auth' }),
+        }),
+      );
+    },
+  );
 
   it('skips scores when Langfuse sampling is set to zero', async () => {
     process.env.LANGFUSE_SAMPLE_RATE = '0';
