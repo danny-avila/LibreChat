@@ -198,6 +198,13 @@ async function resolveAdminUser(
           'Provided user_id resolves outside the request tenant',
         );
       }
+      if (direct.provider !== 'google') {
+        throw new AdminRefreshError(
+          'PROVIDER_MISMATCH',
+          401,
+          'User account is not bound to the Google provider',
+        );
+      }
       return direct;
     }
   }
@@ -219,6 +226,13 @@ async function resolveAdminUser(
   const [found] = matches;
   if (!found) {
     throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
+  }
+  if (found.provider !== 'google') {
+    throw new AdminRefreshError(
+      'PROVIDER_MISMATCH',
+      401,
+      'User account is not bound to the Google provider',
+    );
   }
   return found;
 }

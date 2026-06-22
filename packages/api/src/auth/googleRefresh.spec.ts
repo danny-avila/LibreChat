@@ -250,6 +250,32 @@ describe('applyGoogleAdminRefresh', () => {
     });
   });
 
+  it('throws PROVIDER_MISMATCH when the resolved user is not bound to the google provider (findUsers path)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeOkJson({ access_token: 'new-access', id_token: makeIdToken() }),
+    );
+    deps.findUsers.mockResolvedValue([makeUser({ provider: 'openid' })]);
+
+    await expect(applyGoogleAdminRefresh(deps, baseOptions)).rejects.toMatchObject({
+      code: 'PROVIDER_MISMATCH',
+      status: 401,
+    });
+    expect(deps.canAccessAdmin).not.toHaveBeenCalled();
+  });
+
+  it('throws PROVIDER_MISMATCH when the direct-lookup user is not bound to the google provider', async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeOkJson({ access_token: 'new-access', id_token: makeIdToken() }),
+    );
+    const direct = makeUser({ provider: 'openid' });
+    deps.getUserById.mockResolvedValue(direct);
+
+    await expect(
+      applyGoogleAdminRefresh(deps, { ...baseOptions, userId: String(direct._id) }),
+    ).rejects.toMatchObject({ code: 'PROVIDER_MISMATCH', status: 401 });
+    expect(deps.canAccessAdmin).not.toHaveBeenCalled();
+  });
+
   it('throws USER_NOT_FOUND when no admin user matches the refreshed googleId', async () => {
     fetchMock.mockResolvedValueOnce(
       makeOkJson({ access_token: 'new-access', id_token: makeIdToken() }),
