@@ -102,9 +102,7 @@ export default function ProgressText({
           {text}
         </span>
         {subtitle && <span className="font-normal text-text-secondary">{subtitle}</span>}
-        {errorSuffix && (
-          <span className="font-normal text-status-error">· {errorSuffix}</span>
-        )}
+        {errorSuffix && <span className="font-normal text-status-error">· {errorSuffix}</span>}
         {hasInput && (
           <ChevronDown
             className={cn(

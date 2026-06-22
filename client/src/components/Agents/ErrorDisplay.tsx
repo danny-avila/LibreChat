@@ -208,11 +208,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, cont
           <h3 className="text-lg font-semibold text-text-primary" id="error-title">
             {title}
           </h3>
-          <p
-            className="text-text-secondary"
-            id="error-message"
-            aria-describedby="error-title"
-          >
+          <p className="text-text-secondary" id="error-message" aria-describedby="error-title">
             {message}
           </p>
           <p
@@ -232,9 +228,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry, cont
               onClick={onRetry}
               variant="outline"
               size="sm"
-              className={cn(
-                'border-status-error text-status-error hover:bg-status-error-subtle',
-              )}
+              className={cn('border-status-error text-status-error hover:bg-status-error-subtle')}
               aria-describedby="error-message error-suggestion"
               aria-label={`Retry action. ${message}`}
             >

@@ -42,24 +42,23 @@ export interface AlertProps
   icon?: React.ReactNode | false;
 }
 
-const Alert: React.ForwardRefExoticComponent<
-  AlertProps & React.RefAttributes<HTMLDivElement>
-> = React.forwardRef<HTMLDivElement, AlertProps>(
-  ({ className, variant = 'info', icon, role = 'alert', children, ...props }, ref) => {
-    const resolvedVariant = (variant ?? 'info') as AlertVariant;
-    const DefaultIcon = defaultIcons[resolvedVariant];
-    return (
-      <div ref={ref} role={role} className={cn(alertVariants({ variant }), className)} {...props}>
-        {icon !== false && (
-          <span className="mt-0.5 shrink-0" aria-hidden="true">
-            {icon ?? <DefaultIcon className="size-4" />}
-          </span>
-        )}
-        <div className="min-w-0 flex-1">{children}</div>
-      </div>
-    );
-  },
-);
+const Alert: React.ForwardRefExoticComponent<AlertProps & React.RefAttributes<HTMLDivElement>> =
+  React.forwardRef<HTMLDivElement, AlertProps>(
+    ({ className, variant = 'info', icon, role = 'alert', children, ...props }, ref) => {
+      const resolvedVariant = (variant ?? 'info') as AlertVariant;
+      const DefaultIcon = defaultIcons[resolvedVariant];
+      return (
+        <div ref={ref} role={role} className={cn(alertVariants({ variant }), className)} {...props}>
+          {icon !== false && (
+            <span className="mt-0.5 shrink-0" aria-hidden="true">
+              {icon ?? <DefaultIcon className="size-4" />}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">{children}</div>
+        </div>
+      );
+    },
+  );
 Alert.displayName = 'Alert';
 
 export { Alert, alertVariants };

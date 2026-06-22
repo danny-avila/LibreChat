@@ -302,7 +302,7 @@ export default function Settings({
               className={cn(
                 defaultTextProps,
                 optionText,
-                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2 border-border-light',
+                'flex rounded-md border-border-light bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2',
                 'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-border-light',
               )}
             />

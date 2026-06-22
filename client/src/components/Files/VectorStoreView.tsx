@@ -8,7 +8,7 @@ export default function VectorStoreView() {
   const params = useParams();
   const navigate = useNavigate();
   return (
-    <div className="max-h-[100vh] bg-surface-primary p-0 lg:p-7">
+    <div className="max-h-[100vh] bg-[#f9f9f9] p-0 lg:p-7">
       <div className="m-4 flex max-h-[10vh] w-full flex-row justify-between md:m-2">
         <FilesSectionSelector />
         <Button

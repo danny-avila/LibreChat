@@ -13,7 +13,6 @@ import type { TSkill, TCreateSkill, TSkillWarning } from 'librechat-data-provide
 import { useCreateSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import SkillContentEditor from './SkillContentEditor';
-import InvocationModePicker from './InvocationModePicker';
 import CategorySelector from './CategorySelector';
 import { cn } from '~/utils';
 
