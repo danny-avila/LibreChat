@@ -197,7 +197,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         message.isTemporary = false;
       }
 
-      if (isForcedRetention && forcedExpiredAt instanceof Date) {
+      const cascadeExpiredAt = update.expiredAt;
+      if (isForcedRetention && cascadeExpiredAt instanceof Date) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
         const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
         await cascadeForcedConversationRetention(
@@ -206,7 +207,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           SharedLink,
           userId,
           conversationId,
-          forcedExpiredAt,
+          cascadeExpiredAt,
         );
       }
 

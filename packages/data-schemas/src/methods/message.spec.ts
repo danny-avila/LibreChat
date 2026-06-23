@@ -902,6 +902,47 @@ describe('Message Operations', () => {
       expect(saved?.expiredAt?.getTime()).toBeLessThanOrEqual(convo?.expiredAt?.getTime() ?? 0);
     });
 
+    it('caps a message-only save to an all-mode parent expiring sooner without extending it', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'All-mode chat expiring soon',
+        isTemporary: false,
+        expiredAt: parentExpiry,
+      });
+      const olderMessageId = uuidv4();
+      await Message.create({
+        messageId: olderMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'older retained message',
+        isTemporary: false,
+        expiredAt: parentExpiry,
+      });
+
+      const saved = await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      expect(saved?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const older = await Message.findOne({ messageId: olderMessageId }).lean();
+      expect(older?.isTemporary).toBe(true);
+      expect(older?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+    });
+
     it('backfills lagging messages when the parent already expires sooner', async () => {
       const conversationId = uuidv4();
       const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
