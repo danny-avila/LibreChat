@@ -10,6 +10,13 @@ const {
 } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
+const {
+  acquireOpenIDRefreshFlight,
+  completeOpenIDRefreshFlight,
+  createOpenIDRefreshFlightKey,
+  failOpenIDRefreshFlight,
+  waitForOpenIDRefreshFlight,
+} = require('./OpenIDRefreshFlight');
 
 /**
  * Shape of `req.session.openidTokens`. Established by `setOpenIDAuthTokens`
@@ -305,7 +312,7 @@ async function syncRefreshTokenCookie({
   }
 }
 
-async function performIdpRefresh(req, res, user, tokenPreference) {
+async function performIdpRefreshGrant(req, res, user, tokenPreference) {
   const sessionTokens = req?.session?.openidTokens;
   const refreshToken = sessionTokens?.refreshToken;
   if (!refreshToken) {
@@ -399,6 +406,68 @@ async function performIdpRefresh(req, res, user, tokenPreference) {
     tokenPreference,
     nextAccessTokenExp ?? undefined,
   );
+}
+
+async function performIdpRefresh(req, res, user, tokenPreference) {
+  const refreshToken = req?.session?.openidTokens?.refreshToken;
+  const key = createOpenIDRefreshFlightKey({ req, user, refreshToken });
+  if (!key) {
+    return performIdpRefreshGrant(req, res, user, tokenPreference);
+  }
+
+  let flight;
+  try {
+    flight = await acquireOpenIDRefreshFlight({ key });
+  } catch (error) {
+    logger.warn(
+      '[OpenIDSessionRefresh] Failed to acquire shared refresh flight; refreshing directly',
+      error,
+    );
+    return performIdpRefreshGrant(req, res, user, tokenPreference);
+  }
+
+  if (!flight.acquired) {
+    logger.debug('[OpenIDSessionRefresh] Joining shared refresh flight', {
+      key: hashKeyForLogs(key),
+    });
+    const resolvedTokens = await waitForOpenIDRefreshFlight({ key });
+    if (resolvedTokens) {
+      await hydrateSessionFromResolvedTokens(req, resolvedTokens);
+      return resolvedTokens;
+    }
+
+    logger.warn('[OpenIDSessionRefresh] Shared refresh flight unavailable; refreshing directly', {
+      key: hashKeyForLogs(key),
+    });
+    return performIdpRefreshGrant(req, res, user, tokenPreference);
+  }
+
+  try {
+    const resolvedTokens = await performIdpRefreshGrant(req, res, user, tokenPreference);
+    try {
+      await completeOpenIDRefreshFlight({
+        key,
+        ownerId: flight.ownerId,
+        tokens: resolvedTokens,
+      });
+    } catch (flightError) {
+      logger.warn('[OpenIDSessionRefresh] Failed to complete shared refresh flight', {
+        key: hashKeyForLogs(key),
+        error: flightError?.message,
+      });
+    }
+    return resolvedTokens;
+  } catch (error) {
+    try {
+      await failOpenIDRefreshFlight({ key, ownerId: flight.ownerId, error });
+    } catch (flightError) {
+      logger.warn('[OpenIDSessionRefresh] Failed to mark shared refresh flight failed', {
+        key: hashKeyForLogs(key),
+        error: flightError?.message,
+      });
+    }
+    throw error;
+  }
 }
 
 /**

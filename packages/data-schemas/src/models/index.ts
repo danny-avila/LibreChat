@@ -1,4 +1,5 @@
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createOpenIDRefreshFlightModel } from './openidRefreshFlight';
 import { createRefreshTokenBridgeModel } from './refreshTokenBridge';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
@@ -77,6 +78,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Group: ReturnType<typeof createGroupModel>;
   Config: ReturnType<typeof createConfigModel>;
   RefreshTokenBridge: ReturnType<typeof createRefreshTokenBridgeModel>;
+  OpenIDRefreshFlight: ReturnType<typeof createOpenIDRefreshFlightModel>;
 } {
   return {
     User: createUserModel(mongoose),
@@ -116,5 +118,6 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
     RefreshTokenBridge: createRefreshTokenBridgeModel(mongoose),
+    OpenIDRefreshFlight: createOpenIDRefreshFlightModel(mongoose),
   };
 }

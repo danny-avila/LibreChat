@@ -1,5 +1,9 @@
 import type { RoleMethods, RoleDeps } from './role';
 import {
+  createOpenIDRefreshFlightMethods,
+  type OpenIDRefreshFlightMethods,
+} from './openidRefreshFlight';
+import {
   createRefreshTokenBridgeMethods,
   type RefreshTokenBridgeMethods,
 } from './refreshTokenBridge';
@@ -119,6 +123,7 @@ export type AllMethods = UserMethods &
   SessionMethods &
   TokenMethods &
   RefreshTokenBridgeMethods &
+  OpenIDRefreshFlightMethods &
   RoleMethods &
   KeyMethods &
   FileMethods &
@@ -247,6 +252,7 @@ export function createMethods(
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
     ...createRefreshTokenBridgeMethods(mongoose),
+    ...createOpenIDRefreshFlightMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
@@ -292,6 +298,7 @@ export type {
   SessionMethods,
   TokenMethods,
   RefreshTokenBridgeMethods,
+  OpenIDRefreshFlightMethods,
   RoleMethods,
   KeyMethods,
   FileMethods,

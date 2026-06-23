@@ -24,12 +24,26 @@ jest.mock('@librechat/api', () => ({
 jest.mock('./RefreshTokenBridge', () => ({
   storeRefreshTokenBridge: jest.fn(),
 }));
+jest.mock('./OpenIDRefreshFlight', () => ({
+  acquireOpenIDRefreshFlight: jest.fn(),
+  completeOpenIDRefreshFlight: jest.fn(),
+  createOpenIDRefreshFlightKey: jest.fn(),
+  failOpenIDRefreshFlight: jest.fn(),
+  waitForOpenIDRefreshFlight: jest.fn(),
+}));
 
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { isEnabled, buildOpenIDRefreshParams, setRefreshTokenCookie } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
+const {
+  acquireOpenIDRefreshFlight,
+  completeOpenIDRefreshFlight,
+  createOpenIDRefreshFlightKey,
+  failOpenIDRefreshFlight,
+  waitForOpenIDRefreshFlight,
+} = require('./OpenIDRefreshFlight');
 const {
   createOpenIDSessionTokenProvider,
   refreshOpenIDSession,
@@ -70,6 +84,13 @@ describe('OpenIDSessionRefresh', () => {
     isEnabled.mockReturnValue(true);
     getOpenIdConfig.mockReturnValue({ issuer: 'https://issuer.example.com' });
     openIdClient.refreshTokenGrant.mockReset();
+    createOpenIDRefreshFlightKey.mockImplementation(
+      ({ req, refreshToken }) => refreshToken && `flight:${req?.sessionID}:${refreshToken}`,
+    );
+    acquireOpenIDRefreshFlight.mockResolvedValue({ acquired: true, ownerId: 'owner-1' });
+    completeOpenIDRefreshFlight.mockResolvedValue({});
+    failOpenIDRefreshFlight.mockResolvedValue({});
+    waitForOpenIDRefreshFlight.mockResolvedValue(null);
   });
 
   describe('createOpenIDSessionTokenProvider closure no-op cases', () => {
@@ -479,6 +500,7 @@ describe('OpenIDSessionRefresh', () => {
 
       const p1 = refreshOpenIDSession(req, undefined, user, 'access_token');
       const p2 = refreshOpenIDSession(req, undefined, user, 'access_token');
+      await Promise.resolve();
 
       // Both calls land before the IdP responds
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
@@ -532,6 +554,7 @@ describe('OpenIDSessionRefresh', () => {
       const user = makeOpenIdUser();
       const pA = refreshOpenIDSession(reqA, undefined, user, 'access_token');
       const pB = refreshOpenIDSession(reqB, undefined, user, 'access_token');
+      await Promise.resolve();
 
       // Two refreshes started, one per session
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(2);
@@ -604,6 +627,7 @@ describe('OpenIDSessionRefresh', () => {
 
       const leaderPromise = refreshOpenIDSession(leaderReq, undefined, user, 'access_token');
       const joinerPromise = refreshOpenIDSession(joinerReq, undefined, user, 'access_token');
+      await Promise.resolve();
 
       // Only the leader hit the IdP; the joiner coalesced onto it.
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
@@ -645,6 +669,7 @@ describe('OpenIDSessionRefresh', () => {
 
       const leaderPromise = refreshOpenIDSession(leaderReq, undefined, user, 'access_token');
       const joinerPromise = refreshOpenIDSession(joinerReq, undefined, user, 'access_token');
+      await Promise.resolve();
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
 
@@ -668,6 +693,81 @@ describe('OpenIDSessionRefresh', () => {
       expect(joinerReq.session.openidTokens.accessTokenExpiresAt).toBe(joinerTokens.expires_at);
       expect(joinerReq.session.openidTokens.accessTokenExpiresAt).toBeGreaterThan(expiredExp);
       expect(joinerReq.session.save).toHaveBeenCalled();
+    });
+
+    it('joins a shared Mongo refresh flight when the local process has no in-flight entry', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const makeExpiredSession = () => ({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-cross-worker',
+      });
+      const leaderReq = buildReq(makeExpiredSession(), 'session-cross-worker');
+      const joinerReq = buildReq(makeExpiredSession(), 'session-cross-worker');
+      const user = makeOpenIdUser();
+
+      let resolveGrant;
+      const grantPromise = new Promise((resolve) => {
+        resolveGrant = resolve;
+      });
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(grantPromise);
+      acquireOpenIDRefreshFlight
+        .mockResolvedValueOnce({ acquired: true, ownerId: 'owner-leader' })
+        .mockResolvedValueOnce({ acquired: false, ownerId: 'owner-joiner' });
+
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      const sharedTokens = {
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-cross-worker-rotated',
+        expires_at: refreshedExp,
+      };
+      waitForOpenIDRefreshFlight.mockResolvedValueOnce(sharedTokens);
+
+      const leaderPromise = refreshOpenIDSession(leaderReq, undefined, user, 'access_token');
+      await Promise.resolve();
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+
+      /**
+       * Simulate a second worker: it does not see this process-local Map, but
+       * it does see the Mongo flight for the same browser session/token.
+       */
+      __internals.inFlightRefreshes.clear();
+      const joinerTokens = await refreshOpenIDSession(joinerReq, undefined, user, 'access_token');
+
+      expect(waitForOpenIDRefreshFlight).toHaveBeenCalledWith({
+        key: 'flight:session-cross-worker:rt-cross-worker',
+      });
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+      expect(joinerTokens).toBe(sharedTokens);
+      expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-cross-worker-rotated');
+      expect(joinerReq.session.save).toHaveBeenCalled();
+
+      resolveGrant({
+        access_token: sharedTokens.access_token,
+        id_token: sharedTokens.id_token,
+        refresh_token: sharedTokens.refresh_token,
+        expires_in: 3600,
+      });
+
+      await expect(leaderPromise).resolves.toEqual(
+        expect.objectContaining({
+          access_token: sharedTokens.access_token,
+          id_token: sharedTokens.id_token,
+          refresh_token: sharedTokens.refresh_token,
+          expires_at: expect.any(Number),
+        }),
+      );
+      expect(completeOpenIDRefreshFlight).toHaveBeenCalledWith({
+        key: 'flight:session-cross-worker:rt-cross-worker',
+        ownerId: 'owner-leader',
+        tokens: expect.objectContaining({
+          access_token: sharedTokens.access_token,
+          id_token: sharedTokens.id_token,
+          refresh_token: sharedTokens.refresh_token,
+          expires_at: expect.any(Number),
+        }),
+      });
     });
   });
 
