@@ -6,6 +6,7 @@ import {
   getReasoningKey,
   isDeepSeekReasoningProvider,
   shouldReplayReasoningContent,
+  anyAgentReplaysReasoningContent,
 } from './run';
 
 describe('extractDiscoveredToolsFromHistory', () => {
@@ -320,5 +321,50 @@ describe('shouldReplayReasoningContent', () => {
   it('returns false for nullish agents', () => {
     expect(shouldReplayReasoningContent(null)).toBe(false);
     expect(shouldReplayReasoningContent(undefined)).toBe(false);
+  });
+});
+
+describe('anyAgentReplaysReasoningContent', () => {
+  const plainAgent = (id: string, extra = {}) =>
+    ({
+      id,
+      provider: Providers.OPENAI,
+      model_parameters: { model: 'MiMo-V2.5' },
+      ...extra,
+    }) as unknown as Parameters<typeof anyAgentReplaysReasoningContent>[0][number];
+
+  it('returns true when the primary agent opts in', () => {
+    expect(
+      anyAgentReplaysReasoningContent([plainAgent('a', { includeReasoningHistory: true })]),
+    ).toBe(true);
+  });
+
+  it('returns true when only a nested subagent opts in', () => {
+    const subagent = plainAgent('child', { includeReasoningHistory: true });
+    const primary = plainAgent('root', {
+      subagentAgentConfigs: [plainAgent('mid', { subagentAgentConfigs: [subagent] })],
+    });
+    expect(anyAgentReplaysReasoningContent([primary])).toBe(true);
+  });
+
+  it('returns false when no reachable agent opts in', () => {
+    const primary = plainAgent('root', {
+      subagentAgentConfigs: [plainAgent('child')],
+    });
+    expect(anyAgentReplaysReasoningContent([primary, null, undefined])).toBe(false);
+  });
+
+  it('is cycle-safe across subagent references', () => {
+    const a = plainAgent('a');
+    const b = plainAgent('b', { includeReasoningHistory: true });
+    (a as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [b];
+    (b as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [a];
+    expect(anyAgentReplaysReasoningContent([a])).toBe(true);
+
+    const x = plainAgent('x');
+    const y = plainAgent('y');
+    (x as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [y];
+    (y as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [x];
+    expect(anyAgentReplaysReasoningContent([x])).toBe(false);
   });
 });

@@ -29,7 +29,7 @@ const {
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
-  shouldReplayReasoningContent,
+  anyAgentReplaysReasoningContent,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -1164,11 +1164,13 @@ class AgentClient extends BaseClient {
        * Reconstruct `reasoning_content` on prior tool-call turns: DeepSeek
        * thinking-mode (#13366) or custom endpoints opting in via
        * `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+       * Walks subagents too — the opted-in endpoint may appear only as a
+       * nested subagent, not the primary or a top-level handoff agent.
        */
-      const needsReasoningContentFormat =
-        shouldReplayReasoningContent(this.options.agent) ||
-        (this.agentConfigs != null &&
-          Array.from(this.agentConfigs.values()).some(shouldReplayReasoningContent));
+      const needsReasoningContentFormat = anyAgentReplaysReasoningContent([
+        this.options.agent,
+        ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+      ]);
       /**
        * Skills primed fresh this turn — manual ($ popover) and always-apply
        * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
