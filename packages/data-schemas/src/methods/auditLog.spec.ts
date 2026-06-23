@@ -351,6 +351,30 @@ describe('auditLog methods', () => {
       expect(result.checked).toBe(0);
     });
 
+    it('stops verification when the caller cancels', async () => {
+      await seed(3);
+      const result = await methods.verifyAuditChain('tenant-a', { isCancelled: () => true });
+      expect(result.ok).toBe(false);
+      expect(result.checked).toBe(0);
+      expect(result.reason).toBe('verification cancelled');
+    });
+
+    it('bounds verification when rows exceed the configured cap', async () => {
+      await seed(3);
+      const result = await methods.verifyAuditChain('tenant-a', { maxRows: 2 });
+      expect(result.ok).toBe(false);
+      expect(result.checked).toBe(2);
+      expect(result.brokenAt).toBe(3);
+      expect(result.reason).toMatch(/row limit exceeded/);
+    });
+
+    it('allows an exact-cap verification to complete', async () => {
+      await seed(2);
+      const result = await methods.verifyAuditChain('tenant-a', { maxRows: 2 });
+      expect(result.ok).toBe(true);
+      expect(result.checked).toBe(2);
+    });
+
     it('detects a tampered field (hash mismatch)', async () => {
       await seed(3);
       // mutate a field via the raw driver, bypassing the append-only hooks
