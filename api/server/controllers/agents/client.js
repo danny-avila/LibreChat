@@ -1161,10 +1161,9 @@ class AgentClient extends BaseClient {
       });
 
       /**
-       * Spoof `Providers.DEEPSEEK` so `formatAgentMessages` reconstructs
-       * `reasoning_content` on prior tool-call turns (#13366). Also applies to
-       * custom endpoints opting in via `customParams.includeReasoningContent`
-       * (e.g. Xiaomi MiMo, Kimi) for cross-turn reasoning replay parity.
+       * Reconstruct `reasoning_content` on prior tool-call turns: DeepSeek
+       * thinking-mode (#13366) or custom endpoints opting in via
+       * `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
        */
       const needsReasoningContentFormat =
         shouldReplayReasoningContent(this.options.agent) ||
@@ -1188,7 +1187,7 @@ class AgentClient extends BaseClient {
       const formatOptions =
         needsReasoningContentFormat || freshSkillPrimeNames.size > 0
           ? {
-              ...(needsReasoningContentFormat ? { provider: Providers.DEEPSEEK } : {}),
+              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
               ...(freshSkillPrimeNames.size > 0
                 ? { skipSkillBodyNames: freshSkillPrimeNames }
                 : {}),
