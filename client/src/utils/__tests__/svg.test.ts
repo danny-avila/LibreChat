@@ -210,6 +210,18 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><style>.a{fill:currentColor}</style><path class="a" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('does not count an unused CSS color declaration as a tone', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>svg{color:#333}</style><path d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('resolves CSS currentColor against a CSS color declaration', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.a{color:#e00;fill:currentColor}</style><path class="a" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
   });
 
   describe('default fills alongside <style> rules', () => {
@@ -323,6 +335,18 @@ describe('isMonochromeSvg', () => {
     it('tints a glyph over a rect whose fill-opacity:0 comes from CSS', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><style>.bg{fill-opacity:0}</style><rect class="bg" width="24" height="24" fill="#fff" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over a rect hidden with display="none"', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#fff" display="none" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over a rect hidden by a CSS display:none rule', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.bg{display:none}</style><rect class="bg" width="24" height="24" fill="#fff" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
