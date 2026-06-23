@@ -23,8 +23,17 @@ export default function AgentPanelSplash({
           <h1 className="text-xl font-bold">Meet the agent builder</h1>
 
           <p className="text-md text-text-primary">
-            The agent builder lets you create agents designed around specific tasks and workflows.
-            Read the agent guide before you dive in.
+            The agent builder lets you create agents designed around specific tasks and workflows.{' '}
+            <Link
+              to="https://www.youtube.com/watch?v=XmghIAbRx14"
+              className="text-md font-semibold text-jersey-button underline hover:decoration-2"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Watch the tutorial (opens new page to video)"
+            >
+              Watch the tutorial
+            </Link>{' '}
+            or read the agent guide before you dive in.
           </p>
 
           <Link
