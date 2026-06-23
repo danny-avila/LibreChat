@@ -121,6 +121,10 @@ export const capConversationSharedLinks = async (
  * an already-conforming parent untouched, so older `expiredAt: null`/later messages would
  * otherwise survive the parent's TTL. Returns the forced window unchanged when no earlier
  * parent deadline applies.
+ *
+ * Any active earlier deadline is honored regardless of `isTemporary`: an `all`-mode parent
+ * carried over with a sooner `expiredAt` must not be extended to the fresh window just
+ * because it is not yet temporary — the cascade converts it afterward using this deadline.
  */
 export const capForcedRetentionToParent = async (
   Conversation: Model<IConversation>,
@@ -130,15 +134,10 @@ export const capForcedRetentionToParent = async (
   conversationId: string,
   forcedExpiredAt: Date,
 ): Promise<Date> => {
-  const parent = await Conversation.findOne(
-    { conversationId, user: userId },
-    'isTemporary expiredAt',
-  ).lean<{ isTemporary?: boolean | null; expiredAt?: Date | null } | null>();
-  if (
-    parent?.isTemporary === true &&
-    parent.expiredAt instanceof Date &&
-    parent.expiredAt.getTime() < forcedExpiredAt.getTime()
-  ) {
+  const parent = await Conversation.findOne({ conversationId, user: userId }, 'expiredAt').lean<{
+    expiredAt?: Date | null;
+  } | null>();
+  if (parent?.expiredAt instanceof Date && parent.expiredAt.getTime() < forcedExpiredAt.getTime()) {
     await forceConversationMessagesTemporary(Message, userId, conversationId, parent.expiredAt);
     await capConversationSharedLinks(SharedLink, userId, conversationId, parent.expiredAt);
     return parent.expiredAt;
