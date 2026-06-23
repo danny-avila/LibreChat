@@ -37,6 +37,8 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const canAccessSharedLink = require('~/server/middleware/canAccessSharedLink');
+const { forkSharedConversation } = require('~/server/utils/import/fork');
+const { createForkLimiters } = require('~/server/middleware/limiters');
 const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
@@ -224,6 +226,8 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 };
 
 if (allowSharedLinks) {
+  const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
+
   router.get('/:shareId/config', optionalJwtAuth, canAccessSharedLink, async (_req, res) => {
     try {
       const payload = await getShareStartupPayload();
@@ -256,6 +260,36 @@ if (allowSharedLinks) {
       } catch (error) {
         logger.error('Error getting shared messages:', error);
         res.status(500).json({ message: 'Error getting shared messages' });
+      }
+    },
+  );
+
+  router.post(
+    '/:shareId/fork',
+    requireJwtAuth,
+    forkIpLimiter,
+    forkUserLimiter,
+    canAccessSharedLink,
+    async (req, res) => {
+      try {
+        const result = await forkSharedConversation({
+          shareId: req.params.shareId,
+          shareResourceId: req.shareResourceId,
+          requestUserId: req.user.id,
+          userRole: req.user.role,
+          userTenantId: req.user.tenantId,
+          targetMessageIndex: req.body?.targetMessageIndex,
+          // Viewer-independent: honor the global shared-file kill switch, matching
+          // the GET share route so disabled file snapshots aren't copied into forks.
+          snapshotFiles: !isFileSnapshotKillSwitchActive(),
+        });
+        if (!result) {
+          return res.status(404).json({ message: 'Shared conversation not found' });
+        }
+        res.status(201).json(result);
+      } catch (error) {
+        logger.error('Error forking shared conversation:', error);
+        res.status(500).json({ message: 'Error forking shared conversation' });
       }
     },
   );

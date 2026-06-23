@@ -1,16 +1,19 @@
 import { useRecoilValue } from 'recoil';
 import { Dropdown, Spinner } from '@librechat/client';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 export const ThemeSelector = ({
   theme,
   onChange,
   portal = true,
+  popoverClassName,
 }: {
   theme: string;
   onChange: (value: string) => void;
   portal?: boolean;
+  popoverClassName?: string;
 }) => {
   const localize = useLocalize();
 
@@ -30,9 +33,8 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        sizeClasses="w-[180px]"
+        sizeClasses={cn('z-50 w-[180px]', popoverClassName)}
         testId="theme-selector"
-        className="z-50"
         aria-labelledby={labelId}
         portal={portal}
       />
@@ -44,10 +46,12 @@ export const LangSelector = ({
   langcode,
   onChange,
   portal = true,
+  popoverClassName,
 }: {
   langcode: string;
   onChange: (value: string) => void;
   portal?: boolean;
+  popoverClassName?: string;
 }) => {
   const localize = useLocalize();
   const isLanguageLoading = useRecoilValue(store.languageLoading);
@@ -116,9 +120,11 @@ export const LangSelector = ({
         <Dropdown
           value={langcode}
           onChange={onChange}
-          sizeClasses="[--anchor-max-height:256px] max-h-[60vh] w-[220px]"
+          sizeClasses={cn(
+            'z-50 [--anchor-max-height:256px] max-h-[60vh] w-[220px]',
+            popoverClassName,
+          )}
           options={languageOptions}
-          className="z-50"
           aria-labelledby={labelId}
           portal={portal}
           searchable
