@@ -9,6 +9,7 @@ const {
   setRefreshTokenCookie,
 } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
+const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
 
 /**
  * Shape of `req.session.openidTokens`. Established by `setOpenIDAuthTokens`
@@ -237,20 +238,74 @@ async function persistSession(req) {
  * this sync an OBO-triggered rotation would leave a stale, invalidated token in
  * the cookie and sign the user out on the next post-session-loss refresh.
  *
- * No-op when `res` is unavailable or its headers are already sent — which is
- * the case on the streaming agent tool-call path (SSE headers flush before any
- * tool runs). There the session copy remains authoritative and the next
- * non-streaming `/api/auth/refresh` re-syncs the cookie via setOpenIDAuthTokens.
+ * When `res.headersSent` is true (streaming SSE path), the cookie cannot be set.
+ * In this case, store a server-side recovery bridge so that if the session is
+ * later lost, `refreshController` can look up the rotated token by hash of the
+ * stale cookie token.
+ *
+ * @param {object} args
+ * @param {import('express').Response} [args.res]
+ * @param {string} args.newRefreshToken — the rotated token to sync
+ * @param {string} [args.oldRefreshToken] — the token before rotation (required for bridge)
+ * @param {string} [args.userId] — user._id (required for bridge verification)
+ * @param {string} [args.tenantId] — user.tenantId (optional, verified on bridge lookup)
+ * @param {string} [args.openidIssuer] — user.openidIssuer (optional, verified on bridge lookup)
  */
-function syncRefreshTokenCookie(res, refreshToken) {
-  if (!res || res.headersSent || typeof res.cookie !== 'function') {
+async function syncRefreshTokenCookie({
+  res,
+  newRefreshToken,
+  oldRefreshToken,
+  userId,
+  tenantId,
+  openidIssuer,
+}) {
+  if (!res || typeof res.cookie !== 'function') {
     return;
   }
-  const expiryInMilliseconds = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
-  setRefreshTokenCookie(res, refreshToken, new Date(Date.now() + expiryInMilliseconds));
+
+  // If response is still writable, set the cookie directly.
+  if (!res.headersSent) {
+    const expiryInMilliseconds = math(
+      process.env.REFRESH_TOKEN_EXPIRY,
+      DEFAULT_REFRESH_TOKEN_EXPIRY,
+    );
+    setRefreshTokenCookie(res, newRefreshToken, new Date(Date.now() + expiryInMilliseconds));
+    return;
+  }
+
+  // Headers already sent (SSE streaming): store a recovery bridge instead.
+  // This allows a later /api/auth/refresh call to recover the rotated token
+  // even after the express-session expires.
+  if (oldRefreshToken && userId) {
+    try {
+      await storeRefreshTokenBridge({
+        oldRefreshToken,
+        newRefreshToken,
+        userId,
+        tenantId,
+        openidIssuer,
+      });
+      logger.debug(
+        '[OpenIDSessionRefresh] Stored refresh-token recovery bridge (SSE streaming path)',
+        {
+          userId,
+        },
+      );
+    } catch (error) {
+      logger.error('[OpenIDSessionRefresh] Failed to store refresh-token recovery bridge', error);
+    }
+  } else {
+    logger.warn(
+      '[OpenIDSessionRefresh] Cannot set cookie (headers sent) and insufficient context to store bridge',
+      {
+        hasOldToken: !!oldRefreshToken,
+        hasUserId: !!userId,
+      },
+    );
+  }
 }
 
-async function performIdpRefresh(req, res, tokenPreference) {
+async function performIdpRefresh(req, res, user, tokenPreference) {
   const sessionTokens = req?.session?.openidTokens;
   const refreshToken = sessionTokens?.refreshToken;
   if (!refreshToken) {
@@ -320,10 +375,17 @@ async function performIdpRefresh(req, res, tokenPreference) {
 
   /**
    * Keep the browser refresh-token cookie in sync when the IdP rotated it.
-   * Best-effort: a no-op on the streaming tool-call path (headers already sent).
+   * If headers are already sent (SSE streaming), store a recovery bridge instead.
    */
   if (nextRefreshToken !== refreshToken) {
-    syncRefreshTokenCookie(res, nextRefreshToken);
+    await syncRefreshTokenCookie({
+      res,
+      newRefreshToken: nextRefreshToken,
+      oldRefreshToken: refreshToken,
+      userId: user?.id || user?._id?.toString?.() || req.user?.id || req.user?._id?.toString?.(),
+      tenantId: user?.tenantId ?? req.user?.tenantId,
+      openidIssuer: user?.openidIssuer ?? req.user?.openidIssuer,
+    });
   }
 
   logger.info('[OpenIDSessionRefresh] Inline refresh succeeded');
@@ -368,7 +430,7 @@ async function hydrateSessionFromResolvedTokens(req, resolvedTokens) {
   await persistSession(req);
 }
 
-async function refreshOrReuseSession(req, res, tokenPreference) {
+async function refreshOrReuseSession(req, res, user, tokenPreference) {
   const sessionTokens = req?.session?.openidTokens;
   if (!sessionTokens) {
     logger.debug('[OpenIDSessionRefresh] No session tokens to refresh from');
@@ -380,7 +442,7 @@ async function refreshOrReuseSession(req, res, tokenPreference) {
     return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
   }
 
-  return performIdpRefresh(req, res, tokenPreference);
+  return performIdpRefresh(req, res, user, tokenPreference);
 }
 
 /**
@@ -399,7 +461,7 @@ async function refreshOrReuseSession(req, res, tokenPreference) {
 async function refreshOpenIDSession(req, res, user, tokenPreference) {
   const key = getSingleFlightKey(req, user);
   if (!key) {
-    return refreshOrReuseSession(req, res, tokenPreference);
+    return refreshOrReuseSession(req, res, user, tokenPreference);
   }
 
   const inFlight = inFlightRefreshes.get(key);
@@ -415,7 +477,7 @@ async function refreshOpenIDSession(req, res, user, tokenPreference) {
     return resolvedTokens;
   }
 
-  const promise = refreshOrReuseSession(req, res, tokenPreference).finally(() => {
+  const promise = refreshOrReuseSession(req, res, user, tokenPreference).finally(() => {
     if (inFlightRefreshes.get(key) === promise) {
       inFlightRefreshes.delete(key);
     }

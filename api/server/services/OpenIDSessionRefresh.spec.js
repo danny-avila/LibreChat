@@ -21,11 +21,15 @@ jest.mock('@librechat/api', () => ({
     res.cookie('refreshToken', refreshToken, { expires });
   }),
 }));
+jest.mock('./RefreshTokenBridge', () => ({
+  storeRefreshTokenBridge: jest.fn(),
+}));
 
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { isEnabled, buildOpenIDRefreshParams, setRefreshTokenCookie } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
+const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
 const {
   createOpenIDSessionTokenProvider,
   refreshOpenIDSession,
@@ -371,6 +375,7 @@ describe('OpenIDSessionRefresh', () => {
 
       expect(setRefreshTokenCookie).toHaveBeenCalledTimes(1);
       expect(setRefreshTokenCookie).toHaveBeenCalledWith(res, 'rt-rotated', expect.any(Date));
+      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     });
 
     it('does not write the cookie when the IdP does not rotate the refresh token', async () => {
@@ -389,7 +394,7 @@ describe('OpenIDSessionRefresh', () => {
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
     });
 
-    it('skips the cookie write when response headers are already sent (streaming path)', async () => {
+    it('stores a recovery bridge when response headers are already sent (streaming path)', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
         access_token: makeJwt(refreshedExp),
@@ -399,10 +404,21 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(buildExpiredSession('rt-old'));
       const res = buildRes({ headersSent: true });
+      const user = makeOpenIdUser({
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+      });
 
-      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+      await refreshOpenIDSession(req, res, user, 'access_token');
 
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-rotated',
+        userId: 'local-id-1',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+      });
       /** Session copy remains authoritative even when the cookie can't be set. */
       expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
     });
@@ -421,6 +437,26 @@ describe('OpenIDSessionRefresh', () => {
         refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
       ).resolves.toBeDefined();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+    });
+
+    it('does not fail the refresh when bridge storage fails after headers are sent', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      storeRefreshTokenBridge.mockRejectedValueOnce(new Error('encrypt failed'));
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: true });
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).resolves.toBeDefined();
+
+      expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
     });
   });
 

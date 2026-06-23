@@ -26,6 +26,10 @@ const {
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
+const {
+  getRefreshTokenBridge,
+  deleteRefreshTokenBridge,
+} = require('~/server/services/RefreshTokenBridge');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
@@ -87,6 +91,22 @@ const isRecentOpenIDSessionRefresh = (openidTokens) => {
   const elapsed = Date.now() - lastRefreshedAt;
   return (
     Number.isFinite(lastRefreshedAt) && elapsed >= 0 && elapsed <= OPENID_REUSE_MAX_SESSION_AGE_MS
+  );
+};
+
+const isInvalidGrantError = (error) => {
+  const values = [
+    error?.message,
+    error?.error,
+    error?.code,
+    error?.response?.data?.error,
+    error?.response?.data?.error_description,
+    error?.body?.error,
+    error?.body?.error_description,
+  ];
+
+  return values.some(
+    (value) => typeof value === 'string' && value.toLowerCase().includes('invalid_grant'),
   );
 };
 
@@ -251,6 +271,88 @@ const refreshController = async (req, res) => {
       return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
+
+      /**
+       * Detect and recover from stale refresh-token cookie after SSE-triggered rotation.
+       * If the initial refresh with the cookie fails with invalid_grant, check if a
+       * recovery bridge exists. Bridges are stored when an OBO refresh rotates the token
+       * but cannot set the browser cookie (headers already sent during SSE streaming).
+       */
+      if (isInvalidGrantError(error) && refreshToken) {
+        // Bridge lookup uses the signed user-id cookie because /refresh is unauthenticated.
+        const openidUserId = parsedCookies.openid_user_id;
+        if (openidUserId) {
+          try {
+            const payload = jwt.verify(openidUserId, process.env.JWT_REFRESH_SECRET);
+            const userId = typeof payload === 'object' && payload?.id ? payload.id : null;
+
+            if (userId) {
+              const bridgeUser = await getUserById(userId, AUTH_REFRESH_USER_PROJECTION);
+              if (!bridgeUser) {
+                return res.status(403).send('Invalid OpenID refresh token');
+              }
+
+              const bridgedRefreshToken = await getRefreshTokenBridge({
+                oldRefreshToken: refreshToken,
+                userId,
+                tenantId: bridgeUser.tenantId,
+                openidIssuer: bridgeUser.openidIssuer,
+              });
+
+              if (bridgedRefreshToken) {
+                logger.info(
+                  '[refreshController] Recovered via refresh-token bridge after invalid_grant',
+                  {
+                    userId,
+                  },
+                );
+
+                // Retry with the recovered (rotated) refresh token
+                try {
+                  const openIdConfig = getOpenIdConfig();
+                  const refreshParams = buildOpenIDRefreshParams();
+                  const retryTokenset = await openIdClient.refreshTokenGrant(
+                    openIdConfig,
+                    bridgedRefreshToken,
+                    refreshParams,
+                  );
+
+                  const retryClaims = retryTokenset.claims();
+                  const retryIssuer = getOpenIdIssuer(retryClaims, openIdConfig);
+                  const { user: retryUser, error: retryError } = await findOpenIDUser({
+                    findUser,
+                    email: getOpenIdEmail(retryClaims),
+                    openidId: retryClaims.sub,
+                    openidIssuer: retryIssuer,
+                    idOnTheSource: retryClaims.oid,
+                    strategyName: 'refreshController (bridge recovery)',
+                  });
+
+                  if (retryUser && !retryError) {
+                    const token = setOpenIDAuthTokens(retryTokenset, req, res, {
+                      userId: retryUser._id.toString(),
+                      existingRefreshToken: bridgedRefreshToken,
+                      tenantId: retryUser.tenantId,
+                    });
+                    deleteRefreshTokenBridge({ oldRefreshToken: refreshToken });
+                    return res
+                      .status(200)
+                      .send({ token, user: sanitizeUserForAuthResponse(retryUser) });
+                  }
+                } catch (retryError) {
+                  logger.error('[refreshController] Bridge recovery retry failed', retryError);
+                  // Fall through to generic error response
+                }
+              }
+            }
+          } catch (verifyError) {
+            logger.debug('[refreshController] Could not verify openid_user_id for bridge lookup', {
+              error: verifyError.message,
+            });
+          }
+        }
+      }
+
       return res.status(403).send('Invalid OpenID refresh token');
     }
   }

@@ -21,6 +21,10 @@ jest.mock('~/models', () => ({
   updateUser: jest.fn(),
   findUser: jest.fn(),
 }));
+jest.mock('~/server/services/RefreshTokenBridge', () => ({
+  getRefreshTokenBridge: jest.fn(),
+  deleteRefreshTokenBridge: jest.fn(),
+}));
 jest.mock('@librechat/api', () => ({
   math: jest.fn((value, fallback) => fallback),
   isEnabled: jest.fn(),
@@ -51,6 +55,10 @@ const {
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const { getUserById, findSession, updateUser } = require('~/models');
+const {
+  getRefreshTokenBridge,
+  deleteRefreshTokenBridge,
+} = require('~/server/services/RefreshTokenBridge');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -237,6 +245,8 @@ describe('refreshController – OpenID path', () => {
     setOpenIDAuthTokens.mockReturnValue('new-app-token');
     setCloudFrontAuthCookies.mockReturnValue(true);
     findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
+    getRefreshTokenBridge.mockResolvedValue(null);
+    deleteRefreshTokenBridge.mockReturnValue(true);
     getUserById.mockResolvedValue({
       _id: 'user-db-id',
       email: baseClaims.email,
@@ -710,8 +720,91 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
+  });
+
+  it('recovers stale refresh-token cookies with a bridge after session loss', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    const bridgeUser = {
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    };
+    getUserById.mockResolvedValue(bridgeUser);
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+
+    await refreshController(req, res);
+
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-db-id',
+      '-password -__v -totpSecret -backupCodes -federatedTokens',
+    );
+    expect(getRefreshTokenBridge).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    expect(openIdClient.refreshTokenGrant).toHaveBeenNthCalledWith(
+      1,
+      { some: 'config' },
+      'stored-refresh',
+      {},
+    );
+    expect(openIdClient.refreshTokenGrant).toHaveBeenNthCalledWith(
+      2,
+      { some: 'config' },
+      'bridged-refresh',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'bridged-refresh',
+      tenantId: undefined,
+    });
+    expect(deleteRefreshTokenBridge).toHaveBeenCalledWith({ oldRefreshToken: 'stored-refresh' });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('does not delete the bridge when bridged refresh retry fails', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockRejectedValueOnce(new Error('temporarily unavailable'));
+
+    await refreshController(req, res);
+
+    expect(getRefreshTokenBridge).toHaveBeenCalled();
+    expect(deleteRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('does not use the bridge for generic HTTP 400 errors without invalid_grant', async () => {
+    setOpenIDReuseCookies();
+    openIdClient.refreshTokenGrant.mockRejectedValue(
+      Object.assign(new Error('bad request'), { status: 400 }),
+    );
+
+    await refreshController(req, res);
+
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(deleteRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('should skip OpenID path when token_provider is not openid', async () => {
