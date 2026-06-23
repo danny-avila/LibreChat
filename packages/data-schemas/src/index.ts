@@ -27,6 +27,7 @@ export {
   AUDIT_SCHEMA_VERSION,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,
+  MAX_AUDIT_VERIFY_ROWS,
 } from './methods';
 export type * from './types';
 export type * from './methods';
