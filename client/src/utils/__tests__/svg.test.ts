@@ -145,6 +145,46 @@ describe('isMonochromeSvg', () => {
     });
   });
 
+  describe('currentColor resolved against a fixed color', () => {
+    it('preserves a logo whose currentColor resolves to a fixed chromatic color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24" color="#e00"><path fill="currentColor" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves currentColor fixed by an ancestor group color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g color="#0a0"><path fill="currentColor" d="M4 4h16v16H4z" /></g></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('still tints when the fixed color is itself grayscale', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24" color="#333"><path fill="currentColor" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+  });
+
+  describe('default fills alongside <style> rules', () => {
+    it('rejects a CSS-filled shape combined with a default-black glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.bg{fill:#fff}</style><path class="bg" d="M0 0h24v24H0z" /><path d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a CSS-styled monochrome icon with no unpainted shapes', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.st0{fill:#333}</style><path class="st0" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a default-black glyph when the style block sets no conflicting fill', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.hidden{display:none}</style><path d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+  });
+
   describe('multi-color icons (colors preserved)', () => {
     it('treats a saturated hex color as multi-color', () => {
       const svg = '<svg><path fill="#ff0000" /></svg>';
