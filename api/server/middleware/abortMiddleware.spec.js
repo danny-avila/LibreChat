@@ -73,7 +73,18 @@ jest.mock('./abortRun', () => ({
   abortRun: jest.fn(),
 }));
 
-const { spendCollectedUsage } = require('./abortMiddleware');
+const { logger } = require('@librechat/data-schemas');
+const { sendError } = require('~/server/middleware/error');
+const { handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
+
+const buildAbortRequest = () => ({
+  body: {
+    model: 'gpt-4',
+  },
+  user: {
+    id: 'user-123',
+  },
+});
 
 describe('abortMiddleware - spendCollectedUsage', () => {
   beforeEach(() => {
@@ -235,5 +246,52 @@ describe('abortMiddleware - spendCollectedUsage', () => {
       expect(resolved).toBe(true);
       expect(collectedUsage.length).toBe(0);
     });
+  });
+});
+
+describe('abortMiddleware - handleAbortError', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it.each([
+    [new DOMException('The operation was aborted', 'AbortError'), 'AbortError'],
+    [new Error('SSE stream disconnected: AbortError: The operation was aborted'), 'Error'],
+  ])('logs user aborts as debug events instead of errors', async (error, name) => {
+    await handleAbortError({}, buildAbortRequest(), error, {
+      sender: 'AI',
+      conversationId: 'convo-123',
+      messageId: 'message-123',
+      parentMessageId: 'parent-123',
+      userMessageId: 'user-message-123',
+    });
+
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith('[handleAbortError] AI response aborted by user', {
+      conversationId: 'convo-123',
+      code: error.code,
+      name,
+      message: error.message,
+    });
+    expect(sendError).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps unexpected generation errors classified as errors', async () => {
+    const error = new Error('Provider failed');
+
+    await handleAbortError({}, buildAbortRequest(), error, {
+      sender: 'AI',
+      conversationId: 'convo-123',
+      messageId: 'message-123',
+      parentMessageId: 'parent-123',
+      userMessageId: 'user-message-123',
+    });
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[handleAbortError] AI response error; aborting request:',
+      error,
+    );
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(sendError).toHaveBeenCalledTimes(1);
   });
 });
