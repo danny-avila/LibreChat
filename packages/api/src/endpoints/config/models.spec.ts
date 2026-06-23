@@ -1,7 +1,10 @@
 import { AuthType, EModelEndpoint } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
-import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from '../keys';
-import { createLoadConfigModels } from './models';
+
+const mockValidateEndpointURL = jest.fn().mockResolvedValue(undefined);
+jest.mock('~/auth', () => ({
+  validateEndpointURL: (...args: unknown[]) => mockValidateEndpointURL(...args),
+}));
 
 jest.mock('~/utils', () => {
   const original = jest.requireActual('~/utils');
@@ -11,6 +14,9 @@ jest.mock('~/utils', () => {
     isUserProvided: (val: string) => val === 'user_provided',
   };
 });
+
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from '../keys';
+import { createLoadConfigModels } from './models';
 
 describe('createLoadConfigModels – user-provided baseURL header guard', () => {
   const fetchModels = jest.fn().mockResolvedValue([]);
@@ -31,6 +37,7 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
 
   beforeEach(() => {
     fetchModels.mockReset().mockResolvedValue([]);
+    mockValidateEndpointURL.mockReset().mockResolvedValue(undefined);
   });
 
   it('does NOT forward configured headers when baseURL is user-provided', async () => {
@@ -56,10 +63,16 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
     await loadConfigModels(req);
 
     expect(fetchModels).toHaveBeenCalledTimes(1);
+    expect(mockValidateEndpointURL).toHaveBeenCalledWith(
+      'https://user-controlled.example.com/v1',
+      'TestProxy',
+      undefined,
+    );
     expect(fetchModels).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'TestProxy',
         baseURL: 'https://user-controlled.example.com/v1',
+        baseURLIsUserProvided: true,
         headers: undefined,
       }),
     );
@@ -101,6 +114,29 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
     );
   });
 
+  it('does NOT call fetchModels when user-provided baseURL validation fails', async () => {
+    mockValidateEndpointURL.mockRejectedValueOnce(new Error('blocked SSRF target'));
+
+    const loadConfigModels = createLoadConfigModels({
+      getAppConfig: jest.fn().mockResolvedValue(buildAppConfig({})),
+      getUserKeyValues: jest.fn().mockResolvedValue({
+        apiKey: 'sk-user-key',
+        baseURL: 'http://127.0.0.1:11434/v1',
+      }),
+      fetchModels,
+    });
+
+    const req = {
+      user: { id: 'user-1' },
+      config: undefined,
+    } as unknown as ServerRequest;
+
+    const modelsConfig = await loadConfigModels(req);
+
+    expect(fetchModels).not.toHaveBeenCalled();
+    expect(modelsConfig.TestProxy).toEqual([]);
+  });
+
   it('DOES forward configured headers when baseURL is admin-trusted (only apiKey is user-provided)', async () => {
     const headers = {
       Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
@@ -139,6 +175,7 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
       expect.objectContaining({
         name: 'TrustedProxy',
         baseURL: 'https://admin-trusted.example.com/v1',
+        baseURLIsUserProvided: false,
         headers,
       }),
     );
