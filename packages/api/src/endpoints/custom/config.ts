@@ -41,6 +41,7 @@ export function loadCustomEndpointsConfig(
 
       const resolvedApiKey = extractEnvVariable(apiKey ?? '');
       const resolvedBaseURL = extractEnvVariable(baseURL ?? '');
+      const userProvideURL = isUserProvided(resolvedBaseURL);
 
       /**
        * A native `provider` (e.g. anthropic) implies its parameter set. Surface it
@@ -57,8 +58,8 @@ export function loadCustomEndpointsConfig(
 
       customEndpointsConfig[name] = {
         type: EModelEndpoint.custom,
-        userProvide: isUserProvided(resolvedApiKey),
-        userProvideURL: isUserProvided(resolvedBaseURL),
+        userProvide: isUserProvided(resolvedApiKey) || userProvideURL,
+        userProvideURL,
         customParams: resolvedCustomParams,
         modelDisplayLabel,
         iconURL,
