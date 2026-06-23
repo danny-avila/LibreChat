@@ -994,7 +994,43 @@ describe('createAdminConfigHandlers', () => {
       await handlers.upsertConfigOverrides(req, res);
 
       expect(res.statusCode).toBe(201);
-      expect(deps.upsertConfig).toHaveBeenCalled();
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        10,
+        undefined,
+        { expectEmpty: true },
+      );
+    });
+
+    it('preserves existing priority for ASSIGN_CONFIGS-only empty-overrides upsert', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 999 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        7,
+        undefined,
+        { expectEmpty: true },
+      );
     });
 
     it('rejects non-empty overrides for ASSIGN_CONFIGS-only caller', async () => {
@@ -1113,7 +1149,15 @@ describe('createAdminConfigHandlers', () => {
       await handlers.upsertConfigOverrides(req, res);
 
       expect(res.statusCode).toBe(201);
-      expect(deps.upsertConfig).toHaveBeenCalled();
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        10,
+        undefined,
+        { expectEmpty: true },
+      );
     });
 
     it('rejects upsert when parameterized grant targets a different principalType', async () => {
