@@ -2,11 +2,13 @@ import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { Providers, createTokenCounter, projectAgentContextUsage } from '@librechat/agents';
 import type { TContextProjectionRequest, TContextUsageEvent } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
-import { mergeQuotedText } from '~/utils/quotes';
+import { QUOTE_MAX_COUNT, mergeQuotedText } from '~/utils/quotes';
 
 const MAX_PROJECTION_MESSAGES = 512;
 const MAX_PROJECTION_BRANCH_MESSAGES = 256;
 const MAX_PROJECTION_BRANCH_TEXT_BYTES = 512 * 1024;
+const PROJECTION_GRAPH_SELECT = 'messageId parentMessageId metadata';
+const PROJECTION_BODY_SELECT = 'messageId parentMessageId tokenCount isCreatedByUser text quotes';
 
 interface ProjectionMessage {
   messageId: string;
@@ -22,12 +24,24 @@ interface ProjectionMessage {
   metadata?: { summaryUsedTokens?: number };
 }
 
+interface ProjectionMessageFilter {
+  conversationId: string;
+  user?: string;
+  messageId?: string | { $in: string[] };
+}
+
+interface ProjectionMessageQueryOptions {
+  limit?: number;
+  sort?: false;
+}
+
 export interface ContextProjectionDeps {
   /** Authenticated requester — branch lookups are scoped to this user. */
   userId?: string;
   getMessages: (
-    filter: { conversationId: string; user?: string },
+    filter: ProjectionMessageFilter,
     select?: string,
+    options?: ProjectionMessageQueryOptions,
   ) => Promise<ProjectionMessage[]>;
 }
 
@@ -59,15 +73,31 @@ function hasValidProjectionIds(params: TContextProjectionRequest): boolean {
   return typeof params.conversationId === 'string' && typeof params.messageId === 'string';
 }
 
+function getProjectionText(message: ProjectionMessage): string | null {
+  const hasQuotes =
+    message.isCreatedByUser === true && Array.isArray(message.quotes) && message.quotes.length > 0;
+  if (!hasQuotes) {
+    return message.text ?? '';
+  }
+  if (message.quotes == null || message.quotes.length > QUOTE_MAX_COUNT) {
+    return null;
+  }
+  for (const quote of message.quotes) {
+    if (typeof quote !== 'string') {
+      return null;
+    }
+  }
+  return mergeQuotedText(message.text ?? '', message.quotes);
+}
+
 function hasExceededBranchTextLimit(branch: ProjectionMessage[]): boolean {
   let bytes = 0;
   for (const message of branch) {
-    bytes += Buffer.byteLength(message.text ?? '', 'utf8');
-    if (Array.isArray(message.quotes)) {
-      for (const quote of message.quotes) {
-        bytes += Buffer.byteLength(quote, 'utf8');
-      }
+    const text = getProjectionText(message);
+    if (text == null) {
+      return true;
     }
+    bytes += Buffer.byteLength(text, 'utf8');
     if (bytes > MAX_PROJECTION_BRANCH_TEXT_BYTES) {
       return true;
     }
@@ -98,6 +128,35 @@ function resolveProvider(value?: string): Providers {
   return Providers.OPENAI;
 }
 
+async function getBranchMessages(
+  deps: ContextProjectionDeps,
+  baseFilter: ProjectionMessageFilter,
+  branch: ProjectionMessage[],
+): Promise<ProjectionMessage[] | null> {
+  const branchIds = branch.map((message) => message.messageId);
+  const stored = await deps.getMessages(
+    { ...baseFilter, messageId: { $in: branchIds } },
+    PROJECTION_BODY_SELECT,
+    { limit: branchIds.length, sort: false },
+  );
+  if (stored.length !== branchIds.length) {
+    return null;
+  }
+  const byId = new Map<string, ProjectionMessage>();
+  for (const message of stored) {
+    byId.set(message.messageId, message);
+  }
+  const ordered: ProjectionMessage[] = [];
+  for (const messageId of branchIds) {
+    const message = byId.get(messageId);
+    if (message == null) {
+      return null;
+    }
+    ordered.push(message);
+  }
+  return ordered;
+}
+
 /**
  * Server-side context-usage projection: reconstructs the viewed branch and asks
  * the agents SDK what the next call's context would be, WITHOUT invoking the
@@ -123,10 +182,11 @@ export async function resolveContextProjection(
     return null;
   }
 
-  const stored = await deps.getMessages(
-    { conversationId: params.conversationId, user: deps.userId },
-    'messageId parentMessageId tokenCount isCreatedByUser text quotes metadata',
-  );
+  const baseFilter = { conversationId: params.conversationId, user: deps.userId };
+  const stored = await deps.getMessages(baseFilter, PROJECTION_GRAPH_SELECT, {
+    limit: MAX_PROJECTION_MESSAGES + 1,
+    sort: false,
+  });
   if (stored.length > MAX_PROJECTION_MESSAGES) {
     return null;
   }
@@ -135,7 +195,7 @@ export async function resolveContextProjection(
   if (branch.length === 0) {
     return null;
   }
-  if (branch.length > MAX_PROJECTION_BRANCH_MESSAGES || hasExceededBranchTextLimit(branch)) {
+  if (branch.length > MAX_PROJECTION_BRANCH_MESSAGES) {
     return null;
   }
 
@@ -149,23 +209,29 @@ export async function resolveContextProjection(
     return null;
   }
 
+  const bodyBranch = await getBranchMessages(deps, baseFilter, branch);
+  if (bodyBranch == null || hasExceededBranchTextLimit(bodyBranch)) {
+    return null;
+  }
+
   const model = params.model;
   const encoding = (model ?? '').toLowerCase().includes('claude') ? 'claude' : 'o200k_base';
   const tokenCounter = await createTokenCounter(encoding);
 
   const messages: BaseMessage[] = [];
   const indexTokenCountMap: Record<string, number> = {};
-  for (let i = 0; i < branch.length; i++) {
-    const message = branch[i];
+  for (let i = 0; i < bodyBranch.length; i++) {
+    const message = bodyBranch[i];
     /** Mirror the live path: prepend quoted excerpts into the user text the model
      *  receives so the gauge counts the same prompt. */
     const hasQuotes =
       message.isCreatedByUser === true &&
       Array.isArray(message.quotes) &&
       message.quotes.length > 0;
-    const text = hasQuotes
-      ? mergeQuotedText(message.text ?? '', message.quotes ?? [])
-      : (message.text ?? '');
+    const text = getProjectionText(message);
+    if (text == null) {
+      return null;
+    }
     const lcMessage =
       message.isCreatedByUser === true ? new HumanMessage(text) : new AIMessage(text);
     messages.push(lcMessage);

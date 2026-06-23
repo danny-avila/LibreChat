@@ -240,6 +240,37 @@ describe('Message Operations', () => {
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
     });
+
+    it('should limit retrieved messages when requested', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg1',
+        conversationId,
+        text: 'First message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg2',
+        conversationId,
+        text: 'Second message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg3',
+        conversationId,
+        text: 'Third message',
+        user: 'user123',
+      });
+
+      const messages = await getMessages({ conversationId }, undefined, { limit: 2 });
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].text).toBe('First message');
+      expect(messages[1].text).toBe('Second message');
+    });
   });
 
   describe('deleteMessages', () => {
