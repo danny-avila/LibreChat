@@ -231,6 +231,30 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(false);
     });
 
+    it('tints a glyph over a 4-digit-hex transparent background rect', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#fff0" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over an 8-digit-hex transparent background rect', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#ffffff00" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over an rgba() transparent background rect', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="rgba(255,255,255,0)" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a shape painted with a fully transparent (alpha-zero) fill', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path fill="#ff000000" d="M0 0h4v4H0z" /><path fill="#333" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
     it('rejects a full-size percentage background rect', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><rect x="0" y="0" width="100%" height="100%" fill="#eee" /><path fill="#222" /></svg>';
