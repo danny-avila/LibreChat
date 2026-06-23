@@ -163,6 +163,25 @@ export default function useAttachmentPreviewSync(
     if (!polled || polled.status === 'pending' || !messageId || !fileId || !attachment) {
       return;
     }
+    /* Idempotency gate. `useAttachments` re-derives `attachment` with a
+     * fresh object identity on every messageAttachmentsMap write, and
+     * `attachment` is in this effect's deps — so without a gate the
+     * write-back ping-pongs forever (setAttachmentsMap → re-derive →
+     * effect → setAttachmentsMap …), tripping React's "Maximum update
+     * depth exceeded" (#185) once the preview resolves on a loaded
+     * conversation. Once the merged attachment already carries the
+     * resolved fields, there's nothing to write — stop. */
+    const current = attachment as Partial<TFile> & TAttachment;
+    const nextText = polled.text ?? current.text ?? null;
+    const nextTextFormat = polled.textFormat ?? current.textFormat ?? null;
+    if (
+      current.status === polled.status &&
+      current.text === nextText &&
+      current.textFormat === nextTextFormat &&
+      current.previewError === polled.previewError
+    ) {
+      return;
+    }
     setAttachmentsMap((prevMap) => {
       const messageAttachments =
         (prevMap as Record<string, TAttachment[] | undefined>)[messageId] || [];
