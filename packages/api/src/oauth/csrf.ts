@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
 import { isEnabled } from '~/utils/common';
 
@@ -48,6 +49,8 @@ export function shouldUseSecureCookie(): boolean {
 }
 
 export const REFRESH_TOKEN_COOKIE = 'refreshToken';
+export const TOKEN_PROVIDER_COOKIE = 'token_provider';
+export const OPENID_USER_ID_COOKIE = 'openid_user_id';
 
 /**
  * Writes the IdP refresh token to the `refreshToken` cookie. Single source of
@@ -65,6 +68,46 @@ export function setRefreshTokenCookie(res: Response, refreshToken: string, expir
     secure: shouldUseSecureCookie(),
     sameSite: 'strict',
   });
+}
+
+export interface OpenIDMarkerCookieOptions {
+  userId?: string | null;
+  expires: Date;
+  refreshExpiryMs: number;
+  reuseTokens?: boolean;
+}
+
+export function setOpenIDMarkerCookies(
+  res: Response,
+  {
+    userId,
+    expires,
+    refreshExpiryMs,
+    reuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS),
+  }: OpenIDMarkerCookieOptions,
+): void {
+  const cookieOptions = {
+    expires,
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict' as const,
+  };
+
+  res.cookie(TOKEN_PROVIDER_COOKIE, 'openid', cookieOptions);
+
+  if (!userId || !reuseTokens) {
+    return;
+  }
+
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error('JWT_REFRESH_SECRET is required for OpenID marker cookies');
+  }
+
+  const signedUserId = jwt.sign({ id: userId }, secret, {
+    expiresIn: refreshExpiryMs / 1000,
+  });
+  res.cookie(OPENID_USER_ID_COOKIE, signedUserId, cookieOptions);
 }
 
 /** Generates an HMAC-based token for OAuth CSRF protection */

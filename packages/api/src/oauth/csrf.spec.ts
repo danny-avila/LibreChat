@@ -1,4 +1,12 @@
-import { shouldUseSecureCookie, setRefreshTokenCookie, REFRESH_TOKEN_COOKIE } from './csrf';
+import jwt from 'jsonwebtoken';
+import {
+  shouldUseSecureCookie,
+  setRefreshTokenCookie,
+  setOpenIDMarkerCookies,
+  REFRESH_TOKEN_COOKIE,
+  TOKEN_PROVIDER_COOKIE,
+  OPENID_USER_ID_COOKIE,
+} from './csrf';
 
 describe('shouldUseSecureCookie', () => {
   const originalEnv = process.env;
@@ -166,6 +174,71 @@ describe('setRefreshTokenCookie', () => {
       REFRESH_TOKEN_COOKIE,
       'rt-value',
       expect.objectContaining({ secure: false }),
+    );
+  });
+});
+
+describe('setOpenIDMarkerCookies', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      JWT_REFRESH_SECRET: 'marker-secret',
+      OPENID_REUSE_TOKENS: 'true',
+    };
+    delete process.env.SESSION_COOKIE_SECURE;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('writes OpenID provider and signed user-id marker cookies with the same expiry', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DOMAIN_SERVER = 'https://myapp.example.com';
+    const res = { cookie: jest.fn() } as unknown as import('express').Response;
+    const expires = new Date(Date.now() + 604800000);
+
+    setOpenIDMarkerCookies(res, {
+      userId: 'user-123',
+      expires,
+      refreshExpiryMs: 604800000,
+    });
+
+    expect(res.cookie).toHaveBeenCalledWith(TOKEN_PROVIDER_COOKIE, 'openid', {
+      expires,
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+    });
+    expect(res.cookie).toHaveBeenCalledWith(
+      OPENID_USER_ID_COOKIE,
+      expect.any(String),
+      expect.objectContaining({ expires, secure: true }),
+    );
+
+    const signedUserId = (res.cookie as jest.Mock).mock.calls.find(
+      ([name]) => name === OPENID_USER_ID_COOKIE,
+    )?.[1];
+    expect(jwt.verify(signedUserId, 'marker-secret')).toMatchObject({ id: 'user-123' });
+  });
+
+  it('updates token_provider even when the signed user marker is not applicable', () => {
+    const res = { cookie: jest.fn() } as unknown as import('express').Response;
+    const expires = new Date(Date.now() + 604800000);
+
+    setOpenIDMarkerCookies(res, {
+      expires,
+      refreshExpiryMs: 604800000,
+      reuseTokens: false,
+    });
+
+    expect(res.cookie).toHaveBeenCalledTimes(1);
+    expect(res.cookie).toHaveBeenCalledWith(
+      TOKEN_PROVIDER_COOKIE,
+      'openid',
+      expect.objectContaining({ expires }),
     );
   });
 });

@@ -20,6 +20,12 @@ jest.mock('@librechat/api', () => ({
   setRefreshTokenCookie: jest.fn((res, refreshToken, expires) => {
     res.cookie('refreshToken', refreshToken, { expires });
   }),
+  setOpenIDMarkerCookies: jest.fn((res, { userId, expires }) => {
+    res.cookie('token_provider', 'openid', { expires });
+    if (userId) {
+      res.cookie('openid_user_id', `signed:${userId}`, { expires });
+    }
+  }),
 }));
 jest.mock('./RefreshTokenBridge', () => ({
   storeRefreshTokenBridge: jest.fn(),
@@ -34,7 +40,12 @@ jest.mock('./OpenIDRefreshFlight', () => ({
 
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
-const { isEnabled, buildOpenIDRefreshParams, setRefreshTokenCookie } = require('@librechat/api');
+const {
+  isEnabled,
+  buildOpenIDRefreshParams,
+  setRefreshTokenCookie,
+  setOpenIDMarkerCookies,
+} = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
 const {
@@ -396,6 +407,12 @@ describe('OpenIDSessionRefresh', () => {
 
       expect(setRefreshTokenCookie).toHaveBeenCalledTimes(1);
       expect(setRefreshTokenCookie).toHaveBeenCalledWith(res, 'rt-rotated', expect.any(Date));
+      expect(setOpenIDMarkerCookies).toHaveBeenCalledTimes(1);
+      expect(setOpenIDMarkerCookies).toHaveBeenCalledWith(res, {
+        userId: 'local-id-1',
+        expires: expect.any(Date),
+        refreshExpiryMs: 1000 * 60 * 60 * 24 * 7,
+      });
       expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     });
 
@@ -413,6 +430,7 @@ describe('OpenIDSessionRefresh', () => {
       await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
 
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
     });
 
     it('stores a recovery bridge when response headers are already sent (streaming path)', async () => {
@@ -433,6 +451,7 @@ describe('OpenIDSessionRefresh', () => {
       await refreshOpenIDSession(req, res, user, 'access_token');
 
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
       expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
         oldRefreshToken: 'rt-old',
         newRefreshToken: 'rt-rotated',
@@ -458,6 +477,7 @@ describe('OpenIDSessionRefresh', () => {
         refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
       ).resolves.toBeDefined();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
       expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     });
 

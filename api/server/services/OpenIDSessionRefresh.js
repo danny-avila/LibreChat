@@ -7,6 +7,7 @@ const {
   math,
   buildOpenIDRefreshParams,
   setRefreshTokenCookie,
+  setOpenIDMarkerCookies,
 } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
@@ -237,13 +238,11 @@ async function persistSession(req) {
 }
 
 /**
- * Writes the rotated refresh token to the browser `refreshToken` cookie so it
- * stays in sync with the session copy. Uses the shared `setRefreshTokenCookie`
- * helper to match the options written at login/refresh
- * (`setOpenIDAuthTokens`). The cookie outlives the express-session cookie and
- * is the fallback `refreshController` reads when the session is gone; without
- * this sync an OBO-triggered rotation would leave a stale, invalidated token in
- * the cookie and sign the user out on the next post-session-loss refresh.
+ * Writes the rotated refresh token and OpenID marker cookies to the browser so
+ * they stay in sync with the session copy. These cookies outlive the shorter
+ * express-session cookie and are the fallback `refreshController` reads when
+ * the session is gone; without this sync an OBO-triggered rotation would leave
+ * stale or mismatched cookies and sign the user out on the next refresh.
  *
  * When `res.headersSent` is true (streaming SSE path), the cookie cannot be set.
  * In this case, store a server-side recovery bridge so that if the session is
@@ -270,13 +269,19 @@ async function syncRefreshTokenCookie({
     return;
   }
 
-  // If response is still writable, set the cookie directly.
+  // If response is still writable, set the cookies directly.
   if (!res.headersSent) {
     const expiryInMilliseconds = math(
       process.env.REFRESH_TOKEN_EXPIRY,
       DEFAULT_REFRESH_TOKEN_EXPIRY,
     );
-    setRefreshTokenCookie(res, newRefreshToken, new Date(Date.now() + expiryInMilliseconds));
+    const expirationDate = new Date(Date.now() + expiryInMilliseconds);
+    setRefreshTokenCookie(res, newRefreshToken, expirationDate);
+    setOpenIDMarkerCookies(res, {
+      userId,
+      expires: expirationDate,
+      refreshExpiryMs: expiryInMilliseconds,
+    });
     return;
   }
 

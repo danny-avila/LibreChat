@@ -35,6 +35,22 @@ jest.mock(
           sameSite: 'strict',
         });
       }),
+      setOpenIDMarkerCookies: jest.fn((res, { userId, expires }) => {
+        res.cookie('token_provider', 'openid', {
+          expires,
+          httpOnly: true,
+          secure: shouldUseSecureCookie(),
+          sameSite: 'strict',
+        });
+        if (userId) {
+          res.cookie('openid_user_id', `signed:${userId}`, {
+            expires,
+            httpOnly: true,
+            secure: shouldUseSecureCookie(),
+            sameSite: 'strict',
+          });
+        }
+      }),
       resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
       setCloudFrontCookies: jest.fn(() => true),
       getCloudFrontConfig: jest.fn(() => ({

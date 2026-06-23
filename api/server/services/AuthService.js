@@ -19,6 +19,7 @@ const {
   isEmailDomainAllowed,
   shouldUseSecureCookie,
   setRefreshTokenCookie,
+  setOpenIDMarkerCookies,
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const {
@@ -826,25 +827,11 @@ const setOpenIDAuthTokens = (
       }
     }
 
-    /** Small cookie to indicate token provider (required for auth middleware) */
-    res.cookie('token_provider', 'openid', {
+    setOpenIDMarkerCookies(res, {
+      userId,
       expires: expirationDate,
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      refreshExpiryMs: expiryInMilliseconds,
     });
-    if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-      /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
-      const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
-        expiresIn: expiryInMilliseconds / 1000,
-      });
-      res.cookie('openid_user_id', signedUserId, {
-        expires: expirationDate,
-        httpOnly: true,
-        secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
-      });
-    }
 
     setCloudFrontAuthCookies(req, res, req.user, { userId, tenantId });
 
