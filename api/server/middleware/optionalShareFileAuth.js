@@ -20,7 +20,7 @@ const getRefreshTokenUserId = async (token) => {
     return null;
   }
 
-  const session = await findSession({ userId, refreshToken: token });
+  const session = await runAsSystem(() => findSession({ userId, refreshToken: token }));
   return session ? userId : null;
 };
 

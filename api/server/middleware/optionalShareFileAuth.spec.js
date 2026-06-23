@@ -1,6 +1,7 @@
 const mockVerify = jest.fn();
 const mockGetUserById = jest.fn();
 const mockFindSession = jest.fn();
+const mockRunAsSystem = jest.fn((fn) => fn());
 
 jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockVerify(...args) }));
 jest.mock('@librechat/api', () => ({ isEnabled: (v) => v === 'true' || v === true }), {
@@ -10,7 +11,7 @@ jest.mock(
   '@librechat/data-schemas',
   () => ({
     logger: { warn: jest.fn(), error: jest.fn() },
-    runAsSystem: (fn) => fn(),
+    runAsSystem: (...args) => mockRunAsSystem(...args),
   }),
   { virtual: true },
 );
@@ -54,6 +55,7 @@ describe('optionalShareFileAuth', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(mockVerify).toHaveBeenCalledWith('good.jwt', 'test-secret');
     expect(mockFindSession).toHaveBeenCalledWith({ userId: 'viewer-1', refreshToken: 'good.jwt' });
+    expect(mockRunAsSystem).toHaveBeenCalledTimes(2);
     expect(req.user).toMatchObject({ id: 'viewer-1', role: 'USER' });
   });
 
@@ -85,6 +87,7 @@ describe('optionalShareFileAuth', () => {
       userId: 'viewer-3',
       refreshToken: 'revoked.jwt',
     });
+    expect(mockRunAsSystem).toHaveBeenCalledTimes(1);
     expect(mockGetUserById).not.toHaveBeenCalled();
   });
 
