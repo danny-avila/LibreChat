@@ -255,15 +255,24 @@ describe('abortMiddleware - handleAbortError', () => {
   });
 
   it.each([
-    [new DOMException('The operation was aborted', 'AbortError'), 'AbortError'],
-    [new Error('SSE stream disconnected: AbortError: The operation was aborted'), 'Error'],
     [
+      'native DOMException AbortError',
+      new DOMException('The operation was aborted', 'AbortError'),
+      'AbortError',
+    ],
+    [
+      'wrapped AbortError message',
+      new Error('SSE stream disconnected: AbortError: The operation was aborted'),
+      'Error',
+    ],
+    [
+      'cause-nested AbortError',
       new Error('Request failed', {
         cause: new DOMException('The operation was aborted', 'AbortError'),
       }),
       'Error',
     ],
-  ])('logs user aborts as debug events instead of errors', async (error, name) => {
+  ])('logs a %s as a debug event instead of an error', async (_label, error, name) => {
     await handleAbortError({}, buildAbortRequest(), error, {
       sender: 'AI',
       conversationId: 'convo-123',

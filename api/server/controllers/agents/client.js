@@ -1450,11 +1450,12 @@ class AgentClient extends BaseClient {
         });
       }
     } catch (err) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
-        err,
-      );
-      if (!abortController.signal.aborted) {
+      if (abortController.signal.aborted) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
+          { conversationId: this.conversationId, name: err?.name, code: err?.code },
+        );
+      } else {
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
