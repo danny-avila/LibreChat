@@ -89,6 +89,40 @@ function functionalToValues(color: string): number[] | null {
   return values.some(Number.isNaN) ? null : values;
 }
 
+/** Returns a color's alpha (0-1), defaulting to 1 when none is encoded or parseable. */
+function paintAlpha(color: string): number {
+  if (color.startsWith('#')) {
+    const hex = color.slice(1);
+    if (hex.length === 4) {
+      const a = parseInt(hex[3] + hex[3], 16);
+      return Number.isNaN(a) ? 1 : a / 255;
+    }
+    if (hex.length === 8) {
+      const a = parseInt(hex.slice(6, 8), 16);
+      return Number.isNaN(a) ? 1 : a / 255;
+    }
+    return 1;
+  }
+  if (color.startsWith('rgb') || color.startsWith('hsl')) {
+    const open = color.indexOf('(');
+    const close = color.indexOf(')');
+    if (open === -1 || close === -1) {
+      return 1;
+    }
+    const parts = color
+      .slice(open + 1, close)
+      .split(/[,/\s]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.length < 4) {
+      return 1;
+    }
+    const alpha = parts[3].endsWith('%') ? parseFloat(parts[3]) / 100 : parseFloat(parts[3]);
+    return Number.isNaN(alpha) ? 1 : alpha;
+  }
+  return 1;
+}
+
 /** Returns the 0-255 gray level of a grayscale color, or null when it is chromatic. */
 function grayLevel(color: string): number | null {
   if (color.startsWith('#')) {
@@ -179,7 +213,7 @@ function spansCanvas(value: string | null, canvas: number | null): boolean {
 
 function isOpaqueRect(rect: Element): boolean {
   const fill = (readPaint(rect, 'fill') ?? '').trim().toLowerCase();
-  if (fill === 'none' || fill === 'transparent') {
+  if (fill === 'none' || fill === 'transparent' || paintAlpha(fill) === 0) {
     return false;
   }
   const fillOpacity = rect.getAttribute('fill-opacity');
@@ -273,7 +307,7 @@ function collectColors(root: Element): string[] {
   colors.push(...colorsFromStyleBlocks(root));
   return colors
     .map((color) => color.trim().toLowerCase())
-    .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color));
+    .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color) && paintAlpha(color) !== 0);
 }
 
 /** Selectors from `<style>` blocks whose rule body sets a `fill`. */
