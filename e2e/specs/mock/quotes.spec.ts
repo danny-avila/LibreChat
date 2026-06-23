@@ -47,6 +47,40 @@ async function selectMessageText(page: Page, needle: string) {
   }, needle);
 }
 
+/**
+ * Double-click the first word of `needle` inside the most recent message
+ * containing it, using native mouse events at that word's measured coordinates.
+ * Unlike `selectMessageText` (a programmatic Range), this exercises the
+ * browser's own double-click word selection — the path the `dblclick` listener
+ * guards. Measuring the `needle` text node itself (not the first text node in
+ * `.message-render`, which may be a `select-none` screen-reader/model-label
+ * header) keeps the click on the actual reply word, not metadata or whitespace.
+ */
+async function doubleClickWord(page: Page, needle: string) {
+  const point = await page.evaluate((text) => {
+    const renders = Array.from(document.querySelectorAll('.message-render'));
+    const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
+    if (!host) {
+      throw new Error(`No message contains: ${text}`);
+    }
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node && !(node.nodeValue ?? '').includes(text)) {
+      node = walker.nextNode();
+    }
+    if (!node) {
+      throw new Error(`No text node contains: ${text}`);
+    }
+    const index = (node.nodeValue ?? '').indexOf(text);
+    const range = document.createRange();
+    range.setStart(node, index);
+    range.setEnd(node, index + 1);
+    const r = range.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, needle);
+  await page.mouse.dblclick(point.x, point.y);
+}
+
 const addToChat = (page: Page) => page.getByTestId('add-to-chat-button');
 const pendingChips = (page: Page) => page.getByTestId('pending-quote-chips');
 const messageQuotes = (page: Page) => messagesView(page).getByTestId('message-quotes');
@@ -106,6 +140,32 @@ test.describe('quote references', () => {
     await page.reload({ timeout: 10000 });
     await expect(page).toHaveURL(conversationUrl);
     await expect(messageQuotes(page)).toContainText(MOCK_REPLY_TEXT);
+  });
+
+  test('summons the popup from a native double-click word selection', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    const response = await sendMessage(page, 'seed for dblclick');
+    expect(response.ok()).toBeTruthy();
+    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+
+    // A real double-click selects the word under the cursor. Chromium commits
+    // that selection on `dblclick`, AFTER `mouseup` fires, so only a `dblclick`
+    // listener catches it — a programmatic Range (the other tests) would bypass
+    // this path entirely. Retried as a unit: auto-scroll can clear a fresh
+    // selection, which races the scripted double-click.
+    await expect(async () => {
+      await doubleClickWord(page, MOCK_REPLY_TEXT);
+      const button = addToChat(page);
+      await expect(button).toBeVisible({ timeout: 3000 });
+      await button.click();
+      await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
+    }).toPass({ timeout: 30000 });
+
+    // The quoted excerpt is a word from the reply, not empty.
+    await expect(pendingChips(page)).toContainText(/E2E|mock|reply/i);
   });
 
   test('collapses multiple selections into one chip with a hover popup, and removes one', async ({
