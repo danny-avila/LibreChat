@@ -94,9 +94,9 @@ function buildCustomOptions(
   endpointConfig: Partial<TEndpoint>,
   appConfig?: AppConfig,
   endpointTokenConfig?: Record<string, unknown>,
+  forwardHeaders = true,
 ) {
   const customOptions: Record<string, unknown> = {
-    headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
@@ -109,6 +109,10 @@ function buildCustomOptions(
     streamRate: endpointConfig.streamRate,
     endpointTokenConfig,
   };
+
+  if (forwardHeaders) {
+    customOptions.headers = endpointConfig.headers;
+  }
 
   const allConfig = appConfig?.endpoints?.all;
   if (allConfig) {
@@ -291,7 +295,12 @@ export async function initializeCustom({
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
-  const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig);
+  const customOptions = buildCustomOptions(
+    endpointConfig,
+    appConfig,
+    endpointTokenConfig,
+    !userProvidesURL,
+  );
 
   const clientOptions: Record<string, unknown> = {
     reverseProxyUrl: baseURL ?? null,

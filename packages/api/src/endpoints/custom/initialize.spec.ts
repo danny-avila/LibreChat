@@ -42,6 +42,7 @@ function createParams(overrides: {
   userBaseURL?: string;
   userApiKey?: string;
   expiresAt?: string;
+  headers?: Record<string, string>;
 }): BaseInitializeParams {
   const { apiKey = 'sk-test-key', baseURL = 'https://api.example.com/v1' } = overrides;
 
@@ -49,6 +50,7 @@ function createParams(overrides: {
     apiKey,
     baseURL,
     models: {},
+    headers: overrides.headers,
   });
 
   const db = {
@@ -159,6 +161,64 @@ describe('initializeCustom – Agents API user key resolution', () => {
 
     expect(params.db.getUserKeyValues).not.toHaveBeenCalled();
   });
+});
+
+describe('initializeCustom – OpenAI-compatible header forwarding', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('preserves configured headers for admin-trusted base URLs', async () => {
+    const headers = {
+      Authorization: 'Bearer static-gateway-token',
+      'X-Env-Secret': '${GATEWAY_SECRET}',
+      'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+    };
+    const params = createParams({
+      apiKey: 'sk-system-key',
+      baseURL: 'https://gateway.example.com/v1',
+      headers,
+    });
+
+    await initializeCustom(params);
+
+    const clientOptions = mockGetOpenAIConfig.mock.calls[0][1] as {
+      headers?: Record<string, string>;
+    };
+    expect(clientOptions.headers).toEqual(headers);
+  });
+
+  it.each([
+    {
+      headerType: 'Authorization',
+      headers: { Authorization: 'Bearer static-gateway-token' },
+    },
+    {
+      headerType: 'env-secret',
+      headers: { 'X-Env-Secret': '${GATEWAY_SECRET}' },
+    },
+    {
+      headerType: 'user-placeholder',
+      headers: { 'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}' },
+    },
+  ])(
+    'withholds configured $headerType headers when the user supplies the base URL',
+    async ({ headers }) => {
+      const params = createParams({
+        apiKey: 'sk-system-key',
+        baseURL: AuthType.USER_PROVIDED,
+        userBaseURL: 'https://user-controlled.example.com/v1',
+        headers,
+      });
+
+      await initializeCustom(params);
+
+      const clientOptions = mockGetOpenAIConfig.mock.calls[0][1] as {
+        headers?: Record<string, string>;
+      };
+      expect(clientOptions.headers).toBeUndefined();
+    },
+  );
 });
 
 describe('initializeCustom – SSRF guard wiring', () => {
