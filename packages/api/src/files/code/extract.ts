@@ -27,14 +27,17 @@ export function resolveMaxTextExtractBytes(value: string | undefined): number {
   if (value == null || value.trim() === '') {
     return DEFAULT_MAX_TEXT_EXTRACT_BYTES;
   }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  /* Floor first, then validate: a fractional value in (0, 1) passes a
+   * `> 0` check but floors to 0, which would treat every non-empty
+   * artifact as oversized — fall back to the default instead. */
+  const floored = Math.floor(Number(value));
+  if (!Number.isFinite(floored) || floored < 1) {
     logger.warn(
       `[extract] Invalid FILE_PREVIEW_MAX_EXTRACT_BYTES "${value}"; using ${DEFAULT_MAX_TEXT_EXTRACT_BYTES} bytes.`,
     );
     return DEFAULT_MAX_TEXT_EXTRACT_BYTES;
   }
-  return Math.floor(parsed);
+  return floored;
 }
 
 export const MAX_TEXT_EXTRACT_BYTES: number = resolveMaxTextExtractBytes(

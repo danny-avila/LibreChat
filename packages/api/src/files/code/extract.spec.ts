@@ -703,6 +703,11 @@ describe('resolveMaxTextExtractBytes', () => {
     expect(resolveMaxTextExtractBytes('-100')).toBe(TWO_MB);
   });
 
+  it('falls back to the default for sub-byte values that floor to zero', () => {
+    expect(resolveMaxTextExtractBytes('0.5')).toBe(TWO_MB);
+    expect(resolveMaxTextExtractBytes('0.999')).toBe(TWO_MB);
+  });
+
   it('drives the exported default ceiling to 2 MB out of the box', () => {
     expect(MAX_TEXT_EXTRACT_BYTES).toBe(TWO_MB);
   });
