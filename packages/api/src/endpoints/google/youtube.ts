@@ -73,6 +73,26 @@ const YOUTUBE_URL_REGEX = new RegExp(
   'gi',
 );
 
+/**
+ * Like {@link YOUTUBE_URL_REGEX} but consumes the full URL token (trailing query/fragment) so the
+ * whole link can be removed from the prompt text once it is routed through video understanding.
+ */
+const YOUTUBE_URL_STRIP_REGEX = new RegExp(
+  '(?<![\\w.-])(?:https?:\\/\\/)?' +
+    '(?:(?:[a-z0-9-]+\\.)*youtube\\.com\\/(?:watch\\?(?:\\S*?&)?v=|shorts\\/|live\\/|embed\\/|v\\/)|youtu\\.be\\/)' +
+    '[A-Za-z0-9_-]{11}\\S*',
+  'gi',
+);
+
+/** Removes YouTube URL tokens from text and tidies the leftover horizontal whitespace. */
+function stripYouTubeUrls(text: string): string {
+  return text
+    .replace(YOUTUBE_URL_STRIP_REGEX, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+$/gm, '')
+    .trim();
+}
+
 function resolveLimit(max?: number): number {
   if (max == null || !Number.isFinite(max)) {
     return DEFAULT_MAX_YOUTUBE_PARTS;
@@ -126,6 +146,22 @@ function toBaseParts(content: string | MessageContentComplex[]): MessageContentC
   return [];
 }
 
+function stripYouTubeFromTextParts(parts: MessageContentComplex[]): MessageContentComplex[] {
+  const result: MessageContentComplex[] = [];
+  for (const part of parts) {
+    const record = part as Record<string, unknown>;
+    if (record != null && record.type === ContentTypes.TEXT && typeof record.text === 'string') {
+      const stripped = stripYouTubeUrls(record.text);
+      if (stripped.length > 0) {
+        result.push({ ...record, text: stripped } as MessageContentComplex);
+      }
+      continue;
+    }
+    result.push(part);
+  }
+  return result;
+}
+
 function collectFileUris(parts: MessageContentComplex[]): Set<string> {
   const uris = new Set<string>();
   for (const part of parts) {
@@ -145,9 +181,12 @@ function collectFileUris(parts: MessageContentComplex[]): Set<string> {
 }
 
 /**
- * Appends YouTube video parts to a message's content when `url_context` is enabled.
- * No-ops when disabled, when no YouTube URLs are found, or when every URL is already present
- * as a media part. A string content is upgraded to a parts array only when something is added.
+ * Appends YouTube video parts to a message's content when `url_context` is enabled, and removes
+ * the matched YouTube URLs from the prompt text so the `urlContext` tool (which reads URLs from
+ * the text and cannot fetch YouTube) does not spend its URL budget on them. Non-YouTube URLs are
+ * left intact for the tool. No-ops when disabled, when no YouTube URLs are found, or when every
+ * URL is already present as a media part. A string content is upgraded to a parts array only when
+ * something is added.
  */
 export function appendYouTubeVideoParts(params: {
   enabled: boolean;
@@ -175,5 +214,5 @@ export function appendYouTubeVideoParts(params: {
   if (newParts.length === 0) {
     return content;
   }
-  return [...baseParts, ...newParts];
+  return [...stripYouTubeFromTextParts(baseParts), ...newParts];
 }

@@ -150,7 +150,7 @@ describe('appendYouTubeVideoParts', () => {
     expect(result).toBe(text);
   });
 
-  it('upgrades string content to a parts array with a media part', () => {
+  it('upgrades string content to a parts array, stripping the URL from text', () => {
     const result = appendYouTubeVideoParts({
       enabled: true,
       text: youtubeText,
@@ -159,7 +159,8 @@ describe('appendYouTubeVideoParts', () => {
 
     expect(Array.isArray(result)).toBe(true);
     const parts = result as MessageContentComplex[];
-    expect(parts[0]).toEqual({ type: ContentTypes.TEXT, text: youtubeText });
+    /** The YouTube URL is removed from the text since it now flows through video understanding. */
+    expect(parts[0]).toEqual({ type: ContentTypes.TEXT, text: 'Summarize for me' });
 
     const mediaPart = parts[1] as Record<string, unknown>;
     expect(mediaPart.type).toBe('media');
@@ -169,7 +170,7 @@ describe('appendYouTubeVideoParts', () => {
     expect(mediaPart.mimeType).toBeUndefined();
   });
 
-  it('appends media parts to existing array content without touching other parts', () => {
+  it('strips the YouTube URL from an existing text part but leaves other parts intact', () => {
     const content: MessageContentComplex[] = [
       { type: ContentTypes.TEXT, text: youtubeText } as MessageContentComplex,
       {
@@ -184,23 +185,35 @@ describe('appendYouTubeVideoParts', () => {
     }) as MessageContentComplex[];
 
     expect(result).toHaveLength(3);
-    expect(result[0]).toEqual(content[0]);
+    expect(result[0]).toEqual({ type: ContentTypes.TEXT, text: 'Summarize for me' });
     expect(result[1]).toEqual(content[1]);
     expect((result[2] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
   });
 
-  it('only injects YouTube links, leaving non-YouTube URLs in the text untouched', () => {
+  it('strips YouTube links from text but leaves non-YouTube URLs intact for urlContext', () => {
     const text = 'Watch https://youtu.be/dQw4w9WgXcQ and read https://example.com/article please';
     const result = appendYouTubeVideoParts({ enabled: true, text, content: text });
 
     const parts = result as MessageContentComplex[];
     const textPart = parts[0] as { type: string; text: string };
-    expect(textPart.text).toBe(text);
+    expect(textPart.text).not.toContain('youtu.be');
+    expect(textPart.text).not.toContain('dQw4w9WgXcQ');
     expect(textPart.text).toContain('https://example.com/article');
+    expect(textPart.text).toBe('Watch and read https://example.com/article please');
 
     const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
     expect(mediaParts).toHaveLength(1);
     expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
+
+  it('drops a text part that becomes empty after stripping a sole YouTube URL', () => {
+    const text = 'https://youtu.be/dQw4w9WgXcQ';
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text });
+
+    const parts = result as MessageContentComplex[];
+    expect(parts).toHaveLength(1);
+    expect((parts[0] as Record<string, unknown>).type).toBe('media');
+    expect((parts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
   });
 
   it('does not duplicate a video already present as a media part', () => {

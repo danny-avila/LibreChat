@@ -1378,8 +1378,6 @@ export const openAIBaseSchema = tConversationSchema.pick({
   verbosity: true,
   useResponsesApi: true,
   web_search: true,
-  /** @endpoints google-compatible custom endpoints (defaultParamsEndpoint: 'google') */
-  url_context: true,
   disableStreaming: true,
   fileTokenLimit: true,
 });
