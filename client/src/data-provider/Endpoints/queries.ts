@@ -88,6 +88,9 @@ export const useContextProjectionQuery = (
 export const startupConfigKey = (isAuthenticated: boolean, context?: t.StartupConfigContext) =>
   [QueryKeys.startupConfig, isAuthenticated, context ?? 'default'] as const;
 
+export const sharedStartupConfigKey = (shareId?: string) =>
+  [QueryKeys.sharedStartupConfig, shareId ?? ''] as const;
+
 export const useGetStartupConfig = (
   config?: UseQueryOptions<t.TStartupConfig>,
   options?: { context?: t.StartupConfigContext },
@@ -104,6 +107,29 @@ export const useGetStartupConfig = (
       refetchOnMount: false,
       ...config,
       enabled: (config?.enabled ?? true) === true && queriesEnabled,
+    },
+  );
+};
+
+export const useGetSharedStartupConfig = (
+  shareId?: string,
+  config?: UseQueryOptions<t.TSharedLinkStartupConfig>,
+): QueryObserverResult<t.TSharedLinkStartupConfig> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<t.TSharedLinkStartupConfig>(
+    sharedStartupConfigKey(shareId),
+    () => dataService.getSharedStartupConfig(shareId ?? ''),
+    {
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+      enabled:
+        (config?.enabled ?? true) === true &&
+        queriesEnabled &&
+        typeof shareId === 'string' &&
+        shareId.length > 0,
     },
   );
 };
