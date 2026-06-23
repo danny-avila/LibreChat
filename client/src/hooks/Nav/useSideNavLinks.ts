@@ -88,10 +88,6 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
   });
-  const hasAccessToFileSearch = useHasAccess({
-    permissionType: PermissionTypes.FILE_SEARCH,
-    permission: Permissions.USE,
-  });
   const { availableMCPServers } = useMCPServerManager();
 
   const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
@@ -174,16 +170,13 @@ export default function useSideNavLinks({
       });
     }
 
-    // NJ (Temp feature flag): Conditionally show file attachment until RAG fully enabled
-    if (hasAccessToFileSearch) {
-      links.push({
-        title: 'com_sidepanel_attach_files',
-        label: '',
-        icon: AttachmentIcon,
-        id: 'files',
-        Component: FilesPanel,
-      });
-    }
+    links.push({
+      title: 'com_sidepanel_attach_files',
+      label: '',
+      icon: AttachmentIcon,
+      id: 'files',
+      Component: FilesPanel,
+    });
 
     if (
       interfaceConfig.parameters === true &&
