@@ -71,7 +71,12 @@ const buildOwnerFileFilter = (fileIds, user) => {
   return filter;
 };
 
-const TOOL_ATTACHMENT_KEYS = [Tools.file_search, Tools.web_search, Tools.ui_resources, Tools.memory];
+const TOOL_ATTACHMENT_KEYS = [
+  Tools.file_search,
+  Tools.web_search,
+  Tools.ui_resources,
+  Tools.memory,
+];
 const DISPLAY_ATTACHMENT_FIELDS = [
   'filename',
   'filepath',
@@ -1486,9 +1491,13 @@ class BaseClient {
         delete message.files;
       }
 
-      const rehydratedAttachments = rehydrateMessageFileRefs(message.attachments, authorizedFilesById, {
-        preserveDisplayOnly: true,
-      });
+      const rehydratedAttachments = rehydrateMessageFileRefs(
+        message.attachments,
+        authorizedFilesById,
+        {
+          preserveDisplayOnly: true,
+        },
+      );
       if (rehydratedAttachments) {
         message.attachments = rehydratedAttachments;
       } else {
