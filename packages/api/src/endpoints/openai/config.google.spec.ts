@@ -222,7 +222,7 @@ describe('getOpenAIConfig - Google Compatibility', () => {
         const result = getOpenAIConfig(
           apiKey,
           {
-            modelOptions: { model: 'gemini-2.0-flash-exp' },
+            modelOptions: { model: 'gemini-2.5-flash' },
             customParams: { defaultParamsEndpoint: 'google' },
             addParams: { url_context: true },
             reverseProxyUrl,
@@ -237,7 +237,7 @@ describe('getOpenAIConfig - Google Compatibility', () => {
         const result = getOpenAIConfig(
           apiKey,
           {
-            modelOptions: { model: 'gemini-2.0-flash-exp', url_context: true },
+            modelOptions: { model: 'gemini-2.5-flash', url_context: true },
             customParams: { defaultParamsEndpoint: 'google' },
             addParams: { url_context: false },
             reverseProxyUrl,
@@ -252,7 +252,7 @@ describe('getOpenAIConfig - Google Compatibility', () => {
         const result = getOpenAIConfig(
           apiKey,
           {
-            modelOptions: { model: 'gemini-2.0-flash-exp', url_context: true },
+            modelOptions: { model: 'gemini-2.5-flash', url_context: true },
             customParams: { defaultParamsEndpoint: 'google' },
             dropParams: ['url_context'],
             reverseProxyUrl,
@@ -267,7 +267,7 @@ describe('getOpenAIConfig - Google Compatibility', () => {
         const result = getOpenAIConfig(
           apiKey,
           {
-            modelOptions: { model: 'gemini-2.0-flash-exp', url_context: true },
+            modelOptions: { model: 'gemini-2.5-flash', url_context: true },
             customParams: { defaultParamsEndpoint: 'google' },
             reverseProxyUrl,
           },
@@ -278,11 +278,26 @@ describe('getOpenAIConfig - Google Compatibility', () => {
         expect(result.tools).toEqual([]);
       });
 
-      it('should enable urlContext via defaultParams', () => {
+      it('should not enable urlContext on a model that does not support it (Gemini < 2.5)', () => {
         const result = getOpenAIConfig(
           apiKey,
           {
             modelOptions: { model: 'gemini-2.0-flash-exp' },
+            customParams: { defaultParamsEndpoint: 'google' },
+            addParams: { url_context: true },
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should enable urlContext via defaultParams', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.5-flash' },
             customParams: {
               defaultParamsEndpoint: 'google',
               paramDefinitions: [{ key: 'url_context', default: true }],
@@ -299,7 +314,7 @@ describe('getOpenAIConfig - Google Compatibility', () => {
         const result = getOpenAIConfig(
           apiKey,
           {
-            modelOptions: { model: 'gemini-2.0-flash-exp' },
+            modelOptions: { model: 'gemini-2.5-flash' },
             customParams: { defaultParamsEndpoint: 'google' },
             addParams: { web_search: true, url_context: true },
             reverseProxyUrl,

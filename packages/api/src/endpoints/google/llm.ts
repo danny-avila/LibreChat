@@ -1,4 +1,5 @@
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
 import type { GoogleAIToolType } from '@librechat/agents/langchain/google-common';
@@ -133,6 +134,23 @@ function isGemini35Flash(model: string) {
   const normalized = model.toLowerCase();
   const modelId = normalized.split('/').pop() ?? normalized;
   return modelId === GEMINI_3_5_FLASH || modelId.startsWith(`${GEMINI_3_5_FLASH}-`);
+}
+
+const urlContextModelRegex = /gemini-(\d+)(?:\.(\d+))?/i;
+
+/**
+ * The native URL Context tool is supported only on Gemini 2.5+ and 3.x models
+ * (https://ai.google.dev/gemini-api/docs/url-context#supported_models). Enabling it on an
+ * earlier model returns a provider-side error, so we skip the tool there instead.
+ */
+function supportsUrlContext(model: string): boolean {
+  const match = urlContextModelRegex.exec(model);
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? '0');
+  return major > 2 || (major === 2 && minor >= 5);
 }
 
 function getVertexMultiRegionEndpoint(location: string): string | undefined {
@@ -627,7 +645,14 @@ export function getGoogleConfig(
   }
 
   if (enableUrlContext) {
-    tools.push({ urlContext: {} });
+    const urlContextModel = ((llmConfig as { model?: string }).model || modelName) ?? '';
+    if (supportsUrlContext(urlContextModel)) {
+      tools.push({ urlContext: {} });
+    } else {
+      logger.debug(
+        `[getGoogleConfig] url_context enabled but model "${urlContextModel}" does not support the URL Context tool (Gemini 2.5+ only); skipping.`,
+      );
+    }
   }
 
   // Return the final shape

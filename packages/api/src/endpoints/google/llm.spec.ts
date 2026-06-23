@@ -1187,7 +1187,7 @@ describe('getGoogleConfig', () => {
     it('should enable the urlContext tool when url_context is true', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           url_context: true,
         },
       });
@@ -1198,7 +1198,7 @@ describe('getGoogleConfig', () => {
     it('should not include the urlContext tool when url_context is false', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           url_context: false,
         },
       });
@@ -1209,7 +1209,7 @@ describe('getGoogleConfig', () => {
     it('should not include the urlContext tool when url_context is unset', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
       });
 
@@ -1219,7 +1219,7 @@ describe('getGoogleConfig', () => {
     it('should enable url context via defaultParams', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         defaultParams: {
           url_context: true,
@@ -1232,7 +1232,7 @@ describe('getGoogleConfig', () => {
     it('should enable url context via addParams', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         addParams: {
           url_context: true,
@@ -1245,7 +1245,7 @@ describe('getGoogleConfig', () => {
     it('should let addParams override a defaultParams url_context', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
         },
         defaultParams: {
           url_context: true,
@@ -1261,7 +1261,7 @@ describe('getGoogleConfig', () => {
     it('should disable url context via dropParams', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           url_context: true,
         },
         dropParams: ['url_context'],
@@ -1273,7 +1273,7 @@ describe('getGoogleConfig', () => {
     it('should not leak url_context into the llmConfig', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           url_context: true,
         },
       });
@@ -1284,13 +1284,36 @@ describe('getGoogleConfig', () => {
     it('should enable both googleSearch and urlContext tools together', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: {
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           web_search: true,
           url_context: true,
         },
       });
 
       expect(result.tools).toContainEqual({ googleSearch: {} });
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should not include the urlContext tool on models that do not support it (Gemini < 2.5)', () => {
+      for (const model of ['gemini-2.0-flash', 'gemini-1.5-pro']) {
+        const result = getGoogleConfig(credentials, {
+          modelOptions: {
+            model,
+            url_context: true,
+          },
+        });
+        expect(result.tools).not.toContainEqual({ urlContext: {} });
+      }
+    });
+
+    it('should enable the urlContext tool on Gemini 3.x models', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-pro-preview',
+          url_context: true,
+        },
+      });
+
       expect(result.tools).toContainEqual({ urlContext: {} });
     });
 
