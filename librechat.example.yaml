@@ -168,13 +168,14 @@ interface:
     roles: true
   marketplace:
     use: false
+    # categories is only applied when marketplace is enabled above
     categories:
       enableDefaultCategories: true
-      # list:
-      #   - value: "Education"
-      #     description: "Educational agents."
-      #   - value: "Productivity"
-      #     description: "Productivity agents."
+      list:
+        - value: "Education"
+          description: "Educational agents."
+        - value: "Productivity"
+          description: "Productivity agents."
 
   fileCitations: true
   # Tools pinned to the prompt bar by default for all users.
