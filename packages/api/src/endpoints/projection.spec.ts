@@ -1,5 +1,5 @@
-import { QUOTE_MAX_COUNT } from '~/utils/quotes';
 import { resolveContextProjection } from './projection';
+import { QUOTE_MAX_COUNT } from '~/utils/quotes';
 
 jest.mock('@librechat/agents', () => ({
   Providers: { OPENAI: 'openai' },
