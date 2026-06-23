@@ -29,7 +29,7 @@ const {
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
-  isDeepSeekReasoningProvider,
+  shouldReplayReasoningContent,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -1160,14 +1160,16 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
-      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
-      const hasDeepSeekAgent = (agent) =>
-        agent != null &&
-        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
-      const needsDeepSeekFormat =
-        hasDeepSeekAgent(this.options.agent) ||
+      /**
+       * Spoof `Providers.DEEPSEEK` so `formatAgentMessages` reconstructs
+       * `reasoning_content` on prior tool-call turns (#13366). Also applies to
+       * custom endpoints opting in via `customParams.includeReasoningContent`
+       * (e.g. Xiaomi MiMo, Kimi) for cross-turn reasoning replay parity.
+       */
+      const needsReasoningContentFormat =
+        shouldReplayReasoningContent(this.options.agent) ||
         (this.agentConfigs != null &&
-          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+          Array.from(this.agentConfigs.values()).some(shouldReplayReasoningContent));
       /**
        * Skills primed fresh this turn — manual ($ popover) and always-apply
        * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
@@ -1184,9 +1186,9 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const formatOptions =
-        needsDeepSeekFormat || freshSkillPrimeNames.size > 0
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
           ? {
-              ...(needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : {}),
+              ...(needsReasoningContentFormat ? { provider: Providers.DEEPSEEK } : {}),
               ...(freshSkillPrimeNames.size > 0
                 ? { skipSkillBodyNames: freshSkillPrimeNames }
                 : {}),

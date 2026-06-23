@@ -1,11 +1,11 @@
 import { Providers } from '@librechat/agents';
-import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import { ReasoningResponseKey } from 'librechat-data-provider';
-
+import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import {
   extractDiscoveredToolsFromHistory,
   getReasoningKey,
   isDeepSeekReasoningProvider,
+  shouldReplayReasoningContent,
 } from './run';
 
 describe('extractDiscoveredToolsFromHistory', () => {
@@ -272,5 +272,53 @@ describe('isDeepSeekReasoningProvider', () => {
       isDeepSeekReasoningProvider(Providers.OPENROUTER, 'mistral/deepseek-distilled-foo'),
     ).toBe(false);
     expect(isDeepSeekReasoningProvider(undefined, 'community/deepseek-r1')).toBe(false);
+  });
+});
+
+describe('shouldReplayReasoningContent', () => {
+  it('returns true when a custom endpoint opts in via includeReasoningContent', () => {
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENAI,
+        model_parameters: { model: 'MiMo-V2.5' },
+        includeReasoningContent: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for DeepSeek reasoning agents without the flag', () => {
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.DEEPSEEK,
+        model_parameters: { model: 'deepseek-chat' },
+      }),
+    ).toBe(true);
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENROUTER,
+        model_parameters: { model: 'deepseek/deepseek-v4-pro' },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for a non-DeepSeek agent that has not opted in', () => {
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENAI,
+        model_parameters: { model: 'MiMo-V2.5' },
+      }),
+    ).toBe(false);
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENAI,
+        model_parameters: { model: 'MiMo-V2.5' },
+        includeReasoningContent: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false for nullish agents', () => {
+    expect(shouldReplayReasoningContent(null)).toBe(false);
+    expect(shouldReplayReasoningContent(undefined)).toBe(false);
   });
 });
