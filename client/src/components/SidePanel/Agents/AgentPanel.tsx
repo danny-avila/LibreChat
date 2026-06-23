@@ -526,6 +526,7 @@ export default function AgentPanel() {
               agentQuery={agentQuery}
               setCurrentAgentId={setCurrentAgentId}
               createMutation={create}
+              canEditAgent={canEditAgent}
             />
           )}
 

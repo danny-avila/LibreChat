@@ -16,12 +16,14 @@ export default function AgentBuilderHeader({
   agentQuery,
   setCurrentAgentId,
   createMutation,
+  canEditAgent,
 }: {
   agent_id?: string;
   onClickCreateNew: () => void;
   agentQuery: QueryObserverResult<Agent>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
+  canEditAgent: boolean;
 }) {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -76,7 +78,7 @@ export default function AgentBuilderHeader({
             </div>
           </button>
 
-          {agent_id && (
+          {agent_id && canEditAgent && (
             <ManageAgentDropdown
               agent={agentQuery.data}
               createMutation={createMutation}
