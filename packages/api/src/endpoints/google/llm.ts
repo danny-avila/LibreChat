@@ -361,6 +361,7 @@ export function getGoogleConfig(
 
   const {
     web_search,
+    url_context,
     thinkingLevel,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
@@ -368,6 +369,7 @@ export function getGoogleConfig(
   } = sanitizeModelOptions(options.modelOptions);
 
   let enableWebSearch = web_search;
+  let enableUrlContext = url_context;
 
   const llmConfig = removeNullishValues(
     {
@@ -514,6 +516,14 @@ export function getGoogleConfig(
         continue;
       }
 
+      /** Handle url_context separately - resolved to a native tool, not config */
+      if (key === 'url_context') {
+        if (enableUrlContext === undefined && typeof value === 'boolean') {
+          enableUrlContext = value;
+        }
+        continue;
+      }
+
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig only if undefined */
         applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
@@ -536,6 +546,14 @@ export function getGoogleConfig(
         continue;
       }
 
+      /** Handle url_context separately - resolved to a native tool, not config */
+      if (key === 'url_context') {
+        if (typeof value === 'boolean') {
+          enableUrlContext = value;
+        }
+        continue;
+      }
+
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig */
         (llmConfig as Record<string, unknown>)[key] = value;
@@ -552,6 +570,11 @@ export function getGoogleConfig(
     options.dropParams.forEach((param) => {
       if (param === 'web_search') {
         enableWebSearch = false;
+        return;
+      }
+
+      if (param === 'url_context') {
+        enableUrlContext = false;
         return;
       }
 
@@ -601,6 +624,10 @@ export function getGoogleConfig(
 
   if (enableWebSearch) {
     tools.push({ googleSearch: {} });
+  }
+
+  if (enableUrlContext) {
+    tools.push({ urlContext: {} });
   }
 
   // Return the final shape

@@ -49,6 +49,8 @@ const {
   buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
+  hasUrlContextTool,
+  appendYouTubeVideoParts,
 } = require('@librechat/api');
 const {
   Callback,
@@ -458,6 +460,30 @@ class AgentClient extends BaseClient {
 
       return formattedMessage;
     });
+
+    /**
+     * Native YouTube -> video understanding: when Google `url_context` is enabled
+     * (resolved to the native `urlContext` provider tool), inject any YouTube URLs
+     * from the latest user turn as Gemini `fileData` video parts. The URL Context
+     * tool cannot read YouTube, so this routes those links through the video path
+     * while other URLs still flow through `urlContext`. Done after token counting
+     * (video tokens are reported by the provider) and only on the LLM payload, so
+     * the memory copy and persisted message are untouched.
+     */
+    const latestOrdered = orderedMessages[orderedMessages.length - 1];
+    const provider = this.options.agent?.provider;
+    if (
+      latestOrdered?.isCreatedByUser === true &&
+      (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) &&
+      hasUrlContextTool(this.options.agent?.tools)
+    ) {
+      const latestFormatted = formattedMessages[formattedMessages.length - 1];
+      latestFormatted.content = appendYouTubeVideoParts({
+        enabled: true,
+        text: latestOrdered.text,
+        content: latestFormatted.content,
+      });
+    }
 
     payload = formattedMessages;
     this.memoryPayload = hasFileContext ? memoryPayload : null;
