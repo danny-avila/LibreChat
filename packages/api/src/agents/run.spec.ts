@@ -276,12 +276,12 @@ describe('isDeepSeekReasoningProvider', () => {
 });
 
 describe('shouldReplayReasoningContent', () => {
-  it('returns true when a custom endpoint opts in via includeReasoningContent', () => {
+  it('returns true when a custom endpoint opts in via includeReasoningHistory', () => {
     expect(
       shouldReplayReasoningContent({
         provider: Providers.OPENAI,
         model_parameters: { model: 'MiMo-V2.5' },
-        includeReasoningContent: true,
+        includeReasoningHistory: true,
       }),
     ).toBe(true);
   });
@@ -312,7 +312,7 @@ describe('shouldReplayReasoningContent', () => {
       shouldReplayReasoningContent({
         provider: Providers.OPENAI,
         model_parameters: { model: 'MiMo-V2.5' },
-        includeReasoningContent: false,
+        includeReasoningHistory: false,
       }),
     ).toBe(false);
   });

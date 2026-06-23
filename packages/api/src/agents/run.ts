@@ -288,20 +288,20 @@ export function isDeepSeekReasoningProvider(
  * Whether prior assistant tool-call messages should have `reasoning_content`
  * reconstructed when reformatting persisted history (cross-turn replay): either
  * DeepSeek thinking-mode (#13366) or a custom OpenAI-compatible endpoint that
- * opted in via `customParams.includeReasoningContent` (e.g. Xiaomi MiMo, Kimi).
+ * opted in via `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
  */
 export function shouldReplayReasoningContent(
   agent?: {
     provider?: string | Providers | null;
     model?: string | null;
     model_parameters?: { model?: string | null } | null;
-    includeReasoningContent?: boolean | null;
+    includeReasoningHistory?: boolean | null;
   } | null,
 ): boolean {
   if (agent == null) {
     return false;
   }
-  if (agent.includeReasoningContent === true) {
+  if (agent.includeReasoningHistory === true) {
     return true;
   }
   return isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);

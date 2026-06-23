@@ -160,7 +160,10 @@ export function getOpenAIConfig(
         customFormat: options.customParams?.reasoningFormat,
         isVercel: Boolean(isVercel),
       }),
-      includeReasoningContent: options.customParams?.includeReasoningContent,
+      /** History reconstruction requires the within-run replay flag to be set too. */
+      includeReasoningContent:
+        options.customParams?.includeReasoningContent === true ||
+        options.customParams?.includeReasoningHistory === true,
     });
     llmConfig = openaiResult.llmConfig;
     azure = openaiResult.azure;

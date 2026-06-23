@@ -235,6 +235,24 @@ describe('getOpenAIConfig', () => {
     expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
   });
 
+  it('should enable within-run replay when custom endpoint enables includeReasoningHistory', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          reasoningKey: ReasoningResponseKey.reasoningContent,
+          includeReasoningHistory: true,
+        },
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      },
+      'custom-endpoint',
+    );
+
+    expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+  });
+
   it('should not replay reasoning content for custom endpoints by default', () => {
     const result = getOpenAIConfig(
       mockApiKey,
