@@ -169,6 +169,24 @@ describe('initializeCustom – Agents API user key resolution', () => {
 });
 
 describe('initializeCustom – OpenAI-compatible header forwarding', () => {
+  const userControlledHeaderCases: Array<{
+    headerType: string;
+    headers: Record<string, string>;
+  }> = [
+    {
+      headerType: 'Authorization',
+      headers: { Authorization: 'Bearer static-gateway-token' },
+    },
+    {
+      headerType: 'env-secret',
+      headers: { 'X-Env-Secret': '${GATEWAY_SECRET}' },
+    },
+    {
+      headerType: 'user-placeholder',
+      headers: { 'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}' },
+    },
+  ];
+
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -227,20 +245,7 @@ describe('initializeCustom – OpenAI-compatible header forwarding', () => {
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
   });
 
-  it.each([
-    {
-      headerType: 'Authorization',
-      headers: { Authorization: 'Bearer static-gateway-token' },
-    },
-    {
-      headerType: 'env-secret',
-      headers: { 'X-Env-Secret': '${GATEWAY_SECRET}' },
-    },
-    {
-      headerType: 'user-placeholder',
-      headers: { 'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}' },
-    },
-  ])(
+  it.each(userControlledHeaderCases)(
     'withholds configured $headerType headers when the user supplies the base URL',
     async ({ headers }) => {
       const params = createParams({
