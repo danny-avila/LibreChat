@@ -203,16 +203,21 @@ describe('MCPConnection.fetchTools pagination', () => {
 
   it('passes the elapsed-time budget to the SDK request timeout', async () => {
     mcpConfig.TOOLS_LIST_TIMEOUT_MS = 25;
-    const listTools = jest.fn(async () => {
-      throw new Error('Request timed out');
-    });
+    const listTools = jest.fn(
+      async (
+        _params?: { cursor?: string },
+        _options?: { timeout: number; maxTotalTimeout: number },
+      ) => {
+        throw new Error('Request timed out');
+      },
+    );
     const conn = createConnectionWithListTools(listTools);
 
     const tools = await conn.fetchTools();
 
     expect(tools).toEqual([]);
     expect(listTools).toHaveBeenCalledTimes(1);
-    const options = listTools.mock.calls[0][1];
+    const options = listTools.mock.calls[0][1]!;
     expect(options.timeout).toBeGreaterThan(0);
     expect(options.timeout).toBeLessThanOrEqual(25);
     expect(options.maxTotalTimeout).toBe(options.timeout);
