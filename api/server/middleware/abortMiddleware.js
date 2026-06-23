@@ -20,16 +20,29 @@ const db = require('~/models');
  * @returns {boolean}
  */
 const isAbortError = (error) => {
-  const errorName = error?.name ?? error?.cause?.name;
-  const errorCode = error?.code ?? error?.cause?.code;
-  const errorMessage = error?.message ?? error?.cause?.message ?? '';
+  const visited = new Set();
+  let current = error;
 
-  return (
-    errorName === 'AbortError' ||
-    errorCode === 'ABORT_ERR' ||
-    errorMessage.includes('AbortError') ||
-    /(?:operation|request|stream) was aborted/i.test(errorMessage)
-  );
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+
+    const errorName = current.name;
+    const errorCode = current.code;
+    const errorMessage = typeof current.message === 'string' ? current.message : '';
+
+    if (
+      errorName === 'AbortError' ||
+      errorCode === 'ABORT_ERR' ||
+      errorMessage.includes('AbortError') ||
+      /(?:operation|request|stream) was aborted/i.test(errorMessage)
+    ) {
+      return true;
+    }
+
+    current = current.cause;
+  }
+
+  return false;
 };
 
 /**
