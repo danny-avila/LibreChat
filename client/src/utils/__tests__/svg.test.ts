@@ -100,6 +100,17 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(false);
     });
 
+    it('rejects an explicit badge alongside a default-black polyline glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect x="0" y="0" width="8" height="8" fill="#fff" /><polyline points="6,6 18,6 18,18 6,18" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a glyph drawn as a single default-black polyline', () => {
+      const svg = '<svg viewBox="0 0 24 24"><polyline points="6,6 18,6 18,18 6,18" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
     it('inherits an ancestor fill instead of assuming the default black', () => {
       const svg = '<svg viewBox="0 0 24 24"><g fill="#333"><path d="M4 4h16v16H4z" /></g></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
