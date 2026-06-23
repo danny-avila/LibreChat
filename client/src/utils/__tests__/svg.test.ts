@@ -222,6 +222,24 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><style>.a{color:#e00;fill:currentColor}</style><path class="a" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
+
+    it('ignores an unused CSS paint rule that matches no element', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.unused{fill:#f00}.icon{fill:#333}</style><path class="icon" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a CSS paint that only targets a hidden element', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.ghost{fill:#f00;display:none}.icon{fill:#333}</style><path class="ghost" d="M0 0h4v4H0z" /><path class="icon" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('preserves a chromatic fill applied to the root via CSS', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>svg{fill:#f00}</style><path d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
   });
 
   describe('default fills alongside <style> rules', () => {
