@@ -6,6 +6,7 @@ const {
   checkBalance,
   getBalanceConfig,
   buildMessageFiles,
+  sanitizeFileForTransmit,
   extractFileContext,
   getReferencedQuotes,
   encodeAndFormatAudios,
@@ -30,6 +31,47 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
+
+const collectHistoricalFileRefs = (message) => {
+  const refs = [];
+  if (Array.isArray(message.files)) {
+    refs.push(...message.files);
+  }
+  if (Array.isArray(message.attachments)) {
+    refs.push(...message.attachments);
+  }
+  return refs;
+};
+
+const buildOwnerFileFilter = (fileIds, user) => {
+  if (!user?.id || fileIds.length === 0) {
+    return null;
+  }
+
+  const filter = {
+    file_id: { $in: fileIds },
+    user: user.id,
+  };
+  if (user.tenantId) {
+    filter.tenantId = user.tenantId;
+  }
+  return filter;
+};
+
+const rehydrateMessageFileRefs = (refs, filesById) => {
+  if (!Array.isArray(refs)) {
+    return undefined;
+  }
+
+  const files = [];
+  for (const ref of refs) {
+    const file = filesById.get(ref?.file_id);
+    if (file) {
+      files.push(sanitizeFileForTransmit(file));
+    }
+  }
+  return files.length > 0 ? files : undefined;
+};
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -1343,38 +1385,75 @@ class BaseClient {
         this.message_file_map = {};
       }
 
+      delete message.fileContext;
+
       const fileIds = [];
-      for (const file of message.files) {
-        if (seen.has(file.file_id)) {
+      const messageFileIds = new Set();
+      if (Array.isArray(message.files)) {
+        for (const file of message.files) {
+          if (file?.file_id) {
+            messageFileIds.add(file.file_id);
+          }
+        }
+      }
+      const fileRefs = collectHistoricalFileRefs(message);
+      for (const file of fileRefs) {
+        if (!file?.file_id || seen.has(file.file_id)) {
           continue;
         }
         fileIds.push(file.file_id);
         seen.add(file.file_id);
       }
 
-      if (fileIds.length === 0) {
+      const fileFilter = buildOwnerFileFilter(fileIds, this.options.req?.user);
+      if (!fileFilter) {
+        delete message.files;
+        delete message.attachments;
         return message;
       }
 
-      const files = await db.getFiles(
-        {
-          file_id: { $in: fileIds },
-        },
-        {},
-        {},
-      );
+      const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
+      const filesById = new Map();
+      for (const file of files) {
+        if (file?.file_id) {
+          filesById.set(file.file_id, file);
+        }
+      }
 
-      await this.addFileContextToMessage(message, files);
-      await this.processAttachments(message, files);
+      const rehydratedFiles = rehydrateMessageFileRefs(message.files, filesById);
+      if (rehydratedFiles) {
+        message.files = rehydratedFiles;
+      } else {
+        delete message.files;
+      }
 
-      this.message_file_map[message.messageId] = files;
+      const rehydratedAttachments = rehydrateMessageFileRefs(message.attachments, filesById);
+      if (rehydratedAttachments) {
+        message.attachments = rehydratedAttachments;
+      } else {
+        delete message.attachments;
+      }
+
+      if (files.length === 0) {
+        return message;
+      }
+
+      const contextFiles = files.filter((file) => messageFileIds.has(file.file_id));
+      if (contextFiles.length === 0) {
+        return message;
+      }
+
+      await this.addFileContextToMessage(message, contextFiles);
+      await this.processAttachments(message, contextFiles);
+
+      this.message_file_map[message.messageId] = contextFiles;
       return message;
     };
 
     const promises = [];
 
     for (const message of _messages) {
-      if (!message.files) {
+      if (!message.files && !message.attachments) {
         promises.push(message);
         continue;
       }
