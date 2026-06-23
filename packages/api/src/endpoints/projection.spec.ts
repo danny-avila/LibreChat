@@ -7,6 +7,20 @@ jest.mock('@librechat/agents', () => ({
   projectAgentContextUsage: jest.fn(() => ({ tokenCount: 1, maxContextTokens: 1000 })),
 }));
 
+const GRAPH_SELECT = 'messageId parentMessageId metadata.summaryUsedTokens';
+const BODY_SELECT = 'messageId parentMessageId tokenCount isCreatedByUser text quotes';
+
+function textStats(messageId: string, textBytes = 5) {
+  return {
+    messageId,
+    textBytes,
+    quoteCount: 0,
+    quoteBytes: 0,
+    quoteLineCount: 0,
+    nonStringQuoteCount: 0,
+  };
+}
+
 describe('resolveContextProjection', () => {
   const baseParams = {
     conversationId: 'conversation-1',
@@ -29,9 +43,10 @@ describe('resolveContextProjection', () => {
       text: 'hello',
     }));
     const getMessages = jest.fn(async () => messages);
+    const getMessageTextStats = jest.fn();
 
     const result = await resolveContextProjection(
-      { userId: 'user-1', getMessages },
+      { userId: 'user-1', getMessages, getMessageTextStats },
       { ...baseParams, messageId: 'message-512' },
     );
 
@@ -39,9 +54,10 @@ describe('resolveContextProjection', () => {
     expect(getMessages).toHaveBeenCalledTimes(1);
     expect(getMessages).toHaveBeenCalledWith(
       { conversationId: 'conversation-1', user: 'user-1' },
-      'messageId parentMessageId metadata',
+      GRAPH_SELECT,
       { limit: 513, sort: false },
     );
+    expect(getMessageTextStats).not.toHaveBeenCalled();
     expect(createTokenCounter).not.toHaveBeenCalled();
   });
 
@@ -54,46 +70,46 @@ describe('resolveContextProjection', () => {
       text: 'hello',
     }));
     const getMessages = jest.fn(async () => messages);
+    const getMessageTextStats = jest.fn();
 
     const result = await resolveContextProjection(
-      { userId: 'user-1', getMessages },
+      { userId: 'user-1', getMessages, getMessageTextStats },
       { ...baseParams, messageId: 'message-256' },
     );
 
     expect(result).toBeNull();
     expect(getMessages).toHaveBeenCalledTimes(1);
+    expect(getMessageTextStats).not.toHaveBeenCalled();
     expect(createTokenCounter).not.toHaveBeenCalled();
   });
 
-  it('returns null before tokenization when the branch text is too large', async () => {
+  it('returns null before loading bodies when the branch text is too large', async () => {
     const { createTokenCounter } = jest.requireMock('@librechat/agents');
     const getMessages = jest.fn(async () => [
       {
         messageId: 'message-1',
         parentMessageId: null,
-        isCreatedByUser: true,
-        text: 'x'.repeat(512 * 1024 + 1),
       },
     ]);
+    const getMessageTextStats = jest.fn(async () => [textStats('message-1', 512 * 1024 + 1)]);
     const result = await resolveContextProjection(
       {
         userId: 'user-1',
         getMessages,
+        getMessageTextStats,
       },
       baseParams,
     );
 
     expect(result).toBeNull();
-    expect(getMessages).toHaveBeenCalledTimes(2);
-    expect(getMessages).toHaveBeenNthCalledWith(
-      2,
+    expect(getMessages).toHaveBeenCalledTimes(1);
+    expect(getMessageTextStats).toHaveBeenCalledWith(
       {
         conversationId: 'conversation-1',
         user: 'user-1',
         messageId: { $in: ['message-1'] },
       },
-      'messageId parentMessageId tokenCount isCreatedByUser text quotes',
-      { limit: 1, sort: false },
+      { limit: 1 },
     );
     expect(createTokenCounter).not.toHaveBeenCalled();
   });
@@ -121,11 +137,15 @@ describe('resolveContextProjection', () => {
       },
     ];
     const getMessages = jest.fn(async (_filter: object, select?: string) =>
-      select === 'messageId parentMessageId metadata' ? graph : bodies,
+      select === GRAPH_SELECT ? graph : bodies,
     );
+    const getMessageTextStats = jest.fn(async () => [
+      textStats('message-1', 5),
+      textStats('message-2', 6),
+    ]);
 
     const result = await resolveContextProjection(
-      { userId: 'user-1', getMessages },
+      { userId: 'user-1', getMessages, getMessageTextStats },
       { ...baseParams, messageId: 'message-2' },
     );
 
@@ -133,8 +153,16 @@ describe('resolveContextProjection', () => {
     expect(getMessages).toHaveBeenNthCalledWith(
       1,
       { conversationId: 'conversation-1', user: 'user-1' },
-      'messageId parentMessageId metadata',
+      GRAPH_SELECT,
       { limit: 513, sort: false },
+    );
+    expect(getMessageTextStats).toHaveBeenCalledWith(
+      {
+        conversationId: 'conversation-1',
+        user: 'user-1',
+        messageId: { $in: ['message-1', 'message-2'] },
+      },
+      { limit: 2 },
     );
     expect(getMessages).toHaveBeenNthCalledWith(
       2,
@@ -143,27 +171,36 @@ describe('resolveContextProjection', () => {
         user: 'user-1',
         messageId: { $in: ['message-1', 'message-2'] },
       },
-      'messageId parentMessageId tokenCount isCreatedByUser text quotes',
+      BODY_SELECT,
       { limit: 2, sort: false },
     );
   });
 
-  it('returns null before tokenization when a branch message has too many quotes', async () => {
+  it('returns null before loading bodies when a branch message has too many quotes', async () => {
     const { createTokenCounter } = jest.requireMock('@librechat/agents');
     const getMessages = jest.fn(async () => [
       {
         messageId: 'message-1',
         parentMessageId: null,
-        isCreatedByUser: true,
-        text: 'hello',
-        quotes: Array.from({ length: QUOTE_MAX_COUNT + 1 }, (_, index) => `quote-${index}`),
+      },
+    ]);
+    const getMessageTextStats = jest.fn(async () => [
+      {
+        ...textStats('message-1'),
+        quoteCount: QUOTE_MAX_COUNT + 1,
+        quoteBytes: 10,
+        quoteLineCount: QUOTE_MAX_COUNT + 1,
       },
     ]);
 
-    const result = await resolveContextProjection({ userId: 'user-1', getMessages }, baseParams);
+    const result = await resolveContextProjection(
+      { userId: 'user-1', getMessages, getMessageTextStats },
+      baseParams,
+    );
 
     expect(result).toBeNull();
-    expect(getMessages).toHaveBeenCalledTimes(2);
+    expect(getMessages).toHaveBeenCalledTimes(1);
+    expect(getMessageTextStats).toHaveBeenCalledTimes(1);
     expect(createTokenCounter).not.toHaveBeenCalled();
   });
 });

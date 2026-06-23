@@ -7,7 +7,7 @@ import { QUOTE_MAX_COUNT, mergeQuotedText } from '~/utils/quotes';
 const MAX_PROJECTION_MESSAGES = 512;
 const MAX_PROJECTION_BRANCH_MESSAGES = 256;
 const MAX_PROJECTION_BRANCH_TEXT_BYTES = 512 * 1024;
-const PROJECTION_GRAPH_SELECT = 'messageId parentMessageId metadata';
+const PROJECTION_GRAPH_SELECT = 'messageId parentMessageId metadata.summaryUsedTokens';
 const PROJECTION_BODY_SELECT = 'messageId parentMessageId tokenCount isCreatedByUser text quotes';
 
 interface ProjectionMessage {
@@ -35,6 +35,19 @@ interface ProjectionMessageQueryOptions {
   sort?: false;
 }
 
+interface ProjectionMessageTextStats {
+  messageId: string;
+  textBytes: number;
+  quoteCount: number;
+  quoteBytes: number;
+  quoteLineCount: number;
+  nonStringQuoteCount: number;
+}
+
+interface ProjectionMessageTextStatsOptions {
+  limit?: number;
+}
+
 export interface ContextProjectionDeps {
   /** Authenticated requester — branch lookups are scoped to this user. */
   userId?: string;
@@ -43,6 +56,10 @@ export interface ContextProjectionDeps {
     select?: string,
     options?: ProjectionMessageQueryOptions,
   ) => Promise<ProjectionMessage[]>;
+  getMessageTextStats: (
+    filter: ProjectionMessageFilter,
+    options?: ProjectionMessageTextStatsOptions,
+  ) => Promise<ProjectionMessageTextStats[]>;
 }
 
 /**
@@ -105,6 +122,47 @@ function hasExceededBranchTextLimit(branch: ProjectionMessage[]): boolean {
   return false;
 }
 
+function getEstimatedMergedTextBytes(stats: ProjectionMessageTextStats): number | null {
+  if (
+    stats.nonStringQuoteCount > 0 ||
+    stats.quoteCount > QUOTE_MAX_COUNT ||
+    stats.quoteLineCount < stats.quoteCount
+  ) {
+    return null;
+  }
+  if (stats.quoteCount === 0) {
+    return stats.textBytes;
+  }
+
+  const quotePrefixBytes = stats.quoteLineCount * 2;
+  const quoteLineBreakBytes = stats.quoteLineCount - stats.quoteCount;
+  const quoteSeparatorBytes = (stats.quoteCount - 1) * 2;
+  const bodySeparatorBytes = stats.textBytes > 0 ? 2 : 0;
+  return (
+    stats.textBytes +
+    stats.quoteBytes +
+    quotePrefixBytes +
+    quoteLineBreakBytes +
+    quoteSeparatorBytes +
+    bodySeparatorBytes
+  );
+}
+
+function hasExceededBranchTextStatsLimit(stats: ProjectionMessageTextStats[]): boolean {
+  let bytes = 0;
+  for (const messageStats of stats) {
+    const messageBytes = getEstimatedMergedTextBytes(messageStats);
+    if (messageBytes == null) {
+      return true;
+    }
+    bytes += messageBytes;
+    if (bytes > MAX_PROJECTION_BRANCH_TEXT_BYTES) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Maps an endpoint/provider string to the agents `Providers` enum. */
 function resolveProvider(value?: string): Providers {
   if (value == null || value === '') {
@@ -134,6 +192,14 @@ async function getBranchMessages(
   branch: ProjectionMessage[],
 ): Promise<ProjectionMessage[] | null> {
   const branchIds = branch.map((message) => message.messageId);
+  const stats = await deps.getMessageTextStats(
+    { ...baseFilter, messageId: { $in: branchIds } },
+    { limit: branchIds.length },
+  );
+  if (stats.length !== branchIds.length || hasExceededBranchTextStatsLimit(stats)) {
+    return null;
+  }
+
   const stored = await deps.getMessages(
     { ...baseFilter, messageId: { $in: branchIds } },
     PROJECTION_BODY_SELECT,
