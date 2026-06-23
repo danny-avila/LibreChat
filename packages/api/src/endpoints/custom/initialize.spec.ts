@@ -2,8 +2,16 @@ import { AuthType, ErrorTypes } from 'librechat-data-provider';
 import type { BaseInitializeParams } from '~/types';
 
 const mockValidateEndpointURL = jest.fn();
+const mockCreateSSRFSafeUndiciConnect = jest.fn(
+  (_allowedAddresses?: string[] | null, _port?: string | number | null) => ({
+    lookup: jest.fn(),
+  }),
+);
 jest.mock('~/auth', () => ({
   validateEndpointURL: (...args: unknown[]) => mockValidateEndpointURL(...args),
+  createSSRFSafeUndiciConnect: (
+    ...args: [allowedAddresses?: string[] | null, port?: string | number | null]
+  ) => mockCreateSSRFSafeUndiciConnect(...args),
 }));
 
 const mockGetOpenAIConfig = jest.fn().mockReturnValue({
@@ -378,6 +386,7 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
         name: 'openrouter',
         headers,
         userObject: params.req.user,
+        baseURLIsUserProvided: false,
       }),
     );
   });
@@ -401,6 +410,7 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
         apiKey: 'sk-user-key',
         headers: undefined,
         userObject: params.req.user,
+        baseURLIsUserProvided: true,
       }),
     );
   });
@@ -641,6 +651,17 @@ describe('initializeCustom – native Anthropic provider', () => {
     ).clientOptions?.defaultHeaders;
     expect(defaultHeaders?.Authorization).toBeUndefined();
     expect(defaultHeaders?.['X-User-Email']).toBeUndefined();
+    const fetchOptions = (
+      options.llmConfig as {
+        clientOptions?: { fetchOptions?: { dispatcher?: unknown; redirect?: string } };
+      }
+    ).clientOptions?.fetchOptions;
+    expect(fetchOptions).toEqual(
+      expect.objectContaining({
+        dispatcher: expect.any(Object),
+        redirect: 'error',
+      }),
+    );
   });
 
   it('applies customParams.paramDefinitions defaults on the native path', async () => {

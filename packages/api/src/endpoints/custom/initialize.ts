@@ -135,17 +135,21 @@ function buildAnthropicCustomConfig({
   modelOptions,
   endpointConfig,
   userProvidesURL,
+  allowedAddresses,
 }: {
   apiKey: string;
   baseURL: string;
   modelOptions: AnthropicModelOptions;
   endpointConfig: Partial<TEndpoint>;
   userProvidesURL: boolean;
+  allowedAddresses?: string[] | null;
 }): InitializeResultBase {
   const result = getAnthropicLLMConfig(apiKey, {
     modelOptions,
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses,
     headers: userProvidesURL ? undefined : endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
@@ -277,6 +281,8 @@ export async function initializeCustom({
     await fetchModels({
       apiKey,
       baseURL,
+      baseURLIsUserProvided: userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
       name: endpoint,
       user: userId,
       tokenKey,
@@ -304,6 +310,8 @@ export async function initializeCustom({
 
   const clientOptions: Record<string, unknown> = {
     reverseProxyUrl: baseURL ?? null,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     proxy: PROXY ?? null,
     ...customOptions,
   };
@@ -321,6 +329,7 @@ export async function initializeCustom({
       modelOptions: modelOptions as AnthropicModelOptions,
       endpointConfig,
       userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     });
     options.endpointTokenConfig = endpointTokenConfig;
   } else {

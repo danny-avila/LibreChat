@@ -1,3 +1,4 @@
+import { Agent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
@@ -26,10 +27,43 @@ import {
   isAnthropicVertexCredentials,
   getVertexDeploymentName,
 } from './vertex';
+import { createSSRFSafeUndiciConnect } from '~/auth';
 import { getProxyDispatcher } from '~/utils/proxy';
 import { mergeHeaders } from '~/utils/headers';
 
 const WEB_SEARCH_BETA = 'web-search-2025-03-05';
+
+type FetchOptions = { dispatcher?: Dispatcher; redirect?: RequestRedirect };
+
+function getEffectiveURLPort(baseURL: string): string | null {
+  try {
+    const parsed = new URL(baseURL);
+    if (parsed.port) {
+      return parsed.port;
+    }
+    if (parsed.protocol === 'http:') {
+      return '80';
+    }
+    if (parsed.protocol === 'https:') {
+      return '443';
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function mergeFetchOptions(
+  clientOptions: NonNullable<AnthropicClientOptions['clientOptions']>,
+  options: FetchOptions,
+): void {
+  const currentOptions = (clientOptions.fetchOptions ?? {}) as FetchOptions;
+  clientOptions.fetchOptions = {
+    ...currentOptions,
+    ...options,
+  } as NonNullable<AnthropicClientOptions['clientOptions']>['fetchOptions'];
+}
 
 /**
  * Parses credentials from string or object format
@@ -236,11 +270,13 @@ function getLLMConfig(
     requestOptions.clientOptions.defaultHeaders = headers;
   }
 
+  const shouldProtectUserBaseURL =
+    options.baseURLIsUserProvided === true && !!options.reverseProxyUrl;
   const proxyDispatcher = getProxyDispatcher(options.proxy);
-  if (proxyDispatcher && requestOptions.clientOptions) {
-    requestOptions.clientOptions.fetchOptions = {
+  if (proxyDispatcher && !shouldProtectUserBaseURL && requestOptions.clientOptions) {
+    mergeFetchOptions(requestOptions.clientOptions, {
       dispatcher: proxyDispatcher,
-    };
+    });
   }
 
   if (options.reverseProxyUrl && requestOptions.clientOptions) {
@@ -360,6 +396,21 @@ function getLLMConfig(
       options.headers,
       requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
     );
+  }
+
+  if (shouldProtectUserBaseURL) {
+    if (!requestOptions.clientOptions) {
+      requestOptions.clientOptions = {};
+    }
+    mergeFetchOptions(requestOptions.clientOptions, {
+      dispatcher: new Agent({
+        connect: createSSRFSafeUndiciConnect(
+          options.allowedAddresses,
+          getEffectiveURLPort(options.reverseProxyUrl ?? ''),
+        ),
+      }),
+      redirect: 'error',
+    });
   }
 
   return {

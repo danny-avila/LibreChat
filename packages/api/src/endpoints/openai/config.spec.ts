@@ -474,6 +474,43 @@ describe('getOpenAIConfig', () => {
     expect((result.configOptions?.fetchOptions as RequestInit).dispatcher).toBeDefined();
   });
 
+  it('should harden user-provided base URLs with a connect-time dispatcher and disabled redirects', () => {
+    const result = getOpenAIConfig(mockApiKey, {
+      reverseProxyUrl: 'https://user-provider.example.com/v1',
+      baseURLIsUserProvided: true,
+      allowedAddresses: ['10.0.0.5:443'],
+    });
+
+    expect(result.configOptions?.baseURL).toBe('https://user-provider.example.com/v1');
+    expect(result.configOptions?.fetchOptions).toEqual(
+      expect.objectContaining({
+        dispatcher: expect.any(Object),
+        redirect: 'error',
+      }),
+    );
+  });
+
+  it('should keep the SSRF-safe dispatcher when a proxy is configured for a user-provided URL', () => {
+    const result = getOpenAIConfig(mockApiKey, {
+      reverseProxyUrl: 'https://user-provider.example.com/v1',
+      baseURLIsUserProvided: true,
+      proxy: 'http://proxy.example.com:8080',
+    });
+
+    const unproxiedResult = getOpenAIConfig(mockApiKey, {
+      reverseProxyUrl: 'https://user-provider.example.com/v1',
+      baseURLIsUserProvided: true,
+    });
+
+    expect(result.configOptions?.fetchOptions?.dispatcher).toBeDefined();
+    expect(result.configOptions?.fetchOptions?.dispatcher?.constructor.name).toBe(
+      unproxiedResult.configOptions?.fetchOptions?.dispatcher?.constructor.name,
+    );
+    expect(result.configOptions?.fetchOptions).toEqual(
+      expect.objectContaining({ redirect: 'error' }),
+    );
+  });
+
   it('should handle headers and defaultQuery', () => {
     const headers = { 'X-Custom-Header': 'value' };
     const defaultQuery = { customParam: 'value' };
