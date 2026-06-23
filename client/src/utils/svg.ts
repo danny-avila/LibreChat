@@ -231,6 +231,29 @@ function colorsFromStyleBlocks(root: Element): string[] {
   return colors;
 }
 
+/**
+ * Resolves a `currentColor` paint to the fixed `color` set on the element or an
+ * ancestor, since that is what the icon actually renders. Returns `currentColor`
+ * unchanged when no fixed color is in scope, meaning the paint follows the theme.
+ */
+function resolveCurrentColor(el: Element, root: Element): string {
+  let current: Element | null = el;
+  while (current != null) {
+    const color = readPaint(current, 'color');
+    if (color != null) {
+      const normalized = color.trim().toLowerCase();
+      if (normalized !== '' && normalized !== 'inherit' && normalized !== CURRENT_COLOR) {
+        return normalized;
+      }
+    }
+    if (current === root) {
+      break;
+    }
+    current = current.parentElement;
+  }
+  return CURRENT_COLOR;
+}
+
 function collectColors(root: Element): string[] {
   const colors: string[] = [];
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
@@ -239,9 +262,12 @@ function collectColors(root: Element): string[] {
     }
     for (const prop of PAINT_PROPS) {
       const value = readPaint(el, prop);
-      if (value) {
-        colors.push(value);
+      if (!value) {
+        continue;
       }
+      colors.push(
+        value.trim().toLowerCase() === CURRENT_COLOR ? resolveCurrentColor(el, root) : value,
+      );
     }
   }
   colors.push(...colorsFromStyleBlocks(root));
@@ -250,15 +276,53 @@ function collectColors(root: Element): string[] {
     .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color));
 }
 
-/** True when the element or any ancestor sets an explicit `fill` (inherited by SVG). */
-function inheritsExplicitFill(el: Element): boolean {
+/** Selectors from `<style>` blocks whose rule body sets a `fill`. */
+function fillSelectors(root: Element): string[] {
+  const selectors: string[] = [];
+  for (const style of Array.from(root.querySelectorAll('style'))) {
+    for (const rule of (style.textContent ?? '').split('}')) {
+      const brace = rule.indexOf('{');
+      if (brace === -1) {
+        continue;
+      }
+      const selector = rule.slice(0, brace).trim();
+      if (selector !== '' && /(^|[;{\s])fill\s*:/i.test(rule.slice(brace + 1))) {
+        selectors.push(selector);
+      }
+    }
+  }
+  return selectors;
+}
+
+function matchesAnySelector(el: Element, selectors: string[]): boolean {
+  for (const selector of selectors) {
+    try {
+      if (el.matches(selector)) {
+        return true;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when a fill is resolved for the element by an explicit `fill` (its own or
+ * an ancestor's, since fill is inherited) or by a fill-setting CSS rule applying
+ * to it or an ancestor. When false, the element falls back to the default black.
+ */
+function fillIsResolved(el: Element, root: Element, selectors: string[]): boolean {
   let current: Element | null = el;
   while (current != null) {
     const fill = readPaint(current, 'fill');
     if (fill != null && fill.trim() !== '') {
       return true;
     }
-    if (current.nodeName.toLowerCase() === 'svg') {
+    if (matchesAnySelector(current, selectors)) {
+      return true;
+    }
+    if (current === root) {
       break;
     }
     current = current.parentElement;
@@ -299,23 +363,16 @@ function rendersFillArea(el: Element): boolean {
 }
 
 /**
- * True when a rendered shape paints with SVG's default black fill: it sets no
- * explicit fill, inherits none from an ancestor, is not a non-rendering template,
- * and encloses a fillable area. A stroke does not suppress the default fill, so a
- * closed stroked shape still renders black. Such a shape contributes a black tone
- * that explicit paint values alone do not capture. Skipped when a `<style>` block
- * is present, since a CSS rule may color the shape and cannot be resolved without
- * matching.
+ * True when a rendered shape paints with SVG's default black fill: no explicit or
+ * CSS fill resolves for it (or an ancestor), it is not a non-rendering template,
+ * and it encloses a fillable area. A stroke does not suppress the default fill, so
+ * a closed stroked shape still renders black. Such a shape contributes a black
+ * tone that explicit paint values alone do not capture.
  */
 function hasDefaultBlackShape(root: Element): boolean {
-  if (root.querySelector('style') != null) {
-    return false;
-  }
+  const selectors = fillSelectors(root);
   for (const el of Array.from(root.querySelectorAll(FILLABLE_SHAPES))) {
-    if (readPaint(el, 'fill') != null) {
-      continue;
-    }
-    if (inheritsExplicitFill(el) || inFunctionalContainer(el, root)) {
+    if (fillIsResolved(el, root, selectors) || inFunctionalContainer(el, root)) {
       continue;
     }
     if (rendersFillArea(el)) {
