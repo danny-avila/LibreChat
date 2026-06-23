@@ -44,7 +44,7 @@ export interface MessageMethods {
   ): Promise<Partial<IMessage>>;
   applyForcedRetention(
     ctx: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
-    params: { conversationId: string; messageId: string },
+    params: { conversationId: string; messageId?: string },
     metadata?: { context?: string; capExpiryToConversation?: boolean },
   ): Promise<void>;
   deleteMessagesSince(
@@ -363,14 +363,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
-   * Enforces forced (ephemeral) retention on an existing message and its parent
-   * conversation. Message-write paths that only update a row — edits, feedback — bypass
-   * the `saveMessage`/`saveConvo` enforcement, so an older permanent chat touched after an
-   * install switches to ephemeral would otherwise stay visible and never expire.
+   * Enforces forced (ephemeral) retention on a conversation (and optionally a specific
+   * message) that was touched outside `saveMessage`/`saveConvo` — message edits, feedback,
+   * or bookmark-tag writes. Without these, an older permanent chat touched after an install
+   * switches to ephemeral would stay visible and never expire. Omit `messageId` for
+   * conversation-only writes (e.g. tag changes) to run just the conversation cascade.
    */
   async function applyForcedRetention(
     { userId, interfaceConfig }: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
-    { conversationId, messageId }: { conversationId: string; messageId: string },
+    { conversationId, messageId }: { conversationId: string; messageId?: string },
     metadata?: { context?: string; capExpiryToConversation?: boolean },
   ): Promise<void> {
     if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
@@ -401,10 +402,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       );
     }
 
-    await Message.updateOne(
-      { messageId, user: userId },
-      { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
-    );
+    if (messageId) {
+      await Message.updateOne(
+        { messageId, user: userId },
+        { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+      );
+    }
     await cascadeForcedConversationRetention(
       Conversation,
       Message,
