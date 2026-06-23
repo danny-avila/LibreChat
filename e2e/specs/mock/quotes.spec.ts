@@ -48,12 +48,13 @@ async function selectMessageText(page: Page, needle: string) {
 }
 
 /**
- * Double-click the first real word inside the most recent message containing
- * `needle`, using native mouse events at the word's measured coordinates.
+ * Double-click the first word of `needle` inside the most recent message
+ * containing it, using native mouse events at that word's measured coordinates.
  * Unlike `selectMessageText` (a programmatic Range), this exercises the
  * browser's own double-click word selection — the path the `dblclick` listener
- * guards. Targeting measured coordinates avoids landing on the empty right side
- * of a full-width message row (which selects only inter-block whitespace).
+ * guards. Measuring the `needle` text node itself (not the first text node in
+ * `.message-render`, which may be a `select-none` screen-reader/model-label
+ * header) keeps the click on the actual reply word, not metadata or whitespace.
  */
 async function doubleClickWord(page: Page, needle: string) {
   const point = await page.evaluate((text) => {
@@ -64,17 +65,16 @@ async function doubleClickWord(page: Page, needle: string) {
     }
     const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
     let node = walker.nextNode();
-    while (node && (node.nodeValue ?? '').trim().length === 0) {
+    while (node && !(node.nodeValue ?? '').includes(text)) {
       node = walker.nextNode();
     }
     if (!node) {
-      throw new Error(`No non-empty text node in: ${text}`);
+      throw new Error(`No text node contains: ${text}`);
     }
-    const value = node.nodeValue ?? '';
-    const start = value.search(/\S/);
+    const index = (node.nodeValue ?? '').indexOf(text);
     const range = document.createRange();
-    range.setStart(node, start);
-    range.setEnd(node, start + 1);
+    range.setStart(node, index);
+    range.setEnd(node, index + 1);
     const r = range.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, needle);
