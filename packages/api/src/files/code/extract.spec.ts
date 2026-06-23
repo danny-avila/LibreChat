@@ -708,7 +708,13 @@ describe('resolveMaxTextExtractBytes', () => {
     expect(resolveMaxTextExtractBytes('0.999')).toBe(TWO_MB);
   });
 
-  it('drives the exported default ceiling to 2 MB out of the box', () => {
-    expect(MAX_TEXT_EXTRACT_BYTES).toBe(TWO_MB);
+  it('wires the exported ceiling through the resolver for the current env', () => {
+    /* Asserting a literal 2 MB here would falsely fail when the suite runs
+     * with FILE_PREVIEW_MAX_EXTRACT_BYTES set (the export is initialized
+     * from the env at module load). Verify the export tracks the resolver
+     * instead; the `undefined` case above pins the 2 MB default. */
+    expect(MAX_TEXT_EXTRACT_BYTES).toBe(
+      resolveMaxTextExtractBytes(process.env.FILE_PREVIEW_MAX_EXTRACT_BYTES),
+    );
   });
 });
