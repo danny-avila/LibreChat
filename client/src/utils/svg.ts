@@ -56,6 +56,9 @@ const FUNCTIONAL_CONTAINERS = new Set(['clippath', 'mask', 'marker', 'pattern'])
  */
 const DEFERRED_CONTAINERS = new Set(['clippath', 'mask', 'marker', 'pattern', 'defs', 'symbol']);
 
+/** Containers whose content renders only when referenced (e.g. through `<use>`). */
+const TEMPLATE_CONTAINERS = new Set(['defs', 'symbol']);
+
 /** Paint properties whose corresponding opacity makes them invisible at zero. */
 const PAINT_OPACITY = new Map([
   ['fill', 'fill-opacity'],
@@ -290,6 +293,9 @@ function resolveCssCurrentColor(root: Element, selector: string, rules: StyleRul
   let matched: Element[];
   try {
     matched = Array.from(root.querySelectorAll(selector));
+    if (root.matches(selector)) {
+      matched = [root, ...matched];
+    }
   } catch {
     return [CURRENT_COLOR];
   }
@@ -373,13 +379,35 @@ function resolveCurrentColor(el: Element, root: Element, rules: StyleRule[]): st
   return CURRENT_COLOR;
 }
 
+/** Elements rendered through a visible `<use>` (target subtrees), so their
+ * template paint counts even though they live in a deferred container. */
+function referencedElements(root: Element, rules: StyleRule[]): Set<Element> {
+  const referenced = new Set<Element>();
+  for (const use of Array.from(root.querySelectorAll('use'))) {
+    if (isHidden(use, root, rules) || isInside(use, root, DEFERRED_CONTAINERS)) {
+      continue;
+    }
+    const target = referencedTarget(use, root);
+    if (target == null) {
+      continue;
+    }
+    referenced.add(target);
+    for (const el of Array.from(target.querySelectorAll('*'))) {
+      referenced.add(el);
+    }
+  }
+  return referenced;
+}
+
 function collectColors(root: Element, rules: StyleRule[]): string[] {
   const colors: string[] = [];
+  const referenced = referencedElements(root, rules);
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
     if (
       el.nodeName.toLowerCase() === 'style' ||
       isInside(el, root, FUNCTIONAL_CONTAINERS) ||
-      isHidden(el, root, rules)
+      isHidden(el, root, rules) ||
+      (isInside(el, root, TEMPLATE_CONTAINERS) && !referenced.has(el))
     ) {
       continue;
     }
