@@ -4,6 +4,10 @@ import type { TContextProjectionRequest, TContextUsageEvent } from 'librechat-da
 import type { BaseMessage } from '@langchain/core/messages';
 import { mergeQuotedText } from '~/utils/quotes';
 
+const MAX_PROJECTION_MESSAGES = 512;
+const MAX_PROJECTION_BRANCH_MESSAGES = 256;
+const MAX_PROJECTION_BRANCH_TEXT_BYTES = 512 * 1024;
+
 interface ProjectionMessage {
   messageId: string;
   parentMessageId?: string | null;
@@ -51,6 +55,26 @@ function resolveBranch(messages: ProjectionMessage[], tailId: string): Projectio
   return branch.reverse();
 }
 
+function hasValidProjectionIds(params: TContextProjectionRequest): boolean {
+  return typeof params.conversationId === 'string' && typeof params.messageId === 'string';
+}
+
+function hasExceededBranchTextLimit(branch: ProjectionMessage[]): boolean {
+  let bytes = 0;
+  for (const message of branch) {
+    bytes += Buffer.byteLength(message.text ?? '', 'utf8');
+    if (Array.isArray(message.quotes)) {
+      for (const quote of message.quotes) {
+        bytes += Buffer.byteLength(quote, 'utf8');
+      }
+    }
+    if (bytes > MAX_PROJECTION_BRANCH_TEXT_BYTES) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Maps an endpoint/provider string to the agents `Providers` enum. */
 function resolveProvider(value?: string): Providers {
   if (value == null || value === '') {
@@ -90,6 +114,10 @@ export async function resolveContextProjection(
   deps: ContextProjectionDeps,
   params: TContextProjectionRequest,
 ): Promise<TContextUsageEvent | null> {
+  if (!hasValidProjectionIds(params)) {
+    return null;
+  }
+
   const maxContextTokens = params.maxContextTokens;
   if (maxContextTokens == null || maxContextTokens <= 0) {
     return null;
@@ -99,8 +127,18 @@ export async function resolveContextProjection(
     { conversationId: params.conversationId, user: deps.userId },
     'messageId parentMessageId tokenCount isCreatedByUser text quotes metadata',
   );
+  if (stored.length > MAX_PROJECTION_MESSAGES) {
+    return null;
+  }
+
   const branch = resolveBranch(stored, params.messageId);
   if (branch.length === 0) {
+    return null;
+  }
+  if (
+    branch.length > MAX_PROJECTION_BRANCH_MESSAGES ||
+    hasExceededBranchTextLimit(branch)
+  ) {
     return null;
   }
 
