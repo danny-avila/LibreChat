@@ -1001,17 +1001,18 @@ describe('createAdminConfigHandlers', () => {
         {},
         10,
         undefined,
-        { expectEmpty: true },
+        { expectEmpty: true, preservePriority: true },
       );
     });
 
-    it('preserves existing priority for ASSIGN_CONFIGS-only empty-overrides upsert', async () => {
+    it('requests atomic priority preservation for ASSIGN_CONFIGS-only empty-overrides upsert', async () => {
+      const findConfigByPrincipal = jest
+        .fn()
+        .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} });
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
         hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest
-          .fn()
-          .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} }),
+        findConfigByPrincipal,
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1027,10 +1028,11 @@ describe('createAdminConfigHandlers', () => {
         'admin',
         expect.anything(),
         {},
-        7,
+        10,
         undefined,
-        { expectEmpty: true },
+        { expectEmpty: true, preservePriority: true },
       );
+      expect(findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
     it('rejects non-empty overrides for ASSIGN_CONFIGS-only caller', async () => {
@@ -1156,7 +1158,7 @@ describe('createAdminConfigHandlers', () => {
         {},
         10,
         undefined,
-        { expectEmpty: true },
+        { expectEmpty: true, preservePriority: true },
       );
     });
 
@@ -1289,7 +1291,7 @@ describe('createAdminConfigHandlers', () => {
         expect.anything(),
         expect.anything(),
         undefined,
-        { expectEmpty: true },
+        { expectEmpty: true, preservePriority: true },
       );
     });
 

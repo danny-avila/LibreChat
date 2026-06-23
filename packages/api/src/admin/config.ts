@@ -79,7 +79,7 @@ export interface AdminConfigDeps {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean },
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -399,13 +399,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
       }
 
-      const existing =
-        priority != null && !hasBroadManage
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
       const requestedPriority = hasBroadManage
         ? (priority ?? DEFAULT_PRIORITY)
-        : (existing?.priority ?? DEFAULT_PRIORITY);
+        : DEFAULT_PRIORITY;
+      const upsertOptions = hasBroadManage
+        ? { expectEmpty: false }
+        : { expectEmpty: true, preservePriority: true };
 
       const config = await upsertConfig(
         principalType,
@@ -414,7 +413,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         filteredOverrides,
         requestedPriority,
         undefined,
-        { expectEmpty: !hasBroadManage },
+        upsertOptions,
       );
       if (!config && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
