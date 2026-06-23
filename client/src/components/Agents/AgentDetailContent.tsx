@@ -196,6 +196,8 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
         >
           {isFavorite ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
         </Button>
+
+        {/* NJ: We don't want users to share agents ATM
         <Button
           variant="outline"
           size="icon"
@@ -205,6 +207,8 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
         >
           <Link className="h-4 w-4" aria-hidden="true" />
         </Button>
+        */}
+
         {/* NJ: Give users a way to edit their own copy of an agent */}
         <Button variant="outline" onClick={handleDuplicate} disabled={!agent}>
           Duplicate<span className="sr-only"> agent {agent?.name}</span>
