@@ -77,9 +77,9 @@ const RESOLVED_DECLS = new Set([
 /** A `<style>` rule reduced to the paint/opacity declarations we resolve. */
 type StyleRule = { selector: string; declarations: Map<string, string> };
 
-/** Matches paint declarations inside a `<style>` block (not `color`, which only
- * resolves `currentColor` rather than painting on its own). */
-const CSS_COLOR_REGEX = /(?:fill|stroke|stop-color)\s*:\s*([^;}]+)/gi;
+/** Matches paint declarations inside a `<style>` block, capturing property and
+ * value (not `color`, which only resolves `currentColor` rather than painting). */
+const CSS_COLOR_REGEX = /(fill|stroke|stop-color)\s*:\s*([^;}]+)/gi;
 
 function hexToRgb(hex: string): [number, number, number] | null {
   let value = hex.slice(1);
@@ -306,16 +306,50 @@ function colorsFromStyleBlocks(root: Element, rules: StyleRule[]): string[] {
       }
       const selector = rule.slice(0, brace).trim();
       for (const match of rule.slice(brace + 1).matchAll(CSS_COLOR_REGEX)) {
-        const value = match[1].trim();
+        const property = match[1].toLowerCase();
+        const value = match[2].trim();
         if (value.toLowerCase() === CURRENT_COLOR) {
           colors.push(...resolveCssCurrentColor(root, selector, rules));
-        } else {
+        } else if (selectorPaintsRendered(root, selector, rules, property)) {
           colors.push(value);
         }
       }
     }
   }
   return colors;
+}
+
+/**
+ * True when a CSS selector matches at least one element that actually paints: it
+ * is rendered (not `display:none`), is not inside a functional template, and the
+ * paint is not made invisible by opacity. Unused or hidden rules contribute no
+ * tone. The root element is checked too, since `querySelectorAll` only walks
+ * descendants.
+ */
+function selectorPaintsRendered(
+  root: Element,
+  selector: string,
+  rules: StyleRule[],
+  paintProp: string,
+): boolean {
+  if (selector === '') {
+    return false;
+  }
+  let matched: Element[];
+  try {
+    matched = Array.from(root.querySelectorAll(selector));
+    if (root.matches(selector)) {
+      matched = [root, ...matched];
+    }
+  } catch {
+    return true;
+  }
+  return matched.some(
+    (el) =>
+      !isHidden(el, root, rules) &&
+      !isInside(el, root, FUNCTIONAL_CONTAINERS) &&
+      !paintInvisible(el, root, rules, paintProp),
+  );
 }
 
 /**
