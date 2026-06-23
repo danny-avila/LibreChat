@@ -238,7 +238,9 @@ const TwoFactorAuthentication: React.FC = () => {
                         key={step}
                         animate={{
                           color:
-                            currentStep >= index ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                            currentStep >= index
+                              ? 'rgb(var(--text-primary))'
+                              : 'rgb(var(--text-tertiary))',
                         }}
                         className="font-medium"
                       >
