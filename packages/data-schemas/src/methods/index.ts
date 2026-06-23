@@ -1,9 +1,9 @@
 import type { RoleMethods, RoleDeps } from './role';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
+import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
-import { createFileMethods, type FileMethods } from './file';
 import { createKeyMethods, type KeyMethods } from './key';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
@@ -288,6 +288,7 @@ export type {
   RoleMethods,
   KeyMethods,
   FileMethods,
+  FileOwnerScope,
   MemoryMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,
