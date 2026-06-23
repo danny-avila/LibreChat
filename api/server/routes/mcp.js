@@ -47,6 +47,7 @@ const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middlew
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -708,11 +709,16 @@ router.post(
 
       const result = await reinitMCPServer({
         user,
-        req,
         serverName,
         serverConfig,
         configServers,
         userMCPAuthMap,
+        upstreamTokenProvider: createOpenIDSessionTokenProvider({
+          req,
+          res,
+          user: req.user,
+          tokenPreference: 'access_token',
+        }),
       });
 
       if (!result) {

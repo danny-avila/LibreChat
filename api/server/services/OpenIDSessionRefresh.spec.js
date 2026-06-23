@@ -11,15 +11,20 @@ jest.mock('@librechat/data-schemas', () => ({
     warn: jest.fn(),
     info: jest.fn(),
   },
+  DEFAULT_REFRESH_TOKEN_EXPIRY: 1000 * 60 * 60 * 24 * 7,
 }));
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(),
+  math: jest.fn((_value, fallback) => fallback),
   buildOpenIDRefreshParams: jest.fn(() => ({ scope: 'openid profile' })),
+  setRefreshTokenCookie: jest.fn((res, refreshToken, expires) => {
+    res.cookie('refreshToken', refreshToken, { expires });
+  }),
 }));
 
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
-const { isEnabled, buildOpenIDRefreshParams } = require('@librechat/api');
+const { isEnabled, buildOpenIDRefreshParams, setRefreshTokenCookie } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const {
   createOpenIDSessionTokenProvider,
@@ -39,6 +44,12 @@ const buildReq = (sessionTokens, sessionId = 'session-A') => ({
     },
     sessionTokens === undefined ? {} : { openidTokens: sessionTokens },
   ),
+});
+
+/** Minimal writable Express response stub for cookie-sync assertions. */
+const buildRes = ({ headersSent = false } = {}) => ({
+  headersSent,
+  cookie: jest.fn(),
 });
 
 const makeOpenIdUser = (overrides = {}) => ({
@@ -137,7 +148,7 @@ describe('OpenIDSessionRefresh', () => {
       };
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -170,7 +181,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(result.access_token).not.toBe(sessionTokens.accessToken);
@@ -192,7 +203,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(buildOpenIDRefreshParams).toHaveBeenCalled();
@@ -219,7 +230,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(req.session.save).toHaveBeenCalledTimes(1);
@@ -248,7 +259,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(result.id_token).toBe(priorIdToken);
       expect(result.refresh_token).toBe('rt-keep');
@@ -278,7 +289,7 @@ describe('OpenIDSessionRefresh', () => {
       const req = buildReq(sessionTokens);
       const beforeSec = Math.floor(Date.now() / 1000);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       // expires_at should be ~now + 3600, NOT the stale prior id_token exp
       expect(result.expires_at).toBeGreaterThanOrEqual(beforeSec + 3590);
@@ -294,7 +305,7 @@ describe('OpenIDSessionRefresh', () => {
       };
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
       expect(result).toBeNull();
@@ -310,9 +321,9 @@ describe('OpenIDSessionRefresh', () => {
       openIdClient.refreshTokenGrant.mockRejectedValueOnce(new Error('invalid_grant'));
       const req = buildReq(sessionTokens);
 
-      await expect(refreshOpenIDSession(req, makeOpenIdUser(), 'access_token')).rejects.toThrow(
-        'invalid_grant',
-      );
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('invalid_grant');
       expect(req.session.save).not.toHaveBeenCalled();
     });
 
@@ -329,9 +340,87 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      await expect(refreshOpenIDSession(req, makeOpenIdUser(), 'access_token')).rejects.toThrow(
-        /no access_token/i,
-      );
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow(/no access_token/i);
+    });
+  });
+
+  describe('rotated refresh-token cookie sync', () => {
+    const buildExpiredSession = (refreshToken) => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      return {
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken,
+      };
+    };
+
+    it('writes the rotated refresh token to the cookie when res is writable', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: false });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(setRefreshTokenCookie).toHaveBeenCalledTimes(1);
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(res, 'rt-rotated', expect.any(Date));
+    });
+
+    it('does not write the cookie when the IdP does not rotate the refresh token', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        // refresh_token omitted → preserved as 'rt-stable'
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-stable'));
+      const res = buildRes({ headersSent: false });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+    });
+
+    it('skips the cookie write when response headers are already sent (streaming path)', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: true });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      /** Session copy remains authoritative even when the cookie can't be set. */
+      expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
+    });
+
+    it('does not throw when no res is provided', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).resolves.toBeDefined();
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
     });
   });
 
@@ -352,8 +441,8 @@ describe('OpenIDSessionRefresh', () => {
       const req = buildReq(sessionTokens, 'session-shared');
       const user = makeOpenIdUser();
 
-      const p1 = refreshOpenIDSession(req, user, 'access_token');
-      const p2 = refreshOpenIDSession(req, user, 'access_token');
+      const p1 = refreshOpenIDSession(req, undefined, user, 'access_token');
+      const p2 = refreshOpenIDSession(req, undefined, user, 'access_token');
 
       // Both calls land before the IdP responds
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
@@ -405,8 +494,8 @@ describe('OpenIDSessionRefresh', () => {
       openIdClient.refreshTokenGrant.mockReturnValueOnce(promiseA).mockReturnValueOnce(promiseB);
 
       const user = makeOpenIdUser();
-      const pA = refreshOpenIDSession(reqA, user, 'access_token');
-      const pB = refreshOpenIDSession(reqB, user, 'access_token');
+      const pA = refreshOpenIDSession(reqA, undefined, user, 'access_token');
+      const pB = refreshOpenIDSession(reqB, undefined, user, 'access_token');
 
       // Two refreshes started, one per session
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(2);
@@ -442,7 +531,9 @@ describe('OpenIDSessionRefresh', () => {
       const req = buildReq(sessionTokens);
       const user = makeOpenIdUser();
 
-      await expect(refreshOpenIDSession(req, user, 'access_token')).rejects.toThrow('transient');
+      await expect(refreshOpenIDSession(req, undefined, user, 'access_token')).rejects.toThrow(
+        'transient',
+      );
       expect(__internals.inFlightRefreshes.size).toBe(0);
 
       // Second attempt: succeed
@@ -453,8 +544,49 @@ describe('OpenIDSessionRefresh', () => {
         refresh_token: 'rt-recovered',
         expires_in: 3600,
       });
-      const result = await refreshOpenIDSession(req, user, 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, user, 'access_token');
       expect(result.refresh_token).toBe('rt-recovered');
+    });
+
+    it('hydrates a joining request that shares the session id but carries a distinct req', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const makeExpiredSession = (refreshToken) => ({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken,
+      });
+      /** Two concurrent HTTP requests from the same browser session. */
+      const leaderReq = buildReq(makeExpiredSession('rt-stale'), 'session-joined');
+      const joinerReq = buildReq(makeExpiredSession('rt-stale'), 'session-joined');
+      const user = makeOpenIdUser();
+
+      let resolveGrant;
+      const grantPromise = new Promise((resolve) => {
+        resolveGrant = resolve;
+      });
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(grantPromise);
+
+      const leaderPromise = refreshOpenIDSession(leaderReq, undefined, user, 'access_token');
+      const joinerPromise = refreshOpenIDSession(joinerReq, undefined, user, 'access_token');
+
+      // Only the leader hit the IdP; the joiner coalesced onto it.
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      resolveGrant({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+
+      const [leaderTokens, joinerTokens] = await Promise.all([leaderPromise, joinerPromise]);
+
+      expect(leaderTokens.refresh_token).toBe('rt-rotated');
+      expect(joinerTokens.refresh_token).toBe('rt-rotated');
+      // The joiner's OWN session is hydrated so a later OBO call won't replay rt-stale.
+      expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
+      expect(joinerReq.session.save).toHaveBeenCalled();
     });
   });
 
@@ -517,7 +649,7 @@ describe('OpenIDSessionRefresh', () => {
       };
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -544,7 +676,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      const result = await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(result.access_token).toBe('opaque-fresh');
@@ -564,7 +696,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
     });
@@ -583,7 +715,7 @@ describe('OpenIDSessionRefresh', () => {
       const req = buildReq(sessionTokens);
       const beforeSec = Math.floor(Date.now() / 1000);
 
-      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       const persistedExp = req.session.openidTokens.accessTokenExpiresAt;
       expect(typeof persistedExp).toBe('number');
@@ -605,7 +737,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       expect(req.session.openidTokens).not.toHaveProperty('accessTokenExpiresAt');
     });
@@ -648,7 +780,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       // The long-lived id_token exp must NOT have been borrowed for the access token.
       expect(req.session.openidTokens).not.toHaveProperty('accessTokenExpiresAt');
@@ -668,7 +800,7 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+      await refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token');
 
       // accessTokenExpiresAt comes from the access token's own JWT exp, not the id_token.
       expect(req.session.openidTokens.accessTokenExpiresAt).toBe(accessExp);

@@ -1,8 +1,13 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('node:crypto');
 const openIdClient = require('openid-client');
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, buildOpenIDRefreshParams } = require('@librechat/api');
+const { logger, DEFAULT_REFRESH_TOKEN_EXPIRY } = require('@librechat/data-schemas');
+const {
+  isEnabled,
+  math,
+  buildOpenIDRefreshParams,
+  setRefreshTokenCookie,
+} = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 
 /**
@@ -223,7 +228,29 @@ async function persistSession(req) {
   });
 }
 
-async function performIdpRefresh(req, tokenPreference) {
+/**
+ * Writes the rotated refresh token to the browser `refreshToken` cookie so it
+ * stays in sync with the session copy. Uses the shared `setRefreshTokenCookie`
+ * helper to match the options written at login/refresh
+ * (`setOpenIDAuthTokens`). The cookie outlives the express-session cookie and
+ * is the fallback `refreshController` reads when the session is gone; without
+ * this sync an OBO-triggered rotation would leave a stale, invalidated token in
+ * the cookie and sign the user out on the next post-session-loss refresh.
+ *
+ * No-op when `res` is unavailable or its headers are already sent — which is
+ * the case on the streaming agent tool-call path (SSE headers flush before any
+ * tool runs). There the session copy remains authoritative and the next
+ * non-streaming `/api/auth/refresh` re-syncs the cookie via setOpenIDAuthTokens.
+ */
+function syncRefreshTokenCookie(res, refreshToken) {
+  if (!res || res.headersSent || typeof res.cookie !== 'function') {
+    return;
+  }
+  const expiryInMilliseconds = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
+  setRefreshTokenCookie(res, refreshToken, new Date(Date.now() + expiryInMilliseconds));
+}
+
+async function performIdpRefresh(req, res, tokenPreference) {
   const sessionTokens = req?.session?.openidTokens;
   const refreshToken = sessionTokens?.refreshToken;
   if (!refreshToken) {
@@ -291,6 +318,14 @@ async function performIdpRefresh(req, tokenPreference) {
   req.session.openidTokens = updatedSessionTokens;
   await persistSession(req);
 
+  /**
+   * Keep the browser refresh-token cookie in sync when the IdP rotated it.
+   * Best-effort: a no-op on the streaming tool-call path (headers already sent).
+   */
+  if (nextRefreshToken !== refreshToken) {
+    syncRefreshTokenCookie(res, nextRefreshToken);
+  }
+
   logger.info('[OpenIDSessionRefresh] Inline refresh succeeded');
   /**
    * Pass the same expiry as the explicit `expiresAtOverride` so the returned
@@ -304,7 +339,36 @@ async function performIdpRefresh(req, tokenPreference) {
   );
 }
 
-async function refreshOrReuseSession(req, tokenPreference) {
+/**
+ * Hydrates `req.session.openidTokens` from a resolved OIDCTokens result and
+ * persists it. Used by joining requests in the single-flight path: the leader
+ * mutates only its own `req.session`, so a joiner that shares the session id but
+ * carries a distinct `req` (concurrent HTTP requests) would otherwise re-read a
+ * pre-rotation refresh token on its next OBO call and fail with invalid_grant.
+ * Idempotent when the joiner shares the leader's `req` object.
+ */
+async function hydrateSessionFromResolvedTokens(req, resolvedTokens) {
+  if (!req?.session || !resolvedTokens?.access_token) {
+    return;
+  }
+  const existing = req.session.openidTokens ?? {};
+  if (existing.refreshToken === resolvedTokens.refresh_token) {
+    return;
+  }
+  req.session.openidTokens = {
+    ...existing,
+    accessToken: resolvedTokens.access_token,
+    idToken: resolvedTokens.id_token ?? existing.idToken,
+    refreshToken: resolvedTokens.refresh_token ?? existing.refreshToken,
+    lastRefreshedAt: Date.now(),
+  };
+  if (typeof resolvedTokens.expires_at === 'number') {
+    req.session.openidTokens.accessTokenExpiresAt = resolvedTokens.expires_at;
+  }
+  await persistSession(req);
+}
+
+async function refreshOrReuseSession(req, res, tokenPreference) {
   const sessionTokens = req?.session?.openidTokens;
   if (!sessionTokens) {
     logger.debug('[OpenIDSessionRefresh] No session tokens to refresh from');
@@ -316,7 +380,7 @@ async function refreshOrReuseSession(req, tokenPreference) {
     return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
   }
 
-  return performIdpRefresh(req, tokenPreference);
+  return performIdpRefresh(req, res, tokenPreference);
 }
 
 /**
@@ -325,24 +389,33 @@ async function refreshOrReuseSession(req, tokenPreference) {
  * not pin subsequent retries.
  *
  * @param {import('express').Request} req
+ * @param {import('express').Response} [res] — when present and writable, the
+ *   rotated refresh token is mirrored to the `refreshToken` cookie.
  * @param {import('@librechat/data-schemas').IUser} user
  * @param {'access_token' | 'id_token'} tokenPreference — required; selects
  *   which token's `exp` gates the live-vs-refresh decision and populates the
  *   returned `expires_at`. OBO callers pass 'access_token'.
  */
-async function refreshOpenIDSession(req, user, tokenPreference) {
+async function refreshOpenIDSession(req, res, user, tokenPreference) {
   const key = getSingleFlightKey(req, user);
   if (!key) {
-    return refreshOrReuseSession(req, tokenPreference);
+    return refreshOrReuseSession(req, res, tokenPreference);
   }
 
   const inFlight = inFlightRefreshes.get(key);
   if (inFlight) {
     logger.debug(`[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(key)})`);
-    return inFlight;
+    const resolvedTokens = await inFlight;
+    /**
+     * The leader mutated only its own request's session. Copy the resolved
+     * tokens into THIS request's session so a later OBO call on the joiner
+     * reads the rotated refresh token instead of replaying the stale one.
+     */
+    await hydrateSessionFromResolvedTokens(req, resolvedTokens);
+    return resolvedTokens;
   }
 
-  const promise = refreshOrReuseSession(req, tokenPreference).finally(() => {
+  const promise = refreshOrReuseSession(req, res, tokenPreference).finally(() => {
     if (inFlightRefreshes.get(key) === promise) {
       inFlightRefreshes.delete(key);
     }
@@ -387,11 +460,14 @@ function isOIDCRefreshApplicable(user) {
  *
  * @param {object} args
  * @param {import('express').Request} [args.req]
+ * @param {import('express').Response} [args.res] — forwarded so a rotated
+ *   refresh token can be mirrored to the `refreshToken` cookie when the
+ *   response is still writable (no-op on the streaming tool-call path).
  * @param {import('@librechat/data-schemas').IUser} [args.user]
  * @param {'access_token' | 'id_token'} args.tokenPreference
  * @returns {() => Promise<import('@librechat/data-schemas').OIDCTokens | null>}
  */
-function createOpenIDSessionTokenProvider({ req, user, tokenPreference }) {
+function createOpenIDSessionTokenProvider({ req, res, user, tokenPreference }) {
   if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
     throw new Error(
       `[OpenIDSessionRefresh] createOpenIDSessionTokenProvider requires tokenPreference 'access_token' or 'id_token', got: ${tokenPreference}`,
@@ -407,7 +483,7 @@ function createOpenIDSessionTokenProvider({ req, user, tokenPreference }) {
       );
       return null;
     }
-    return refreshOpenIDSession(req, user, tokenPreference);
+    return refreshOpenIDSession(req, res, user, tokenPreference);
   };
 }
 

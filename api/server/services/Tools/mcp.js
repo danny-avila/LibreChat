@@ -6,7 +6,6 @@ const { findToken, createToken, updateToken, deleteTokens } = require('~/models'
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
-const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { updateMCPServerTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
@@ -16,7 +15,7 @@ const { getLogStores } = require('~/cache');
  * (per MCP spec, tool listing should be possible without auth).
  * @param {Object} params
  * @param {IUser} params.user - The user from the request object.
- * @param {ServerRequest} [params.req] - The Express request, threaded through so the OBO upstream-token closure can read/refresh `req.session.openidTokens` for connection-establishment OBO calls.
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO connection establishment, built at the request boundary so this layer never receives the raw Express request.
  * @param {string} params.serverName - The name of the MCP server
  * @param {boolean} params.returnOnOAuth - Whether to initiate OAuth and return, or wait for OAuth flow to finish
  * @param {AbortSignal} [params.signal] - The abort signal to handle cancellation.
@@ -31,7 +30,6 @@ const { getLogStores } = require('~/cache');
  */
 async function reinitMCPServer({
   user,
-  req,
   signal,
   forceNew,
   serverName,
@@ -44,6 +42,7 @@ async function reinitMCPServer({
   serverConfig: providedConfig,
   requestBody,
   requestScopedConnections,
+  upstreamTokenProvider,
   oauthEnd,
 }) {
   /** @type {MCPConnection | null} */
@@ -155,11 +154,7 @@ async function reinitMCPServer({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
-        upstreamTokenProvider: createOpenIDSessionTokenProvider({
-          req,
-          user,
-          tokenPreference: 'access_token',
-        }),
+        upstreamTokenProvider,
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
@@ -197,11 +192,7 @@ async function reinitMCPServer({
             graphTokenResolver: getGraphApiToken,
             oboTokenResolver: exchangeOboToken,
             oboTrustChecker: createOboTrustChecker(),
-            upstreamTokenProvider: createOpenIDSessionTokenProvider({
-              req,
-              user,
-              tokenPreference: 'access_token',
-            }),
+            upstreamTokenProvider,
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {

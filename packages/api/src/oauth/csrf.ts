@@ -47,6 +47,26 @@ export function shouldUseSecureCookie(): boolean {
   return isProduction && !isLocalhost;
 }
 
+export const REFRESH_TOKEN_COOKIE = 'refreshToken';
+
+/**
+ * Writes the IdP refresh token to the `refreshToken` cookie. Single source of
+ * truth for the cookie's options so the login/refresh path
+ * (`setOpenIDAuthTokens`) and the inline OBO refresh path (`performIdpRefresh`)
+ * stay byte-for-byte in sync. The cookie outlives the (shorter) express-session
+ * cookie and is the fallback `refreshController` reads when the session copy is
+ * gone, so a rotated refresh token must land here too — otherwise a later
+ * session loss replays an invalidated token and signs the user out.
+ */
+export function setRefreshTokenCookie(res: Response, refreshToken: string, expires: Date): void {
+  res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, {
+    expires,
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict',
+  });
+}
+
 /** Generates an HMAC-based token for OAuth CSRF protection */
 export function generateOAuthCsrfToken(flowId: string, secret?: string): string {
   const key = secret || process.env.JWT_SECRET;

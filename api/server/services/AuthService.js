@@ -18,6 +18,7 @@ const {
   CLOUDFRONT_SCOPE_COOKIE,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
+  setRefreshTokenCookie,
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const {
@@ -782,12 +783,7 @@ const setOpenIDAuthTokens = (
      * The refresh token is small (opaque string) so it doesn't hit the HTTP/2 header
      * size limits that motivated session storage for the larger access_token/id_token.
      */
-    res.cookie('refreshToken', refreshToken, {
-      expires: expirationDate,
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
+    setRefreshTokenCookie(res, refreshToken, expirationDate);
 
     /** Store tokens server-side in session to avoid large cookies */
     if (req.session) {

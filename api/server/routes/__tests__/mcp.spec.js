@@ -1907,12 +1907,13 @@ describe('MCP Routes', () => {
     });
 
     /**
-     * Codex Finding 2 regression: the reinitialize route must forward `req`
-     * to reinitMCPServer so that OBO servers can build a session-aware
-     * upstream-token closure. Without this, OBO reinit fails with
-     * `missing_upstream_token` even when the user has a valid session.
+     * Codex Finding 2 regression: the reinitialize route must forward a
+     * session-aware upstream-token closure to reinitMCPServer so OBO servers
+     * can mint a downstream token. The closure is built at the route boundary
+     * (from req/res) and passed as `upstreamTokenProvider`; the raw `req` is
+     * NOT threaded into the MCP layer.
      */
-    it('should forward req into reinitMCPServer so OBO upstream-token closure has session access', async () => {
+    it('forwards an upstream-token closure (not req) into reinitMCPServer for OBO session access', async () => {
       const mockMcpManager = {
         disconnectUserConnection: jest.fn().mockResolvedValue(),
       };
@@ -1925,7 +1926,11 @@ describe('MCP Routes', () => {
 
       await request(app).post('/api/mcp/obo-server/reinitialize');
 
-      expect(reinitSpy).toHaveBeenCalledWith(expect.objectContaining({ req: expect.any(Object) }));
+      expect(reinitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ upstreamTokenProvider: expect.any(Function) }),
+      );
+      const [params] = reinitSpy.mock.calls[reinitSpy.mock.calls.length - 1];
+      expect(params).not.toHaveProperty('req');
     });
 
     it('should return 500 when unexpected error occurs', async () => {

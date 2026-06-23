@@ -19,24 +19,35 @@ jest.mock(
 );
 jest.mock(
   '@librechat/api',
-  () => ({
-    isEnabled: jest.fn((val) => val === 'true' || val === true),
-    checkEmailConfig: jest.fn(),
-    isEmailDomainAllowed: jest.fn(),
-    math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
-    shouldUseSecureCookie: jest.fn(() => false),
-    resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
-    setCloudFrontCookies: jest.fn(() => true),
-    getCloudFrontConfig: jest.fn(() => ({
-      domain: 'https://cdn.example.com',
-      imageSigning: 'cookies',
-      cookieDomain: '.example.com',
-      privateKey: 'test-private-key',
-      keyPairId: 'K123ABC',
-    })),
-    parseCloudFrontCookieScope: jest.fn(() => null),
-    CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
-  }),
+  () => {
+    const shouldUseSecureCookie = jest.fn(() => false);
+    return {
+      isEnabled: jest.fn((val) => val === 'true' || val === true),
+      checkEmailConfig: jest.fn(),
+      isEmailDomainAllowed: jest.fn(),
+      math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
+      shouldUseSecureCookie,
+      setRefreshTokenCookie: jest.fn((res, refreshToken, expires) => {
+        res.cookie('refreshToken', refreshToken, {
+          expires,
+          httpOnly: true,
+          secure: shouldUseSecureCookie(),
+          sameSite: 'strict',
+        });
+      }),
+      resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+      setCloudFrontCookies: jest.fn(() => true),
+      getCloudFrontConfig: jest.fn(() => ({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'cookies',
+        cookieDomain: '.example.com',
+        privateKey: 'test-private-key',
+        keyPairId: 'K123ABC',
+      })),
+      parseCloudFrontCookieScope: jest.fn(() => null),
+      CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
+    };
+  },
   { virtual: true },
 );
 jest.mock('~/models', () => ({

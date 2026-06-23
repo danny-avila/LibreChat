@@ -1,4 +1,4 @@
-import { shouldUseSecureCookie } from './csrf';
+import { shouldUseSecureCookie, setRefreshTokenCookie, REFRESH_TOKEN_COOKIE } from './csrf';
 
 describe('shouldUseSecureCookie', () => {
   const originalEnv = process.env;
@@ -124,5 +124,48 @@ describe('shouldUseSecureCookie', () => {
       process.env.DOMAIN_SERVER = 'http://LOCALHOST:3080';
       expect(shouldUseSecureCookie()).toBe(false);
     });
+  });
+});
+
+describe('setRefreshTokenCookie', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.SESSION_COOKIE_SECURE;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('writes the refresh token cookie with httpOnly + strict sameSite and the given expiry', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DOMAIN_SERVER = 'https://myapp.example.com';
+    const res = { cookie: jest.fn() } as unknown as import('express').Response;
+    const expires = new Date(Date.now() + 1000);
+
+    setRefreshTokenCookie(res, 'rt-value', expires);
+
+    expect(res.cookie).toHaveBeenCalledWith(REFRESH_TOKEN_COOKIE, 'rt-value', {
+      expires,
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+    });
+  });
+
+  it('uses an insecure cookie on localhost', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DOMAIN_SERVER = 'http://localhost:3080';
+    const res = { cookie: jest.fn() } as unknown as import('express').Response;
+
+    setRefreshTokenCookie(res, 'rt-value', new Date());
+
+    expect(res.cookie).toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      'rt-value',
+      expect.objectContaining({ secure: false }),
+    );
   });
 });

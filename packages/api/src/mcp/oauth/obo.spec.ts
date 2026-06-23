@@ -1,5 +1,5 @@
-import type { IUser } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver, UpstreamTokenProvider } from './obo';
 import { isOboConfigStillTrusted, resolveOboToken } from './obo';
 
@@ -13,11 +13,13 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/utils/oidc', () => ({
   isOpenIDTokenValid: jest.fn(),
+  extractOpenIDTokenInfo: jest.fn(),
 }));
 
-import { isOpenIDTokenValid } from '~/utils/oidc';
+import { isOpenIDTokenValid, extractOpenIDTokenInfo } from '~/utils/oidc';
 
 const mockIsOpenIDTokenValid = isOpenIDTokenValid as jest.Mock;
+const mockExtractOpenIDTokenInfo = extractOpenIDTokenInfo as jest.Mock;
 
 const farFutureExp = Math.floor(Date.now() / 1000) + 3600;
 
@@ -50,6 +52,8 @@ describe('resolveOboToken', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsOpenIDTokenValid.mockReturnValue(true);
+    /** Default: no federated-token fallback unless a test opts in. */
+    mockExtractOpenIDTokenInfo.mockReturnValue(null);
     (liveProvider as jest.Mock).mockResolvedValue(liveTokens);
     (mockResolver as jest.Mock).mockResolvedValue({
       access_token: 'exchanged-mcp-token',
@@ -57,7 +61,45 @@ describe('resolveOboToken', () => {
     });
   });
 
-  it('throws missing_upstream_token when provider returns null', async () => {
+  it('throws missing_upstream_token when provider returns null and no federated fallback', async () => {
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, nullProvider),
+    ).rejects.toMatchObject({
+      reason: 'missing_upstream_token',
+      retryable: false,
+    });
+    expect(mockResolver).not.toHaveBeenCalled();
+  });
+
+  it('falls back to user.federatedTokens for the OBO exchange when provider returns null', async () => {
+    /** OIDC remote-agent flow: bearer token on the user, no Express session. */
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
+      idToken: 'federated-id-token',
+      expiresAt: farFutureExp,
+      userId: 'oidc-sub-456',
+    });
+    mockIsOpenIDTokenValid.mockReturnValue(true);
+
+    const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver, nullProvider);
+
+    expect(mockExtractOpenIDTokenInfo).toHaveBeenCalledWith(mockUser);
+    expect(mockResolver).toHaveBeenCalledWith(
+      mockUser,
+      'federated-access-token',
+      'api://mcp-server-id/Mcp.Tools.ReadWrite',
+      true,
+    );
+    expect(result.access_token).toBe('exchanged-mcp-token');
+  });
+
+  it('throws missing_upstream_token when federated fallback token is invalid', async () => {
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
+      expiresAt: farFutureExp,
+    });
+    mockIsOpenIDTokenValid.mockReturnValue(false);
+
     await expect(
       resolveOboToken(mockUser as IUser, oboConfig, mockResolver, nullProvider),
     ).rejects.toMatchObject({

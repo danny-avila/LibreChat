@@ -41,7 +41,6 @@ const { findToken, createToken, updateToken, deleteTokens } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
-const { createOpenIDSessionTokenProvider } = require('./OpenIDSessionRefresh');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -381,7 +380,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 /**
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
- * @param {ServerRequest} [params.req] - The Express request, threaded through so the OBO upstream-token closure can read/refresh `req.session.openidTokens` at tool-call time.
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary so this layer never receives the raw Express request.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {AbortSignal} params.signal
@@ -395,7 +394,6 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  */
 async function reconnectServer({
   res,
-  req,
   user,
   index,
   signal,
@@ -405,6 +403,7 @@ async function reconnectServer({
   userMCPAuthMap,
   requestBody,
   requestScopedConnections,
+  upstreamTokenProvider,
   streamId = null,
 }) {
   logger.debug(
@@ -475,7 +474,6 @@ async function reconnectServer({
     });
     return await reinitMCPServer({
       user,
-      req,
       signal,
       serverName,
       configServers,
@@ -484,6 +482,7 @@ async function reconnectServer({
       userMCPAuthMap,
       requestBody,
       requestScopedConnections,
+      upstreamTokenProvider,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -516,11 +515,11 @@ async function reconnectServer({
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary.
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTools({
   res,
-  req,
   mcpPermissionContext,
   user,
   index,
@@ -532,6 +531,7 @@ async function createMCPTools({
   userMCPAuthMap,
   requestBody,
   requestScopedConnections,
+  upstreamTokenProvider,
   streamId = null,
 }) {
   const serverConfig =
@@ -562,7 +562,6 @@ async function createMCPTools({
 
   const result = await reconnectServer({
     res,
-    req,
     user,
     index,
     signal,
@@ -572,6 +571,7 @@ async function createMCPTools({
     userMCPAuthMap,
     requestBody,
     requestScopedConnections,
+    upstreamTokenProvider,
     streamId,
   });
   if (result === null) {
@@ -587,7 +587,6 @@ async function createMCPTools({
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
-      req,
       mcpPermissionContext,
       user,
       provider,
@@ -598,6 +597,7 @@ async function createMCPTools({
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
       requestBody,
       requestScopedConnections,
+      upstreamTokenProvider,
       config: serverConfig,
     });
     if (toolInstance) {
@@ -625,12 +625,12 @@ async function createMCPTools({
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary.
  * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
   res,
-  req,
   mcpPermissionContext,
   user,
   index,
@@ -643,6 +643,7 @@ async function createMCPTool({
   requestScopedConnections,
   config,
   configServers,
+  upstreamTokenProvider,
   onAvailableTools,
   streamId = null,
 }) {
@@ -692,7 +693,6 @@ async function createMCPTool({
     );
     const result = await reconnectServer({
       res,
-      req,
       user,
       index,
       signal,
@@ -702,6 +702,7 @@ async function createMCPTool({
       userMCPAuthMap,
       requestBody,
       requestScopedConnections,
+      upstreamTokenProvider,
       streamId,
     });
     if (result?.availableTools) {
@@ -724,7 +725,6 @@ async function createMCPTool({
 
   return createToolInstance({
     res,
-    req,
     mcpPermissionContext,
     user,
     requestBody,
@@ -734,13 +734,13 @@ async function createMCPTool({
     serverName,
     serverConfig,
     toolDefinition,
+    upstreamTokenProvider,
     streamId,
   });
 }
 
 function createToolInstance({
   res,
-  req: capturedReq = null,
   mcpPermissionContext,
   user: capturedUser = null,
   requestBody: capturedRequestBody,
@@ -750,6 +750,7 @@ function createToolInstance({
   serverConfig: capturedServerConfig,
   toolDefinition,
   provider: capturedProvider,
+  upstreamTokenProvider: capturedUpstreamTokenProvider = null,
   streamId = null,
 }) {
   /** @type {LCTool} */
@@ -829,25 +830,15 @@ function createToolInstance({
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
       /**
-       * Build the upstream-token closure from the captured Express request and
-       * the effective user so OBO reads the LIVE session at call time. Built
-       * here (not in the factory) because `req.session` is the source of truth
-       * for `req.session.openidTokens` and only the request layer can refresh
-       * and persist it via `req.session.save()`. No-op when reuse is off, the
-       * user is non-OpenID, or the session lacks openidTokens.
-       *
-       * `tokenPreference: 'access_token'` is required for OBO: the OBO grant
-       * sends the upstream access token to the IdP as the jwt-bearer assertion,
-       * so freshness must gate on access_token.exp specifically. An expired
-       * access_token under a still-fresh id_token would otherwise reach the
-       * IdP and be rejected.
+       * The upstream-token closure is built at the request boundary (where
+       * `req`/`res` are in scope) and captured here, so this layer never holds
+       * the raw Express request. The closure reads/refreshes the LIVE
+       * `req.session.openidTokens` at call time and persists rotations; it is a
+       * no-op when reuse is off, the user is non-OpenID, or the session lacks
+       * openidTokens. `tokenPreference: 'access_token'` (set at construction)
+       * is required for OBO since the grant sends the access token to the IdP
+       * as the jwt-bearer assertion.
        */
-      const upstreamTokenProvider = createOpenIDSessionTokenProvider({
-        req: capturedReq,
-        user: effectiveUser,
-        tokenPreference: 'access_token',
-      });
-
       const result = await mcpManager.callTool({
         serverName,
         serverConfig: capturedServerConfig,
@@ -874,7 +865,7 @@ function createToolInstance({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
-        upstreamTokenProvider,
+        upstreamTokenProvider: capturedUpstreamTokenProvider,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

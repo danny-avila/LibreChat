@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser, OIDCTokens } from '@librechat/data-schemas';
-import { isOpenIDTokenValid } from '~/utils/oidc';
 import type { OpenIDTokenInfo } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
+import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
 
 export interface OboConfig {
   scopes: string;
@@ -132,6 +132,32 @@ function isRetryableOboExchangeError(error: unknown): boolean {
 }
 
 /**
+ * Resolves the upstream OpenID token info used for the OBO exchange. The live
+ * session (via `upstreamTokenProvider`) is the preferred source because it can
+ * inline-refresh an expired access token. When no live session exists — the
+ * OIDC remote-agent flow verifies a bearer token and attaches it to
+ * `user.federatedTokens` without an Express session — fall back to the token
+ * snapshot on the user via `extractOpenIDTokenInfo`. Returns null when neither
+ * source yields a token; the caller maps that to `missing_upstream_token`.
+ */
+function buildUpstreamTokenInfo(
+  user: IUser,
+  liveTokens: OIDCTokens | null,
+): OpenIDTokenInfo | null {
+  if (liveTokens) {
+    return {
+      accessToken: liveTokens.access_token,
+      idToken: liveTokens.id_token,
+      expiresAt: liveTokens.expires_at,
+      userId: user.openidId || user.id,
+      userEmail: user.email,
+      userName: user.name || user.username,
+    };
+  }
+  return extractOpenIDTokenInfo(user);
+}
+
+/**
  * Performs an OBO token exchange for the given user and MCP server OBO config.
  * Returns MCPOAuthTokens suitable for injection into the MCP connection.
  *
@@ -142,6 +168,10 @@ function isRetryableOboExchangeError(error: unknown): boolean {
  * request validation, which is what previously caused the walk-away failure mode
  * ("No valid OpenID access token is available for OBO exchange") on long-running
  * tool calls. Required (not optional) so wiring bugs surface at compile time.
+ *
+ * When the provider yields no live session (it resolves to null), this falls
+ * back to `user.federatedTokens` so the OIDC remote-agent flow — which carries a
+ * verified bearer token but no Express session — still works.
  */
 export async function resolveOboToken(
   user: IUser,
@@ -162,27 +192,12 @@ export async function resolveOboToken(
     );
   }
 
-  if (!liveTokens) {
+  const tokenInfo = buildUpstreamTokenInfo(user, liveTokens);
+
+  if (!tokenInfo || !isOpenIDTokenValid(tokenInfo)) {
     logger.warn(
-      `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens})`,
+      `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens}, hadLiveSession: ${!!liveTokens})`,
     );
-    throw new OboTokenResolutionError(
-      'missing_upstream_token',
-      'No valid OpenID access token is available for OBO exchange.',
-    );
-  }
-
-  const tokenInfo: OpenIDTokenInfo = {
-    accessToken: liveTokens.access_token,
-    idToken: liveTokens.id_token,
-    expiresAt: liveTokens.expires_at,
-    userId: user.openidId || user.id,
-    userEmail: user.email,
-    userName: user.name || user.username,
-  };
-
-  if (!isOpenIDTokenValid(tokenInfo)) {
-    logger.warn('[OBO] Live OpenID token is not valid for OBO exchange');
     throw new OboTokenResolutionError(
       'missing_upstream_token',
       'No valid OpenID access token is available for OBO exchange.',

@@ -95,11 +95,6 @@ jest.mock('./OboPolicyService', () => ({
   createOboTrustChecker: jest.fn(() => jest.fn()),
 }));
 
-const mockCreateOpenIDSessionTokenProvider = jest.fn(() => async () => null);
-jest.mock('./OpenIDSessionRefresh', () => ({
-  createOpenIDSessionTokenProvider: (args) => mockCreateOpenIDSessionTokenProvider(args),
-}));
-
 describe('tests for the new helper functions used by the MCP connection status endpoints', () => {
   let mockGetMCPManager;
   let mockGetFlowStateManager;
@@ -1259,7 +1254,7 @@ describe('User parameter passing tests', () => {
       );
     });
 
-    it('builds the upstream-token closure with the captured req and forwards it to callTool', async () => {
+    it('forwards the pre-built upstream-token closure to callTool without receiving req', async () => {
       const mockUser = {
         id: 'obo-user',
         email: 'obo@example.com',
@@ -1267,7 +1262,6 @@ describe('User parameter passing tests', () => {
         provider: 'openid',
       };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
-      const mockReq = { session: { openidTokens: {} } };
       const { getRoleByName } = require('~/models');
       getRoleByName.mockResolvedValue({
         permissions: {
@@ -1278,18 +1272,17 @@ describe('User parameter passing tests', () => {
       });
 
       const sentinelClosure = async () => null;
-      mockCreateOpenIDSessionTokenProvider.mockReturnValueOnce(sentinelClosure);
 
       const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
       mockGetMCPManager.mockReturnValue({ callTool: mockCallTool });
 
       const mcpTool = await createMCPTool({
         res: mockRes,
-        req: mockReq,
         user: mockUser,
         toolKey: `test-tool${D}test-server`,
         provider: 'openai',
         userMCPAuthMap: {},
+        upstreamTokenProvider: sentinelClosure,
         availableTools: {
           [`test-tool${D}test-server`]: {
             function: {
@@ -1311,11 +1304,6 @@ describe('User parameter passing tests', () => {
         ),
       ).resolves.toBe('ok');
 
-      expect(mockCreateOpenIDSessionTokenProvider).toHaveBeenCalledWith({
-        req: mockReq,
-        user: mockUser,
-        tokenPreference: 'access_token',
-      });
       expect(mockCallTool).toHaveBeenCalledWith(
         expect.objectContaining({
           upstreamTokenProvider: sentinelClosure,
