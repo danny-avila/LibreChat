@@ -149,6 +149,12 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><defs><path id="p" d="M4 4h16v16H4z" /></defs><use href="#p" fill="#333" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('preserves an explicit badge alongside a default-black use instance', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="glyph" d="M6 6h12v12H6z" /></defs><rect x="0" y="0" width="8" height="8" fill="#fff" /><use href="#glyph" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
   });
 
   describe('currentColor resolved against a fixed color', () => {
@@ -167,6 +173,18 @@ describe('isMonochromeSvg', () => {
     it('still tints when the fixed color is itself grayscale', () => {
       const svg =
         '<svg viewBox="0 0 24 24" color="#333"><path fill="currentColor" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('preserves a CSS currentColor fill fixed by an ancestor color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24" color="#e00"><style>.a{fill:currentColor}</style><path class="a" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a CSS currentColor fill with no fixed color in scope', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.a{fill:currentColor}</style><path class="a" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
   });
