@@ -154,7 +154,9 @@ export function formatToolContent(
   }
 
   const content = result?.content ?? [];
-  if (!content.length) {
+  const hasSyntheticApp =
+    metadata?.resourceUri != null && metadata.serverName != null && metadata.toolName != null;
+  if (!content.length && !hasSyntheticApp) {
     return ['(No response)', undefined];
   }
 
@@ -253,6 +255,9 @@ export function formatToolContent(
       csp: metadata.csp,
       permissions: metadata.permissions,
     });
+    currentTextBlock +=
+      (currentTextBlock ? '\n\n' : '') +
+      `UI Resource ID: ${resourceId}\nUI Resource Marker: \\ui{${resourceId}}`;
   }
 
   if (uiResources.length > 0) {

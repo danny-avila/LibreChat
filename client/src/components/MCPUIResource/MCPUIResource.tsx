@@ -57,7 +57,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
         <span className="mx-1 inline-block w-full align-middle">
           {!loaded && (
             <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
-              Loading interactive view...
+              {localize('com_ui_loading_interactive_view')}
             </div>
           )}
           <iframe

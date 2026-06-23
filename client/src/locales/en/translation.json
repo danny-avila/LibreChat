@@ -1199,6 +1199,7 @@
   "com_ui_live": "live",
   "com_ui_load_more": "Load more",
   "com_ui_loading": "Loading...",
+  "com_ui_loading_interactive_view": "Loading interactive view...",
   "com_ui_locked": "Locked",
   "com_ui_logo": "{{0}} Logo",
   "com_ui_low": "Low",

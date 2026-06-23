@@ -29,6 +29,7 @@ const MCPAppView = React.memo(function MCPAppView({
   app: UIResource;
   args: string | Record<string, unknown>;
 }) {
+  const localize = useLocalize();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
@@ -82,7 +83,7 @@ const MCPAppView = React.memo(function MCPAppView({
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
-          Loading interactive view...
+          {localize('com_ui_loading_interactive_view')}
         </div>
       )}
       <iframe
