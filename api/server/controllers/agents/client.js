@@ -479,9 +479,12 @@ class AgentClient extends BaseClient {
       hasUrlContextTool(this.options.agent?.tools)
     ) {
       const latestFormatted = formattedMessages[formattedMessages.length - 1];
+      /** Use the resolved run model (model_parameters override) rather than the saved base model. */
+      const resolvedModel =
+        this.options.agent?.model_parameters?.model ?? this.options.agent?.model;
       const { max, mimeType } = resolveYouTubeInjectionConfig({
         provider,
-        model: this.options.agent?.model,
+        model: resolvedModel,
       });
       latestFormatted.content = appendYouTubeVideoParts({
         enabled: true,

@@ -1317,6 +1317,23 @@ describe('getGoogleConfig', () => {
       expect(result.tools).toContainEqual({ urlContext: {} });
     });
 
+    it('should not include the urlContext tool on non-text modality variants', () => {
+      for (const model of [
+        'gemini-2.5-flash-image',
+        'gemini-3-pro-image-preview',
+        'gemini-3.5-flash-live',
+        'gemini-2.5-flash-tts',
+      ]) {
+        const result = getGoogleConfig(credentials, {
+          modelOptions: {
+            model,
+            url_context: true,
+          },
+        });
+        expect(result.tools).not.toContainEqual({ urlContext: {} });
+      }
+    });
+
     it('should enable the urlContext tool for the Vertex AI provider', () => {
       const vertexCredentials = {
         [AuthKeys.GOOGLE_SERVICE_KEY]: {

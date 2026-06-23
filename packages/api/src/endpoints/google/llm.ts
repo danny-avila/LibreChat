@@ -137,14 +137,21 @@ function isGemini35Flash(model: string) {
 }
 
 const urlContextModelRegex = /gemini-(\d+)(?:\.(\d+))?/i;
+const urlContextExcludedModalityRegex = /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
 
 /**
- * The native URL Context tool is supported only on Gemini 2.5+ and 3.x models
- * (https://ai.google.dev/gemini-api/docs/url-context#supported_models). Enabling it on an
- * earlier model returns a provider-side error, so we skip the tool there instead.
+ * The native URL Context tool is supported only on text Gemini 2.5+ and 3.x models
+ * (https://ai.google.dev/gemini-api/docs/url-context#supported_models). Modality-specific
+ * variants (image, live, TTS) do not accept it, mirroring the Google tool-combination exclusion.
+ * Enabling it on an unsupported model returns a provider-side error, so we skip the tool there.
  */
 function supportsUrlContext(model: string): boolean {
-  const match = urlContextModelRegex.exec(model);
+  const normalized = model.trim().toLowerCase();
+  const modelId = normalized.split('/').pop() ?? normalized;
+  if (urlContextExcludedModalityRegex.test(modelId)) {
+    return false;
+  }
+  const match = urlContextModelRegex.exec(modelId);
   if (!match) {
     return false;
   }

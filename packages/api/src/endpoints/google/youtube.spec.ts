@@ -61,6 +61,12 @@ describe('extractYouTubeUrls', () => {
     ]);
   });
 
+  it('handles youtube-nocookie embed URLs', () => {
+    expect(extractYouTubeUrls('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')).toEqual([
+      WATCH('dQw4w9WgXcQ'),
+    ]);
+  });
+
   it('preserves order across multiple distinct videos', () => {
     const text = 'https://youtu.be/aaaaaaaaaaa then https://www.youtube.com/watch?v=bbbbbbbbbbb';
     expect(extractYouTubeUrls(text)).toEqual([WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')]);
@@ -214,6 +220,42 @@ describe('appendYouTubeVideoParts', () => {
     expect(parts).toHaveLength(1);
     expect((parts[0] as Record<string, unknown>).type).toBe('media');
     expect((parts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
+
+  it('keeps over-limit YouTube links in the text (only injected ones are stripped)', () => {
+    const text = 'https://youtu.be/aaaaaaaaaaa and https://youtu.be/bbbbbbbbbbb';
+    const result = appendYouTubeVideoParts({
+      enabled: true,
+      text,
+      content: text,
+      max: 1,
+    }) as MessageContentComplex[];
+
+    const mediaParts = result.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('aaaaaaaaaaa'));
+
+    const textPart = result.find((p) => (p as Record<string, unknown>).type === 'text') as {
+      text: string;
+    };
+    /** The injected link is stripped; the over-limit link is preserved for the model. */
+    expect(textPart.text).not.toContain('aaaaaaaaaaa');
+    expect(textPart.text).toContain('bbbbbbbbbbb');
+  });
+
+  it('keeps a timestamped YouTube link in the text so the moment cue survives', () => {
+    const text = 'what happens here https://youtu.be/dQw4w9WgXcQ?t=90';
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text });
+
+    const parts = result as MessageContentComplex[];
+    const textPart = parts.find((p) => (p as Record<string, unknown>).type === 'text') as {
+      text: string;
+    };
+    expect(textPart.text).toContain('t=90');
+
+    const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
   });
 
   it('does not duplicate a video already present as a media part', () => {

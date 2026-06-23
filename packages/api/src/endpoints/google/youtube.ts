@@ -61,33 +61,56 @@ export function resolveYouTubeInjectionConfig(params: { provider?: string; model
 }
 
 /**
- * Matches YouTube watch/share/shorts/live/embed URLs and captures the 11-char video id.
- * Any YouTube subdomain is accepted (`www.`, `m.`, `music.`, `gaming.`, ...). The leading
- * lookbehind rejects hosts embedded in a longer domain (e.g. `notyoutube.com`,
- * `evil-youtube.com`) and the trailing lookahead rejects ids that are part of a longer token.
+ * Host + path alternation shared by the detection and strip regexes. Accepts any YouTube
+ * subdomain (`www.`, `m.`, `music.`, ...) for youtube.com plus youtu.be and youtube-nocookie
+ * embed links. The capture group is always the 11-char video id.
+ */
+const YOUTUBE_HOST_PATH =
+  '(?:(?:[a-z0-9-]+\\.)*youtube\\.com\\/(?:watch\\?(?:\\S*?&)?v=|shorts\\/|live\\/|embed\\/|v\\/)' +
+  '|(?:www\\.)?youtube-nocookie\\.com\\/embed\\/' +
+  '|youtu\\.be\\/)';
+
+/**
+ * Matches YouTube watch/share/shorts/live/embed (incl. youtube-nocookie) URLs and captures the
+ * 11-char video id. The leading lookbehind rejects hosts embedded in a longer domain (e.g.
+ * `notyoutube.com`, `evil-youtube.com`); the trailing lookahead rejects ids inside a longer token.
  */
 const YOUTUBE_URL_REGEX = new RegExp(
-  '(?<![\\w.-])(?:https?:\\/\\/)?' +
-    '(?:(?:[a-z0-9-]+\\.)*youtube\\.com\\/(?:watch\\?(?:\\S*?&)?v=|shorts\\/|live\\/|embed\\/|v\\/)|youtu\\.be\\/)' +
-    '([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])',
+  `(?<![\\w.-])(?:https?:\\/\\/)?${YOUTUBE_HOST_PATH}([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])`,
   'gi',
 );
 
 /**
- * Like {@link YOUTUBE_URL_REGEX} but consumes the full URL token (trailing query/fragment) so the
- * whole link can be removed from the prompt text once it is routed through video understanding.
+ * Like {@link YOUTUBE_URL_REGEX} but also captures the full trailing URL token (query/fragment),
+ * so a matched link can be removed from the prompt text. Group 1 = video id, group 2 = trailing.
  */
 const YOUTUBE_URL_STRIP_REGEX = new RegExp(
-  '(?<![\\w.-])(?:https?:\\/\\/)?' +
-    '(?:(?:[a-z0-9-]+\\.)*youtube\\.com\\/(?:watch\\?(?:\\S*?&)?v=|shorts\\/|live\\/|embed\\/|v\\/)|youtu\\.be\\/)' +
-    '[A-Za-z0-9_-]{11}\\S*',
+  `(?<![\\w.-])(?:https?:\\/\\/)?${YOUTUBE_HOST_PATH}([A-Za-z0-9_-]{11})(\\S*)`,
   'gi',
 );
 
-/** Removes YouTube URL tokens from text and tidies the leftover horizontal whitespace. */
-function stripYouTubeUrls(text: string): string {
-  return text
-    .replace(YOUTUBE_URL_STRIP_REGEX, '')
+/** A YouTube link carries a user-selected moment (e.g. `?t=90`, `&start=90`). */
+const YOUTUBE_TIMESTAMP_REGEX = /[?&](t|start)=/i;
+
+/**
+ * Removes from text only the YouTube URL tokens whose video id was injected as a video part and
+ * that do not carry a timestamp. Over-limit links (not injected) and timestamped links are kept so
+ * the model can still see/reason about them. Tidies leftover horizontal whitespace when changed.
+ */
+function stripYouTubeUrls(text: string, injectedIds: Set<string>): string {
+  const replaced = text.replace(YOUTUBE_URL_STRIP_REGEX, (match, videoId, trailing) => {
+    if (!injectedIds.has(videoId)) {
+      return match;
+    }
+    if (YOUTUBE_TIMESTAMP_REGEX.test(trailing)) {
+      return match;
+    }
+    return '';
+  });
+  if (replaced === text) {
+    return text;
+  }
+  return replaced
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+$/gm, '')
     .trim();
@@ -146,12 +169,15 @@ function toBaseParts(content: string | MessageContentComplex[]): MessageContentC
   return [];
 }
 
-function stripYouTubeFromTextParts(parts: MessageContentComplex[]): MessageContentComplex[] {
+function stripYouTubeFromTextParts(
+  parts: MessageContentComplex[],
+  injectedIds: Set<string>,
+): MessageContentComplex[] {
   const result: MessageContentComplex[] = [];
   for (const part of parts) {
     const record = part as Record<string, unknown>;
     if (record != null && record.type === ContentTypes.TEXT && typeof record.text === 'string') {
-      const stripped = stripYouTubeUrls(record.text);
+      const stripped = stripYouTubeUrls(record.text, injectedIds);
       if (stripped.length > 0) {
         result.push({ ...record, text: stripped } as MessageContentComplex);
       }
@@ -214,5 +240,10 @@ export function appendYouTubeVideoParts(params: {
   if (newParts.length === 0) {
     return content;
   }
-  return [...stripYouTubeFromTextParts(baseParts), ...newParts];
+
+  /** Only strip the links actually routed to video (capped + deduped set); over-limit links stay. */
+  const injectedIds = new Set(
+    urls.map((url) => new URL(url).searchParams.get('v')).filter((id): id is string => id != null),
+  );
+  return [...stripYouTubeFromTextParts(baseParts, injectedIds), ...newParts];
 }
