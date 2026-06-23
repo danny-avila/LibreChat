@@ -66,6 +66,8 @@ const PAINT_OPACITY = new Map([
 /** Declarations resolved from `<style>` rules for tint detection. */
 const RESOLVED_DECLS = new Set([
   'fill',
+  'color',
+  'display',
   'opacity',
   'fill-opacity',
   'stroke-opacity',
@@ -75,8 +77,9 @@ const RESOLVED_DECLS = new Set([
 /** A `<style>` rule reduced to the paint/opacity declarations we resolve. */
 type StyleRule = { selector: string; declarations: Map<string, string> };
 
-/** Matches color declarations inside a `<style>` block. */
-const CSS_COLOR_REGEX = /(?:fill|stroke|stop-color|color)\s*:\s*([^;}]+)/gi;
+/** Matches paint declarations inside a `<style>` block (not `color`, which only
+ * resolves `currentColor` rather than painting on its own). */
+const CSS_COLOR_REGEX = /(?:fill|stroke|stop-color)\s*:\s*([^;}]+)/gi;
 
 function hexToRgb(hex: string): [number, number, number] | null {
   let value = hex.slice(1);
@@ -241,6 +244,9 @@ function spansCanvas(value: string | null, canvas: number | null): boolean {
 }
 
 function isOpaqueRect(rect: Element, root: Element, rules: StyleRule[]): boolean {
+  if (isHidden(rect, root, rules)) {
+    return false;
+  }
   const fill = resolveFill(rect, root, rules) ?? '';
   if (fill === 'none' || fill === 'transparent' || paintAlpha(fill) === 0) {
     return false;
@@ -277,7 +283,7 @@ function hasOpaqueBackground(root: Element, rules: StyleRule[]): boolean {
  * the rule matches (against an inherited fixed `color`), so a fixed color is
  * preserved rather than recorded as the theme-following sentinel.
  */
-function resolveCssCurrentColor(root: Element, selector: string): string[] {
+function resolveCssCurrentColor(root: Element, selector: string, rules: StyleRule[]): string[] {
   if (selector === '') {
     return [];
   }
@@ -287,10 +293,10 @@ function resolveCssCurrentColor(root: Element, selector: string): string[] {
   } catch {
     return [CURRENT_COLOR];
   }
-  return matched.map((el) => resolveCurrentColor(el, root));
+  return matched.map((el) => resolveCurrentColor(el, root, rules));
 }
 
-function colorsFromStyleBlocks(root: Element): string[] {
+function colorsFromStyleBlocks(root: Element, rules: StyleRule[]): string[] {
   const colors: string[] = [];
   for (const style of Array.from(root.querySelectorAll('style'))) {
     for (const rule of (style.textContent ?? '').split('}')) {
@@ -302,7 +308,7 @@ function colorsFromStyleBlocks(root: Element): string[] {
       for (const match of rule.slice(brace + 1).matchAll(CSS_COLOR_REGEX)) {
         const value = match[1].trim();
         if (value.toLowerCase() === CURRENT_COLOR) {
-          colors.push(...resolveCssCurrentColor(root, selector));
+          colors.push(...resolveCssCurrentColor(root, selector, rules));
         } else {
           colors.push(value);
         }
@@ -314,18 +320,16 @@ function colorsFromStyleBlocks(root: Element): string[] {
 
 /**
  * Resolves a `currentColor` paint to the fixed `color` set on the element or an
- * ancestor, since that is what the icon actually renders. Returns `currentColor`
- * unchanged when no fixed color is in scope, meaning the paint follows the theme.
+ * ancestor (inline style, attribute, or CSS), since that is what the icon actually
+ * renders. Returns `currentColor` unchanged when no fixed color is in scope,
+ * meaning the paint follows the theme.
  */
-function resolveCurrentColor(el: Element, root: Element): string {
+function resolveCurrentColor(el: Element, root: Element, rules: StyleRule[]): string {
   let current: Element | null = el;
   while (current != null) {
-    const color = readPaint(current, 'color');
-    if (color != null) {
-      const normalized = color.trim().toLowerCase();
-      if (normalized !== '' && normalized !== 'inherit' && normalized !== CURRENT_COLOR) {
-        return normalized;
-      }
+    const color = styleValue(current, rules, 'color');
+    if (color != null && color !== '' && color !== 'inherit' && color !== CURRENT_COLOR) {
+      return color;
     }
     if (current === root) {
       break;
@@ -338,7 +342,11 @@ function resolveCurrentColor(el: Element, root: Element): string {
 function collectColors(root: Element, rules: StyleRule[]): string[] {
   const colors: string[] = [];
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
-    if (el.nodeName.toLowerCase() === 'style' || isInside(el, root, FUNCTIONAL_CONTAINERS)) {
+    if (
+      el.nodeName.toLowerCase() === 'style' ||
+      isInside(el, root, FUNCTIONAL_CONTAINERS) ||
+      isHidden(el, root, rules)
+    ) {
       continue;
     }
     for (const prop of PAINT_PROPS) {
@@ -347,11 +355,11 @@ function collectColors(root: Element, rules: StyleRule[]): string[] {
         continue;
       }
       colors.push(
-        value.trim().toLowerCase() === CURRENT_COLOR ? resolveCurrentColor(el, root) : value,
+        value.trim().toLowerCase() === CURRENT_COLOR ? resolveCurrentColor(el, root, rules) : value,
       );
     }
   }
-  colors.push(...colorsFromStyleBlocks(root));
+  colors.push(...colorsFromStyleBlocks(root, rules));
   return colors
     .map((color) => color.trim().toLowerCase())
     .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color) && paintAlpha(color) !== 0);
@@ -430,6 +438,21 @@ function styleNumber(el: Element, rules: StyleRule[], property: string): number 
   }
   const number = parseFloat(value);
   return Number.isNaN(number) ? null : number;
+}
+
+/** True when the element or an ancestor is removed from rendering via `display:none`. */
+function isHidden(el: Element, root: Element, rules: StyleRule[]): boolean {
+  let current: Element | null = el;
+  while (current != null) {
+    if (styleValue(current, rules, 'display') === 'none') {
+      return true;
+    }
+    if (current === root) {
+      break;
+    }
+    current = current.parentElement;
+  }
+  return false;
 }
 
 /**
@@ -531,7 +554,11 @@ function rendersFillArea(el: Element): boolean {
  */
 function hasDefaultBlackShape(root: Element, rules: StyleRule[]): boolean {
   for (const el of Array.from(root.querySelectorAll(FILLABLE_SHAPES))) {
-    if (fillIsResolved(el, root, rules) || isInside(el, root, DEFERRED_CONTAINERS)) {
+    if (
+      fillIsResolved(el, root, rules) ||
+      isInside(el, root, DEFERRED_CONTAINERS) ||
+      isHidden(el, root, rules)
+    ) {
       continue;
     }
     if (rendersFillArea(el)) {
@@ -566,7 +593,11 @@ function targetHasDefaultBlackShape(target: Element, rules: StyleRule[]): boolea
     shapes.unshift(target);
   }
   for (const el of shapes) {
-    if (resolveFill(el, target, rules) != null || isInside(el, target, FUNCTIONAL_CONTAINERS)) {
+    if (
+      resolveFill(el, target, rules) != null ||
+      isInside(el, target, FUNCTIONAL_CONTAINERS) ||
+      isHidden(el, target, rules)
+    ) {
       continue;
     }
     if (rendersFillArea(el)) {
