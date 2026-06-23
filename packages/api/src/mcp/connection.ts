@@ -2326,11 +2326,10 @@ export class MCPConnection extends EventEmitter {
     timeoutMs: number,
   ): Promise<MCPListToolsResult | null> {
     try {
-      return await withTimeout(
-        this.client.listTools(cursor != null ? { cursor } : undefined),
-        timeoutMs,
-        `tools/list timeout after ${timeoutMs}ms`,
-      );
+      return await this.client.listTools(cursor != null ? { cursor } : undefined, {
+        timeout: timeoutMs,
+        maxTotalTimeout: timeoutMs,
+      });
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
       return null;

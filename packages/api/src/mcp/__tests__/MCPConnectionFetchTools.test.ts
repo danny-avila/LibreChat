@@ -58,6 +58,21 @@ function createConnectionWithListTools(listTools: jest.Mock): MCPConnection {
   return conn;
 }
 
+function expectListToolsCall(
+  listTools: jest.Mock,
+  callNumber: number,
+  params: { cursor?: string } | undefined,
+): void {
+  expect(listTools).toHaveBeenNthCalledWith(
+    callNumber,
+    params,
+    expect.objectContaining({
+      timeout: expect.any(Number),
+      maxTotalTimeout: expect.any(Number),
+    }),
+  );
+}
+
 describe('MCPConnection.fetchTools pagination', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -74,7 +89,7 @@ describe('MCPConnection.fetchTools pagination', () => {
 
     expect(tools.map((t) => t.name)).toEqual(['a', 'b']);
     expect(listTools).toHaveBeenCalledTimes(1);
-    expect(listTools).toHaveBeenNthCalledWith(1, undefined);
+    expectListToolsCall(listTools, 1, undefined);
     expect(mockLogger.warn).not.toHaveBeenCalled();
   });
 
@@ -97,9 +112,9 @@ describe('MCPConnection.fetchTools pagination', () => {
 
     expect(tools.map((t) => t.name)).toEqual(['a', 'b', 'c', 'd', 'e']);
     expect(listTools).toHaveBeenCalledTimes(3);
-    expect(listTools).toHaveBeenNthCalledWith(1, undefined);
-    expect(listTools).toHaveBeenNthCalledWith(2, { cursor: 'c1' });
-    expect(listTools).toHaveBeenNthCalledWith(3, { cursor: 'c2' });
+    expectListToolsCall(listTools, 1, undefined);
+    expectListToolsCall(listTools, 2, { cursor: 'c1' });
+    expectListToolsCall(listTools, 3, { cursor: 'c2' });
     expect(mockLogger.warn).not.toHaveBeenCalled();
   });
 
@@ -186,18 +201,22 @@ describe('MCPConnection.fetchTools pagination', () => {
     dateNow.mockRestore();
   });
 
-  it('applies the elapsed-time budget to an in-flight page request', async () => {
-    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 1;
-    const listTools = jest.fn(() => new Promise<never>(() => undefined));
+  it('passes the elapsed-time budget to the SDK request timeout', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 25;
+    const listTools = jest.fn(async () => {
+      throw new Error('Request timed out');
+    });
     const conn = createConnectionWithListTools(listTools);
 
     const tools = await conn.fetchTools();
 
     expect(tools).toEqual([]);
     expect(listTools).toHaveBeenCalledTimes(1);
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      expect.stringContaining('tools/list timeout after'),
-    );
+    const options = listTools.mock.calls[0][1];
+    expect(options.timeout).toBeGreaterThan(0);
+    expect(options.timeout).toBeLessThanOrEqual(25);
+    expect(options.maxTotalTimeout).toBe(options.timeout);
+    expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Request timed out'));
   });
 
   it('stops and warns when the server repeats a cursor instead of looping forever', async () => {
@@ -242,7 +261,7 @@ describe('MCPConnection.fetchTools pagination', () => {
 
     expect(tools.map((t) => t.name)).toEqual(['a', 'b']);
     expect(listTools).toHaveBeenCalledTimes(2);
-    expect(listTools).toHaveBeenNthCalledWith(2, { cursor: '' });
+    expectListToolsCall(listTools, 2, { cursor: '' });
   });
 
   it('returns the pages already fetched when a later page fails, without throwing', async () => {
