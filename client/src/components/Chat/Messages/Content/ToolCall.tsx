@@ -1,8 +1,7 @@
-import React, { useMemo, useState, useEffect, useCallback, useContext } from 'react';
+import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
-import { AppRenderer } from '@mcp-ui/client';
-import { Button, ThemeContext, isDark } from '@librechat/client';
 import {
   Constants,
   Tools,
@@ -13,8 +12,8 @@ import {
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useMCPIconMap, useMCPAppCallbacks } from '~/hooks/MCP';
-import { getMCPSandboxConfig } from '~/utils/mcpApps';
+import { useMCPIconMap, useAppBridge } from '~/hooks/MCP';
+import { getMCPSandboxUrl } from '~/utils/mcpApps';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -26,15 +25,14 @@ const SPINNER_TIMEOUT_MS = 10_000;
 const MCPAppView = React.memo(function MCPAppView({
   app,
   args,
-  themeMode,
 }: {
   app: UIResource;
   args: string | Record<string, unknown>;
-  themeMode: string;
 }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
-  const callbacks = useMCPAppCallbacks((app.serverName as string | undefined) ?? '');
+  const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
 
   useEffect(() => {
     if (loaded) return;
@@ -42,13 +40,7 @@ const MCPAppView = React.memo(function MCPAppView({
     return () => clearTimeout(timer);
   }, [loaded]);
 
-  const toolResult = useMemo(() => {
-    const sc = app.structuredContent as Record<string, unknown> | undefined | null;
-    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
-    return { content: [], structuredContent: sc };
-  }, [app.structuredContent]);
-
-  const toolInput = useMemo(() => {
+  const toolArgs = useMemo(() => {
     try {
       return typeof args === 'string' ? JSON.parse(args) : args;
     } catch {
@@ -56,10 +48,11 @@ const MCPAppView = React.memo(function MCPAppView({
     }
   }, [args]);
 
-  const hostContext = useMemo(
-    () => ({ theme: isDark(themeMode) ? ('dark' as const) : ('light' as const) }),
-    [themeMode],
-  );
+  const toolResult = useMemo(() => {
+    const sc = app.structuredContent as Record<string, unknown> | undefined | null;
+    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
+    return { content: [] as [], structuredContent: sc };
+  }, [app.structuredContent]);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {
@@ -68,7 +61,7 @@ const MCPAppView = React.memo(function MCPAppView({
     }
   }, []);
 
-  const handleError = useCallback((err: Error) => logger.error('[MCP App]', err), []);
+  useAppBridge(iframeRef, app, toolArgs, toolResult, handleSizeChanged);
 
   return (
     <div className="my-2" style={height ? { height } : { minHeight: 100 }}>
@@ -92,18 +85,17 @@ const MCPAppView = React.memo(function MCPAppView({
           Loading interactive view...
         </div>
       )}
-      <AppRenderer
-        toolName={(app.toolName as string | undefined) ?? ''}
-        sandbox={getMCPSandboxConfig()}
-        toolResourceUri={app.uri}
-        toolResult={toolResult}
-        toolInput={toolInput}
-        hostContext={hostContext}
-        onCallTool={callbacks.onCallTool}
-        onReadResource={callbacks.onReadResource}
-        onOpenLink={callbacks.onOpenLink}
-        onSizeChanged={handleSizeChanged}
-        onError={handleError}
+      <iframe
+        ref={iframeRef}
+        data-sandbox-url={sandboxUrl}
+        sandbox="allow-scripts allow-forms"
+        style={{
+          width: '100%',
+          height: '100%',
+          border: 'none',
+          display: loaded ? 'block' : 'none',
+        }}
+        title={`MCP App: ${(app.toolName as string | undefined) ?? ''}`}
       />
     </div>
   );
@@ -133,7 +125,6 @@ export default function ToolCall({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
-  const { theme: themeMode } = useContext(ThemeContext);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
@@ -371,9 +362,7 @@ export default function ToolCall({
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}
-      {mcpApp && hasOutput && (
-        <MCPAppView key={mcpApp.resourceId} app={mcpApp} args={_args} themeMode={themeMode} />
-      )}
+      {mcpApp && hasOutput && <MCPAppView key={mcpApp.resourceId} app={mcpApp} args={_args} />}
     </>
   );
 }

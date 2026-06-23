@@ -4,27 +4,14 @@ import type { UIResource } from 'librechat-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
 
 jest.mock('~/hooks/MCP', () => ({
-  useMCPAppCallbacks: () => ({
-    onCallTool: jest.fn(),
-    onReadResource: jest.fn(),
-    onOpenLink: jest.fn(),
-  }),
-}));
-
-jest.mock('@mcp-ui/client', () => ({
-  AppRenderer: ({ toolResourceUri }: { toolResourceUri: string }) => (
-    <div data-testid="ui-resource-renderer" data-uri={toolResourceUri} />
-  ),
+  useAppBridge: jest.fn(),
 }));
 
 jest.mock('~/utils/mcpApps', () => ({
-  getMCPSandboxConfig: () => ({ url: new URL('http://localhost/sandbox') }),
+  getMCPSandboxUrl: () => 'http://localhost/sandbox',
   callMCPAppTool: jest.fn(),
   readMCPResource: jest.fn(),
-}));
-
-jest.mock('~/utils', () => ({
-  logger: { error: jest.fn() },
+  fetchMCPResourceHtml: jest.fn(),
 }));
 
 const mockScrollTo = jest.fn();
@@ -61,15 +48,17 @@ describe('UIResourceCarousel', () => {
   });
 
   it('renders all UI resources', () => {
-    render(<UIResourceCarousel uiResources={mockUIResources} />);
-    expect(screen.getAllByTestId('ui-resource-renderer')).toHaveLength(5);
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
+    expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(5);
   });
 
-  it('renders AppRenderer with correct uri for each resource', () => {
-    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
-    const renderers = screen.getAllByTestId('ui-resource-renderer');
-    expect(renderers[0]).toHaveAttribute('data-uri', 'resource1');
-    expect(renderers[1]).toHaveAttribute('data-uri', 'resource2');
+  it('renders bridge iframe for each bound resource', () => {
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
+    const iframes = container.querySelectorAll('iframe[data-sandbox-url]');
+    expect(iframes).toHaveLength(2);
+    iframes.forEach((iframe) => {
+      expect(iframe).toHaveAttribute('data-sandbox-url', 'http://localhost/sandbox');
+    });
   });
 
   it('falls back to iframe for inline resources without toolName', () => {
@@ -142,10 +131,10 @@ describe('UIResourceCarousel', () => {
   });
 
   it('applies correct dimensions to resource containers', () => {
-    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
-    const renderers = screen.getAllByTestId('ui-resource-renderer');
-    renderers.forEach((el, index) => {
-      const card = el.parentElement?.parentElement;
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
+    const iframes = container.querySelectorAll('iframe[data-sandbox-url]');
+    iframes.forEach((iframe, index) => {
+      const card = iframe.parentElement?.parentElement;
       expect(card).toHaveStyle({
         width: '230px',
         minHeight: '360px',

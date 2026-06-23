@@ -1,12 +1,9 @@
 import { request } from 'librechat-data-provider';
 
-let sandboxUrl: URL | null = null;
-
-export function getMCPSandboxConfig() {
-  if (!sandboxUrl) {
-    sandboxUrl = new URL('/api/mcp/sandbox', window.location.origin);
-  }
-  return { url: sandboxUrl };
+export function getMCPSandboxUrl(): string {
+  const configured = (import.meta.env as Record<string, string | undefined>).VITE_MCP_SANDBOX_URL;
+  if (configured) return configured;
+  return `${window.location.origin}/api/mcp/sandbox`;
 }
 
 export async function callMCPAppTool(
@@ -47,4 +44,11 @@ export async function readMCPResource(serverName: string, uri: string) {
   resourceCache.set(key, { promise, ts: now });
   promise.catch(() => resourceCache.delete(key));
   return promise;
+}
+
+export async function fetchMCPResourceHtml(serverName: string, uri: string): Promise<string> {
+  const result = (await readMCPResource(serverName, uri)) as {
+    contents?: Array<{ text?: string }>;
+  };
+  return result?.contents?.[0]?.text ?? '';
 }

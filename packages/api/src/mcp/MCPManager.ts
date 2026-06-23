@@ -1,6 +1,7 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import { getToolUiResourceUri } from '@modelcontextprotocol/ext-apps/app-bridge';
 import {
   CallToolResultSchema,
   ReadResourceResultSchema,
@@ -9,6 +10,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { UIResource } from 'librechat-data-provider';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -57,7 +59,10 @@ function createOboToolCallErrorMessage(
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
-  private readonly resourceUriCache = new Map<string, Map<string, string>>();
+  private readonly resourceUriCache = new Map<
+    string,
+    Map<string, { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }>
+  >();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -344,20 +349,28 @@ Please follow these instructions when using tools from the respective MCP server
     }
   }
 
-  private async getResourceUri(
+  private async getResourceMeta(
     connection: MCPConnection,
     serverName: string,
     toolName: string,
-  ): Promise<string | undefined> {
+  ): Promise<
+    { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] } | undefined
+  > {
     let serverMap = this.resourceUriCache.get(serverName);
     if (!serverMap) {
       const tools = await connection.fetchTools();
-      serverMap = new Map<string, string>();
+      serverMap = new Map();
       for (const tool of tools) {
-        const meta = tool._meta as { ui?: { resourceUri?: string } } | undefined;
-        const uri = meta?.ui?.resourceUri;
+        const uri = getToolUiResourceUri(tool);
         if (uri) {
-          serverMap.set(tool.name, uri);
+          const meta = tool._meta as
+            | { ui?: { csp?: UIResource['csp']; permissions?: UIResource['permissions'] } }
+            | undefined;
+          serverMap.set(tool.name, {
+            uri,
+            csp: meta?.ui?.csp,
+            permissions: meta?.ui?.permissions,
+          });
         }
       }
       this.resourceUriCache.set(serverName, serverMap);
@@ -567,11 +580,13 @@ Please follow these instructions when using tools from the respective MCP server
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
-      let resourceUri: string | undefined;
+      let resourceMeta:
+        | { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
+        | undefined;
       try {
-        resourceUri = await this.getResourceUri(connection, serverName, toolName);
-        if (resourceUri) {
-          logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceUri}`);
+        resourceMeta = await this.getResourceMeta(connection, serverName, toolName);
+        if (resourceMeta) {
+          logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`);
         }
       } catch {
         // Non-critical -- tools render without the app UI
@@ -580,7 +595,9 @@ Please follow these instructions when using tools from the respective MCP server
       return formatToolContent(result as t.MCPToolCallResponse, provider, {
         serverName,
         toolName,
-        resourceUri,
+        resourceUri: resourceMeta?.uri,
+        csp: resourceMeta?.csp,
+        permissions: resourceMeta?.permissions,
       });
     } catch (error) {
       // Log with context and re-throw or handle as needed

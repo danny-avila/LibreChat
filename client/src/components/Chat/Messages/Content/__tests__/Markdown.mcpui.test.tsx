@@ -1,17 +1,17 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import Markdown from '../Markdown';
-import MarkdownLite from '../MarkdownLite';
 import { RecoilRoot } from 'recoil';
-import { UI_RESOURCE_MARKER } from '~/components/MCPUIResource/plugin';
+import { render, screen } from '@testing-library/react';
 import {
   useMessageContext,
   useOptionalMessagesConversation,
   useOptionalMessagesOperations,
 } from '~/Providers';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import { UI_RESOURCE_MARKER } from '~/components/MCPUIResource/plugin';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import MarkdownLite from '../MarkdownLite';
 import { useLocalize } from '~/hooks';
+import Markdown from '../Markdown';
 
 jest.mock('~/Providers', () => ({
   ...jest.requireActual('~/Providers'),
@@ -23,28 +23,15 @@ jest.mock('~/data-provider');
 jest.mock('~/hooks');
 jest.mock('~/hooks/Messages/useConversationUIResources');
 
-jest.mock('@mcp-ui/client', () => ({
-  AppRenderer: ({ toolName, toolResourceUri }: { toolName: string; toolResourceUri: string }) => (
-    <div
-      data-testid="ui-resource-renderer"
-      data-resource-uri={toolResourceUri}
-      data-tool-name={toolName}
-    />
-  ),
-}));
-
 jest.mock('~/utils/mcpApps', () => ({
-  getMCPSandboxConfig: () => ({ url: new URL('http://localhost/sandbox') }),
+  getMCPSandboxUrl: () => 'http://localhost/sandbox',
   callMCPAppTool: jest.fn(),
   readMCPResource: jest.fn(),
+  fetchMCPResourceHtml: jest.fn(),
 }));
 
 jest.mock('~/hooks/MCP', () => ({
-  useMCPAppCallbacks: () => ({
-    onCallTool: jest.fn(),
-    onReadResource: jest.fn(),
-    onOpenLink: jest.fn(),
-  }),
+  useAppBridge: jest.fn(),
   useMCPIconMap: () => new Map(),
 }));
 
@@ -136,10 +123,8 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
       </RecoilRoot>,
     );
 
-    const renderers = screen.getAllByTestId('ui-resource-renderer');
-    expect(renderers).toHaveLength(2);
-    expect(renderers[0]).toHaveAttribute('data-resource-uri', 'ui://weather/paris');
-    expect(renderers[1]).toHaveAttribute('data-resource-uri', 'ui://weather/nyc');
+    const iframes = document.querySelectorAll('iframe[data-sandbox-url]');
+    expect(iframes).toHaveLength(2);
   });
 });
 

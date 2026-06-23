@@ -141,7 +141,13 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
-  metadata?: { serverName?: string; toolName?: string; resourceUri?: string },
+  metadata?: {
+    serverName?: string;
+    toolName?: string;
+    resourceUri?: string;
+    csp?: UIResource['csp'];
+    permissions?: UIResource['permissions'];
+  },
 ): t.FormattedContentResult {
   if (!RECOGNIZED_PROVIDERS.has(provider)) {
     return [parseAsString(result), undefined];
@@ -195,6 +201,8 @@ export function formatToolContent(
           resourceId,
           serverName: metadata?.serverName,
           toolName: metadata?.toolName,
+          csp: metadata?.csp,
+          permissions: metadata?.permissions,
         };
         uiResources.push(uiResource);
         resourceText.push(`UI Resource ID: ${resourceId}`);
@@ -242,6 +250,8 @@ export function formatToolContent(
       serverName: metadata.serverName,
       toolName: metadata.toolName,
       structuredContent: result?.structuredContent,
+      csp: metadata.csp,
+      permissions: metadata.permissions,
     });
   }
 

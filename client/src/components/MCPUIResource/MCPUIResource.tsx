@@ -1,9 +1,8 @@
-import React from 'react';
-import { AppRenderer } from '@mcp-ui/client';
+import React, { useRef, useState, useMemo, useCallback } from 'react';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { useOptionalMessagesConversation } from '~/Providers';
-import { getMCPSandboxConfig } from '~/utils/mcpApps';
-import { useMCPAppCallbacks } from '~/hooks/MCP';
+import { getMCPSandboxUrl } from '~/utils/mcpApps';
+import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 
@@ -15,13 +14,32 @@ interface MCPUIResourceProps {
   };
 }
 
+const EMPTY_RESOURCE = { resourceId: '', uri: '' };
+
 export function MCPUIResource(props: MCPUIResourceProps) {
   const { resourceId } = props.node.properties;
   const localize = useLocalize();
   const { conversationId } = useOptionalMessagesConversation();
   const conversationResourceMap = useConversationUIResources(conversationId ?? undefined);
   const uiResource = conversationResourceMap.get(resourceId ?? '');
-  const callbacks = useMCPAppCallbacks((uiResource?.serverName as string | undefined) ?? '');
+
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
+
+  const toolResult = useMemo(() => {
+    const sc = uiResource?.structuredContent as Record<string, unknown> | undefined | null;
+    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
+    return { content: [] as [], structuredContent: sc };
+  }, [uiResource?.structuredContent]);
+
+  const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
+    if (params.height && params.height > 0) {
+      setLoaded(true);
+    }
+  }, []);
+
+  useAppBridge(iframeRef, uiResource ?? EMPTY_RESOURCE, undefined, toolResult, handleSizeChanged);
 
   if (!uiResource) {
     return (
@@ -37,14 +55,22 @@ export function MCPUIResource(props: MCPUIResourceProps) {
     if (uiResource.toolName && uiResource.serverName && !uiResource.text) {
       return (
         <span className="mx-1 inline-block w-full align-middle">
-          <AppRenderer
-            toolName={(uiResource.toolName as string | undefined) ?? ''}
-            sandbox={getMCPSandboxConfig()}
-            toolResourceUri={uiResource.uri}
-            onCallTool={callbacks.onCallTool}
-            onReadResource={callbacks.onReadResource}
-            onOpenLink={callbacks.onOpenLink}
-            onError={(err) => logger.error('[MCP App]', err)}
+          {!loaded && (
+            <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+              Loading interactive view...
+            </div>
+          )}
+          <iframe
+            ref={iframeRef}
+            data-sandbox-url={sandboxUrl}
+            sandbox="allow-scripts allow-forms"
+            style={{
+              width: '100%',
+              minHeight: '200px',
+              border: 'none',
+              display: loaded ? 'block' : 'none',
+            }}
+            title={`MCP App: ${(uiResource.toolName as string | undefined) ?? ''}`}
           />
         </span>
       );

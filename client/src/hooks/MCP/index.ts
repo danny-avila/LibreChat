@@ -1,5 +1,5 @@
 export * from './useMCPSelect';
-export { useMCPAppCallbacks } from './useMCPAppCallbacks';
+export { useAppBridge } from './useAppBridge';
 export * from './useVisibleTools';
 export * from './useMCPServerManager';
 export * from './useMCPConnectionStatus';

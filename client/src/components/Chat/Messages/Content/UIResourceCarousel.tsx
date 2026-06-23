@@ -1,30 +1,52 @@
 import React, { useState } from 'react';
-import { AppRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
-import { getMCPSandboxConfig } from '~/utils/mcpApps';
-import { useMCPAppCallbacks } from '~/hooks/MCP';
-import { logger } from '~/utils';
+import { getMCPSandboxUrl } from '~/utils/mcpApps';
+import { useAppBridge } from '~/hooks/MCP';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];
 }
 
 function MCPAppCard({ resource }: { resource: UIResource }) {
-  const callbacks = useMCPAppCallbacks((resource.serverName as string | undefined) ?? '');
-  const handleError = React.useCallback((err: Error) => logger.error('[MCP App]', err), []);
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const sandboxUrl = React.useMemo(() => getMCPSandboxUrl(), []);
+
+  const toolResult = React.useMemo(() => {
+    const sc = resource.structuredContent as Record<string, unknown> | undefined | null;
+    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
+    return { content: [] as [], structuredContent: sc };
+  }, [resource.structuredContent]);
+
+  const handleSizeChanged = React.useCallback((params: { height?: number; width?: number }) => {
+    if (params.height && params.height > 0) {
+      setLoaded(true);
+    }
+  }, []);
+
+  useAppBridge(iframeRef, resource, undefined, toolResult, handleSizeChanged);
 
   if (resource.toolName && resource.serverName) {
     return (
-      <AppRenderer
-        toolName={(resource.toolName as string | undefined) ?? ''}
-        sandbox={getMCPSandboxConfig()}
-        html={resource.text}
-        toolResourceUri={resource.uri}
-        onCallTool={callbacks.onCallTool}
-        onReadResource={callbacks.onReadResource}
-        onOpenLink={callbacks.onOpenLink}
-        onError={handleError}
-      />
+      <>
+        {!loaded && (
+          <div className="flex h-full items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
+            Loading interactive view...
+          </div>
+        )}
+        <iframe
+          ref={iframeRef}
+          data-sandbox-url={sandboxUrl}
+          sandbox="allow-scripts allow-forms"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            display: loaded ? 'block' : 'none',
+          }}
+          title={`MCP App: ${(resource.toolName as string | undefined) ?? ''}`}
+        />
+      </>
     );
   }
 

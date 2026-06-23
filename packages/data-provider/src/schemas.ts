@@ -839,6 +839,18 @@ export type UIResource = {
   serverName?: string;
   toolName?: string;
   structuredContent?: Record<string, unknown>;
+  csp?: {
+    connectDomains?: string[];
+    resourceDomains?: string[];
+    frameDomains?: string[];
+    baseUriDomains?: string[];
+  };
+  permissions?: {
+    camera?: Record<string, never>;
+    microphone?: Record<string, never>;
+    geolocation?: Record<string, never>;
+    clipboardWrite?: Record<string, never>;
+  };
   [key: string]: unknown;
 };
 
