@@ -143,6 +143,12 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><defs><path id="p" fill="#333" d="M4 4h16v16H4z" /></defs><use href="#p" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('tints a one-color symbol icon whose fill comes from a colored use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="p" d="M4 4h16v16H4z" /></defs><use href="#p" fill="#333" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('currentColor resolved against a fixed color', () => {
@@ -252,6 +258,18 @@ describe('isMonochromeSvg', () => {
     it('ignores a shape painted with a fully transparent (alpha-zero) fill', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><path fill="#ff000000" d="M0 0h4v4H0z" /><path fill="#333" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over a background rect that inherits fill="none"', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g fill="none"><rect width="24" height="24" /></g><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over a background rect whose fill:none comes from CSS', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.bg{fill:none}</style><rect class="bg" width="24" height="24" /><path fill="#333" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 

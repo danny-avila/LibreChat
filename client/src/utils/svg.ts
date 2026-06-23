@@ -46,6 +46,16 @@ const FILLABLE_SHAPES = 'path, rect, circle, ellipse, polygon, text';
  */
 const FUNCTIONAL_CONTAINERS = new Set(['clippath', 'mask', 'marker', 'pattern']);
 
+/**
+ * Containers whose descendants do not paint where they are declared. Default-black
+ * detection skips these: functional templates never render a plain fill, and
+ * `defs`/`symbol` shapes inherit the fill of the `<use>` that instantiates them.
+ */
+const DEFERRED_CONTAINERS = new Set(['clippath', 'mask', 'marker', 'pattern', 'defs', 'symbol']);
+
+/** A `fill`-setting rule parsed from a `<style>` block. */
+type FillRule = { selector: string; value: string };
+
 /** Matches color declarations inside a `<style>` block. */
 const CSS_COLOR_REGEX = /(?:fill|stroke|stop-color|color)\s*:\s*([^;}]+)/gi;
 
@@ -211,8 +221,8 @@ function spansCanvas(value: string | null, canvas: number | null): boolean {
   return canvas != null && size >= canvas * 0.98;
 }
 
-function isOpaqueRect(rect: Element): boolean {
-  const fill = (readPaint(rect, 'fill') ?? '').trim().toLowerCase();
+function isOpaqueRect(rect: Element, root: Element, rules: FillRule[]): boolean {
+  const fill = resolveFill(rect, root, rules) ?? '';
   if (fill === 'none' || fill === 'transparent' || paintAlpha(fill) === 0) {
     return false;
   }
@@ -232,10 +242,10 @@ function isOpaqueRect(rect: Element): boolean {
  * the mask uses alpha, so an opaque background fills the whole area with the
  * tint color instead of the glyph.
  */
-function hasOpaqueBackground(root: Element): boolean {
+function hasOpaqueBackground(root: Element, rules: FillRule[]): boolean {
   const { width, height } = canvasSize(root);
   for (const rect of Array.from(root.querySelectorAll('rect'))) {
-    if (!isOpaqueRect(rect) || inFunctionalContainer(rect, root)) {
+    if (!isOpaqueRect(rect, root, rules) || isInside(rect, root, FUNCTIONAL_CONTAINERS)) {
       continue;
     }
     if ((readDimension(rect, 'x') ?? 0) > 0 || (readDimension(rect, 'y') ?? 0) > 0) {
@@ -291,7 +301,7 @@ function resolveCurrentColor(el: Element, root: Element): string {
 function collectColors(root: Element): string[] {
   const colors: string[] = [];
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
-    if (el.nodeName.toLowerCase() === 'style' || inFunctionalContainer(el, root)) {
+    if (el.nodeName.toLowerCase() === 'style' || isInside(el, root, FUNCTIONAL_CONTAINERS)) {
       continue;
     }
     for (const prop of PAINT_PROPS) {
@@ -310,9 +320,9 @@ function collectColors(root: Element): string[] {
     .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color) && paintAlpha(color) !== 0);
 }
 
-/** Selectors from `<style>` blocks whose rule body sets a `fill`. */
-function fillSelectors(root: Element): string[] {
-  const selectors: string[] = [];
+/** `fill`-setting rules parsed from `<style>` blocks, in source order. */
+function fillRules(root: Element): FillRule[] {
+  const rules: FillRule[] = [];
   for (const style of Array.from(root.querySelectorAll('style'))) {
     for (const rule of (style.textContent ?? '').split('}')) {
       const brace = rule.indexOf('{');
@@ -320,54 +330,62 @@ function fillSelectors(root: Element): string[] {
         continue;
       }
       const selector = rule.slice(0, brace).trim();
-      if (selector !== '' && /(^|[;{\s])fill\s*:/i.test(rule.slice(brace + 1))) {
-        selectors.push(selector);
+      const match = /(?:^|[;{\s])fill\s*:\s*([^;}]+)/i.exec(rule.slice(brace + 1));
+      if (selector !== '' && match) {
+        rules.push({ selector, value: match[1].trim().toLowerCase() });
       }
     }
   }
-  return selectors;
+  return rules;
 }
 
-function matchesAnySelector(el: Element, selectors: string[]): boolean {
-  for (const selector of selectors) {
+/** The fill value a CSS rule assigns to the element, or null when none applies. */
+function cssFill(el: Element, rules: FillRule[]): string | null {
+  let value: string | null = null;
+  for (const rule of rules) {
     try {
-      if (el.matches(selector)) {
-        return true;
+      if (el.matches(rule.selector)) {
+        value = rule.value;
       }
     } catch {
       continue;
     }
   }
-  return false;
+  return value;
 }
 
 /**
- * True when a fill is resolved for the element by an explicit `fill` (its own or
- * an ancestor's, since fill is inherited) or by a fill-setting CSS rule applying
- * to it or an ancestor. When false, the element falls back to the default black.
+ * Resolves the fill an element renders with, following inheritance: its own
+ * explicit fill, then a matching CSS rule, then the same up its ancestors. Returns
+ * null when nothing sets a fill, meaning the element falls back to default black.
  */
-function fillIsResolved(el: Element, root: Element, selectors: string[]): boolean {
+function resolveFill(el: Element, root: Element, rules: FillRule[]): string | null {
   let current: Element | null = el;
   while (current != null) {
-    const fill = readPaint(current, 'fill');
-    if (fill != null && fill.trim() !== '') {
-      return true;
+    const explicit = readPaint(current, 'fill');
+    if (explicit != null && explicit.trim() !== '') {
+      return explicit.trim().toLowerCase();
     }
-    if (matchesAnySelector(current, selectors)) {
-      return true;
+    const css = cssFill(current, rules);
+    if (css != null) {
+      return css;
     }
     if (current === root) {
       break;
     }
     current = current.parentElement;
   }
-  return false;
+  return null;
 }
 
-function inFunctionalContainer(el: Element, root: Element): boolean {
+function fillIsResolved(el: Element, root: Element, rules: FillRule[]): boolean {
+  return resolveFill(el, root, rules) != null;
+}
+
+function isInside(el: Element, root: Element, containers: Set<string>): boolean {
   let current = el.parentElement;
   while (current != null && current !== root) {
-    if (FUNCTIONAL_CONTAINERS.has(current.nodeName.toLowerCase())) {
+    if (containers.has(current.nodeName.toLowerCase())) {
       return true;
     }
     current = current.parentElement;
@@ -403,10 +421,9 @@ function rendersFillArea(el: Element): boolean {
  * a closed stroked shape still renders black. Such a shape contributes a black
  * tone that explicit paint values alone do not capture.
  */
-function hasDefaultBlackShape(root: Element): boolean {
-  const selectors = fillSelectors(root);
+function hasDefaultBlackShape(root: Element, rules: FillRule[]): boolean {
   for (const el of Array.from(root.querySelectorAll(FILLABLE_SHAPES))) {
-    if (fillIsResolved(el, root, selectors) || inFunctionalContainer(el, root)) {
+    if (fillIsResolved(el, root, rules) || isInside(el, root, DEFERRED_CONTAINERS)) {
       continue;
     }
     if (rendersFillArea(el)) {
@@ -432,7 +449,8 @@ export function isMonochromeSvg(svg: string): boolean {
   if (root.querySelector('image, foreignObject') != null) {
     return false;
   }
-  if (hasOpaqueBackground(root)) {
+  const rules = fillRules(root);
+  if (hasOpaqueBackground(root, rules)) {
     return false;
   }
   const levels = new Set<number>();
@@ -447,7 +465,7 @@ export function isMonochromeSvg(svg: string): boolean {
     }
     levels.add(level);
   }
-  if (hasDefaultBlackShape(root)) {
+  if (hasDefaultBlackShape(root, rules)) {
     levels.add(0);
   }
   return levels.size <= 1;
