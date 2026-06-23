@@ -2,12 +2,12 @@
 /* ^ We're not worried about i18n for this app ^ */
 
 import React from 'react';
-import * as Collapsible from '@radix-ui/react-collapsible';
 import { useRecoilState } from 'recoil';
-import { landingHelpOpen } from '~/nj/store/landing';
-import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import icons from '@uswds/uswds/img/sprite.svg';
+import { AnimatePresence, motion } from 'framer-motion';
+import * as Collapsible from '@radix-ui/react-collapsible';
+import { landingHelpOpen } from '~/nj/store/landing';
 
 /**
  * Provides alternate landing page content w/ New Jersey-specific information.
@@ -107,6 +107,21 @@ export function NewJerseyLanding() {
                         </svg>
                       </a>{' '}
                       ,{' '}
+                      <Link
+                        to={{ pathname: '/nj/agent-guide' }}
+                        className="inline-flex items-center gap-1 underline hover:decoration-2"
+                      >
+                        How to Build & Use Agents Guide{' '}
+                        <svg
+                          className="usa-icon usa-icon--size-2"
+                          aria-hidden="true"
+                          focusable="false"
+                          role="img"
+                        >
+                          <use href={`${icons}#school`} />
+                        </svg>
+                      </Link>{' '}
+                      ,
                       <Link
                         to={{ pathname: '/nj/guide' }}
                         className="inline-flex items-center gap-1 underline hover:decoration-2"

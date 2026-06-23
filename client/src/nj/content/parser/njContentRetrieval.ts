@@ -42,6 +42,20 @@ export function getGuideContent(): GuideContent {
             answer:
               'Join weekly AI Office Hours to discuss AI, a project you’re working on, or feedback about the NJ AI Assistant. [Book time on any Thursday](https://outlook.office365.com/book/AIOfficeHours1@SoNJ.onmicrosoft.com/s/5Hx9mVbMJUK8H1YcXwEr6A2?ismsaljsauthenabled) with the team.',
           },
+          {
+            question: 'How can I use agents for repetitive tasks?',
+            answer: `Agents are great for repetitive tasks since they save instructions and files. Without re-typing the same prompts, an agent will start knowing that information and then you can take the conversation (and work) wherever you need. 
+
+You can start using agents with the [Platform Agents](https://ai-assistant.nj.gov/agents) for common tasks, build your own, or customize an existing Platform Agent for what you need. 
+
+See the ["How to Build & Use Agents" guide](https://ai-assistant.nj.gov/nj/agent-guide) to learn more.`,
+          },
+          {
+            question: 'Can I customize the Platform Agents to hone the AI response?',
+            answer: `Yes, customizing a Platform Agent will allow you to define the instructions and context files. You can use this to ensure that an agent writes in your style and tone by adjusting the instructions and adding past writing samples. You can define the format further in the instructions. 
+
+You can also create your own agent and then create duplicates to tailor it to specific tasks.`,
+          },
         ],
       },
       {
@@ -98,6 +112,25 @@ For maintenance purposes, the Platform team and OIT can access the information s
             answer: `* The context limit: 1,000,000 tokens  
 * Output token limit: 64,000 tokens  
 * Temperature: 1.0 `,
+          },
+          {
+            question: 'How can I start using an agent or switch agents?',
+            answer: `Use agents at conversation start, mid-conversation, or use multiple agents in one conversation. To use an agent, “activate” in one of four methods: 
+
+* Choose an agent using the selector at the top of the screen (where you usually see the AI model)   
+* Select an agent in the Agent Library, shown at the top of the chat panel  
+* Start a new chat conversation by typing “@\\[agent name\\],” and the conversation starts with that agent   
+* Use an agent mid-conversation by typing “@\\[agent name\\]” to activate it. The agent name appears at the top. 
+
+Once you activate an agent, you can see its name at the top of the screen, regardless of activation method. See the ["How to Build & Use Agents" guide](https://ai-assistant.nj.gov/nj/agent-guide) to learn more.`,
+          },
+          {
+            question: 'How can I stop using an agent?',
+            answer: `The agent name appears in the selector at the top when active, providing an easy way to stop using an agent (or switch to a different agent). 
+
+At the top of the page in the selector, you will see the agent name (“Email Drafter”). Click on that to see a menu. Within the menu you will see the name of the model (“Claude Sonnet 4.5”) or other agents (“Brainstorming Buddy”). Click on the one you want.
+
+You will see the new name in the selector, which is how you know switching agents (or switching back to the base model) worked. See the ["How to Build & Use Agents" guide](https://ai-assistant.nj.gov/nj/agent-guide) to learn more.`,
           },
         ],
       },
