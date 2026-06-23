@@ -1,3 +1,4 @@
+import { Providers } from '@librechat/agents';
 import { ContentTypes } from 'librechat-data-provider';
 import type { MessageContentComplex } from '@librechat/agents';
 import {
@@ -5,6 +6,7 @@ import {
   extractYouTubeUrls,
   appendYouTubeVideoParts,
   DEFAULT_MAX_YOUTUBE_PARTS,
+  resolveYouTubeInjectionConfig,
 } from './youtube';
 
 const WATCH = (id: string) => `https://www.youtube.com/watch?v=${id}`;
@@ -224,5 +226,70 @@ describe('appendYouTubeVideoParts', () => {
     ];
     const result = appendYouTubeVideoParts({ enabled: true, text: youtubeText, content });
     expect(result).toBe(content);
+  });
+
+  it('stamps the provided mimeType on the media part (Vertex)', () => {
+    const result = appendYouTubeVideoParts({
+      enabled: true,
+      text: youtubeText,
+      content: youtubeText,
+      mimeType: 'video/mp4',
+    }) as MessageContentComplex[];
+
+    const mediaPart = result[result.length - 1] as Record<string, unknown>;
+    expect(mediaPart.type).toBe('media');
+    expect(mediaPart.mimeType).toBe('video/mp4');
+  });
+
+  it('respects max=1 even when the message has multiple YouTube links', () => {
+    const text = 'https://youtu.be/aaaaaaaaaaa and https://youtu.be/bbbbbbbbbbb';
+    const result = appendYouTubeVideoParts({
+      enabled: true,
+      text,
+      content: text,
+      max: 1,
+    }) as MessageContentComplex[];
+
+    const mediaParts = result.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('aaaaaaaaaaa'));
+  });
+});
+
+describe('resolveYouTubeInjectionConfig', () => {
+  it('caps Vertex at one video and sets a video/mp4 mimeType', () => {
+    expect(
+      resolveYouTubeInjectionConfig({ provider: Providers.VERTEXAI, model: 'gemini-2.5-flash' }),
+    ).toEqual({
+      max: 1,
+      mimeType: 'video/mp4',
+    });
+  });
+
+  it('allows multiple videos with no mimeType for Gemini 2.5+ on the Developer API', () => {
+    expect(
+      resolveYouTubeInjectionConfig({ provider: Providers.GOOGLE, model: 'gemini-2.5-flash' }),
+    ).toEqual({
+      max: DEFAULT_MAX_YOUTUBE_PARTS,
+    });
+    expect(
+      resolveYouTubeInjectionConfig({ provider: Providers.GOOGLE, model: 'gemini-3-pro-preview' }),
+    ).toEqual({
+      max: DEFAULT_MAX_YOUTUBE_PARTS,
+    });
+  });
+
+  it('caps pre-2.5 and unknown Developer API models at one video', () => {
+    expect(
+      resolveYouTubeInjectionConfig({ provider: Providers.GOOGLE, model: 'gemini-2.0-flash' }),
+    ).toEqual({
+      max: 1,
+    });
+    expect(
+      resolveYouTubeInjectionConfig({ provider: Providers.GOOGLE, model: 'gemini-1.5-pro' }),
+    ).toEqual({
+      max: 1,
+    });
+    expect(resolveYouTubeInjectionConfig({ provider: Providers.GOOGLE })).toEqual({ max: 1 });
   });
 });

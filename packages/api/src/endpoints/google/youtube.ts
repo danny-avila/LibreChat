@@ -1,3 +1,4 @@
+import { Providers } from '@librechat/agents';
 import { ContentTypes } from 'librechat-data-provider';
 import type { MessageContentComplex } from '@librechat/agents';
 
@@ -12,19 +13,51 @@ import type { MessageContentComplex } from '@librechat/agents';
  * `urlContext` tool.
  */
 
-/** Default cap on auto-injected YouTube video parts per message (Gemini practical limits). */
+/** Per-message cap on auto-injected YouTube video parts for Gemini 2.5+ (the API allows up to 10). */
 export const DEFAULT_MAX_YOUTUBE_PARTS = 5;
 
 /** A Gemini video-understanding content block (becomes a `fileData` part downstream). */
 export interface YouTubeVideoPart {
   type: 'media';
   /**
-   * Present (even as `undefined`) so the agents `messageContentMedia` `'mimeType' in content`
-   * guard passes; YouTube does not require a mimeType and an undefined value is dropped on
-   * JSON serialization of the request.
+   * Always present as a key so the agents `messageContentMedia` `'mimeType' in content` guard
+   * passes. The Gemini Developer API omits it for YouTube (value `undefined`, dropped on JSON
+   * serialization); Vertex samples set `video/mp4`.
    */
   mimeType?: string;
   fileUri: string;
+}
+
+const GEMINI_VERSION_REGEX = /gemini-(\d+)(?:\.(\d+))?/i;
+
+/** Gemini 2.5+ models accept up to 10 YouTube videos per request; earlier models accept 1. */
+function isGemini25OrLater(model?: string): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+  const match = GEMINI_VERSION_REGEX.exec(model);
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? '0');
+  return major > 2 || (major === 2 && minor >= 5);
+}
+
+/**
+ * Resolves provider/model-aware YouTube injection limits.
+ * - Vertex: every Vertex sample sets a `video/mp4` mimeType on YouTube fileData, and Vertex is
+ *   capped conservatively at a single YouTube URL per request.
+ * - Gemini Developer API: omits the mimeType; 2.5+ models accept multiple videos, earlier ones one.
+ */
+export function resolveYouTubeInjectionConfig(params: { provider?: string; model?: string }): {
+  max: number;
+  mimeType?: string;
+} {
+  if (params.provider === Providers.VERTEXAI) {
+    return { max: 1, mimeType: 'video/mp4' };
+  }
+  return { max: isGemini25OrLater(params.model) ? DEFAULT_MAX_YOUTUBE_PARTS : 1 };
 }
 
 /**
@@ -121,8 +154,9 @@ export function appendYouTubeVideoParts(params: {
   text?: string | null;
   content: string | MessageContentComplex[];
   max?: number;
+  mimeType?: string;
 }): string | MessageContentComplex[] {
-  const { enabled, text, content, max } = params;
+  const { enabled, text, content, max, mimeType } = params;
   if (!enabled) {
     return content;
   }
@@ -136,7 +170,7 @@ export function appendYouTubeVideoParts(params: {
   const existing = collectFileUris(baseParts);
   const newParts = urls
     .filter((url) => !existing.has(url))
-    .map((fileUri) => ({ type: 'media', mimeType: undefined, fileUri }) as MessageContentComplex);
+    .map((fileUri) => ({ type: 'media', mimeType, fileUri }) as MessageContentComplex);
 
   if (newParts.length === 0) {
     return content;

@@ -51,6 +51,7 @@ const {
   buildInitialToolSessions,
   hasUrlContextTool,
   appendYouTubeVideoParts,
+  resolveYouTubeInjectionConfig,
 } = require('@librechat/api');
 const {
   Callback,
@@ -478,10 +479,16 @@ class AgentClient extends BaseClient {
       hasUrlContextTool(this.options.agent?.tools)
     ) {
       const latestFormatted = formattedMessages[formattedMessages.length - 1];
+      const { max, mimeType } = resolveYouTubeInjectionConfig({
+        provider,
+        model: this.options.agent?.model,
+      });
       latestFormatted.content = appendYouTubeVideoParts({
         enabled: true,
         text: latestOrdered.text,
         content: latestFormatted.content,
+        max,
+        mimeType,
       });
     }
 
