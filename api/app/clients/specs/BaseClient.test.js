@@ -1439,6 +1439,118 @@ describe('BaseClient', () => {
       expect(message.files).toBeUndefined();
       expect(message.fileContext).toBeUndefined();
     });
+
+    test('preserves repeated owner-authorized historical file refs after the first context use', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [firstMessage, secondMessage] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-repeat-1',
+          files: [{ file_id: 'owner-file', filename: 'first-forged.txt' }],
+        },
+        {
+          messageId: 'msg-repeat-2',
+          files: [{ file_id: 'owner-file', filename: 'second-forged.txt' }],
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledTimes(1);
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledTimes(1);
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(firstMessage, [ownerFile]);
+      expect(secondMessage.fileContext).toBeUndefined();
+      expect(firstMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(secondMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(JSON.stringify(secondMessage)).not.toContain('second-forged');
+    });
+
+    test('preserves download-only historical attachments without trusting file fields', async () => {
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-download-only',
+          attachments: [
+            {
+              filename: 'report.csv',
+              filepath: '/api/files/code/download/session/file',
+              expiresAt: 123456,
+              conversationId: 'conversation-1',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-1',
+              text: 'untrusted text should not survive',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+            },
+          ],
+          fileContext: 'stale context',
+        },
+      ]);
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(message.fileContext).toBeUndefined();
+      expect(message.attachments).toEqual([
+        {
+          filename: 'report.csv',
+          filepath: '/api/files/code/download/session/file',
+          expiresAt: 123456,
+          conversationId: 'conversation-1',
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-1',
+        },
+      ]);
+      expect(JSON.stringify(message)).not.toContain('untrusted text');
+      expect(JSON.stringify(message)).not.toContain('forged-source');
+      expect(JSON.stringify(message)).not.toContain('victim');
+    });
+
+    test('merges safe per-message metadata onto authorized DB-backed attachments', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-artifact',
+          attachments: [
+            {
+              file_id: 'owner-file',
+              filename: 'forged-artifact.csv',
+              filepath: '/forged/artifact.csv',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+              text: 'forged artifact text',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-2',
+            },
+          ],
+        },
+      ]);
+
+      expect(message.attachments).toEqual([
+        expect.objectContaining({
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          filepath: '/uploads/owner.txt',
+          source: 'local',
+          metadata: ownerFile.metadata,
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-2',
+        }),
+      ]);
+      expect(message.attachments[0].text).toBeUndefined();
+      expect(message.attachments[0]._id).toBeUndefined();
+      expect(JSON.stringify(message)).not.toContain('forged-artifact');
+      expect(JSON.stringify(message)).not.toContain('forged artifact text');
+    });
   });
 
   describe('sendMessage quote references', () => {

@@ -16,6 +16,7 @@ const {
 const {
   Constants,
   FileSources,
+  Tools,
   ContentTypes,
   excludedKeys,
   EModelEndpoint,
@@ -43,6 +44,18 @@ const collectHistoricalFileRefs = (message) => {
   return refs;
 };
 
+const collectHistoricalFileIds = (messages) => {
+  const fileIds = new Set();
+  for (const message of messages) {
+    for (const ref of collectHistoricalFileRefs(message)) {
+      if (ref?.file_id) {
+        fileIds.add(ref.file_id);
+      }
+    }
+  }
+  return Array.from(fileIds);
+};
+
 const buildOwnerFileFilter = (fileIds, user) => {
   if (!user?.id || fileIds.length === 0) {
     return null;
@@ -58,7 +71,47 @@ const buildOwnerFileFilter = (fileIds, user) => {
   return filter;
 };
 
-const rehydrateMessageFileRefs = (refs, filesById) => {
+const TOOL_ATTACHMENT_KEYS = [Tools.file_search, Tools.web_search, Tools.ui_resources, Tools.memory];
+const DISPLAY_ATTACHMENT_FIELDS = [
+  'filename',
+  'filepath',
+  'expiresAt',
+  'conversationId',
+  'messageId',
+  'toolCallId',
+  'name',
+];
+const PER_MESSAGE_FILE_ATTACHMENT_FIELDS = ['messageId', 'toolCallId'];
+
+const pickFields = (source, fields) => {
+  const picked = {};
+  for (const field of fields) {
+    if (source?.[field] !== undefined) {
+      picked[field] = source[field];
+    }
+  }
+  return picked;
+};
+
+const sanitizeDisplayOnlyAttachment = (ref) => {
+  if (!ref || ref.file_id) {
+    return undefined;
+  }
+
+  const attachment = pickFields(ref, DISPLAY_ATTACHMENT_FIELDS);
+  if (TOOL_ATTACHMENT_KEYS.includes(ref.type)) {
+    attachment.type = ref.type;
+  }
+  for (const key of TOOL_ATTACHMENT_KEYS) {
+    if (ref[key] !== undefined) {
+      attachment[key] = ref[key];
+    }
+  }
+
+  return Object.keys(attachment).length > 0 ? attachment : undefined;
+};
+
+const rehydrateMessageFileRefs = (refs, filesById, { preserveDisplayOnly = false } = {}) => {
   if (!Array.isArray(refs)) {
     return undefined;
   }
@@ -67,7 +120,18 @@ const rehydrateMessageFileRefs = (refs, filesById) => {
   for (const ref of refs) {
     const file = filesById.get(ref?.file_id);
     if (file) {
-      files.push(sanitizeFileForTransmit(file));
+      files.push({
+        ...sanitizeFileForTransmit(file),
+        ...pickFields(ref, PER_MESSAGE_FILE_ATTACHMENT_FIELDS),
+      });
+      continue;
+    }
+
+    if (preserveDisplayOnly) {
+      const displayOnlyAttachment = sanitizeDisplayOnlyAttachment(ref);
+      if (displayOnlyAttachment) {
+        files.push(displayOnlyAttachment);
+      }
     }
   }
   return files.length > 0 ? files : undefined;
@@ -1366,12 +1430,26 @@ class BaseClient {
       return _messages;
     }
 
-    const seen = new Set();
+    const contextSeen = new Set();
     const attachmentsProcessed =
       this.options.attachments && !(this.options.attachments instanceof Promise);
     if (attachmentsProcessed) {
       for (const attachment of this.options.attachments) {
-        seen.add(attachment.file_id);
+        if (attachment?.file_id) {
+          contextSeen.add(attachment.file_id);
+        }
+      }
+    }
+
+    const historicalFileIds = collectHistoricalFileIds(_messages);
+    const fileFilter = buildOwnerFileFilter(historicalFileIds, this.options.req?.user);
+    const authorizedFilesById = new Map();
+    if (fileFilter) {
+      const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
+      for (const file of files) {
+        if (file?.file_id) {
+          authorizedFilesById.set(file.file_id, file);
+        }
       }
     }
 
@@ -1387,58 +1465,36 @@ class BaseClient {
 
       delete message.fileContext;
 
-      const fileIds = [];
-      const messageFileIds = new Set();
+      const contextFiles = [];
       if (Array.isArray(message.files)) {
         for (const file of message.files) {
-          if (file?.file_id) {
-            messageFileIds.add(file.file_id);
+          if (!file?.file_id || contextSeen.has(file.file_id)) {
+            continue;
+          }
+          const authorizedFile = authorizedFilesById.get(file.file_id);
+          if (authorizedFile) {
+            contextFiles.push(authorizedFile);
+            contextSeen.add(file.file_id);
           }
         }
       }
-      const fileRefs = collectHistoricalFileRefs(message);
-      for (const file of fileRefs) {
-        if (!file?.file_id || seen.has(file.file_id)) {
-          continue;
-        }
-        fileIds.push(file.file_id);
-        seen.add(file.file_id);
-      }
 
-      const fileFilter = buildOwnerFileFilter(fileIds, this.options.req?.user);
-      if (!fileFilter) {
-        delete message.files;
-        delete message.attachments;
-        return message;
-      }
-
-      const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
-      const filesById = new Map();
-      for (const file of files) {
-        if (file?.file_id) {
-          filesById.set(file.file_id, file);
-        }
-      }
-
-      const rehydratedFiles = rehydrateMessageFileRefs(message.files, filesById);
+      const rehydratedFiles = rehydrateMessageFileRefs(message.files, authorizedFilesById);
       if (rehydratedFiles) {
         message.files = rehydratedFiles;
       } else {
         delete message.files;
       }
 
-      const rehydratedAttachments = rehydrateMessageFileRefs(message.attachments, filesById);
+      const rehydratedAttachments = rehydrateMessageFileRefs(message.attachments, authorizedFilesById, {
+        preserveDisplayOnly: true,
+      });
       if (rehydratedAttachments) {
         message.attachments = rehydratedAttachments;
       } else {
         delete message.attachments;
       }
 
-      if (files.length === 0) {
-        return message;
-      }
-
-      const contextFiles = files.filter((file) => messageFileIds.has(file.file_id));
       if (contextFiles.length === 0) {
         return message;
       }
