@@ -1,10 +1,10 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
+import { render, screen } from '@testing-library/react';
+import type { UIResource } from 'librechat-data-provider';
+import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { MCPUIResourceCarousel } from '../MCPUIResourceCarousel';
 import { useOptionalMessagesConversation } from '~/Providers';
-import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import type { UIResource } from 'librechat-data-provider';
 
 jest.mock('~/Providers', () => ({
   useOptionalMessagesConversation: jest.fn(),

@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useLocalize, useExpandCollapse } from '~/hooks';
-import { cn } from '~/utils';
 import { OutputRenderer } from './ToolOutput';
+import { cn } from '~/utils';
 
 function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
