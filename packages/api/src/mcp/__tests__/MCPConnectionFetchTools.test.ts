@@ -10,6 +10,7 @@
 
 import { logger } from '@librechat/data-schemas';
 import { MCPConnection } from '~/mcp/connection';
+import { mcpConfig } from '~/mcp/mcpConfig';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -29,7 +30,13 @@ jest.mock('~/auth', () => ({
 
 /** Pin the page cap to a small value so the cap path is cheap to exercise. */
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { TOOLS_LIST_MAX_PAGES: 3, CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: {
+    TOOLS_LIST_MAX_PAGES: 3,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
+    CONNECTION_CHECK_TTL: 0,
+  },
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
@@ -54,6 +61,9 @@ function createConnectionWithListTools(listTools: jest.Mock): MCPConnection {
 describe('MCPConnection.fetchTools pagination', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mcpConfig.TOOLS_LIST_MAX_TOOLS = 1000;
+    mcpConfig.TOOLS_LIST_MAX_BYTES = 5 * 1024 * 1024;
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
   });
 
   it('returns the tools from a single page and makes one request when there is no nextCursor', async () => {
@@ -107,6 +117,56 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(listTools).toHaveBeenCalledTimes(3);
     expect(tools.map((t) => t.name)).toEqual(['t1', 't2', 't3']);
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('pagination limit'));
+  });
+
+  it('stops at the aggregate tool-count budget and warns', async () => {
+    mcpConfig.TOOLS_LIST_MAX_TOOLS = 3;
+    const listTools = jest.fn(async (params?: { cursor?: string }) => {
+      if (params?.cursor == null) {
+        return { tools: [makeTool('a'), makeTool('b')], nextCursor: 'c1' };
+      }
+      return { tools: [makeTool('c'), makeTool('d')], nextCursor: 'c2' };
+    });
+    const conn = createConnectionWithListTools(listTools);
+
+    const tools = await conn.fetchTools();
+
+    expect(tools.map((t) => t.name)).toEqual(['a', 'b', 'c']);
+    expect(listTools).toHaveBeenCalledTimes(2);
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('tool count budget'));
+  });
+
+  it('stops at the aggregate byte budget and warns', async () => {
+    mcpConfig.TOOLS_LIST_MAX_BYTES = 170;
+    const listTools = jest.fn(async () => ({
+      tools: [makeTool('a'), makeTool('b')],
+      nextCursor: 'c1',
+    }));
+    const conn = createConnectionWithListTools(listTools);
+
+    const tools = await conn.fetchTools();
+
+    expect(tools.map((t) => t.name)).toEqual(['a']);
+    expect(listTools).toHaveBeenCalledTimes(1);
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('size budget'));
+  });
+
+  it('stops at the elapsed-time budget before requesting another page', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 1;
+    const listTools = jest.fn(async () => ({ tools: [makeTool('a')], nextCursor: 'c1' }));
+    const conn = createConnectionWithListTools(listTools);
+    const dateNow = jest
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1001);
+
+    const tools = await conn.fetchTools();
+
+    expect(tools.map((t) => t.name)).toEqual(['a']);
+    expect(listTools).toHaveBeenCalledTimes(1);
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('time budget'));
+    dateNow.mockRestore();
   });
 
   it('stops and warns when the server repeats a cursor instead of looping forever', async () => {
