@@ -178,6 +178,12 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><defs><path id="glyph" d="M6 6h12v12H6z" /></defs><rect x="0" y="0" width="8" height="8" fill="#fff" /><use href="#glyph" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
+
+    it('ignores an unreferenced colored template in defs', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="unused"><path fill="#f00" d="M0 0h4v4H0z" /></symbol></defs><path fill="#333" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('currentColor resolved against a fixed color', () => {
@@ -238,6 +244,12 @@ describe('isMonochromeSvg', () => {
     it('preserves a chromatic fill applied to the root via CSS', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><style>svg{fill:#f00}</style><path d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves a root CSS currentColor fill fixed by the root color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24" color="#e00"><style>svg{fill:currentColor}</style><path d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
