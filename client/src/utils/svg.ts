@@ -261,15 +261,41 @@ function hasOpaqueBackground(root: Element, rules: FillRule[]): boolean {
   return false;
 }
 
+/**
+ * The tones a CSS `currentColor` paint contributes: it is resolved per element
+ * the rule matches (against an inherited fixed `color`), so a fixed color is
+ * preserved rather than recorded as the theme-following sentinel.
+ */
+function resolveCssCurrentColor(root: Element, selector: string): string[] {
+  if (selector === '') {
+    return [];
+  }
+  let matched: Element[];
+  try {
+    matched = Array.from(root.querySelectorAll(selector));
+  } catch {
+    return [CURRENT_COLOR];
+  }
+  return matched.map((el) => resolveCurrentColor(el, root));
+}
+
 function colorsFromStyleBlocks(root: Element): string[] {
   const colors: string[] = [];
   for (const style of Array.from(root.querySelectorAll('style'))) {
-    const css = style.textContent ?? '';
-    CSS_COLOR_REGEX.lastIndex = 0;
-    let match: RegExpExecArray | null = CSS_COLOR_REGEX.exec(css);
-    while (match !== null) {
-      colors.push(match[1]);
-      match = CSS_COLOR_REGEX.exec(css);
+    for (const rule of (style.textContent ?? '').split('}')) {
+      const brace = rule.indexOf('{');
+      if (brace === -1) {
+        continue;
+      }
+      const selector = rule.slice(0, brace).trim();
+      for (const match of rule.slice(brace + 1).matchAll(CSS_COLOR_REGEX)) {
+        const value = match[1].trim();
+        if (value.toLowerCase() === CURRENT_COLOR) {
+          colors.push(...resolveCssCurrentColor(root, selector));
+        } else {
+          colors.push(value);
+        }
+      }
     }
   }
   return colors;
@@ -356,10 +382,12 @@ function cssFill(el: Element, rules: FillRule[]): string | null {
 
 /**
  * Resolves the fill an element renders with, following inheritance: its own
- * explicit fill, then a matching CSS rule, then the same up its ancestors. Returns
- * null when nothing sets a fill, meaning the element falls back to default black.
+ * explicit fill, then a matching CSS rule, then the same up its ancestors until
+ * `boundary` (inclusive). Returns null when nothing sets a fill, meaning the
+ * element falls back to default black. For template content rendered through
+ * `<use>`, `boundary` is the referenced root, since the instance re-parents there.
  */
-function resolveFill(el: Element, root: Element, rules: FillRule[]): string | null {
+function resolveFill(el: Element, boundary: Element, rules: FillRule[]): string | null {
   let current: Element | null = el;
   while (current != null) {
     const explicit = readPaint(current, 'fill');
@@ -370,7 +398,7 @@ function resolveFill(el: Element, root: Element, rules: FillRule[]): string | nu
     if (css != null) {
       return css;
     }
-    if (current === root) {
+    if (current === boundary) {
       break;
     }
     current = current.parentElement;
@@ -433,6 +461,59 @@ function hasDefaultBlackShape(root: Element, rules: FillRule[]): boolean {
   return false;
 }
 
+/** The element a `<use>` references by local id (`href`/`xlink:href`), or null. */
+function referencedTarget(use: Element, root: Element): Element | null {
+  const ref = use.getAttribute('href') ?? use.getAttribute('xlink:href');
+  if (ref == null || !ref.startsWith('#')) {
+    return null;
+  }
+  const id = ref.slice(1);
+  if (id === '') {
+    return null;
+  }
+  for (const el of Array.from(root.querySelectorAll('[id]'))) {
+    if (el.getAttribute('id') === id) {
+      return el;
+    }
+  }
+  return null;
+}
+
+/** True when a referenced template has a fillable shape with no fill of its own. */
+function targetHasDefaultBlackShape(target: Element, rules: FillRule[]): boolean {
+  const shapes = Array.from(target.querySelectorAll(FILLABLE_SHAPES));
+  if (target.matches(FILLABLE_SHAPES)) {
+    shapes.unshift(target);
+  }
+  for (const el of shapes) {
+    if (resolveFill(el, target, rules) != null || isInside(el, target, FUNCTIONAL_CONTAINERS)) {
+      continue;
+    }
+    if (rendersFillArea(el)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when a visible `<use>` renders a template's default black fill: the use
+ * supplies no fill of its own, so an unpainted shape in the referenced content
+ * paints black at the instance.
+ */
+function hasDefaultBlackUse(root: Element, rules: FillRule[]): boolean {
+  for (const use of Array.from(root.querySelectorAll('use'))) {
+    if (isInside(use, root, DEFERRED_CONTAINERS) || fillIsResolved(use, root, rules)) {
+      continue;
+    }
+    const target = referencedTarget(use, root);
+    if (target != null && targetHasDefaultBlackShape(target, rules)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Returns true when an SVG can be safely tinted to match the theme: it embeds no
  * raster (`<image>`) or foreign (`<foreignObject>`) content, has no opaque
@@ -465,7 +546,7 @@ export function isMonochromeSvg(svg: string): boolean {
     }
     levels.add(level);
   }
-  if (hasDefaultBlackShape(root, rules)) {
+  if (hasDefaultBlackShape(root, rules) || hasDefaultBlackUse(root, rules)) {
     levels.add(0);
   }
   return levels.size <= 1;
