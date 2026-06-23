@@ -8,9 +8,10 @@ const {
   createConversationTag,
   deleteConversationTag,
   getConversationTags,
+  applyForcedRetention,
   getRoleByName,
 } = require('~/models');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
 const router = express.Router();
 
@@ -22,6 +23,17 @@ const checkBookmarkAccess = generateCheckAccess({
 
 router.use(requireJwtAuth);
 router.use(checkBookmarkAccess);
+
+/**
+ * Enforces forced (ephemeral) retention after a bookmark-tag write converts an older
+ * permanent conversation; a no-op outside forced retention.
+ */
+const enforceForcedRetention = (req, conversationId, context) =>
+  applyForcedRetention(
+    { userId: req?.user?.id, interfaceConfig: req?.config?.interfaceConfig },
+    { conversationId },
+    { context },
+  );
 
 /**
  * GET /
@@ -49,9 +61,12 @@ router.get('/', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.post('/', async (req, res) => {
+router.post('/', configMiddleware, async (req, res) => {
   try {
     const tag = await createConversationTag(req.user.id, req.body);
+    if (req.body?.addToConversation && req.body?.conversationId) {
+      await enforceForcedRetention(req, req.body.conversationId, 'POST /api/tags');
+    }
     res.status(200).json(tag);
   } catch (error) {
     logger.error('Error creating conversation tag:', error);
@@ -107,12 +122,17 @@ router.delete('/:tag', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.put('/convo/:conversationId', async (req, res) => {
+router.put('/convo/:conversationId', configMiddleware, async (req, res) => {
   try {
     const conversationTags = await updateTagsForConversation(
       req.user.id,
       req.params.conversationId,
       req.body.tags,
+    );
+    await enforceForcedRetention(
+      req,
+      req.params.conversationId,
+      'PUT /api/tags/convo/:conversationId',
     );
     res.status(200).json(conversationTags);
   } catch (error) {

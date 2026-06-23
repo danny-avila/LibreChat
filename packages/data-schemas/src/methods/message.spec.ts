@@ -1302,6 +1302,40 @@ describe('Message Operations', () => {
       }
     });
 
+    it('converts a permanent conversation and its messages without a messageId (tag write)', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await Message.create([
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'first' },
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'second' },
+      ]);
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId },
+        { context: 'tag' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt).toBeInstanceOf(Date);
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+      }
+    });
+
     it('is a no-op outside forced retention', async () => {
       const conversationId = uuidv4();
       const messageId = uuidv4();
