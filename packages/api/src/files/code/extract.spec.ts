@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
   extractCodeArtifactText,
   getExtractedTextFormat,
+  resolveMaxTextExtractBytes,
   MAX_TEXT_CACHE_BYTES,
   MAX_TEXT_EXTRACT_BYTES,
 } from './extract';
@@ -675,5 +676,34 @@ describe('extractCodeArtifactText office-html concurrency', () => {
     const htmlCount = results.filter((t) => t != null && t.includes('<!DOCTYPE html>')).length;
     expect(nullCount).toBe(1);
     expect(htmlCount).toBe(4);
+  });
+});
+
+describe('resolveMaxTextExtractBytes', () => {
+  const TWO_MB = 2 * 1024 * 1024;
+
+  it('defaults to 2 MB when unset or blank', () => {
+    expect(resolveMaxTextExtractBytes(undefined)).toBe(TWO_MB);
+    expect(resolveMaxTextExtractBytes('')).toBe(TWO_MB);
+    expect(resolveMaxTextExtractBytes('   ')).toBe(TWO_MB);
+  });
+
+  it('honors a valid positive byte override', () => {
+    expect(resolveMaxTextExtractBytes('1048576')).toBe(1048576);
+    expect(resolveMaxTextExtractBytes('5242880')).toBe(5242880);
+  });
+
+  it('floors fractional values', () => {
+    expect(resolveMaxTextExtractBytes('1048576.9')).toBe(1048576);
+  });
+
+  it('falls back to the default on non-numeric or non-positive input', () => {
+    expect(resolveMaxTextExtractBytes('nope')).toBe(TWO_MB);
+    expect(resolveMaxTextExtractBytes('0')).toBe(TWO_MB);
+    expect(resolveMaxTextExtractBytes('-100')).toBe(TWO_MB);
+  });
+
+  it('drives the exported default ceiling to 2 MB out of the box', () => {
+    expect(MAX_TEXT_EXTRACT_BYTES).toBe(TWO_MB);
   });
 });
