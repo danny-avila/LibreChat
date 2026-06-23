@@ -10,6 +10,7 @@ describe('resolveContextProjection', () => {
   const baseParams = {
     conversationId: 'conversation-1',
     messageId: 'message-1',
+    endpoint: 'openai',
     maxContextTokens: 1000,
     model: 'gpt-4o',
   };

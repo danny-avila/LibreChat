@@ -135,10 +135,7 @@ export async function resolveContextProjection(
   if (branch.length === 0) {
     return null;
   }
-  if (
-    branch.length > MAX_PROJECTION_BRANCH_MESSAGES ||
-    hasExceededBranchTextLimit(branch)
-  ) {
+  if (branch.length > MAX_PROJECTION_BRANCH_MESSAGES || hasExceededBranchTextLimit(branch)) {
     return null;
   }
 
