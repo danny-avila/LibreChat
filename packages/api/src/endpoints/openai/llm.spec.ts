@@ -1224,6 +1224,32 @@ describe('getOpenAILLMConfig', () => {
 
       expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
     });
+
+    it('should set includeReasoningContent for non-DeepSeek models when explicitly enabled', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        includeReasoningContent: true,
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should not set includeReasoningContent when the flag is false', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        includeReasoningContent: false,
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
+    });
   });
 
   describe('Verbosity Handling', () => {

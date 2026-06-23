@@ -3,6 +3,7 @@ import {
   EModelEndpoint,
   ReasoningEffort,
   ReasoningSummary,
+  ReasoningResponseKey,
   ReasoningParameterFormat,
 } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
@@ -214,6 +215,38 @@ describe('getOpenAIConfig', () => {
     });
     expect(result.llmConfig.reasoning).toBeUndefined();
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should replay reasoning content when custom endpoint enables includeReasoningContent', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          reasoningKey: ReasoningResponseKey.reasoningContent,
+          includeReasoningContent: true,
+        },
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      },
+      'custom-endpoint',
+    );
+
+    expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+  });
+
+  it('should not replay reasoning content for custom endpoints by default', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      },
+      'custom-endpoint',
+    );
+
+    expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
   });
 
   it('should default Vercel custom endpoints to reasoning object format', () => {

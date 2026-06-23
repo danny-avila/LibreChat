@@ -456,6 +456,7 @@ export type TConfig = {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;
     reasoningKey?: ReasoningResponseKey;
+    includeReasoningContent?: boolean;
     paramDefinitions?: Partial<SettingDefinition>[];
   };
 };

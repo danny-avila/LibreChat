@@ -857,6 +857,8 @@ export const endpointSchema = baseEndpointSchema.merge(
         defaultParamsEndpoint: z.string().default('custom'),
         reasoningFormat: eReasoningParameterFormatSchema.optional(),
         reasoningKey: eReasoningResponseKeySchema.optional(),
+        /** Replays `reasoning_content` on tool-call turns (e.g. Xiaomi MiMo, Kimi). */
+        includeReasoningContent: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
