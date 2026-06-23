@@ -15,7 +15,8 @@ describe('filterMentionEndpoints', () => {
     expect(result).toEqual([EModelEndpoint.agents]);
   });
 
-  it('keeps provider endpoints when no model spec allow-list is configured', () => {
+  // NJ: We've invalidated this test with our own behaviors
+  it.skip('keeps provider endpoints when no model spec allow-list is configured', () => {
     const result = filterMentionEndpoints({
       endpoints,
       includedEndpoints: new Set(),
@@ -24,6 +25,17 @@ describe('filterMentionEndpoints', () => {
     });
 
     expect(result).toEqual(endpoints);
+  });
+
+  it('NJ customization: removes all provider endpoints', () => {
+    const result = filterMentionEndpoints({
+      endpoints,
+      includedEndpoints: new Set(),
+      includeAssistants: true,
+      hasAgentAccess: true,
+    });
+
+    expect(result).toEqual([EModelEndpoint.agents]);
   });
 
   it('excludes agents when the user lacks agent access', () => {
@@ -45,6 +57,6 @@ describe('filterMentionEndpoints', () => {
       hasAgentAccess: true,
     });
 
-    expect(result).toEqual([EModelEndpoint.openAI]);
+    expect(result).toEqual([]);
   });
 });

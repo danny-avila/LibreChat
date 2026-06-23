@@ -165,6 +165,10 @@ export default function useMentions({
       if (spec.preset?.endpoint === EModelEndpoint.agents && spec.preset?.agent_id) {
         return spec.preset.agent_id in agentsMap;
       }
+      // NJ: Only render default model spec (for now)
+      if (!spec.default) {
+        return false;
+      }
       /** Keep non-agent modelSpecs */
       return true;
     });
