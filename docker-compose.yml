@@ -45,7 +45,9 @@ services:
     restart: always
     environment:
       - PORT=3000
-      - SESSION_SECRET=${ADMIN_PANEL_SESSION_SECRET:-${CREDS_KEY}}
+      # Plain expansion (not :?) so `docker compose down`/`pull` still run when this is unset.
+      # The panel itself refuses to start without it; set ADMIN_PANEL_SESSION_SECRET in .env.
+      - SESSION_SECRET=${ADMIN_PANEL_SESSION_SECRET}
       - API_SERVER_URL=http://api:${PORT:-3080}
       - VITE_API_BASE_URL=${DOMAIN_CLIENT:-http://localhost:3080}
       - SESSION_COOKIE_SECURE=${ADMIN_PANEL_SESSION_COOKIE_SECURE:-false}

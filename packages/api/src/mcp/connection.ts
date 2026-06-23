@@ -30,12 +30,36 @@ import { mcpConfig } from './mcpConfig';
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 type ManagedDispatcher = Agent | ProxyAgent;
 type ParsedIP = { version: 4 | 6; bits: 32 | 128; value: bigint };
+type MCPTool = MCPListToolsResult['tools'][number];
 
 const BIGINT_ZERO = BigInt(0);
 const BIGINT_ONE = BigInt(1);
 const BIGINT_EIGHT = BigInt(8);
 const BIGINT_SIXTEEN = BigInt(16);
 const UINT16_MASK = BigInt(0xffff);
+
+function getApproximateToolBytes(tool: MCPTool): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(tool), 'utf8');
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function getToolsListBudgetExceededReason(
+  toolCount: number,
+  totalBytes: number,
+  maxTools: number,
+  maxBytes: number,
+): string | null {
+  if (toolCount >= maxTools) {
+    return 'tool count';
+  }
+  if (totalBytes >= maxBytes) {
+    return 'size';
+  }
+  return null;
+}
 
 type MCPProxyConfig =
   | {
@@ -2202,29 +2226,77 @@ export class MCPConnection extends EventEmitter {
    * server that spans multiple pages (e.g. an aggregating gateway exposing many
    * tools) is loaded in full instead of being truncated to the first page.
    *
-   * Pagination is bounded by {@link mcpConfig.TOOLS_LIST_MAX_PAGES} and a
-   * repeated-cursor guard. On error, the tools already fetched are returned rather
-   * than discarded, and the method never throws.
+   * Pagination is bounded by {@link mcpConfig.TOOLS_LIST_MAX_PAGES}, aggregate
+   * tool count, approximate serialized size, elapsed time, and a repeated-cursor
+   * guard. On error, the tools already fetched are returned rather than discarded,
+   * and the method never throws.
    */
   async fetchTools(): Promise<MCPListToolsResult['tools']> {
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
+    const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
+    const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
+    const deadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
     const allTools: MCPListToolsResult['tools'] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
+    let totalBytes = 0;
 
     for (let page = 1; page <= maxPages; page++) {
-      const result = await this.listToolsPage(cursor);
+      const exhaustedBudget = getToolsListBudgetExceededReason(
+        allTools.length,
+        totalBytes,
+        maxTools,
+        maxBytes,
+      );
+      if (exhaustedBudget != null) {
+        this.warnToolsListBudgetExceeded(exhaustedBudget, allTools.length);
+        return allTools;
+      }
+
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        this.warnToolsListBudgetExceeded('time', allTools.length);
+        return allTools;
+      }
+
+      const result = await this.listToolsPage(cursor, remainingMs);
       if (result == null) {
         /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
         return allTools;
       }
 
-      allTools.push(...result.tools);
+      for (const tool of result.tools) {
+        if (allTools.length >= maxTools) {
+          this.warnToolsListBudgetExceeded('tool count', allTools.length);
+          return allTools;
+        }
+
+        const toolBytes = getApproximateToolBytes(tool);
+        if (totalBytes + toolBytes > maxBytes) {
+          this.warnToolsListBudgetExceeded('size', allTools.length);
+          return allTools;
+        }
+
+        allTools.push(tool);
+        totalBytes += toolBytes;
+      }
 
       const { nextCursor } = result;
       if (nextCursor == null) {
         return allTools;
       }
+
+      const nextPageBudget = getToolsListBudgetExceededReason(
+        allTools.length,
+        totalBytes,
+        maxTools,
+        maxBytes,
+      );
+      if (nextPageBudget != null) {
+        this.warnToolsListBudgetExceeded(nextPageBudget, allTools.length);
+        return allTools;
+      }
+
       if (seenCursors.has(nextCursor)) {
         logger.warn(
           `${this.getLogPrefix()} MCP server returned a repeated tools/list cursor; stopping pagination after ${page} page(s).`,
@@ -2242,10 +2314,22 @@ export class MCPConnection extends EventEmitter {
     return allTools;
   }
 
+  private warnToolsListBudgetExceeded(reason: string, toolCount: number): void {
+    logger.warn(
+      `${this.getLogPrefix()} Stopping tools/list pagination because the ${reason} budget was reached after ${toolCount} tool(s).`,
+    );
+  }
+
   /** Fetches a single `tools/list` page, returning null (and logging) on failure so pagination can stop gracefully. */
-  private async listToolsPage(cursor: string | undefined): Promise<MCPListToolsResult | null> {
+  private async listToolsPage(
+    cursor: string | undefined,
+    timeoutMs: number,
+  ): Promise<MCPListToolsResult | null> {
     try {
-      return await this.client.listTools(cursor != null ? { cursor } : undefined);
+      return await this.client.listTools(cursor != null ? { cursor } : undefined, {
+        timeout: timeoutMs,
+        maxTotalTimeout: timeoutMs,
+      });
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
       return null;

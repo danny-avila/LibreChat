@@ -7,6 +7,7 @@ const {
   ensureLinkPermissions,
   isFileSnapshotEnabled,
   isFileSnapshotKillSwitchActive,
+  buildSharedLinkStartupPayload,
   deleteSharedLinkWithCleanup,
   updateSharedLinkPermissionsExpiration,
   isActiveExpirationDate,
@@ -14,8 +15,10 @@ const {
 } = require('@librechat/api');
 const {
   logger,
+  getTenantId,
   runAsSystem,
   tenantStorage,
+  SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -38,6 +41,7 @@ const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const configMiddleware = require('~/server/middleware/config/app');
+const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
 
 const checkSharedLinksAccess = generateCheckAccess({
@@ -75,6 +79,14 @@ const runWithTenant = (tenantId, fn) =>
 /** Mirrors the owner preview route: pending records older than this are swept to
  * 'failed' on the next poll so the client poller terminates. */
 const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
+
+const getShareStartupPayload = async () => {
+  const tenantId = getTenantId();
+  const appConfig = await getAppConfig(
+    tenantId && tenantId !== SYSTEM_TENANT_ID ? { tenantId } : { baseOnly: true },
+  );
+  return buildSharedLinkStartupPayload(appConfig);
+};
 
 /**
  * MIME types that are safe to render inline. Everything else (text/html, SVG,
@@ -212,6 +224,17 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 };
 
 if (allowSharedLinks) {
+  router.get('/:shareId/config', optionalJwtAuth, canAccessSharedLink, async (_req, res) => {
+    try {
+      const payload = await getShareStartupPayload();
+      res.set('Cache-Control', 'private, no-store');
+      res.status(200).json(payload);
+    } catch (error) {
+      logger.error('Error getting shared startup config:', error);
+      res.status(500).json({ message: 'Error getting shared startup config' });
+    }
+  });
+
   router.get(
     '/:shareId',
     optionalJwtAuth,

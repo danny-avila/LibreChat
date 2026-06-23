@@ -124,6 +124,20 @@ describe('canAccessSharedLink', () => {
       expect(res._status).toBe(404);
       expect(next).not.toHaveBeenCalled();
     });
+
+    test('returns 404 when share is expired but ACL still exists', async () => {
+      const link = await createTestLink({ expiredAt: new Date('2020-01-01T00:00:00.000Z') });
+      await grantPublicViewer(link._id);
+      process.env.ALLOW_SHARED_LINKS_PUBLIC = 'true';
+
+      const req = createReq({ params: { shareId: link.shareId } });
+      const res = createRes();
+      const next = jest.fn();
+      await canAccessSharedLink(req, res, next as unknown as NextFunction);
+
+      expect(res._status).toBe(404);
+      expect(next).not.toHaveBeenCalled();
+    });
   });
 
   describe('public links', () => {
