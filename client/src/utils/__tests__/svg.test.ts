@@ -111,6 +111,18 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
+    it('rejects an explicit badge alongside an inherited-fill glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect x="0" y="0" width="8" height="8" fill="#fff" /><path fill="inherit" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('resolves fill="inherit" against an ancestor fill', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g fill="#333"><path fill="inherit" d="M4 4h16v16H4z" /></g></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
     it('inherits an ancestor fill instead of assuming the default black', () => {
       const svg = '<svg viewBox="0 0 24 24"><g fill="#333"><path d="M4 4h16v16H4z" /></g></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
@@ -299,6 +311,18 @@ describe('isMonochromeSvg', () => {
     it('tints a glyph over a background rect whose fill:none comes from CSS', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><style>.bg{fill:none}</style><rect class="bg" width="24" height="24" /><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over a rect with fill-opacity:0 in inline style', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" style="fill:#fff;fill-opacity:0" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph over a rect whose fill-opacity:0 comes from CSS', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.bg{fill-opacity:0}</style><rect class="bg" width="24" height="24" fill="#fff" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
