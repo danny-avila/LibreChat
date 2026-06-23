@@ -399,9 +399,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
       }
 
-      const requestedPriority = hasBroadManage
-        ? (priority ?? DEFAULT_PRIORITY)
-        : DEFAULT_PRIORITY;
+      const requestedPriority = hasBroadManage ? (priority ?? DEFAULT_PRIORITY) : DEFAULT_PRIORITY;
       const upsertOptions = hasBroadManage
         ? { expectEmpty: false }
         : { expectEmpty: true, preservePriority: true };
