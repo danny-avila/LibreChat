@@ -213,10 +213,10 @@ export async function initializeCustom({
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
-  const apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
+  const apiKey = userProvidesKey || userProvidesURL ? userValues?.apiKey : CUSTOM_API_KEY;
   const baseURL = userProvidesURL ? userValues?.baseURL : CUSTOM_BASE_URL;
 
-  if (userProvidesKey && !apiKey) {
+  if ((userProvidesKey || userProvidesURL) && !apiKey) {
     throw new Error(
       JSON.stringify({
         type: ErrorTypes.NO_USER_KEY,

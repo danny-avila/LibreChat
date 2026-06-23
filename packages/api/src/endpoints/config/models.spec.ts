@@ -65,6 +65,42 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
     );
   });
 
+  it('uses the user API key when baseURL is user-provided', async () => {
+    const loadConfigModels = createLoadConfigModels({
+      getAppConfig: jest.fn().mockResolvedValue(
+        buildAppConfig({
+          apiKey: 'sk-system-key',
+        }),
+      ),
+      getUserKeyValues: jest.fn().mockResolvedValue({
+        apiKey: 'sk-user-key',
+        baseURL: 'https://user-controlled.example.com/v1',
+      }),
+      fetchModels,
+    });
+
+    const req = {
+      user: { id: 'user-1', email: 'user@example.com' },
+      config: undefined,
+    } as unknown as ServerRequest;
+
+    await loadConfigModels(req);
+
+    expect(fetchModels).toHaveBeenCalledTimes(1);
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'TestProxy',
+        apiKey: 'sk-user-key',
+        baseURL: 'https://user-controlled.example.com/v1',
+      }),
+    );
+    expect(fetchModels).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'sk-system-key',
+      }),
+    );
+  });
+
   it('DOES forward configured headers when baseURL is admin-trusted (only apiKey is user-provided)', async () => {
     const headers = {
       Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',

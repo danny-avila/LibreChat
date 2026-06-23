@@ -204,7 +204,8 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
 
       if (models?.fetch && userKeyMap.has(name)) {
         const userKeyValues = userKeyMap.get(name);
-        const resolvedApiKey = apiKeyIsUserProvided ? userKeyValues?.apiKey : API_KEY;
+        const resolvedApiKey =
+          apiKeyIsUserProvided || baseURLIsUserProvided ? userKeyValues?.apiKey : API_KEY;
         const resolvedBaseURL = baseURLIsUserProvided ? userKeyValues?.baseURL : BASE_URL;
 
         if (resolvedApiKey && resolvedBaseURL) {
