@@ -8,13 +8,12 @@
  *   - packages/client/tailwind.config.js
  *
  * Semantic tokens resolve to CSS custom properties defined in
- * client/src/style.css (`html`, `.dark`, `.gizmo` blocks). shadcn-compatible
- * tokens hold HSL triplets, so they are wrapped in `hsl(...)`.
- *
- * Opacity modifiers (e.g. `bg-surface-primary/50`) are intentionally not
- * supported yet: the underlying variables hold hex/`rgb()` values rather than
- * bare channels. Migrating the variables to `R G B` triplets and switching to
- * `rgb(var(--x) / <alpha-value>)` is tracked as a follow-up.
+ * client/src/style.css (`html`, `.dark`, `.gizmo` blocks). Those variables hold
+ * bare `R G B` channel triplets, so `cssVar` wraps them as
+ * `rgb(var(--x) / <alpha-value>)`. This makes opacity modifiers work, e.g.
+ * `bg-surface-primary/50`. shadcn-compatible tokens still hold HSL triplets, so
+ * they are wrapped in `hsl(...)`; any direct `var(--token)` usage in plain CSS
+ * must wrap the channel triplet itself, e.g. `color: rgb(var(--text-primary))`.
  */
 
 const palette = {
@@ -47,7 +46,7 @@ const palette = {
   },
 };
 
-const cssVar = (name) => `var(${name})`;
+const cssVar = (name) => `rgb(var(${name}) / <alpha-value>)`;
 const hslVar = (name) => `hsl(var(${name}))`;
 
 /**
