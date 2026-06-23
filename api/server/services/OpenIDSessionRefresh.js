@@ -405,8 +405,10 @@ async function performIdpRefresh(req, res, user, tokenPreference) {
  * Hydrates `req.session.openidTokens` from a resolved OIDCTokens result and
  * persists it. Used by joining requests in the single-flight path: the leader
  * mutates only its own `req.session`, so a joiner that shares the session id but
- * carries a distinct `req` (concurrent HTTP requests) would otherwise re-read a
- * pre-rotation refresh token on its next OBO call and fail with invalid_grant.
+ * carries a distinct `req` (concurrent HTTP requests) would otherwise re-read
+ * stale tokens on its next OBO call. This includes stable-refresh-token IdPs,
+ * where the refresh token remains unchanged but the access token and expiry
+ * were refreshed by the leader.
  * Idempotent when the joiner shares the leader's `req` object.
  */
 async function hydrateSessionFromResolvedTokens(req, resolvedTokens) {
@@ -414,19 +416,33 @@ async function hydrateSessionFromResolvedTokens(req, resolvedTokens) {
     return;
   }
   const existing = req.session.openidTokens ?? {};
-  if (existing.refreshToken === resolvedTokens.refresh_token) {
+  const accessTokenChanged = existing.accessToken !== resolvedTokens.access_token;
+  const idTokenChanged =
+    resolvedTokens.id_token != null && existing.idToken !== resolvedTokens.id_token;
+  const refreshTokenChanged =
+    resolvedTokens.refresh_token != null && existing.refreshToken !== resolvedTokens.refresh_token;
+  const hasResolvedExpiry = typeof resolvedTokens.expires_at === 'number';
+  const expiresAtChanged = hasResolvedExpiry
+    ? existing.accessTokenExpiresAt !== resolvedTokens.expires_at
+    : accessTokenChanged && existing.accessTokenExpiresAt !== undefined;
+
+  if (!accessTokenChanged && !idTokenChanged && !refreshTokenChanged && !expiresAtChanged) {
     return;
   }
-  req.session.openidTokens = {
+
+  const nextSessionTokens = {
     ...existing,
     accessToken: resolvedTokens.access_token,
     idToken: resolvedTokens.id_token ?? existing.idToken,
     refreshToken: resolvedTokens.refresh_token ?? existing.refreshToken,
     lastRefreshedAt: Date.now(),
   };
-  if (typeof resolvedTokens.expires_at === 'number') {
-    req.session.openidTokens.accessTokenExpiresAt = resolvedTokens.expires_at;
+  if (hasResolvedExpiry) {
+    nextSessionTokens.accessTokenExpiresAt = resolvedTokens.expires_at;
+  } else if (accessTokenChanged) {
+    delete nextSessionTokens.accessTokenExpiresAt;
   }
+  req.session.openidTokens = nextSessionTokens;
   await persistSession(req);
 }
 

@@ -624,6 +624,51 @@ describe('OpenIDSessionRefresh', () => {
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
       expect(joinerReq.session.save).toHaveBeenCalled();
     });
+
+    it('hydrates a joining request when the refresh token stays stable', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const makeExpiredSession = () => ({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-stable',
+        accessTokenExpiresAt: expiredExp,
+      });
+      const leaderReq = buildReq(makeExpiredSession(), 'session-stable-joined');
+      const joinerReq = buildReq(makeExpiredSession(), 'session-stable-joined');
+      const user = makeOpenIdUser();
+
+      let resolveGrant;
+      const grantPromise = new Promise((resolve) => {
+        resolveGrant = resolve;
+      });
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(grantPromise);
+
+      const leaderPromise = refreshOpenIDSession(leaderReq, undefined, user, 'access_token');
+      const joinerPromise = refreshOpenIDSession(joinerReq, undefined, user, 'access_token');
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      const refreshedAccessToken = makeJwt(refreshedExp);
+      const refreshedIdToken = makeJwt(refreshedExp);
+      resolveGrant({
+        access_token: refreshedAccessToken,
+        id_token: refreshedIdToken,
+        refresh_token: 'rt-stable',
+        expires_in: 3600,
+      });
+
+      const [leaderTokens, joinerTokens] = await Promise.all([leaderPromise, joinerPromise]);
+
+      expect(leaderTokens.refresh_token).toBe('rt-stable');
+      expect(joinerTokens.refresh_token).toBe('rt-stable');
+      expect(joinerReq.session.openidTokens.accessToken).toBe(refreshedAccessToken);
+      expect(joinerReq.session.openidTokens.idToken).toBe(refreshedIdToken);
+      expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-stable');
+      expect(joinerReq.session.openidTokens.accessTokenExpiresAt).toBe(joinerTokens.expires_at);
+      expect(joinerReq.session.openidTokens.accessTokenExpiresAt).toBeGreaterThan(expiredExp);
+      expect(joinerReq.session.save).toHaveBeenCalled();
+    });
   });
 
   describe('createOpenIDSessionTokenProvider closure delegation', () => {
