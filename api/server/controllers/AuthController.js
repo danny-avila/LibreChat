@@ -334,7 +334,11 @@ const refreshController = async (req, res) => {
                       existingRefreshToken: bridgedRefreshToken,
                       tenantId: retryUser.tenantId,
                     });
-                    deleteRefreshTokenBridge({ oldRefreshToken: refreshToken });
+                    await deleteRefreshTokenBridge({
+                      oldRefreshToken: refreshToken,
+                      userId,
+                      tenantId: bridgeUser.tenantId,
+                    });
                     return res
                       .status(200)
                       .send({ token, user: sanitizeUserForAuthResponse(retryUser) });

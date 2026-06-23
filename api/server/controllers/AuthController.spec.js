@@ -770,7 +770,11 @@ describe('refreshController – OpenID path', () => {
       existingRefreshToken: 'bridged-refresh',
       tenantId: undefined,
     });
-    expect(deleteRefreshTokenBridge).toHaveBeenCalledWith({ oldRefreshToken: 'stored-refresh' });
+    expect(deleteRefreshTokenBridge).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+    });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

@@ -1,40 +1,37 @@
 const crypto = require('node:crypto');
-const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
+const {
+  logger,
+  encryptV2,
+  decryptV2,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+} = require('@librechat/data-schemas');
+const { math } = require('@librechat/api');
+const db = require('~/models');
 
 /**
- * Ephemeral server-side recovery bridge for refresh tokens rotated during SSE streaming.
+ * Server-side recovery bridge for refresh tokens rotated during SSE streaming.
  *
  * When an OBO call during SSE streaming rotates a refresh token but cannot sync the
- * browser cookie (headers already sent), this bridge stores a temporary mapping so
+ * browser cookie (headers already sent), this bridge stores a temporary Mongo mapping so
  * that if the express-session expires and the next /api/auth/refresh uses the stale
  * cookie, we can look up and use the rotated token instead.
  *
  * Bridge key: hash(oldRefreshToken) uniquely identifies which token rotation this is.
  * Bridge value: encrypted newRefreshToken, userId, tenantId, openidIssuer for verification.
- * Bridge TTL: short-lived (default ~max cookie expiry window), auto-deleted on use or expiry.
- *
- * Process-local: each server instance maintains its own bridge map. Multi-worker deployments
- * may have race conditions on cleanup, but the TTL ensures bridges don't accumulate.
+ * Bridge TTL: matches the refresh-token cookie lifetime and is enforced by Mongo TTL.
  */
-// hash(oldToken) -> { encryptedNewToken, userId, tenantId, issuer, createdAt, ttl }
-const bridges = new Map();
-
-/**
- * TTL for a refresh-token bridge (ms). Bridges should be short-lived to bound memory
- * and avoid stale recovery attempts. Defaults to 24 hours (similar to refresh cookie).
- */
-const DEFAULT_BRIDGE_TTL_MS = 24 * 60 * 60 * 1000;
+const getBridgeTtlMs = () => math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
 
 /**
  * Hashes a refresh token for use as a bridge key. Does NOT encrypt; hash is for
- * lookup only, safe to expose. Uses SHA-256 truncated to 12 bytes for reasonable
- * collision safety (~ 48 bits entropy, same as single-flight key hashing).
+ * lookup only, safe to expose. Uses full SHA-256 because this value is persisted
+ * and participates in a unique index.
  *
  * @param {string} refreshToken
- * @returns {string} hex-encoded 12-byte hash
+ * @returns {string} hex-encoded SHA-256 hash
  */
 function hashRefreshToken(refreshToken) {
-  return crypto.createHash('sha256').update(refreshToken).digest('hex').slice(0, 24);
+  return crypto.createHash('sha256').update(refreshToken).digest('hex');
 }
 
 /**
@@ -48,7 +45,7 @@ function hashRefreshToken(refreshToken) {
  * @param {string} args.userId — user._id (for verification on lookup)
  * @param {string} [args.tenantId] — user.tenantId (for multi-tenant deployments)
  * @param {string} [args.openidIssuer] — user.openidIssuer (for issuer-specific validation)
- * @param {number} [args.ttl] — bridge TTL in ms (defaults to DEFAULT_BRIDGE_TTL_MS)
+ * @param {number} [args.ttl] — bridge TTL in ms (defaults to REFRESH_TOKEN_EXPIRY)
  */
 async function storeRefreshTokenBridge({
   oldRefreshToken,
@@ -63,23 +60,21 @@ async function storeRefreshTokenBridge({
     return;
   }
 
-  purgeExpiredBridges();
-
-  const key = hashRefreshToken(oldRefreshToken);
-  const bridgeTtl = ttl ?? DEFAULT_BRIDGE_TTL_MS;
+  const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
+  const bridgeTtl = ttl ?? getBridgeTtlMs();
   const encryptedNewToken = await encryptV2(newRefreshToken);
 
-  bridges.set(key, {
-    encryptedNewToken,
+  await db.upsertRefreshTokenBridge({
+    oldRefreshTokenHash,
+    encryptedNewRefreshToken: encryptedNewToken,
     userId,
     tenantId,
-    issuer: openidIssuer,
-    createdAt: Date.now(),
-    ttl: bridgeTtl,
+    openidIssuer,
+    expiresAt: new Date(Date.now() + bridgeTtl),
   });
 
   logger.debug('[RefreshTokenBridge] Stored recovery bridge', {
-    tokenHash: key,
+    tokenHash: oldRefreshTokenHash,
     userId,
     ttl: bridgeTtl,
   });
@@ -103,52 +98,32 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
     return null;
   }
 
-  const key = hashRefreshToken(oldRefreshToken);
-  const bridge = bridges.get(key);
+  const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
+  const bridge = await db.findRefreshTokenBridge({
+    oldRefreshTokenHash,
+    userId,
+    tenantId,
+  });
 
   if (!bridge) {
     return null;
   }
 
-  // Check TTL: if expired, delete and return null
-  const age = Date.now() - bridge.createdAt;
-  if (age > bridge.ttl) {
-    logger.debug('[RefreshTokenBridge] Bridge expired, deleting', { tokenHash: key, age });
-    bridges.delete(key);
-    return null;
-  }
-
-  // Verify user context matches. Optional tenant/issuer constraints are enforced when stored.
-  if (bridge.userId !== userId) {
-    logger.warn('[RefreshTokenBridge] Bridge lookup failed: userId mismatch', {
-      tokenHash: key,
-      bridgedUserId: bridge.userId,
-      currentUserId: userId,
-    });
-    return null;
-  }
-
-  if (bridge.tenantId && bridge.tenantId !== tenantId) {
-    logger.warn('[RefreshTokenBridge] Bridge lookup failed: tenantId mismatch', {
-      tokenHash: key,
-    });
-    return null;
-  }
-
-  if (bridge.issuer && bridge.issuer !== openidIssuer) {
+  if (bridge.openidIssuer && bridge.openidIssuer !== openidIssuer) {
     logger.warn('[RefreshTokenBridge] Bridge lookup failed: issuer mismatch', {
-      tokenHash: key,
+      tokenHash: oldRefreshTokenHash,
     });
     return null;
   }
 
+  const age = Date.now() - new Date(bridge.createdAt).getTime();
   logger.info('[RefreshTokenBridge] Successfully resolved recovery bridge', {
-    tokenHash: key,
+    tokenHash: oldRefreshTokenHash,
     userId,
     age,
   });
 
-  return decryptV2(bridge.encryptedNewToken);
+  return decryptV2(bridge.encryptedNewRefreshToken);
 }
 
 /**
@@ -156,47 +131,26 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
  *
  * @param {object} args
  * @param {string} args.oldRefreshToken
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-function deleteRefreshTokenBridge({ oldRefreshToken }) {
+async function deleteRefreshTokenBridge({ oldRefreshToken, userId, tenantId }) {
   if (!oldRefreshToken) {
     return false;
   }
-  return bridges.delete(hashRefreshToken(oldRefreshToken));
-}
-
-/**
- * Cleanup routine: purge expired bridges. Safe to call periodically (e.g., hourly).
- * Logs the count of bridges cleaned up.
- */
-function purgeExpiredBridges() {
-  const now = Date.now();
-  let purged = 0;
-
-  for (const [key, bridge] of bridges.entries()) {
-    const age = now - bridge.createdAt;
-    if (age > bridge.ttl) {
-      bridges.delete(key);
-      purged++;
-    }
+  if (!userId) {
+    return false;
   }
-
-  if (purged > 0) {
-    logger.debug('[RefreshTokenBridge] Purged expired bridges', {
-      count: purged,
-      remaining: bridges.size,
-    });
-  }
+  const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
+  const result = await db.deleteRefreshTokenBridge({ oldRefreshTokenHash, userId, tenantId });
+  return (result.deletedCount ?? 0) > 0;
 }
 
 module.exports = {
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
   deleteRefreshTokenBridge,
-  purgeExpiredBridges,
   __internals: {
-    bridges,
     hashRefreshToken,
-    DEFAULT_BRIDGE_TTL_MS,
+    getBridgeTtlMs,
   },
 };

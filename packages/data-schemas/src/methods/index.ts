@@ -1,4 +1,8 @@
 import type { RoleMethods, RoleDeps } from './role';
+import {
+  createRefreshTokenBridgeMethods,
+  type RefreshTokenBridgeMethods,
+} from './refreshTokenBridge';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createTokenMethods, type TokenMethods } from './token';
@@ -114,6 +118,7 @@ export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_A
 export type AllMethods = UserMethods &
   SessionMethods &
   TokenMethods &
+  RefreshTokenBridgeMethods &
   RoleMethods &
   KeyMethods &
   FileMethods &
@@ -241,6 +246,7 @@ export function createMethods(
     ...createUserMethods(mongoose),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
+    ...createRefreshTokenBridgeMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
@@ -285,6 +291,7 @@ export type {
   UserMethods,
   SessionMethods,
   TokenMethods,
+  RefreshTokenBridgeMethods,
   RoleMethods,
   KeyMethods,
   FileMethods,

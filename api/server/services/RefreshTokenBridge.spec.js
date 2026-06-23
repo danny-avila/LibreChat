@@ -5,42 +5,61 @@ jest.mock('@librechat/data-schemas', () => ({
     warn: jest.fn(),
     info: jest.fn(),
   },
+  DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
   encryptV2: jest.fn(async (value) => `encrypted:${value}`),
   decryptV2: jest.fn(async (value) => value.replace(/^encrypted:/, '')),
 }));
 
+jest.mock('@librechat/api', () => ({
+  math: jest.fn((_value, fallback) => fallback),
+}));
+
+jest.mock('~/models', () => ({
+  upsertRefreshTokenBridge: jest.fn(),
+  findRefreshTokenBridge: jest.fn(),
+  deleteRefreshTokenBridge: jest.fn(),
+}));
+
 const { encryptV2, decryptV2 } = require('@librechat/data-schemas');
+const { math } = require('@librechat/api');
+const db = require('~/models');
 const {
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
   deleteRefreshTokenBridge,
-  purgeExpiredBridges,
   __internals,
 } = require('./RefreshTokenBridge');
 
 describe('RefreshTokenBridge', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.useRealTimers();
-    __internals.bridges.clear();
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
+    db.upsertRefreshTokenBridge.mockResolvedValue({});
+    db.findRefreshTokenBridge.mockResolvedValue(null);
+    db.deleteRefreshTokenBridge.mockResolvedValue({ deletedCount: 0 });
   });
 
   describe('storeRefreshTokenBridge', () => {
-    it('stores an encrypted bridge with required fields', async () => {
+    it('stores an encrypted Mongo bridge with required fields', async () => {
+      const before = Date.now();
+
       await storeRefreshTokenBridge({
         oldRefreshToken: 'rt-old',
         newRefreshToken: 'rt-new',
         userId: 'user-123',
       });
 
-      const bridge = Array.from(__internals.bridges.values())[0];
       expect(encryptV2).toHaveBeenCalledWith('rt-new');
-      expect(bridge.encryptedNewToken).toBe('encrypted:rt-new');
-      expect(JSON.stringify(bridge)).not.toContain('"rt-new"');
+      expect(db.upsertRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshTokenHash: __internals.hashRefreshToken('rt-old'),
+        encryptedNewRefreshToken: 'encrypted:rt-new',
+        userId: 'user-123',
+        tenantId: undefined,
+        openidIssuer: undefined,
+        expiresAt: expect.any(Date),
+      });
+      const stored = db.upsertRefreshTokenBridge.mock.calls[0][0];
+      expect(JSON.stringify(stored)).not.toContain('"rt-new"');
+      expect(stored.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 604800000 - 1000);
     });
 
     it('stores optional tenant and issuer context', async () => {
@@ -52,9 +71,12 @@ describe('RefreshTokenBridge', () => {
         openidIssuer: 'https://issuer.example.com',
       });
 
-      const bridge = Array.from(__internals.bridges.values())[0];
-      expect(bridge.tenantId).toBe('tenant-1');
-      expect(bridge.issuer).toBe('https://issuer.example.com');
+      expect(db.upsertRefreshTokenBridge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          openidIssuer: 'https://issuer.example.com',
+        }),
+      );
     });
 
     it('does not store a bridge without required fields', async () => {
@@ -63,49 +85,59 @@ describe('RefreshTokenBridge', () => {
         userId: 'user-123',
       });
 
-      expect(__internals.bridges.size).toBe(0);
+      expect(db.upsertRefreshTokenBridge).not.toHaveBeenCalled();
     });
 
-    it('purges expired bridges before inserting a new one', async () => {
-      jest.useFakeTimers();
+    it('honors an explicit ttl override', async () => {
+      const before = Date.now();
+
       await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old-1',
-        newRefreshToken: 'rt-new-1',
-        userId: 'user-1',
-        ttl: 100,
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-new',
+        userId: 'user-123',
+        ttl: 1000,
       });
 
-      jest.advanceTimersByTime(110);
-      await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old-2',
-        newRefreshToken: 'rt-new-2',
-        userId: 'user-2',
-        ttl: 10000,
-      });
-
-      expect(__internals.bridges.size).toBe(1);
-      await expect(
-        getRefreshTokenBridge({ oldRefreshToken: 'rt-old-2', userId: 'user-2' }),
-      ).resolves.toBe('rt-new-2');
+      const stored = db.upsertRefreshTokenBridge.mock.calls[0][0];
+      expect(stored.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 1000);
+      expect(stored.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
     });
-  });
 
-  describe('getRefreshTokenBridge', () => {
-    it('retrieves a matching bridge without consuming it', async () => {
+    it('derives the default ttl from REFRESH_TOKEN_EXPIRY', async () => {
       await storeRefreshTokenBridge({
         oldRefreshToken: 'rt-old',
         newRefreshToken: 'rt-new',
         userId: 'user-123',
       });
 
+      expect(math).toHaveBeenCalledWith(process.env.REFRESH_TOKEN_EXPIRY, 604800000);
+    });
+  });
+
+  describe('getRefreshTokenBridge', () => {
+    it('retrieves and decrypts a matching bridge', async () => {
+      db.findRefreshTokenBridge.mockResolvedValue({
+        encryptedNewRefreshToken: 'encrypted:rt-new',
+        userId: 'user-123',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+        createdAt: new Date(Date.now() - 100),
+      });
+
       const result = await getRefreshTokenBridge({
         oldRefreshToken: 'rt-old',
         userId: 'user-123',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
       });
 
-      expect(result).toBe('rt-new');
+      expect(db.findRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshTokenHash: __internals.hashRefreshToken('rt-old'),
+        userId: 'user-123',
+        tenantId: 'tenant-1',
+      });
       expect(decryptV2).toHaveBeenCalledWith('encrypted:rt-new');
-      expect(__internals.bridges.size).toBe(1);
+      expect(result).toBe('rt-new');
     });
 
     it('returns null when bridge does not exist', async () => {
@@ -117,46 +149,12 @@ describe('RefreshTokenBridge', () => {
       ).resolves.toBeNull();
     });
 
-    it('returns null when userId does not match', async () => {
-      await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        newRefreshToken: 'rt-new',
-        userId: 'user-123',
-      });
-
-      const result = await getRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        userId: 'user-wrong',
-      });
-
-      expect(result).toBeNull();
-      expect(__internals.bridges.size).toBe(1);
-    });
-
-    it('returns null when tenantId does not match', async () => {
-      await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        newRefreshToken: 'rt-new',
-        userId: 'user-123',
-        tenantId: 'tenant-1',
-      });
-
-      const result = await getRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        userId: 'user-123',
-        tenantId: 'tenant-2',
-      });
-
-      expect(result).toBeNull();
-      expect(__internals.bridges.size).toBe(1);
-    });
-
-    it('returns null when issuer does not match', async () => {
-      await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        newRefreshToken: 'rt-new',
+    it('returns null when stored issuer does not match', async () => {
+      db.findRefreshTokenBridge.mockResolvedValue({
+        encryptedNewRefreshToken: 'encrypted:rt-new',
         userId: 'user-123',
         openidIssuer: 'https://issuer1.example.com',
+        createdAt: new Date(),
       });
 
       const result = await getRefreshTokenBridge({
@@ -166,75 +164,37 @@ describe('RefreshTokenBridge', () => {
       });
 
       expect(result).toBeNull();
-      expect(__internals.bridges.size).toBe(1);
-    });
-
-    it('returns null and deletes when bridge has expired', async () => {
-      jest.useFakeTimers();
-      await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        newRefreshToken: 'rt-new',
-        userId: 'user-123',
-        ttl: 100,
-      });
-
-      jest.advanceTimersByTime(110);
-
-      const result = await getRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        userId: 'user-123',
-      });
-
-      expect(result).toBeNull();
-      expect(__internals.bridges.size).toBe(0);
+      expect(decryptV2).not.toHaveBeenCalled();
     });
   });
 
   describe('deleteRefreshTokenBridge', () => {
     it('deletes an existing bridge explicitly', async () => {
-      await storeRefreshTokenBridge({
+      db.deleteRefreshTokenBridge.mockResolvedValue({ deletedCount: 1 });
+
+      const result = await deleteRefreshTokenBridge({
         oldRefreshToken: 'rt-old',
-        newRefreshToken: 'rt-new',
         userId: 'user-123',
+        tenantId: 'tenant-1',
       });
 
-      expect(deleteRefreshTokenBridge({ oldRefreshToken: 'rt-old' })).toBe(true);
-      expect(__internals.bridges.size).toBe(0);
+      expect(result).toBe(true);
+      expect(db.deleteRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshTokenHash: __internals.hashRefreshToken('rt-old'),
+        userId: 'user-123',
+        tenantId: 'tenant-1',
+      });
     });
 
-    it('returns false when the bridge does not exist', () => {
-      expect(deleteRefreshTokenBridge({ oldRefreshToken: 'missing' })).toBe(false);
-    });
-  });
-
-  describe('purgeExpiredBridges', () => {
-    it('removes expired bridges and leaves fresh ones', async () => {
-      jest.useFakeTimers();
-      await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old-1',
-        newRefreshToken: 'rt-new-1',
-        userId: 'user-1',
-        ttl: 100,
-      });
-
-      await storeRefreshTokenBridge({
-        oldRefreshToken: 'rt-old-2',
-        newRefreshToken: 'rt-new-2',
-        userId: 'user-2',
-        ttl: 10000,
-      });
-
-      jest.advanceTimersByTime(110);
-      purgeExpiredBridges();
-
-      expect(__internals.bridges.size).toBe(1);
+    it('returns false when the bridge does not exist', async () => {
       await expect(
-        getRefreshTokenBridge({ oldRefreshToken: 'rt-old-2', userId: 'user-2' }),
-      ).resolves.toBe('rt-new-2');
+        deleteRefreshTokenBridge({ oldRefreshToken: 'missing', userId: 'user-123' }),
+      ).resolves.toBe(false);
     });
 
-    it('handles empty bridge map gracefully', () => {
-      expect(() => purgeExpiredBridges()).not.toThrow();
+    it('returns false when userId is omitted', async () => {
+      await expect(deleteRefreshTokenBridge({ oldRefreshToken: 'missing' })).resolves.toBe(false);
+      expect(db.deleteRefreshTokenBridge).not.toHaveBeenCalled();
     });
   });
 });
