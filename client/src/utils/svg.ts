@@ -35,8 +35,11 @@ const GRAY_LEVELS = new Map<string, number>([
 /** Paint properties whose color values determine whether an SVG is monochrome. */
 const PAINT_PROPS = ['fill', 'stroke', 'stop-color'];
 
-/** Area shapes that render with SVG's default black fill when none is supplied. */
-const FILLABLE_SHAPES = 'path, rect, circle, ellipse, polygon, text';
+/**
+ * Shapes that render with SVG's default black fill when none is supplied. Includes
+ * `polyline` (SVG closes it for fill painting) but not `line`, which has no area.
+ */
+const FILLABLE_SHAPES = 'path, rect, circle, ellipse, polygon, polyline, text';
 
 /**
  * Containers whose descendants supply functional paint (clipping, masking,
