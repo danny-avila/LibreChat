@@ -253,6 +253,34 @@ describe('getOpenAIConfig', () => {
     expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
   });
 
+  it('should enable within-run replay for non-OpenAI param-format gateways (anthropic/google)', () => {
+    const anthropic = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          defaultParamsEndpoint: EModelEndpoint.anthropic,
+          includeReasoningContent: true,
+        },
+        modelOptions: { model: 'claude-3-7-sonnet' },
+      },
+      'custom-endpoint',
+    );
+    expect(anthropic.llmConfig).toHaveProperty('includeReasoningContent', true);
+
+    const google = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          defaultParamsEndpoint: EModelEndpoint.google,
+          includeReasoningHistory: true,
+        },
+        modelOptions: { model: 'gemini-2.5-pro' },
+      },
+      'custom-endpoint',
+    );
+    expect(google.llmConfig).toHaveProperty('includeReasoningContent', true);
+  });
+
   it('should not replay reasoning content for custom endpoints by default', () => {
     const result = getOpenAIConfig(
       mockApiKey,

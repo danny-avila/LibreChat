@@ -426,7 +426,6 @@ export function getOpenAILLMConfig({
   defaultParams,
   useOpenRouter,
   reasoningFormat = ReasoningParameterFormat.reasoningEffort,
-  includeReasoningContent,
   modelOptions: _modelOptions,
 }: {
   apiKey: string;
@@ -439,7 +438,6 @@ export function getOpenAILLMConfig({
   defaultParams?: Record<string, unknown>;
   useOpenRouter?: boolean;
   reasoningFormat?: ReasoningParameterFormat;
-  includeReasoningContent?: boolean;
   azure?: false | t.AzureOptions;
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
@@ -668,15 +666,11 @@ export function getOpenAILLMConfig({
       }) || hasModelKwargs;
   }
 
-  /**
-   * Replay `reasoning_content` on tool-call turns: auto-on for DeepSeek thinking-mode
-   * (#13366), or opt-in per custom endpoint via `customParams.includeReasoningContent`
-   * (e.g. Xiaomi MiMo, Kimi), removing the need to impersonate the moonshot provider.
-   */
+  /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
   const isDeepSeekModel =
     typeof modelOptions.model === 'string' &&
     /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''));
-  if (includeReasoningContent === true || isDeepSeekModel) {
+  if (isDeepSeekModel) {
     llmConfig.includeReasoningContent = true;
   }
 
