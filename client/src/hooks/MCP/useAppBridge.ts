@@ -30,10 +30,23 @@ export function useAppBridge(
 
       const transport = new PostMessageTransport(iframe.contentWindow, iframe.contentWindow);
 
+      const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      const { locale, timeZone } = Intl.DateTimeFormat().resolvedOptions();
+
       bridge = new AppBridge(
         null,
         { name: 'LibreChat', version: '1.0.0' },
-        { openLinks: {}, serverTools: {}, logging: {} },
+        { openLinks: {}, serverTools: {}, serverResources: {}, logging: {} },
+        {
+          hostContext: {
+            theme,
+            platform: 'web',
+            locale,
+            timeZone,
+            displayMode: 'inline',
+            availableDisplayModes: ['inline'],
+          },
+        },
       );
 
       bridge.oncalltool = async (params) =>
@@ -51,16 +64,11 @@ export function useAppBridge(
       bridge.addEventListener('sandboxready', async () => {
         try {
           const html = await fetchMCPResourceHtml(resource.serverName as string, resource.uri);
-          const allowAttr = buildAllowAttribute(
-            resource.permissions as Parameters<typeof buildAllowAttribute>[0],
-          );
-          const sandboxTokens = ['allow-scripts', 'allow-forms'];
-          if (allowAttr) sandboxTokens.push(allowAttr);
           await bridge!.sendSandboxResourceReady({
             html,
             csp: resource.csp as never,
             permissions: resource.permissions as never,
-            sandbox: sandboxTokens.join(' '),
+            sandbox: 'allow-scripts allow-forms',
           });
         } catch (err) {
           logger.error('[MCP App] Failed to send sandbox resource', err);
@@ -82,12 +90,25 @@ export function useAppBridge(
 
       bridge.addEventListener('sizechange', onSizeChanged);
 
+      bridge.addEventListener('requestteardown', async () => {
+        await bridge!.teardownResource({}).catch(() => {});
+      });
+
+      bridge.addEventListener('loggingmessage', (event) => {
+        const { level, data } = event as { level: string; data: unknown };
+        logger.debug('[MCP App]', level, data);
+      });
+
       await bridge
         .connect(transport)
         .catch((err: unknown) => logger.error('[MCP App] bridge.connect failed', err));
       bridgeRef.current = bridge;
     };
 
+    const allowAttr = buildAllowAttribute(
+      resource.permissions as Parameters<typeof buildAllowAttribute>[0],
+    );
+    if (allowAttr) iframe.setAttribute('allow', allowAttr);
     iframe.addEventListener('load', handleLoad, { once: true });
     iframe.src = iframe.getAttribute('data-sandbox-url') ?? '';
 

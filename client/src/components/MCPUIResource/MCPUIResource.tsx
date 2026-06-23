@@ -19,7 +19,7 @@ const EMPTY_RESOURCE = { resourceId: '', uri: '' };
 export function MCPUIResource(props: MCPUIResourceProps) {
   const { resourceId } = props.node.properties;
   const localize = useLocalize();
-  const { conversationId } = useOptionalMessagesConversation();
+  const { conversationId } = useOptionalMessagesConversation() ?? {};
   const conversationResourceMap = useConversationUIResources(conversationId ?? undefined);
   const uiResource = conversationResourceMap.get(resourceId ?? '');
 

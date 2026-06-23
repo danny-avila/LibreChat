@@ -8,6 +8,7 @@ export interface MCPToolInput {
   name: string;
   description?: string;
   inputSchema?: JsonSchemaType;
+  _meta?: Record<string, unknown>;
 }
 
 export interface MCPToolCacheDeps {
@@ -89,6 +90,17 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       }
 
       for (const tool of tools) {
+        const uiMeta = (tool._meta as Record<string, unknown>)?.ui as
+          | Record<string, unknown>
+          | undefined;
+        const visibility = uiMeta?.visibility as string[] | undefined;
+        if (
+          Array.isArray(visibility) &&
+          visibility.includes('app') &&
+          !visibility.includes('model')
+        ) {
+          continue;
+        }
         const name = `${tool.name}${mcpDelimiter}${serverName}`;
         const entry: LCFunctionTool = {
           type: 'function',
