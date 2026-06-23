@@ -102,8 +102,9 @@ export default function applyTheme(themeRGB?: IThemeRGB): void {
       return;
     }
 
-    // Set the CSS variable as rgb() value for compatibility
-    // This ensures existing CSS that expects color values (not space-separated RGB) continues to work
-    root.style.setProperty(cssVar, `rgb(${value})`);
+    // Store the bare `R G B` channel triplet. The Tailwind color map wraps these
+    // as `rgb(var(--x) / <alpha-value>)`, so storing raw channels is what enables
+    // opacity modifiers and matches the style.css defaults.
+    root.style.setProperty(cssVar, value);
   });
 }
