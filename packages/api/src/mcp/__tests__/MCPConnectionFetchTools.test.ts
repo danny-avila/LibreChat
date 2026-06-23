@@ -136,6 +136,23 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('tool count budget'));
   });
 
+  it('does not request another page when the tool-count budget is exactly full', async () => {
+    mcpConfig.TOOLS_LIST_MAX_TOOLS = 2;
+    const listTools = jest.fn(async (params?: { cursor?: string }) => {
+      if (params?.cursor == null) {
+        return { tools: [makeTool('a'), makeTool('b')], nextCursor: 'c1' };
+      }
+      return { tools: [makeTool('c')] };
+    });
+    const conn = createConnectionWithListTools(listTools);
+
+    const tools = await conn.fetchTools();
+
+    expect(tools.map((t) => t.name)).toEqual(['a', 'b']);
+    expect(listTools).toHaveBeenCalledTimes(1);
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('tool count budget'));
+  });
+
   it('stops at the aggregate byte budget and warns', async () => {
     mcpConfig.TOOLS_LIST_MAX_BYTES = 170;
     const listTools = jest.fn(async () => ({
@@ -167,6 +184,20 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(listTools).toHaveBeenCalledTimes(1);
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('time budget'));
     dateNow.mockRestore();
+  });
+
+  it('applies the elapsed-time budget to an in-flight page request', async () => {
+    mcpConfig.TOOLS_LIST_TIMEOUT_MS = 1;
+    const listTools = jest.fn(() => new Promise<never>(() => undefined));
+    const conn = createConnectionWithListTools(listTools);
+
+    const tools = await conn.fetchTools();
+
+    expect(tools).toEqual([]);
+    expect(listTools).toHaveBeenCalledTimes(1);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining('tools/list timeout after'),
+    );
   });
 
   it('stops and warns when the server repeats a cursor instead of looping forever', async () => {

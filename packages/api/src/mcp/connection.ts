@@ -46,6 +46,21 @@ function getApproximateToolBytes(tool: MCPTool): number {
   }
 }
 
+function getToolsListBudgetExceededReason(
+  toolCount: number,
+  totalBytes: number,
+  maxTools: number,
+  maxBytes: number,
+): string | null {
+  if (toolCount >= maxTools) {
+    return 'tool count';
+  }
+  if (totalBytes >= maxBytes) {
+    return 'size';
+  }
+  return null;
+}
+
 type MCPProxyConfig =
   | {
       type: 'explicit';
@@ -2227,12 +2242,24 @@ export class MCPConnection extends EventEmitter {
     let totalBytes = 0;
 
     for (let page = 1; page <= maxPages; page++) {
-      if (Date.now() >= deadline) {
+      const exhaustedBudget = getToolsListBudgetExceededReason(
+        allTools.length,
+        totalBytes,
+        maxTools,
+        maxBytes,
+      );
+      if (exhaustedBudget != null) {
+        this.warnToolsListBudgetExceeded(exhaustedBudget, allTools.length);
+        return allTools;
+      }
+
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
         this.warnToolsListBudgetExceeded('time', allTools.length);
         return allTools;
       }
 
-      const result = await this.listToolsPage(cursor);
+      const result = await this.listToolsPage(cursor, remainingMs);
       if (result == null) {
         /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
         return allTools;
@@ -2258,6 +2285,18 @@ export class MCPConnection extends EventEmitter {
       if (nextCursor == null) {
         return allTools;
       }
+
+      const nextPageBudget = getToolsListBudgetExceededReason(
+        allTools.length,
+        totalBytes,
+        maxTools,
+        maxBytes,
+      );
+      if (nextPageBudget != null) {
+        this.warnToolsListBudgetExceeded(nextPageBudget, allTools.length);
+        return allTools;
+      }
+
       if (seenCursors.has(nextCursor)) {
         logger.warn(
           `${this.getLogPrefix()} MCP server returned a repeated tools/list cursor; stopping pagination after ${page} page(s).`,
@@ -2282,9 +2321,16 @@ export class MCPConnection extends EventEmitter {
   }
 
   /** Fetches a single `tools/list` page, returning null (and logging) on failure so pagination can stop gracefully. */
-  private async listToolsPage(cursor: string | undefined): Promise<MCPListToolsResult | null> {
+  private async listToolsPage(
+    cursor: string | undefined,
+    timeoutMs: number,
+  ): Promise<MCPListToolsResult | null> {
     try {
-      return await this.client.listTools(cursor != null ? { cursor } : undefined);
+      return await withTimeout(
+        this.client.listTools(cursor != null ? { cursor } : undefined),
+        timeoutMs,
+        `tools/list timeout after ${timeoutMs}ms`,
+      );
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
       return null;
