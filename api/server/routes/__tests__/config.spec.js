@@ -185,18 +185,22 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('customFooter');
     });
 
-    it('should include public share footer fields when share context is requested', async () => {
+    it('should not include share-only fields when share context is requested', async () => {
       process.env.ANALYTICS_GTM_ID = 'GTM-XYZ';
       process.env.CUSTOM_FOOTER = 'public footer text';
       process.env.HELP_AND_FAQ_URL = 'https://internal.example.com/faq';
+      process.env.SANDPACK_BUNDLER_URL = 'https://bundler.test';
+      process.env.SANDPACK_STATIC_BUNDLER_URL = 'https://static-bundler.test';
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(null);
 
       const response = await request(app).get('/api/config?context=share');
 
       expect(response.statusCode).toBe(200);
-      expect(response.body.analyticsGtmId).toBe('GTM-XYZ');
-      expect(response.body.customFooter).toBe('public footer text');
+      expect(response.body).not.toHaveProperty('analyticsGtmId');
+      expect(response.body).not.toHaveProperty('customFooter');
+      expect(response.body).not.toHaveProperty('bundlerURL');
+      expect(response.body).not.toHaveProperty('staticBundlerURL');
       expect(response.body).not.toHaveProperty('helpAndFaqURL');
       expect(response.body).not.toHaveProperty('allowAccountDeletion');
     });

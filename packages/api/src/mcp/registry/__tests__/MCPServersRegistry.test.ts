@@ -220,6 +220,114 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('resolveAllowlists (per-request, tenant-scoped)', () => {
+    const createWith = (
+      allowedDomains?: string[] | null,
+      allowedAddresses?: string[] | null,
+      resolver?: (ctx?: { userId?: string; role?: string }) => Promise<{
+        allowedDomains?: string[] | null;
+        allowedAddresses?: string[] | null;
+      }>,
+    ): MCPServersRegistry => {
+      (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+      MCPServersRegistry.createInstance(mockMongoose, allowedDomains, allowedAddresses, resolver);
+      return MCPServersRegistry.getInstance();
+    };
+
+    it('returns the YAML base allowlists when no resolver is injected', async () => {
+      const reg = createWith(['yaml.com'], ['10.0.0.0/8']);
+      await expect(reg.resolveAllowlists()).resolves.toEqual({
+        allowedDomains: ['yaml.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+        useSSRFProtection: false,
+      });
+    });
+
+    it('enables SSRF protection when the effective allowlist is empty', async () => {
+      const reg = createWith(undefined, undefined);
+      await expect(reg.resolveAllowlists()).resolves.toEqual({
+        allowedDomains: undefined,
+        allowedAddresses: undefined,
+        useSSRFProtection: true,
+      });
+    });
+
+    it('returns the resolver-provided merged allowlists and forwards the context', async () => {
+      const resolver = jest.fn().mockResolvedValue({
+        allowedDomains: ['admin-added.com'],
+        allowedAddresses: ['172.16.0.0/12'],
+      });
+      const reg = createWith(['yaml.com'], null, resolver);
+
+      const result = await reg.resolveAllowlists({ userId: 'u1', role: 'ADMIN' });
+
+      expect(resolver).toHaveBeenCalledWith({ userId: 'u1', role: 'ADMIN' });
+      expect(result).toEqual({
+        allowedDomains: ['admin-added.com'],
+        allowedAddresses: ['172.16.0.0/12'],
+        useSSRFProtection: false,
+      });
+    });
+
+    it('falls back to the YAML base allowlists when the resolver throws', async () => {
+      const resolver = jest.fn().mockRejectedValue(new Error('DB down'));
+      const reg = createWith(['yaml.com'], null, resolver);
+
+      await expect(reg.resolveAllowlists()).resolves.toEqual({
+        allowedDomains: ['yaml.com'],
+        allowedAddresses: null,
+        useSSRFProtection: false,
+      });
+    });
+
+    it('inspects against the resolved (admin-panel) allowlist, not the YAML base', async () => {
+      const resolver = jest.fn().mockResolvedValue({
+        allowedDomains: ['admin-added.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+      });
+      const reg = createWith(['yaml-only.com'], null, resolver);
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      await reg.reset();
+
+      await reg.addServer(
+        'admin_panel_server',
+        { type: 'streamable-http', url: 'https://admin-added.com/mcp' },
+        'DB',
+        'user-1',
+      );
+
+      expect(resolver).toHaveBeenCalledWith({ userId: 'user-1' });
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'admin_panel_server',
+        expect.objectContaining({ url: 'https://admin-added.com/mcp' }),
+        undefined,
+        ['admin-added.com'],
+        ['10.0.0.0/8'],
+      );
+    });
+
+    it('scopes the config-source cache key by the resolved allowlist (no cross-tenant poison)', async () => {
+      const resolver = jest
+        .fn()
+        .mockResolvedValueOnce({ allowedDomains: ['a.com'], allowedAddresses: null })
+        .mockResolvedValueOnce({ allowedDomains: ['b.com'], allowedAddresses: null });
+      const reg = createWith(null, null, resolver);
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      await reg.reset();
+      inspectSpy.mockClear();
+
+      const cfg = {
+        srv: { type: 'streamable-http' as const, url: 'https://srv.example.com/mcp' },
+      };
+      await reg.ensureConfigServers(cfg); // resolver call 1 → allowlist A
+      await reg.ensureConfigServers(cfg); // resolver call 2 → allowlist B (distinct key)
+
+      // Different resolved allowlists ⇒ different cache keys ⇒ the second pass re-inspects
+      // instead of reusing the first allowlist's cached entry.
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('reset', () => {
     it('should clear all servers from cache repository', async () => {
       // Add servers to cache using the new API

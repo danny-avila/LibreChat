@@ -1,6 +1,7 @@
 export enum QueryKeys {
   messages = 'messages',
   sharedMessages = 'sharedMessages',
+  sharedStartupConfig = 'sharedStartupConfig',
   sharedLinks = 'sharedLinks',
   allConversations = 'allConversations',
   archivedConversations = 'archivedConversations',
@@ -13,6 +14,7 @@ export enum QueryKeys {
   balance = 'balance',
   endpoints = 'endpoints',
   tokenConfig = 'tokenConfig',
+  contextProjection = 'contextProjection',
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',
@@ -126,4 +128,5 @@ export enum MutationKeys {
   updateSkillNode = 'updateSkillNode',
   deleteSkillNode = 'deleteSkillNode',
   updateSkillNodeContent = 'updateSkillNodeContent',
+  convoPin = 'convoPin',
 }

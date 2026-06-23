@@ -1,6 +1,7 @@
 /// <reference types="jest" />
-import { EventEmitter } from 'events';
 import express from 'express';
+import request from 'supertest';
+import { EventEmitter } from 'events';
 import type { Request, Response } from 'express';
 import {
   createMetrics,
@@ -10,10 +11,9 @@ import {
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   recordOpenIDUserLookup,
+  recordRumProxyRequest,
   setGenerationJobsInFlight,
 } from './metrics';
-
-const request = require('supertest') as (app: express.Express) => any;
 
 describe('normalizePath', () => {
   it.each([
@@ -270,6 +270,36 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(/openid_user_lookup_total\{result="found"\} 1/);
     expect(response.text).toMatch(/openid_user_lookup_duration_seconds_count\{result="found"\} 1/);
     expect(response.text).toMatch(/openid_user_lookup_duration_seconds_sum\{result="found"\} 0.2/);
+  });
+
+  it('tracks RUM proxy request outcomes', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordRumProxyRequest('traces', 'success');
+    recordRumProxyRequest('traces', 'auth_drop');
+    recordRumProxyRequest('logs', 'auth_error');
+    recordRumProxyRequest('logs', 'collector_5xx');
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="traces",result="success"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="traces",result="auth_drop"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="logs",result="auth_error"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="logs",result="collector_5xx"\} 1/,
+    );
   });
 
   it('tracks mongoose query counts and latency by model and operation', async () => {

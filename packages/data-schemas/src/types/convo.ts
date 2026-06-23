@@ -27,6 +27,7 @@ export interface IConversation extends Document {
   file_ids?: string[];
   resendImages?: boolean;
   promptCache?: boolean;
+  promptCacheTtl?: '5m' | '1h';
   thinking?: boolean;
   thinkingBudget?: number;
   effort?: string;
@@ -38,6 +39,7 @@ export interface IConversation extends Document {
   instructions?: string;
   stop?: string[];
   isArchived?: boolean;
+  pinned?: boolean;
   iconURL?: string;
   greeting?: string;
   spec?: string;

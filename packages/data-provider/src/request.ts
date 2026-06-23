@@ -81,6 +81,46 @@ type AuthRecoveryWindow = Window & {
 const refreshToken = (retry?: boolean): Promise<t.TRefreshTokenResponse | undefined> =>
   _post(endpoints.refreshToken(retry));
 
+const SHARE_PAGE_PATH_REGEX = /^\/share\/[^/]+\/?$/;
+const SHARED_MESSAGES_PATH_REGEX = /^\/api\/share\/[^/]+$/;
+
+const normalizePathname = (pathname: string) =>
+  pathname.startsWith('/') ? pathname : `/${pathname}`;
+
+const stripBasePath = (pathname: string) => {
+  const normalizedPathname = normalizePathname(pathname);
+  const baseUrl = endpoints.apiBaseUrl();
+  if (!baseUrl) {
+    return normalizedPathname;
+  }
+
+  const normalizedBaseUrl = normalizePathname(baseUrl);
+  if (
+    normalizedPathname === normalizedBaseUrl ||
+    normalizedPathname.startsWith(`${normalizedBaseUrl}/`)
+  ) {
+    return normalizedPathname.slice(normalizedBaseUrl.length) || '/';
+  }
+  return normalizedPathname;
+};
+
+const isSharePage = () => SHARE_PAGE_PATH_REGEX.test(stripBasePath(window.location.pathname));
+
+const getRequestPathname = (url?: string) => {
+  if (typeof url !== 'string') {
+    return '';
+  }
+  try {
+    return new URL(url, window.location.origin).pathname;
+  } catch {
+    return url.split(/[?#]/)[0] ?? '';
+  }
+};
+
+const isSharedMessagesRequest = (url?: string, method?: string) =>
+  method?.toLowerCase() === 'get' &&
+  SHARED_MESSAGES_PATH_REGEX.test(stripBasePath(getRequestPathname(url)));
+
 const dispatchTokenUpdatedEvent = (token: string) => {
   setTokenHeader(token);
   clearAuthRedirectStartedAt();
@@ -274,10 +314,11 @@ if (typeof window !== 'undefined') {
       }
 
       /** Skip refresh when the Authorization header has been cleared (e.g. during logout),
-       *  but allow shared link requests to proceed so auth recovery/redirect can happen */
+       *  but allow the shared link data request to proceed so private shares can still
+       *  recover auth/redirect without unrelated share-page queries forcing login. */
       if (
         !axios.defaults.headers.common['Authorization'] &&
-        !window.location.pathname.startsWith('/share/')
+        !(isSharePage() && isSharedMessagesRequest(originalRequest.url, originalRequest.method))
       ) {
         return Promise.reject(error);
       }

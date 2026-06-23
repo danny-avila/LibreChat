@@ -18,6 +18,7 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { isUserProvided, checkUserKeyExpiry, resolveAddParams } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { getScopedTokenConfigKey } from '~/endpoints/keys';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
@@ -25,24 +26,42 @@ import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
 
+function getTenantTokenScope(tenantId?: string | null): string {
+  const normalizedTenantId = typeof tenantId === 'string' ? tenantId.trim() : '';
+  return normalizedTenantId;
+}
+
 /**
  * Cache key for an endpoint's fetched token config. User-scoped when the
  * model fetch can resolve per-user: user-provided key/URL, or header
  * templates forwarded against an admin-trusted base URL — making the
- * response, and therefore the derived token config, user-specific.
+ * response, and therefore the derived token config, user-specific. Otherwise
+ * tenant-scoped when a tenant id is available because custom endpoint config
+ * is resolved per tenant.
  */
 export function getTokenConfigKey(
   endpointConfig: Partial<TEndpoint>,
   endpoint: string,
   userId: string,
+  tenantId?: string | null,
 ): string {
   const hasTokenConfig = endpointConfig.tokenConfig != null;
+  if (hasTokenConfig) {
+    return endpoint;
+  }
+
   const userProvidesKey = isUserProvided(extractEnvVariable(endpointConfig.apiKey ?? ''));
   const userProvidesURL = isUserProvided(extractEnvVariable(endpointConfig.baseURL ?? ''));
   const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
-  return !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
-    ? `${endpoint}:${userId}`
-    : endpoint;
+  const tenantScope = getTenantTokenScope(tenantId);
+
+  if (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders) {
+    return tenantScope
+      ? getScopedTokenConfigKey('tenant-user', [tenantScope, endpoint, userId])
+      : `${endpoint}:${userId}`;
+  }
+
+  return tenantScope ? getScopedTokenConfigKey('tenant', [tenantScope, endpoint]) : endpoint;
 }
 
 /**
@@ -120,17 +139,19 @@ function buildAnthropicCustomConfig({
   baseURL,
   modelOptions,
   endpointConfig,
+  userProvidesURL,
 }: {
   apiKey: string;
   baseURL: string;
   modelOptions: AnthropicModelOptions;
   endpointConfig: Partial<TEndpoint>;
+  userProvidesURL: boolean;
 }): InitializeResultBase {
   const result = getAnthropicLLMConfig(apiKey, {
     modelOptions,
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL,
-    headers: endpointConfig.headers,
+    headers: userProvidesURL ? undefined : endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     /** Apply admin `customParams.paramDefinitions` defaults (e.g. promptCache,
@@ -231,10 +252,11 @@ export async function initializeCustom({
   let endpointTokenConfig: EndpointTokenConfig | undefined;
 
   const userId = req.user?.id ?? '';
+  const tenantId = req.user?.tenantId;
 
   const cache = tokenConfigCache();
   const hasTokenConfig = endpointConfig.tokenConfig != null;
-  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId);
+  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId, tenantId);
 
   if (hasTokenConfig) {
     /** A static override is authoritative — use it for the agent's billing
@@ -304,6 +326,7 @@ export async function initializeCustom({
       baseURL,
       modelOptions: modelOptions as AnthropicModelOptions,
       endpointConfig,
+      userProvidesURL,
     });
     options.endpointTokenConfig = endpointTokenConfig;
   } else {

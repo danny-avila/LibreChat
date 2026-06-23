@@ -8,15 +8,22 @@ import {
   getBedrockModels,
   getAnthropicModels,
 } from './models';
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from './keys';
 
 jest.mock('axios');
 
 const mockCacheGet = jest.fn().mockResolvedValue(undefined);
 const mockCacheSet = jest.fn().mockResolvedValue(true);
+const mockTokenConfigGet = jest.fn().mockResolvedValue(undefined);
+const mockTokenConfigSet = jest.fn().mockResolvedValue(true);
 jest.mock('~/cache', () => ({
   standardCache: jest.fn().mockImplementation(() => ({
     get: mockCacheGet,
     set: mockCacheSet,
+  })),
+  tokenConfigCache: jest.fn().mockImplementation(() => ({
+    get: mockTokenConfigGet,
+    set: mockTokenConfigSet,
   })),
 }));
 
@@ -51,6 +58,8 @@ mockedAxios.get.mockResolvedValue({
 beforeEach(() => {
   mockCacheGet.mockReset().mockResolvedValue(undefined);
   mockCacheSet.mockReset().mockResolvedValue(true);
+  mockTokenConfigGet.mockReset().mockResolvedValue(undefined);
+  mockTokenConfigSet.mockReset().mockResolvedValue(true);
 });
 
 describe('fetchModels', () => {
@@ -263,6 +272,7 @@ describe('fetchModels with createTokenConfig true', () => {
   };
 
   beforeEach(() => {
+    mockedAxios.get.mockClear();
     mockedAxios.get.mockResolvedValue({ data });
   });
 
@@ -277,6 +287,59 @@ describe('fetchModels with createTokenConfig true', () => {
     const { processModelData } = jest.requireMock('~/utils');
     expect(processModelData).toHaveBeenCalled();
     expect(processModelData).toHaveBeenCalledWith(data);
+  });
+
+  it('backfills requested token config when model cache hits', async () => {
+    const endpointTokenConfig = {
+      'model-1': { prompt: 2000, completion: 1000, context: 1024 },
+    };
+    mockCacheGet.mockResolvedValue(['model-1']);
+    mockTokenConfigGet.mockResolvedValue(endpointTokenConfig);
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      tokenKey: `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000abc123`,
+    });
+
+    expect(models).toEqual(['model-1']);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(
+      mockTokenConfigGet.mock.calls[0][0].startsWith(`${SCOPED_TOKEN_CONFIG_KEY_PREFIX}models`),
+    ).toBe(true);
+    expect(mockTokenConfigSet).toHaveBeenCalledWith(
+      `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000abc123`,
+      endpointTokenConfig,
+    );
+  });
+
+  it('fetches and writes token config when scoped token key is missing on model cache hit', async () => {
+    mockCacheGet.mockResolvedValue(['cached-model']);
+    mockTokenConfigGet.mockResolvedValue(undefined);
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      tokenKey: `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000def456`,
+    });
+
+    expect(models).toEqual(['model-1', 'model-2']);
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.any(Object),
+    );
+    expect(mockTokenConfigSet).toHaveBeenCalledWith(
+      `${SCOPED_TOKEN_CONFIG_KEY_PREFIX}tenant\u0000def456`,
+      expect.objectContaining({
+        'model-1': expect.objectContaining({ context: 1024 }),
+      }),
+    );
+    const sourceSetCall = mockTokenConfigSet.mock.calls.find(([key]) =>
+      key.startsWith(`${SCOPED_TOKEN_CONFIG_KEY_PREFIX}models`),
+    );
+    expect(sourceSetCall).toBeDefined();
   });
 });
 

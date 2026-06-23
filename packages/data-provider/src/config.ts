@@ -1218,6 +1218,8 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
+    defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),
     remoteAgents: z
       .object({
@@ -1246,6 +1248,7 @@ export const interfaceSchema = z
           create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
+          snapshotFiles: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -1274,7 +1277,7 @@ export const interfaceSchema = z
     runCode: true,
     webSearch: true,
     contextUsage: true,
-    contextCost: true,
+    contextCost: false,
     peoplePicker: {
       users: true,
       groups: true,
@@ -1309,6 +1312,7 @@ export const interfaceSchema = z
       create: true,
       share: true,
       public: true,
+      snapshotFiles: true,
     },
   });
 
@@ -1389,6 +1393,8 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Whether shared links snapshot conversation files (gates the per-link "share files" checkbox). */
+  sharedLinksSnapshotFilesEnabled?: boolean;
   /** Effective default timing for when conversation titles become fetchable.
    * `immediate` = fetch in parallel with the active stream (default);
    * `final` = fetch only after the stream completes (legacy). */
@@ -1440,6 +1446,19 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
 };
+
+export type TSharedLinkStartupInterface = Pick<
+  Partial<TInterfaceConfig>,
+  'privacyPolicy' | 'termsOfService'
+>;
+
+export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &
+  Pick<
+    Partial<TStartupConfig>,
+    'analyticsGtmId' | 'bundlerURL' | 'customFooter' | 'staticBundlerURL'
+  > & {
+    interface?: TSharedLinkStartupInterface;
+  };
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
@@ -2488,7 +2507,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.12',
+  CONFIG_VERSION = '1.3.13',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

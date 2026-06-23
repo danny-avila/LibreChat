@@ -71,6 +71,7 @@ export const messagesBranch = () => `${messagesRoot}/branch`;
 
 const shareRoot = `${BASE_URL}/api/share`;
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
+export const sharedStartupConfig = (shareId: string) => `${shareMessages(shareId)}/config`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
 export const getSharedLinks = (
   pageSize: number,
@@ -84,6 +85,13 @@ export const getSharedLinks = (
   }${cursor ? `&cursor=${cursor}` : ''}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
 export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
+/** Share-scoped file routes: serve snapshotted files via shared-link permission. */
+export const sharedFile = (shareId: string, fileId: string) =>
+  `${shareRoot}/${shareId}/files/${encodeURIComponent(fileId)}`;
+export const sharedFileDownload = (shareId: string, fileId: string) =>
+  `${sharedFile(shareId, fileId)}/download`;
+export const sharedFilePreview = (shareId: string, fileId: string) =>
+  `${sharedFile(shareId, fileId)}/preview`;
 
 const keysEndpoint = `${BASE_URL}/api/keys`;
 
@@ -115,6 +123,7 @@ export const genTitle = (conversationId: string) =>
 export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const archiveConversation = () => `${conversationsRoot}/archive`;
+export const pinConversation = () => `${conversationsRoot}/pin`;
 
 export const deleteConversation = () => `${conversationsRoot}`;
 
@@ -149,6 +158,8 @@ export const deletePreset = () => `${BASE_URL}/api/presets/delete`;
 export const aiEndpoints = () => `${BASE_URL}/api/endpoints`;
 
 export const tokenConfig = () => `${BASE_URL}/api/endpoints/token-config`;
+
+export const contextProjection = () => `${BASE_URL}/api/endpoints/context-projection`;
 
 export const models = () => `${BASE_URL}/api/models`;
 

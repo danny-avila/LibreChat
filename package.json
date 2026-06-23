@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.6",
+  "version": "v0.8.7-rc1",
   "description": "",
   "packageManager": "npm@11.13.0",
   "workspaces": [
@@ -59,6 +59,7 @@
     "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:enforce": "npm run e2e:prepare && cross-env E2E_MODEL_SPECS_ENFORCE=true playwright test --config=e2e/playwright.config.mock.ts enforced-model-specs.spec.ts",
     "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:debug": "npm run e2e:prepare && cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
     "e2e:record": "npm run e2e:prepare && cross-env E2E_BASE_URL=http://localhost:3333 node e2e/setup/record.js",
@@ -152,7 +153,7 @@
   "overrides": {
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
-    "form-data": "^4.0.4",
+    "form-data": "^4.0.6",
     "langsmith": "^0.6.0",
     "postcss": "^8.5.13",
     "tslib": "^2.8.1",
@@ -179,12 +180,14 @@
       "ajv": "6.14.0"
     },
     "underscore": "1.13.8",
-    "hono": "^4.12.18",
+    "hono": "^4.12.25",
     "@hono/node-server": "^1.19.10",
     "monaco-editor": {
       "dompurify": "3.4.0"
     },
-    "svgo": "^2.8.2"
+    "svgo": "^2.8.2",
+    "js-yaml": "^4.2.0",
+    "ws": "^8.21.0"
   },
   "nodemonConfig": {
     "ignore": [

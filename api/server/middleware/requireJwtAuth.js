@@ -10,6 +10,7 @@ const {
   buildSafeAuthLogContext,
   formatAuthLogMessage,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
+  recordRumProxyRequest,
 } = require('@librechat/api');
 
 const hasPassportStrategy = (strategy) =>
@@ -35,6 +36,45 @@ const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.to
 const refreshCloudFrontCookies =
   maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
 
+const getAuthStrategies = (req) => {
+  const cookieHeader = req.headers.cookie;
+  const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
+  const tokenProvider = parsedCookies.token_provider;
+  const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
+  const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
+  const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies);
+  const useOpenIdJwt =
+    tokenProvider === 'openid' && openidJwtAvailable && openIdReuseUserId != null;
+
+  return {
+    tokenProvider,
+    openidReuseEnabled,
+    openidJwtAvailable,
+    openIdReuseUserId,
+    strategies: useOpenIdJwt ? ['openidJwt', 'jwt'] : ['jwt'],
+  };
+};
+
+const dropRumTelemetry = (res) => {
+  if (!res.headersSent) {
+    res.status(204).end();
+  }
+};
+
+// Keep in sync with packages/api/src/rum/proxy.ts; auth drops are recorded before proxy code runs.
+const getRumProxyEndpoint = (req) => {
+  if (req.path === '/v1/traces') {
+    return 'traces';
+  }
+  if (req.path === '/v1/logs') {
+    return 'logs';
+  }
+  return 'unknown';
+};
+
+const isOpenIdReuseUser = (strategy, user, openIdReuseUserId) =>
+  strategy !== 'openidJwt' || getAuthenticatedUserId(user) === openIdReuseUserId;
+
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
  * Switches between JWT and OpenID authentication based on cookies and environment settings.
@@ -44,15 +84,8 @@ const refreshCloudFrontCookies =
  * for downstream Mongoose tenant isolation and structured logging.
  */
 const requireJwtAuth = (req, res, next) => {
-  const cookieHeader = req.headers.cookie;
-  const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
-  const tokenProvider = parsedCookies.token_provider;
-  const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
-  const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
-  const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies);
-  const useOpenIdJwt =
-    tokenProvider === 'openid' && openidJwtAvailable && openIdReuseUserId != null;
-  const strategies = useOpenIdJwt ? ['openidJwt', 'jwt'] : ['jwt'];
+  const { tokenProvider, openidReuseEnabled, openidJwtAvailable, openIdReuseUserId, strategies } =
+    getAuthStrategies(req);
   const authLogState = {
     tokenProvider,
     openidReuseEnabled,
@@ -162,4 +195,45 @@ const requireJwtAuth = (req, res, next) => {
   authenticateWithStrategy(0);
 };
 
+const requireRumProxyAuth = (req, res, next) => {
+  const { openIdReuseUserId, strategies } = getAuthStrategies(req);
+  const endpoint = getRumProxyEndpoint(req);
+  let authErrorSeen = false;
+
+  const dropTelemetry = () => {
+    recordRumProxyRequest(endpoint, authErrorSeen ? 'auth_error' : 'auth_drop');
+    dropRumTelemetry(res);
+  };
+
+  const finishAuthentication = (strategy, user) => {
+    req.user = user;
+    req.authStrategy = strategy;
+    next();
+  };
+
+  let nextStrategyIndex = 0;
+  const tryNextStrategy = () => {
+    const strategy = strategies[nextStrategyIndex];
+    nextStrategyIndex += 1;
+
+    if (!strategy) {
+      dropTelemetry();
+      return;
+    }
+
+    passport.authenticate(strategy, { session: false }, (err, user) => {
+      authErrorSeen = authErrorSeen || err != null;
+      if (err || !user || !isOpenIdReuseUser(strategy, user, openIdReuseUserId)) {
+        tryNextStrategy();
+        return;
+      }
+
+      finishAuthentication(strategy, user);
+    })(req, res, next);
+  };
+
+  tryNextStrategy();
+};
+
 module.exports = requireJwtAuth;
+module.exports.requireRumProxyAuth = requireRumProxyAuth;

@@ -87,6 +87,9 @@ export const conversationPreset: {
   promptCache: {
     type: BooleanConstructor;
   };
+  promptCacheTtl: {
+    type: StringConstructor;
+  };
   thinking: {
     type: BooleanConstructor;
   };
@@ -255,6 +258,9 @@ export const conversationPreset: {
   /* Anthropic only */
   promptCache: {
     type: Boolean,
+  },
+  promptCacheTtl: {
+    type: String,
   },
   thinking: {
     type: Boolean,

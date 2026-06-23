@@ -34,6 +34,7 @@ import {
   useLocalize,
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -78,6 +79,8 @@ const AttachFileMenu = ({
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const uploadFileTooltip = useShortcutHint('uploadFile', localize('com_sidepanel_attach_files'));
+  const uploadFileAriaKey = useShortcutAriaKey('uploadFile');
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
     ephemeralAgentByConvoId(conversationId),
   );
@@ -277,6 +280,7 @@ const AttachFileMenu = ({
           disabled={isUploadDisabled}
           id="attach-file-menu-button"
           aria-label="Attach File Options"
+          aria-keyshortcuts={uploadFileAriaKey}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
             isPopoverActive && 'bg-surface-hover',
@@ -288,7 +292,7 @@ const AttachFileMenu = ({
         </Ariakit.MenuButton>
       }
       id="attach-file-menu-button"
-      description={localize('com_sidepanel_attach_files')}
+      description={uploadFileTooltip}
       disabled={isUploadDisabled}
     />
   );

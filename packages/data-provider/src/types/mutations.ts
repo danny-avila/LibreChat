@@ -1,18 +1,3 @@
-import * as types from '../types';
-import * as r from '../roles';
-import * as p from '../permissions';
-import {
-  Tools,
-  Assistant,
-  AssistantCreateParams,
-  AssistantUpdateParams,
-  FunctionTool,
-  AssistantDocument,
-  Agent,
-  AgentCreateParams,
-  AgentUpdateParams,
-} from './assistants';
-import { Action, ActionMetadata } from './agents';
 import type { InfiniteData, QueryKey } from '@tanstack/react-query';
 import type {
   TSkill,
@@ -26,6 +11,21 @@ import type {
   TDeleteSkillFileResponse,
   TSkillListResponse,
 } from './skills';
+import {
+  Tools,
+  Assistant,
+  AssistantCreateParams,
+  AssistantUpdateParams,
+  FunctionTool,
+  AssistantDocument,
+  Agent,
+  AgentCreateParams,
+  AgentUpdateParams,
+} from './assistants';
+import { Action, ActionMetadata } from './agents';
+import * as p from '../permissions';
+import * as types from '../types';
+import * as r from '../roles';
 
 export type MutationOptions<
   Response,
@@ -193,6 +193,11 @@ export type DeleteConversationOptions = MutationOptions<
 export type ArchiveConversationOptions = MutationOptions<
   types.TArchiveConversationResponse,
   types.TArchiveConversationRequest
+>;
+
+export type PinConversationOptions = MutationOptions<
+  types.TPinConversationResponse,
+  types.TPinConversationRequest
 >;
 
 export type DuplicateConvoOptions = MutationOptions<

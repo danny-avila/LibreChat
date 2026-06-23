@@ -256,6 +256,7 @@ export const bedrockInputSchema = s.tConversationSchema
     thinkingDisplay: true,
     reasoning_effort: true,
     promptCache: true,
+    promptCacheTtl: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -312,6 +313,7 @@ export const bedrockInputParser = s.tConversationSchema
     thinkingDisplay: true,
     reasoning_effort: true,
     promptCache: true,
+    promptCacheTtl: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -336,6 +338,7 @@ export const bedrockInputParser = s.tConversationSchema
       'topP',
       'stop',
       'promptCache',
+      'promptCacheTtl',
     ];
 
     const additionalFields: Record<string, unknown> = {};
@@ -501,6 +504,15 @@ export const bedrockInputParser = s.tConversationSchema
       }
     } else if (typedData.promptCache === true) {
       typedData.promptCache = undefined;
+    }
+
+    /**
+     * A cache TTL is meaningless without caching — tie it to promptCache. When
+     * caching is off or unsupported for the model (cleared above), drop the TTL
+     * so an unsupported `1h` is never sent on a non-caching Bedrock request.
+     */
+    if (typedData.promptCache !== true) {
+      typedData.promptCacheTtl = undefined;
     }
 
     if (Object.keys(additionalFields).length > 0) {

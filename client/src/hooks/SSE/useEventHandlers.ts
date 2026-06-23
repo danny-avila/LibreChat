@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
@@ -282,6 +282,19 @@ export default function useEventHandlers({
   const setAbortScroll = useSetRecoilState(store.abortScroll);
   const navigate = useNavigate();
   const location = useLocation();
+
+  /** Re-queue the turn's quoted excerpts when an early abort restores the draft,
+   *  so retrying the restored message still sends the references — the pending
+   *  queue was already drained on submit. */
+  const restorePendingQuotes = useRecoilCallback(
+    ({ set }) =>
+      (convoId: string, quotes?: string[]) => {
+        if (Array.isArray(quotes) && quotes.length > 0) {
+          set(store.pendingQuotesByConvoId(convoId), quotes);
+        }
+      },
+    [],
+  );
 
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
@@ -659,6 +672,7 @@ export default function useEventHandlers({
               abortMessages,
             );
             setDraft({ id: currentConvoId, value: requestMessage?.text });
+            restorePendingQuotes(currentConvoId, requestMessage?.quotes);
             return;
           }
 
@@ -670,6 +684,7 @@ export default function useEventHandlers({
           setMessages([]);
           queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
           setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
+          restorePendingQuotes(String(Constants.NEW_CONVO), requestMessage?.quotes);
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
@@ -734,6 +749,7 @@ export default function useEventHandlers({
 
           setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
           setDraft({ id: currentConvoId, value: requestMessage?.text });
+          restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
           }
@@ -864,6 +880,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      restorePendingQuotes,
     ],
   );
 

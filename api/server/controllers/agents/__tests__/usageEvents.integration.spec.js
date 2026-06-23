@@ -375,6 +375,12 @@ describe('usage events through the real agents pipeline', () => {
       expect(resumeState.contextUsage.breakdown.maxContextTokens).toBe(MAX_CONTEXT_TOKENS);
       /** Latest-wins: the persisted snapshot is the second call's */
       expect(resumeState.contextUsage.prePruneContextTokens).toBeGreaterThan(0);
+      /** Reconciled to the final primary call's actual prompt: openAI folds cache
+       *  into input_tokens (150), so the resume snapshot's used = 150 — the real
+       *  context, not the calibrated estimate. */
+      const used =
+        resumeState.contextUsage.contextBudget - resumeState.contextUsage.remainingContextTokens;
+      expect(used).toBe(SECOND_CALL_USAGE.input_tokens);
     }
   });
 
