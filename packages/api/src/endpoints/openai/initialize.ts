@@ -8,6 +8,7 @@ import type {
 import {
   mergeHeaders,
   resolveHeaders,
+  resolveAddParams,
   isUserProvided,
   checkUserKeyExpiry,
   getAzureCredentials,
@@ -108,6 +109,7 @@ export async function initializeOpenAI({
     clientOptions.headers = resolveHeaders({
       headers: { ...headers, ...(clientOptions.headers ?? {}) },
       user: req.user,
+      body: req.body,
     });
     /** `endpoints.all` headers apply globally, but stay unresolved here — they are
      *  resolved once at request time by `resolveConfigHeaders`. Resolving them now
@@ -119,7 +121,12 @@ export async function initializeOpenAI({
 
     const groupName = modelGroupMap[modelName || '']?.group;
     if (groupName && groupMap[groupName]) {
-      clientOptions.addParams = groupMap[groupName]?.addParams;
+      const rawAddParams = groupMap[groupName]?.addParams;
+      clientOptions.addParams = resolveAddParams({
+        addParams: rawAddParams,
+        user: req.user,
+        body: req.body,
+      });
       clientOptions.dropParams = groupMap[groupName]?.dropParams;
     }
 
