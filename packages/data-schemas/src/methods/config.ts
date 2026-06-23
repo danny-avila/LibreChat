@@ -149,7 +149,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean },
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
