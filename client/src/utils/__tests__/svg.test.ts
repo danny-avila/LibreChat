@@ -209,6 +209,24 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
+    it('ignores a referenced color rendered only through an opacity-zero use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="red" fill="#f00" d="M6 6h12v12H6z" /></defs><path fill="#333" d="M0 0h4v4H0z" /><use href="#red" opacity="0" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a nested referenced color hidden by an opacity-zero use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#red" opacity="0" /></symbol><path id="red" fill="#f00" d="M6 6h12v12H6z" /></defs><path fill="#333" d="M0 0h4v4H0z" /><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a default-black use hidden with opacity zero', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="g" d="M6 6h12v12H6z" /></defs><path fill="#fff" d="M0 0h4v4H0z" /><use href="#g" opacity="0" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
     it('tints a referenced glyph whose own fill overrides the use fill', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><defs><path id="p" fill="#333" d="M4 4h16v16H4z" /></defs><use href="#p" fill="#000" /></svg>';
