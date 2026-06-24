@@ -16,6 +16,15 @@ import type { MessageContentComplex } from '@librechat/agents';
 /** Per-message cap on auto-injected YouTube video parts for Gemini 2.5+ (the API allows up to 10). */
 export const DEFAULT_MAX_YOUTUBE_PARTS = 5;
 
+/**
+ * ReDoS guards. The detection/strip regexes run on authenticated, user-controlled chat text.
+ * Rather than scan the whole message in one global pass (which lets the engine restart at every
+ * `youtube.com/watch?` and rescan the rest of a long token), we split on whitespace and skip any
+ * token too long to be a real URL, and cap the total text scanned. This bounds the work to O(n).
+ */
+const MAX_YOUTUBE_SCAN_CHARS = 100_000;
+const MAX_URL_TOKEN_CHARS = 2_048;
+
 /** A Gemini video-understanding content block (becomes a `fileData` part downstream). */
 export interface YouTubeVideoPart {
   type: 'media';
@@ -66,7 +75,7 @@ export function resolveYouTubeInjectionConfig(params: { provider?: string; model
  * embed links. The capture group is always the 11-char video id.
  */
 const YOUTUBE_HOST_PATH =
-  '(?:(?:[a-z0-9-]+\\.)*youtube\\.com\\/(?:watch\\?(?:\\S*?&)?v=|shorts\\/|live\\/|embed\\/|v\\/)' +
+  '(?:(?:[a-z0-9-]+\\.)*youtube\\.com\\/(?:watch\\?(?:[^\\s&]*&)*v=|shorts\\/|live\\/|embed\\/|v\\/)' +
   '|(?:www\\.)?youtube-nocookie\\.com\\/embed\\/' +
   '|youtu\\.be\\/)';
 
@@ -98,20 +107,38 @@ const YOUTUBE_TIMESTAMP_REGEX = /[?&](t|start)=/i;
  * the model can still see/reason about them. Tidies leftover horizontal whitespace when changed.
  */
 function stripYouTubeUrls(text: string, injectedIds: Set<string>): string {
-  const replaced = text.replace(YOUTUBE_URL_STRIP_REGEX, (match, videoId) => {
-    if (!injectedIds.has(videoId)) {
-      return match;
-    }
-    /** Test the whole URL: the timestamp can precede `v=` (e.g. `watch?t=90&v=<id>`). */
-    if (YOUTUBE_TIMESTAMP_REGEX.test(match)) {
-      return match;
-    }
-    return '';
-  });
-  if (replaced === text) {
+  if (text.length === 0) {
     return text;
   }
-  return replaced
+  /**
+   * Split on whitespace while keeping the separators, so the text can be reassembled. Matching
+   * per-token (and skipping over-long tokens) bounds the regex scan — see {@link MAX_URL_TOKEN_CHARS}.
+   */
+  const segments = text.split(/(\s+)/);
+  let changed = false;
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (segment.length === 0 || segment.length > MAX_URL_TOKEN_CHARS || /\s/.test(segment[0])) {
+      continue;
+    }
+    YOUTUBE_URL_STRIP_REGEX.lastIndex = 0;
+    segments[i] = segment.replace(YOUTUBE_URL_STRIP_REGEX, (match, videoId) => {
+      if (!injectedIds.has(videoId)) {
+        return match;
+      }
+      /** Test the whole URL: the timestamp can precede `v=` (e.g. `watch?t=90&v=<id>`). */
+      if (YOUTUBE_TIMESTAMP_REGEX.test(match)) {
+        return match;
+      }
+      changed = true;
+      return '';
+    });
+  }
+  if (!changed) {
+    return text;
+  }
+  return segments
+    .join('')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+$/gm, '')
     .trim();
@@ -134,19 +161,27 @@ export function extractYouTubeUrls(text?: string | null, max?: number): string[]
     return [];
   }
 
+  const scanText =
+    text.length > MAX_YOUTUBE_SCAN_CHARS ? text.slice(0, MAX_YOUTUBE_SCAN_CHARS) : text;
   const seen = new Set<string>();
   const urls: string[] = [];
-  YOUTUBE_URL_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = YOUTUBE_URL_REGEX.exec(text)) !== null) {
-    const videoId = match[1];
-    if (seen.has(videoId)) {
+  /** URLs never contain whitespace, so per-token matching is equivalent and bounds the scan. */
+  for (const token of scanText.split(/\s+/)) {
+    if (token.length === 0 || token.length > MAX_URL_TOKEN_CHARS) {
       continue;
     }
-    seen.add(videoId);
-    urls.push(`https://www.youtube.com/watch?v=${videoId}`);
-    if (urls.length >= limit) {
-      break;
+    YOUTUBE_URL_REGEX.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = YOUTUBE_URL_REGEX.exec(token)) !== null) {
+      const videoId = match[1];
+      if (seen.has(videoId)) {
+        continue;
+      }
+      seen.add(videoId);
+      urls.push(`https://www.youtube.com/watch?v=${videoId}`);
+      if (urls.length >= limit) {
+        return urls;
+      }
     }
   }
   return urls;

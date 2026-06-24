@@ -363,3 +363,45 @@ describe('resolveYouTubeInjectionConfig', () => {
     expect(resolveYouTubeInjectionConfig({ provider: Providers.GOOGLE })).toEqual({ max: 1 });
   });
 });
+
+describe('ReDoS safety', () => {
+  it('returns quickly for a long malformed watch token with no v= parameter', () => {
+    /** One ~600KB non-whitespace token; before the fix this exhibited quadratic backtracking. */
+    const malicious = 'https://www.youtube.com/watch?'.repeat(20000);
+    const start = Date.now();
+    const result = extractYouTubeUrls(malicious, 5);
+    const elapsed = Date.now() - start;
+
+    expect(result).toEqual([]);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it('returns quickly for many medium malformed watch tokens', () => {
+    const token = 'https://www.youtube.com/watch?'.repeat(50); // ~1.5KB, under the per-token cap
+    const malicious = `${token} `.repeat(2000); // ~3MB of whitespace-separated malformed tokens
+    const start = Date.now();
+    const result = extractYouTubeUrls(malicious, 5);
+
+    expect(result).toEqual([]);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('still extracts a valid URL that appears before a huge token', () => {
+    const text = `https://youtu.be/dQw4w9WgXcQ ${'x'.repeat(60000)}`;
+    expect(extractYouTubeUrls(text, 5)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('injects + strips quickly when a valid URL is followed by a huge malformed token', () => {
+    const text = `https://youtu.be/dQw4w9WgXcQ ${'https://www.youtube.com/watch?'.repeat(20000)}`;
+    const start = Date.now();
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text, max: 5 });
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(1000);
+    const mediaParts = (result as MessageContentComplex[]).filter(
+      (p) => (p as Record<string, unknown>).type === 'media',
+    );
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
+});
