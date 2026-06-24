@@ -2,6 +2,7 @@ import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provid
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IConversation, IMessage, ISharedLink } from '~/types';
 import {
+  capForcedRetentionExpiry,
   capForcedRetentionToParent,
   cascadeForcedConversationRetention,
   cascadeForcedRetentionByTag,
@@ -162,26 +163,31 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const forcedExpiredAt = update.expiredAt;
       const isForcedRetention = isForcedTemporaryRetention(interfaceConfig?.retentionMode);
       /**
-       * Message-only saves (branch/artifact/abort) never run `saveConvo`, so the new
-       * message must not outlive a parent that already expires sooner. Callers that DO
-       * refresh the conversation afterward must not opt in, otherwise the message keeps
-       * the stale deadline and the TTL index deletes it before the refreshed conversation.
+       * Under forced retention the new message must never outlive a parent that already
+       * expires sooner, since `saveConvo` preserves that earlier deadline rather than
+       * refreshing it. Message-only saves (branch/artifact/abort) additionally backfill the
+       * parent's other messages and shares because no `saveConvo` follows to cascade; normal
+       * saves only cap the message itself and let the conversation cascade handle the rest.
        */
-      if (
-        isForcedRetention &&
-        forcedExpiredAt instanceof Date &&
-        metadata?.capExpiryToConversation === true
-      ) {
+      if (isForcedRetention && forcedExpiredAt instanceof Date) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
-        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
-        update.expiredAt = await capForcedRetentionToParent(
-          Conversation,
-          Message,
-          SharedLink,
-          userId,
-          conversationId,
-          forcedExpiredAt,
-        );
+        if (metadata?.capExpiryToConversation === true) {
+          const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+          update.expiredAt = await capForcedRetentionToParent(
+            Conversation,
+            Message,
+            SharedLink,
+            userId,
+            conversationId,
+            forcedExpiredAt,
+          );
+        } else {
+          const parent = await Conversation.findOne(
+            { conversationId, user: userId },
+            'expiredAt',
+          ).lean<{ expiredAt?: Date | null } | null>();
+          update.expiredAt = capForcedRetentionExpiry(parent?.expiredAt, forcedExpiredAt);
+        }
       }
 
       const message = await Message.findOneAndUpdate(
