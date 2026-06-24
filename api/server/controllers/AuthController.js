@@ -334,11 +334,18 @@ const refreshController = async (req, res) => {
                       existingRefreshToken: bridgedRefreshToken,
                       tenantId: retryUser.tenantId,
                     });
-                    await deleteRefreshTokenBridge({
-                      oldRefreshToken: refreshToken,
-                      userId,
-                      tenantId: bridgeUser.tenantId,
-                    });
+                    try {
+                      await deleteRefreshTokenBridge({
+                        oldRefreshToken: refreshToken,
+                        userId,
+                        tenantId: bridgeUser.tenantId,
+                      });
+                    } catch (cleanupError) {
+                      logger.warn(
+                        '[refreshController] Bridge cleanup failed after successful recovery',
+                        cleanupError,
+                      );
+                    }
                     return res
                       .status(200)
                       .send({ token, user: sanitizeUserForAuthResponse(retryUser) });

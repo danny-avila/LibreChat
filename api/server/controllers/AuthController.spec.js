@@ -798,6 +798,41 @@ describe('refreshController – OpenID path', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  it('returns success when bridge cleanup fails after bridged refresh succeeds', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    deleteRefreshTokenBridge.mockRejectedValueOnce(new Error('delete failed'));
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+
+    await refreshController(req, res);
+
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'bridged-refresh',
+      tenantId: undefined,
+    });
+    expect(deleteRefreshTokenBridge).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] Bridge cleanup failed after successful recovery',
+      expect.any(Error),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('does not use the bridge for generic HTTP 400 errors without invalid_grant', async () => {
     setOpenIDReuseCookies();
     openIdClient.refreshTokenGrant.mockRejectedValue(
