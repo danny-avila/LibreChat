@@ -52,14 +52,41 @@ describe('retention helpers', () => {
     expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
-  it('returns expiry when retentionMode is EPHEMERAL', async () => {
+  it('returns a fresh expiry when retentionMode is EPHEMERAL and the conversation has no earlier deadline', async () => {
+    dependencies.getConvo.mockResolvedValue(null);
+
     const result = await getRetentionExpiry(
       request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
       dependencies,
     );
 
     expect(result).toEqual({ expiredAt: expirationDate });
-    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.getConvo).toHaveBeenCalledWith('user-1', 'convo-1');
+  });
+
+  it('caps an ephemeral file to a parent conversation that expires sooner', async () => {
+    const soonerExpiry = new Date('2029-01-01T00:00:00.000Z');
+    dependencies.getConvo.mockResolvedValue({ expiredAt: soonerExpiry });
+
+    const result = await getRetentionExpiry(
+      request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: soonerExpiry });
+  });
+
+  it('keeps the fresh window when an ephemeral parent expires later', async () => {
+    dependencies.getConvo.mockResolvedValue({
+      expiredAt: new Date('2031-01-01T00:00:00.000Z'),
+    });
+
+    const result = await getRetentionExpiry(
+      request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
   });
 
   it('returns a fresh expiry when the conversation has an active expiration', async () => {
@@ -322,7 +349,7 @@ describe('retention helpers', () => {
     );
 
     expect(result).toEqual({ expiredAt: expirationDate });
-    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.getConvo).toHaveBeenCalledWith('user-1', 'convo-1');
     expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
   });
 

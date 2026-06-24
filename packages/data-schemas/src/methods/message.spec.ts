@@ -1092,6 +1092,39 @@ describe('Message Operations', () => {
       }
     });
 
+    it('preserves a carried-over message that already expires sooner than the forced window', async () => {
+      const conversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Permanent chat with a sooner-expiring message',
+        isTemporary: false,
+      });
+      const soonerMessageId = uuidv4();
+      await Message.create({
+        messageId: soonerMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'all-mode message with its own sooner TTL',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'follow-up', user: 'user123' },
+      );
+
+      const sooner = await Message.findOne({ messageId: soonerMessageId }).lean();
+      expect(sooner?.isTemporary).toBe(true);
+      expect(sooner?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
     it('re-caps an already temporary parent and its messages to a shorter ephemeral window', async () => {
       const conversationId = uuidv4();
       const longerExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
