@@ -572,6 +572,7 @@ export enum AgentCapabilities {
   actions = 'actions',
   context = 'context',
   skills = 'skills',
+  memory = 'memory',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -687,6 +688,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.actions,
   AgentCapabilities.context,
   AgentCapabilities.skills,
+  AgentCapabilities.memory,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -2666,6 +2668,8 @@ export enum LocalStorageKeys {
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
   /** Last checked toggle for Skills per conversation ID */
   LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
+  /** Last checked toggle for Memory per conversation ID */
+  LAST_MEMORY_TOGGLE_ = 'LAST_MEMORY_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

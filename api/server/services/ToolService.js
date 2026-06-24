@@ -507,7 +507,12 @@ async function processRequiredActions(client, requiredActions) {
  * }>} The agent tools and registry.
  */
 /** Native LibreChat tools that are not in the manifest */
-const nativeTools = new Set([Tools.execute_code, Tools.file_search, Tools.web_search]);
+const nativeTools = new Set([
+  Tools.execute_code,
+  Tools.file_search,
+  Tools.web_search,
+  Tools.memory,
+]);
 
 /** Checks if a tool name is a known built-in tool */
 const isBuiltInTool = (toolName) =>
@@ -570,6 +575,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     }
     if (tool === Tools.web_search) {
       return checkCapability(AgentCapabilities.web_search);
+    }
+    if (tool === Tools.memory) {
+      return checkCapability(AgentCapabilities.memory);
     }
     if (isActionTool(tool)) {
       return actionsEnabled;
@@ -1123,6 +1131,8 @@ async function loadAgentTools({
     } else if (tool === Tools.web_search) {
       includesWebSearch = checkCapability(AgentCapabilities.web_search);
       return includesWebSearch;
+    } else if (tool === Tools.memory) {
+      return checkCapability(AgentCapabilities.memory);
     } else if (isActionTool(tool)) {
       return actionsEnabled;
     } else if (tool?.includes(Constants.mcp_delimiter)) {
