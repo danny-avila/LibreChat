@@ -9,6 +9,7 @@ const {
   deleteConversationTag,
   getConversationTags,
   applyForcedRetention,
+  applyForcedRetentionToTag,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
@@ -32,6 +33,18 @@ const enforceForcedRetention = (req, conversationId, context) =>
   applyForcedRetention(
     { userId: req?.user?.id, interfaceConfig: req?.config?.interfaceConfig },
     { conversationId },
+    { context },
+  );
+
+/**
+ * Enforces forced (ephemeral) retention on every conversation carrying a tag, for global
+ * tag renames/deletes that rewrite conversation rows without converting them; a no-op
+ * outside forced retention.
+ */
+const enforceForcedRetentionForTag = (req, tag, context) =>
+  applyForcedRetentionToTag(
+    { userId: req?.user?.id, interfaceConfig: req?.config?.interfaceConfig },
+    { tag },
     { context },
   );
 
@@ -80,11 +93,12 @@ router.post('/', configMiddleware, async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.put('/:tag', async (req, res) => {
+router.put('/:tag', configMiddleware, async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
     const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
     if (tag) {
+      await enforceForcedRetentionForTag(req, req.body?.tag || decodedTag, 'PUT /api/tags/:tag');
       res.status(200).json(tag);
     } else {
       res.status(404).json({ error: 'Tag not found' });
@@ -101,9 +115,10 @@ router.put('/:tag', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.delete('/:tag', async (req, res) => {
+router.delete('/:tag', configMiddleware, async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
+    await enforceForcedRetentionForTag(req, decodedTag, 'DELETE /api/tags/:tag');
     const tag = await deleteConversationTag(req.user.id, decodedTag);
     if (tag) {
       res.status(200).json(tag);
