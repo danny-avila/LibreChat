@@ -2,11 +2,8 @@ const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 const { getMCPManager } = require('~/config');
 
-/** @param {unknown} error */
-function getErrorMessage(error) {
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
+// MCP SDK ErrorCode.InvalidRequest = -32600
+const MCP_INVALID_REQUEST = -32600;
 
 /** @route POST /api/mcp/resources/read */
 const readMCPResource = async (req, res) => {
@@ -29,7 +26,7 @@ const readMCPResource = async (req, res) => {
     return res.json(result);
   } catch (error) {
     logger.error('[readMCPResource] Error:', error);
-    return res.status(500).json({ error: getErrorMessage(error) || 'Failed to read resource' });
+    return res.status(500).json({ error: 'Failed to read resource' });
   }
 };
 
@@ -64,7 +61,10 @@ const appToolCall = async (req, res) => {
     return res.json(result);
   } catch (error) {
     logger.error('[appToolCall] Error:', error);
-    return res.status(500).json({ error: getErrorMessage(error) || 'Failed to execute tool' });
+    if (error && typeof error === 'object' && error.code === MCP_INVALID_REQUEST) {
+      return res.status(400).json({ error: error.message });
+    }
+    return res.status(500).json({ error: 'Failed to execute tool' });
   }
 };
 
@@ -76,6 +76,8 @@ const serveMCPSandbox = async (_req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
 
     const sandboxPath = path.resolve(
       __dirname,
@@ -96,7 +98,7 @@ const serveMCPSandbox = async (_req, res) => {
     });
   } catch (error) {
     logger.error('[serveMCPSandbox] Error:', error);
-    return res.status(500).json({ error: getErrorMessage(error) || 'Failed to load MCP sandbox' });
+    return res.status(500).json({ error: 'Failed to load MCP sandbox' });
   }
 };
 

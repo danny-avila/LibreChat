@@ -68,6 +68,7 @@ export class MCPManager extends UserConnectionManager {
   >();
 
   private readonly modelOnlyToolCache = new Map<string, Set<string>>();
+  private readonly knownToolNamesCache = new Map<string, Set<string>>();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -352,11 +353,13 @@ Please follow these instructions when using tools from the respective MCP server
         if (key === serverName || key.startsWith(`${serverName}:`)) {
           this.resourceUriCache.delete(key);
           this.modelOnlyToolCache.delete(key);
+          this.knownToolNamesCache.delete(key);
         }
       }
     } else {
       this.resourceUriCache.clear();
       this.modelOnlyToolCache.clear();
+      this.knownToolNamesCache.clear();
     }
   }
 
@@ -367,7 +370,9 @@ Please follow these instructions when using tools from the respective MCP server
       { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
     >();
     const modelOnly = new Set<string>();
+    const knownNames = new Set<string>();
     for (const tool of tools) {
+      knownNames.add(tool.name);
       if (isToolVisibilityModelOnly(tool)) {
         modelOnly.add(tool.name);
       }
@@ -381,6 +386,7 @@ Please follow these instructions when using tools from the respective MCP server
     }
     this.resourceUriCache.set(cacheKey, serverMap);
     this.modelOnlyToolCache.set(cacheKey, modelOnly);
+    this.knownToolNamesCache.set(cacheKey, knownNames);
   }
 
   private async getResourceMeta(
@@ -396,19 +402,6 @@ Please follow these instructions when using tools from the respective MCP server
       await this.populateToolCaches(connection, cacheKey);
     }
     return this.resourceUriCache.get(cacheKey)?.get(toolName);
-  }
-
-  private async isModelOnlyTool(
-    connection: MCPConnection,
-    serverName: string,
-    toolName: string,
-    userId?: string,
-  ): Promise<boolean> {
-    const cacheKey = `${serverName}:${userId ?? ''}`;
-    if (!this.modelOnlyToolCache.has(cacheKey)) {
-      await this.populateToolCaches(connection, cacheKey);
-    }
-    return this.modelOnlyToolCache.get(cacheKey)?.has(toolName) ?? false;
   }
 
   /**
@@ -670,6 +663,7 @@ Please follow these instructions when using tools from the respective MCP server
     user?: import('@librechat/data-schemas').IUser;
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    if (userId && user) this.updateUserLastActivity(userId);
     const connection = await this.getConnection({ serverName, user });
 
     if (!(await connection.isConnected())) {
@@ -719,7 +713,18 @@ Please follow these instructions when using tools from the respective MCP server
       );
     }
 
-    if (await this.isModelOnlyTool(connection, serverName, toolName, userId)) {
+    const cacheKey = `${serverName}:${userId ?? ''}`;
+    if (!this.knownToolNamesCache.has(cacheKey)) {
+      await this.populateToolCaches(connection, cacheKey);
+    }
+    if (!this.knownToolNamesCache.get(cacheKey)?.has(toolName)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Tool "${toolName}" is not available on server "${serverName}".`,
+      );
+    }
+
+    if (this.modelOnlyToolCache.get(cacheKey)?.has(toolName)) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `${logPrefix} Tool "${toolName}" is restricted to model use only.`,

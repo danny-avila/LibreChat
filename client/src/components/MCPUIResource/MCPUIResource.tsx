@@ -80,7 +80,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
               border: 'none',
               display: loaded ? 'block' : 'none',
             }}
-            title={`MCP App: ${(uiResource.toolName as string | undefined) ?? ''}`}
+            title={`MCP App: ${uiResource.toolName ?? ''}`}
           />
         </span>
       );

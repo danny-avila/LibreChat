@@ -15,21 +15,29 @@
 
     let innerFrame = null;
     let innerFrameBlobUrl = null;
-    let trustedOrigin = null;
     let readyInterval = null;
     const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
+
+    // Derive the trusted origin from the referrer at startup.
+    // The sandbox is always served same-origin, so document.referrer is the LibreChat page URL.
+    let trustedOrigin = null;
+    try {
+      if (document.referrer) {
+        trustedOrigin = new URL(document.referrer).origin;
+      }
+    } catch {}
 
     function notifyReady() {
       window.parent.postMessage(
         { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
-        '*'
+        trustedOrigin || '*'
       );
       if (!readyInterval) {
         readyInterval = setInterval(() => {
           if (!innerFrame) {
             window.parent.postMessage(
               { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
-              '*'
+              trustedOrigin || '*'
             );
           }
         }, 500);
@@ -157,8 +165,15 @@
       ].join('; ');
     }
 
+    // Only permit host patterns: optional scheme, optional wildcard subdomain prefix,
+    // hostname characters, optional port. Rejects CSP keywords and injection attempts.
+    const SAFE_HOST_RE = /^(?:https?:\/\/)?(?:\*\.)?[a-zA-Z0-9][a-zA-Z0-9\-.]*(?::\d{1,5})?$/;
+
     function toDomainList(value) {
-      return Array.isArray(value) ? value.join(' ') : '';
+      if (!Array.isArray(value)) return '';
+      return value
+        .filter(d => typeof d === 'string' && SAFE_HOST_RE.test(d.trim()))
+        .join(' ');
     }
 
     function escapeAttr(str) {

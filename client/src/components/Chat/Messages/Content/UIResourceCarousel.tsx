@@ -51,7 +51,7 @@ function MCPAppCard({ resource }: { resource: UIResource }) {
             border: 'none',
             display: loaded ? 'block' : 'none',
           }}
-          title={`MCP App: ${(resource.toolName as string | undefined) ?? ''}`}
+          title={`MCP App: ${resource.toolName ?? ''}`}
         />
       </>
     );

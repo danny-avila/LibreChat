@@ -22,6 +22,23 @@ export function useAppBridge(
   const user = useRecoilValue(store.user);
   const bridgeRef = useRef<AppBridge | null>(null);
 
+  // Refs keep latest values accessible inside the stable effect closure without triggering remount.
+  // The bridge mounts once per resourceId; toolArgs/toolResult/onSizeChanged are captured at
+  // mount time and are stable for a given resource identity because they derive from the same
+  // tool-call snapshot that produced the resource.
+  const onSizeChangedRef = useRef(onSizeChanged);
+  const toolArgsRef = useRef(toolArgs);
+  const toolResultRef = useRef(toolResult);
+  useEffect(() => {
+    onSizeChangedRef.current = onSizeChanged;
+  });
+  useEffect(() => {
+    toolArgsRef.current = toolArgs;
+  });
+  useEffect(() => {
+    toolResultRef.current = toolResult;
+  });
+
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe || !resource.serverName) return;
@@ -83,19 +100,21 @@ export function useAppBridge(
       });
 
       bridge.oninitialized = async () => {
-        if (toolArgs) {
+        const args = toolArgsRef.current;
+        const result = toolResultRef.current;
+        if (args) {
           await bridge!
-            .sendToolInput({ arguments: toolArgs })
+            .sendToolInput({ arguments: args })
             .catch((err: unknown) => logger.error('[MCP App] sendToolInput failed', err));
         }
-        if (toolResult) {
+        if (result) {
           await bridge!
-            .sendToolResult(toolResult as never)
+            .sendToolResult(result as never)
             .catch((err: unknown) => logger.error('[MCP App] sendToolResult failed', err));
         }
       };
 
-      bridge.addEventListener('sizechange', onSizeChanged);
+      bridge.addEventListener('sizechange', (params) => onSizeChangedRef.current(params));
 
       bridge.addEventListener('requestteardown', async () => {
         await bridge!.teardownResource({}).catch(() => {});

@@ -33,11 +33,12 @@ const MCPAppView = React.memo(function MCPAppView({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
 
   useEffect(() => {
     if (loaded) return;
-    const timer = setTimeout(() => setLoaded(true), SPINNER_TIMEOUT_MS);
+    const timer = setTimeout(() => setTimedOut(true), SPINNER_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [loaded]);
 
@@ -71,7 +72,7 @@ const MCPAppView = React.memo(function MCPAppView({
 
   return (
     <div className="my-2" style={height ? { height } : { minHeight: 100 }}>
-      {!loaded && (
+      {!loaded && !timedOut && (
         <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
           <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle
@@ -91,6 +92,11 @@ const MCPAppView = React.memo(function MCPAppView({
           {localize('com_ui_loading_interactive_view')}
         </div>
       )}
+      {timedOut && !loaded && (
+        <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+          {localize('com_ui_mcp_app_failed_to_load')}
+        </div>
+      )}
       <iframe
         ref={iframeRef}
         data-sandbox-url={sandboxUrl}
@@ -101,7 +107,7 @@ const MCPAppView = React.memo(function MCPAppView({
           border: 'none',
           display: loaded ? 'block' : 'none',
         }}
-        title={`MCP App: ${(app.toolName as string | undefined) ?? ''}`}
+        title={`MCP App: ${app.toolName ?? ''}`}
       />
     </div>
   );
