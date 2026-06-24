@@ -387,6 +387,11 @@ export const listSkillsWithFilters = (
   return `${skills()}${query}`;
 };
 
+/* Skill Schedules */
+export const skillSchedules = () => `${BASE_URL}/api/skill-schedules`;
+export const skillSchedule = (id: string) => `${skillSchedules()}/${encodeURIComponent(id)}`;
+export const runSkillSchedule = (id: string) => `${skillSchedule(id)}/run`;
+
 export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 
 export const skillFile = (id: string, relativePath: string) =>
