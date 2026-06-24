@@ -24,7 +24,60 @@ jobs:
       github.event.workflow_run.run_attempt < 3
     runs-on: ubuntu-latest
     steps:
+      - name: Check failed run is still current
+        id: current-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          set -euo pipefail
+
+          encode_uri() {
+            jq -nr --arg value "$1" '$value | @uri'
+          }
+
+          workflow_runs_path="repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_ID}/runs"
+          query="per_page=1&exclude_pull_requests=false"
+
+          if [ -n "$RUN_EVENT" ]; then
+            query="${query}&event=$(encode_uri "$RUN_EVENT")"
+          fi
+
+          if [ -n "$HEAD_BRANCH" ]; then
+            query_with_ref="${query}&branch=$(encode_uri "$HEAD_BRANCH")"
+            latest_run=$(gh api "${workflow_runs_path}?${query_with_ref}" --jq '.workflow_runs[0] // empty')
+          else
+            latest_run=""
+          fi
+
+          if [ -z "$latest_run" ]; then
+            latest_run=$(gh api "${workflow_runs_path}?${query}" --jq '.workflow_runs[0] // empty')
+          fi
+
+          if [ -z "$latest_run" ]; then
+            echo "No matching workflow runs found for ${WORKFLOW_NAME}; skipping retry."
+            echo "should_retry=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest_run_id=$(jq -r '.id' <<< "$latest_run")
+          latest_head_sha=$(jq -r '.head_sha' <<< "$latest_run")
+
+          if [ "$latest_run_id" = "$RUN_ID" ] || [ "$latest_head_sha" = "$HEAD_SHA" ]; then
+            echo "should_retry=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Skipping retry for stale ${WORKFLOW_NAME} run ${RUN_ID}; newer run ${latest_run_id} is at ${latest_head_sha}."
+          echo "should_retry=false" >> "$GITHUB_OUTPUT"
+
       - name: Re-run failed Docker jobs
+        if: steps.current-run.outputs.should_retry == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
