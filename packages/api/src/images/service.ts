@@ -75,7 +75,7 @@ export async function resolveResult(
   args: { predictionId: string; userId: string; model: string; prompt: string },
   deps: ImageDeps,
   cfg: ImageGenConfig,
-): Promise<{ status: string; file?: IMongoFile }> {
+): Promise<{ status: string; file?: IMongoFile; error?: string }> {
   const existing = await deps.findFileByPrediction(args.userId, args.predictionId);
   if (existing) {
     return { status: 'completed', file: existing };
@@ -85,7 +85,10 @@ export async function resolveResult(
     return { status: pred.status };
   }
   if (pred.status === 'failed' || pred.status === 'error') {
-    throw new Error(pred.error ?? 'image generation failed');
+    return { status: 'failed', error: pred.error ?? 'image generation failed' };
+  }
+  if (pred.status !== 'completed') {
+    return { status: 'processing' };
   }
   const url = pred.outputs[0];
   if (!url) {

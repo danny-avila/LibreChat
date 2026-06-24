@@ -162,10 +162,10 @@ describe('POST /api/images/generate', () => {
 describe('GET /api/images/result/:predictionId (handler wiring)', () => {
   it('returns resolveResult output and deletes cache on completed', async () => {
     const fileRecord = { _id: 'file-1', filepath: '/images/test.png', context: 'image_generation' };
-    mockCacheGet.mockResolvedValue({ userId: 'user-1', model: 'm', prompt: 'a sunset' });
+    const { app, user } = createApp();
+    mockCacheGet.mockResolvedValue({ userId: user.id, model: 'm', prompt: 'a sunset' });
     mockResolveResult.mockResolvedValue({ status: 'completed', file: fileRecord });
 
-    const { app } = createApp();
     const res = await request(app).get('/api/images/result/pred-abc');
 
     expect(res.status).toBe(200);
@@ -183,10 +183,10 @@ describe('GET /api/images/result/:predictionId (handler wiring)', () => {
   });
 
   it('does NOT delete cache when status is still processing', async () => {
-    mockCacheGet.mockResolvedValue({ userId: 'user-1', model: 'm', prompt: 'test' });
+    const { app, user } = createApp();
+    mockCacheGet.mockResolvedValue({ userId: user.id, model: 'm', prompt: 'test' });
     mockResolveResult.mockResolvedValue({ status: 'processing' });
 
-    const { app } = createApp();
     const res = await request(app).get('/api/images/result/pred-xyz');
 
     expect(res.status).toBe(200);
@@ -194,7 +194,19 @@ describe('GET /api/images/result/:predictionId (handler wiring)', () => {
     expect(mockCacheDelete).not.toHaveBeenCalled();
   });
 
-  it('returns 502 when resolveResult throws', async () => {
+  it('returns 200 {status:"failed"} and deletes cache when resolveResult returns failed', async () => {
+    const { app, user } = createApp();
+    mockCacheGet.mockResolvedValue({ userId: user.id, model: 'm', prompt: 'test' });
+    mockResolveResult.mockResolvedValue({ status: 'failed', error: 'out of memory' });
+
+    const res = await request(app).get('/api/images/result/pred-gptsapi-fail');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('failed');
+    expect(mockCacheDelete).toHaveBeenCalledWith('pred-gptsapi-fail');
+  });
+
+  it('returns 502 when resolveResult throws (unexpected/storage error)', async () => {
     mockCacheGet.mockResolvedValue({});
     mockResolveResult.mockRejectedValue(new Error('image generation failed'));
 
@@ -204,6 +216,7 @@ describe('GET /api/images/result/:predictionId (handler wiring)', () => {
     expect(res.status).toBe(502);
     expect(res.body.status).toBe('failed');
     expect(res.body.message).toBe('image generation failed');
+    expect(mockCacheDelete).not.toHaveBeenCalled();
   });
 
   it('uses fallback model/prompt when ctx is missing from cache', async () => {
@@ -218,6 +231,18 @@ describe('GET /api/images/result/:predictionId (handler wiring)', () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it('returns 403 and does NOT delete cache when ctx.userId differs from req.user.id', async () => {
+    const otherId = new mongoose.Types.ObjectId().toString();
+    mockCacheGet.mockResolvedValue({ userId: otherId, model: 'm', prompt: 'p' });
+
+    const { app } = createApp({ id: new mongoose.Types.ObjectId().toString(), role: 'USER' });
+    const res = await request(app).get('/api/images/result/pred-forbidden');
+
+    expect(res.status).toBe(403);
+    expect(mockResolveResult).not.toHaveBeenCalled();
+    expect(mockCacheDelete).not.toHaveBeenCalled();
   });
 });
 

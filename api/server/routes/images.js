@@ -103,7 +103,11 @@ router.post('/generate', async (req, res) => {
 router.get('/result/:predictionId', async (req, res) => {
   try {
     const { predictionId } = req.params;
-    const ctx = (await getLogStores(CacheKeys.IMAGE_GENERATION).get(predictionId)) || {};
+    const cache = getLogStores(CacheKeys.IMAGE_GENERATION);
+    const ctx = (await cache.get(predictionId)) || {};
+    if (ctx.userId && ctx.userId !== req.user.id) {
+      return res.status(403).json({ message: 'forbidden' });
+    }
     const appConfig = await getAppConfig({ role: req.user.role });
     const deps = buildDeps(appConfig, req);
     const out = await resolveResult(
@@ -116,8 +120,8 @@ router.get('/result/:predictionId', async (req, res) => {
       deps,
       cfg(),
     );
-    if (out.status === 'completed') {
-      await getLogStores(CacheKeys.IMAGE_GENERATION).delete(predictionId);
+    if (out.status === 'completed' || out.status === 'failed') {
+      await cache.delete(predictionId);
     }
     res.json(out);
   } catch (err) {

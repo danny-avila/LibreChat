@@ -1126,6 +1126,7 @@
   "com_ui_load_more": "Load more",
   "com_ui_image_generating": "Generating...",
   "com_ui_image_failed": "Generation failed",
+  "com_ui_image_timeout": "Generation timed out. Please try again.",
   "com_ui_import": "Import",
   "com_ui_import_conversation_error": "There was an error importing your conversations",
   "com_ui_import_conversation_file_type_error": "Unsupported import type",

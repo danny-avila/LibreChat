@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Spinner, Button, TextareaAutosize } from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
-import { useImageModels, useGenerateImage, useImageResult } from '~/data-provider';
+import {
+  useImageModels,
+  useGenerateImage,
+  useImageResult,
+  POLL_TIMEOUT_COUNT,
+} from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import ImageControls from './ImageControls';
 import ImageGallery from './ImageGallery';
@@ -25,6 +30,7 @@ export default function ImageWorkspace() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const pollCountRef = useRef(0);
 
   // Sync model/param defaults once config loads
   useEffect(() => {
@@ -52,6 +58,7 @@ export default function ImageWorkspace() {
 
   const { mutate: generateImage } = useGenerateImage({
     onSuccess: (data) => {
+      pollCountRef.current = 0;
       setPredictionId(data.predictionId);
     },
     onError: () => {
@@ -60,9 +67,16 @@ export default function ImageWorkspace() {
     },
   });
 
-  const result = useImageResult(predictionId, !!predictionId);
+  const pollCount = pollCountRef.current;
+  const result = useImageResult(predictionId, !!predictionId, pollCount);
 
   useEffect(() => {
+    if (result.isError) {
+      setPredictionId(null);
+      setIsGenerating(false);
+      setErrorMsg(localize('com_ui_image_failed'));
+      return;
+    }
     if (!result.data) {
       return;
     }
@@ -71,12 +85,21 @@ export default function ImageWorkspace() {
       setPredictionId(null);
       setIsGenerating(false);
       setErrorMsg(null);
-    } else if (result.data.status === 'failed') {
+      return;
+    }
+    if (result.data.status === 'failed') {
       setPredictionId(null);
       setIsGenerating(false);
       setErrorMsg(localize('com_ui_image_failed'));
+      return;
     }
-  }, [result.data, queryClient, localize]);
+    pollCountRef.current += 1;
+    if (pollCountRef.current >= POLL_TIMEOUT_COUNT) {
+      setPredictionId(null);
+      setIsGenerating(false);
+      setErrorMsg(localize('com_ui_image_timeout'));
+    }
+  }, [result.data, result.isError, queryClient, localize]);
 
   const handleGenerate = () => {
     if (!prompt.trim() || isGenerating) {

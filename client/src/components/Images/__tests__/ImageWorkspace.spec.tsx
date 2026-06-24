@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { render } from 'test/layout-test-utils';
 import { QueryKeys } from 'librechat-data-provider';
 
@@ -15,6 +15,7 @@ const mockImageResultHolder = {
   data: undefined as
     | { status: 'created' | 'processing' | 'completed' | 'failed'; file?: object }
     | undefined,
+  isError: false,
 };
 
 const mockModelsConfig = {
@@ -41,6 +42,7 @@ const mockModelsConfig = {
 };
 
 jest.mock('~/data-provider', () => ({
+  POLL_TIMEOUT_COUNT: 2,
   useImageModels: () => ({ data: mockModelsConfig }),
   useGenerateImage: ({
     onSuccess,
@@ -60,6 +62,7 @@ jest.mock('~/data-provider', () => ({
   }),
   useImageResult: (_predictionId: string | null, enabled: boolean) => ({
     data: enabled ? mockImageResultHolder.data : undefined,
+    isError: enabled ? mockImageResultHolder.isError : false,
   }),
   useImageGallery: () => ({
     data: { pages: [] },
@@ -151,6 +154,7 @@ describe('ImageWorkspace', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockImageResultHolder.data = undefined;
+    mockImageResultHolder.isError = false;
     mockGenerateBehavior.shouldError = false;
   });
 
@@ -245,5 +249,46 @@ describe('ImageWorkspace', () => {
     // predictionId never set → polling never starts; button must not stay locked
     expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'com_ui_generate' })).not.toBeDisabled();
+  });
+
+  it('clears generating state and shows error when useImageResult is in error state (502 backend)', async () => {
+    // Simulate a 502 / query-error path: isError=true, data=undefined
+    mockImageResultHolder.data = undefined;
+    mockImageResultHolder.isError = true;
+
+    render(<ImageWorkspace />);
+    const textarea = screen.getByRole('textbox', { name: 'com_ui_image_prompt_placeholder' });
+    fireEvent.change(textarea, { target: { value: 'a sunset' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_generate' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('com_ui_image_failed');
+    });
+
+    expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_generate' })).not.toBeDisabled();
+  });
+
+  it('shows timeout error when poll cap is exceeded (pollCount >= POLL_TIMEOUT_COUNT)', async () => {
+    // The mock sets POLL_TIMEOUT_COUNT=2 so we only need 2 processing responses.
+    // Each unique data object reference triggers useEffect → increments pollCountRef.
+    const { rerender } = render(<ImageWorkspace />);
+
+    // Enter prompt and trigger generation to set predictionId.
+    const textarea = screen.getByRole('textbox', { name: 'com_ui_image_prompt_placeholder' });
+    fireEvent.change(textarea, { target: { value: 'a sunset' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_generate' }));
+
+    // Drive 2 unique "processing" payloads to hit the mocked cap of 2.
+    for (let i = 0; i < 2; i++) {
+      await act(async () => {
+        mockImageResultHolder.data = { status: 'processing' };
+        rerender(<ImageWorkspace />);
+      });
+    }
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('com_ui_image_timeout');
+    });
   });
 });

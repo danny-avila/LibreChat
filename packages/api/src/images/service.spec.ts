@@ -179,20 +179,69 @@ describe('resolveResult', () => {
     expect(deps.saveImageFile).toHaveBeenCalledWith(expect.objectContaining({ userId }));
   });
 
-  test('failed status throws', async () => {
+  test('failed status returns { status: "failed", error } instead of throwing', async () => {
     mockGetPrediction.mockResolvedValueOnce({
       status: 'failed',
       outputs: [],
       error: 'out of memory',
     });
     const deps = buildDeps();
+    const result = await resolveResult(
+      { predictionId: 'pred-fail', userId, model: 'gemini-3-pro-image-preview', prompt: 'x' },
+      deps,
+      cfg,
+    );
+    expect(result).toEqual({ status: 'failed', error: 'out of memory' });
+    expect(deps.fetchImage).not.toHaveBeenCalled();
+  });
+
+  test('error status returns { status: "failed", error } without downloading', async () => {
+    mockGetPrediction.mockResolvedValueOnce({
+      status: 'error',
+      outputs: [],
+      error: 'provider error',
+    });
+    const deps = buildDeps();
+    const result = await resolveResult(
+      { predictionId: 'pred-error', userId, model: 'gemini-3-pro-image-preview', prompt: 'x' },
+      deps,
+      cfg,
+    );
+    expect(result).toEqual({ status: 'failed', error: 'provider error' });
+    expect(deps.fetchImage).not.toHaveBeenCalled();
+  });
+
+  test('unknown/unrecognized status is treated as non-terminal (processing)', async () => {
+    mockGetPrediction.mockResolvedValueOnce({
+      status: 'queued',
+      outputs: [],
+      error: null,
+    });
+    const deps = buildDeps();
+    const result = await resolveResult(
+      { predictionId: 'pred-queued', userId, model: 'gemini-3-pro-image-preview', prompt: 'x' },
+      deps,
+      cfg,
+    );
+    expect(result).toEqual({ status: 'processing' });
+    expect(deps.fetchImage).not.toHaveBeenCalled();
+  });
+
+  test('download failure throws (real unexpected error stays a throw)', async () => {
+    mockGetPrediction.mockResolvedValueOnce({
+      status: 'completed',
+      outputs: ['http://result.example.com/bad.png'],
+      error: null,
+    });
+    const deps = buildDeps();
+    (deps.fetchImage as jest.Mock).mockRejectedValueOnce(new Error('network error'));
     await expect(
       resolveResult(
-        { predictionId: 'pred-fail', userId, model: 'gemini-3-pro-image-preview', prompt: 'x' },
+        { predictionId: 'pred-dl-fail', userId, model: 'gemini-3-pro-image-preview', prompt: 'x' },
         deps,
         cfg,
       ),
-    ).rejects.toThrow('out of memory');
+    ).rejects.toThrow('network error');
   });
 
   test('idempotent: second call with same predictionId returns existing File without duplicate', async () => {

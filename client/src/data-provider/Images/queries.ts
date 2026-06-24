@@ -15,16 +15,27 @@ export const useImageGallery = () =>
     refetchOnWindowFocus: false,
   });
 
-const resultInterval = (data?: TImageResult): number | false =>
-  data && (data.status === 'completed' || data.status === 'failed') ? false : 3000;
+/** Maximum number of polls before treating a generation as timed out (~3 min at 3s). */
+export const POLL_TIMEOUT_COUNT = 60;
 
-export const useImageResult = (predictionId: string | null, enabled: boolean) =>
+const resultInterval = (data?: TImageResult, failureCount?: number): number | false => {
+  if (failureCount != null && failureCount > 0) {
+    return false;
+  }
+  if (!data) {
+    return 3000;
+  }
+  return data.status === 'completed' || data.status === 'failed' ? false : 3000;
+};
+
+export const useImageResult = (predictionId: string | null, enabled: boolean, pollCount?: number) =>
   useQuery<TImageResult>(
     [QueryKeys.imageResult, predictionId],
     () => dataService.getImageResult(predictionId ?? ''),
     {
-      enabled: !!predictionId && enabled,
-      refetchInterval: resultInterval,
+      enabled: !!predictionId && enabled && (pollCount == null || pollCount < POLL_TIMEOUT_COUNT),
+      refetchInterval: (_data, query) =>
+        resultInterval(_data, query.state.fetchFailureCount ?? query.state.errorUpdateCount),
       refetchOnWindowFocus: false,
       retry: false,
     },
