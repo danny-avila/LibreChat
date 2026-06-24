@@ -184,6 +184,30 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><defs><symbol id="unused"><path fill="#f00" d="M0 0h4v4H0z" /></symbol></defs><path fill="#333" d="M6 6h12v12H6z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('preserves a referenced currentColor symbol fixed to a chromatic color by the use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><path fill="currentColor" d="M4 4h16v16H4z" /></symbol></defs><use href="#s" color="#e00" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a referenced currentColor symbol with no fixed color at the use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><path fill="currentColor" d="M4 4h16v16H4z" /></symbol></defs><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a default-black use hidden with display="none"', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="g" d="M6 6h12v12H6z" /></defs><path fill="#333" d="M0 0h4v4H0z" /><use href="#g" display="none" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a default-black use hidden by a CSS rule', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.hidden{display:none}</style><defs><path id="g" d="M6 6h12v12H6z" /></defs><path fill="#333" d="M0 0h4v4H0z" /><use href="#g" class="hidden" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('currentColor resolved against a fixed color', () => {
