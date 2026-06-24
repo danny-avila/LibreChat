@@ -1,8 +1,8 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { RecoilState } from 'recoil';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import { useGetConversation, useLocalize, TranslationKeys } from '~/hooks';
@@ -129,6 +129,10 @@ function MentionContent({
   }, [open, options]);
 
   useEffect(() => {
+    setActiveIndex((prev) => Math.min(prev, Math.max(matches.length - 1, 0)));
+  }, [matches.length]);
+
+  useEffect(() => {
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -191,10 +195,23 @@ function MentionContent({
               textAreaRef.current?.focus();
             }
             if (e.key === 'ArrowDown') {
+              if (matches.length === 0) {
+                return;
+              }
               setActiveIndex((prevIndex) => (prevIndex + 1) % matches.length);
             } else if (e.key === 'ArrowUp') {
+              if (matches.length === 0) {
+                return;
+              }
               setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
+              if (matches.length === 0) {
+                e.preventDefault();
+                setOpen(false);
+                setShowPopover(false);
+                textAreaRef.current?.focus();
+                return;
+              }
               const mentionOption = matches[activeIndex] as MentionOption | undefined;
               if (mentionOption?.type === 'endpoint') {
                 e.preventDefault();

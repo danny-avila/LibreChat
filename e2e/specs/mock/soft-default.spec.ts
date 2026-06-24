@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { NEW_CHAT_PATH, getAccessToken, requestJson } from './helpers';
+import {
+  NEW_CHAT_PATH,
+  getAccessToken,
+  mockReply,
+  requestJson,
+  selectModelSpec,
+  sendMessage,
+} from './helpers';
 
 /** Label of the `softDefault: true` spec in e2e/config/librechat.e2e.yaml. */
 const SOFT_DEFAULT_LABEL = 'E2E Soft Default';
@@ -53,6 +60,18 @@ async function selectEphemeralModel(page: Page) {
   await expect(modelTrigger(page)).toContainText(EPHEMERAL_ENDPOINT.model);
 }
 
+async function sendAndAwaitReply(page: Page, text: string) {
+  const response = await sendMessage(page, text);
+  expect(response.ok()).toBeTruthy();
+  await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+  await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
+}
+
+async function newChat(page: Page) {
+  await page.getByTestId('new-chat-button').click();
+  await expect(page).toHaveURL(/\/c\/new/, { timeout: 15000 });
+}
+
 test.describe('soft default model spec', () => {
   test('applies the soft default on a fresh instance and stays applied across reloads', async ({
     page,
@@ -102,5 +121,67 @@ test.describe('soft default model spec', () => {
     await page.getByTestId('new-chat-button').click();
     await expect(page).toHaveURL(/\/c\/new/, { timeout: 15000 });
     await expect(modelTrigger(page)).toContainText(EPHEMERAL_ENDPOINT.model, { timeout: 15000 });
+  });
+
+  test('stays soft on New Chat after the first conversation is sent', async ({ page }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    await sendAndAwaitReply(page, 'first soft conversation');
+
+    await newChat(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+  });
+
+  test('viewing the soft conversation re-arms it on the next New Chat', async ({ page }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    await sendAndAwaitReply(page, 'soft history conversation');
+    const softConvoUrl = page.url();
+
+    await newChat(page);
+    await selectEphemeralModel(page);
+
+    await page.goto(softConvoUrl, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    // Fresh load (not the in-memory SPA transition, which masks the regression): the
+    // cold ChatRoute path resolves the New Chat purely from getDefaultModelSpec.
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+    await expect(modelTrigger(page)).not.toHaveText('Select a model');
+  });
+
+  // Regression: softDefault spec on an endpoint kept out of `addedEndpoints` (e.g. a
+  // bedrock spec with `addedEndpoints: [agents, <custom>]`). Using the custom endpoint
+  // leaves a model in history under a key the spec preset never matches, which used to
+  // suppress the soft default and strand a freshly loaded New Chat on the unselectable
+  // endpoint ("Select a model"). The spec must re-arm when it was the conversation used
+  // last. A cold load is used because the SPA New Chat transition resolves non-
+  // deterministically and can mask the dropped spec.
+  test('re-arms on a fresh New Chat when the spec endpoint is outside the allow-list', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    await selectEphemeralModel(page);
+    await sendAndAwaitReply(page, 'history on a different endpoint');
+
+    await newChat(page);
+    await selectModelSpec(page, SOFT_DEFAULT_LABEL);
+    await sendAndAwaitReply(page, 'soft spec used last');
+    const specConvoUrl = page.url();
+
+    await page.goto(specConvoUrl, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+    await expect(modelTrigger(page)).not.toHaveText('Select a model');
   });
 });

@@ -1,10 +1,10 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import {
   Constants,
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
@@ -149,27 +149,55 @@ export const useArchiveConvoMutation = (
   );
 };
 
+export const usePinConversationMutation = (
+  options?: t.PinConversationOptions,
+): UseMutationResult<t.TPinConversationResponse, unknown, t.TPinConversationRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, ..._options } = options || {};
+
+  return useMutation(
+    [MutationKeys.convoPin],
+    (payload: t.TPinConversationRequest) => dataService.pinConversation(payload),
+    {
+      onSuccess: (data, vars, context) => {
+        updateConvoInAllQueries(queryClient, vars.conversationId, () => data);
+        onSuccess?.(data, vars, context);
+      },
+      onError,
+      ..._options,
+    },
+  );
+};
+
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<
     t.TCreateShareLinkRequest,
-    { conversationId: string; targetMessageId?: string }
+    { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean }
   >,
 ): UseMutationResult<
   t.TSharedLinkResponse,
   unknown,
-  { conversationId: string; targetMessageId?: string },
+  { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean },
   unknown
 > => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
+    ({
+      conversationId,
+      targetMessageId,
+      snapshotFiles,
+    }: {
+      conversationId: string;
+      targetMessageId?: string;
+      snapshotFiles?: boolean;
+    }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
-      return dataService.createSharedLink(conversationId, targetMessageId);
+      return dataService.createSharedLink(conversationId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -183,17 +211,25 @@ export const useCreateSharedLinkMutation = (
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, t.TUpdateShareLinkRequest>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, t.TUpdateShareLinkRequest, unknown> => {
+  options?: t.MutationOptions<
+    t.TUpdateShareLinkRequest,
+    t.TUpdateShareLinkRequest & { snapshotFiles?: boolean }
+  >,
+): UseMutationResult<
+  t.TSharedLinkResponse,
+  unknown,
+  t.TUpdateShareLinkRequest & { snapshotFiles?: boolean },
+  unknown
+> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ shareId, targetMessageId }) => {
+    ({ shareId, targetMessageId, snapshotFiles }) => {
       if (!shareId) {
         throw new Error('Share ID is required');
       }
-      return dataService.updateSharedLink(shareId, targetMessageId);
+      return dataService.updateSharedLink(shareId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -552,6 +588,7 @@ export const useDeleteConversationMutation = (
         });
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.conversationTags]);
         if (deletedProjectId) {
           queryClient.invalidateQueries([QueryKeys.project, deletedProjectId]);
         }

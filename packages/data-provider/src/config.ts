@@ -585,6 +585,15 @@ export const defaultAssistantsVersion = {
 export const baseEndpointSchema = z.object({
   streamRate: z.number().optional(),
   baseURL: z.string().optional(),
+  /**
+   * Custom request headers forwarded to the provider on every request. Values
+   * support the same placeholder resolution as custom endpoints — env vars
+   * (`${VAR}`), user fields (`{{LIBRECHAT_USER_*}}`), and request-body fields
+   * (`{{LIBRECHAT_BODY_CONVERSATIONID}}`). Primarily for routing built-in
+   * providers through an AI gateway / reverse proxy that consumes metadata
+   * headers (provider-native request shaping is preserved).
+   */
+  headers: z.record(z.string()).optional(),
   titlePrompt: z.string().optional(),
   titleModel: z.string().optional(),
   titleConvo: z.boolean().optional(),
@@ -832,6 +841,14 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
+    /**
+     * Forces the endpoint to use a provider's native client / request format
+     * instead of the default OpenAI-compatible client. Currently supports
+     * `anthropic`, for endpoints that speak the Anthropic `/v1/messages` API
+     * (Anthropic itself or Anthropic-compatible gateways). Omit for
+     * OpenAI-compatible endpoints.
+     */
+    provider: z.literal(EModelEndpoint.anthropic).optional(),
     headers: z.record(z.string()).optional(),
     addParams: addParamsSchema.optional(),
     dropParams: z.array(z.string()).optional(),
@@ -840,12 +857,28 @@ export const endpointSchema = baseEndpointSchema.merge(
         defaultParamsEndpoint: z.string().default('custom'),
         reasoningFormat: eReasoningParameterFormatSchema.optional(),
         reasoningKey: eReasoningResponseKeySchema.optional(),
+        /** Replays `reasoning_content` within a run's tool-call turns (e.g. Xiaomi MiMo, Kimi). */
+        includeReasoningContent: z.boolean().optional(),
+        /** Also reconstructs `reasoning_content` from persisted history across turns (implies `includeReasoningContent`). */
+        includeReasoningHistory: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
       .optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
+    /** Static per-model token config: context window and per-million-token rates */
+    tokenConfig: z
+      .record(
+        z.object({
+          prompt: z.number(),
+          completion: z.number(),
+          context: z.number(),
+          cacheRead: z.number().optional(),
+          cacheWrite: z.number().optional(),
+        }),
+      )
+      .optional(),
   }),
 );
 
@@ -1167,6 +1200,14 @@ export const interfaceSchema = z
     retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    contextUsage: z.boolean().optional(),
+    contextCost: z.boolean().optional(),
+    currency: z
+      .object({
+        code: z.string(),
+        rate: z.number().positive(),
+      })
+      .optional(),
     peoplePicker: z
       .object({
         users: z.boolean().optional(),
@@ -1181,6 +1222,8 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
+    defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),
     remoteAgents: z
       .object({
@@ -1209,6 +1252,7 @@ export const interfaceSchema = z
           create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
+          snapshotFiles: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -1236,6 +1280,8 @@ export const interfaceSchema = z
     autoSubmitFromUrl: true,
     runCode: true,
     webSearch: true,
+    contextUsage: true,
+    contextCost: false,
     peoplePicker: {
       users: true,
       groups: true,
@@ -1270,6 +1316,7 @@ export const interfaceSchema = z
       create: true,
       share: true,
       public: true,
+      snapshotFiles: true,
     },
   });
 
@@ -1350,6 +1397,8 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Whether shared links snapshot conversation files (gates the per-link "share files" checkbox). */
+  sharedLinksSnapshotFilesEnabled?: boolean;
   /** Effective default timing for when conversation titles become fetchable.
    * `immediate` = fetch in parallel with the active stream (default);
    * `final` = fetch only after the stream completes (legacy). */
@@ -1401,6 +1450,19 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
 };
+
+export type TSharedLinkStartupInterface = Pick<
+  Partial<TInterfaceConfig>,
+  'privacyPolicy' | 'termsOfService'
+>;
+
+export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &
+  Pick<
+    Partial<TStartupConfig>,
+    'analyticsGtmId' | 'bundlerURL' | 'customFooter' | 'staticBundlerURL'
+  > & {
+    interface?: TSharedLinkStartupInterface;
+  };
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
@@ -2449,7 +2511,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.12',
+  CONFIG_VERSION = '1.3.13',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

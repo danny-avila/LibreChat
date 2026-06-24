@@ -2703,14 +2703,19 @@ html {
   color: var(--text-primary);
 }
 
-.account-settings-popover .select-item[data-active-item] {
-  box-shadow: 0 0 0 2px hsl(var(--ring));
-}
-
 .popover-ui[data-enter] {
   opacity: 1;
   scale: 1;
   translate: 0;
+}
+
+.popover-ui.popover-from-left {
+  transform-origin: left;
+  translate: -0.5rem 0;
+  margin-top: 0;
+}
+.popover-ui.popover-from-left[data-enter] {
+  translate: 0 0;
 }
 
 .animate-popover-top,

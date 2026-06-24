@@ -10,6 +10,8 @@
  * from the conversation and the agents' advertised tools.
  */
 const { FakeChatModel } = require('@librechat/agents');
+const { ChatGenerationChunk } = require('@langchain/core/outputs');
+const { AIMessageChunk } = require('@langchain/core/messages');
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -18,9 +20,11 @@ const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
 const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
+const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
@@ -28,6 +32,7 @@ const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
+const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const SLOW_REPLY_CHUNKS = 160;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
@@ -47,6 +52,7 @@ const SKILL_DESCRIPTION =
 const EDITED_SKILL_DESCRIPTION =
   'Use this edited skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const countedReplies = new Map();
+const slowCountedReplies = new Map();
 
 function messageType(message) {
   if (typeof message.getType === 'function') {
@@ -228,6 +234,37 @@ function providerFileAssertionResponses({ messages, text }) {
   };
 }
 
+/**
+ * Verifies the quote feature end to end: scans every user message in the prompt
+ * the model actually received for a Markdown blockquote line containing the
+ * expected token. Passing proves the excerpt was merged into the model-facing
+ * turn — covering both the current turn and durable re-merge of a prior quoted
+ * turn from history (the merge runs in `AgentClient.buildMessages`).
+ */
+function quoteAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_QUOTE_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const found = (messages ?? []).some((message) => {
+    const type = messageType(message);
+    if (type !== 'human' && type !== 'user') {
+      return false;
+    }
+    return getContentText(message.content)
+      .split('\n')
+      .some((line) => line.startsWith('> ') && line.includes(expected));
+  });
+
+  if (found) {
+    return { responses: [`${QUOTE_ASSERTION_FINAL_TEXT}: ${expected}`] };
+  }
+  return {
+    responses: [`E2E quote assertion failed: no blockquote containing "${expected}" in the prompt`],
+  };
+}
+
 function replyResponses(text) {
   if (text.includes(MARKDOWN_REPLY_MARKER)) {
     return {
@@ -283,6 +320,20 @@ function replyResponses(text) {
     };
   }
 
+  const slowCountedName = getMarkerValue(text, SLOW_COUNTED_REPLY_MARKER);
+  if (slowCountedName) {
+    const count = (slowCountedReplies.get(slowCountedName) ?? 0) + 1;
+    slowCountedReplies.set(slowCountedName, count);
+    const chunks = Array.from(
+      { length: SLOW_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E slow counted reply ${slowCountedName} #${count} ${chunks}`],
+      sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
+
   const resumeIconName = getMarkerValue(text, RESUME_ICON_REPLY_MARKER);
   if (resumeIconName) {
     const chunks = Array.from(
@@ -298,9 +349,41 @@ function replyResponses(text) {
   return null;
 }
 
+/**
+ * Attaches synthetic usage_metadata on a final empty chunk (the OpenAI
+ * streaming pattern) so token-usage SSE events flow end to end in mock runs.
+ */
+class UsageEmittingFakeChatModel extends FakeChatModel {
+  async *_streamResponseChunks(messages, options, runManager) {
+    let outputChars = 0;
+    for await (const chunk of super._streamResponseChunks(messages, options, runManager)) {
+      outputChars += typeof chunk.text === 'string' ? chunk.text.length : 0;
+      yield chunk;
+    }
+    const inputChars = (messages ?? []).reduce(
+      (sum, message) => sum + getContentText(message?.content).length,
+      0,
+    );
+    const input_tokens = Math.max(1, Math.ceil(inputChars / 4));
+    const output_tokens = Math.max(1, Math.ceil(outputChars / 4));
+    yield new ChatGenerationChunk({
+      text: '',
+      message: new AIMessageChunk({
+        content: '',
+        usage_metadata: { input_tokens, output_tokens, total_tokens: input_tokens + output_tokens },
+      }),
+    });
+  }
+}
+
 function overrideModel({ graph, responses, sleep, toolCalls, thrownError }) {
   if (!thrownError) {
-    graph.overrideTestModel(responses, sleep ?? CHUNK_DELAY_MS, toolCalls);
+    graph.overrideModel = new UsageEmittingFakeChatModel({
+      responses,
+      sleep: sleep ?? CHUNK_DELAY_MS,
+      emitCustomEvent: true,
+      toolCalls,
+    });
     return;
   }
 
@@ -377,7 +460,7 @@ Created by the Playwright mock e2e suite to verify host file authoring without c
 
 function buildCreateSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     content: buildSkillBody(skillName),
     overwrite: false,
   };
@@ -385,7 +468,7 @@ function buildCreateSkillArgs(skillName) {
 
 function buildEditSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     old_text: `description: ${SKILL_DESCRIPTION}`,
     new_text: `description: ${EDITED_SKILL_DESCRIPTION}`,
   };
@@ -431,6 +514,11 @@ function resolveResponses({ agents, messages, text, toolNames }) {
   const providerFileAssertion = providerFileAssertionResponses({ messages, text });
   if (providerFileAssertion) {
     return providerFileAssertion;
+  }
+
+  const quoteAssertion = quoteAssertionResponses({ messages, text });
+  if (quoteAssertion) {
+    return quoteAssertion;
   }
 
   if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {

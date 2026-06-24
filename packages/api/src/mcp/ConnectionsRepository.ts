@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { isUserSourced, requiresUserScopedConnection } from './utils';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;
@@ -78,14 +78,16 @@ export class ConnectionsRepository {
       }
     }
     const registry = MCPServersRegistry.getInstance();
+    const { allowedDomains, allowedAddresses, useSSRFProtection } =
+      await registry.resolveAllowlists({ userId: this.ownerId });
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
         serverConfig,
         dbSourced: isUserSourced(serverConfig as t.ParsedServerConfig),
-        useSSRFProtection: registry.shouldEnableSSRFProtection(),
-        allowedDomains: registry.getAllowedDomains(),
-        allowedAddresses: registry.getAllowedAddresses(),
+        useSSRFProtection,
+        allowedDomains,
+        allowedAddresses,
       },
       this.oauthOpts,
     );

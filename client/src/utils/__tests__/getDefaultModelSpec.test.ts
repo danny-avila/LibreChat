@@ -1,4 +1,4 @@
-import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TModelSpec, TStartupConfig, TEndpointsConfig } from 'librechat-data-provider';
 import { getDefaultModelSpec } from '../endpoints';
 
@@ -51,12 +51,13 @@ const writeLastModel = (endpoint: string, model: string) => {
 };
 
 /** Mirrors what the conversation effect persists after a spec preset is applied */
-const persistAppliedSpec = (spec: TModelSpec) => {
+const persistAppliedSpec = (spec: TModelSpec, conversationId: string = Constants.NEW_CONVO) => {
   localStorage.setItem(LocalStorageKeys.LAST_SPEC, spec.name);
   writeLastModel(spec.preset.endpoint as string, spec.preset.model as string);
   localStorage.setItem(
     `${LocalStorageKeys.LAST_CONVO_SETUP}_0`,
     JSON.stringify({
+      conversationId,
       endpoint: spec.preset.endpoint,
       model: spec.preset.model,
       spec: spec.name,
@@ -104,7 +105,7 @@ describe('getDefaultModelSpec', () => {
   it('keeps the last selected spec before applying the soft default', () => {
     const lastSpec = createModelSpec('last-spec');
     const softSpec = createModelSpec('soft-spec', { softDefault: true });
-    localStorage.setItem(LocalStorageKeys.LAST_SPEC, lastSpec.name);
+    persistAppliedSpec(lastSpec);
 
     const result = getDefaultModelSpec(createStartupConfig([softSpec, lastSpec]));
 
@@ -113,10 +114,7 @@ describe('getDefaultModelSpec', () => {
 
   it('does not apply the soft default when a prior model selection exists', () => {
     const softSpec = createModelSpec('soft-spec', { softDefault: true });
-    localStorage.setItem(
-      LocalStorageKeys.LAST_MODEL,
-      JSON.stringify({ [EModelEndpoint.openAI]: 'gpt-4o' }),
-    );
+    persistEphemeralSelection(EModelEndpoint.openAI, 'gpt-4o');
 
     const result = getDefaultModelSpec(createStartupConfig([softSpec]), fullEndpointsConfig);
 
@@ -125,7 +123,7 @@ describe('getDefaultModelSpec', () => {
 
   it('does not apply the soft default when a prior agent selection exists', () => {
     const softSpec = createModelSpec('soft-spec', { softDefault: true });
-    localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, 'agent_123');
+    persistAgentSelection('agent_123');
 
     const result = getDefaultModelSpec(createStartupConfig([softSpec]), fullEndpointsConfig);
 
@@ -135,7 +133,7 @@ describe('getDefaultModelSpec', () => {
   it('keeps hard admin defaults ahead of user history and soft defaults', () => {
     const hardSpec = createModelSpec('hard-spec', { default: true });
     const softSpec = createModelSpec('soft-spec', { softDefault: true });
-    localStorage.setItem(LocalStorageKeys.LAST_SPEC, softSpec.name);
+    persistAppliedSpec(softSpec);
 
     const result = getDefaultModelSpec(createStartupConfig([softSpec, hardSpec]));
 
@@ -225,33 +223,65 @@ describe('getDefaultModelSpec', () => {
       expect(result).toEqual({ last: otherSpec });
     });
 
-    it('yields to a stored agent even when it matches the soft default agent spec', () => {
+    it('treats a matching stored agent as residue when the soft default points to an agent', () => {
       const softAgentSpec = createModelSpec('soft-agent-spec', {
         softDefault: true,
         preset: { endpoint: EModelEndpoint.agents, agent_id: 'agent_soft' },
       } as Partial<TModelSpec>);
-      localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, 'agent_soft');
+      persistAppliedSpec(softAgentSpec);
 
       const result = getDefaultModelSpec(
         createStartupConfig([softAgentSpec], { prioritize: false }),
         fullEndpointsConfig,
       );
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual({ softDefault: softAgentSpec });
     });
 
-    it('yields to a stored model selection matching the soft default preset', () => {
-      localStorage.setItem(
-        LocalStorageKeys.LAST_MODEL,
-        JSON.stringify({ [softSpec.preset.endpoint as string]: softSpec.preset.model }),
-      );
+    it('treats a stored model matching the soft default preset as residue', () => {
+      persistAppliedSpec(softSpec);
 
       const result = getDefaultModelSpec(
         createStartupConfig([otherSpec, softSpec], { prioritize: false }),
         fullEndpointsConfig,
       );
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('stays soft after the first conversation is sent', () => {
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('re-arms after viewing the soft conversation, even when an ephemeral pick lingers', () => {
+      persistEphemeralSelection(EModelEndpoint.anthropic, 'claude-sonnet-4-6');
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('re-arms after viewing the soft conversation, even when an agent pick lingers', () => {
+      localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, 'agent_abc');
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
     });
 
     it('yields when a different agent is stored than the soft default agent spec', () => {
@@ -259,11 +289,53 @@ describe('getDefaultModelSpec', () => {
         softDefault: true,
         preset: { endpoint: EModelEndpoint.agents, agent_id: 'agent_soft' },
       } as Partial<TModelSpec>);
-      localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, 'agent_other');
+      persistAgentSelection('agent_other');
 
       const result = getDefaultModelSpec(
         createStartupConfig([softAgentSpec], { prioritize: false }),
         fullEndpointsConfig,
+      );
+
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('soft default endpoint outside an added-endpoints allow-list', () => {
+    // Mirrors a softDefault spec on `bedrock` with `addedEndpoints: [agents, <custom>]`.
+    // The custom endpoint turns on the ephemeral-options gate, and a model used on
+    // that endpoint lingers under a different key than the spec preset — which used
+    // to suppress the soft default and strand New Chat on the unselectable bedrock.
+    const softSpec = createModelSpec('clickhouse-agent', {
+      softDefault: true,
+      preset: { endpoint: 'bedrock', model: 'claude-sonnet-4-6' },
+    } as Partial<TModelSpec>);
+    const otherSpec = createModelSpec('other-spec');
+    const allowListConfig = { addedEndpoints: ['agents', 'ClickHouse'] };
+    const allowListEndpoints = {
+      bedrock: { order: 0 },
+      ClickHouse: { order: 1 },
+      [EModelEndpoint.agents]: { order: 2 },
+    } as TEndpointsConfig;
+
+    it('re-arms on New Chat after viewing the soft conversation last', () => {
+      writeLastModel('ClickHouse', 'kimi-k2p7-code');
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], allowListConfig),
+        allowListEndpoints,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('still yields when a selectable endpoint was the last conversation', () => {
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
+      persistEphemeralSelection('ClickHouse', 'kimi-k2p7-code');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], allowListConfig),
+        allowListEndpoints,
       );
 
       expect(result).toBeUndefined();

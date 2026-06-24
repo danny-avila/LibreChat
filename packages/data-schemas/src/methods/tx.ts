@@ -217,6 +217,10 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'grok-4-1-fast': { prompt: 0.2, completion: 0.5 },
     'grok-code-fast': { prompt: 0.2, completion: 1.5 },
     codestral: { prompt: 0.3, completion: 0.9 },
+    devstral: { prompt: 0.4, completion: 2.0 },
+    'mistral-medium': { prompt: 1.5, completion: 7.5 },
+    voxtral: { prompt: 0.1, completion: 0.4 },
+    holo2: { prompt: 0.3, completion: 0.7 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
     'mistral-nemo': { prompt: 0.15, completion: 0.15 },
@@ -510,7 +514,13 @@ export function createTxMethods(
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number {
     if (endpointTokenConfig && model) {
-      return endpointTokenConfig?.[model]?.[tokenType as string] ?? defaultRate;
+      const modelConfig = endpointTokenConfig[model];
+      /** A partial override only prices the models it lists; others fall
+       *  through to the standard tables so billing matches the advertised
+       *  token config instead of charging defaultRate */
+      if (modelConfig) {
+        return modelConfig[tokenType as string] ?? defaultRate;
+      }
     }
 
     if (valueKey && tokenType) {
@@ -555,7 +565,12 @@ export function createTxMethods(
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number | null {
     if (endpointTokenConfig && model) {
-      return endpointTokenConfig?.[model]?.[cacheType as string] ?? null;
+      const modelConfig = endpointTokenConfig[model];
+      /** Models absent from a partial override fall through to standard
+       *  cache rates rather than reporting no cache pricing */
+      if (modelConfig) {
+        return modelConfig[cacheType as string] ?? null;
+      }
     }
 
     if (valueKey && cacheType) {

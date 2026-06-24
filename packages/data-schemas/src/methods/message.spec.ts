@@ -21,6 +21,7 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let getMessageTextStats: ReturnType<typeof createMessageMethods>['getMessageTextStats'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
@@ -39,6 +40,7 @@ beforeAll(async () => {
   const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
+  getMessageTextStats = methods.getMessageTextStats;
   updateMessage = methods.updateMessage;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
@@ -239,6 +241,62 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
+    });
+
+    it('should limit retrieved messages when requested', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg1',
+        conversationId,
+        text: 'First message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg2',
+        conversationId,
+        text: 'Second message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg3',
+        conversationId,
+        text: 'Third message',
+        user: 'user123',
+      });
+
+      const messages = await getMessages({ conversationId }, undefined, { limit: 2 });
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].text).toBe('First message');
+      expect(messages[1].text).toBe('Second message');
+    });
+
+    it('should retrieve message text stats without returning message bodies', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg1',
+        conversationId,
+        text: 'hello',
+        quotes: ['a\nb', ''],
+        user: 'user123',
+      });
+
+      const stats = await getMessageTextStats({ conversationId, user: 'user123' }, { limit: 1 });
+
+      expect(stats).toEqual([
+        {
+          messageId: 'msg1',
+          textBytes: 5,
+          quoteCount: 2,
+          quoteBytes: 3,
+          quoteLineCount: 3,
+          nonStringQuoteCount: 0,
+        },
+      ]);
     });
   });
 

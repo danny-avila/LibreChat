@@ -561,6 +561,80 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual({ error: 'conversationId is required' });
     });
   });
+
+  describe('POST /convos/pin', () => {
+    const mockConversationId = 'conv-123';
+
+    it('should pin a conversation', async () => {
+      const mockPinnedConvo = { conversationId: mockConversationId, pinned: true };
+      saveConvo.mockResolvedValue(mockPinnedConvo);
+
+      const response = await request(app).post('/api/convos/pin').send({ arg: mockPinnedConvo });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockPinnedConvo);
+      expect(saveConvo).toHaveBeenCalledWith(
+        { userId: 'test-user-123' },
+        { conversationId: mockConversationId, pinned: true },
+        { context: `POST /api/convos/pin ${mockConversationId}` },
+      );
+    });
+
+    it('should unpin a conversation', async () => {
+      const mockUnpinnedConvo = { conversationId: mockConversationId, pinned: false };
+      saveConvo.mockResolvedValue(mockUnpinnedConvo);
+
+      const response = await request(app).post('/api/convos/pin').send({ arg: mockUnpinnedConvo });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockUnpinnedConvo);
+      expect(saveConvo).toHaveBeenCalledWith(
+        { userId: 'test-user-123' },
+        { conversationId: mockConversationId, pinned: false },
+        { context: `POST /api/convos/pin ${mockConversationId}` },
+      );
+    });
+
+    it('should return 400 when conversationId is missing', async () => {
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { pinned: true } });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationId is required' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when pinned is not a boolean', async () => {
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId, pinned: 'yes' } });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'pinned must be a boolean' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when pinned is missing', async () => {
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId } });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'pinned is required' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 500 when saveConvo fails', async () => {
+      saveConvo.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId, pinned: true } });
+
+      expect(response.status).toBe(500);
+    });
+  });
 });
 
 /**

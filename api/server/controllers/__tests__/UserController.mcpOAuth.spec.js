@@ -132,7 +132,10 @@ function setupMCPMocks() {
     getAllowedAddresses: jest.fn().mockReturnValue(null),
   };
 
-  mockGetAppConfig.mockResolvedValue({});
+  // Revocation reads the merged config's mcpSettings allowlists (not the registry getters).
+  mockGetAppConfig.mockResolvedValue({
+    mcpSettings: { allowedDomains: [], allowedAddresses: null },
+  });
   mockUpdateUserPlugins.mockResolvedValue();
   mockDeleteUserPluginAuth.mockResolvedValue();
   mockInvalidateCachedTools.mockResolvedValue();

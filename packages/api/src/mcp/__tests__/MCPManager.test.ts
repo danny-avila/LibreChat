@@ -42,13 +42,23 @@ jest.mock('~/auth/domain', () => ({
   isMCPDomainAllowed: jest.fn().mockResolvedValue(true),
 }));
 
+const mockShouldEnableSSRFProtection = jest.fn().mockReturnValue(false);
+const mockGetAllowedDomains = jest.fn().mockReturnValue(null);
+const mockGetAllowedAddresses = jest.fn().mockReturnValue(null);
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
   getOAuthServers: jest.fn(),
-  shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
-  getAllowedDomains: jest.fn().mockReturnValue(null),
-  getAllowedAddresses: jest.fn().mockReturnValue(null),
+  shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
+  getAllowedDomains: mockGetAllowedDomains,
+  getAllowedAddresses: mockGetAllowedAddresses,
+  // Mirrors the real per-request resolver by reading the base-allowlist mocks above, so
+  // existing tests that override getAllowedDomains/shouldEnableSSRFProtection still apply.
+  resolveAllowlists: jest.fn(async () => ({
+    allowedDomains: mockGetAllowedDomains(),
+    allowedAddresses: mockGetAllowedAddresses(),
+    useSSRFProtection: mockShouldEnableSSRFProtection(),
+  })),
 };
 
 jest.mock('~/mcp/registry/MCPServersRegistry', () => ({
