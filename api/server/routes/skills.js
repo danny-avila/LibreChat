@@ -5,6 +5,7 @@ const express = require('express');
 const {
   createSkillsHandlers,
   createImportHandler,
+  createSkillFromFileHandlers,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -30,6 +31,7 @@ const {
   getSkillFileByPath,
   updateSkillFileContent,
   getRoleByName,
+  getFiles,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
 const {
@@ -171,6 +173,17 @@ const importHandler = createImportHandler({
 });
 
 // ---------------------------------------------------------------------------
+// In-chat "save as skill" handlers (preview a generated file / create from it)
+// ---------------------------------------------------------------------------
+const { previewSkillFile, createFromFile } = createSkillFromFileHandlers({
+  getFiles,
+  getStrategyFunctions,
+  createSkill,
+  deleteSkill,
+  grantPermission,
+});
+
+// ---------------------------------------------------------------------------
 // Per-file upload handler (add a single file to an existing skill)
 // ---------------------------------------------------------------------------
 async function uploadFileHandler(req, res) {
@@ -283,6 +296,11 @@ router.post(
   restoreTenantContextFromReq,
   importHandler,
 );
+
+// In-chat "save as skill": preview a generated file, then create from it.
+// Registered before `/:id` so these literal paths aren't captured as ids.
+router.get('/file-preview', previewSkillFile);
+router.post('/from-file', checkSkillCreate, restoreTenantContextFromReq, createFromFile);
 
 router.get('/', handlers.list);
 router.post('/', checkSkillCreate, handlers.create);

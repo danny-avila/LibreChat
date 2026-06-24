@@ -983,6 +983,21 @@ export function importSkill(formData: FormData): Promise<sk.TSkill> {
   return request.postMultiPart(endpoints.importSkill(), formData);
 }
 
+/**
+ * Probe a generated conversation file: is it a skill, and what name/description
+ * would it produce? Drives the in-chat "save as skill" banner. Never mutates.
+ */
+export function previewSkillFile(fileId: string): Promise<sk.TSkillFilePreviewResponse> {
+  return request.get(endpoints.skillFilePreview(fileId));
+}
+
+/** Create a skill from a generated conversation file (the `.md` the model produced). */
+export function createSkillFromFile(
+  payload: sk.TCreateSkillFromFilePayload,
+): Promise<sk.TSkill> {
+  return request.post(endpoints.skillFromFile(), payload);
+}
+
 export function getSkillFileContent(
   skillId: string,
   relativePath: string,

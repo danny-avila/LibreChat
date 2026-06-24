@@ -5,6 +5,8 @@ import type {
   TSkill,
   TSkillFile,
   TCreateSkill,
+  TCreateSkillFromFilePayload,
+  CreateSkillFromFileOptions,
   TUpdateSkillVariables,
   TUpdateSkillResponse,
   TDeleteSkillResponse,
@@ -138,6 +140,27 @@ export const useImportSkillMutation = (
   const { onSuccess, ...rest } = options ?? {};
   return useMutation({
     mutationFn: (formData: FormData) => dataService.importSkill(formData),
+    ...rest,
+    onSuccess: (skill, variables, context) => {
+      queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);
+      addSkillToCachedLists(queryClient, skill);
+      if (onSuccess) onSuccess(skill, variables, context);
+    },
+  });
+};
+
+/**
+ * Create a skill from a generated conversation file (the in-chat "save as
+ * skill" banner). On success, writes the new skill into the detail and list
+ * caches so any open listing UI updates immediately.
+ */
+export const useCreateSkillFromFileMutation = (
+  options?: CreateSkillFromFileOptions,
+): UseMutationResult<TSkill, unknown, TCreateSkillFromFilePayload> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options ?? {};
+  return useMutation({
+    mutationFn: (payload: TCreateSkillFromFilePayload) => dataService.createSkillFromFile(payload),
     ...rest,
     onSuccess: (skill, variables, context) => {
       queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);

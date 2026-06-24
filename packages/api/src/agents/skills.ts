@@ -16,6 +16,21 @@ const MAX_CATALOG_PAGES = 10;
 /** Page size used when paginating to fill the active-skill quota. */
 const CATALOG_PAGE_SIZE = 100;
 /**
+ * Appended after the skill catalog so the model treats cataloged skills and
+ * its other available tools (including MCP-server tools) as one searchable
+ * capability set, never substitutes a loosely-related skill, and asks the user
+ * to disambiguate — via the `<suggestions>` chip block — when a request maps
+ * to more than one close candidate. Addresses the failure where a loosely
+ * name-matched local skill ran in place of the intended MCP-server skill.
+ */
+const SKILL_DISCOVERY_GUIDANCE = `When deciding how to fulfill a request, search ALL of your available capabilities — the skills listed above AND your other tools, including tools provided by connected MCP servers. Treat them as one set; a skill in the catalog is not preferred over a directly-matching tool.
+
+Match the user's intent precisely. Never invoke a skill or tool that is only loosely related to what was asked as a substitute for one that matches better. If you are not certain which capability the user means, do not guess.
+
+When a request plausibly matches more than one skill or tool — for example several with similar names or overlapping purpose — ask the user which one they want instead of picking for them, and offer the candidates as a hidden suggestions block on the final line, formatted EXACTLY as:
+<suggestions>["Use <name A>","Use <name B>"]</suggestions>
+The block is stripped from your visible reply and rendered as clickable chips.`;
+/**
  * Hard ceiling on skill names resolved per request via `$` popover or
  * `always-apply`. The popover realistically surfaces only a few per turn;
  * the cap is a defense-in-depth against a crafted payload fanning out into
@@ -422,9 +437,10 @@ export async function injectSkillCatalog(
       { contextWindowTokens: contextWindowTokens || 200_000 },
     );
     if (catalog) {
+      const catalogWithGuidance = `${catalog}\n\n${SKILL_DISCOVERY_GUIDANCE}`;
       agent.additional_instructions = agent.additional_instructions
-        ? `${agent.additional_instructions}\n\n${catalog}`
-        : catalog;
+        ? `${agent.additional_instructions}\n\n${catalogWithGuidance}`
+        : catalogWithGuidance;
     }
   }
 

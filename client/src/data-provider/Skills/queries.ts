@@ -12,6 +12,7 @@ import type {
   TSkillStatesResponse,
   TListSkillFilesResponse,
   TSkillFileContentResponse,
+  TSkillFilePreviewResponse,
 } from 'librechat-data-provider';
 
 /**
@@ -139,6 +140,32 @@ export const useGetSkillFileContentQuery = (
   return useQuery<TSkillFileContentResponse>(
     [QueryKeys.skillFileContent, skillId, relativePath],
     () => dataService.getSkillFileContent(skillId as string, relativePath as string),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      staleTime: Infinity,
+      ...config,
+      enabled: enabled && (config?.enabled ?? true),
+    },
+  );
+};
+
+/**
+ * Probe a generated conversation file to decide whether the in-chat "save as
+ * skill" banner should appear. Returns `isSkill` plus the parsed name and
+ * description used to prefill the banner. Server-side cheap; cached so the
+ * banner doesn't re-probe on every render.
+ */
+export const useSkillFilePreviewQuery = (
+  fileId: string | null | undefined,
+  config?: UseQueryOptions<TSkillFilePreviewResponse>,
+): QueryObserverResult<TSkillFilePreviewResponse> => {
+  const enabled = !!fileId;
+  return useQuery<TSkillFilePreviewResponse>(
+    [QueryKeys.skillFilePreview, fileId],
+    () => dataService.previewSkillFile(fileId as string),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

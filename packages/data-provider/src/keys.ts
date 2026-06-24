@@ -73,6 +73,8 @@ export enum QueryKeys {
   skill = 'skill',
   skillFiles = 'skillFiles',
   skillFileContent = 'skillFileContent',
+  /* In-chat "save as skill": preview of a generated conversation file */
+  skillFilePreview = 'skillFilePreview',
   /* Skill tree (phase 2 — filesystem-style node view) */
   skillTree = 'skillTree',
   skillNodeContent = 'skillNodeContent',

@@ -10,11 +10,14 @@ import type {
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
 import { Types } from 'mongoose';
+import type { FilterQuery } from 'mongoose';
+import type { IMongoFile } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
 import { logAxiosError, runOutsideTracing } from '~/utils';
+import { resolveFileReferences } from './mcpFileBridge';
 import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -89,6 +92,12 @@ export interface ToolExecuteOptions {
     getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
   };
+  /**
+   * Looks up conversation file records by filter. Used by the MCP file bridge
+   * to resolve `@librechat-file:<id>` references to real base64 bytes before
+   * dispatching an MCP tool call (e.g. Google Drive `create_file`).
+   */
+  getFiles?: (filter: FilterQuery<IMongoFile>) => Promise<IMongoFile[] | null>;
   /** Batch uploads files to the code execution environment. `kind`/`id`/
    *  `version?` carry the resource identity codeapi uses to derive the
    *  sessionKey for the batch's storage bucket. */
@@ -1218,7 +1227,35 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   }
 
-                  const result = await tool.invoke(tc.args, {
+                  let invokeArgs = tc.args;
+                  if (tc.name.includes(Constants.mcp_delimiter)) {
+                    try {
+                      const bridgeReq = mergedConfigurable?.req as ServerRequest | undefined;
+                      const { args: resolvedArgs, resolved } = await resolveFileReferences({
+                        name: tc.name,
+                        args: tc.args,
+                        req: bridgeReq,
+                        userId: bridgeReq?.user?.id,
+                        getFiles: options.getFiles,
+                        getStrategyFunctions: options.getStrategyFunctions,
+                      });
+                      if (resolved.length > 0) {
+                        logger.debug(
+                          `[mcpFileBridge] resolved ${resolved.length} file refs for tool=${tc.name}`,
+                        );
+                      }
+                      invokeArgs = resolvedArgs as typeof tc.args;
+                    } catch (bridgeError) {
+                      const message =
+                        bridgeError instanceof Error ? bridgeError.message : String(bridgeError);
+                      logger.warn(
+                        `[mcpFileBridge] failed to resolve file refs for tool=${tc.name}; using original args: ${message}`,
+                      );
+                      invokeArgs = tc.args;
+                    }
+                  }
+
+                  const result = await tool.invoke(invokeArgs, {
                     toolCall: toolCallConfig,
                     configurable: mergedConfigurable,
                     metadata,

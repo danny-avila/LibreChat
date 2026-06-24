@@ -40,6 +40,7 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import { registerCodeExecutionTools } from './tools';
+import { buildFileBridgeNote } from './mcpFileBridge';
 import { SUGGESTIONS_PROMPT } from './suggestions';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
@@ -983,6 +984,26 @@ export async function initializeAgent(
     finalAttachments.length > 0
       ? finalAttachments
       : requestAttachments.concat(agentContextAttachments);
+
+  /**
+   * When MCP tools are present and the turn carries files, teach the model
+   * the `@librechat-file:<id>` upload convention so it routes binary files to
+   * storage/drive tools via the host bridge instead of falling back to a text
+   * document. Gated on MCP-tool presence so non-MCP agents are unaffected.
+   */
+  const hasMCPTool = (toolDefinitions ?? []).some((d) =>
+    d.name.includes(Constants.mcp_delimiter),
+  );
+  if (hasMCPTool && compatibilityAttachments.length > 0) {
+    const bridgeNote = buildFileBridgeNote(
+      compatibilityAttachments.map((f) => ({
+        file_id: f.file_id,
+        filename: f.filename,
+        type: f.type,
+      })),
+    );
+    appendAdditionalInstructions(agent, bridgeNote);
+  }
 
   const endpointConfigs = req.config?.endpoints;
   const providerConfig =

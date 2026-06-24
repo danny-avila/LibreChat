@@ -293,6 +293,25 @@ export type TDeleteSkillFileVariables = {
 };
 
 /**
+ * Response from GET `/api/skills/file-preview?fileId=`. Reports whether a
+ * generated conversation file is a skill (named SKILL.md or carrying both
+ * `name` and `description` frontmatter) and the parsed name/description used
+ * to prefill the in-chat save banner. Empty strings when absent.
+ */
+export type TSkillFilePreviewResponse = {
+  isSkill: boolean;
+  name: string;
+  description: string;
+};
+
+/** Body for POST `/api/skills/from-file` (create a skill from a generated file). */
+export type TCreateSkillFromFilePayload = {
+  fileId: string;
+  name?: string;
+  description?: string;
+};
+
+/**
  * Per-user skill active/inactive overrides (GET response and POST body payload).
  * Key = skill ObjectId string, value = explicit active state.
  * Skills absent from the map use the ownership-based default:

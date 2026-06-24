@@ -1,11 +1,18 @@
 import React, { useCallback, useMemo, memo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
 import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import {
+  useLocalize,
+  useMessageActions,
+  useContentMetadata,
+  useScopeOverrideFeatureAccess,
+} from '~/hooks';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
-import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import SaveSkillBanner from '~/components/Skills/SaveSkillBanner';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -118,6 +125,10 @@ const MessageRender = memo(function MessageRender({
   });
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const hasSkillCreateAccess = useScopeOverrideFeatureAccess(
+    PermissionTypes.SKILLS,
+    Permissions.CREATE,
+  );
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
   const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -234,6 +245,9 @@ const MessageRender = memo(function MessageRender({
               />
             </MessageContext.Provider>
           </div>
+          {!msg.isCreatedByUser && !isSubmitting && (
+            <SaveSkillBanner message={msg} hasCreateAccess={hasSkillCreateAccess} />
+          )}
           {hasNoChildren && isSubmitting ? (
             <PlaceholderRow />
           ) : (

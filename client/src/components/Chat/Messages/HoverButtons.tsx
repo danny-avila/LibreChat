@@ -1,12 +1,8 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
-import { Wand2 } from 'lucide-react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
-import { useGenerationsByLatest, useLocalize, useScopeOverrideFeatureAccess } from '~/hooks';
-import { suggestSkillName, suggestSkillDescription } from '~/utils/skillSuggest';
-import CreateSkillDialog from '~/components/Skills/dialogs/CreateSkillDialog';
+import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
@@ -133,13 +129,6 @@ const HoverButtons = ({
   const forkingEnabled = startupConfig?.interface?.forking !== false;
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
-  const [saveSkillOpen, setSaveSkillOpen] = useState(false);
-  const hasSkillCreateAccess = useScopeOverrideFeatureAccess(
-    PermissionTypes.SKILLS,
-    Permissions.CREATE,
-  );
-  const skillBody = useMemo(() => extractMessageContent(message), [message]);
-  const canSaveAsSkill = hasSkillCreateAccess && !message.isCreatedByUser && skillBody.trim().length > 0;
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -261,25 +250,6 @@ const HoverButtons = ({
       {/* Feedback Buttons */}
       {!isCreatedByUser && handleFeedback != null && (
         <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
-      )}
-
-      {/* Save as Skill */}
-      {canSaveAsSkill && (
-        <HoverButton
-          onClick={() => setSaveSkillOpen(true)}
-          title={localize('com_ui_save_as_skill')}
-          icon={<Wand2 size="18" />}
-          isLast={isLast}
-        />
-      )}
-      {canSaveAsSkill && saveSkillOpen && (
-        <CreateSkillDialog
-          isOpen={saveSkillOpen}
-          setIsOpen={setSaveSkillOpen}
-          defaultName={suggestSkillName(skillBody)}
-          defaultDescription={suggestSkillDescription(skillBody)}
-          defaultBody={skillBody}
-        />
       )}
 
       {/* Regenerate Button */}
