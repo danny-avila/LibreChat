@@ -111,13 +111,13 @@ export default function DataTableFile<TData, TValue>({
                 deleteFiles({ files: filesToDelete as TFile[], setFiles });
                 setRowSelection({});
               }}
-              className="ml-1 gap-2 dark:hover:bg-gray-850/25 sm:ml-0"
+              className="ml-1 gap-2 hover:bg-surface-hover sm:ml-0"
               disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
             >
               {isDeleting ? (
                 <Spinner className="h-4 w-4" />
               ) : (
-                <TrashIcon className="h-4 w-4 text-red-400" />
+                <TrashIcon className="h-4 w-4 text-text-destructive" />
               )}
               {localize('com_ui_delete')}
             </Button>
@@ -132,7 +132,7 @@ export default function DataTableFile<TData, TValue>({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="z-[1001] dark:border-gray-700 dark:bg-gray-850"
+                className="z-[1001] border-border-light bg-surface-dialog"
               >
                 {table
                   .getAllColumns()
@@ -141,7 +141,7 @@ export default function DataTableFile<TData, TValue>({
                     return (
                       <DropdownMenuCheckboxItem
                         key={column.id}
-                        className="cursor-pointer capitalize dark:text-white dark:hover:bg-gray-800"
+                        className="cursor-pointer capitalize text-text-primary hover:bg-surface-hover"
                         checked={column.getIsVisible()}
                         onCheckedChange={(value) => column.toggleVisibility(Boolean(value))}
                       >
@@ -161,7 +161,7 @@ export default function DataTableFile<TData, TValue>({
           </div>
         </div>
       </div>
-      <div className="relative mt-3 max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10 sm:min-h-[28rem]">
+      <div className="relative mt-3 max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-border-light pb-4 sm:min-h-[28rem]">
         <Table className="w-full min-w-[600px] border-separate border-spacing-0">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -192,7 +192,7 @@ export default function DataTableFile<TData, TValue>({
                   return (
                     <TableHead
                       key={header.id}
-                      className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
+                      className="align-start sticky top-0 rounded-t border-b border-border-light bg-surface-secondary px-2 py-1 text-left font-medium text-text-secondary sm:px-4 sm:py-2"
                       style={style}
                     >
                       {header.isPlaceholder
@@ -210,7 +210,7 @@ export default function DataTableFile<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && 'selected'}
-                  className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0"
+                  className="border-b border-border-light text-left text-text-secondary [tr:last-child_&]:border-b-0"
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
@@ -247,14 +247,14 @@ export default function DataTableFile<TData, TValue>({
         </Table>
       </div>
       <div className="ml-4 mr-4 mt-4 flex h-auto items-center justify-end space-x-2 py-4 sm:ml-0 sm:mr-0 sm:h-0">
-        <div className="ml-2 flex-1 text-sm text-muted-foreground">
+        <div className="ml-2 flex-1 text-sm text-text-secondary">
           {localize('com_files_number_selected', {
             0: `${table.getFilteredSelectedRowModel().rows.length}`,
             1: `${table.getFilteredRowModel().rows.length}`,
           })}
         </div>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="border-border-medium hover:bg-surface-hover"
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
@@ -263,7 +263,7 @@ export default function DataTableFile<TData, TValue>({
           {localize('com_ui_prev')}
         </Button>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="border-border-medium hover:bg-surface-hover"
           variant="outline"
           size="sm"
           onClick={() => table.nextPage()}

@@ -199,7 +199,7 @@ export default function SharedLinks() {
                 to={`/share/${shareId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center gap-1 truncate rounded-sm text-blue-600 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-text-primary"
                 title={title}
               >
                 <span className="truncate">{title}</span>
@@ -275,7 +275,7 @@ export default function SharedLinks() {
                   href={`/c/${row.original.conversationId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex h-8 w-8 items-center justify-center rounded-md p-0 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="flex h-8 w-8 items-center justify-center rounded-md p-0 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-text-primary"
                   aria-label={localize('com_ui_open_source_chat_new_tab_title', {
                     title: row.original.title || localize('com_ui_untitled'),
                   })}
@@ -324,7 +324,7 @@ export default function SharedLinks() {
 
         <OGDialogContent
           title={localize('com_nav_shared_links')}
-          className="w-11/12 max-w-5xl bg-background text-text-primary shadow-2xl"
+          className="w-11/12 max-w-5xl bg-surface-primary text-text-primary shadow-2xl"
         >
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>
@@ -371,7 +371,7 @@ export default function SharedLinks() {
           }
           selection={{
             selectHandler: confirmDelete,
-            selectClasses: `bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white ${
+            selectClasses: `bg-surface-destructive hover:bg-surface-destructive-hover text-white ${
               deleteMutation.isLoading ? 'cursor-not-allowed opacity-80' : ''
             }`,
             selectText: deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete'),

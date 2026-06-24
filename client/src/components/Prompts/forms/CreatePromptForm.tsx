@@ -147,7 +147,7 @@ const CreatePromptForm = ({
                   </label>
                   <div
                     className={cn(
-                      'mt-1 w-56 text-sm text-red-500',
+                      'mt-1 w-56 text-sm text-text-destructive',
                       errors.name ? 'visible h-auto' : 'invisible h-0',
                     )}
                   >
@@ -195,7 +195,7 @@ const CreatePromptForm = ({
                     />
                     <div
                       className={cn(
-                        'mt-1 text-sm text-red-500',
+                        'mt-1 text-sm text-text-destructive',
                         errors.prompt ? 'visible h-auto' : 'invisible h-0',
                       )}
                     >

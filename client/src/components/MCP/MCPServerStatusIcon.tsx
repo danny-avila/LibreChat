@@ -111,27 +111,29 @@ interface CompactStatusDotProps {
 function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProps) {
   if (isInitializing) {
     return (
-      <div className="flex size-3.5 items-center justify-center rounded-full border-2 border-surface-secondary bg-blue-500">
+      <div className="flex size-3.5 items-center justify-center rounded-full border-2 border-surface-secondary bg-status-info">
         <div className="size-1.5 animate-pulse rounded-full bg-white" />
       </div>
     );
   }
 
   if (!serverStatus) {
-    return <div className="size-3 rounded-full border-2 border-surface-secondary bg-gray-400" />;
+    return (
+      <div className="size-3 rounded-full border-2 border-surface-secondary bg-status-neutral" />
+    );
   }
 
   const { connectionState, requiresOAuth } = serverStatus;
 
-  let colorClass = 'bg-gray-400';
+  let colorClass = 'bg-status-neutral';
   if (connectionState === 'connected') {
-    colorClass = 'bg-green-500';
+    colorClass = 'bg-status-success';
   } else if (connectionState === 'connecting') {
-    colorClass = 'bg-blue-500';
+    colorClass = 'bg-status-info';
   } else if (connectionState === 'error') {
-    colorClass = 'bg-red-500';
+    colorClass = 'bg-status-error';
   } else if (connectionState === 'disconnected' && requiresOAuth) {
-    colorClass = 'bg-amber-500';
+    colorClass = 'bg-status-warning';
   }
 
   return (
@@ -145,13 +147,13 @@ function LoadingStatusIcon({ serverName, onCancel, canCancel }: InitializingStat
       <button
         type="button"
         onClick={onCancel}
-        className="group flex size-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
+        className="group flex size-6 items-center justify-center rounded p-1 hover:bg-status-error-subtle"
         aria-label={localize('com_ui_cancel')}
         title={localize('com_ui_cancel')}
       >
         <div className="relative size-4">
           <Spinner className="size-4 text-text-primary group-hover:opacity-0" />
-          <X className="absolute inset-0 size-4 text-red-500 opacity-0 group-hover:opacity-100" />
+          <X className="absolute inset-0 size-4 text-text-destructive opacity-0 group-hover:opacity-100" />
         </div>
       </button>
     );

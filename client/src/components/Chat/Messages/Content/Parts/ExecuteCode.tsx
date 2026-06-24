@@ -123,7 +123,7 @@ export default function ExecuteCode({
                 <div
                   className={cn(
                     'max-h-[200px] overflow-auto',
-                    outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                    outputHasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >
                   <Stdout output={output} />

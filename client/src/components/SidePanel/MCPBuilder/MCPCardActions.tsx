@@ -92,7 +92,7 @@ export default function MCPCardActions({
           >
             <div className="relative size-4">
               <Spinner className="size-4 group-hover:opacity-0" />
-              <X className="absolute inset-0 size-4 text-red-500 opacity-0 group-hover:opacity-100" />
+              <X className="absolute inset-0 size-4 text-text-destructive opacity-0 group-hover:opacity-100" />
             </div>
           </TooltipAnchor>
         ) : (
@@ -171,7 +171,7 @@ export default function MCPCardActions({
         <TooltipAnchor
           description={localize('com_ui_revoke')}
           side="top"
-          className={cn(buttonBaseClass, 'text-red-500 hover:text-red-600')}
+          className={cn(buttonBaseClass, 'text-text-destructive')}
           aria-label={localize('com_ui_revoke')}
           role="button"
           onClick={onRevoke}

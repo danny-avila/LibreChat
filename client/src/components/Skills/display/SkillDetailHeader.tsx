@@ -42,7 +42,7 @@ const SkillDetailHeader = ({ skill, showActions = true }: SkillDetailHeaderProps
               side="top"
               render={
                 <EarthIcon
-                  className="h-5 w-5 shrink-0 text-green-400"
+                  className="h-5 w-5 shrink-0 text-accent-primary"
                   aria-label={localize('com_ui_sr_public_skill')}
                 />
               }

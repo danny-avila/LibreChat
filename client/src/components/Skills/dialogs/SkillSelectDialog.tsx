@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Search, Check, EarthIcon, User, Plus, Star, ListFilter, X } from 'lucide-react';
-import { useFormContext, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { OGDialog, OGDialogContent } from '@librechat/client';
+import { Search, Check, EarthIcon, User, Plus, Star, ListFilter, X } from 'lucide-react';
 import { PermissionTypes, Permissions, SystemCategories } from 'librechat-data-provider';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
@@ -90,7 +90,7 @@ function SkillCard({
         'group relative flex h-32 cursor-pointer flex-col rounded-xl border p-3.5 text-left transition-all duration-200',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
         selected
-          ? 'border-green-500/70 bg-green-500/[0.06]'
+          ? 'border-status-success-border bg-status-success-subtle'
           : 'border-border-light hover:border-border-medium hover:bg-surface-tertiary',
       )}
     >
@@ -157,7 +157,7 @@ function SkillCard({
         <span
           className={cn(
             'ml-auto flex size-5 shrink-0 items-center justify-center rounded-full transition-all duration-200',
-            selected ? 'scale-100 bg-green-500 text-white opacity-100' : 'scale-75 opacity-0',
+            selected ? 'scale-100 bg-surface-submit text-white opacity-100' : 'scale-75 opacity-0',
           )}
           aria-hidden="true"
         >

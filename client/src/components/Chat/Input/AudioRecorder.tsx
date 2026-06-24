@@ -95,7 +95,7 @@ export default memo(function AudioRecorder({
 
   const renderIcon = () => {
     if (isListening === true) {
-      return <MicOff className="stroke-red-500" />;
+      return <MicOff className="stroke-status-error" />;
     }
     if (isLoading === true) {
       return <Spinner className="stroke-text-secondary" />;

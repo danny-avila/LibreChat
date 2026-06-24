@@ -30,20 +30,20 @@ export default function Pages({
       <button
         onClick={clickHandler(previousPage)}
         className={
-          'btn btn-small bg-transition m-auto flex gap-2 transition hover:bg-gray-800 disabled:text-gray-300 dark:text-white dark:disabled:text-gray-400' +
+          'btn btn-small bg-transition m-auto flex gap-2 text-text-primary transition hover:bg-surface-hover disabled:text-text-tertiary' +
           (pageNumber <= 1 ? ' hidden-visibility' : '')
         }
         disabled={pageNumber <= 1}
       >
         &lt;
       </button>
-      <span className="flex-none text-gray-400">
+      <span className="flex-none text-text-tertiary">
         {pageNumber} / {pages}
       </span>
       <button
         onClick={clickHandler(nextPage)}
         className={
-          'btn btn-small bg-transition m-auto flex gap-2 transition hover:bg-gray-800 disabled:text-gray-300 dark:text-white dark:disabled:text-gray-400' +
+          'btn btn-small bg-transition m-auto flex gap-2 text-text-primary transition hover:bg-surface-hover disabled:text-text-tertiary' +
           (pageNumber >= pages ? ' hidden-visibility' : '')
         }
         disabled={pageNumber >= pages}

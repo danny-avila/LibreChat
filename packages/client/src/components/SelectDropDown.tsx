@@ -119,13 +119,13 @@ function SelectDropDown({
                   }
                 }}
                 className={cn(
-                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:bg-white dark:border-gray-600 dark:bg-gray-700 sm:text-sm',
+                  'relative flex w-full cursor-default flex-col rounded-md border border-border-light bg-surface-secondary py-2 pl-3 pr-10 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:bg-surface-secondary sm:text-sm',
                   className ?? '',
                 )}
               >
                 {showLabel && (
                   <Label
-                    className="block text-xs text-gray-700 dark:text-gray-500"
+                    className="block text-xs text-text-secondary"
                     id="headlessui-listbox-label-:r1:"
                     data-headlessui-state=""
                   >
@@ -135,13 +135,13 @@ function SelectDropDown({
                 <span className="inline-flex w-full truncate">
                   <span
                     className={cn(
-                      'flex h-6 items-center gap-1 truncate text-sm text-gray-800 dark:text-white',
+                      'flex h-6 items-center gap-1 truncate text-sm text-text-primary',
                       !showLabel ? 'text-xs' : '',
                       currentValueClass ?? '',
                     )}
                   >
                     {!showLabel && !emptyTitle && (
-                      <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
+                      <span className="text-xs text-text-secondary">{title}:</span>
                     )}
                     {renderIcon && optionIconSide !== 'right' && (
                       <span className="icon-md flex items-center">
@@ -172,7 +172,7 @@ function SelectDropDown({
                     viewBox="0 0 24 24"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="h-4 w-4 text-gray-400"
+                    className="h-4 w-4 text-text-tertiary"
                     height="1em"
                     width="1em"
                     xmlns="http://www.w3.org/2000/svg"
@@ -192,7 +192,7 @@ function SelectDropDown({
               >
                 <ListboxOptions
                   className={cn(
-                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-xs ring-black/10 dark:border-gray-600 dark:bg-gray-700 dark:ring-white/20 md:w-[100%]',
+                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border border-border-light bg-surface-secondary text-xs md:w-[100%]',
                     optionsListClass ?? '',
                   )}
                 >
@@ -201,7 +201,7 @@ function SelectDropDown({
                       key={'listbox-render-option'}
                       value={null}
                       className={cn(
-                        'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-gray-800 hover:bg-gray-20 dark:text-white dark:hover:bg-gray-700',
+                        'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-text-primary hover:bg-surface-hover',
                         optionsClass ?? '',
                       )}
                     >
@@ -230,7 +230,7 @@ function SelectDropDown({
                         value={option}
                         className={({ active }) =>
                           cn(
-                            'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-gray-800 hover:bg-gray-20 dark:text-white dark:hover:bg-gray-600',
+                            'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden pl-3 pr-9 text-text-primary hover:bg-surface-hover',
                             active ? 'bg-surface-active text-text-primary' : '',
                             optionsClass ?? '',
                           )
@@ -239,7 +239,7 @@ function SelectDropDown({
                         <span className="flex items-center gap-1.5 truncate">
                           <span
                             className={cn(
-                              'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-200',
+                              'flex h-6 items-center gap-1 text-text-primary',
                               option === value ? 'font-semibold' : '',
                               iconSide === 'left' ? 'ml-4' : '',
                             )}
@@ -259,7 +259,7 @@ function SelectDropDown({
                           {currentValue === activeValue && (
                             <span
                               className={cn(
-                                'absolute inset-y-0 flex items-center text-gray-800 dark:text-gray-200',
+                                'absolute inset-y-0 flex items-center text-text-primary',
                                 iconSide === 'left' ? 'left-0 pl-2' : 'right-0 pr-3',
                               )}
                             >

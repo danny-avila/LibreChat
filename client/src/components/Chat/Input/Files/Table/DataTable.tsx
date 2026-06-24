@@ -110,7 +110,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {isDeleting ? (
             <Spinner className="size-3.5 sm:size-4" />
           ) : (
-            <TrashIcon className="size-3.5 text-red-400 sm:size-4" />
+            <TrashIcon className="size-3.5 text-text-destructive sm:size-4" />
           )}
           {!isSmallScreen && <span className="ml-2">{localize('com_ui_delete')}</span>}
         </Button>
@@ -129,7 +129,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           />
         </div>
       </div>
-      <div className="relative grid h-full max-h-[calc(100vh-20rem)] min-h-[calc(100vh-20rem)] w-full flex-1 overflow-hidden overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
+      <div className="relative grid h-full max-h-[calc(100vh-20rem)] min-h-[calc(100vh-20rem)] w-full flex-1 overflow-hidden overflow-x-auto overflow-y-auto rounded-md border border-border-light">
         <Table className="w-full min-w-[300px] border-separate border-spacing-0">
           <TableHeader className="sticky top-0 z-50">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -196,7 +196,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       </div>
 
       <div className="flex items-center justify-end gap-2 py-4">
-        <div className="ml-2 flex-1 truncate text-xs text-muted-foreground sm:ml-4 sm:text-sm">
+        <div className="ml-2 flex-1 truncate text-xs text-text-secondary sm:ml-4 sm:text-sm">
           <span className="hidden sm:inline">
             {localize('com_files_number_selected', {
               0: `${table.getFilteredSelectedRowModel().rows.length}`,

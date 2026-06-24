@@ -83,8 +83,8 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
               {localize('com_nav_delete_account_confirm')}
             </OGDialogTitle>
           </OGDialogHeader>
-          <div className="mb-8 text-sm text-black dark:text-white">
-            <ul className="font-semibold text-amber-600">
+          <div className="mb-8 text-sm text-text-primary">
+            <ul className="font-semibold text-text-warning">
               <li>{localize('com_nav_delete_warning')}</li>
               <li>{localize('com_nav_delete_data_info')}</li>
             </ul>
@@ -145,7 +145,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
                     setUseBackup(!useBackup);
                     setOtpToken('');
                   }}
-                  className="text-sm text-primary hover:underline"
+                  className="text-sm text-text-primary hover:underline"
                 >
                   {useBackup ? localize('com_ui_use_2fa_code') : localize('com_ui_use_backup_code')}
                 </button>
@@ -166,7 +166,7 @@ const renderInput = (
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
 ) => (
   <div className="mb-4">
-    <label className="mb-1 block text-sm font-medium text-black dark:text-white" htmlFor={id}>
+    <label className="mb-1 block text-sm font-medium text-text-primary" htmlFor={id}>
       {label}
     </label>
     <Input id={id} onChange={onChange} placeholder={value} />
@@ -182,7 +182,7 @@ const renderDeleteButton = (
   <button
     className={cn(
       'mt-4 flex w-full items-center justify-center rounded-lg bg-surface-tertiary px-4 py-2 transition-all duration-200',
-      isLocked ? 'cursor-not-allowed opacity-30' : 'bg-destructive text-destructive-foreground',
+      isLocked ? 'cursor-not-allowed opacity-30' : 'bg-surface-destructive text-white',
     )}
     onClick={handleDeleteUser}
     disabled={isDeleting || isLocked}

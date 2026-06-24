@@ -52,6 +52,12 @@ function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
     'rgb-surface-destructive': '--surface-destructive',
     'rgb-surface-destructive-hover': '--surface-destructive-hover',
     'rgb-surface-chat': '--surface-chat',
+    'rgb-surface-inverted': '--surface-inverted',
+    'rgb-surface-inverted-hover': '--surface-inverted-hover',
+    'rgb-text-inverted': '--text-inverted',
+    'rgb-surface-fixed': '--surface-fixed',
+    'rgb-surface-fixed-hover': '--surface-fixed-hover',
+    'rgb-text-fixed': '--text-fixed',
     'rgb-border-light': '--border-light',
     'rgb-border-medium': '--border-medium',
     'rgb-border-medium-alt': '--border-medium-alt',
@@ -60,23 +66,11 @@ function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
     'rgb-brand-purple': '--brand-purple',
     'rgb-presentation': '--presentation',
 
-    // Utility colors
+    // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
     'rgb-background': '--background',
-    'rgb-foreground': '--foreground',
     'rgb-primary': '--primary',
     'rgb-primary-foreground': '--primary-foreground',
-    'rgb-secondary': '--secondary',
-    'rgb-secondary-foreground': '--secondary-foreground',
-    'rgb-muted': '--muted',
-    'rgb-muted-foreground': '--muted-foreground',
-    'rgb-accent': '--accent',
-    'rgb-accent-foreground': '--accent-foreground',
-    'rgb-destructive-foreground': '--destructive-foreground',
-    'rgb-border': '--border',
-    'rgb-input': '--input',
     'rgb-ring': '--ring',
-    'rgb-card': '--card',
-    'rgb-card-foreground': '--card-foreground',
   };
 
   Object.entries(mappings).forEach(([rgbKey, cssVar]) => {
@@ -108,8 +102,9 @@ export default function applyTheme(themeRGB?: IThemeRGB): void {
       return;
     }
 
-    // Set the CSS variable as rgb() value for compatibility
-    // This ensures existing CSS that expects color values (not space-separated RGB) continues to work
-    root.style.setProperty(cssVar, `rgb(${value})`);
+    // Store the bare `R G B` channel triplet. The Tailwind color map wraps these
+    // as `rgb(var(--x) / <alpha-value>)`, so storing raw channels is what enables
+    // opacity modifiers and matches the style.css defaults.
+    root.style.setProperty(cssVar, value);
   });
 }

@@ -13,7 +13,6 @@ import type { TSkill, TSkillWarning, TUpdateSkillPayload } from 'librechat-data-
 import { useGetSkillQuery, useUpdateSkillMutation } from '~/data-provider';
 import { useLocalize, useSkillPermissions } from '~/hooks';
 import SkillContentEditor from './SkillContentEditor';
-import InvocationModePicker from './InvocationModePicker';
 import CategorySelector from './CategorySelector';
 import DeleteSkill from '../dialogs/DeleteSkill';
 import { ShareSkill } from '../buttons';
@@ -207,7 +206,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
                   <div
                     id="skill-name-error"
                     className={cn(
-                      'mt-1 w-56 text-sm text-red-500',
+                      'mt-1 w-56 text-sm text-text-destructive',
                       errors.name ? 'visible h-auto' : 'invisible h-0',
                     )}
                     role={errors.name ? 'alert' : undefined}
@@ -240,7 +239,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
         {readOnly && (
           <div
             role="note"
-            className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-600 dark:text-amber-400"
+            className="mt-4 flex items-start gap-2 rounded-md border border-status-warning-border bg-status-warning-subtle p-3 text-sm text-status-warning"
           >
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>{localize('com_ui_skill_no_edit_permission')}</span>
@@ -250,7 +249,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
         {warnings && warnings.length > 0 && (
           <div
             role="alert"
-            className="mt-4 flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-600 dark:text-amber-400"
+            className="mt-4 flex flex-col gap-1 rounded-md border border-status-warning-border bg-status-warning-subtle p-3 text-sm text-status-warning"
           >
             <div className="flex items-center gap-2 font-semibold">
               <AlertTriangle className="size-4" aria-hidden="true" />
@@ -284,7 +283,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
                   className="mb-1 text-sm font-medium text-text-secondary"
                 >
                   {localize('com_ui_description')}
-                  <span className="ml-0.5 text-red-500">*</span>
+                  <span className="ml-0.5 text-text-destructive">*</span>
                 </label>
                 <TextareaAutosize
                   {...field}
@@ -303,7 +302,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
                 {errors.description && (
                   <p
                     id="skill-description-error"
-                    className="mt-1 text-sm text-red-500"
+                    className="mt-1 text-sm text-text-destructive"
                     role="alert"
                   >
                     {errors.description.message}

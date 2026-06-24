@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { useState, ReactNode } from 'react';
-import { Spinner, Button } from '@librechat/client';
+import { Spinner, Button, Alert } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import { loginPage } from 'librechat-data-provider';
@@ -11,12 +11,9 @@ import { useLocalize } from '~/hooks';
 
 const BodyTextWrapper: FC<{ children: ReactNode }> = ({ children }) => {
   return (
-    <div
-      className="relative mt-6 rounded-xl border border-green-500/20 bg-green-50/50 px-6 py-4 text-green-700 shadow-sm transition-all dark:bg-green-950/30 dark:text-green-100"
-      role="alert"
-    >
+    <Alert variant="success" icon={false} className="mt-6 px-6 py-4 shadow-sm transition-all">
       {children}
-    </div>
+    </Alert>
   );
 };
 
@@ -26,7 +23,7 @@ const ResetPasswordBodyText = () => {
     <div className="flex flex-col space-y-4">
       <p>{localize('com_auth_reset_password_if_email_exists')}</p>
       <a
-        className="inline-flex text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+        className="inline-flex text-sm font-medium text-accent-primary transition-colors hover:text-accent-primary-hover"
         href={loginPage()}
       >
         {localize('com_auth_back_to_login')}
@@ -56,7 +53,7 @@ function RequestPasswordReset() {
           setBodyText(
             <span>
               {localize('com_auth_click')}{' '}
-              <a className="text-green-500 hover:underline" href={data.link}>
+              <a className="text-accent-primary hover:underline" href={data.link}>
                 {localize('com_auth_here')}
               </a>{' '}
               {localize('com_auth_to_reset_your_password')}
@@ -108,18 +105,18 @@ function RequestPasswordReset() {
               },
             })}
             aria-invalid={!!errors.email}
-            className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
+            className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-accent-primary focus:outline-none"
             placeholder=" "
           />
           <label
             htmlFor="email"
-            className="absolute -top-2 left-2 z-10 bg-white px-2 text-sm text-gray-600 transition-all peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-500 peer-focus:-top-2 peer-focus:text-sm peer-focus:text-green-600 dark:bg-gray-900 dark:text-gray-400 dark:peer-focus:text-green-500"
+            className="absolute -top-2 left-2 z-10 bg-surface-primary px-2 text-sm text-text-secondary transition-all peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:text-text-tertiary peer-focus:-top-2 peer-focus:text-sm peer-focus:text-accent-primary"
           >
             {localize('com_auth_email_address')}
           </label>
         </div>
         {errors.email && (
-          <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm font-medium text-text-destructive">
             {errors.email.message}
           </p>
         )}
@@ -136,7 +133,7 @@ function RequestPasswordReset() {
         </Button>
         <a
           href={loginPage()}
-          className="block text-center text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+          className="block text-center text-sm font-medium text-accent-primary transition-colors hover:text-accent-primary-hover"
         >
           {localize('com_auth_back_to_login')}
         </a>

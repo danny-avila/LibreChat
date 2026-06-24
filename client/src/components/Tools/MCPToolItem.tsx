@@ -80,14 +80,14 @@ function MCPToolItem({
               <img
                 src={icon}
                 alt={localize('com_ui_logo', { 0: name })}
-                className="h-full w-full rounded-[5px] bg-white"
+                className="h-full w-full rounded-[5px] bg-surface-fixed"
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
                 <Wrench className="h-8 w-8 text-text-secondary" />
               </div>
             )}
-            <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
+            <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-border-light"></div>
           </div>
         </div>
         <div className="flex min-w-0 flex-col items-start justify-between">

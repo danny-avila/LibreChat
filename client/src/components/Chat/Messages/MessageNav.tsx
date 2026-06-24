@@ -140,18 +140,14 @@ const MessageIndicator = memo(function MessageIndicator({
             <span
               className={cn(
                 'block rounded-full transition-all duration-200',
-                isActive
-                  ? 'h-1.5 w-1.5 bg-gray-800 dark:bg-gray-100'
-                  : 'h-1 w-1 bg-gray-400 dark:bg-gray-500',
+                isActive ? 'h-1.5 w-1.5 bg-text-primary' : 'h-1 w-1 bg-border-heavy',
               )}
             />
           ) : (
             <span
               className={cn(
                 'block w-full rounded-full transition-all duration-200',
-                isActive
-                  ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
-                  : 'h-[3px] bg-gray-400 dark:bg-gray-500',
+                isActive ? 'h-[5px] bg-text-primary' : 'h-[3px] bg-border-heavy',
               )}
             />
           )}
@@ -840,8 +836,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         'group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))]',
         '-translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 md:flex',
         'opacity-30 transition-opacity duration-300',
-        'hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/5',
-        'focus-within:bg-black/5 focus-within:opacity-100 dark:focus-within:bg-white/5',
+        'hover:bg-surface-hover hover:opacity-100',
+        'focus-within:bg-surface-hover focus-within:opacity-100',
       )}
     >
       <button

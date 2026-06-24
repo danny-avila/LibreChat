@@ -135,13 +135,13 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
         )}
         {saveStatus === 'saved' && (
           <Check
-            className="size-4 text-green-500 transition-opacity duration-300"
+            className="size-4 text-status-success transition-opacity duration-300"
             aria-label={localize('com_ui_saved')}
           />
         )}
         {saveStatus === 'error' && (
           <X
-            className="size-4 text-red-500 transition-opacity duration-300"
+            className="size-4 text-text-destructive transition-opacity duration-300"
             aria-label={localize('com_ui_error')}
           />
         )}
