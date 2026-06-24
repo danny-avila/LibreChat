@@ -78,6 +78,8 @@ const PAINT_OPACITY = new Map([
 /** Declarations resolved from `<style>` rules for tint detection. */
 const RESOLVED_DECLS = new Set([
   'fill',
+  'stroke',
+  'stop-color',
   'color',
   'display',
   'opacity',
@@ -88,10 +90,6 @@ const RESOLVED_DECLS = new Set([
 
 /** A `<style>` rule reduced to the paint/opacity declarations we resolve. */
 type StyleRule = { selector: string; declarations: Map<string, string> };
-
-/** Matches paint declarations inside a `<style>` block, capturing property and
- * value (not `color`, which only resolves `currentColor` rather than painting). */
-const CSS_COLOR_REGEX = /(fill|stroke|stop-color)\s*:\s*([^;}]+)/gi;
 
 function hexToRgb(hex: string): [number, number, number] | null {
   let value = hex.slice(1);
@@ -291,96 +289,6 @@ function hasOpaqueBackground(root: Element, rules: StyleRule[]): boolean {
 }
 
 /**
- * The tones a CSS `currentColor` paint contributes: it is resolved per rendered
- * element the rule matches (against an inherited fixed `color`), so a fixed color
- * is preserved rather than recorded as the theme-following sentinel. Hidden,
- * functional, or fully transparent matches paint nothing and are skipped.
- */
-function resolveCssCurrentColor(
-  root: Element,
-  selector: string,
-  rules: StyleRule[],
-  paintProp: string,
-): string[] {
-  if (selector === '') {
-    return [];
-  }
-  let matched: Element[];
-  try {
-    matched = Array.from(root.querySelectorAll(selector));
-    if (root.matches(selector)) {
-      matched = [root, ...matched];
-    }
-  } catch {
-    return [CURRENT_COLOR];
-  }
-  return matched
-    .filter(
-      (el) =>
-        !isHidden(el, root, rules) &&
-        !isInside(el, root, FUNCTIONAL_CONTAINERS) &&
-        !paintInvisible(el, root, rules, paintProp),
-    )
-    .map((el) => resolveCurrentColor(el, root, rules));
-}
-
-function colorsFromStyleBlocks(root: Element, rules: StyleRule[]): string[] {
-  const colors: string[] = [];
-  for (const style of Array.from(root.querySelectorAll('style'))) {
-    for (const rule of (style.textContent ?? '').split('}')) {
-      const brace = rule.indexOf('{');
-      if (brace === -1) {
-        continue;
-      }
-      const selector = rule.slice(0, brace).trim();
-      for (const match of rule.slice(brace + 1).matchAll(CSS_COLOR_REGEX)) {
-        const property = match[1].toLowerCase();
-        const value = match[2].trim();
-        if (value.toLowerCase() === CURRENT_COLOR) {
-          colors.push(...resolveCssCurrentColor(root, selector, rules, property));
-        } else if (selectorPaintsRendered(root, selector, rules, property)) {
-          colors.push(value);
-        }
-      }
-    }
-  }
-  return colors;
-}
-
-/**
- * True when a CSS selector matches at least one element that actually paints: it
- * is rendered (not `display:none`), is not inside a functional template, and the
- * paint is not made invisible by opacity. Unused or hidden rules contribute no
- * tone. The root element is checked too, since `querySelectorAll` only walks
- * descendants.
- */
-function selectorPaintsRendered(
-  root: Element,
-  selector: string,
-  rules: StyleRule[],
-  paintProp: string,
-): boolean {
-  if (selector === '') {
-    return false;
-  }
-  let matched: Element[];
-  try {
-    matched = Array.from(root.querySelectorAll(selector));
-    if (root.matches(selector)) {
-      matched = [root, ...matched];
-    }
-  } catch {
-    return true;
-  }
-  return matched.some(
-    (el) =>
-      !isHidden(el, root, rules) &&
-      !isInside(el, root, FUNCTIONAL_CONTAINERS) &&
-      !paintInvisible(el, root, rules, paintProp),
-  );
-}
-
-/**
  * Resolves a `currentColor` paint to the fixed `color` set on the element or an
  * ancestor up to `boundary` (inline style, attribute, or CSS), since that is what
  * the icon actually renders. Returns `currentColor` unchanged when no fixed color
@@ -460,9 +368,11 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
 
 /**
  * The paint an element renders for a property, or null when it paints none.
- * Fill/stroke are resolved through inheritance but only on actual painters, so a
- * value declared on a pure container (`svg`, `g`) is ignored unless a painter
- * inherits it. `stop-color` only paints on a gradient `<stop>`.
+ * Fill/stroke are resolved through inheritance (inline, attribute, or CSS) but only
+ * on actual painters, so a value declared on a pure container (`svg`, `g`) is
+ * ignored unless a painter inherits it. A `<use>`'s paint counts only where the
+ * referenced content actually inherits it, not where the template overrides it.
+ * `stop-color` only paints on a gradient `<stop>`.
  */
 function renderedPaint(
   el: Element,
@@ -471,10 +381,16 @@ function renderedPaint(
   property: string,
 ): string | null {
   if (property === 'stop-color') {
-    return el.matches('stop') ? readPaint(el, property) : null;
+    return el.matches('stop') ? styleValue(el, rules, property) : null;
   }
   const painters = property === 'stroke' ? STROKE_PAINTERS : FILL_PAINTERS;
-  return el.matches(painters) ? resolvePaint(el, root, rules, property) : null;
+  if (!el.matches(painters)) {
+    return null;
+  }
+  if (el.matches('use') && !instanceContributesPaint(el, root, rules, property)) {
+    return null;
+  }
+  return resolvePaint(el, root, rules, property);
 }
 
 function collectColors(root: Element, rules: StyleRule[]): string[] {
@@ -501,7 +417,6 @@ function collectColors(root: Element, rules: StyleRule[]): string[] {
       }
     }
   }
-  colors.push(...colorsFromStyleBlocks(root, rules));
   return colors
     .map((color) => color.trim().toLowerCase())
     .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color) && paintAlpha(color) !== 0);
@@ -737,25 +652,46 @@ function referencedTarget(use: Element, root: Element): Element | null {
   return null;
 }
 
-/** True when a referenced template has a fillable shape with no fill of its own. */
-function targetHasDefaultBlackShape(target: Element, rules: StyleRule[]): boolean {
-  const shapes = Array.from(target.querySelectorAll(FILLABLE_SHAPES));
-  if (target.matches(FILLABLE_SHAPES)) {
+/**
+ * True when a referenced template has a rendered painter that inherits `property`
+ * rather than setting its own, so a `<use>` supplying that paint is what colors it.
+ * For `fill` the painter must enclose an area; a stroke paints on any outline.
+ */
+function targetInheritsPaint(target: Element, rules: StyleRule[], property: string): boolean {
+  const painters = property === 'stroke' ? STROKE_PAINTERS : FILLABLE_SHAPES;
+  const shapes = Array.from(target.querySelectorAll(painters));
+  if (target.matches(painters)) {
     shapes.unshift(target);
   }
   for (const el of shapes) {
     if (
-      resolveFill(el, target, rules) != null ||
+      resolvePaint(el, target, rules, property) != null ||
       isInside(el, target, FUNCTIONAL_CONTAINERS) ||
       isHidden(el, target, rules)
     ) {
       continue;
     }
-    if (rendersFillArea(el)) {
+    if (property === 'stroke' || rendersFillArea(el)) {
       return true;
     }
   }
   return false;
+}
+
+/** True when a referenced template has a fillable shape with no fill of its own. */
+function targetHasDefaultBlackShape(target: Element, rules: StyleRule[]): boolean {
+  return targetInheritsPaint(target, rules, 'fill');
+}
+
+/** True when a `<use>`'s own paint reaches a referenced shape that inherits it. */
+function instanceContributesPaint(
+  use: Element,
+  root: Element,
+  rules: StyleRule[],
+  property: string,
+): boolean {
+  const target = referencedTarget(use, root);
+  return target != null && targetInheritsPaint(target, rules, property);
 }
 
 /**
