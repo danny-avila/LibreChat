@@ -203,18 +203,19 @@ function parseSvgRoot(svg: string): Element | null {
   return root != null && root.nodeName.toLowerCase() === 'svg' ? root : null;
 }
 
-/** Reads a paint value (e.g. `fill`), preferring an inline `style` over the attribute. */
-function readPaint(el: Element, prop: string): string | null {
+/** Reads a property from the element's inline `style` attribute, or null. */
+function inlineStyleValue(el: Element, prop: string): string | null {
   const style = el.getAttribute('style');
-  if (style) {
-    for (const declaration of style.split(';')) {
-      const separator = declaration.indexOf(':');
-      if (separator !== -1 && declaration.slice(0, separator).trim().toLowerCase() === prop) {
-        return declaration.slice(separator + 1).trim();
-      }
+  if (!style) {
+    return null;
+  }
+  for (const declaration of style.split(';')) {
+    const separator = declaration.indexOf(':');
+    if (separator !== -1 && declaration.slice(0, separator).trim().toLowerCase() === prop) {
+      return declaration.slice(separator + 1).trim();
     }
   }
-  return el.getAttribute(prop);
+  return null;
 }
 
 function readDimension(el: Element, name: string): number | null {
@@ -339,7 +340,9 @@ function currentColorTones(
  * Maps each element rendered through a visible `<use>` (target subtrees) to the
  * instantiating `<use>` elements, so its template paint counts even though it
  * lives in a deferred container, and `currentColor` can resolve against the
- * instance's inherited `color`. Hidden uses render nothing and are skipped.
+ * instance's inherited `color`. Nested `<use>` inside a referenced template are
+ * followed too (a symbol may reference another template). Hidden uses render
+ * nothing and are skipped; a `seen` set guards against reference cycles.
  */
 function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]> {
   const map = new Map<Element, Element[]>();
@@ -351,17 +354,32 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
     }
     map.set(el, [use]);
   };
+  const linkTarget = (target: Element, use: Element, seen: Set<Element>) => {
+    if (seen.has(target)) {
+      return;
+    }
+    seen.add(target);
+    link(target, use);
+    for (const el of Array.from(target.querySelectorAll('*'))) {
+      link(el, use);
+    }
+    for (const nested of Array.from(target.querySelectorAll('use'))) {
+      if (isHidden(nested, root, rules)) {
+        continue;
+      }
+      const nestedTarget = referencedTarget(nested, root);
+      if (nestedTarget != null) {
+        linkTarget(nestedTarget, nested, seen);
+      }
+    }
+  };
   for (const use of Array.from(root.querySelectorAll('use'))) {
     if (isHidden(use, root, rules) || isInside(use, root, DEFERRED_CONTAINERS)) {
       continue;
     }
     const target = referencedTarget(use, root);
-    if (target == null) {
-      continue;
-    }
-    link(target, use);
-    for (const el of Array.from(target.querySelectorAll('*'))) {
-      link(el, use);
+    if (target != null) {
+      linkTarget(target, use, new Set());
     }
   }
   return map;
@@ -514,13 +532,22 @@ function cssDecl(el: Element, rules: StyleRule[], property: string): string | nu
   return value;
 }
 
-/** An element's own value for a property from inline style, attribute, or CSS. */
+/**
+ * An element's effective value for a property, in CSS cascade order: an inline
+ * `style` declaration wins, then a matching author `<style>` rule, and only then
+ * the presentation attribute (which browsers treat as the lowest priority).
+ */
 function styleValue(el: Element, rules: StyleRule[], property: string): string | null {
-  const own = readPaint(el, property);
-  if (own != null && own.trim() !== '') {
-    return own.trim().toLowerCase();
+  const inline = inlineStyleValue(el, property);
+  if (inline != null && inline.trim() !== '') {
+    return inline.trim().toLowerCase();
   }
-  return cssDecl(el, rules, property);
+  const css = cssDecl(el, rules, property);
+  if (css != null && css !== '') {
+    return css;
+  }
+  const attribute = el.getAttribute(property);
+  return attribute != null && attribute.trim() !== '' ? attribute.trim().toLowerCase() : null;
 }
 
 /** Parses a property to a number, or null when absent/unparseable. */
