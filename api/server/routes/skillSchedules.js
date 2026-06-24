@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const { generateCheckAccess } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
@@ -8,13 +9,13 @@ const {
   listSkillSchedules,
   updateSkillSchedule,
   deleteSkillSchedule,
+  markScheduleResult,
   getUserById,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
 const configMiddleware = require('~/server/middleware/config/app');
-const { runScheduledTurn } = require('~/server/services/Scheduler/runScheduledTurn');
-const { computeNextRunAt } = require('~/server/services/Scheduler');
+const { computeNextRunAt, runScheduleManually } = require('~/server/services/Scheduler');
 const { assertValidCron } = require('~/server/services/Scheduler/cron');
 
 const router = express.Router();
@@ -190,8 +191,20 @@ router.post('/:id/run', async (req, res) => {
     if (!owner) {
       return res.status(404).json({ error: 'User not found' });
     }
-    const { conversationId } = await runScheduledTurn({ owner, schedule });
-    res.json({ success: true, conversationId });
+
+    const conversationId = crypto.randomUUID();
+    await markScheduleResult(schedule._id, { status: 'running', conversationId, error: null });
+
+    /**
+     * Fire-and-forget: an agent turn can take longer than the gateway's
+     * request timeout (504). We respond immediately with the conversation id
+     * and `running` status; the client polls `lastStatus` for completion.
+     */
+    runScheduleManually({ owner, schedule, conversationId }).catch((error) => {
+      logger.error('[skillSchedules] background manual run error:', error);
+    });
+
+    res.status(202).json({ status: 'running', conversationId });
   } catch (error) {
     logger.error('[skillSchedules] manual run error:', error);
     res.status(500).json({ error: error.message || 'Failed to run schedule' });

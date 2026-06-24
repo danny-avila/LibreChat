@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Plus, Play, Pencil, Trash2, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Play, Pencil, Trash2, Clock, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { Button, OGDialog, OGDialogContent, Spinner, useToastContext } from '@librechat/client';
 import type { TSkillSchedule } from 'librechat-data-provider';
 import {
@@ -30,16 +31,65 @@ interface ScheduledSkillsPanelProps {
   className?: string;
 }
 
+function StatusRow({
+  schedule,
+  isRunning,
+  localize,
+  onView,
+}: {
+  schedule: TSkillSchedule;
+  isRunning: boolean;
+  localize: ReturnType<typeof useLocalize>;
+  onView: () => void;
+}) {
+  if (isRunning) {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary">
+        <Spinner className="h-3 w-3" />
+        {localize('com_ui_scheduled_skills_running')}
+      </p>
+    );
+  }
+  if (schedule.lastStatus === 'error') {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-xs text-red-500">
+        <AlertCircle className="h-3 w-3 shrink-0" />
+        {schedule.lastError || localize('com_ui_scheduled_skills_last_error')}
+      </p>
+    );
+  }
+  if (schedule.lastStatus === 'success') {
+    return (
+      <button
+        type="button"
+        onClick={onView}
+        disabled={!schedule.lastConversationId}
+        className="mt-1 flex items-center gap-1.5 text-xs text-green-600 hover:underline disabled:no-underline"
+      >
+        <CheckCircle2 className="h-3 w-3 shrink-0" />
+        {localize('com_ui_scheduled_skills_last_success')}
+        {schedule.lastConversationId && <ExternalLink className="h-3 w-3" />}
+      </button>
+    );
+  }
+  return null;
+}
+
 export default function ScheduledSkillsPanel({ className }: ScheduledSkillsPanelProps) {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const { showToast } = useToastContext();
-  const { data, isLoading } = useSkillSchedulesQuery();
+  const { data, isLoading } = useSkillSchedulesQuery({
+    refetchInterval: (current) =>
+      current?.schedules?.some((s) => s.lastStatus === 'running') ? 4000 : false,
+  });
   const runMutation = useRunSkillScheduleMutation();
   const deleteMutation = useDeleteSkillScheduleMutation();
   const updateMutation = useUpdateSkillScheduleMutation();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TSkillSchedule | undefined>(undefined);
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
 
   const schedules = data?.schedules ?? [];
 
@@ -54,12 +104,46 @@ export default function ScheduledSkillsPanel({ className }: ScheduledSkillsPanel
   };
 
   const handleRun = (schedule: TSkillSchedule) => {
+    setRunningIds((prev) => new Set(prev).add(schedule._id));
     runMutation.mutate(schedule._id, {
       onSuccess: () =>
         showToast({ message: localize('com_ui_scheduled_skills_run_started'), status: 'success' }),
-      onError: () => showToast({ message: localize('com_ui_error'), status: 'error' }),
+      onError: () => {
+        setRunningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(schedule._id);
+          return next;
+        });
+        showToast({ message: localize('com_ui_error'), status: 'error' });
+      },
     });
   };
+
+  const isRunning = (schedule: TSkillSchedule) =>
+    schedule.lastStatus === 'running' || runningIds.has(schedule._id);
+
+  const viewRun = (schedule: TSkillSchedule) => {
+    if (schedule.lastConversationId) {
+      navigate(`/c/${schedule.lastConversationId}`);
+    }
+  };
+
+  useEffect(() => {
+    setRunningIds((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+      const next = new Set(prev);
+      let changed = false;
+      for (const schedule of schedules) {
+        if (next.has(schedule._id) && schedule.lastStatus === 'running') {
+          next.delete(schedule._id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [schedules]);
 
   const handleDelete = (schedule: TSkillSchedule) => {
     deleteMutation.mutate(schedule._id);
@@ -113,11 +197,12 @@ export default function ScheduledSkillsPanel({ className }: ScheduledSkillsPanel
                     <p className="mt-1 text-xs text-text-secondary">
                       {localize('com_ui_scheduled_skills_next')}: {formatNext(schedule, localize)}
                     </p>
-                    {schedule.lastStatus === 'error' && (
-                      <p className="mt-1 text-xs text-red-500">
-                        {localize('com_ui_scheduled_skills_last_error')}
-                      </p>
-                    )}
+                    <StatusRow
+                      schedule={schedule}
+                      isRunning={isRunning(schedule)}
+                      localize={localize}
+                      onView={() => viewRun(schedule)}
+                    />
                   </div>
                 </div>
                 <div className="mt-2 flex items-center gap-1">
@@ -125,10 +210,14 @@ export default function ScheduledSkillsPanel({ className }: ScheduledSkillsPanel
                     size="sm"
                     variant="outline"
                     onClick={() => handleRun(schedule)}
-                    disabled={runMutation.isLoading}
+                    disabled={isRunning(schedule)}
                     aria-label={localize('com_ui_scheduled_skills_run_now')}
                   >
-                    <Play className="h-3.5 w-3.5" />
+                    {isRunning(schedule) ? (
+                      <Spinner className="h-3.5 w-3.5" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5" />
+                    )}
                   </Button>
                   <Button
                     size="sm"

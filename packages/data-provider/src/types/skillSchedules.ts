@@ -55,6 +55,7 @@ export type TSkillScheduleResponse = {
 };
 
 export type TRunSkillScheduleResponse = {
-  success: boolean;
+  status?: TSkillScheduleStatus;
+  success?: boolean;
   conversationId: string;
 };
