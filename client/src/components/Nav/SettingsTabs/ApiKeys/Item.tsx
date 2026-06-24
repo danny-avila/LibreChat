@@ -18,7 +18,7 @@ export default function Item({ apiKey }: ItemProps) {
   const status = getExpiryStatus(apiKey.expiresAt);
 
   return (
-    <li className="hover:bg-surface-secondary/50 group flex items-start justify-between gap-3 px-4 py-3 transition-colors first:rounded-t-xl last:rounded-b-xl">
+    <li className="group flex items-start justify-between gap-3 px-4 py-3 transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-surface-secondary/50">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2">
           <span className="truncate font-medium text-text-primary">{apiKey.name}</span>
