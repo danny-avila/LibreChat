@@ -29,7 +29,7 @@ const {
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
-  isDeepSeekReasoningProvider,
+  anyAgentReplaysReasoningContent,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -1160,14 +1160,17 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
-      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
-      const hasDeepSeekAgent = (agent) =>
-        agent != null &&
-        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
-      const needsDeepSeekFormat =
-        hasDeepSeekAgent(this.options.agent) ||
-        (this.agentConfigs != null &&
-          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      /**
+       * Reconstruct `reasoning_content` on prior tool-call turns: DeepSeek
+       * thinking-mode (#13366) or custom endpoints opting in via
+       * `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+       * Walks subagents too — the opted-in endpoint may appear only as a
+       * nested subagent, not the primary or a top-level handoff agent.
+       */
+      const needsReasoningContentFormat = anyAgentReplaysReasoningContent([
+        this.options.agent,
+        ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+      ]);
       /**
        * Skills primed fresh this turn — manual ($ popover) and always-apply
        * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
@@ -1184,9 +1187,9 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const formatOptions =
-        needsDeepSeekFormat || freshSkillPrimeNames.size > 0
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
           ? {
-              ...(needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : {}),
+              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
               ...(freshSkillPrimeNames.size > 0
                 ? { skipSkillBodyNames: freshSkillPrimeNames }
                 : {}),
