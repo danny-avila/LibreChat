@@ -20,6 +20,8 @@ export interface GenerationJobMetadata {
   model?: string;
   /** Prompt token count for abort token spending */
   promptTokens?: number;
+  /** Agent that initiated the run; a HITL resume verifies it rebuilds the same agent. */
+  agent_id?: string;
   /** Set when the job is paused for human review (status === 'requires_action') */
   pendingAction?: Agents.PendingAction;
 }

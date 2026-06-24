@@ -33,6 +33,10 @@ const {
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
+  buildPendingAction,
+  getApprovalTtlMs,
+  isHITLEnabled,
+  deleteAgentCheckpoint,
   getRequestMemories,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
@@ -69,6 +73,7 @@ const {
   Permissions,
   VisionModes,
   ContentTypes,
+  ApprovalEvents,
   EModelEndpoint,
   PermissionTypes,
   AgentCapabilities,
@@ -1165,6 +1170,63 @@ class AgentClient extends BaseClient {
    * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
    * @param {AbortController} [params.abortController]
    */
+  /**
+   * Surface any human-in-the-loop interrupt the SDK captured during the most
+   * recent `processStream` / `resume`. When the run paused for tool approval (or
+   * an ask-user question), mark the job `requires_action`, persist the pending
+   * review record, and emit it to live clients — then set `this.pendingApproval`
+   * so the controller leaves the turn unfinalized for the resume route to continue.
+   *
+   * No-op when the run completed without an interrupt, or when the job was aborted
+   * between the interrupt firing and this mark (a late interrupt must not pause a
+   * dead job — the atomic `pause` transition returns false and we drop it).
+   *
+   * @param {AgentRun} run
+   * @param {string} [streamId]
+   */
+  async handleRunInterrupt(run, streamId) {
+    if (!streamId || typeof run?.getInterrupt !== 'function') {
+      return;
+    }
+    const interrupt = run.getInterrupt();
+    if (!interrupt?.payload) {
+      return;
+    }
+
+    const appConfig = this.options.req?.config;
+    const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    const pendingAction = buildPendingAction(interrupt.payload, {
+      streamId,
+      conversationId: this.conversationId,
+      // runId mirrors the LangGraph checkpoint namespace when the SDK provides it
+      // (its documented meaning), falling back to the response message id.
+      runId: interrupt.checkpointNs ?? this.responseMessageId,
+      responseMessageId: this.responseMessageId,
+      interruptId: interrupt.interruptId,
+      // thread_id was bound to conversationId at run config (config.configurable);
+      // fall back to it when the SDK doesn't echo threadId on the interrupt.
+      threadId: interrupt.threadId ?? this.conversationId,
+      ttlMs: getApprovalTtlMs(checkpointerCfg),
+    });
+
+    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);
+    if (!paused) {
+      logger.debug(
+        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
+      );
+      return;
+    }
+
+    this.pendingApproval = pendingAction;
+    await GenerationJobManager.emitChunk(streamId, {
+      event: ApprovalEvents.ON_PENDING_ACTION,
+      data: pendingAction,
+    });
+    logger.debug(
+      `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
+    );
+  }
+
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -1458,6 +1520,11 @@ class AgentClient extends BaseClient {
           },
         });
 
+        // HITL: if the run paused for tool approval, mark the job
+        // `requires_action` + emit the prompt and leave the turn unfinalized
+        // (the resume route continues it). No-op when the run completed.
+        await this.handleRunInterrupt(run, streamId);
+
         config.signal = null;
       };
 
@@ -1584,9 +1651,219 @@ class AgentClient extends BaseClient {
         this._resolveRun(this.run ?? null);
         this._resolveRun = null;
       }
+
+      // HITL: a turn that completed (or errored) without pausing leaves a dead
+      // checkpoint. thread_id is the conversationId — stable across turns — so it
+      // MUST be pruned before the next turn, or LangGraph would resume this turn's
+      // state instead of starting fresh. Skip when paused (the checkpoint is needed
+      // to resume) or when HITL is off (none was written). The Mongo TTL is the backstop.
+      const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+      if (!this.pendingApproval && isHITLEnabled(agentsEConfig?.toolApproval)) {
+        try {
+          await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
+        } catch (err) {
+          logger.warn('[AgentClient] Failed to prune checkpoint after completion', err);
+        }
+      }
+
       run = null;
       config = null;
       memoryPromise = null;
+    }
+  }
+
+  /**
+   * Resume a run that paused for human-in-the-loop review.
+   *
+   * The original run lives in a detached background task that exits when the run
+   * pauses, so resume REBUILDS the run on a fresh graph bound to the same
+   * `thread_id` (= conversationId) and the durable checkpointer. LangGraph rehydrates
+   * the paused graph state from the checkpoint; `run.resume(value)` re-enters the
+   * interrupted node with the user's decision. State comes from the checkpoint, so
+   * no message history is rebuilt here — `createRun` only needs the agent(s) to
+   * reconstruct the graph structure.
+   *
+   * `seedContent` is the content streamed before the pause (the assistant message +
+   * its tool call). In Redis mode the job store's append log already spans the pause,
+   * so the finalized message is complete regardless; seeding keeps the in-memory store
+   * complete too. The run drives events through the same `streamId`, so the client's
+   * open SSE receives the continuation live.
+   *
+   * Unlike `chatCompletion`, this does NOT prune the checkpoint in its `finally` — the
+   * resume controller owns checkpoint lifecycle (it must also clean up on failures that
+   * happen before this method runs, and keep the checkpoint on a re-pause).
+   *
+   * @param {object} params
+   * @param {Agents.ToolApprovalDecisionMap | { answer: string }} params.resumeValue
+   * @param {Array} [params.seedContent] - content aggregated before the pause
+   * @param {AbortController} [params.abortController]
+   * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
+   */
+  async resumeCompletion({
+    resumeValue,
+    seedContent = [],
+    abortController = null,
+    commandOptions,
+  }) {
+    /** @type {Partial<GraphRunnableConfig>} */
+    let config;
+    /** @type {ReturnType<createRun>} */
+    let run;
+    const appConfig = this.options.req.config;
+    const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
+    try {
+      if (!abortController) {
+        abortController = new AbortController();
+      }
+
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+
+      config = {
+        runName: 'AgentRun',
+        configurable: {
+          thread_id: this.conversationId,
+          last_agent_index: this.agentConfigs?.size ?? 0,
+          user_id: this.user ?? this.options.req.user?.id,
+          hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
+          requestBody: {
+            messageId: this.responseMessageId,
+            conversationId: this.conversationId,
+            parentMessageId: this.parentMessageId,
+          },
+          user: createSafeUser(this.options.req.user),
+        },
+        recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
+        signal: abortController.signal,
+        streamMode: 'values',
+        version: 'v2',
+      };
+
+      // Seed pre-pause content so the in-memory job store reports the complete turn
+      // (Redis aggregates across the pause via its append log; this covers in-memory).
+      if (Array.isArray(seedContent) && seedContent.length > 0) {
+        this.contentParts.push(...seedContent);
+      }
+
+      const tokenCounter = createTokenCounter(this.getEncoding());
+      const agents = [this.options.agent];
+      if (this.agentConfigs && this.agentConfigs.size > 0) {
+        agents.push(...this.agentConfigs.values());
+      }
+
+      run = await createRun({
+        agents,
+        // State (messages, tool calls) is rehydrated from the checkpoint by
+        // run.resume; createRun only needs the agents to rebuild the graph.
+        messages: [],
+        runId: this.responseMessageId,
+        signal: abortController.signal,
+        customHandlers: this.options.eventHandlers,
+        requestBody: config.configurable.requestBody,
+        user: createSafeUser(this.options.req?.user),
+        tenantId: this.options.req?.user?.tenantId,
+        summarizationConfig: appConfig?.summarization,
+        appConfig,
+        tokenCounter,
+        subagentUsageSink: createSubagentUsageSink(
+          this.collectedUsage,
+          this.buildSubagentUsageEmitter(appConfig),
+        ),
+      });
+
+      if (!run) {
+        throw new Error('Failed to create run for resume');
+      }
+
+      this.run = run;
+      if (this._resolveRun) {
+        this._resolveRun(run);
+        this._resolveRun = null;
+      }
+
+      const streamId = this.options.req?._resumableStreamId;
+      if (streamId && run.Graph) {
+        GenerationJobManager.setGraph(streamId, run.Graph);
+      }
+      if (streamId && this.contentParts) {
+        GenerationJobManager.setContentParts(streamId, this.contentParts);
+      }
+
+      /** @deprecated Agent Chain */
+      config.configurable.last_agent_id = agents[agents.length - 1].id;
+
+      await run.resume(
+        resumeValue,
+        config,
+        { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
+        commandOptions,
+      );
+
+      config.signal = null;
+
+      // The model may pause AGAIN (another tool needs approval, or a follow-up
+      // question). Re-arm the same interrupt gate so the cycle can repeat.
+      await this.handleRunInterrupt(run, streamId);
+    } catch (err) {
+      if (abortController.signal.aborted) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
+          {
+            conversationId: this.conversationId,
+            name: err?.name,
+            code: err?.code,
+          },
+        );
+      } else {
+        logger.error(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+          err,
+        );
+        this.contentParts.push({
+          type: ContentTypes.ERROR,
+          [ContentTypes.ERROR]: `An error occurred while resuming the request${err?.message ? `: ${err.message}` : ''}`,
+        });
+      }
+    } finally {
+      const ratio = this.run?.getCalibrationRatio() ?? 0;
+      if (ratio > 0 && ratio !== 1) {
+        this.contextMeta = {
+          calibrationRatio: Math.round(ratio * 1000) / 1000,
+          encoding: this.getEncoding(),
+        };
+      } else {
+        this.contextMeta = undefined;
+      }
+
+      this.finalizeSubagentContent();
+
+      if (this.pendingSubagentEmits.length > 0) {
+        await Promise.allSettled(this.pendingSubagentEmits);
+        this.pendingSubagentEmits = [];
+      }
+
+      try {
+        const wasAborted = abortController?.signal?.aborted;
+        if (!wasAborted) {
+          await this.recordCollectedUsage({
+            context: 'message',
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+          });
+        }
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
+          err,
+        );
+      }
+      if (this._resolveRun) {
+        this._resolveRun(this.run ?? null);
+        this._resolveRun = null;
+      }
+      run = null;
+      config = null;
     }
   }
 

@@ -38,8 +38,10 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildLangfuseConfig } from '~/langfuse/config';
+import { buildHITLRunWiring } from '~/agents/hitl/runtime';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
@@ -1135,6 +1137,21 @@ export async function createRun({
   const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
 
   /**
+   * Human-in-the-loop tool approval — OFF by default. When the agents endpoint
+   * opts in (`toolApproval.enabled`), attach the `PreToolUse` policy hook + the
+   * `humanInTheLoop` switch, and bind a durable checkpointer so a run that pauses
+   * for review can be rebuilt and resumed on any worker (see `agents/checkpointer.ts`
+   * and the resume route). When disabled, nothing attaches and the run is identical
+   * to before this feature shipped.
+   */
+  const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+  const hitl = buildHITLRunWiring(agentsEndpointConfig?.toolApproval);
+  if (hitl) {
+    const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
+    graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
+  }
+
+  /**
    * Built as a variable (not an inline literal) so the extra
    * `subagentUsageSink` field passes assignability against SDK versions
    * whose `RunConfig` predates it (<= 3.2.33, where it is ignored at
@@ -1159,6 +1176,10 @@ export async function createRun({
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
+    // HITL opt-in: the `humanInTheLoop` switch + the PreToolUse policy hook. Spread
+    // here (not just `compileOptions.checkpointer` above) so an `ask` decision raises
+    // a real interrupt — without these the run would never pause. Absent when disabled.
+    ...(hitl && { humanInTheLoop: hitl.humanInTheLoop, hooks: hitl.hooks }),
   };
   const run = await Run.create(runConfig);
 

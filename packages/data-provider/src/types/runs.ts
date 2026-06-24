@@ -48,6 +48,15 @@ export enum UsageEvents {
   ON_TOKEN_USAGE = 'on_token_usage',
 }
 
+/**
+ * Human-in-the-loop event names. Streamed to live clients when a run pauses for
+ * tool approval (or an ask-user question). Reconnecting clients instead read the
+ * same record from `resumeState.pendingAction` on the sync event / status route.
+ */
+export enum ApprovalEvents {
+  ON_PENDING_ACTION = 'on_pending_action',
+}
+
 /** Mirrors TokenBudgetBreakdown from @librechat/agents (data-provider cannot import it). */
 export type TTokenBudgetBreakdown = {
   maxContextTokens: number;

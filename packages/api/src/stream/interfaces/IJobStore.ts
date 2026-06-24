@@ -68,6 +68,13 @@ export interface SerializableJobData {
   promptTokens?: number;
 
   /**
+   * Agent that initiated the run. Persisted so a HITL resume can verify it rebuilds
+   * the SAME agent that paused — resuming Agent A's checkpoint on Agent B's graph
+   * would mis-execute the paused tool calls.
+   */
+  agent_id?: string;
+
+  /**
    * Set when status is `requires_action`. Describes the human review the
    * run is waiting on. Cleared by the resume path before the job returns to `running`.
    */

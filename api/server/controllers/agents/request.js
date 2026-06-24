@@ -248,6 +248,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       endpoint: endpointOption.endpoint,
       iconURL: endpointIconURL,
       model: responseModel,
+      // Persist the originating agent so a HITL resume can refuse to rebuild this
+      // paused run on a different agent (see resume.js).
+      agent_id: endpointOption.agent_id ?? req.body?.agent_id,
       responseMessageId: preliminaryResponseMessageId,
       userMessage: preliminaryUserMessage,
     });
@@ -502,6 +505,36 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         const response = await sendPromise;
+
+        // HITL: the turn paused for human review (see AgentClient.handleRunInterrupt).
+        // The job is already `requires_action` with the pending action persisted and
+        // emitted to the client; the resume route owns finishing this turn. Settle the
+        // in-flight user-message / conversation save, then tear down WITHOUT saving a
+        // partial response, emitting a terminal event, or completing the job.
+        if (client?.pendingApproval) {
+          if (response?.databasePromise) {
+            try {
+              await response.databasePromise;
+            } catch (dbErr) {
+              logger.error(
+                '[ResumableAgentController] Error settling databasePromise on HITL pause',
+                dbErr,
+              );
+            }
+            delete response.databasePromise;
+          }
+          titleAbortController.abort();
+          acceptsTitleEvents = false;
+          resolveConvoReady();
+          await finishResumableRequest(req, userId);
+          if (client) {
+            disposeClient(client);
+          }
+          logger.debug(
+            `[ResumableAgentController] Turn paused for approval; awaiting resume: ${streamId}`,
+          );
+          return;
+        }
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;

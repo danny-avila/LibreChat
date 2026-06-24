@@ -28,11 +28,14 @@ import {
   setGenerationJobsInFlight,
   recordGenerationJob,
 } from '~/app/metrics';
+import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
-import { isPendingActionStale } from './interfaces/IJobStore';
 import { ApprovalLifecycle } from './ApprovalLifecycle';
+
+/** Terminal error surfaced to a client still attached when its approval window lapses. */
+const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
@@ -492,6 +495,9 @@ class GenerationJobManagerClass {
         iconURL: jobData.iconURL,
         model: jobData.model,
         promptTokens: jobData.promptTokens,
+        // Surface the originating agent so the resume route can refuse to rebuild a
+        // paused run on a different agent.
+        agent_id: jobData.agent_id,
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
@@ -1398,6 +1404,9 @@ class GenerationJobManagerClass {
     if (metadata.model) {
       updates.model = metadata.model;
     }
+    if (metadata.agent_id) {
+      updates.agent_id = metadata.agent_id;
+    }
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;
     }
@@ -1598,7 +1607,54 @@ class GenerationJobManagerClass {
    * Cleanup expired jobs.
    * Also cleans up any orphaned runtime state, buffers, and event transport entries.
    */
+  /**
+   * Expire any locally-tracked approval whose window has lapsed: drive the atomic
+   * `requires_action → aborted` transition and, if this caller won it, emit a
+   * terminal error so a connected SSE client closes. Only streams this replica has
+   * runtime for are scanned — those are exactly the ones with a client subscribed
+   * here; a paused job on another replica is finalized by that replica's sweep (and
+   * the store's own cleanup). The durable checkpoint is reclaimed by its Mongo TTL
+   * index, which shares the approval window, so no cross-layer delete is needed here.
+   */
+  private async expireStaleApprovals(): Promise<void> {
+    let changed = false;
+    for (const streamId of this.runtimeState.keys()) {
+      let job: SerializableJobData | null;
+      try {
+        job = await this.jobStore.getJob(streamId);
+      } catch (err) {
+        logger.error(
+          `[GenerationJobManager] Failed to read job during approval expiry sweep: ${streamId}`,
+          err,
+        );
+        continue;
+      }
+      if (!job || job.status !== 'requires_action' || !isPendingActionExpired(job)) {
+        continue;
+      }
+      const expired = await this._approvals.expire(streamId);
+      if (!expired) {
+        continue;
+      }
+      try {
+        await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
+      } catch (err) {
+        logger.error(`[GenerationJobManager] Failed to notify expired approval ${streamId}`, err);
+      }
+      changed = this.runningJobs.delete(streamId) || changed;
+      logger.debug(`[GenerationJobManager] Expired pending approval: ${streamId}`);
+    }
+    if (changed) {
+      this.syncRunningJobMetrics();
+    }
+  }
+
   private async cleanup(): Promise<void> {
+    // Finalize approvals whose window lapsed before the store's own cleanup, so a
+    // client still attached to a paused stream gets a terminal event instead of a
+    // connection that hangs open until it gives up.
+    await this.expireStaleApprovals();
+
     const count = await this.jobStore.cleanup();
     let runningJobsChanged = false;
 

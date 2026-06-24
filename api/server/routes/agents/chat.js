@@ -10,6 +10,7 @@ const {
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const AgentController = require('~/server/controllers/agents/request');
+const ResumeController = require('~/server/controllers/agents/resume');
 const addTitle = require('~/server/services/Endpoints/agents/title');
 const { getRoleByName } = require('~/models');
 
@@ -35,6 +36,21 @@ router.use(buildEndpointOption);
 const controller = async (req, res, next) => {
   await AgentController(req, res, next, initializeClient, addTitle);
 };
+
+const resumeController = async (req, res, next) => {
+  await ResumeController(req, res, next, initializeClient, addTitle);
+};
+
+/**
+ * @route POST /resume
+ * @desc Resume a generation paused for human-in-the-loop review (tool approval or
+ *       ask-user answer). Shares this router's middleware so the agent/endpoint are
+ *       reconstructed from the request exactly like a normal turn. Declared before
+ *       `/:endpoint` so it is not captured as an ephemeral endpoint name.
+ * @access Private
+ * @returns {void}
+ */
+router.post('/resume', resumeController);
 
 /**
  * @route POST / (regular endpoint)

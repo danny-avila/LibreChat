@@ -1215,6 +1215,7 @@ export class RedisJobStore implements IJobStore {
       iconURL: data.iconURL || undefined,
       model: data.model || undefined,
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
+      agent_id: data.agent_id || undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,
