@@ -106,7 +106,7 @@ export default function PublicSharingToggle({
         <div
           className={cn(
             'rounded-lg transition-all duration-300',
-            isPublic ? 'bg-surface-secondary/50 translate-y-0' : '-translate-y-2',
+            isPublic ? 'translate-y-0 bg-surface-secondary/50' : '-translate-y-2',
           )}
         >
           <div className="flex items-center justify-between">
