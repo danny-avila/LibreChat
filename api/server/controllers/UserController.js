@@ -23,6 +23,7 @@ const { invalidateCachedTools } = require('~/server/services/Config/getCachedToo
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
+const { enrichUserWithTenant } = require('~/server/utils/enrichUserTenant');
 const db = require('~/models');
 
 const getUserController = async (req, res) => {
@@ -45,6 +46,7 @@ const getUserController = async (req, res) => {
   if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
     const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
     if (!avatarNeedsRefresh) {
+      await enrichUserWithTenant(userData);
       return res.status(200).send(userData);
     }
     const originalAvatar = userData.avatar;
@@ -56,6 +58,7 @@ const getUserController = async (req, res) => {
       logger.error('Error getting new S3 URL for avatar:', error);
     }
   }
+  await enrichUserWithTenant(userData);
   res.status(200).send(userData);
 };
 

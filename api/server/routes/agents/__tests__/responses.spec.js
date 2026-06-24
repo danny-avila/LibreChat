@@ -2,14 +2,12 @@
  * Open Responses API Integration Tests
  *
  * Tests the /v1/responses endpoint against the Open Responses specification
- * compliance tests. Uses real Anthropic API for LLM calls.
+ * compliance tests. Uses real Anthropic API for LLM calls when ANTHROPIC_API_KEY
+ * is set in the process environment (not loaded from .env during test:ci).
  *
  * @see https://openresponses.org/specification
  * @see https://github.com/openresponses/openresponses/blob/main/src/lib/compliance-tests.ts
  */
-
-// Load environment variables from root .env file for API keys
-require('dotenv').config({ path: require('path').resolve(__dirname, '../../../../../.env') });
 
 const originalEnv = {
   CREDS_KEY: process.env.CREDS_KEY,

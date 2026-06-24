@@ -122,6 +122,126 @@ describe('loadAgent', () => {
     }
   });
 
+  test('should include Google integration tools from modelSpec and ephemeralAgent', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const mockReq = {
+      user: { id: 'user123' },
+      config: {
+        modelSpecs: {
+          list: [
+            {
+              name: 'assistant',
+              label: 'Assistant',
+              googleDrive: true,
+              googleMail: true,
+              googleCalendar: false,
+            },
+          ],
+        },
+      },
+      body: {
+        ephemeralAgent: {
+          google_calendar: true,
+        },
+      },
+    } as unknown as LoadAgentParams['req'];
+
+    const result = await loadAgent(
+      {
+        req: mockReq,
+        spec: 'assistant',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'anthropic',
+        model_parameters: { model: 'claude-sonnet-4-6' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result).toBeDefined();
+    expect(result!.tools).toContain('google_drive');
+    expect(result!.tools).toContain('google_mail');
+    expect(result!.tools).toContain('google_calendar');
+  });
+
+  test('should include Microsoft integration tools from modelSpec and ephemeralAgent', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const mockReq = {
+      user: { id: 'user123' },
+      config: {
+        modelSpecs: {
+          list: [
+            {
+              name: 'assistant',
+              label: 'Assistant',
+              microsoftOneDrive: true,
+              microsoftMail: true,
+              microsoftCalendar: false,
+            },
+          ],
+        },
+      },
+      body: {
+        ephemeralAgent: {
+          microsoft_calendar: true,
+        },
+      },
+    } as unknown as LoadAgentParams['req'];
+
+    const result = await loadAgent(
+      {
+        req: mockReq,
+        spec: 'assistant',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'anthropic',
+        model_parameters: { model: 'claude-sonnet-4-6' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result).toBeDefined();
+    expect(result!.tools).toContain('microsoft_onedrive');
+    expect(result!.tools).toContain('microsoft_mail');
+    expect(result!.tools).toContain('microsoft_calendar');
+  });
+
+  test('should include Dropbox and Clio tools from modelSpec', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const mockReq = {
+      user: { id: 'user123' },
+      config: {
+        modelSpecs: {
+          list: [
+            {
+              name: 'assistant',
+              label: 'Assistant',
+              dropbox: true,
+              clio: true,
+            },
+          ],
+        },
+      },
+      body: {},
+    } as unknown as LoadAgentParams['req'];
+
+    const result = await loadAgent(
+      {
+        req: mockReq,
+        spec: 'assistant',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'anthropic',
+        model_parameters: { model: 'claude-sonnet-4-6' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result).toBeDefined();
+    expect(result!.tools).toContain('dropbox');
+    expect(result!.tools).toContain('clio');
+  });
+
   test('should return null for non-existent agent', async () => {
     const mockReq = { user: { id: 'user123' } };
     const result = await loadAgent(

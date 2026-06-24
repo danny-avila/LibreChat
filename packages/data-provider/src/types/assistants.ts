@@ -30,6 +30,11 @@ export enum Tools {
   google_drive = 'google_drive',
   google_mail = 'google_mail',
   google_calendar = 'google_calendar',
+  microsoft_onedrive = 'microsoft_onedrive',
+  microsoft_mail = 'microsoft_mail',
+  microsoft_calendar = 'microsoft_calendar',
+  dropbox = 'dropbox',
+  clio = 'clio',
 }
 
 export enum EToolResources {

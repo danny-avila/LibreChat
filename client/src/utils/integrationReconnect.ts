@@ -14,3 +14,21 @@ export function isIntegrationReconnectApiError(error: unknown): boolean {
 
   return false;
 }
+
+export function isOneDriveNotProvisionedApiError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const response = (
+    error as { response?: { status?: number; data?: { code?: string; error?: string } } }
+  ).response;
+  const code = response?.data?.code;
+  const message = response?.data?.error ?? (error as { message?: string }).message ?? '';
+
+  if (code === 'onedrive_not_provisioned') {
+    return true;
+  }
+
+  return response?.status === 503 && /OneDrive not provisioned/i.test(message);
+}

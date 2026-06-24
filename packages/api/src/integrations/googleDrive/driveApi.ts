@@ -1,3 +1,5 @@
+import { inferMimeType } from 'librechat-data-provider';
+
 export interface GoogleDriveFileSummary {
   id: string;
   name: string;
@@ -17,6 +19,22 @@ export interface GoogleDriveSearchOptions {
   pageSize?: number;
   pageToken?: string;
 }
+
+export interface CreateGoogleDriveDocumentOptions {
+  title: string;
+  content: string;
+  folderId?: string;
+}
+
+export interface GoogleDriveDocumentCreated {
+  id: string;
+  name: string;
+  mimeType: string;
+  webViewLink?: string;
+}
+
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+const MAX_DOCUMENT_CONTENT_CHARS = 500_000;
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 
@@ -94,6 +112,11 @@ export function buildGoogleDriveFullTextQuery(searchTerm: string): string {
   return `fullText contains '${escapeDriveQueryValue(trimmed)}'`;
 }
 
+function resolveGoogleDriveMimeType(fileName: string, reportedMimeType?: string | null): string {
+  const normalizedReported = reportedMimeType?.split(';')[0]?.trim() ?? '';
+  return inferMimeType(fileName, normalizedReported);
+}
+
 export async function downloadGoogleDriveFile(
   accessToken: string,
   file: Pick<GoogleDriveFileSummary, 'id' | 'name' | 'mimeType'>,
@@ -116,8 +139,87 @@ export async function downloadGoogleDriveFile(
 
   const buffer = await response.arrayBuffer();
   const fileName = exportConfig ? `${file.name}${exportConfig.extension}` : file.name;
-  const mimeType =
-    exportConfig?.mimeType ?? response.headers.get('content-type') ?? 'application/octet-stream';
+  const reportedMimeType =
+    exportConfig?.mimeType ?? response.headers.get('content-type') ?? file.mimeType ?? '';
+  const mimeType = resolveGoogleDriveMimeType(fileName, reportedMimeType);
 
   return { buffer, fileName, mimeType };
+}
+
+function normalizeDocumentTitle(title: string): string {
+  const trimmed = title.trim();
+  return trimmed || 'Untitled document';
+}
+
+function normalizeDocumentContent(content: string): string {
+  if (content.length <= MAX_DOCUMENT_CONTENT_CHARS) {
+    return content;
+  }
+  return content.slice(0, MAX_DOCUMENT_CONTENT_CHARS);
+}
+
+export async function createGoogleDriveDocument(
+  accessToken: string,
+  options: CreateGoogleDriveDocumentOptions,
+): Promise<GoogleDriveDocumentCreated> {
+  const name = normalizeDocumentTitle(options.title);
+  const content = normalizeDocumentContent(options.content ?? '');
+
+  const createParams = new URLSearchParams({
+    fields: 'id,name,mimeType,webViewLink',
+  });
+
+  const createBody: { name: string; mimeType: string; parents?: string[] } = {
+    name,
+    mimeType: GOOGLE_DOC_MIME,
+  };
+  if (options.folderId?.trim()) {
+    createBody.parents = [options.folderId.trim()];
+  }
+
+  const createResponse = await fetch(`${DRIVE_FILES_URL}?${createParams.toString()}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(createBody),
+  });
+
+  if (!createResponse.ok) {
+    const body = await createResponse.text();
+    throw new Error(`Google Drive create document failed (${createResponse.status}): ${body}`);
+  }
+
+  const created = (await createResponse.json()) as GoogleDriveDocumentCreated;
+
+  if (content) {
+    const docsResponse = await fetch(
+      `https://docs.googleapis.com/v1/documents/${created.id}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              insertText: {
+                location: { index: 1 },
+                text: content,
+              },
+            },
+          ],
+        }),
+      },
+    );
+
+    if (!docsResponse.ok) {
+      const body = await docsResponse.text();
+      throw new Error(`Google Docs update failed (${docsResponse.status}): ${body}`);
+    }
+  }
+
+  return created;
 }

@@ -164,6 +164,7 @@ Run MongoDB and Meilisearch in Docker while developing the API and UI on the hos
 
 - [Local Development Guide](docs/local-development.md) — uses `docker-compose.local.yml` with `npm run backend:dev` and `npm run frontend:dev`
 - [Database Migrations](docs/database-migrations.md) — one-time MongoDB scripts for production data migrations
+- [Nango OAuth Integrations](docs/NANGO_INTEGRATIONS.md) — Google, Microsoft (OneDrive + Outlook), Dropbox, Clio connect + attach pickers; Box disabled pending OAuth setup (branch `feat/nango-integration-providers`)
 
 ---
 

@@ -291,6 +291,11 @@ export const defaultAgentFormValues = {
   [Tools.google_drive]: false,
   [Tools.google_mail]: false,
   [Tools.google_calendar]: false,
+  [Tools.microsoft_onedrive]: false,
+  [Tools.microsoft_mail]: false,
+  [Tools.microsoft_calendar]: false,
+  [Tools.dropbox]: false,
+  [Tools.clio]: false,
   category: 'general',
   support_contact: {
     name: '',

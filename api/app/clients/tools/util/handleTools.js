@@ -40,6 +40,11 @@ const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSe
 const { createGoogleDriveTool } = require('./googleDrive');
 const { createGoogleMailTool } = require('./googleMail');
 const { createGoogleCalendarTool } = require('./googleCalendar');
+const { createMicrosoftOneDriveTool } = require('./microsoftOneDrive');
+const { createMicrosoftMailTool } = require('./microsoftMail');
+const { createMicrosoftCalendarTool } = require('./microsoftCalendar');
+const { createDropboxTool } = require('./dropbox');
+const { createClioTool } = require('./clio');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -360,6 +365,31 @@ const loadTools = async ({
     } else if (tool === Tools.google_calendar) {
       requestedTools[tool] = async () => {
         return createGoogleCalendarTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.microsoft_onedrive) {
+      requestedTools[tool] = async () => {
+        return createMicrosoftOneDriveTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.microsoft_mail) {
+      requestedTools[tool] = async () => {
+        return createMicrosoftMailTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.microsoft_calendar) {
+      requestedTools[tool] = async () => {
+        return createMicrosoftCalendarTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.dropbox) {
+      requestedTools[tool] = async () => {
+        return createDropboxTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.clio) {
+      requestedTools[tool] = async () => {
+        return createClioTool({ user: options.req.user });
       };
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {

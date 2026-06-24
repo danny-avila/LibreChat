@@ -39,6 +39,11 @@ router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);
 router.get('/', requireReadIntegrations, handlers.listMyIntegrations);
 router.get('/tenant', requireReadIntegrations, handlers.listTenantIntegrations);
 router.get('/users/:userId', requireReadIntegrations, handlers.listUserIntegrations);
+router.delete(
+  '/users/:userId/:providerKey',
+  requireManageIntegrations,
+  handlers.disconnectUserIntegration,
+);
 router.delete('/:providerKey', requireManageIntegrations, handlers.disconnectProvider);
 
 module.exports = router;

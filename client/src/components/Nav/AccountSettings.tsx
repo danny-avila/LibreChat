@@ -14,6 +14,7 @@ import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
+import TenantIndicator from './TenantIndicator';
 
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
@@ -46,12 +47,19 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
     }
   };
 
+  const tenantName = user?.tenantName?.trim();
+  const accountTitle =
+    collapsed && tenantName
+      ? localize('com_nav_organization_context', { 0: tenantName })
+      : undefined;
+
   return (
     <Menu.MenuProvider>
       <Menu.MenuButton
         ref={accountSettingsButtonRef}
         aria-label={localize('com_nav_account_settings')}
         data-testid="nav-user"
+        title={accountTitle}
         className={
           collapsed
             ? 'flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt'
@@ -70,7 +78,14 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
             className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-text-primary"
             style={{ marginTop: '0', marginLeft: '0' }}
           >
-            {user?.name ?? user?.username ?? localize('com_nav_user')}
+            <div className="truncate">
+              {user?.name ?? user?.username ?? localize('com_nav_user')}
+            </div>
+            {user?.tenantName?.trim() ? (
+              <div className="truncate text-xs font-normal text-text-secondary">
+                {user.tenantName.trim()}
+              </div>
+            ) : null}
           </div>
         )}
       </Menu.MenuButton>
@@ -86,6 +101,9 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
           {user?.email ?? localize('com_nav_user')}
         </div>
+        {user?.tenantName?.trim() ? (
+          <TenantIndicator variant="inline" className="-mt-1 ml-3 mr-2 pb-2" />
+        ) : null}
         <DropdownMenuSeparator />
         {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
           <>

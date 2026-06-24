@@ -5,4 +5,8 @@ export const INTEGRATION_LABEL_KEYS: Partial<Record<IntegrationProviderKey, stri
   'google-drive': 'com_integrations_google_drive',
   'google-mail': 'com_integrations_google_mail',
   'google-calendar': 'com_integrations_google_calendar',
+  microsoft: 'com_integrations_microsoft',
+  dropbox: 'com_integrations_dropbox',
+  box: 'com_integrations_box',
+  clio: 'com_integrations_clio',
 };

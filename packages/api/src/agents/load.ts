@@ -72,6 +72,30 @@ export async function loadEphemeralAgent(
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
+  if (ephemeralAgent?.google_drive === true || modelSpec?.googleDrive === true) {
+    tools.push(Tools.google_drive);
+  }
+  if (ephemeralAgent?.google_mail === true || modelSpec?.googleMail === true) {
+    tools.push(Tools.google_mail);
+  }
+  if (ephemeralAgent?.google_calendar === true || modelSpec?.googleCalendar === true) {
+    tools.push(Tools.google_calendar);
+  }
+  if (ephemeralAgent?.microsoft_onedrive === true || modelSpec?.microsoftOneDrive === true) {
+    tools.push(Tools.microsoft_onedrive);
+  }
+  if (ephemeralAgent?.microsoft_mail === true || modelSpec?.microsoftMail === true) {
+    tools.push(Tools.microsoft_mail);
+  }
+  if (ephemeralAgent?.microsoft_calendar === true || modelSpec?.microsoftCalendar === true) {
+    tools.push(Tools.microsoft_calendar);
+  }
+  if (ephemeralAgent?.dropbox === true || modelSpec?.dropbox === true) {
+    tools.push(Tools.dropbox);
+  }
+  if (ephemeralAgent?.clio === true || modelSpec?.clio === true) {
+    tools.push(Tools.clio);
+  }
 
   const addedServers = new Set<string>();
   if (mcpServers.size > 0) {

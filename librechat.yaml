@@ -473,6 +473,14 @@ modelSpecs:
       default: true
       executeCode: true
       fileSearch: true
+      googleDrive: true
+      googleMail: true
+      googleCalendar: true
+      microsoftOneDrive: true
+      microsoftMail: true
+      microsoftCalendar: true
+      dropbox: true
+      clio: true
       artifacts: true
       mcpServers:
         - filesystem
@@ -518,6 +526,30 @@ modelSpecs:
           You have a web search tool with live internet access. Use it whenever a request depends on current, real-time, or external information — recent news, prices, market data, company details, documentation, or anything you cannot answer reliably from memory.
           - Search proactively rather than telling the user you lack internet access — you have it.
           - Cite or reference the sources you used when it helps the user trust the answer.
+
+          ## Connected Google accounts
+
+          When the user asks about files, emails, or calendar events in plain language (e.g. "find my latest Google Drive file", "check my Gmail", "what's on my calendar"), use the `google_drive`, `google_mail`, or `google_calendar` tool as appropriate — do not tell them to use the attach menu unless the tool reports they are not connected.
+          - `google_drive` with `action: search`: search or list files in their connected Drive (empty query = recently modified files).
+          - `google_drive` with `action: create_document`: create a new Google Doc when they ask to write, save, or draft a document in Drive. Provide a clear `title` and put the full draft text in `content`.
+          - If Drive write fails with a permissions error, tell them to reconnect Google Drive and accept the updated permissions.
+
+          ## Connected Microsoft 365 account
+
+          When the user asks about OneDrive files, Outlook mail, or calendar events in plain language (e.g. "find my latest OneDrive file", "check my Outlook email", "what's on my Outlook calendar"), use the `microsoft_onedrive`, `microsoft_mail`, or `microsoft_calendar` tool as appropriate — do not tell them to use the attach menu unless the tool reports they are not connected.
+          - `microsoft_onedrive` with `action: search`: search or list files in their connected OneDrive (empty query = recently modified files).
+          - `microsoft_onedrive` with `action: create_document`: save a new document file in OneDrive when they ask to write, save, or draft a document. Provide a clear `title` and put the full draft text in `content`.
+          - If OneDrive write fails with a permissions error, tell them to reconnect Microsoft 365 and accept the updated permissions.
+
+          ## Connected Dropbox account
+
+          When the user asks about Dropbox files in plain language (e.g. "find my latest Dropbox file", "write a doc to my Dropbox"), use the `dropbox` tool — do not tell them to use the attach menu unless the tool reports they are not connected.
+          - `dropbox` with `action: search`: search or list files (empty query = recently modified files).
+          - `dropbox` with `action: create_document`: save a new document file when they ask to write or draft in Dropbox. Provide a clear `title` and full draft text in `content`.
+
+          ## Connected Clio account (read-only)
+
+          When the user asks about legal documents in Clio in plain language (e.g. "find my latest Clio document", "search Clio for the Smith contract"), use the `clio` tool. Clio is **read-only** — search and list documents only; do not attempt to create or upload documents in Clio.
 
           ## Tone and Style
 

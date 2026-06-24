@@ -1,5 +1,6 @@
 import {
   buildGoogleDriveFullTextQuery,
+  createGoogleDriveDocument,
   downloadGoogleDriveFile,
   searchGoogleDriveFiles,
 } from './driveApi';
@@ -88,5 +89,86 @@ describe('downloadGoogleDriveFile', () => {
       'https://www.googleapis.com/drive/v3/files/doc-1/export?mimeType=application%2Fpdf',
       expect.any(Object),
     );
+  });
+
+  it('infers MIME type from the file name when Drive returns octet-stream', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'application/octet-stream' },
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    } as unknown as Response);
+
+    const result = await downloadGoogleDriveFile('token-123', {
+      id: 'file-1',
+      name: 'contract.pdf',
+      mimeType: 'application/pdf',
+    });
+
+    expect(result.fileName).toBe('contract.pdf');
+    expect(result.mimeType).toBe('application/pdf');
+  });
+});
+
+describe('createGoogleDriveDocument', () => {
+  const originalFetch = global.fetch;
+  const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('creates a Google Doc and inserts content', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'doc-1',
+          name: 'Meeting Notes',
+          mimeType: 'application/vnd.google-apps.document',
+          webViewLink: 'https://docs.google.com/document/d/doc-1/edit',
+        }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}),
+      } as unknown as Response);
+
+    const result = await createGoogleDriveDocument('token-123', {
+      title: 'Meeting Notes',
+      content: 'Summary from chat',
+    });
+
+    expect(result.id).toBe('doc-1');
+    expect(result.webViewLink).toContain('doc-1');
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[0]?.[0]).toContain('https://www.googleapis.com/drive/v3/files');
+    expect(mockFetch.mock.calls[1]?.[0]).toBe(
+      'https://docs.googleapis.com/v1/documents/doc-1:batchUpdate',
+    );
+  });
+
+  it('uses Untitled document when title is blank', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: 'doc-2',
+        name: 'Untitled document',
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    } as unknown as Response);
+
+    await createGoogleDriveDocument('token-123', {
+      title: '   ',
+      content: '',
+    });
+
+    const createInit = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(createInit.body).toContain('"name":"Untitled document"');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

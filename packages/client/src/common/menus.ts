@@ -14,6 +14,8 @@ export interface MenuItemProps {
   show?: boolean;
   disabled?: boolean;
   separate?: boolean;
+  /** Non-interactive section label row */
+  header?: boolean;
   hideOnClick?: boolean;
   dialog?: React.ReactElement;
   ariaHasPopup?:

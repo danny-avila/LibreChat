@@ -2,6 +2,7 @@ export * from './axios';
 export * from './azure';
 export * from './code';
 export * from './common';
+export * from './completionError';
 export * from './content';
 export * from './email';
 export * from './env';

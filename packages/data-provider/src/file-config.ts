@@ -363,7 +363,48 @@ export const codeTypeMapping: { [key: string]: string } = {
 export const imageTypeMapping: { [key: string]: string } = {
   heic: 'image/heic',
   heif: 'image/heif',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
 };
+
+/** Maps common document and media extensions when providers return generic binary MIME types */
+export const documentTypeMapping: { [key: string]: string } = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  epub: 'application/epub+zip',
+  mp3: 'audio/mpeg',
+  mp4: 'video/mp4',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  avi: 'video/x-msvideo',
+};
+
+const genericBinaryMimeTypes = new Set([
+  'application/octet-stream',
+  'application/binary',
+  'binary/octet-stream',
+]);
+
+function inferMimeTypeFromExtension(fileName: string): string {
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
+  return (
+    codeTypeMapping[extension] ||
+    documentTypeMapping[extension] ||
+    imageTypeMapping[extension] ||
+    ''
+  );
+}
 
 /** Normalizes non-standard MIME types that browsers may report to their canonical forms */
 export const mimeTypeAliases: Readonly<Record<string, string>> = {
@@ -379,12 +420,13 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
  * @returns The normalized or inferred MIME type; empty string if unresolvable
  */
 export function inferMimeType(fileName: string, currentType: string): string {
-  if (currentType) {
-    return mimeTypeAliases[currentType] ?? currentType;
+  const normalizedType = currentType ? (mimeTypeAliases[currentType] ?? currentType) : '';
+
+  if (normalizedType && !genericBinaryMimeTypes.has(normalizedType)) {
+    return normalizedType;
   }
 
-  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
-  return codeTypeMapping[extension] || imageTypeMapping[extension] || currentType;
+  return inferMimeTypeFromExtension(fileName) || normalizedType;
 }
 
 export const retrievalMimeTypes = [

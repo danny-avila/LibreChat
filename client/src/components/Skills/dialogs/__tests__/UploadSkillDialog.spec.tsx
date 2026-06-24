@@ -22,7 +22,9 @@ jest.mock(
   '@librechat/client',
   () => {
     const React = jest.requireActual<typeof import('react')>('react');
+    const actual = jest.requireActual('@librechat/client');
     return {
+      ...actual,
       OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
         open ? React.createElement('div', null, children) : null,
       OGDialogContent: ({ children }: { children: ReactNode }) =>

@@ -2,7 +2,8 @@
   display: flex;
   max-height: min(var(--popover-available-height, 1700px), 1700px);
   flex-direction: column;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   border-radius: 1rem;
   border-width: 1px;
@@ -75,4 +76,9 @@
   opacity: 1;
   scale: 1;
   translate: 0;
+}
+
+.popover-submenu {
+  overflow-x: hidden;
+  overflow-y: auto;
 }

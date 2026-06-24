@@ -4,6 +4,8 @@ import { EToolResources } from 'librechat-data-provider';
 import {
   useAttachGmailMessagesMutation,
   useAttachGoogleCalendarEventsMutation,
+  useAttachMicrosoftOutlookCalendarEventsMutation,
+  useAttachMicrosoftOutlookMessagesMutation,
 } from '~/data-provider';
 import type { FileHandlingState } from './useFileHandling';
 import useFileHandling, { useFileHandlingNoChatContext } from './useFileHandling';
@@ -18,9 +20,13 @@ interface UseIntegrationTextAttachProps {
 interface UseIntegrationTextAttachReturn {
   attachGmailMessages: (messageIds: string[]) => Promise<void>;
   attachCalendarEvents: (eventIds: string[]) => Promise<void>;
+  attachOutlookMailMessages: (messageIds: string[]) => Promise<void>;
+  attachOutlookCalendarEvents: (eventIds: string[]) => Promise<void>;
   isProcessing: boolean;
   error: string | null;
 }
+
+type AttachTextType = 'gmail' | 'calendar' | 'outlook-mail' | 'outlook-calendar';
 
 function useIntegrationTextAttach({
   onFilesDownloaded,
@@ -35,15 +41,16 @@ function useIntegrationTextAttach({
   const [error, setError] = useState<string | null>(null);
   const gmailMutation = useAttachGmailMessagesMutation();
   const calendarMutation = useAttachGoogleCalendarEventsMutation();
+  const outlookMailMutation = useAttachMicrosoftOutlookMessagesMutation();
+  const outlookCalendarMutation = useAttachMicrosoftOutlookCalendarEventsMutation();
 
   const attachItems = useCallback(
-    async (ids: string[], type: 'gmail' | 'calendar') => {
+    async (ids: string[], type: AttachTextType) => {
       if (!ids.length) {
         throw new Error('No items selected');
       }
 
       setError(null);
-      const isGmail = type === 'gmail';
 
       try {
         showToast({
@@ -52,9 +59,25 @@ function useIntegrationTextAttach({
           duration: 3000,
         });
 
-        const response = isGmail
-          ? await gmailMutation.mutateAsync(ids)
-          : await calendarMutation.mutateAsync(ids);
+        let response;
+        switch (type) {
+          case 'gmail':
+            response = await gmailMutation.mutateAsync(ids);
+            break;
+          case 'calendar':
+            response = await calendarMutation.mutateAsync(ids);
+            break;
+          case 'outlook-mail':
+            response = await outlookMailMutation.mutateAsync(ids);
+            break;
+          case 'outlook-calendar':
+            response = await outlookCalendarMutation.mutateAsync(ids);
+            break;
+          default: {
+            const unsupportedType: never = type;
+            throw new Error(`Unsupported attach type: ${unsupportedType}`);
+          }
+        }
 
         const files = integrationAttachedFilesToFiles(response.files);
 
@@ -87,13 +110,28 @@ function useIntegrationTextAttach({
         throw attachError;
       }
     },
-    [calendarMutation, gmailMutation, onError, onFilesDownloaded, providerLabel, showToast],
+    [
+      calendarMutation,
+      gmailMutation,
+      onError,
+      onFilesDownloaded,
+      outlookCalendarMutation,
+      outlookMailMutation,
+      providerLabel,
+      showToast,
+    ],
   );
 
   return {
     attachGmailMessages: (messageIds: string[]) => attachItems(messageIds, 'gmail'),
     attachCalendarEvents: (eventIds: string[]) => attachItems(eventIds, 'calendar'),
-    isProcessing: gmailMutation.isLoading || calendarMutation.isLoading,
+    attachOutlookMailMessages: (messageIds: string[]) => attachItems(messageIds, 'outlook-mail'),
+    attachOutlookCalendarEvents: (eventIds: string[]) => attachItems(eventIds, 'outlook-calendar'),
+    isProcessing:
+      gmailMutation.isLoading ||
+      calendarMutation.isLoading ||
+      outlookMailMutation.isLoading ||
+      outlookCalendarMutation.isLoading,
     error,
   };
 }

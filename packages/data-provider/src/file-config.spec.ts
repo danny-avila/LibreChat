@@ -44,6 +44,14 @@ describe('inferMimeType', () => {
     expect(inferMimeType('file.xyz', '')).toBe('');
   });
 
+  it('should infer from extension when the provider reports application/octet-stream', () => {
+    expect(inferMimeType('contract.pdf', 'application/octet-stream')).toBe('application/pdf');
+    expect(inferMimeType('Budget.xlsx', 'application/octet-stream')).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(inferMimeType('photo.png', 'application/octet-stream')).toBe('image/png');
+  });
+
   it('should produce a type accepted by checkType after normalizing text/x-python-script', () => {
     const normalized = inferMimeType('test.py', 'text/x-python-script');
     expect(baseFileConfig.checkType(normalized)).toBe(true);

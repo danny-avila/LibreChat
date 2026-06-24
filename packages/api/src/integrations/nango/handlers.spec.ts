@@ -4,6 +4,12 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { IntegrationProviderStatus } from '../providers';
 import * as driveApi from '../googleDrive/driveApi';
+import * as boxApi from '../box/boxApi';
+import * as clioApi from '../clio/clioApi';
+import * as dropboxApi from '../dropbox/dropboxApi';
+import * as oneDriveApi from '../microsoft/oneDriveApi';
+import * as outlookMailApi from '../microsoft/outlookMailApi';
+import * as outlookCalendarApi from '../microsoft/outlookCalendarApi';
 import { createAdminIntegrationHandlers, createIntegrationHandlers } from './handlers';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -195,6 +201,176 @@ describe('createIntegrationHandlers', () => {
     });
     expect(nangoService.getProviderAccessToken).toHaveBeenCalledWith(mockUser, 'google-drive');
   });
+
+  it('searches Dropbox files for connected users', async () => {
+    const nangoService = createMockNangoService();
+    const handlers = createIntegrationHandlers({
+      nangoService,
+      isNangoConfigured: () => true,
+    });
+    const { req, res, status, json } = createReqRes({
+      params: { providerKey: 'dropbox' },
+    });
+    req.query = { query: 'contract', pageSize: '5' };
+
+    jest.spyOn(dropboxApi, 'searchDropboxFiles').mockResolvedValue({
+      files: [{ id: 'id:file-1', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+
+    await handlers.searchProviderFiles(req, res);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({
+      files: [{ id: 'id:file-1', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+    expect(nangoService.getProviderAccessToken).toHaveBeenCalledWith(mockUser, 'dropbox');
+  });
+
+  it('searches Box files for connected users', async () => {
+    const nangoService = createMockNangoService();
+    const handlers = createIntegrationHandlers({
+      nangoService,
+      isNangoConfigured: () => true,
+    });
+    const { req, res, status, json } = createReqRes({
+      params: { providerKey: 'box' },
+    });
+    req.query = { query: 'contract', pageSize: '5' };
+
+    jest.spyOn(boxApi, 'searchBoxFiles').mockResolvedValue({
+      files: [{ id: '123', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+
+    await handlers.searchProviderFiles(req, res);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({
+      files: [{ id: '123', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+    expect(nangoService.getProviderAccessToken).toHaveBeenCalledWith(mockUser, 'box');
+  });
+
+  it('searches Clio documents for connected users', async () => {
+    const nangoService = createMockNangoService();
+    const handlers = createIntegrationHandlers({
+      nangoService,
+      isNangoConfigured: () => true,
+    });
+    const { req, res, status, json } = createReqRes({
+      params: { providerKey: 'clio' },
+    });
+    req.query = { query: 'contract', pageSize: '5' };
+
+    jest.spyOn(clioApi, 'searchClioDocuments').mockResolvedValue({
+      files: [{ id: '456', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+
+    await handlers.searchProviderFiles(req, res);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({
+      files: [{ id: '456', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+    expect(nangoService.getProviderAccessToken).toHaveBeenCalledWith(mockUser, 'clio');
+  });
+
+  it('searches Microsoft OneDrive files for connected users', async () => {
+    const nangoService = createMockNangoService();
+    const handlers = createIntegrationHandlers({
+      nangoService,
+      isNangoConfigured: () => true,
+    });
+    const { req, res, status, json } = createReqRes({
+      params: { providerKey: 'microsoft' },
+    });
+    req.query = { query: 'contract', pageSize: '5' };
+
+    jest.spyOn(oneDriveApi, 'searchMicrosoftOneDriveFiles').mockResolvedValue({
+      files: [{ id: 'item-1', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+
+    await handlers.searchProviderFiles(req, res);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({
+      files: [{ id: 'item-1', name: 'contract.pdf', mimeType: 'application/pdf' }],
+    });
+    expect(nangoService.getProviderAccessToken).toHaveBeenCalledWith(mockUser, 'microsoft');
+  });
+
+  it('searches Outlook mail messages for connected Microsoft users', async () => {
+    const nangoService = createMockNangoService();
+    const handlers = createIntegrationHandlers({
+      nangoService,
+      isNangoConfigured: () => true,
+    });
+    const { req, res, status, json } = createReqRes({
+      params: { providerKey: 'microsoft' },
+    });
+    req.query = { query: 'invoice', pageSize: '5' };
+
+    jest.spyOn(outlookMailApi, 'searchOutlookMailMessages').mockResolvedValue({
+      messages: [
+        {
+          id: 'msg-1',
+          threadId: 'conv-1',
+          subject: 'Invoice',
+          from: 'billing@example.com',
+          date: '2026-06-01T12:00:00Z',
+          snippet: 'Your invoice is ready.',
+        },
+      ],
+    });
+
+    await handlers.searchProviderMessages(req, res);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({
+      messages: [
+        expect.objectContaining({
+          id: 'msg-1',
+          subject: 'Invoice',
+        }),
+      ],
+    });
+    expect(nangoService.getProviderAccessToken).toHaveBeenCalledWith(mockUser, 'microsoft');
+  });
+
+  it('lists Outlook calendar events for connected Microsoft users', async () => {
+    const nangoService = createMockNangoService();
+    const handlers = createIntegrationHandlers({
+      nangoService,
+      isNangoConfigured: () => true,
+    });
+    const { req, res, status, json } = createReqRes({
+      params: { providerKey: 'microsoft' },
+    });
+    req.query = { query: 'sync', pageSize: '5' };
+
+    jest.spyOn(outlookCalendarApi, 'listOutlookCalendarEvents').mockResolvedValue({
+      events: [
+        {
+          id: 'event-1',
+          summary: 'Team sync',
+          start: '2026-06-02T10:00:00Z',
+          end: '2026-06-02T11:00:00Z',
+        },
+      ],
+    });
+
+    await handlers.listProviderEvents(req, res);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({
+      events: [
+        expect.objectContaining({
+          id: 'event-1',
+          summary: 'Team sync',
+        }),
+      ],
+    });
+    expect(nangoService.getProviderAccessToken).toHaveBeenCalledWith(mockUser, 'microsoft');
+  });
 });
 
 describe('createAdminIntegrationHandlers', () => {
@@ -298,5 +474,68 @@ describe('createAdminIntegrationHandlers', () => {
 
     expect(status).toHaveBeenCalledWith(404);
     expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+  });
+
+  it('disconnects an integration for a tenant-scoped user', async () => {
+    const nangoService = createMockNangoService();
+    const userId = mockUser._id?.toString() ?? '';
+    const findUsers = jest.fn().mockResolvedValue([mockUser]);
+    const handlers = createAdminIntegrationHandlers({
+      nangoService,
+      isNangoConfigured: () => true,
+      findUsers,
+    });
+    const { req, res, status, json } = createReqRes({
+      params: { userId, providerKey: 'google-drive' },
+    });
+
+    await handlers.disconnectUserIntegration(req, res);
+
+    expect(findUsers).toHaveBeenCalledWith(
+      { _id: userId, tenantId: 'tenant-a' },
+      'name email tenantId',
+      { limit: 1 },
+    );
+    expect(nangoService.disconnectProvider).toHaveBeenCalledWith(mockUser, 'google-drive');
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('returns 404 when disconnecting a user outside tenant scope', async () => {
+    const handlers = createAdminIntegrationHandlers({
+      nangoService: createMockNangoService(),
+      isNangoConfigured: () => true,
+      findUsers: jest.fn().mockResolvedValue([]),
+    });
+    const { req, res, status, json } = createReqRes({
+      params: {
+        userId: mockUser._id?.toString() ?? '',
+        providerKey: 'google-drive',
+      },
+    });
+
+    await handlers.disconnectUserIntegration(req, res);
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+  });
+
+  it('returns 400 for an invalid provider key on user disconnect', async () => {
+    const handlers = createAdminIntegrationHandlers({
+      nangoService: createMockNangoService(),
+      isNangoConfigured: () => true,
+      findUsers: jest.fn(),
+    });
+    const { req, res, status, json } = createReqRes({
+      params: {
+        userId: mockUser._id?.toString() ?? '',
+        providerKey: 'invalid-provider',
+      },
+    });
+
+    await handlers.disconnectUserIntegration(req, res);
+
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith({ error: 'Invalid integration provider' });
   });
 });

@@ -508,6 +508,11 @@ const nativeTools = new Set([
   Tools.google_drive,
   Tools.google_mail,
   Tools.google_calendar,
+  Tools.microsoft_onedrive,
+  Tools.microsoft_mail,
+  Tools.microsoft_calendar,
+  Tools.dropbox,
+  Tools.clio,
 ]);
 
 /** Checks if a tool name is a known built-in tool */

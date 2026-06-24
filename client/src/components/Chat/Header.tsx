@@ -10,6 +10,7 @@ import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
+import TenantIndicator from '~/components/Nav/TenantIndicator';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -54,6 +55,7 @@ function Header() {
               )}
             >
               <ModelSelector startupConfig={startupConfig} />
+              <TenantIndicator className="hidden shrink-0 sm:flex" />
               {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
               {hasAccessToMultiConvo === true && <AddMultiConvo />}

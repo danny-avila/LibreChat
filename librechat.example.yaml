@@ -417,10 +417,28 @@ modelSpecs:
       label: AI Assistant
       description: Your AI assistant from SMB Team — ask anything to get started.
       default: true
+      executeCode: true
+      fileSearch: true
+      googleDrive: true
+      googleMail: false
+      googleCalendar: false
+      microsoftOneDrive: true
+      microsoftMail: true
+      microsoftCalendar: true
+      dropbox: true
+      clio: true
       preset:
         endpoint: anthropic
         model: claude-sonnet-4-6
         greeting: How can I help you today?
+        instructions: |
+          When users ask about connected accounts in plain language, use the matching integration tools instead of directing them to the attach menu.
+
+          - `google_drive` / `microsoft_onedrive` / `dropbox` with `action: search`: find or list files.
+          - `google_drive` / `microsoft_onedrive` / `dropbox` with `action: create_document`: save a draft using `title` and `content`.
+          - `google_mail` / `microsoft_mail`: search or list recent email.
+          - `google_calendar` / `microsoft_calendar`: list upcoming calendar events.
+          - `clio`: search or list Clio documents (read-only — no uploads).
 
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:

@@ -354,14 +354,32 @@ export const fileSearchSchema: ExtendedJsonSchema = {
 export const googleDriveSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
+    action: {
+      type: 'string',
+      enum: ['search', 'create_document'],
+      description:
+        'Use "search" to list or find files. Use "create_document" to create a new Google Doc from a title and body text.',
+    },
     query: {
       type: 'string',
       description:
-        'Optional search query to find files in the connected Google Drive account. Leave empty to list recently modified files.',
+        'For search: optional query to find files. Leave empty to list recently modified files.',
     },
     page_size: {
       type: 'number',
-      description: 'Maximum number of files to return (1-20). Defaults to 10.',
+      description: 'For search: maximum files to return (1-20). Defaults to 10.',
+    },
+    title: {
+      type: 'string',
+      description: 'For create_document: document title shown in Google Drive.',
+    },
+    content: {
+      type: 'string',
+      description: 'For create_document: plain-text body written into the new Google Doc.',
+    },
+    folder_id: {
+      type: 'string',
+      description: 'For create_document: optional parent folder ID in Drive.',
     },
   },
 };
@@ -394,6 +412,121 @@ export const googleCalendarSchema: ExtendedJsonSchema = {
     page_size: {
       type: 'number',
       description: 'Maximum number of events to return (1-20). Defaults to 10.',
+    },
+  },
+};
+
+/** Microsoft OneDrive tool JSON schema */
+export const microsoftOneDriveSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['search', 'create_document'],
+      description:
+        'Use "search" to list or find files. Use "create_document" to save a new document file in OneDrive from a title and body text.',
+    },
+    query: {
+      type: 'string',
+      description:
+        'For search: optional query to find files. Leave empty to list recently modified files.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'For search: maximum files to return (1-20). Defaults to 10.',
+    },
+    title: {
+      type: 'string',
+      description: 'For create_document: document title shown in OneDrive.',
+    },
+    content: {
+      type: 'string',
+      description: 'For create_document: plain-text body written into the new file.',
+    },
+    folder_id: {
+      type: 'string',
+      description: 'For create_document: optional parent folder ID in OneDrive.',
+    },
+  },
+};
+
+/** Outlook Mail tool JSON schema */
+export const microsoftMailSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description: 'Optional search query for Outlook mail. Leave empty to list recent messages.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'Maximum number of messages to return (1-20). Defaults to 10.',
+    },
+  },
+};
+
+/** Outlook Calendar tool JSON schema */
+export const microsoftCalendarSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        'Optional free-text search for calendar events. Leave empty to list upcoming events.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'Maximum number of events to return (1-20). Defaults to 10.',
+    },
+  },
+};
+
+/** Dropbox tool JSON schema */
+export const dropboxSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['search', 'create_document'],
+      description:
+        'Use "search" to list or find files. Use "create_document" to save a new document file in Dropbox from a title and body text.',
+    },
+    query: {
+      type: 'string',
+      description:
+        'For search: optional query to find files. Leave empty to list recently modified files.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'For search: maximum files to return (1-20). Defaults to 10.',
+    },
+    title: {
+      type: 'string',
+      description: 'For create_document: document title shown in Dropbox.',
+    },
+    content: {
+      type: 'string',
+      description: 'For create_document: plain-text body written into the new file.',
+    },
+    folder_path: {
+      type: 'string',
+      description: 'For create_document: optional folder path in Dropbox (e.g. /Reports).',
+    },
+  },
+};
+
+/** Clio tool JSON schema (read-only) */
+export const clioSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        'Optional search query for Clio documents. Leave empty to list recently updated documents.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'Maximum number of documents to return (1-20). Defaults to 10.',
     },
   },
 };
@@ -475,7 +608,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google_drive: {
     name: 'google_drive',
     description:
-      'Search and list files in the connected user Google Drive account. Returns file names, IDs, MIME types, modification times, and web links.',
+      'Search, list, or create files in the connected user Google Drive account. Use create_document to save a new Google Doc from a title and text body. Returns file metadata and web links.',
     schema: googleDriveSchema,
     toolType: 'builtin',
   },
@@ -491,6 +624,41 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Search and list upcoming events in the connected user Google Calendar. Returns titles, times, locations, and links.',
     schema: googleCalendarSchema,
+    toolType: 'builtin',
+  },
+  microsoft_onedrive: {
+    name: 'microsoft_onedrive',
+    description:
+      'Search, list, or create files in the connected user Microsoft OneDrive account. Use create_document to save a new document from a title and text body. Returns file metadata and web links.',
+    schema: microsoftOneDriveSchema,
+    toolType: 'builtin',
+  },
+  microsoft_mail: {
+    name: 'microsoft_mail',
+    description:
+      'Search and list emails in the connected user Outlook mailbox. Returns subject, sender, date, and snippet.',
+    schema: microsoftMailSchema,
+    toolType: 'builtin',
+  },
+  microsoft_calendar: {
+    name: 'microsoft_calendar',
+    description:
+      'Search and list upcoming events in the connected user Outlook Calendar. Returns titles, times, locations, and links.',
+    schema: microsoftCalendarSchema,
+    toolType: 'builtin',
+  },
+  dropbox: {
+    name: 'dropbox',
+    description:
+      'Search, list, or create files in the connected user Dropbox account. Use create_document to save a new document from a title and text body. Returns file metadata and paths.',
+    schema: dropboxSchema,
+    toolType: 'builtin',
+  },
+  clio: {
+    name: 'clio',
+    description:
+      'Search and list documents in the connected user Clio account (read-only). Returns document names, types, and modification times.',
+    schema: clioSchema,
     toolType: 'builtin',
   },
   image_gen_oai: {

@@ -1,3 +1,4 @@
+import { inferMimeType } from 'librechat-data-provider';
 import type { IntegrationAttachedFile } from 'librechat-data-provider';
 
 export function integrationAttachedFilesToFiles(attached: IntegrationAttachedFile[]): File[] {
@@ -7,6 +8,7 @@ export function integrationAttachedFilesToFiles(attached: IntegrationAttachedFil
     for (let i = 0; i < binary.length; i += 1) {
       bytes[i] = binary.charCodeAt(i);
     }
-    return new File([bytes], fileName, { type: mimeType, lastModified: Date.now() });
+    const resolvedMimeType = inferMimeType(fileName, mimeType);
+    return new File([bytes], fileName, { type: resolvedMimeType, lastModified: Date.now() });
   });
 }

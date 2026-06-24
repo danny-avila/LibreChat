@@ -21,7 +21,6 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
-  isIntegrationConnected,
   isPermissiveMimeConfig,
   defaultAgentCapabilities,
   bedrockDocumentExtensions,
@@ -39,21 +38,31 @@ import {
   useAgentCapabilities,
   useGetAgentsConfig,
   useFileHandlingNoChatContext,
+  useIntegrationConnectors,
   useLocalize,
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useGoogleDriveFileHandlingNoChatContext } from '~/hooks/Files/useGoogleDriveFileHandling';
+import { useDropboxFileHandlingNoChatContext } from '~/hooks/Files/useDropboxFileHandling';
+import { useBoxFileHandlingNoChatContext } from '~/hooks/Files/useBoxFileHandling';
+import { useClioFileHandlingNoChatContext } from '~/hooks/Files/useClioFileHandling';
+import { useMicrosoftOneDriveFileHandlingNoChatContext } from '~/hooks/Files/useMicrosoftOneDriveFileHandling';
 import { useIntegrationTextAttachHandlingNoChatContext } from '~/hooks/Files/useIntegrationTextAttachHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import {
   ConnectProviderPrompt,
+  BoxPickerDialog,
+  ClioPickerDialog,
+  DropboxPickerDialog,
   GmailPickerDialog,
   GoogleCalendarPickerDialog,
   GoogleDrivePickerDialog,
-  INTEGRATION_ATTACH_MENU,
+  MicrosoftOneDrivePickerDialog,
+  MicrosoftOutlookMailPickerDialog,
+  MicrosoftOutlookCalendarPickerDialog,
+  buildAttachIntegrationMenuItems,
 } from '~/components/Integrations';
 import { useGetStartupConfig, useIntegrationsQuery } from '~/data-provider';
-import { useNangoConnect } from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
@@ -65,6 +74,8 @@ type FileUploadType =
   | 'image_document'
   | 'image_document_extended'
   | 'image_document_video_audio';
+
+type IntegrationPickerKey = IntegrationProviderKey | 'microsoft-mail' | 'microsoft-calendar';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -119,9 +130,29 @@ const AttachFileMenu = ({
       { toolResource: toolResourceRef.current },
       { files, setFiles, setFilesLoading, conversation },
     );
+  const { handleDropboxFiles, isProcessing: isDropboxProcessing } =
+    useDropboxFileHandlingNoChatContext(
+      { toolResource: toolResourceRef.current },
+      { files, setFiles, setFilesLoading, conversation },
+    );
+  const { handleBoxFiles, isProcessing: isBoxProcessing } = useBoxFileHandlingNoChatContext(
+    { toolResource: toolResourceRef.current },
+    { files, setFiles, setFilesLoading, conversation },
+  );
+  const { handleClioFiles, isProcessing: isClioProcessing } = useClioFileHandlingNoChatContext(
+    { toolResource: toolResourceRef.current },
+    { files, setFiles, setFilesLoading, conversation },
+  );
+  const { handleMicrosoftOneDriveFiles, isProcessing: isMicrosoftProcessing } =
+    useMicrosoftOneDriveFileHandlingNoChatContext(
+      { toolResource: toolResourceRef.current },
+      { files, setFiles, setFilesLoading, conversation },
+    );
   const {
     attachGmailMessages,
     attachCalendarEvents,
+    attachOutlookMailMessages,
+    attachOutlookCalendarEvents,
     isProcessing: isTextAttachProcessing,
   } = useIntegrationTextAttachHandlingNoChatContext(
     { toolResource: toolResourceRef.current, providerLabel: 'Integration' },
@@ -135,32 +166,12 @@ const AttachFileMenu = ({
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const [activeIntegrationPicker, setActiveIntegrationPicker] =
-    useState<IntegrationProviderKey | null>(null);
+    useState<IntegrationPickerKey | null>(null);
   const [connectPromptProvider, setConnectPromptProvider] = useState<IntegrationProviderKey | null>(
     null,
   );
 
-  const googleDriveConnect = useNangoConnect({
-    providerKey: 'google-drive',
-    enabled: integrationsEnabled,
-  });
-  const googleMailConnect = useNangoConnect({
-    providerKey: 'google-mail',
-    enabled: integrationsEnabled,
-  });
-  const googleCalendarConnect = useNangoConnect({
-    providerKey: 'google-calendar',
-    enabled: integrationsEnabled,
-  });
-
-  const integrationConnectors = useMemo(
-    () => ({
-      'google-drive': googleDriveConnect,
-      'google-mail': googleMailConnect,
-      'google-calendar': googleCalendarConnect,
-    }),
-    [googleDriveConnect, googleMailConnect, googleCalendarConnect],
-  );
+  const integrationConnectors = useIntegrationConnectors(integrationsEnabled);
 
   const connectPromptConnector = connectPromptProvider
     ? integrationConnectors[connectPromptProvider]
@@ -242,6 +253,38 @@ const AttachFileMenu = ({
   const openDrivePicker = useCallback(() => {
     closeAttachMenu();
     setActiveIntegrationPicker('google-drive');
+  }, [closeAttachMenu]);
+
+  const openDropboxPicker = useCallback(() => {
+    closeAttachMenu();
+    setActiveIntegrationPicker('dropbox');
+  }, [closeAttachMenu]);
+
+  const openBoxPicker = useCallback(() => {
+    closeAttachMenu();
+    setActiveIntegrationPicker('box');
+  }, [closeAttachMenu]);
+
+  const openClioPicker = useCallback(() => {
+    closeAttachMenu();
+    setActiveIntegrationPicker('clio');
+  }, [closeAttachMenu]);
+
+  const openMicrosoftOneDrivePicker = useCallback(() => {
+    closeAttachMenu();
+    setActiveIntegrationPicker('microsoft');
+  }, [closeAttachMenu]);
+
+  const openMicrosoftOutlookMailPicker = useCallback(() => {
+    closeAttachMenu();
+    toolResourceRef.current = EToolResources.context;
+    setActiveIntegrationPicker('microsoft-mail');
+  }, [closeAttachMenu]);
+
+  const openMicrosoftOutlookCalendarPicker = useCallback(() => {
+    closeAttachMenu();
+    toolResourceRef.current = EToolResources.context;
+    setActiveIntegrationPicker('microsoft-calendar');
   }, [closeAttachMenu]);
 
   const dropdownItems = useMemo(() => {
@@ -341,64 +384,73 @@ const AttachFileMenu = ({
       return items;
     };
 
-    const localItems = createMenuItems(handleUploadClick);
+    const uploadItems = createMenuItems(handleUploadClick);
+    const localItems: MenuItemProps[] = [
+      {
+        id: 'section-upload',
+        header: true,
+        label: localize('com_attach_menu_section_upload'),
+      },
+      ...uploadItems,
+    ];
 
     if (integrationsEnabled) {
-      for (const integration of integrationsList?.integrations ?? []) {
-        if (!integration.enabled) {
-          continue;
-        }
-
-        const menuConfig = INTEGRATION_ATTACH_MENU[integration.providerKey];
-        if (!menuConfig) {
-          continue;
-        }
-
-        const isConnected = isIntegrationConnected(integration.status);
-        const providerKey = integration.providerKey;
-        const { menuLabelKey, Icon } = menuConfig;
-
-        if (providerKey === 'google-drive' && isConnected) {
-          localItems.push({
-            label: localize(menuLabelKey as Parameters<typeof localize>[0]),
+      const sharePointItem = sharePointEnabled
+        ? {
+            id: 'integration-sharepoint',
+            label: localize('com_files_upload_sharepoint'),
             onClick: () => {},
-            icon: <Icon className="icon-md" />,
-            subItems: createMenuItems(openDrivePicker),
-          });
-          continue;
-        }
-
-        localItems.push({
-          label: localize(menuLabelKey as Parameters<typeof localize>[0]),
-          onClick: () => {
-            if (isConnected) {
-              if (providerKey === 'google-mail' || providerKey === 'google-calendar') {
-                toolResourceRef.current = EToolResources.context;
-              }
+            icon: <SharePointIcon className="icon-md" />,
+            subItems: createMenuItems(() => {
               closeAttachMenu();
-              setActiveIntegrationPicker(providerKey);
-              return;
-            }
-            closeAttachMenu();
-            setConnectPromptProvider(providerKey);
-          },
-          icon: <Icon className="icon-md" />,
-        });
-      }
-    }
+              setIsSharePointDialogOpen(true);
+            }),
+          }
+        : undefined;
 
-    if (sharePointEnabled) {
-      const sharePointItems = createMenuItems(() => {
-        closeAttachMenu();
-        setIsSharePointDialogOpen(true);
+      localItems.push(
+        ...buildAttachIntegrationMenuItems({
+          integrations: integrationsList?.integrations ?? [],
+          createFileTypeSubItems: createMenuItems,
+          localize,
+          closeAttachMenu,
+          setActiveIntegrationPicker,
+          setConnectPromptProvider,
+          openDrivePicker,
+          openDropboxPicker,
+          openBoxPicker,
+          openClioPicker,
+          openMicrosoftOneDrivePicker,
+          openMicrosoftOutlookMailPicker,
+          openMicrosoftOutlookCalendarPicker,
+          setToolResourceContext: () => {
+            toolResourceRef.current = EToolResources.context;
+          },
+          showComingSoonToast: () => {
+            showToast({
+              message: localize('com_integrations_picker_coming_soon'),
+              status: 'info',
+            });
+          },
+          sharePointItem,
+        }),
+      );
+    } else if (sharePointEnabled) {
+      localItems.push({ separate: true });
+      localItems.push({
+        id: 'section-cloud',
+        header: true,
+        label: localize('com_attach_menu_section_cloud'),
       });
       localItems.push({
         label: localize('com_files_upload_sharepoint'),
         onClick: () => {},
         icon: <SharePointIcon className="icon-md" />,
-        subItems: sharePointItems,
+        subItems: createMenuItems(() => {
+          closeAttachMenu();
+          setIsSharePointDialogOpen(true);
+        }),
       });
-      return localItems;
     }
 
     return localItems;
@@ -418,8 +470,15 @@ const AttachFileMenu = ({
     fileSearchAllowedByAgent,
     closeAttachMenu,
     openDrivePicker,
+    openDropboxPicker,
+    openBoxPicker,
+    openClioPicker,
+    openMicrosoftOneDrivePicker,
+    openMicrosoftOutlookMailPicker,
+    openMicrosoftOutlookCalendarPicker,
     setIsSharePointDialogOpen,
     setActiveIntegrationPicker,
+    showToast,
   ]);
 
   const menuTrigger = (
@@ -477,6 +536,54 @@ const AttachFileMenu = ({
     }
   };
 
+  const handleDropboxFilesSelected = async (
+    dropboxFiles: Parameters<typeof handleDropboxFiles>[0],
+  ) => {
+    closeAttachMenu();
+    try {
+      await handleDropboxFiles(dropboxFiles);
+      setActiveIntegrationPicker(null);
+    } catch (error) {
+      console.error('Dropbox file processing error:', error);
+      handleIntegrationAttachError(error, 'dropbox');
+    }
+  };
+
+  const handleBoxFilesSelected = async (boxFiles: Parameters<typeof handleBoxFiles>[0]) => {
+    closeAttachMenu();
+    try {
+      await handleBoxFiles(boxFiles);
+      setActiveIntegrationPicker(null);
+    } catch (error) {
+      console.error('Box file processing error:', error);
+      handleIntegrationAttachError(error, 'box');
+    }
+  };
+
+  const handleClioFilesSelected = async (clioFiles: Parameters<typeof handleClioFiles>[0]) => {
+    closeAttachMenu();
+    try {
+      await handleClioFiles(clioFiles);
+      setActiveIntegrationPicker(null);
+    } catch (error) {
+      console.error('Clio file processing error:', error);
+      handleIntegrationAttachError(error, 'clio');
+    }
+  };
+
+  const handleMicrosoftOneDriveFilesSelected = async (
+    oneDriveFiles: Parameters<typeof handleMicrosoftOneDriveFiles>[0],
+  ) => {
+    closeAttachMenu();
+    try {
+      await handleMicrosoftOneDriveFiles(oneDriveFiles);
+      setActiveIntegrationPicker(null);
+    } catch (error) {
+      console.error('Microsoft OneDrive file processing error:', error);
+      handleIntegrationAttachError(error, 'microsoft');
+    }
+  };
+
   const handleGmailMessagesSelected = async (messages: Array<{ id: string }>) => {
     try {
       await attachGmailMessages(messages.map((message) => message.id));
@@ -497,6 +604,26 @@ const AttachFileMenu = ({
     }
   };
 
+  const handleOutlookMailMessagesSelected = async (messages: Array<{ id: string }>) => {
+    try {
+      await attachOutlookMailMessages(messages.map((message) => message.id));
+      setActiveIntegrationPicker(null);
+    } catch (error) {
+      console.error('Outlook mail attach error:', error);
+      handleIntegrationAttachError(error, 'microsoft');
+    }
+  };
+
+  const handleOutlookCalendarEventsSelected = async (events: Array<{ id: string }>) => {
+    try {
+      await attachOutlookCalendarEvents(events.map((event) => event.id));
+      setActiveIntegrationPicker(null);
+    } catch (error) {
+      console.error('Outlook calendar attach error:', error);
+      handleIntegrationAttachError(error, 'microsoft');
+    }
+  };
+
   return (
     <>
       <FileUpload
@@ -508,7 +635,7 @@ const AttachFileMenu = ({
       >
         <DropdownPopup
           menuId="attach-file-menu"
-          className="overflow-visible"
+          className="min-w-56 overflow-y-auto overflow-x-hidden"
           isOpen={isPopoverActive}
           setIsOpen={setIsPopoverActive}
           modal={true}
@@ -539,6 +666,58 @@ const AttachFileMenu = ({
         maxSelectionCount={endpointFileConfig?.fileLimit}
         onReconnect={() => openIntegrationReconnect('google-drive')}
       />
+      <DropboxPickerDialog
+        isOpen={activeIntegrationPicker === 'dropbox'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeAttachMenu();
+            setActiveIntegrationPicker(null);
+          }
+        }}
+        onFilesSelected={handleDropboxFilesSelected}
+        isAttaching={isDropboxProcessing}
+        maxSelectionCount={endpointFileConfig?.fileLimit}
+        onReconnect={() => openIntegrationReconnect('dropbox')}
+      />
+      <BoxPickerDialog
+        isOpen={activeIntegrationPicker === 'box'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeAttachMenu();
+            setActiveIntegrationPicker(null);
+          }
+        }}
+        onFilesSelected={handleBoxFilesSelected}
+        isAttaching={isBoxProcessing}
+        maxSelectionCount={endpointFileConfig?.fileLimit}
+        onReconnect={() => openIntegrationReconnect('box')}
+      />
+      <ClioPickerDialog
+        isOpen={activeIntegrationPicker === 'clio'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeAttachMenu();
+            setActiveIntegrationPicker(null);
+          }
+        }}
+        onFilesSelected={handleClioFilesSelected}
+        isAttaching={isClioProcessing}
+        maxSelectionCount={endpointFileConfig?.fileLimit}
+        onReconnect={() => openIntegrationReconnect('clio')}
+      />
+      <MicrosoftOneDrivePickerDialog
+        isOpen={activeIntegrationPicker === 'microsoft'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeAttachMenu();
+            setActiveIntegrationPicker(null);
+          }
+        }}
+        onFilesSelected={handleMicrosoftOneDriveFilesSelected}
+        isAttaching={isMicrosoftProcessing}
+        maxSelectionCount={endpointFileConfig?.fileLimit}
+        onReconnect={() => openIntegrationReconnect('microsoft')}
+      />
       <GmailPickerDialog
         isOpen={activeIntegrationPicker === 'google-mail'}
         onOpenChange={(open) => {
@@ -562,6 +741,30 @@ const AttachFileMenu = ({
         isAttaching={isTextAttachProcessing}
         maxSelectionCount={endpointFileConfig?.fileLimit}
         onReconnect={() => openIntegrationReconnect('google-calendar')}
+      />
+      <MicrosoftOutlookMailPickerDialog
+        isOpen={activeIntegrationPicker === 'microsoft-mail'}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActiveIntegrationPicker(null);
+          }
+        }}
+        onMessagesSelected={handleOutlookMailMessagesSelected}
+        isAttaching={isTextAttachProcessing}
+        maxSelectionCount={endpointFileConfig?.fileLimit}
+        onReconnect={() => openIntegrationReconnect('microsoft')}
+      />
+      <MicrosoftOutlookCalendarPickerDialog
+        isOpen={activeIntegrationPicker === 'microsoft-calendar'}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActiveIntegrationPicker(null);
+          }
+        }}
+        onEventsSelected={handleOutlookCalendarEventsSelected}
+        isAttaching={isTextAttachProcessing}
+        maxSelectionCount={endpointFileConfig?.fileLimit}
+        onReconnect={() => openIntegrationReconnect('microsoft')}
       />
       <ConnectProviderPrompt
         isOpen={connectPromptProvider != null}
