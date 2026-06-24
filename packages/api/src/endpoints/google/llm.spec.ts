@@ -1323,6 +1323,7 @@ describe('getGoogleConfig', () => {
         'gemini-3-pro-image-preview',
         'gemini-3.5-flash-live',
         'gemini-2.5-flash-tts',
+        'gemini-2.5-flash-preview-native-audio-dialog',
       ]) {
         const result = getGoogleConfig(credentials, {
           modelOptions: {

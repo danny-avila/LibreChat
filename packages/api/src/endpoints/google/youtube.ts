@@ -89,7 +89,7 @@ const YOUTUBE_URL_STRIP_REGEX = new RegExp(
   'gi',
 );
 
-/** A YouTube link carries a user-selected moment (e.g. `?t=90`, `&start=90`). */
+/** A YouTube link carries a user-selected moment (e.g. `?t=90`, `&start=90`, before or after `v=`). */
 const YOUTUBE_TIMESTAMP_REGEX = /[?&](t|start)=/i;
 
 /**
@@ -98,11 +98,12 @@ const YOUTUBE_TIMESTAMP_REGEX = /[?&](t|start)=/i;
  * the model can still see/reason about them. Tidies leftover horizontal whitespace when changed.
  */
 function stripYouTubeUrls(text: string, injectedIds: Set<string>): string {
-  const replaced = text.replace(YOUTUBE_URL_STRIP_REGEX, (match, videoId, trailing) => {
+  const replaced = text.replace(YOUTUBE_URL_STRIP_REGEX, (match, videoId) => {
     if (!injectedIds.has(videoId)) {
       return match;
     }
-    if (YOUTUBE_TIMESTAMP_REGEX.test(trailing)) {
+    /** Test the whole URL: the timestamp can precede `v=` (e.g. `watch?t=90&v=<id>`). */
+    if (YOUTUBE_TIMESTAMP_REGEX.test(match)) {
       return match;
     }
     return '';

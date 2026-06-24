@@ -137,7 +137,7 @@ function isGemini35Flash(model: string) {
 }
 
 const urlContextModelRegex = /gemini-(\d+)(?:\.(\d+))?/i;
-const urlContextExcludedModalityRegex = /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
+const urlContextExcludedModalityRegex = /(?:^|-)(?:image|live|tts|audio)(?:-|$)/;
 
 /**
  * The native URL Context tool is supported only on text Gemini 2.5+ and 3.x models

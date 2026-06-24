@@ -258,6 +258,21 @@ describe('appendYouTubeVideoParts', () => {
     expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
   });
 
+  it('keeps a timestamp that precedes the video id in the watch URL', () => {
+    const text = 'jump to https://www.youtube.com/watch?t=90&v=dQw4w9WgXcQ';
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text });
+
+    const parts = result as MessageContentComplex[];
+    const textPart = parts.find((p) => (p as Record<string, unknown>).type === 'text') as {
+      text: string;
+    };
+    expect(textPart.text).toContain('t=90');
+    expect(textPart.text).toContain('dQw4w9WgXcQ');
+
+    const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+  });
+
   it('does not duplicate a video already present as a media part', () => {
     const content: MessageContentComplex[] = [
       { type: ContentTypes.TEXT, text: youtubeText } as MessageContentComplex,
