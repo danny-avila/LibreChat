@@ -513,9 +513,11 @@ function isHidden(el: Element, root: Element, rules: StyleRule[]): boolean {
 }
 
 /**
- * True when a paint is fully transparent through opacity: the element (or an
- * ancestor group) has `opacity:0`, or the inherited paint-specific opacity (e.g.
- * `fill-opacity`) resolves to zero.
+ * True when a paint is fully transparent through opacity: the element or any
+ * ancestor group has `opacity:0` (group opacity is not inherited and composites
+ * the whole subtree), or the nearest paint-specific opacity (e.g. `fill-opacity`)
+ * resolves to zero. The nearest paint-specific opacity wins, but the walk keeps
+ * checking ancestors for `opacity:0` even after a nonzero one is found.
  */
 function paintInvisible(
   el: Element,
@@ -524,15 +526,19 @@ function paintInvisible(
   paintProp: string,
 ): boolean {
   const opacityProp = PAINT_OPACITY.get(paintProp);
+  let paintOpacityResolved = false;
   let current: Element | null = el;
   while (current != null) {
     if (styleNumber(current, rules, 'opacity') === 0) {
       return true;
     }
-    if (opacityProp != null) {
+    if (opacityProp != null && !paintOpacityResolved) {
       const value = styleNumber(current, rules, opacityProp);
       if (value != null) {
-        return value === 0;
+        if (value === 0) {
+          return true;
+        }
+        paintOpacityResolved = true;
       }
     }
     if (current === root) {
