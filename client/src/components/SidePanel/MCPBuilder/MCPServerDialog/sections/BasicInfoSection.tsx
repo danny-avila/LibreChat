@@ -52,7 +52,7 @@ export default function BasicInfoSection() {
             {...register('title', {
               required: localize('com_ui_field_required'),
               pattern: {
-                value: /^[a-zA-Z0-9 ]+$/,
+                value: /^[-\p{L}\p{N} '']+$/u,
                 message: localize('com_ui_mcp_title_invalid'),
               },
             })}
