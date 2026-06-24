@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useRecoilValue } from 'recoil';
 import {
   AppBridge,
   PostMessageTransport,
@@ -7,6 +8,7 @@ import {
 import type { UIResource } from 'librechat-data-provider';
 import { callMCPAppTool, fetchMCPResourceHtml } from '~/utils/mcpApps';
 import { logger } from '~/utils';
+import store from '~/store';
 
 type SizeParams = { width?: number; height?: number };
 
@@ -17,6 +19,7 @@ export function useAppBridge(
   toolResult: { content: []; structuredContent?: Record<string, unknown> } | undefined,
   onSizeChanged: (params: SizeParams) => void,
 ) {
+  const user = useRecoilValue(store.user);
   const bridgeRef = useRef<AppBridge | null>(null);
 
   useEffect(() => {
@@ -63,7 +66,11 @@ export function useAppBridge(
 
       bridge.addEventListener('sandboxready', async () => {
         try {
-          const html = await fetchMCPResourceHtml(resource.serverName as string, resource.uri);
+          const html = await fetchMCPResourceHtml(
+            resource.serverName as string,
+            resource.uri,
+            user?.id,
+          );
           await bridge!.sendSandboxResourceReady({
             html,
             csp: resource.csp as never,

@@ -676,6 +676,7 @@ Please follow these instructions when using tools from the respective MCP server
     user?: import('@librechat/data-schemas').IUser;
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    if (userId && user) this.updateUserLastActivity(userId);
     const connection = await this.getConnection({ serverName, user });
 
     if (!(await connection.isConnected())) {

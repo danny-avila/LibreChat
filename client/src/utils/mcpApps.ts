@@ -24,8 +24,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 type CacheEntry = { promise: Promise<unknown>; ts: number };
 const resourceCache = new Map<string, CacheEntry>();
 
-export async function readMCPResource(serverName: string, uri: string) {
-  const key = `${serverName}:${uri}`;
+export async function readMCPResource(serverName: string, uri: string, userId?: string) {
+  const key = `${userId ?? ''}:${serverName}:${uri}`;
   const now = Date.now();
 
   const existing = resourceCache.get(key);
@@ -46,8 +46,12 @@ export async function readMCPResource(serverName: string, uri: string) {
   return promise;
 }
 
-export async function fetchMCPResourceHtml(serverName: string, uri: string): Promise<string> {
-  const result = (await readMCPResource(serverName, uri)) as {
+export async function fetchMCPResourceHtml(
+  serverName: string,
+  uri: string,
+  userId?: string,
+): Promise<string> {
+  const result = (await readMCPResource(serverName, uri, userId)) as {
     contents?: Array<{ text?: string }>;
   };
   return result?.contents?.[0]?.text ?? '';
