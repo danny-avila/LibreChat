@@ -32,6 +32,7 @@ const {
   getMCPTools,
 } = require('~/server/controllers/mcp');
 const { readMCPResource, appToolCall, serveMCPSandbox } = require('~/server/controllers/mcpApps');
+const mcpAppToolCallLimiter = require('~/server/middleware/limiters/mcpAppToolCallLimiter');
 const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
@@ -991,7 +992,13 @@ router.post('/resources/read', requireJwtAuth, checkMCPUsePermissions, readMCPRe
  * Proxy tool calls from MCP App iframe to MCP server
  * @route POST /api/mcp/app-tool-call
  */
-router.post('/app-tool-call', requireJwtAuth, checkMCPUsePermissions, appToolCall);
+router.post(
+  '/app-tool-call',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  mcpAppToolCallLimiter,
+  appToolCall,
+);
 
 /**
  * Serve the sandbox proxy HTML for MCP Apps
