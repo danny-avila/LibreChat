@@ -588,3 +588,96 @@ describe('INTERFACE_PERMISSION_FIELDS', () => {
     }
   });
 });
+
+describe('mergeConfigOverrides — Azure groups re-derivation', () => {
+  const azureBase = {
+    endpoints: {
+      azureOpenAI: {
+        isValid: true,
+        errors: [],
+        modelNames: ['gpt-4o'],
+        modelGroupMap: { 'gpt-4o': { group: 'my-group' } },
+        groupMap: {
+          'my-group': {
+            apiKey: 'test-key',
+            instanceName: 'test-instance',
+            version: '2024-08-01-preview',
+            models: { 'gpt-4o': { deploymentName: 'gpt-4o' } },
+          },
+        },
+      },
+    },
+  } as unknown as AppConfig;
+
+  function azureGroupsOverride(models: Record<string, unknown>, priority = 20): IConfig[] {
+    return [
+      fakeConfig(
+        {
+          endpoints: {
+            azureOpenAI: {
+              groups: [
+                {
+                  group: 'my-group',
+                  apiKey: 'test-key',
+                  instanceName: 'test-instance',
+                  version: '2024-08-01-preview',
+                  models,
+                },
+              ],
+            },
+          },
+        },
+        priority,
+      ),
+    ];
+  }
+
+  it('re-derives modelNames and routing maps when a scoped override adds a model', () => {
+    const configs = azureGroupsOverride({
+      'gpt-4o': { deploymentName: 'gpt-4o' },
+      'gpt-4o-mini': { deploymentName: 'gpt-4o-mini' },
+    });
+    const result = mergeConfigOverrides(azureBase, configs) as unknown as Record<string, unknown>;
+    const azure = (result.endpoints as Record<string, unknown>).azureOpenAI as Record<
+      string,
+      unknown
+    >;
+
+    expect(azure.modelNames).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect((azure.modelGroupMap as Record<string, unknown>)['gpt-4o-mini']).toEqual({
+      group: 'my-group',
+    });
+    // raw groups are consumed by re-derivation, not left on the resolved config
+    expect(azure.groups).toBeUndefined();
+  });
+
+  it('keeps the base-derived config when the override groups are invalid', () => {
+    const configs = azureGroupsOverride({ 'gpt-4o-mini': { deploymentName: 'gpt-4o-mini' } });
+    // strip the mandatory instanceName to force a validation failure
+    (
+      (configs[0].overrides as Record<string, unknown>).endpoints as Record<string, unknown>
+    ).azureOpenAI = {
+      groups: [{ group: 'broken', apiKey: 'k', version: 'v', models: { 'gpt-4o-mini': true } }],
+    };
+
+    const result = mergeConfigOverrides(azureBase, configs) as unknown as Record<string, unknown>;
+    const azure = (result.endpoints as Record<string, unknown>).azureOpenAI as Record<
+      string,
+      unknown
+    >;
+
+    expect(azure.modelNames).toEqual(['gpt-4o']);
+  });
+
+  it('leaves the resolved Azure config untouched when no override supplies groups', () => {
+    const configs = [fakeConfig({ registration: { enabled: false } }, 10)];
+    const result = mergeConfigOverrides(azureBase, configs) as unknown as Record<string, unknown>;
+    const azure = (result.endpoints as Record<string, unknown>).azureOpenAI as Record<
+      string,
+      unknown
+    >;
+
+    expect(azure.modelNames).toEqual(['gpt-4o']);
+    expect(azure.groups).toBeUndefined();
+  });
+});
