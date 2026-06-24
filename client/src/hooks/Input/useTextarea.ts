@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import debounce from 'lodash/debounce';
+import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
+import { EToolResources } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
@@ -18,11 +20,13 @@ import {
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
+import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
-import useFileHandling from '~/hooks/Files/useFileHandling';
+import useUploadOptions from '~/hooks/Files/useUploadOptions';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useUploadModalContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -46,7 +50,10 @@ export default function useTextarea({
   const getSender = useGetSender();
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
-  const { handleFiles } = useFileHandling();
+  const { showToast } = useToastContext();
+  const getUploadOptions = useUploadOptions();
+  const routeFiles = useFileUploadRouter();
+  const { openModal } = useUploadModalContext();
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
@@ -285,10 +292,29 @@ export default function useTextarea({
           });
           timestampedFiles.push(newFile);
         }
-        handleFiles(timestampedFiles);
+
+        const options = getUploadOptions(timestampedFiles);
+        if (options.length === 0) {
+          showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
+          setFilesLoading(false);
+          return;
+        }
+        if (options.length === 1) {
+          routeFiles(timestampedFiles, options[0]);
+          showToast({
+            message:
+              options[0] === EToolResources.context
+                ? localize('com_ui_file_attached_as_text')
+                : localize('com_ui_file_attached'),
+            status: 'success',
+          });
+          return;
+        }
+        setFilesLoading(false);
+        openModal(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, textAreaRef],
+    [localize, showToast, openModal, routeFiles, textAreaRef, setFilesLoading, getUploadOptions],
   );
 
   return {
