@@ -57,6 +57,7 @@ const namespaces = {
     CacheKeys.ADMIN_OAUTH_EXCHANGE,
     Time.THIRTY_SECONDS,
   ),
+  [CacheKeys.IMAGE_GENERATION]: standardCache(CacheKeys.IMAGE_GENERATION),
 };
 
 /**
