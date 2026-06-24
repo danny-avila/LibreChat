@@ -1182,6 +1182,30 @@ describe('MCPManager', () => {
     });
   });
 
+  describe('appToolCall - app request context', () => {
+    const mockUser: Partial<IUser> = { id: 'user-123' };
+
+    it('rejects when the server config needs request body placeholders unavailable to app calls', async () => {
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(
+        manager.appToolCall({
+          userId: 'user-123',
+          serverName: 'body-server',
+          toolName: 'do_thing',
+          toolArguments: {},
+          user: mockUser as IUser,
+        }),
+      ).rejects.toThrow(/request body field/);
+    });
+  });
+
   describe('getConnection', () => {
     const mockUser: Partial<IUser> = {
       id: 'user-123',

@@ -6,9 +6,12 @@ import {
   buildAllowAttribute,
 } from '@modelcontextprotocol/ext-apps/app-bridge';
 import type { UIResource } from 'librechat-data-provider';
-import { callMCPAppTool, fetchMCPResourceHtml } from '~/utils/mcpApps';
+import { callMCPAppTool, fetchMCPResourceHtml, readMCPResource } from '~/utils/mcpApps';
+import { useOptionalMessagesOperations } from '~/Providers';
 import { logger } from '~/utils';
 import store from '~/store';
+
+type MessageContentBlock = { type?: string; text?: string };
 
 type SizeParams = { width?: number; height?: number };
 
@@ -20,7 +23,12 @@ export function useAppBridge(
   onSizeChanged: (params: SizeParams) => void,
 ) {
   const user = useRecoilValue(store.user);
+  const { ask } = useOptionalMessagesOperations();
   const bridgeRef = useRef<AppBridge | null>(null);
+  const askRef = useRef(ask);
+  useEffect(() => {
+    askRef.current = ask;
+  });
 
   // Refs keep latest values accessible inside the stable effect closure without triggering remount.
   // The bridge mounts once per resourceId; toolArgs/toolResult/onSizeChanged are captured at
@@ -56,7 +64,7 @@ export function useAppBridge(
       bridge = new AppBridge(
         null,
         { name: 'LibreChat', version: '1.0.0' },
-        { openLinks: {}, serverTools: {}, logging: {} },
+        { openLinks: {}, serverTools: {}, serverResources: {}, logging: {} },
         {
           hostContext: {
             theme,
@@ -78,6 +86,20 @@ export function useAppBridge(
 
       bridge.onopenlink = async ({ url }) => {
         window.open(url, '_blank', 'noopener,noreferrer');
+        return {};
+      };
+
+      bridge.onreadresource = async (params) =>
+        readMCPResource(resource.serverName as string, params.uri, user?.id) as never;
+
+      bridge.onmessage = async ({ content }) => {
+        const text = (content as MessageContentBlock[])
+          .filter((block) => block.type === 'text' && typeof block.text === 'string')
+          .map((block) => block.text)
+          .join('\n');
+        if (text) {
+          askRef.current({ text });
+        }
         return {};
       };
 

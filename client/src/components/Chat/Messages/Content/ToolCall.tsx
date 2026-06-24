@@ -267,12 +267,15 @@ export default function ToolCall({
     [args, output],
   );
 
-  const mcpApp = useMemo(() => {
+  const mcpApps = useMemo(() => {
     const uiResources: UIResource[] =
       attachments
         ?.filter((a) => a.type === Tools.ui_resources)
         .flatMap((a) => (a[Tools.ui_resources] ?? []) as UIResource[]) ?? [];
-    return uiResources.find((r) => r.toolName && r.serverName && !r.text) ?? null;
+    return uiResources.filter(
+      (r) =>
+        (r.toolName && r.serverName) || (r.text && (r.mimeType ?? 'text/html').includes('html')),
+    );
   }, [attachments]);
 
   const authDomain = useMemo(() => {
@@ -388,7 +391,8 @@ export default function ToolCall({
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}
-      {mcpApp && hasOutput && <MCPAppView key={mcpApp.resourceId} app={mcpApp} args={_args} />}
+      {hasOutput &&
+        mcpApps.map((app) => <MCPAppView key={app.resourceId} app={app} args={_args} />)}
     </>
   );
 }

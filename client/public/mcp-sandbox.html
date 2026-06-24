@@ -18,9 +18,18 @@
     let readyInterval = null;
     const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
 
-    // The sandbox is always served same-origin with LibreChat, so window.location.origin
-    // is the exact expected parent origin. No referrer fallback or lazy-set needed.
-    const trustedOrigin = window.location.origin;
+    // Default to same-origin. When the sandbox is served from a dedicated origin, the parent
+    // passes its origin via the parentOrigin query param so the handshake targets LibreChat
+    // rather than the sandbox's own origin.
+    const trustedOrigin = (function () {
+      try {
+        const param = new URLSearchParams(window.location.search).get('parentOrigin');
+        if (param) {
+          return new URL(param).origin;
+        }
+      } catch (e) {}
+      return window.location.origin;
+    })();
 
     function notifyReady() {
       window.parent.postMessage(

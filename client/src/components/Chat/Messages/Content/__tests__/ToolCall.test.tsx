@@ -35,6 +35,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/hooks/MCP', () => ({
   useMCPIconMap: () => new Map(),
+  useAppBridge: jest.fn(),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
@@ -174,6 +175,35 @@ describe('ToolCall', () => {
 
       const attachmentGroup = screen.getByTestId('attachment-group');
       expect(JSON.parse(attachmentGroup.textContent!)).toEqual(attachments);
+    });
+
+    it('renders an iframe for an inline ui:// text resource attached to the tool call', () => {
+      const attachments = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg1',
+          toolCallId: 'tool1',
+          conversationId: 'conv1',
+          [Tools.ui_resources]: [
+            {
+              uri: 'ui://test-server/inline.html',
+              mimeType: 'text/html',
+              text: '<p>inline resource</p>',
+              resourceId: 'inline-1',
+              toolName: 'test-tool',
+              serverName: 'test-server',
+            },
+          ],
+        },
+      ];
+
+      const { container } = renderWithRecoil(
+        <ToolCall {...mockProps} attachments={attachments as any} />,
+      );
+
+      const iframe = container.querySelector('iframe[srcdoc]');
+      expect(iframe).toBeInTheDocument();
+      expect(iframe).toHaveAttribute('srcdoc', '<p>inline resource</p>');
     });
   });
 

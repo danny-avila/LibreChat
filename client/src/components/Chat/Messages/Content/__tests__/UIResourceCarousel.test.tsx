@@ -23,7 +23,6 @@ Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
 const makeResource = (n: number): UIResource => ({
   uri: `resource${n}`,
   mimeType: 'text/html',
-  text: `Resource ${n}`,
   resourceId: `r${n}`,
   toolName: 'test-tool',
   serverName: 'test-server',

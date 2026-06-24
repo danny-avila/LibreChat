@@ -347,7 +347,14 @@ ${formattedInstructions}
 Please follow these instructions when using tools from the respective MCP servers.`;
   }
 
-  public clearResourceUriCache(serverName?: string): void {
+  public clearResourceUriCache(serverName?: string, userId?: string): void {
+    if (serverName && userId != null) {
+      const cacheKey = `${serverName}:${userId}`;
+      this.resourceUriCache.delete(cacheKey);
+      this.modelOnlyToolCache.delete(cacheKey);
+      this.knownToolNamesCache.delete(cacheKey);
+      return;
+    }
     if (serverName) {
       for (const key of this.resourceUriCache.keys()) {
         if (key === serverName || key.startsWith(`${serverName}:`)) {
@@ -361,6 +368,11 @@ Please follow these instructions when using tools from the respective MCP server
       this.modelOnlyToolCache.clear();
       this.knownToolNamesCache.clear();
     }
+  }
+
+  protected removeUserConnection(userId: string, serverName: string): void {
+    this.clearResourceUriCache(serverName, userId);
+    super.removeUserConnection(userId, serverName);
   }
 
   private async populateToolCaches(connection: MCPConnection, cacheKey: string): Promise<void> {
@@ -652,6 +664,66 @@ Please follow these instructions when using tools from the respective MCP server
    * Reads a UI resource from an MCP server.
    * Used by MCP Apps iframes to fetch additional resources via the host.
    */
+  /**
+   * Resolves the same registry-backed config the original tool call used and hands it to
+   * getConnection so config-source servers resolve, then refreshes headers for non-DB-sourced
+   * servers. Iframe follow-up requests arrive without the original requestBody, so configs that
+   * still need runtime body placeholders are rejected rather than connected with unresolved values.
+   */
+  private async getAppConnection({
+    serverName,
+    userId,
+    user,
+  }: {
+    serverName: string;
+    userId: string;
+    user?: IUser;
+  }): Promise<MCPConnection> {
+    const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+    const isDbSourced = rawConfig ? isUserSourced(rawConfig) : false;
+    if (rawConfig) {
+      if (rawConfig.obo) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Server "${serverName}" requires per-call OBO token resolution which is not supported for app requests.`,
+        );
+      }
+      if (!isDbSourced && mcpOptionsContainGraphTokenPlaceholder(rawConfig as t.MCPOptions)) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Server "${serverName}" requires Graph API token resolution which is not supported for app requests.`,
+        );
+      }
+      const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(rawConfig);
+      if (missingBodyFields.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Server "${serverName}" requires request body field(s) (${missingBodyFields.join(', ')}) that are not available for app requests.`,
+        );
+      }
+    }
+
+    const connection = await this.getConnection({
+      serverName,
+      user,
+      serverConfig: rawConfig ?? undefined,
+    });
+
+    if (rawConfig && !isDbSourced) {
+      const currentOptions = processMCPEnv({
+        user,
+        dbSourced: false,
+        options: rawConfig as t.MCPOptions,
+      });
+      const resolvedHeaders: Record<string, string> =
+        'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+      connection.setRequestHeaders(resolvedHeaders);
+    }
+
+    return connection;
+  }
+
   async readResource({
     userId,
     serverName,
@@ -665,7 +737,7 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
     if (userId && user) this.updateUserLastActivity(userId);
-    const connection = await this.getConnection({ serverName, user });
+    const connection = await this.getAppConnection({ serverName, userId, user });
 
     if (!(await connection.isConnected())) {
       throw new McpError(
@@ -705,7 +777,7 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
     if (userId && user) this.updateUserLastActivity(userId);
-    const connection = await this.getConnection({ serverName, user });
+    const connection = await this.getAppConnection({ serverName, userId, user });
 
     if (!(await connection.isConnected())) {
       throw new McpError(
@@ -730,36 +802,6 @@ Please follow these instructions when using tools from the respective MCP server
         ErrorCode.InvalidRequest,
         `${logPrefix} Tool "${toolName}" is restricted to model use only.`,
       );
-    }
-
-    const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
-    if (rawConfig) {
-      if (rawConfig.obo) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `${logPrefix} Server "${serverName}" requires per-call OBO token resolution which is not supported for app tool calls.`,
-        );
-      }
-      const isDbSourced = isUserSourced(rawConfig);
-      if (!isDbSourced && mcpOptionsContainGraphTokenPlaceholder(rawConfig as t.MCPOptions)) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `${logPrefix} Server "${serverName}" requires Graph API token resolution which is not supported for app tool calls.`,
-        );
-      }
-      // DB-sourced servers have their customUserVars (e.g. {{MCP_API_KEY}}) resolved during
-      // the original callTool setup. Re-processing without customUserVars would overwrite
-      // those resolved headers with unresolved placeholders, so skip for DB-sourced servers.
-      if (!isDbSourced) {
-        const currentOptions = processMCPEnv({
-          user,
-          dbSourced: false,
-          options: rawConfig as t.MCPOptions,
-        });
-        const resolvedHeaders: Record<string, string> =
-          'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
-        connection.setRequestHeaders(resolvedHeaders);
-      }
     }
 
     const result = await connection.client.request(
