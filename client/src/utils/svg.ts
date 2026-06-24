@@ -88,8 +88,9 @@ const RESOLVED_DECLS = new Set([
   'stop-opacity',
 ]);
 
-/** A `<style>` rule reduced to the paint/opacity declarations we resolve. */
-type StyleRule = { selector: string; declarations: Map<string, string> };
+/** A `<style>` rule reduced to the paint/opacity declarations we resolve, with its
+ * selector specificity so the cascade can pick the winning declaration. */
+type StyleRule = { selector: string; specificity: number; declarations: Map<string, string> };
 
 function hexToRgb(hex: string): [number, number, number] | null {
   let value = hex.slice(1);
@@ -422,6 +423,28 @@ function collectColors(root: Element, rules: StyleRule[]): string[] {
     .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color) && paintAlpha(color) !== 0);
 }
 
+/**
+ * Approximates a selector's CSS specificity as one comparable number (ids, then
+ * classes/attributes/pseudo-classes, then type selectors), so the cascade can pick
+ * the winning declaration rather than relying on source order alone.
+ */
+function selectorSpecificity(selector: string): number {
+  const ids = (selector.match(/#[\w-]+/g) ?? []).length;
+  const classes =
+    (selector.match(/\.[\w-]+/g) ?? []).length +
+    (selector.match(/\[[^\]]*\]/g) ?? []).length +
+    (selector.match(/:[\w-]+(?:\([^)]*\))?/g) ?? []).length;
+  const types = selector
+    .replace(/#[\w-]+/g, ' ')
+    .replace(/\.[\w-]+/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/:[\w-]+(?:\([^)]*\))?/g, ' ')
+    .replace(/[>+~*]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => /^[a-z]/i.test(token)).length;
+  return ids * 1_000_000 + classes * 1_000 + types;
+}
+
 /** Paint/opacity rules parsed from `<style>` blocks, in source order. */
 function parseStyleRules(root: Element): StyleRule[] {
   const rules: StyleRule[] = [];
@@ -431,8 +454,12 @@ function parseStyleRules(root: Element): StyleRule[] {
       if (brace === -1) {
         continue;
       }
-      const selector = rule.slice(0, brace).trim();
-      if (selector === '') {
+      const selectors = rule
+        .slice(0, brace)
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (selectors.length === 0) {
         continue;
       }
       const declarations = new Map<string, string>();
@@ -453,23 +480,32 @@ function parseStyleRules(root: Element): StyleRule[] {
         }
       }
       if (declarations.size > 0) {
-        rules.push({ selector, declarations });
+        for (const selector of selectors) {
+          rules.push({ selector, specificity: selectorSpecificity(selector), declarations });
+        }
       }
     }
   }
   return rules;
 }
 
-/** The value matching CSS rules assign to a property (last match wins), or null. */
+/**
+ * The value the CSS cascade assigns to a property for an element, or null. The
+ * most specific matching rule wins; equal specificity is broken by source order
+ * (the later rule), matching how a browser resolves the paint.
+ */
 function cssDecl(el: Element, rules: StyleRule[], property: string): string | null {
   let value: string | null = null;
+  let winning = -1;
   for (const rule of rules) {
+    const declared = rule.declarations.get(property);
+    if (declared === undefined || rule.specificity < winning) {
+      continue;
+    }
     try {
       if (el.matches(rule.selector)) {
-        const declared = rule.declarations.get(property);
-        if (declared !== undefined) {
-          value = declared;
-        }
+        value = declared;
+        winning = rule.specificity;
       }
     } catch {
       continue;
@@ -629,7 +665,8 @@ function hasDefaultBlackShape(root: Element, rules: StyleRule[]): boolean {
     if (
       fillIsResolved(el, root, rules) ||
       isInside(el, root, DEFERRED_CONTAINERS) ||
-      isHidden(el, root, rules)
+      isHidden(el, root, rules) ||
+      paintInvisible(el, root, rules, 'fill')
     ) {
       continue;
     }
