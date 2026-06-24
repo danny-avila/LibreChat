@@ -90,12 +90,24 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       setPos(null);
     };
     const clearSelection = () => setSelection(null);
+    /** Hide the popup the instant the selection collapses or empties, including
+     *  paths that fire no mouse/key event — e.g. a streaming markdown re-render
+     *  replacing the selected text node, which would otherwise leave the button
+     *  stranded over a now-collapsed caret. Only hides here; showing stays gated
+     *  on mouseup/dblclick/keyup so an in-progress drag never flickers it. */
+    const handleSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        setSelection(null);
+      }
+    };
 
     document.addEventListener('mouseup', updateSelection);
     /** Chromium commits a double-click word selection on `dblclick`, after
      *  `mouseup` has already read a still-collapsed range, so listen here too. */
     document.addEventListener('dblclick', updateSelection);
     document.addEventListener('keyup', updateSelection);
+    document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('scroll', clearSelection, true);
     window.addEventListener('resize', clearSelection);
 
@@ -103,6 +115,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       document.removeEventListener('mouseup', updateSelection);
       document.removeEventListener('dblclick', updateSelection);
       document.removeEventListener('keyup', updateSelection);
+      document.removeEventListener('selectionchange', handleSelectionChange);
       document.removeEventListener('scroll', clearSelection, true);
       window.removeEventListener('resize', clearSelection);
     };
