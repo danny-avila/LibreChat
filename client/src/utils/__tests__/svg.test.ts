@@ -466,6 +466,12 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
+    it('ignores a background rect in an opacity-zero group despite its own fill-opacity', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g opacity="0"><rect width="24" height="24" fill="#fff" fill-opacity="1" /></g><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
     it('rejects a full-size percentage background rect', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><rect x="0" y="0" width="100%" height="100%" fill="#eee" /><path fill="#222" /></svg>';
@@ -523,6 +529,20 @@ describe('isMonochromeSvg', () => {
     it('rejects a background rect when the viewBox is comma-separated', () => {
       const svg =
         '<svg viewBox="0,0,24,24"><rect width="24" height="24" fill="#fff" /><path fill="#000" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+  });
+
+  describe('opacity-zero ancestors hide their descendants', () => {
+    it('ignores a colored paint inside an opacity-zero group despite its own fill-opacity', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g opacity="0"><path fill="#f00" fill-opacity="1" d="M0 0h24v24H0z" /></g><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('still counts a paint whose fill-opacity is one under a visible group', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g opacity="1"><path fill="#f00" fill-opacity="1" d="M4 4h16v16H4z" /></g></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
