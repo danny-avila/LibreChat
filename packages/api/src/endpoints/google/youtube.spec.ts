@@ -421,3 +421,32 @@ describe('ReDoS safety', () => {
     expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
   });
 });
+
+describe('long-text handling (no content discarded)', () => {
+  it('extracts a URL that appears far into a long prompt', () => {
+    const text = `${'word '.repeat(40000)}see https://youtu.be/dQw4w9WgXcQ`; // ~200KB before the URL
+    expect(extractYouTubeUrls(text, 5)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('strips the injected URL even when large context is prepended to the content', () => {
+    /** Mirrors AgentClient prepending file/quote context to `content` while extraction uses `text`. */
+    const prompt = 'summarize https://youtu.be/dQw4w9WgXcQ';
+    const prependedContext = 'attached context line.\n'.repeat(8000); // ~180KB preamble
+    const result = appendYouTubeVideoParts({
+      enabled: true,
+      text: prompt,
+      content: prependedContext + prompt,
+      max: 5,
+    });
+
+    const parts = result as MessageContentComplex[];
+    const textPart = parts.find((p) => (p as Record<string, unknown>).type === 'text') as {
+      text: string;
+    };
+    expect(textPart.text).not.toContain('youtu.be/dQw4w9WgXcQ');
+    expect(textPart.text).toContain('attached context line.');
+    const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
+});
