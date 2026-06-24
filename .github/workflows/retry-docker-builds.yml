@@ -1,0 +1,37 @@
+name: Retry Failed Docker Builds
+
+on:
+  workflow_run:
+    workflows:
+      - Docker Build Smoke Tests
+      - Docker Compose Build Latest Main Image Tag (Manual Dispatch)
+      - Docker Dev Branch Images Build
+      - Docker Dev Images Build
+      - Docker Dev Staging Images Build
+      - Docker Images Build on Tag
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  retry-failed-jobs:
+    name: Re-run failed jobs
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run failed Docker jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          echo "Re-running failed jobs for ${WORKFLOW_NAME} (run ${RUN_ID}, attempt ${RUN_ATTEMPT})."
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/rerun-failed-jobs"
