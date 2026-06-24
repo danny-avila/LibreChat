@@ -163,5 +163,8 @@
     "undici": "^7.24.1",
     "yauzl": "^3.2.1",
     "zod": "^3.22.4"
+  },
+  "dependencies": {
+    "@langchain/langgraph-checkpoint-mongodb": "^1.4.0"
   }
 }
