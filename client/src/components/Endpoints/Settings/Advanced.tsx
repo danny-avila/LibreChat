@@ -283,18 +283,18 @@ export default function Settings({
         </HoverCard>
         <div className="w-full">
           <div className="mb-2 flex w-full justify-between gap-2">
-            <label
+            <Label
               htmlFor="resend-files"
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
               <small>{localize('com_endpoint_plug_resend_files')}</small>
-            </label>
-            <label
+            </Label>
+            <Label
               htmlFor="image-detail-value"
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
               <small>{localize('com_endpoint_plug_image_detail')}</small>
-            </label>
+            </Label>
             <Input
               id="image-detail-value"
               disabled={true}

@@ -7,6 +7,7 @@ import {
   Label,
   Input,
   Spinner,
+  Textarea,
   useToastContext,
 } from '@librechat/client';
 import type { TUserMemory } from 'librechat-data-provider';
@@ -199,7 +200,7 @@ export default function MemoryEditDialog({
               <Label htmlFor="memory-value" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_value')}
               </Label>
-              <textarea
+              <Textarea
                 id="memory-value"
                 value={value}
                 onChange={(e) => hasUpdateAccess && setValue(e.target.value)}

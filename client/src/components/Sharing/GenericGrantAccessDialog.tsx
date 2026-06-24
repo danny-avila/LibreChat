@@ -395,31 +395,35 @@ export default function GenericGrantAccessDialog({
           <div className="flex justify-between pt-4">
             <div className="flex gap-2">
               {resourceId && resourceUrl && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (isCopying) return;
-                    copyResourceUrl(setIsCopying);
-                    showToast({
-                      message: localize('com_ui_agent_url_copied'),
-                      status: 'success',
-                    });
-                  }}
-                  disabled={isCopying}
-                  className={cn('shrink-0', isCopying ? 'cursor-default' : '')}
-                  aria-label={localize('com_ui_copy_url_to_clipboard')}
-                  title={
+                <TooltipAnchor
+                  description={
                     isCopying
                       ? config?.getCopyUrlMessage()
                       : localize('com_ui_copy_url_to_clipboard')
                   }
-                >
-                  {isCopying ? (
-                    <CopyCheck className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <Link className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </Button>
+                  render={
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (isCopying) return;
+                        copyResourceUrl(setIsCopying);
+                        showToast({
+                          message: localize('com_ui_agent_url_copied'),
+                          status: 'success',
+                        });
+                      }}
+                      disabled={isCopying}
+                      className={cn('shrink-0', isCopying ? 'cursor-default' : '')}
+                      aria-label={localize('com_ui_copy_url_to_clipboard')}
+                    >
+                      {isCopying ? (
+                        <CopyCheck className="h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <Link className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </Button>
+                  }
+                />
               )}
             </div>
             <div className="flex gap-2">
