@@ -40,6 +40,7 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import { registerCodeExecutionTools } from './tools';
+import { SUGGESTIONS_PROMPT } from './suggestions';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -935,6 +936,8 @@ export async function initializeAgent(
     });
     appendAdditionalInstructions(agent, artifactsPromptResult);
   }
+
+  appendAdditionalInstructions(agent, SUGGESTIONS_PROMPT);
 
   let skillCount = 0;
   /**
