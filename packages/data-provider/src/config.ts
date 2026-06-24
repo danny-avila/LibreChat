@@ -716,6 +716,63 @@ const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(',
   message: 'scopes must be space-separated',
 });
 
+const remoteApiOidcProvisioningSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .default({
+    enabled: false,
+  });
+
+const remoteApiOidcUserInfoSchema = z
+  .object({
+    fetch: z.boolean().default(false),
+    require: z.boolean().default(false),
+  })
+  .superRefine((userInfo, ctx) => {
+    if (userInfo.require === true && userInfo.fetch !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['require'],
+        message: 'userInfo.require requires userInfo.fetch to be true',
+      });
+    }
+  })
+  .default({
+    fetch: false,
+    require: false,
+  });
+
+const remoteApiOidcProfileSyncSchema = z
+  .object({
+    onCreate: z.boolean().default(true),
+    forExisting: z.boolean().default(false),
+  })
+  .default({
+    onCreate: true,
+    forExisting: false,
+  });
+
+const remoteApiOidcGroupSyncSchema = z
+  .object({
+    onCreate: z.boolean().default(false),
+    forExisting: z.boolean().default(false),
+  })
+  .default({
+    onCreate: false,
+    forExisting: false,
+  });
+
+const remoteApiOidcFederatedAuthCacheSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    ttlSeconds: z.number().int().positive().default(300),
+  })
+  .default({
+    enabled: true,
+    ttlSeconds: 300,
+  });
+
 const remoteApiOidcSchema = z
   .object({
     enabled: z.boolean().default(false),
@@ -723,6 +780,11 @@ const remoteApiOidcSchema = z
     audience: z.string().min(1).optional(),
     jwksUri: remoteApiOidcUrlSchema.optional(),
     scope: remoteApiOidcScopeSchema.optional(),
+    provisioning: remoteApiOidcProvisioningSchema,
+    userInfo: remoteApiOidcUserInfoSchema,
+    profileSync: remoteApiOidcProfileSyncSchema,
+    groupSync: remoteApiOidcGroupSyncSchema,
+    federatedAuthCache: remoteApiOidcFederatedAuthCacheSchema,
   })
   .superRefine((oidc, ctx) => {
     if (oidc.enabled === true && !oidc.issuer) {
@@ -2221,6 +2283,10 @@ export enum CacheKeys {
    * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
    */
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
+  /**
+   * Key for federated account reconciliation cache entries.
+   */
+  FEDERATED_AUTH = 'FEDERATED_AUTH',
 }
 
 /**
