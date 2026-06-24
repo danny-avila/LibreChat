@@ -550,6 +550,7 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      skillsAutoDiscovery: z.boolean().optional().default(true),
       remoteApi: remoteApiSchema.optional(),
     }),
   )

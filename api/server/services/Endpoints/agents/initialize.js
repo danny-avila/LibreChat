@@ -140,6 +140,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+  /** Admin setting: inject the skill catalog into ephemeral chats by default
+   *  so the model can recognize skill intent without an explicit `$`. Defaults
+   *  to true; set `endpoints.agents.skillsAutoDiscovery: false` to disable. */
+  const skillsAutoDiscovery =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.skillsAutoDiscovery !== false;
 
   const accessibleSkillIds = skillsCapabilityEnabled
     ? await findAccessibleResources({
@@ -284,6 +289,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     accessibleSkillIds,
     skillsCapabilityEnabled,
     ephemeralSkillsToggle,
+    autoDiscovery: skillsAutoDiscovery,
   });
 
   const primaryConfig = await initializeAgent(
@@ -370,6 +376,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           accessibleSkillIds,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
+          autoDiscovery: skillsAutoDiscovery,
         }),
       skillStates,
       defaultActiveOnShare,
@@ -581,6 +588,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
             accessibleSkillIds,
             skillsCapabilityEnabled,
             ephemeralSkillsToggle,
+            autoDiscovery: skillsAutoDiscovery,
           }),
           /** Match the primary / handoff / addedConvo paths: forward the
            *  endpoint-level admin flag so `initializeAgent` can compute the

@@ -132,13 +132,21 @@ export interface ResolveAgentScopedSkillIdsParams {
   skillsCapabilityEnabled: boolean;
   /** Per-conversation skills badge toggle (`req.body.ephemeralAgent.skills`). */
   ephemeralSkillsToggle: boolean;
+  /**
+   * Admin setting (`endpoints.agents.skillsAutoDiscovery`, default `true`):
+   * when enabled, ephemeral chats receive the full accessible skill catalog
+   * even without the `$` toggle, so the model can recognize skill intent and
+   * invoke the right skill on its own. Manual `$` priming is unaffected.
+   */
+  autoDiscovery?: boolean;
 }
 
 /**
  * Strict opt-in resolver for per-agent skill scope. Activation requires an
  * explicit signal from the user or the agent author:
- *  - Ephemeral agent  → the skills badge toggle for this conversation.
- *    Toggle ON = full accessible catalog; OFF = no skills.
+ *  - Ephemeral agent  → the skills badge toggle for this conversation, OR
+ *    the `skillsAutoDiscovery` admin setting. Either ON = full accessible
+ *    catalog (so the model can self-select skills); both OFF = no skills.
  *  - Persisted agent  → the builder's `skills_enabled` master switch.
  *    Enabled + empty allowlist = full catalog; enabled + non-empty
  *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
@@ -153,12 +161,15 @@ export interface ResolveAgentScopedSkillIdsParams {
 export function resolveAgentScopedSkillIds(
   params: ResolveAgentScopedSkillIdsParams,
 ): Types.ObjectId[] {
-  const { agent, accessibleSkillIds, skillsCapabilityEnabled, ephemeralSkillsToggle } = params;
+  const { agent, accessibleSkillIds, skillsCapabilityEnabled, ephemeralSkillsToggle, autoDiscovery } =
+    params;
   if (!skillsCapabilityEnabled || accessibleSkillIds.length === 0) {
     return [];
   }
   if (isEphemeralAgentId(agent.id)) {
-    return ephemeralSkillsToggle ? scopeSkillIds(accessibleSkillIds, undefined) : [];
+    return ephemeralSkillsToggle || autoDiscovery === true
+      ? scopeSkillIds(accessibleSkillIds, undefined)
+      : [];
   }
   if (agent.skills_enabled !== true) {
     return [];
