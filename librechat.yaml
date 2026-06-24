@@ -424,6 +424,7 @@ endpoints:
       - artifacts
       - context
       - ocr
+      - skills
 
   anthropic:
     titleModel: claude-sonnet-4-6
