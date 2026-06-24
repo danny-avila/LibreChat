@@ -99,11 +99,50 @@ const getRetentionCacheKey = (req: RetentionRequest): string =>
     String(req.body?.isTemporary ?? ''),
   ].join('|');
 
+/**
+ * Resolves a forced (ephemeral) file deadline. The file is always retained, but capped to the
+ * minimum of a freshly created window and the parent conversation's active expiry, so a new
+ * attachment cannot linger in files/storage after the conversation and messages are TTL-deleted.
+ */
+async function computeForcedRetentionExpiry(
+  req: RetentionRequest | null | undefined,
+  dependencies: RetentionDependencies,
+): Promise<RetentionExpiry> {
+  const fresh = createRetentionExpiry(req, dependencies);
+  const conversationId = req?.body?.conversationId;
+  const userId = req?.user?.id;
+  if (!conversationId || !userId) {
+    return fresh;
+  }
+
+  try {
+    const convo = await dependencies.getConvo(userId, conversationId);
+    const conversationExpiredAt = getConversationExpirationDate(convo);
+    if (conversationExpiredAt == null) {
+      return fresh;
+    }
+    if (!isActiveExpirationDate(conversationExpiredAt)) {
+      return { expiredAt: conversationExpiredAt };
+    }
+    if (fresh.expiredAt != null && conversationExpiredAt < fresh.expiredAt) {
+      return { expiredAt: conversationExpiredAt };
+    }
+    return fresh;
+  } catch (err) {
+    dependencies.logger?.error('[getRetentionExpiry] Error checking conversation retention:', err);
+    return fresh;
+  }
+}
+
 async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
 ): Promise<RetentionExpiry> {
-  if (isAllDataRetention(req?.config?.interfaceConfig?.retentionMode)) {
+  const retentionMode = req?.config?.interfaceConfig?.retentionMode;
+  if (retentionMode === RetentionMode.EPHEMERAL) {
+    return computeForcedRetentionExpiry(req, dependencies);
+  }
+  if (isAllDataRetention(retentionMode)) {
     return createRetentionExpiry(req, dependencies);
   }
 
