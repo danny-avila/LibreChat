@@ -113,6 +113,7 @@ export const AppService = async (params?: {
     enabled: process.env.CHECK_BALANCE?.toLowerCase().trim() === 'true',
     startBalance: startBalance ? parseInt(startBalance, 10) : undefined,
   };
+  const payments = config.payments;
   const transactions = config.transactions ?? configDefaults.transactions;
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
@@ -137,6 +138,7 @@ export const AppService = async (params?: {
     speech,
     actions,
     balance,
+    payments,
     skillSync,
     webSearch,
     mcpSettings,

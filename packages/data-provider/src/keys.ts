@@ -94,6 +94,7 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  createStripeCheckoutSession = 'createStripeCheckoutSession',
   createAgentApiKey = 'createAgentApiKey',
   deleteAgentApiKey = 'deleteAgentApiKey',
   fileUpload = 'fileUpload',

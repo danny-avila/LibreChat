@@ -89,6 +89,8 @@ export interface AppConfig {
   turnstileConfig?: Partial<TCustomConfig['turnstile']>;
   /** Balance configuration */
   balance?: Partial<TCustomConfig['balance']>;
+  /** Payments configuration */
+  payments?: Partial<TCustomConfig['payments']>;
   /** Transactions configuration */
   transactions?: TCustomConfig['transactions'];
   /** Speech configuration */

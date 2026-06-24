@@ -1,6 +1,7 @@
 import type { TBalanceResponse } from 'librechat-data-provider';
 import AutoRefillSettings from '../SettingsTabs/Balance/AutoRefillSettings';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import TopUpCard from '../SettingsTabs/Balance/TopUpCard';
 import TokenCreditsItem from '../SettingsTabs/Balance/TokenCreditsItem';
 import { useAuthContext, useLocalize } from '~/hooks';
 
@@ -58,4 +59,10 @@ export function AutoRefill() {
       refillIntervalValue={refillIntervalValue}
     />
   );
+}
+
+export function TopUp() {
+  const { data: startupConfig } = useGetStartupConfig();
+
+  return <TopUpCard config={startupConfig?.payments?.stripe} />;
 }

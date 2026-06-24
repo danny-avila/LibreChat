@@ -257,6 +257,17 @@ registration:
 # Note: If balance.enabled is true, transactions will always be enabled
 # regardless of this setting to ensure balance tracking works correctly
 
+# Example Stripe top-up settings
+# payments:
+#   stripe:
+#     enabled: false
+#     allowCustomAmount: true
+#     minUsd: 2
+#     maxUsd: 25
+#     creditsPerUsd: 1000000
+#     successUrl: 'http://localhost:3080/settings?tab=balance&stripe=success'
+#     cancelUrl: 'http://localhost:3080/settings?tab=balance&stripe=cancel'
+
 # speech:
 #   tts:
 #     openai:

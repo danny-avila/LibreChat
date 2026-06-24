@@ -61,6 +61,12 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 const app = express();
 let serverReady = false;
 
+const captureStripeWebhookBody = (req, _res, buffer) => {
+  if (req.originalUrl === '/api/payments/stripe/webhook' && buffer?.length) {
+    req.rawBody = Buffer.from(buffer);
+  }
+};
+
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
 
@@ -174,7 +180,7 @@ const startServer = async () => {
   /* Middleware */
   app.use(metricsMiddleware);
   app.use(noIndex);
-  app.use(express.json({ limit: '3mb' }));
+  app.use(express.json({ limit: '3mb', verify: captureStripeWebhookBody }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(handleJsonParseError);
 
@@ -258,6 +264,7 @@ const startServer = async () => {
   app.use('/api/categories', routes.categories);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
+  app.use('/api/payments', routes.payments);
   app.use('/api/models', routes.models);
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);

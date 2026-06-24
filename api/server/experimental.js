@@ -343,7 +343,16 @@ if (cluster.isMaster) {
 
     /** Middleware */
     app.use(noIndex);
-    app.use(express.json({ limit: '3mb' }));
+    app.use(
+      express.json({
+        limit: '3mb',
+        verify: (req, _res, buffer) => {
+          if (req.originalUrl === '/api/payments/stripe/webhook' && buffer?.length) {
+            req.rawBody = Buffer.from(buffer);
+          }
+        },
+      }),
+    );
     app.use(express.urlencoded({ extended: true, limit: '3mb' }));
 
     app.use(handleJsonParseError);
@@ -415,6 +424,7 @@ if (cluster.isMaster) {
     app.use('/api/categories', routes.categories);
     app.use('/api/endpoints', routes.endpoints);
     app.use('/api/balance', routes.balance);
+    app.use('/api/payments', routes.payments);
     app.use('/api/models', routes.models);
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
