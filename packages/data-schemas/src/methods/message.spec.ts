@@ -1408,9 +1408,11 @@ describe('Message Operations', () => {
 
   describe('applyForcedRetentionToTag', () => {
     const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+    const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
 
     beforeEach(async () => {
       await Conversation().deleteMany({});
+      await SharedLink().deleteMany({});
     });
 
     it('converts every permanent conversation carrying the tag under ephemeral mode', async () => {
@@ -1453,17 +1455,55 @@ describe('Message Operations', () => {
       expect(untouched?.expiredAt ?? null).toBeNull();
     });
 
-    it('does not extend a tagged conversation that already expires sooner', async () => {
-      const conversationId = uuidv4();
+    it('preserves earlier expirations per tagged conversation when cascading forced retention', async () => {
+      const soonerConversationId = uuidv4();
+      const permanentConversationId = uuidv4();
       const soonerExpiry = new Date(Date.now() + 60 * 60 * 1000);
-      await Conversation().create({
-        conversationId,
-        user: 'user123',
-        endpoint: 'openAI',
-        tags: ['work'],
-        isTemporary: true,
-        expiredAt: soonerExpiry,
-      });
+      await Conversation().create([
+        {
+          conversationId: soonerConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          tags: ['work'],
+          isTemporary: false,
+          expiredAt: soonerExpiry,
+        },
+        {
+          conversationId: permanentConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          tags: ['work'],
+        },
+      ]);
+      await Message.create([
+        {
+          messageId: uuidv4(),
+          conversationId: soonerConversationId,
+          user: 'user123',
+          text: 'sooner',
+          isTemporary: false,
+          expiredAt: soonerExpiry,
+        },
+        {
+          messageId: uuidv4(),
+          conversationId: permanentConversationId,
+          user: 'user123',
+          text: 'permanent',
+        },
+      ]);
+      await SharedLink().create([
+        {
+          conversationId: soonerConversationId,
+          user: 'user123',
+          shareId: uuidv4(),
+          expiredAt: soonerExpiry,
+        },
+        {
+          conversationId: permanentConversationId,
+          user: 'user123',
+          shareId: uuidv4(),
+        },
+      ]);
 
       await applyForcedRetentionToTag(
         {
@@ -1474,8 +1514,34 @@ describe('Message Operations', () => {
         { context: 'PUT /api/tags/:tag' },
       );
 
-      const convo = await Conversation().findOne({ conversationId }).lean();
-      expect(convo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+      const soonerConvo = await Conversation()
+        .findOne({ conversationId: soonerConversationId })
+        .lean();
+      expect(soonerConvo?.isTemporary).toBe(true);
+      expect(soonerConvo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+      const soonerMessage = await Message.findOne({ conversationId: soonerConversationId }).lean();
+      expect(soonerMessage?.isTemporary).toBe(true);
+      expect(soonerMessage?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+      const soonerShare = await SharedLink()
+        .findOne({ conversationId: soonerConversationId })
+        .lean();
+      expect(soonerShare?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const permanentConvo = await Conversation()
+        .findOne({ conversationId: permanentConversationId })
+        .lean();
+      expect(permanentConvo?.isTemporary).toBe(true);
+      expect(permanentConvo?.expiredAt).toBeInstanceOf(Date);
+      expect(permanentConvo?.expiredAt?.getTime()).toBeGreaterThan(soonerExpiry.getTime());
+      const permanentMessage = await Message.findOne({
+        conversationId: permanentConversationId,
+      }).lean();
+      expect(permanentMessage?.isTemporary).toBe(true);
+      expect(permanentMessage?.expiredAt?.getTime()).toBeGreaterThan(soonerExpiry.getTime());
+      const permanentShare = await SharedLink()
+        .findOne({ conversationId: permanentConversationId })
+        .lean();
+      expect(permanentShare?.expiredAt?.getTime()).toBeGreaterThan(soonerExpiry.getTime());
     });
 
     it('is a no-op outside forced retention', async () => {

@@ -21,7 +21,11 @@ jest.mock('librechat-data-provider', () => {
   return {
     ...actual,
     Providers: actual.Providers,
-    RetentionMode: actual.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' },
+    RetentionMode: actual.RetentionMode ?? {
+      ALL: 'all',
+      TEMPORARY: 'temporary',
+      EPHEMERAL: 'ephemeral',
+    },
     documentParserMimeTypes: actual.documentParserMimeTypes ?? [
       /^application\/pdf$/,
       /^application\/vnd\.openxmlformats-officedocument\./,
@@ -35,7 +39,14 @@ jest.mock('librechat-data-provider', () => {
 
 jest.mock('@librechat/api', () => {
   const actualDataProvider = jest.requireActual('librechat-data-provider');
-  const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
+  const RetentionMode = actualDataProvider.RetentionMode ?? {
+    ALL: 'all',
+    TEMPORARY: 'temporary',
+    EPHEMERAL: 'ephemeral',
+  };
+  const isAllDataRetention =
+    actualDataProvider.isAllDataRetention ??
+    ((mode) => mode === RetentionMode.ALL || mode === RetentionMode.EPHEMERAL);
   const getRetentionExpiry = jest.fn(() => ({}));
   return {
     sanitizeFilename: jest.fn((n) => n),
@@ -52,11 +63,12 @@ jest.mock('@librechat/api', () => {
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
+      const retentionMode = interfaceConfig?.retentionMode;
       if (
         !messageAttachment &&
         !!toolResource &&
-        (interfaceConfig?.retentionMode !== RetentionMode.ALL ||
-          interfaceConfig?.retainAgentFiles === true)
+        (!isAllDataRetention(retentionMode) ||
+          (retentionMode === RetentionMode.ALL && interfaceConfig?.retainAgentFiles === true))
       ) {
         return {};
       }
@@ -640,6 +652,31 @@ describe('processAgentFileUpload', () => {
           agent_id: 'agent-abc',
           tool_resource: EToolResources.context,
         }),
+      );
+    });
+
+    test('applies ephemeral retention metadata to persistent agent context files when retainAgentFiles is enabled', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: null,
+        interfaceConfig: {
+          retentionMode: RetentionMode.EPHEMERAL,
+          retainAgentFiles: true,
+        },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getRetentionExpiry).toHaveBeenCalledTimes(1);
+      expect(getRetentionExpiry.mock.calls[0][0]).toBe(req);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiredAt,
+          context: FileContext.agents,
+        }),
+        true,
       );
     });
 
