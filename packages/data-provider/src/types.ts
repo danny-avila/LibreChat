@@ -422,6 +422,14 @@ export type TForkConvoResponse = {
   messages: TMessage[];
 };
 
+export type TForkSharedConvoRequest = {
+  shareId: string;
+  /** Index of the viewer's active message within the shared payload; reduces the
+   *  fork to that branch. An index is used because shared ids are re-anonymized
+   *  per request and `createdAt` can collide, while the payload order is stable. */
+  targetMessageIndex?: number;
+};
+
 export type TSearchResults = {
   conversations: TConversation[];
   messages: TMessage[];
