@@ -4,6 +4,8 @@
 import React, { useState, useId } from 'react';
 import { PlusCircle } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
+import { specialVariables } from 'librechat-data-provider';
+import { Controller, useFormContext } from 'react-hook-form';
 import {
   CircleHelpIcon,
   DropdownPopup,
@@ -13,13 +15,11 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
 } from '@librechat/client';
-import { specialVariables } from 'librechat-data-provider';
-import { Controller, useFormContext } from 'react-hook-form';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
+import { njInputClass } from '~/nj/components/Agents/agentInputStyle';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { njInputClass } from '~/nj/components/Agents/agentInputStyle';
 
 const inputClass = cn(
   defaultTextProps,
@@ -69,6 +69,7 @@ export default function Instructions() {
           htmlFor="instructions"
         >
           Give your agent a task
+          <span className="ml-1 text-red-500">*</span>
         </label>
         <HoverCard openDelay={50}>
           <HoverCardTrigger asChild>
@@ -80,9 +81,9 @@ export default function Instructions() {
             <HoverCardContent side={ESide.Top} className="w-80">
               <div className="space-y-2">
                 <p className="text-sm text-text-secondary">
-                  Try starting with a role (“You are a…”), then describe the task, any constraints,
-                  how you&apos;d like responses structured, and how the agent should use any
-                  uploaded files.
+                  Agents work best when they have a clearly defined identity and behavior. Define
+                  your agent&apos;s role, expertise, criteria for success, and how it should
+                  respond.
                 </p>
               </div>
             </HoverCardContent>
@@ -118,12 +119,14 @@ export default function Instructions() {
       <Controller
         name="instructions"
         control={control}
+        // NJ: We want agent instructions to be a required field
+        rules={{ required: true }}
         render={({ field, fieldState: { error } }) => (
           <>
             <textarea
               {...field}
               value={field.value ?? ''}
-              className={cn(njInputClass, 'min-h-[100px] resize-y')}
+              className={cn(njInputClass, 'min-h-[118px] resize-y')}
               id="instructions"
               placeholder={localize('com_agents_instructions_placeholder')}
               rows={3}
@@ -136,7 +139,9 @@ export default function Instructions() {
                 className="text-sm text-red-500 transition duration-300 ease-in-out"
                 role="alert"
               >
-                {localize('com_ui_field_required')}
+                {/* NJ: custom message for required agent
+                instructions field} */}
+                Add agent instructions before saving
               </span>
             )}
           </>
