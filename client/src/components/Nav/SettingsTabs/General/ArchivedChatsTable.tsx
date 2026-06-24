@@ -258,7 +258,6 @@ export default function ArchivedChatsTable({
                         isArchived: false,
                       })
                     }
-                    title={localize('com_ui_unarchive_conversation')}
                     aria-label={localize('com_ui_unarchive_conversation')}
                     disabled={isUnarchiving}
                   >
@@ -276,7 +275,6 @@ export default function ArchivedChatsTable({
                       setDeleteConversation(row.original);
                       setIsDeleteOpen(true);
                     }}
-                    title={localize('com_ui_delete_conversation_tooltip')}
                     aria-label={localize('com_ui_delete_conversation_tooltip')}
                   >
                     <TrashIcon className="size-4" />
@@ -333,7 +331,11 @@ export default function ArchivedChatsTable({
             </OGDialogTitle>
           </OGDialogHeader>
           <div className="flex justify-end gap-4 pt-4">
-            <Button aria-label="cancel" variant="outline" onClick={() => setIsDeleteOpen(false)}>
+            <Button
+              aria-label={localize('com_ui_cancel')}
+              variant="outline"
+              onClick={() => setIsDeleteOpen(false)}
+            >
               {localize('com_ui_cancel')}
             </Button>
             <Button

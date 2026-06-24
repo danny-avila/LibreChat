@@ -1,10 +1,11 @@
-import { useRecoilState } from 'recoil';
 import { useCallback, useEffect, useMemo } from 'react';
+import { useRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, isAgentsEndpoint } from 'librechat-data-provider';
 import {
   Input,
   Label,
+  Button,
   OGDialog,
   OGDialogTitle,
   SelectDropDown,
@@ -197,18 +198,12 @@ const EditPresetDialog = ({
 
           {/* Action buttons */}
           <div className="flex justify-end gap-2 border-t border-border-medium pt-2 md:pt-4">
-            <button
-              onClick={exportPreset}
-              className="rounded-md border border-border-medium bg-surface-secondary px-3 py-2 text-sm font-medium text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2 md:px-4"
-            >
+            <Button variant="outline" onClick={exportPreset}>
               {localize('com_endpoint_export')}
-            </button>
-            <button
-              onClick={submitPreset}
-              className="rounded-md bg-surface-submit px-3 py-2 text-sm font-medium text-white hover:bg-surface-submit-hover focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2 md:px-4"
-            >
+            </Button>
+            <Button variant="submit" onClick={submitPreset}>
               {localize('com_ui_save')}
-            </button>
+            </Button>
           </div>
         </div>
       </OGDialogContent>

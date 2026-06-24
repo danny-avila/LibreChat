@@ -247,13 +247,15 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
         />
       ))}
       {hasMore && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={onShowAll}
-          className="ml-1 mt-0.5 rounded-md px-2 py-1 text-xs font-medium text-text-secondary outline-none transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+          className="ml-1 mt-0.5 h-auto rounded-md px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-transparent hover:text-text-primary"
         >
           {localize('com_ui_show_all')}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -453,14 +455,15 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
     if (projects.length === 0) {
       return (
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => setIsCreateOpen(true)}
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-secondary outline-none transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+          className="flex h-auto w-full justify-start gap-2 rounded-lg px-2 py-1.5 text-sm font-normal text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
         >
           <FolderPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="truncate">{localize('com_ui_new_project')}</span>
-        </button>
+        </Button>
       );
     }
 
@@ -476,13 +479,14 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
         ))}
         {hasMore && (
           <li className="list-none">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={openProjects}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-text-secondary outline-none transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+              className="flex h-auto w-full justify-start gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
               {localize('com_ui_all_projects')}
-            </button>
+            </Button>
           </li>
         )}
       </ul>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Spinner, ThemeSelector } from '@librechat/client';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Button, Spinner, ThemeSelector } from '@librechat/client';
 import { useVerifyEmailMutation, useResendVerificationEmail } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -87,13 +87,15 @@ function RequestPasswordReset() {
       {showResendLink && countdown === 0 && (
         <p className="text-center text-lg text-text-secondary">
           {localize('com_auth_email_verification_resend_prompt')}
-          <button
-            className="ml-2 text-link hover:underline"
+          <Button
+            type="button"
+            variant="link"
+            className="ml-2 inline h-auto p-0 text-link"
             onClick={handleResendEmail}
             disabled={resendEmailMutation.isLoading}
           >
             {localize('com_auth_email_resend_link')}
-          </button>
+          </Button>
         </p>
       )}
     </div>

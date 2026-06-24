@@ -133,11 +133,7 @@ export default function MCPConfigDialog({
         }}
         buttons={
           onRevoke && (
-            <Button
-              onClick={handleRevoke}
-              className="bg-surface-destructive text-white hover:bg-surface-destructive-hover"
-              disabled={isSubmitting}
-            >
+            <Button variant="destructive" onClick={handleRevoke} disabled={isSubmitting}>
               {localize('com_ui_revoke')}
             </Button>
           )

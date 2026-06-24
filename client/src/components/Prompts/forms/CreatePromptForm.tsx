@@ -214,6 +214,7 @@ const CreatePromptForm = ({
           <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={0} />
           <div className="mt-4 flex justify-end">
             <Button
+              variant="submit"
               aria-label={localize('com_ui_create_prompt')}
               className={cn(
                 'w-full sm:w-auto',

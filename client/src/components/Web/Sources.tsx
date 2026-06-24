@@ -5,6 +5,7 @@ import { VisuallyHidden } from '@ariakit/react';
 import { Tools } from 'librechat-data-provider';
 import { X, Globe, Newspaper, Image, ChevronDown, File, Download } from 'lucide-react';
 import {
+  Button,
   OGDialog,
   AnimatedTabs,
   OGDialogClose,
@@ -752,13 +753,15 @@ export default function Sources(props: SourcesProps) {
       <div className="mb-2 text-sm text-text-secondary">
         {localize('com_sources_error_fallback')}
       </div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => window.location.reload()}
-        className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary"
+        className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary"
         aria-label={localize('com_sources_reload_page')}
       >
         {localize('com_ui_refresh')}
-      </button>
+      </Button>
     </div>
   );
 
