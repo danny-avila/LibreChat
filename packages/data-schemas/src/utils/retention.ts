@@ -94,6 +94,11 @@ export const capForcedRetentionExpiry = (
  * whose `expiredAt` is later than a newly shortened window — that would otherwise outlive
  * the converted conversation. The gap filter pulls all of them onto the ephemeral schedule
  * and stays a no-op once a conversation already conforms.
+ *
+ * Each message keeps its own earlier deadline: a carried-over message whose per-message TTL
+ * already expires sooner than the forced window is marked temporary but its `expiredAt` is
+ * left untouched (`$min`), so converting the conversation never extends data that was already
+ * scheduled to expire sooner.
  */
 export const forceConversationMessagesTemporary = async (
   Message: Model<IMessage>,
@@ -103,7 +108,7 @@ export const forceConversationMessagesTemporary = async (
 ): Promise<void> => {
   await Message.updateMany(
     { conversationId, user: userId, ...forcedRetentionGapFilter<IMessage>(expiredAt) },
-    { $set: { isTemporary: true, expiredAt } },
+    [{ $set: { isTemporary: true, expiredAt: { $min: ['$expiredAt', expiredAt] } } }],
   );
 };
 
@@ -245,7 +250,7 @@ export const cascadeForcedRetentionByTag = async (
         conversationId: { $in: conversationIds },
         ...forcedRetentionGapFilter<IMessage>(expiredAt),
       },
-      { $set: { isTemporary: true, expiredAt } },
+      [{ $set: { isTemporary: true, expiredAt: { $min: ['$expiredAt', expiredAt] } } }],
     );
     await SharedLink.updateMany(
       {
