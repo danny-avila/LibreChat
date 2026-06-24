@@ -5,6 +5,7 @@ const { contentSecurityPolicy } = require('helmet');
  *
  * - Google Tag Manager
  * - Feedback widget
+ * - YouTube embeds
  */
 function njContentSecurityPolicy() {
   return contentSecurityPolicy({
@@ -27,6 +28,7 @@ function njContentSecurityPolicy() {
         'https://*.s3.us-east-1.amazonaws.com',
         'blob:',
         'data:',
+        'https://ytimg.com', // For embedded YT video thumbnails
       ],
       connectSrc: [
         "'self'",
@@ -38,7 +40,11 @@ function njContentSecurityPolicy() {
         'https://pagead2.googlesyndication.com',
         'https://*.nj.gov',
       ],
-      frameSrc: ["'self'", 'https://www.googletagmanager.com'],
+      frameSrc: [
+        "'self'",
+        'https://www.googletagmanager.com',
+        'https://www.youtube.com', // For embedded YT videos
+      ],
       workerSrc: ["'self'", 'blob:'],
     },
   });

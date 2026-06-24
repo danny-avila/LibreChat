@@ -22,18 +22,19 @@ export default function AgentPanelSplash({
         <div className="flex flex-col gap-4 p-1">
           <h1 className="text-xl font-bold">Meet the agent builder</h1>
 
+          <iframe
+            src="https://www.youtube.com/embed/XmghIAbRx14"
+            title="YouTube video player"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerPolicy="strict-origin-when-cross-origin"
+            style={{ width: '100%', height: 'auto', aspectRatio: '16 / 9' }}
+            allowFullScreen
+          ></iframe>
+
           <p className="text-md text-text-primary">
-            The agent builder lets you create agents designed around specific tasks and workflows.{' '}
-            <Link
-              to="https://www.youtube.com/watch?v=XmghIAbRx14"
-              className="text-md font-semibold text-jersey-button underline hover:decoration-2"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Watch the tutorial (opens new page to video)"
-            >
-              Watch the tutorial
-            </Link>{' '}
-            or read the agent guide before you dive in.
+            The agent builder lets you create agents designed around specific tasks and workflows.
+            Watch the tutorial or read the agent guide before you dive in.
           </p>
 
           <Link
