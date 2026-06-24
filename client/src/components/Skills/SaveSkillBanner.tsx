@@ -12,18 +12,34 @@ interface SaveSkillBannerProps {
 
 const SKILL_MD_PATTERN = /^skill\.md$/i;
 
-/** Pick the file most likely to be a generated skill: SKILL.md first, else first markdown. */
-function pickCandidate(files: Partial<TFile>[] | undefined): Partial<TFile> | undefined {
-  if (!files || files.length === 0) {
+/** Minimal shape needed to detect + read a generated skill file. */
+type SkillFileCandidate = { file_id?: string; filename?: string; type?: string };
+
+const isMarkdown = (f: SkillFileCandidate): boolean =>
+  /\.md$/i.test(f.filename ?? '') || f.type === 'text/markdown';
+
+/**
+ * Pick the file most likely to be a generated skill: SKILL.md first, else the
+ * first markdown file. Considers both `message.files` and `message.attachments`
+ * — code-interpreter-generated files (the SKILL.md case) surface as
+ * `attachments`, not `files` — and requires a `file_id` so the backend can read
+ * the file's bytes from storage.
+ */
+function pickCandidate(message: TMessage): SkillFileCandidate | undefined {
+  const fromFiles: SkillFileCandidate[] = (message.files ?? []).map((f) => ({
+    file_id: f.file_id,
+    filename: f.filename,
+    type: f.type,
+  }));
+  const fromAttachments: SkillFileCandidate[] = (message.attachments ?? []).map((a) => {
+    const file = a as Partial<TFile>;
+    return { file_id: file.file_id, filename: file.filename, type: file.type };
+  });
+  const candidates = [...fromFiles, ...fromAttachments].filter((f) => !!f.file_id);
+  if (candidates.length === 0) {
     return undefined;
   }
-  const skillMd = files.find((f) => SKILL_MD_PATTERN.test(f.filename ?? ''));
-  if (skillMd) {
-    return skillMd;
-  }
-  return files.find(
-    (f) => /\.md$/i.test(f.filename ?? '') || f.type === 'text/markdown',
-  );
+  return candidates.find((f) => SKILL_MD_PATTERN.test(f.filename ?? '')) ?? candidates.find(isMarkdown);
 }
 
 /**
@@ -39,7 +55,10 @@ export default function SaveSkillBanner({ message, hasCreateAccess }: SaveSkillB
   const [dismissed, setDismissed] = useState(false);
   const [name, setName] = useState('');
 
-  const candidate = useMemo(() => pickCandidate(message.files), [message.files]);
+  const candidate = useMemo(
+    () => pickCandidate(message),
+    [message.files, message.attachments],
+  );
   const fileId = candidate?.file_id;
 
   const { data: preview } = useSkillFilePreviewQuery(fileId, {
