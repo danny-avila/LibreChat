@@ -1244,6 +1244,29 @@ describe('Message Operations', () => {
       const convo = await Conversation().findOne({ conversationId }).lean();
       expect(convo?.expiredAt ?? null).toBeNull();
     });
+
+    it('ignores a non-string tag instead of matching every conversation (NoSQL injection)', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        tags: ['work'],
+      });
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { tag: { $gt: '' } as unknown as string },
+        { context: 'PUT /api/tags/:tag' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary ?? null).not.toBe(true);
+      expect(convo?.expiredAt ?? null).toBeNull();
+    });
   });
 
   describe('Message cursor pagination', () => {

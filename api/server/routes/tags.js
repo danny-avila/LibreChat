@@ -98,7 +98,8 @@ router.put('/:tag', configMiddleware, async (req, res) => {
     const decodedTag = decodeURIComponent(req.params.tag);
     const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
     if (tag) {
-      await enforceForcedRetentionForTag(req, req.body?.tag || decodedTag, 'PUT /api/tags/:tag');
+      const renamedTag = typeof req.body?.tag === 'string' ? req.body.tag : decodedTag;
+      await enforceForcedRetentionForTag(req, renamedTag, 'PUT /api/tags/:tag');
       res.status(200).json(tag);
     } else {
       res.status(404).json({ error: 'Tag not found' });
