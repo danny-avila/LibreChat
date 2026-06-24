@@ -4,7 +4,12 @@ const { Constants, SCHEDULED_CONVO_TAG } = require('librechat-data-provider');
 const buildEndpointOption = require('~/server/middleware/buildEndpointOption');
 const initializeClient = require('~/server/services/Endpoints/agents/initialize');
 const { getAppConfig } = require('~/server/services/Config');
-const { buildHeadlessReq, buildHeadlessRes, buildRunBody } = require('./headlessRequest');
+const {
+  buildHeadlessReq,
+  buildHeadlessRes,
+  buildRunBody,
+  resolveRunTarget,
+} = require('./headlessRequest');
 const { saveMessage, saveConvo, getUserById } = require('~/models');
 
 /**
@@ -42,13 +47,15 @@ async function executeTurn({ owner, schedule }) {
     role: owner.role,
     tenantId: owner.tenantId,
   };
-  const body = buildRunBody({ schedule, conversationId });
+  const target = resolveRunTarget(schedule, appConfig);
+  const body = buildRunBody({ schedule, conversationId, target });
   const req = buildHeadlessReq({ user, appConfig, body });
   const res = buildHeadlessRes();
 
   await buildEndpointOption(req, res, () => {});
   if (!req.body.endpointOption) {
-    throw new Error('Failed to build endpoint option for scheduled run');
+    const reason = res.capturedError ? `: ${res.capturedError}` : '';
+    throw new Error(`Failed to build endpoint option for scheduled run${reason}`);
   }
 
   req.conversationCreatedAt = new Date().toISOString();

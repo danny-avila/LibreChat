@@ -39,6 +39,12 @@ function buildHeadlessReq({ user, appConfig, body }) {
  * `res` is sufficient (it sends JSON immediately and streams via the job
  * manager). Headless runs skip SSE entirely, so every method is a no-op.
  *
+ * `handleError` (`@librechat/api`) reports failures by writing an
+ * `event: error\ndata: <json message>` frame and ending the response. With a
+ * pure no-op `res` that reason is lost, surfacing only a generic wrapper
+ * error. We capture any such frame on `res.capturedError` so the runner can
+ * rethrow the real cause.
+ *
  * @returns {object} res-like object
  */
 function buildHeadlessRes() {
@@ -47,9 +53,27 @@ function buildHeadlessRes() {
     writableEnded: false,
     finished: false,
     locals: {},
-    write: () => true,
+    capturedError: undefined,
+    write: (chunk) => {
+      if (typeof chunk === 'string' && chunk.includes('event: error')) {
+        const match = chunk.match(/data: (.*)\n/);
+        if (match) {
+          try {
+            res.capturedError = JSON.parse(match[1]);
+          } catch {
+            res.capturedError = match[1];
+          }
+        }
+      }
+      return true;
+    },
     end: () => {},
-    json: () => res,
+    json: (payload) => {
+      if (payload && (payload.error || payload.text)) {
+        res.capturedError = payload.error || payload.text;
+      }
+      return res;
+    },
     send: () => res,
     setHeader: () => {},
     getHeader: () => undefined,
@@ -68,24 +92,69 @@ function buildHeadlessRes() {
 }
 
 /**
- * Translates a schedule into the request body the agent pipeline expects.
- * Agent schedules run on the `agents` endpoint; otherwise the configured
- * endpoint/model is used and the ephemeral skills toggle is set so the
- * primed skill resolves.
+ * Resolves which endpoint/model/agent a scheduled run should execute under.
+ * Priority: an explicitly chosen agent, then an explicit endpoint on the
+ * schedule, then the deployment's default model spec. Skills run through the
+ * agents pipeline either way (a non-agent target becomes an ephemeral agent
+ * wrapping the resolved base model).
  *
- * @param {{ schedule: object, conversationId: string }} params
+ * Without this fallback, a schedule created with only a skill + prompt (the
+ * form leaves the agent optional) would carry no endpoint and fail at
+ * `parseCompactConvo` with "undefined endpoint".
+ *
+ * @param {object} schedule
+ * @param {object} appConfig
+ * @returns {{ agent_id?: string, endpoint: string, endpointType?: string, model?: string, spec?: string }}
+ */
+function resolveRunTarget(schedule, appConfig) {
+  if (schedule.agent_id) {
+    return { agent_id: schedule.agent_id, endpoint: EModelEndpoint.agents };
+  }
+
+  if (schedule.endpoint) {
+    return {
+      endpoint: schedule.endpoint,
+      endpointType: schedule.endpointType,
+      model: schedule.model,
+      spec: schedule.spec,
+    };
+  }
+
+  const specs = appConfig?.modelSpecs?.list ?? [];
+  const defaultSpec = specs.find((s) => s.default) ?? specs[0];
+  if (!defaultSpec?.preset?.endpoint) {
+    throw new Error(
+      'Scheduled run has no agent or endpoint, and no default model spec is configured',
+    );
+  }
+
+  return {
+    endpoint: defaultSpec.preset.endpoint,
+    endpointType: defaultSpec.preset.endpointType,
+    model: defaultSpec.preset.model,
+    spec: defaultSpec.name,
+  };
+}
+
+/**
+ * Translates a schedule into the request body the agent pipeline expects.
+ * Agent schedules run on the `agents` endpoint; otherwise the resolved
+ * endpoint/model (explicit or default model spec) is used and the ephemeral
+ * skills toggle is set so the primed skill resolves.
+ *
+ * @param {{ schedule: object, conversationId: string, target: object }} params
  * @returns {object} request body
  */
-function buildRunBody({ schedule, conversationId }) {
-  const isAgent = !!schedule.agent_id;
+function buildRunBody({ schedule, conversationId, target }) {
+  const isAgent = !!target.agent_id;
   const body = {
     conversationId,
     parentMessageId: Constants.NO_PARENT,
-    endpoint: isAgent ? EModelEndpoint.agents : schedule.endpoint,
-    endpointType: isAgent ? undefined : schedule.endpointType,
-    agent_id: schedule.agent_id,
-    model: schedule.model,
-    spec: schedule.spec,
+    endpoint: target.endpoint,
+    endpointType: target.endpointType,
+    agent_id: target.agent_id,
+    model: target.model,
+    spec: target.spec,
     isTemporary: false,
   };
   if (schedule.skillName) {
@@ -97,4 +166,4 @@ function buildRunBody({ schedule, conversationId }) {
   return body;
 }
 
-module.exports = { buildHeadlessReq, buildHeadlessRes, buildRunBody };
+module.exports = { buildHeadlessReq, buildHeadlessRes, buildRunBody, resolveRunTarget };
