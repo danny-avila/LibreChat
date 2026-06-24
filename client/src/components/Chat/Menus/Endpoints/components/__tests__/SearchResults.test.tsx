@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import { SearchResults } from '../SearchResults';
 
@@ -7,6 +8,7 @@ const mockHandleSelectModel = jest.fn();
 const mockHandleSelectEndpoint = jest.fn();
 const mockNavigate = jest.fn();
 let mockSelectedValues: SelectedValues;
+let mockModelSpecs: TModelSpec[];
 
 jest.mock('~/components/Chat/Menus/Endpoints/ModelSelectorContext', () => ({
   useModelSelectorContext: () => ({
@@ -15,6 +17,7 @@ jest.mock('~/components/Chat/Menus/Endpoints/ModelSelectorContext', () => ({
     handleSelectModel: mockHandleSelectModel,
     handleSelectEndpoint: mockHandleSelectEndpoint,
     endpointsConfig: {},
+    modelSpecs: mockModelSpecs,
   }),
 }));
 
@@ -80,6 +83,7 @@ const disabledAgentsEndpoint: Endpoint = {
 describe('SearchResults', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockModelSpecs = [];
   });
 
   it('marks model as selected when endpoint and model match with no active spec', () => {
@@ -160,5 +164,41 @@ describe('SearchResults', () => {
 
     expect(screen.queryByRole('menuitem', { name: 'My Agents' })).not.toBeInTheDocument();
     expect(mockHandleSelectEndpoint).not.toHaveBeenCalled();
+  });
+
+  it('hides a raw endpoint model that a grouped spec already represents', () => {
+    mockSelectedValues = { endpoint: 'anthropic', model: '', modelSpec: '' };
+    mockModelSpecs = [
+      {
+        name: 'claude-opus-spec',
+        label: 'Claude Opus',
+        group: 'anthropic',
+        preset: { endpoint: 'anthropic', model: 'claude-opus-4-6' },
+      } as TModelSpec,
+    ];
+    render(
+      <SearchResults results={[anthropicEndpoint]} localize={localize} searchValue="claude" />,
+    );
+
+    expect(screen.queryByText('claude-opus-4-6')).not.toBeInTheDocument();
+    expect(screen.getByText('claude-sonnet-4-5')).toBeInTheDocument();
+  });
+
+  it('keeps raw models when no grouped spec covers them', () => {
+    mockSelectedValues = { endpoint: 'anthropic', model: '', modelSpec: '' };
+    mockModelSpecs = [
+      {
+        name: 'other-spec',
+        label: 'Other',
+        group: 'openAI',
+        preset: { endpoint: 'openAI', model: 'gpt-4o' },
+      } as TModelSpec,
+    ];
+    render(
+      <SearchResults results={[anthropicEndpoint]} localize={localize} searchValue="claude" />,
+    );
+
+    expect(screen.getByText('claude-opus-4-6')).toBeInTheDocument();
+    expect(screen.getByText('claude-sonnet-4-5')).toBeInTheDocument();
   });
 });
