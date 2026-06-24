@@ -342,8 +342,8 @@ function currentColorTones(
  * instantiating `<use>` elements, so its template paint counts even though it
  * lives in a deferred container, and `currentColor` can resolve against the
  * instance's inherited `color`. Nested `<use>` inside a referenced template are
- * followed too (a symbol may reference another template). Hidden uses render
- * nothing and are skipped; a `seen` set guards against reference cycles.
+ * followed too (a symbol may reference another template). Hidden or opacity-zero
+ * uses render nothing and are skipped; a `seen` set guards against reference cycles.
  */
 function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]> {
   const map = new Map<Element, Element[]>();
@@ -365,7 +365,7 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
       link(el, use);
     }
     for (const nested of Array.from(target.querySelectorAll('use'))) {
-      if (isHidden(nested, root, rules)) {
+      if (instanceInvisible(nested, root, rules)) {
         continue;
       }
       const nestedTarget = referencedTarget(nested, root);
@@ -375,7 +375,7 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
     }
   };
   for (const use of Array.from(root.querySelectorAll('use'))) {
-    if (isHidden(use, root, rules) || isInside(use, root, DEFERRED_CONTAINERS)) {
+    if (instanceInvisible(use, root, rules) || isInside(use, root, DEFERRED_CONTAINERS)) {
       continue;
     }
     const target = referencedTarget(use, root);
@@ -593,6 +593,24 @@ function isHidden(el: Element, root: Element, rules: StyleRule[]): boolean {
   return false;
 }
 
+function hasZeroOpacity(el: Element, root: Element, rules: StyleRule[]): boolean {
+  let current: Element | null = el;
+  while (current != null) {
+    if (styleNumber(current, rules, 'opacity') === 0) {
+      return true;
+    }
+    if (current === root) {
+      break;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
+function instanceInvisible(el: Element, root: Element, rules: StyleRule[]): boolean {
+  return isHidden(el, root, rules) || hasZeroOpacity(el, root, rules);
+}
+
 /**
  * True when a paint is fully transparent through opacity: the element or any
  * ancestor group has `opacity:0` (group opacity is not inherited and composites
@@ -776,7 +794,10 @@ function targetInheritsPaint(
     }
   }
   for (const nested of Array.from(target.querySelectorAll('use'))) {
-    if (isHidden(nested, root, rules) || resolvePaint(nested, target, rules, property) != null) {
+    if (
+      instanceInvisible(nested, root, rules) ||
+      resolvePaint(nested, target, rules, property) != null
+    ) {
       continue;
     }
     const nestedTarget = referencedTarget(nested, root);
@@ -811,7 +832,7 @@ function instanceContributesPaint(
 function hasDefaultBlackUse(root: Element, rules: StyleRule[]): boolean {
   for (const use of Array.from(root.querySelectorAll('use'))) {
     if (
-      isHidden(use, root, rules) ||
+      instanceInvisible(use, root, rules) ||
       isInside(use, root, DEFERRED_CONTAINERS) ||
       fillIsResolved(use, root, rules)
     ) {
