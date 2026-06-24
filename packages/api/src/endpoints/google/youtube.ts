@@ -62,8 +62,12 @@ export function resolveYouTubeInjectionConfig(params: { provider?: string; model
 
 /** 11-char video id. */
 const ID = '[A-Za-z0-9_-]{11}';
-/** Allowlist of characters that occur in a YouTube URL path/query; anything else ends the match. */
-const URL_TAIL = '[A-Za-z0-9\\-._~%/?&=#:@+]*';
+/**
+ * Allowlist of characters that occur in a YouTube URL path/query; anything else ends the match.
+ * Notably excludes `:` — it never appears in a real YouTube path/query, but `://` of a *nested*
+ * URL does, so excluding it lets the scan stop and find e.g. `watch?url=https://youtu.be/<id>`.
+ */
+const URL_TAIL = '[A-Za-z0-9\\-._~%/?&=#@+]*';
 
 /**
  * Linear YouTube URL matcher restricted to recognized single-video forms:
@@ -94,14 +98,15 @@ const YOUTUBE_URL_REGEX = new RegExp(
 
 /** Matches an 11-char video id at the start of a string, rejecting longer id-like tokens. */
 const VIDEO_ID_REGEX = /^([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])/;
-/** Extracts the `v` query parameter value (bounded length; an id is 11 chars). */
-const V_PARAM_REGEX = /(?:^|&)v=([A-Za-z0-9_-]{1,64})/i;
+/** Iterates every `v` query parameter value (global; values length-bounded — an id is 11 chars). */
+const V_PARAM_REGEX = /(?:^|&)v=([A-Za-z0-9_-]{1,64})/gi;
 /** A YouTube link carries a user-selected moment (e.g. `?t=90`, `&start=90`, before or after `v=`). */
 const YOUTUBE_TIMESTAMP_REGEX = /[?&](?:t|start)=/i;
 
 /**
  * Resolves the 11-char video id from the matcher's capture groups. The path-based ids (groups 1
- * and 2) are already validated by the regex; the watch query (group 3) is parsed for `v=`.
+ * and 2) are already validated by the regex; the watch query (group 3) is scanned for the first
+ * `v=` whose value is a valid id, so a malformed earlier `v=` does not shadow a later valid one.
  */
 function videoIdFromGroups(
   youtuBeId?: string,
@@ -115,8 +120,13 @@ function videoIdFromGroups(
   if (watchQuery == null) {
     return null;
   }
-  const value = V_PARAM_REGEX.exec(watchQuery)?.[1] ?? '';
-  return VIDEO_ID_REGEX.exec(value)?.[1] ?? null;
+  for (const paramMatch of watchQuery.matchAll(V_PARAM_REGEX)) {
+    const id = VIDEO_ID_REGEX.exec(paramMatch[1])?.[1];
+    if (id != null) {
+      return id;
+    }
+  }
+  return null;
 }
 
 /**

@@ -102,6 +102,16 @@ describe('extractYouTubeUrls', () => {
     expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
   });
 
+  it('finds a nested youtu.be link inside a watch URL with no own v=', () => {
+    const text = 'https://www.youtube.com/watch?url=https://youtu.be/dQw4w9WgXcQ';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('skips a malformed v= and uses a later valid one', () => {
+    const text = 'https://www.youtube.com/watch?v=tooShort&list=x&v=dQw4w9WgXcQ';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
   it('ignores unrecognized YouTube routes with no nested video', () => {
     expect(extractYouTubeUrls('https://www.youtube.com/results?search_query=cats')).toEqual([]);
     expect(extractYouTubeUrls('https://www.youtube.com/@SomeChannel')).toEqual([]);
