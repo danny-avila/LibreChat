@@ -463,7 +463,7 @@ describe('OpenIDSessionRefresh', () => {
       expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
     });
 
-    it('does not throw when no res is provided', async () => {
+    it('stores a recovery bridge when no res is provided', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
         access_token: makeJwt(refreshedExp),
@@ -478,7 +478,36 @@ describe('OpenIDSessionRefresh', () => {
       ).resolves.toBeDefined();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
       expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
-      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-rotated',
+        userId: 'local-id-1',
+        tenantId: undefined,
+        openidIssuer: undefined,
+      });
+    });
+
+    it('stores a recovery bridge when res cannot write cookies', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+
+      await refreshOpenIDSession(req, { headersSent: false }, makeOpenIdUser(), 'access_token');
+
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-rotated',
+        userId: 'local-id-1',
+        tenantId: undefined,
+        openidIssuer: undefined,
+      });
     });
 
     it('does not fail the refresh when bridge storage fails after headers are sent', async () => {

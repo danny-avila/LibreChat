@@ -248,10 +248,11 @@ async function persistSession(req) {
  * the session is gone; without this sync an OBO-triggered rotation would leave
  * stale or mismatched cookies and sign the user out on the next refresh.
  *
- * When `res.headersSent` is true (streaming SSE path), the cookie cannot be set.
- * In this case, store a server-side recovery bridge so that if the session is
- * later lost, `refreshController` can look up the rotated token by hash of the
- * stale cookie token.
+ * When no cookie-capable response is available, or `res.headersSent` is true
+ * (streaming SSE path), the cookie cannot be set. In this case, store a
+ * server-side recovery bridge so that if the session is later lost,
+ * `refreshController` can look up the rotated token by hash of the stale cookie
+ * token.
  *
  * @param {object} args
  * @param {import('express').Response} [args.res]
@@ -269,12 +270,8 @@ async function syncRefreshTokenCookie({
   tenantId,
   openidIssuer,
 }) {
-  if (!res || typeof res.cookie !== 'function') {
-    return;
-  }
-
-  // If response is still writable, set the cookies directly.
-  if (!res.headersSent) {
+  const canSetCookie = res && typeof res.cookie === 'function' && !res.headersSent;
+  if (canSetCookie) {
     const expiryInMilliseconds = math(
       process.env.REFRESH_TOKEN_EXPIRY,
       DEFAULT_REFRESH_TOKEN_EXPIRY,
@@ -289,9 +286,6 @@ async function syncRefreshTokenCookie({
     return;
   }
 
-  // Headers already sent (SSE streaming): store a recovery bridge instead.
-  // This allows a later /api/auth/refresh call to recover the rotated token
-  // even after the express-session expires.
   if (oldRefreshToken && userId) {
     try {
       await storeRefreshTokenBridge({
@@ -301,19 +295,22 @@ async function syncRefreshTokenCookie({
         tenantId,
         openidIssuer,
       });
-      logger.debug(
-        '[OpenIDSessionRefresh] Stored refresh-token recovery bridge (SSE streaming path)',
-        {
-          userId,
-        },
-      );
+      logger.debug('[OpenIDSessionRefresh] Stored refresh-token recovery bridge', {
+        userId,
+        responseAvailable: !!res,
+        headersSent: !!res?.headersSent,
+        hasCookieWriter: typeof res?.cookie === 'function',
+      });
     } catch (error) {
       logger.error('[OpenIDSessionRefresh] Failed to store refresh-token recovery bridge', error);
     }
   } else {
     logger.warn(
-      '[OpenIDSessionRefresh] Cannot set cookie (headers sent) and insufficient context to store bridge',
+      '[OpenIDSessionRefresh] Cannot set refresh-token cookie and insufficient context to store bridge',
       {
+        responseAvailable: !!res,
+        headersSent: !!res?.headersSent,
+        hasCookieWriter: typeof res?.cookie === 'function',
         hasOldToken: !!oldRefreshToken,
         hasUserId: !!userId,
       },
