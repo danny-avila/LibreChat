@@ -20,7 +20,13 @@ import {
   getIconKey,
   cn,
 } from '~/utils';
-import { useLocalize, useVisibleTools, useHasAccess, useHasMemoryAccess } from '~/hooks';
+import {
+  useLocalize,
+  useVisibleTools,
+  useHasAccess,
+  useHasMemoryAccess,
+  useAuthContext,
+} from '~/hooks';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
@@ -114,8 +120,12 @@ export default function AgentConfig() {
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
+  const { user } = useAuthContext();
   const hasMemoryAccess = useHasMemoryAccess();
-  const showMemory = hasMemoryAccess && memoryEnabled;
+  /** Mirror the chat memory badge's opt-out gate: a user who disabled memory in
+   *  personalization can't use the inline tools, so the builder toggle is inert
+   *  for them and must be hidden too. */
+  const showMemory = hasMemoryAccess && memoryEnabled && user?.personalization?.memories !== false;
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
   const skillsMap = useMemo(() => {
