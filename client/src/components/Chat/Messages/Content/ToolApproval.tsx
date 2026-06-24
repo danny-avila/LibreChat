@@ -3,7 +3,7 @@ import { Button, TextareaAutosize } from '@librechat/client';
 import { Check, X, Pencil, MessageSquare, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
-import { useApprovalContext } from './ApprovalContext';
+import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
 import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 
@@ -65,11 +65,11 @@ export default function ToolApproval({
     unregisterToolCall,
     setDecision,
     isReady,
-    submitToolApproval,
     getStatus,
     getLeadToolCallId,
     getRegisteredCount,
   } = useApprovalContext();
+  const { submitToolApproval } = useResumeSubmit();
 
   const [active, setActive] = useState<DecisionType | null>(null);
   const [editText, setEditText] = useState(() => seedArgs(args));

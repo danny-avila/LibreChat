@@ -22,11 +22,12 @@ import {
   BashCall,
   SubagentCall,
 } from './Parts';
-import { getCachedPreview, getAskUserQuestionPart } from '~/utils';
+import { getAskUserQuestionPart } from '~/utils/approval';
 import { isBashProgrammaticToolCall } from './routing';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
 import RetrievalCall from './RetrievalCall';
+import { getCachedPreview } from '~/utils';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';

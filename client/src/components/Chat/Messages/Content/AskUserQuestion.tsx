@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
-import { useApprovalContext } from './ApprovalContext';
+import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -19,7 +19,8 @@ export default function AskUserQuestion({
   question: Agents.AskUserQuestionRequest;
 }) {
   const localize = useLocalize();
-  const { submitAskAnswer, getStatus } = useApprovalContext();
+  const { getStatus } = useApprovalContext();
+  const { submitAskAnswer } = useResumeSubmit();
   const [answer, setAnswer] = useState('');
 
   const status = getStatus(actionId);
