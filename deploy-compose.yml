@@ -96,10 +96,28 @@ services:
       # HOST_PATH lets the interpreter bind-mount the correct host directory into
       # the sandbox containers it spawns. Must be the compose project directory.
       - HOST_PATH=${PWD}
+      # Python execution image for spawned sandbox containers. Defaults to our
+      # custom image (built by the `sandbox-python` service below) which adds
+      # openpyxl/python-docx/python-pptx/reportlab/fpdf2 on top of scipy-notebook.
+      # Override in .env to use the stock image (jupyter/scipy-notebook:latest).
+      - PY_CONTAINER_IMAGE=${PY_CONTAINER_IMAGE:-aiworkforce/py-sandbox:latest}
     volumes:
       - ./uploads:/app/uploads
       # Sandbox execution spawns sibling containers via the host Docker daemon.
       - /var/run/docker.sock:/var/run/docker.sock
+
+  # Build-only helper: produces the custom Python sandbox image on the Docker
+  # host so the code-interpreter's sibling-container spawns can find it by tag.
+  # It never runs as a long-lived service (build profile). Build it with:
+  #   docker compose -f deploy-compose.yml build sandbox-python
+  sandbox-python:
+    build:
+      context: ./sandbox
+    image: aiworkforce/py-sandbox:latest
+    profiles:
+      - build
+    restart: "no"
+    command: ["true"]
 
 volumes:
   pgdata2:

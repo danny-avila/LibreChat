@@ -1641,6 +1641,7 @@
   "com_ui_scheduled_skills_next": "Next run",
   "com_ui_scheduled_skills_paused": "Paused",
   "com_ui_scheduled_skills_no_upcoming": "No upcoming runs",
+  "com_ui_save_as_skill": "Save as skill",
   "com_ui_scheduled_skills_run_now": "Run now",
   "com_ui_scheduled_skills_run_started": "Run started — generating response…",
   "com_ui_scheduled_skills_running": "Running…",

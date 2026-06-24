@@ -413,6 +413,58 @@ export function parseTextParts(
 
 export const SEPARATORS = ['.', '?', '!', '۔', '。', '‥', ';', '¡', '¿', '\n', '```'];
 
+/**
+ * Tag the model wraps optional clickable reply suggestions in. Kept in sync
+ * with the system-prompt instruction on the backend
+ * (api/server/services/Endpoints/agents/suggestions.js).
+ */
+export const SUGGESTIONS_TAG = 'suggestions';
+const MAX_SUGGESTIONS = 4;
+
+function parseSuggestionList(raw: string): string[] {
+  const trimmed = raw.trim();
+  let items: unknown[] = [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      items = parsed;
+    }
+  } catch {
+    items = trimmed
+      .split('\n')
+      .map((line) => line.replace(/^[-*\d.\s]+/, '').replace(/^["']|["']$/g, ''));
+  }
+  return items
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item) => item.length > 0)
+    .slice(0, MAX_SUGGESTIONS);
+}
+
+/**
+ * Splits a trailing `<suggestions>[...]</suggestions>` block out of assistant
+ * text, returning the visible text (block removed) and the parsed suggestion
+ * strings. While streaming, an unclosed opening tail is hidden so the partial
+ * block never flashes. Malformed blocks are stripped with no suggestions
+ * rather than shown raw.
+ */
+export function extractSuggestions(text: string): { text: string; suggestions: string[] } {
+  if (!text) {
+    return { text: text ?? '', suggestions: [] };
+  }
+  const closed = text.match(/\n*<suggestions>\s*([\s\S]*?)\s*<\/suggestions>\s*$/i);
+  if (closed && closed.index != null) {
+    return {
+      text: text.slice(0, closed.index).trimEnd(),
+      suggestions: parseSuggestionList(closed[1]),
+    };
+  }
+  const open = text.match(/\n*<suggestions>[\s\S]*$/i);
+  if (open && open.index != null) {
+    return { text: text.slice(0, open.index).trimEnd(), suggestions: [] };
+  }
+  return { text, suggestions: [] };
+}
+
 export function findLastSeparatorIndex(text: string, separators = SEPARATORS): number {
   let lastIndex = -1;
   for (const separator of separators) {
