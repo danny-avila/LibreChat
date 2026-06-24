@@ -153,7 +153,7 @@ function SideMenu({ onCollapse }: { onCollapse?: () => void }) {
           label={localize('com_ui_search')}
           onClick={() => navigate('/search')}
         />
-        <NavRow icon={Image} label={localize('com_ui_images')} onClick={() => navigate('/c/new')} />
+        <NavRow icon={Image} label={localize('com_ui_images')} onClick={() => navigate('/images')} />
         <NavRow
           icon={LayoutGrid}
           label={localize('com_ui_apps')}

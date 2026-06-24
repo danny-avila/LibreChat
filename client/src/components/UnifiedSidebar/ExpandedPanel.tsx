@@ -190,7 +190,7 @@ function ExpandedPanel({
       />
       <NewChatButton setActive={setActive} />
       <QuickNavButton icon={Search} label="Search" href="/search" />
-      <QuickNavButton icon={Image} label="Images" href="/c/new" />
+      <QuickNavButton icon={Image} label="Images" href="/images" />
       <QuickNavButton icon={LayoutGrid} label="Apps" href="/agents" />
       <QuickNavButton icon={Telescope} label="Deep Research" href="/c/new" />
       <div className="mx-2 border-b border-border-light" />

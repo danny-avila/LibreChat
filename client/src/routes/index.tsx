@@ -38,6 +38,9 @@ const loadSkillsView = () =>
     Component: m.default,
   }));
 
+const loadImagesView = () =>
+  import('~/components/Images/layouts/ImagesView').then((m) => ({ Component: m.default }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -164,6 +167,10 @@ export const router = createBrowserRouter(
                   <AgentMarketplace />
                 </MarketplaceProvider>
               ),
+            },
+            {
+              path: 'images',
+              lazy: loadImagesView,
             },
           ],
         },
