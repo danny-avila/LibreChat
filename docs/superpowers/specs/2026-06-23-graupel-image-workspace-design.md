@@ -18,7 +18,7 @@
 - 左侧栏新增「图像」导航入口 + 新前端路由 `/images`。
 - 独立图像页:描述框、生图模型选择器(多引擎)、宽高比选择、参考图上传(图生图/编辑)、生成按钮、语音输入。
 - 「我的图像」画廊:当前用户的历史生成,游标分页,点击查看大图/下载。
-- 后端:统一经 gptsapi 中转(OpenAI 兼容)生图;独立生图端点 + 画廊查询端点。
+- 后端:经 gptsapi v3 异步预测 API 生图(submit→poll→下载转存);异步生图端点 + 结果轮询端点 + 画廊查询端点。
 - 复用现有 `File` 模型与文件存储策略(R2/本地)持久化生成结果。
 
 **不做(YAGNI)**:
@@ -34,7 +34,7 @@
 3. **控制行**(描述框下方):
    - **参考图**(默认「无」):可上传一张图作为编辑/参考来源 → 触发图生图/编辑。
    - **宽高比**:`1:1`(默认)、`16:9`、`9:16`、`4:3`、`3:4`。
-   - **模型选择器**:默认 `gemini-2.5-flash-image-hd`(对齐 Nano Banana);可切换其它引擎(见 §5)。
+   - **模型选择器**:默认 `gemini-3-pro-image-preview`(Nano Banana Pro);可切换其它引擎(见 §5)。
    - **生成**按钮(主操作)。
 4. **「我的图像」画廊**:网格展示历史生成;空态「您还未生成任何图像」;点击打开大图(prompt/model 信息 + 下载)。
 
@@ -42,53 +42,67 @@
 
 ## 4. 架构总览
 
+gptsapi 生图是**异步预测模式**(submit → poll,实测 ~40s),故采用 **async-lite**:提交立即返回 prediction id,前端轮询我方结果端点;结果端点在 gptsapi 返回 `completed` 时**下载临时图 → 转存我方存储 → 落 File**。避免 ~40s 长请求被 Cloudflare(~100s 上限)截断,且不引入后台 worker。
+
 ```
 [client/src] 路由 /images
-   └─ ImageWorkspace(描述框+控制行) ── React Query mutation ──┐
-   └─ ImageGallery(我的图像)        ── React Query query ─────┤
+   ImageWorkspace ─ submit mutation ─→ POST /api/images/generate ─→ { predictionId }
+                  ─ poll query ──────→ GET  /api/images/result/:predictionId ─→ { status, file? }
+   ImageGallery   ─ list query ──────→ GET  /api/images?cursor=...           ─→ { images, nextCursor }
+                                                              │ 调用(注入依赖)
                                                               ▼
-[api/server/routes] 薄 wrapper:                    POST /api/images/generate
-   - 校验入参、注入真实依赖(存储/File 模型)        GET  /api/images?cursor=...
-                                                              │ 调用
+[api/server/routes/images.js] 薄 wrapper:注入 gptsapi 配置 / saveImageFile(存储策略) / File 模型方法
                                                               ▼
 [packages/api/src/images] (TS, 业务核心)
-   - service.generateImage(args, deps)  → 调 gptsapi /images,返回图片字节/URL
-   - 依赖注入:saveImageFile(存储策略) + createFileRecord(File 模型)
-                                                              │ 复用
+   - submitGeneration(args, deps) → POST gptsapi /api/v3/{vendor}/{model}/{text-to-image|image-edit} → predictionId
+   - fetchResult(predictionId, deps) → GET gptsapi /api/v3/predictions/{id}/result
+        completed → 下载 outputs[0] → deps.saveImageFile → deps.createFileRecord(context=image_generation) → File
                                                               ▼
-   gptsapi.net (OpenAI 兼容 /images) + 现有文件存储策略(R2/本地) + File 集合
+   gptsapi.net v3 异步预测 API + 现有文件存储策略(R2/本地) + File 集合
 ```
 
 边界遵循 CLAUDE.md:业务核心在 `packages/api`(TS);`/api` 仅薄 wrapper 注入真实依赖;前端共享类型/端点在 `packages/data-provider`。
 
-## 5. 引擎与模型(gptsapi 中转)
+## 5. 引擎与模型(gptsapi v3 异步预测 API)
 
-- 统一走 gptsapi.net OpenAI 兼容接口。复用 `.env` 现有变量:`IMAGE_GEN_OAI_BASEURL=https://api.gptsapi.net/v1`、`IMAGE_GEN_OAI_API_KEY=${GPTSAPI_KEY}`。
-- 模型选择器列表(来自 gptsapi `/v1/models` 实测,**config 驱动**,可增删):
-  | 模型 id | 说明 | 默认 |
-  |---|---|---|
-  | `gemini-2.5-flash-image-hd` | Nano Banana HD,快/省 | ✅ |
-  | `gemini-3.1-flash-image-preview` | 新 Gemini 图 | |
-  | `gemini-3-pro-image-preview` | 新 Gemini 图(Pro) | |
-  | `gpt-image-2` | OpenAI 图,高质量 | |
-  | `grok-imagine-image` | xAI 图 | |
-- 模型列表与默认值作为**类型化常量** `IMAGE_MODELS`(`packages/api/src/images/models.ts`,易增删、类型安全,免 yaml schema 改动)。前端不硬编码,经轻量端点 `GET /api/images/models`(或并入 `GET /api/images` 的 config 字段)获取。
+gptsapi 生图**不走** OpenAI 兼容 `/v1/images/generations`,而是其专有 v3 异步预测接口(已实测确认):
 
-**⚠️ 待实现期验证(§12)**:上述模型是否都能经 OpenAI 兼容 `/images/generations` 调通。若某些(尤其 Gemini/Grok 图)在 gptsapi 上实际走 `/chat/completions` 图输出,则 service 内按 model 加 adapter 分支;选择器只暴露已验证可用的模型。
+- **提交(text-to-image)**:`POST https://api.gptsapi.net/api/v3/{vendor}/{model}/text-to-image`
+  body `{ prompt(必需,≤20000), aspect_ratio(auto|1:1|9:16|16:9|4:3|3:4), 以及 per-model 参数 }` → `{ code:200, data:{ id, status:'created', urls:{ get } } }`
+- **编辑(image-edit)**:`POST .../{vendor}/{model}/image-edit`,body 加参考图 URL 数组(**可访问 URL**)。**参数名按 vendor 不同**:gemini = `images`,gpt-image-2 = `input_urls`(最多 16 张)。
+- **轮询**:`GET https://api.gptsapi.net/api/v3/predictions/{id}/result` → `data.status: created→processing→completed|failed`,完成时 `data.outputs:[图片URL]`、`data.error`。
+- **输出为临时 CDN URL**(如 `tempfile.aiquickdraw.com` / `oss-us.gptproto.com`)→ **必须下载转存**到我方 R2/本地,不外链。
+- 配置:host = `https://api.gptsapi.net`(新增 `GPTSAPI_BASE_URL` 或常量);鉴权 `Authorization: Bearer ${GPTSAPI_KEY}`(复用 .env 现有 key)。
+
+**已实测确认的引擎**(MVP 选择器,`IMAGE_MODELS` 类型化常量,易增删):
+
+| 模型 id | 路径 vendor/model | per-model 参数 | 编辑(参考图参数名) | 默认 |
+|---|---|---|---|---|
+| `gemini-3-pro-image-preview`(Nano Banana Pro) | `google/gemini-3-pro-image-preview` | `output_format`(png/jpeg) | ✅ `images` | ✅ |
+| `gpt-image-2` | `openai/gpt-image-2` | `resolution`(1K/2K/4K) | ✅ `input_urls`(≤16) | |
+
+- `IMAGE_MODELS` 常量在 `packages/api/src/images/models.ts`,每项:`{ id, label, vendor, supportsEdit, editImagesKey: 'images'|'input_urls', paramKey: 'output_format'|'resolution', paramValues, default? }`。service 据此拼路径与 body。
+- 参数约束(写入校验):`gpt-image-2` 的 `1:1` 不能转 4K;`aspect_ratio` 为 `auto`/未填仅 1K。
+- 前端不硬编码,经 `GET /api/images/models` 获取列表/默认值/能力(是否支持 edit、可选参数、约束)。
+- 默认引擎 `gemini-3-pro-image-preview` 对齐 use.ai 的 Nano Banana 定位。其它模型(gemini-2.5-flash-image-hd、grok-imagine-image 等)路径确认可用后追加进常量即可。
 
 ## 6. 后端设计
 
 ### 6.1 TS service(`packages/api/src/images/`)
-- `service.ts`:`generateImage(args, deps)`,DI 风格(对齐 billing `applyPlanChange`)。
-  - `args`: `{ userId: ObjectId; prompt: string; model: string; size: string; referenceImage?: Buffer | null }`
-  - `deps`: `{ saveImageFile: (buffer, meta) => Promise<{ filepath; source }>; createFileRecord: (doc) => Promise<IFileLean> }`
-  - 职责:校验 model 在白名单内 → 调 gptsapi(generate 或 edit,取决于有无参考图)→ 拿到图片字节 → 经 `deps.saveImageFile` 存储 → 经 `deps.createFileRecord` 落 File(`context: image_generation`、引擎 id 存现有顶层 `model` 字段、prompt 存 `metadata.imageGen.prompt`、`width/height`)→ 返回 File。
-- `models.ts`:`IMAGE_MODELS` 白名单 + 默认值(或从配置读取)。
-- 不引入 `any`;模型未在白名单 → 抛错(由 route 转 400)。
+DI 风格(对齐 billing `applyPlanChange`)。拆两个纯函数 + 一个 http 客户端:
+- `client.ts`:`submitPrediction({ model, prompt, aspectRatio, modelParam, imageUrls? }, cfg) → { predictionId }`(POST v3 text-to-image / image-edit,按 `IMAGE_MODELS` 拼 vendor/model 路径 + per-model 参数 + per-vendor 编辑参数名);`getPrediction(predictionId, cfg) → { status, outputs, error }`(GET v3 result)。`cfg = { baseUrl, apiKey }`。仅这层做 HTTP(测试中 mock)。
+- `service.ts`:
+  - `submitGeneration(args)`:校验 `args.model ∈ IMAGE_MODELS`、`prompt` 非空、参数约束(§5)、edit 时 `imageUrls` 非空且模型 `supportsEdit` → 调 `submitPrediction` → 返回 `{ predictionId, model, prompt }`。
+  - `resolveResult(predictionId, deps)`:`getPrediction` → 若 `processing/created` 原样返回 `{ status }`;若 `failed` 抛错;若 `completed` → 下载 `outputs[0]`(`deps.fetchImage(url)`)→ `deps.saveImageFile(buffer, meta)` → `deps.createFileRecord({ context:'image_generation', model, metadata:{ imageGen:{ prompt, predictionId } }, width,height,... })` → 返回 `{ status:'completed', file }`。**幂等**:落 File 前先按 `metadata.imageGen.predictionId` 查重,已存在则直接返回该 File(防前端重复轮询重复落库)。
+- `models.ts`:`IMAGE_MODELS` 常量 + `getImageModel(id)`(未知→抛错)。
+- `deps`: `{ fetchImage:(url)=>Promise<{buffer,contentType}>; saveImageFile:(buffer,meta)=>Promise<{filepath,source,bytes}>; createFileRecord:(doc)=>Promise<IFileLean>; findFileByPrediction:(uid,pid)=>Promise<IFileLean|null> }`。不引入 `any`。
 
-### 6.2 薄 Express 路由(`api/server/routes/images.js`,thin)
-- `POST /api/images/generate`:鉴权(现有 `requireJwtAuth`)→ 解析 `{ prompt, model, aspectRatio, referenceFileId? }`(参考图经 multer 或引用已上传 file)→ 注入真实 `saveImageFile`(`getStrategyFunctions`)/`createFileRecord`(`~/models`)→ 调 service → 返回 `{ file }`。
-- `GET /api/images?cursor=&limit=`:查当前用户 `context=image_generation` 的 File,按 `createdAt` 倒序游标分页 → 返回 `{ images, nextCursor }`。
+### 6.2 薄 Express 路由(`api/server/routes/images.js`,thin;async)
+- `POST /api/images/generate`:鉴权(`requireJwtAuth`)→ 解析 `{ prompt, model, aspectRatio, modelParam?, referenceFileIds?[] }` → 若 edit:把已上传参考 File 解析为**可访问 URL**(见 §12)→ 调 `submitGeneration` → 返回 `{ predictionId }`(立即返回,不等生成)。
+- `GET /api/images/result/:predictionId`:鉴权 → 注入真实 deps(`fetchImage`=带超时的 http get、`saveImageFile`=`getStrategyFunctions`、`createFileRecord`/`findFileByPrediction`=`~/models`)→ 调 `resolveResult` → 返回 `{ status, file? }`。前端按此轮询。
+- `GET /api/images/models`:返回 `IMAGE_MODELS`(供前端选择器)。
+- `GET /api/images?cursor=&limit=`:查当前用户 `context=image_generation` 的 File,`createdAt` 倒序游标分页 → `{ images, nextCursor }`。
+- `POST /api/images/upload`(参考图):复用现有 multer + 文件存储,存为 File 并返回其 URL/id(供 edit 引用)。
 - 在 `api/server/routes/index.js` 挂载 `/images`。
 
 ### 6.3 与现有 Agent 工具路径的关系
@@ -114,9 +128,9 @@
   - `ImageGallery.tsx`:网格 + 空态 + 大图预览/下载。
   - `index.ts` 导出。
 - **data-provider**:
-  - `packages/data-provider/src/api-endpoints.ts` + `data-service.ts` 加生图/画廊端点;`types/` 加 `TImageGenRequest`/`TGeneratedImage` 类型(复用现有 File 类型扩展);`keys.ts` 加 QueryKey/MutationKey。
+  - `packages/data-provider/src/api-endpoints.ts` + `data-service.ts` 加端点:submit / result / list / models / upload;`types/` 加 `TImageGenRequest`/`TImagePrediction`/`TGeneratedImage`/`TImageModel`(复用现有 File 类型扩展);`keys.ts` 加 QueryKey/MutationKey。
   - `client/src/data-provider/Images/{queries,mutations}.ts` → `index.ts` → 汇入 `client/src/data-provider/index.ts`。
-- **交互**:生成 mutation 成功后 invalidate 画廊 query;loading/error 态完整呈现;所有文案走 `useLocalize`。
+- **交互(异步)**:submit mutation 拿到 `predictionId` → 用 React Query **轮询** `GET result/:predictionId`(`refetchInterval` ~3s,`enabled` 直到 `status==='completed'|'failed'`);completed 时停止轮询 + invalidate 画廊 query(新图入列)+ 清 loading;failed 显示错误。所有文案走 `useLocalize`。生成中页面显示占位/进度。
 
 ## 9. 计费门控(暂缓,留检查点)
 
@@ -126,23 +140,24 @@
 
 ## 10. 错误处理
 
-- gptsapi 调用失败 / 超时 / 配额:service 抛带语义的错误,route 转合适 HTTP 码 + 文案(前端用 `useLocalize` 提示)。
-- 不静默失败:存储失败、File 落库失败都要冒泡并清理半成品(已存字节但落库失败 → 删存储)。
-- 模型不在白名单 → 400。
+- gptsapi 提交失败 / 鉴权 / 配额:service 抛带语义错误,route 转合适 HTTP 码 + 文案(前端 `useLocalize`)。
+- 轮询结果:gptsapi `status==='failed'`(读 `data.error`)→ result 端点返回 `{status:'failed', error}`,前端展示;前端轮询设**上限**(如 ~3min 仍未 completed → 超时提示,停止轮询)。
+- 下载转存:`outputs[0]` 下载失败 / 存储失败 / File 落库失败都冒泡,不静默;已存字节但落库失败 → 删存储(无孤儿)。
+- 模型不在白名单 / 参数违反约束(§5)/ edit 缺参考图 → 400。
 - 参考图过大/格式不支持 → 400(复用现有 multer 限制)。
 
 ## 11. 测试策略(Jest,真实逻辑优先)
 
-- **service(packages/api)**:用真实 DI(假 `saveImageFile`/`createFileRecord` spy + 真 File 模型经 mongodb-memory-server);mock 仅限 gptsapi 的 HTTP 调用(外部、不可控)。覆盖:成功落 File(context/metadata 正确)、未知模型拒绝、参考图走 edit 分支、上游错误冒泡。用 no-AVX 前缀跑(`LD_LIBRARY_PATH=... MONGOMS_VERSION=4.4.18`)。
+- **service(packages/api)**:真实 DI(`fetchImage`/`saveImageFile`/`createFileRecord`/`findFileByPrediction` 用 spy + 真 File 模型经 mongodb-memory-server);mock 仅限 `client.ts` 的 gptsapi HTTP(外部、不可控)。覆盖:`submitGeneration`(校验/约束/edit 缺图/拼路径与 body 含正确 per-model 参数与编辑参数名)、`resolveResult`(processing 直返、failed 抛错、completed 下载+落 File 且 context/model/metadata.imageGen 正确)、**幂等**(同 predictionId 重复 resolve 不重复落库)、上游错误冒泡。用 no-AVX 前缀跑(`LD_LIBRARY_PATH=... MONGOMS_VERSION=4.4.18`)。
 - **route(api)**:鉴权、入参校验、画廊分页(真实 File 查询)。
 - **前端**:`__tests__` 覆盖 ImageWorkspace 的 loading/success/error,画廊空态/有数据。
 
-## 12. 待验证项(实现前 plan 阶段确认)
+## 12. 待验证项(已大部确认;剩余实现期处理)
 
-1. **per-model API 形态**:5 个模型是否都经 `/images/generations` 调通;Gemini/Grok 图是否需 `/chat/completions` 图输出 adapter。用一次真实调用验证,选择器只列已验证模型。
-2. **图片返回形态**:gptsapi 返回 base64 还是 URL;若 URL 需下载再转存到我方存储(R2/本地),不外链。
-3. **参考图编辑**:哪些模型支持 edit;不支持的模型在选了参考图时禁用或提示。
-4. **宽高比映射**:OpenAI `size` vs Gemini `aspectRatio` 参数差异,在 service 内按 model 归一。
+- ✅ **API 形态已确认**:gptsapi v3 异步预测(submit→poll),`gemini-3-pro-image-preview` 与 `gpt-image-2` 的 text-to-image / image-edit 均实测可用;输出为临时 CDN URL。
+- ⚠️ **参考图 URL 可达性(edit)**:`image-edit` 的 `images`/`input_urls` 须为 gptsapi 可访问的 URL。需确认我方上传文件的存储(R2 公有读 / 签名 URL / 本地需公网可达端点)能给出 gptsapi 拉得到的 URL;本地开发若不可达,edit 在该环境降级提示。
+- ⚠️ **轮询节奏/超时**:`refetchInterval` 与前端超时上限实测调优(实测 ~40s,4K 可能更久)。
+- ➕ **追加模型**:其它图模型(`gemini-2.5-flash-image-hd`、`grok-imagine-image` 等)的 v3 路径/参数确认可用后加入 `IMAGE_MODELS`。
 
 ## 13. 工作量预估
 
