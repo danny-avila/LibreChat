@@ -1,7 +1,7 @@
 import { useState, useMemo, memo, useCallback, useRef, useId, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { FocusEvent, FC } from 'react';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
@@ -90,8 +90,9 @@ export const ThinkingButton = memo(
           {label}
         </button>
         {content && showCopyButton && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleCopy}
             aria-label={
               isCopied
@@ -99,7 +100,7 @@ export const ThinkingButton = memo(
                 : localize('com_ui_copy_thoughts_to_clipboard')
             }
             className={cn(
-              'rounded-lg p-1.5 text-text-secondary-alt',
+              'size-auto gap-0 rounded-lg p-1.5 text-text-secondary-alt',
               isExpanded
                 ? 'opacity-0 group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100'
                 : 'opacity-0',
@@ -117,7 +118,7 @@ export const ThinkingButton = memo(
             ) : (
               <Clipboard size="19" aria-hidden="true" />
             )}
-          </button>
+          </Button>
         )}
       </div>
     );

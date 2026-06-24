@@ -5,7 +5,7 @@ import { ChevronDown } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
+import { Button, Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import {
   useLocalize,
@@ -127,14 +127,15 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
       <TooltipAnchor
         description={localize('com_ui_new_chat')}
         render={
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             aria-label={localize('com_ui_new_chat')}
             className={headerIconButtonClassName}
             onClick={handleNewChat}
           >
             <NewChatIcon className="h-4 w-4" />
-          </button>
+          </Button>
         }
       />
     </div>

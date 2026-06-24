@@ -5,6 +5,7 @@ import { getEndpointField } from 'librechat-data-provider';
 import {
   Dialog,
   Label,
+  Button,
   PinIcon,
   EditIcon,
   TrashIcon,
@@ -51,17 +52,18 @@ const PresetItems: FC<{
         tabIndex={-1}
       >
         <div className="flex h-full grow items-center justify-end gap-2">
-          <label
+          <Label
             htmlFor="default-preset"
             className="w-40 truncate rounded bg-transparent py-1 text-xs font-medium text-text-secondary transition-colors sm:w-72"
           >
             {defaultPreset
               ? `${localize('com_endpoint_preset_default_item')} ${defaultPreset.title}`
               : localize('com_endpoint_preset_default_none')}
-          </label>
+          </Label>
           <Dialog>
             <DialogTrigger asChild>
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 className="mr-1 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-destructive focus:ring-text-primary"
                 aria-label={localize('com_ui_clear_all')}
@@ -78,7 +80,7 @@ const PresetItems: FC<{
                   <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0M9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1M6.854 7.146 8 8.293l1.146-1.147a.5.5 0 1 1 .708.708L8.707 9l1.147 1.146a.5.5 0 0 1-.708.708L8 9.707l-1.146 1.147a.5.5 0 0 1-.708-.708L7.293 9 6.146 7.854a.5.5 0 1 1 .708-.708"></path>
                 </svg>
                 {localize('com_ui_clear_all')}
-              </button>
+              </Button>
             </DialogTrigger>
             <DialogTemplate
               showCloseButton={false}
@@ -173,7 +175,8 @@ const PresetItems: FC<{
                               : localize('com_ui_pin')
                           }
                           render={
-                            <button
+                            <Button
+                              variant="ghost"
                               className={cn(
                                 'm-0 h-full rounded-md bg-transparent p-2 text-text-tertiary hover:text-text-primary focus:text-text-primary',
                                 defaultPreset?.presetId === presetId
@@ -194,14 +197,15 @@ const PresetItems: FC<{
                               }}
                             >
                               <PinIcon unpin={defaultPreset?.presetId === presetId} />
-                            </button>
+                            </Button>
                           }
                         />
                         <TooltipAnchor
                           description={localize('com_ui_edit')}
                           aria-label={localize('com_ui_edit')}
                           render={
-                            <button
+                            <Button
+                              variant="ghost"
                               className="m-0 h-full rounded-md p-2 text-text-tertiary hover:text-text-primary focus:text-text-primary sm:invisible sm:group-focus-within:visible sm:group-hover:visible"
                               onClick={(e) => {
                                 e.preventDefault();
@@ -217,14 +221,15 @@ const PresetItems: FC<{
                               }}
                             >
                               <EditIcon />
-                            </button>
+                            </Button>
                           }
                         />
                         <TooltipAnchor
                           description={localize('com_ui_delete')}
                           aria-label={localize('com_ui_delete')}
                           render={
-                            <button
+                            <Button
+                              variant="ghost"
                               className="m-0 h-full rounded-md p-2 text-text-tertiary hover:text-text-primary focus:text-text-primary sm:invisible sm:group-focus-within:visible sm:group-hover:visible"
                               onClick={(e) => {
                                 e.preventDefault();
@@ -240,7 +245,7 @@ const PresetItems: FC<{
                               }}
                             >
                               <TrashIcon />
-                            </button>
+                            </Button>
                           }
                         />
                       </div>

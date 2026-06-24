@@ -3,9 +3,9 @@ import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { VisuallyHidden } from '@ariakit/react';
 import { GitFork, InfoIcon } from 'lucide-react';
-import { useToastContext } from '@librechat/client';
 import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
+import { Button, Label, Checkbox, useToastContext } from '@librechat/client';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
 import { cn } from '~/utils';
@@ -153,28 +153,28 @@ const CheckboxOption: React.FC<CheckboxOptionProps> = ({
         <Ariakit.HovercardAnchor
           render={
             <div className="flex items-center">
-              <Ariakit.Checkbox
+              <Checkbox
                 id={id}
                 checked={checked}
-                onChange={(e) => {
-                  const value = e.target.checked;
-                  if (value && showToastOnCheck) {
+                onCheckedChange={(value) => {
+                  const isChecked = value === true;
+                  if (isChecked && showToastOnCheck) {
                     showToast({
                       message: localize('com_ui_fork_remember_checked'),
                       status: 'info',
                     });
                   }
-                  onToggle(value);
+                  onToggle(isChecked);
                 }}
-                className="h-4 w-4 rounded-sm border border-border-xheavy ring-offset-surface-primary transition duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-surface-inverted data-[state=checked]:text-text-inverted"
+                className="transition duration-300 ease-in-out"
                 aria-label={localize(labelKey)}
               />
-              <label
+              <Label
                 htmlFor={id}
-                className="ml-2 cursor-pointer select-none text-sm text-text-secondary hover:text-text-primary"
+                className="ml-2 w-auto cursor-pointer select-none break-normal text-sm text-text-secondary hover:text-text-primary"
               >
                 {localize(labelKey)}
-              </label>
+              </Label>
             </div>
           }
         />
@@ -227,7 +227,7 @@ export default function Fork({
   });
 
   const buttonStyle = cn(
-    'hover-button rounded-lg p-1.5 text-text-secondary-alt',
+    'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
     'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
     !isLast &&
@@ -330,7 +330,9 @@ export default function Fork({
       <Ariakit.PopoverAnchor
         store={popoverStore}
         render={
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             className={buttonStyle}
             onClick={(e) => {
               if (rememberGlobal) {
@@ -351,7 +353,7 @@ export default function Fork({
             aria-label={localize('com_ui_fork_open_menu')}
           >
             <GitFork size="19" aria-hidden="true" />
-          </button>
+          </Button>
         }
       />
       <Ariakit.Popover

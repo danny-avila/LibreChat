@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
-import { Input, Button, TextareaAutosize, useToastContext } from '@librechat/client';
+import { Input, Label, Button, TextareaAutosize, useToastContext } from '@librechat/client';
 import {
   InvocationMode,
   SKILL_NAME_PATTERN,
@@ -11,9 +11,9 @@ import {
 } from 'librechat-data-provider';
 import type { TSkill, TCreateSkill, TSkillWarning } from 'librechat-data-provider';
 import { useCreateSkillMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import SkillContentEditor from './SkillContentEditor';
 import CategorySelector from './CategorySelector';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const DEFAULT_BODY = `# Overview
@@ -177,12 +177,12 @@ export default function CreateSkillForm({
                     aria-invalid={errors.name ? 'true' : 'false'}
                     aria-describedby={errors.name ? 'skill-name-error' : undefined}
                   />
-                  <label
+                  <Label
                     htmlFor="skill-name"
                     className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-presentation px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
                   >
                     {localize('com_ui_name')}*
-                  </label>
+                  </Label>
                   <div
                     id="skill-name-error"
                     className={cn(
@@ -217,13 +217,13 @@ export default function CreateSkillForm({
             }}
             render={({ field }) => (
               <div className="flex flex-col">
-                <label
+                <Label
                   htmlFor="skill-description"
                   className="mb-1 text-sm font-medium text-text-secondary"
                 >
                   {localize('com_ui_description')}
                   <span className="ml-0.5 text-text-destructive">*</span>
-                </label>
+                </Label>
                 <TextareaAutosize
                   {...field}
                   id="skill-description"

@@ -10,6 +10,7 @@ import {
   BedrockIcon,
   AssistantIcon,
   AnthropicIcon,
+  TooltipAnchor,
   AzureMinimalIcon,
   CustomMinimalIcon,
 } from '@librechat/client';
@@ -62,8 +63,8 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
   const assistantsIcon = {
     icon: iconURL ? (
       <div className="relative flex h-6 w-6 items-center justify-center">
-        <div
-          title={assistantName}
+        <TooltipAnchor
+          description={assistantName ?? ''}
           style={{
             width: size,
             height: size,
@@ -76,7 +77,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
             alt={assistantName}
             style={{ height: '80', width: '80' }}
           />
-        </div>
+        </TooltipAnchor>
       </div>
     ) : (
       <div className="h-6 w-6">
@@ -91,8 +92,8 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
   const agentsIcon = {
     icon: iconURL ? (
       <div className="relative flex h-6 w-6 items-center justify-center">
-        <div
-          title={agentName}
+        <TooltipAnchor
+          description={agentName ?? ''}
           style={{
             width: size,
             height: size,
@@ -105,7 +106,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
             alt={agentName}
             style={{ height: '80', width: '80' }}
           />
-        </div>
+        </TooltipAnchor>
       </div>
     ) : (
       <div className="h-6 w-6">

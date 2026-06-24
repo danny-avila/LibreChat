@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
+import { Button } from '@librechat/client';
 import { UIResourceRenderer } from '@mcp-ui/client';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { UIResource } from 'librechat-data-provider';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { handleUIAction } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];
 }
 
 const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiResources }) => {
+  const localize = useLocalize();
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
@@ -70,23 +74,17 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
       />
 
       {showLeftArrow && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => scroll('left')}
-          className={`absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-xl bg-surface-fixed p-2 text-text-fixed shadow-lg transition-all duration-200 hover:scale-110 hover:bg-surface-fixed-hover hover:shadow-xl active:scale-95 ${
+          className={`absolute left-2 top-1/2 z-20 h-auto w-auto -translate-y-1/2 rounded-xl bg-surface-fixed p-2 text-text-fixed shadow-lg transition-all duration-200 hover:scale-110 hover:bg-surface-fixed-hover hover:text-text-fixed hover:shadow-xl active:scale-95 ${
             isContainerHovered ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
-          aria-label="Scroll left"
+          aria-label={localize('com_ui_scroll_left')}
         >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-        </button>
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
       )}
 
       <div
@@ -122,18 +120,17 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
       </div>
 
       {showRightArrow && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => scroll('right')}
-          className={`absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-xl bg-surface-fixed p-2 text-text-fixed shadow-lg transition-all duration-200 hover:scale-110 hover:bg-surface-fixed-hover hover:shadow-xl active:scale-95 ${
+          className={`absolute right-2 top-1/2 z-20 h-auto w-auto -translate-y-1/2 rounded-xl bg-surface-fixed p-2 text-text-fixed shadow-lg transition-all duration-200 hover:scale-110 hover:bg-surface-fixed-hover hover:text-text-fixed hover:shadow-xl active:scale-95 ${
             isContainerHovered ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
-          aria-label="Scroll right"
+          aria-label={localize('com_ui_scroll_right')}
         >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+          <ChevronRight className="h-5 w-5" />
+        </Button>
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import { Pencil } from 'lucide-react';
 import { Trans } from 'react-i18next';
 import {
   Label,
+  Button,
   Spinner,
   OGDialog,
   TrashIcon,
@@ -64,14 +65,16 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
             description={localize('com_ui_edit_memory')}
             side="top"
             render={
-              <button
+              <Button
                 ref={triggerRef}
+                variant="ghost"
+                size="icon"
                 className={buttonBaseClass}
                 aria-label={localize('com_ui_edit')}
                 onClick={() => setEditOpen(true)}
               >
                 <Pencil className="size-3.5" aria-hidden="true" />
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>
@@ -84,7 +87,9 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
             description={localize('com_ui_delete_memory')}
             side="top"
             render={
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 className={buttonBaseClass}
                 aria-label={localize('com_ui_delete')}
                 onClick={() => setDeleteOpen(true)}
@@ -94,7 +99,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
                 ) : (
                   <TrashIcon className="size-3.5" aria-hidden="true" />
                 )}
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>
