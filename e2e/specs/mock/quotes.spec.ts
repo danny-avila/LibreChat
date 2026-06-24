@@ -168,6 +168,27 @@ test.describe('quote references', () => {
     await expect(pendingChips(page)).toContainText(/E2E|mock|reply/i);
   });
 
+  test('hides the popup when the selection collapses without a mouse event', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    const response = await sendMessage(page, 'seed for collapse');
+    expect(response.ok()).toBeTruthy();
+    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+
+    await expect(async () => {
+      await doubleClickWord(page, MOCK_REPLY_TEXT);
+      await expect(addToChat(page)).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 30000 });
+
+    // Collapse the selection the way a streaming markdown re-render does —
+    // dropping the selected text node fires only `selectionchange`, not a
+    // mouse/key event. The popup must not linger over the now-empty caret.
+    await page.evaluate(() => window.getSelection()?.collapseToEnd());
+    await expect(addToChat(page)).toBeHidden({ timeout: 5000 });
+  });
+
   test('collapses multiple selections into one chip with a hover popup, and removes one', async ({
     page,
   }) => {
