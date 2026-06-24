@@ -7,6 +7,9 @@ import { QueryKeys } from 'librechat-data-provider';
 const mockGenerateMutate = jest.fn();
 const mockInvalidateQueries = jest.fn();
 
+// When true, the mocked generate mutation invokes onError instead of onSuccess
+const mockGenerateBehavior = { shouldError: false };
+
 // This holder is accessed inside jest.mock factory via closure-safe `mock` prefix
 const mockImageResultHolder = {
   data: undefined as
@@ -39,10 +42,20 @@ const mockModelsConfig = {
 
 jest.mock('~/data-provider', () => ({
   useImageModels: () => ({ data: mockModelsConfig }),
-  useGenerateImage: ({ onSuccess }: { onSuccess?: (d: { predictionId: string }) => void }) => ({
+  useGenerateImage: ({
+    onSuccess,
+    onError,
+  }: {
+    onSuccess?: (d: { predictionId: string }) => void;
+    onError?: (e: unknown) => void;
+  }) => ({
     mutate: (args: unknown) => {
       mockGenerateMutate(args);
-      onSuccess?.({ predictionId: 'pred-123' });
+      if (mockGenerateBehavior.shouldError) {
+        onError?.(new Error('boom'));
+      } else {
+        onSuccess?.({ predictionId: 'pred-123' });
+      }
     },
   }),
   useImageResult: (_predictionId: string | null, enabled: boolean) => ({
@@ -132,6 +145,7 @@ describe('ImageWorkspace', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockImageResultHolder.data = undefined;
+    mockGenerateBehavior.shouldError = false;
   });
 
   it('renders prompt textarea and Generate button', () => {
@@ -208,5 +222,22 @@ describe('ImageWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('com_ui_image_failed');
     });
+  });
+
+  it('unlocks the Generate button and shows error when the mutation itself errors', async () => {
+    mockGenerateBehavior.shouldError = true;
+
+    render(<ImageWorkspace />);
+    const textarea = screen.getByRole('textbox', { name: 'com_ui_image_prompt_placeholder' });
+    fireEvent.change(textarea, { target: { value: 'a sunset' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_generate' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('com_ui_image_failed');
+    });
+
+    // predictionId never set → polling never starts; button must not stay locked
+    expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_generate' })).not.toBeDisabled();
   });
 });

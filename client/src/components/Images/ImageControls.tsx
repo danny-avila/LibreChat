@@ -1,7 +1,24 @@
 import React, { useRef } from 'react';
+import { v4 } from 'uuid';
+import { dataService } from 'librechat-data-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@librechat/client';
 import type { TImageModel } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
+
+const readImageDimensions = (file: File): Promise<{ width: number; height: number }> =>
+  new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: 0, height: 0 });
+    };
+    img.src = url;
+  });
 
 interface ImageControlsProps {
   models: TImageModel[];
@@ -38,6 +55,9 @@ export default function ImageControls({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedModel = models.find((m) => m.id === model);
+  const paramLabel = selectedModel
+    ? selectedModel.paramKey.charAt(0).toUpperCase() + selectedModel.paramKey.slice(1)
+    : '';
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,21 +65,18 @@ export default function ImageControls({
       return;
     }
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('endpoint', 'openAI');
-    formData.append('width', String(file.size > 0 ? 1 : 0));
-    formData.append('height', String(file.size > 0 ? 1 : 0));
-
     onUploadStart();
     try {
-      const res = await fetch('/api/files/images', { method: 'POST', body: formData });
-      if (!res.ok) {
-        throw new Error(`Upload failed: ${res.statusText}`);
-      }
-      const data = await res.json();
-      const url: string = data.filepath ?? data.url ?? data.file_id ?? '';
-      onImageUrlsChange(url ? [url] : []);
+      const { width, height } = await readImageDimensions(file);
+      const formData = new FormData();
+      formData.append('endpoint', 'openAI');
+      formData.append('file', file, encodeURIComponent(file.name));
+      formData.append('file_id', v4());
+      formData.append('width', String(width));
+      formData.append('height', String(height));
+
+      const uploaded = await dataService.uploadImage(formData);
+      onImageUrlsChange(uploaded.filepath ? [uploaded.filepath] : []);
     } catch {
       onImageUrlsChange([]);
     } finally {
@@ -126,14 +143,10 @@ export default function ImageControls({
       {selectedModel && selectedModel.paramValues.length > 0 && (
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-text-secondary" htmlFor="model-param-select">
-            {selectedModel.paramKey}
+            {paramLabel}
           </label>
           <Select value={param} onValueChange={onParamChange}>
-            <SelectTrigger
-              id="model-param-select"
-              className="w-32"
-              aria-label={selectedModel.paramKey}
-            >
+            <SelectTrigger id="model-param-select" className="w-32" aria-label={paramLabel}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

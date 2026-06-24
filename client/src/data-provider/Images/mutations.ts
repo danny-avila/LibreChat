@@ -4,6 +4,7 @@ import type { TImageGenRequest, TImagePrediction } from 'librechat-data-provider
 
 type GenerateImageOptions = {
   onSuccess?: (data: TImagePrediction) => void;
+  onError?: (error: unknown) => void;
 };
 
 export const useGenerateImage = (opts?: GenerateImageOptions) =>

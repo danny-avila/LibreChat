@@ -53,6 +53,10 @@ export default function ImageWorkspace() {
     onSuccess: (data) => {
       setPredictionId(data.predictionId);
     },
+    onError: () => {
+      setIsGenerating(false);
+      setErrorMsg(localize('com_ui_image_failed'));
+    },
   });
 
   const result = useImageResult(predictionId, !!predictionId);
@@ -92,7 +96,7 @@ export default function ImageWorkspace() {
   const aspectRatios = config?.aspectRatios ?? ['1:1'];
 
   return (
-    <div className="flex h-full flex-col items-center overflow-y-auto px-4 py-8">
+    <div className="flex h-full flex-col items-center px-4 py-8">
       <div className="w-full max-w-2xl space-y-6">
         {/* Header */}
         <div>
