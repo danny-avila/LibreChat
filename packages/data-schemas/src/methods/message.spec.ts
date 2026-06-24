@@ -1233,7 +1233,7 @@ describe('Message Operations', () => {
       expect(lagging?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
     });
 
-    it('does not cap a normal send save so a following conversation refresh stays aligned', async () => {
+    it('caps a normal send to a parent expiring sooner so it cannot outlive the conversation', async () => {
       const conversationId = uuidv4();
       const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
       await Conversation().create({
@@ -1253,7 +1253,11 @@ describe('Message Operations', () => {
         { messageId: uuidv4(), conversationId, text: 'follow-up', user: 'user123' },
       );
 
-      expect(saved?.expiredAt?.getTime()).toBeGreaterThan(parentExpiry.getTime());
+      expect(saved?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+      expect(saved?.expiredAt?.getTime()).toBeLessThanOrEqual(convo?.expiredAt?.getTime() ?? 0);
     });
 
     it('does not touch the parent conversation outside forced retention', async () => {
