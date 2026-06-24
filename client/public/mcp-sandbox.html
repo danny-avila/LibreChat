@@ -158,6 +158,9 @@
         ("script-src 'unsafe-inline' " + resourceDomains).trim(),
         ("style-src 'unsafe-inline' " + resourceDomains).trim(),
         "connect-src " + connectDomains,
+        // form-action does not fall back to default-src, so with allow-forms a form could post to
+        // any origin; bound it to the declared egress allowlist ('none' when none is declared).
+        "form-action " + connectDomains,
         ("img-src data: blob: " + resourceDomains).trim(),
         ("media-src " + (resourceDomains || "'none'")).trim(),
         ("font-src " + (resourceDomains || "'none'")).trim(),
