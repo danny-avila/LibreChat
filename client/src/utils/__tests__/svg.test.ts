@@ -220,6 +220,18 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><defs><path id="p" d="M4 4h16v16H4z" /></defs><use href="#p" fill="#000" /><path fill="#ccc" d="M0 0h4v4H0z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
+
+    it('preserves a chromatic logo reached through a nested use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#red" /></symbol><path id="red" fill="#f00" d="M4 4h16v16H4z" /></defs><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a grayscale glyph reached through a nested use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#g" /></symbol><path id="g" fill="#333" d="M4 4h16v16H4z" /></defs><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('currentColor resolved against a fixed color', () => {
@@ -368,6 +380,18 @@ describe('isMonochromeSvg', () => {
     it('tints when a more specific class rule agrees with the type rule', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><style>.fg{fill:#333}path{fill:#333}</style><path class="fg" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('lets a CSS rule override a presentation fill attribute', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.bg{fill:#fff}</style><path class="bg" fill="#000" d="M0 0h6v6H0z" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('keeps an inline style fill over a conflicting CSS rule', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.bg{fill:#f00}</style><path class="bg" style="fill:#333" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
   });
