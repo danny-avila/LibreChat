@@ -382,18 +382,20 @@ function selectorPaintsRendered(
 
 /**
  * Resolves a `currentColor` paint to the fixed `color` set on the element or an
- * ancestor (inline style, attribute, or CSS), since that is what the icon actually
- * renders. Returns `currentColor` unchanged when no fixed color is in scope,
- * meaning the paint follows the theme.
+ * ancestor up to `boundary` (inline style, attribute, or CSS), since that is what
+ * the icon actually renders. Returns `currentColor` unchanged when no fixed color
+ * is in scope, meaning the paint follows the theme. For content rendered through
+ * `<use>`, `boundary` is the referenced root: inheritance above it comes from the
+ * instance, not the template's original ancestry.
  */
-function resolveCurrentColor(el: Element, root: Element, rules: StyleRule[]): string {
+function resolveCurrentColor(el: Element, boundary: Element, rules: StyleRule[]): string {
   let current: Element | null = el;
   while (current != null) {
     const color = styleValue(current, rules, 'color');
     if (color != null && color !== '' && color !== 'inherit' && color !== CURRENT_COLOR) {
       return color;
     }
-    if (current === root) {
+    if (current === boundary) {
       break;
     }
     current = current.parentElement;
@@ -401,10 +403,45 @@ function resolveCurrentColor(el: Element, root: Element, rules: StyleRule[]): st
   return CURRENT_COLOR;
 }
 
-/** Elements rendered through a visible `<use>` (target subtrees), so their
- * template paint counts even though they live in a deferred container. */
-function referencedElements(root: Element, rules: StyleRule[]): Set<Element> {
-  const referenced = new Set<Element>();
+/**
+ * The fixed colors a `currentColor` paint resolves to. Directly-rendered content
+ * resolves against its own ancestry. Content pulled in through `<use>` resolves
+ * the template up to the referenced root, then falls back to the `color` inherited
+ * at each instantiating `<use>` (the instance context), so a use that supplies a
+ * fixed color is honored instead of recording the theme-following sentinel.
+ */
+function currentColorTones(
+  el: Element,
+  root: Element,
+  rules: StyleRule[],
+  uses: Element[] | undefined,
+): string[] {
+  if (uses == null || uses.length === 0) {
+    return [resolveCurrentColor(el, root, rules)];
+  }
+  return uses.map((use) => {
+    const target = referencedTarget(use, root);
+    const within = target != null ? resolveCurrentColor(el, target, rules) : CURRENT_COLOR;
+    return within !== CURRENT_COLOR ? within : resolveCurrentColor(use, root, rules);
+  });
+}
+
+/**
+ * Maps each element rendered through a visible `<use>` (target subtrees) to the
+ * instantiating `<use>` elements, so its template paint counts even though it
+ * lives in a deferred container, and `currentColor` can resolve against the
+ * instance's inherited `color`. Hidden uses render nothing and are skipped.
+ */
+function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]> {
+  const map = new Map<Element, Element[]>();
+  const link = (el: Element, use: Element) => {
+    const existing = map.get(el);
+    if (existing) {
+      existing.push(use);
+      return;
+    }
+    map.set(el, [use]);
+  };
   for (const use of Array.from(root.querySelectorAll('use'))) {
     if (isHidden(use, root, rules) || isInside(use, root, DEFERRED_CONTAINERS)) {
       continue;
@@ -413,12 +450,12 @@ function referencedElements(root: Element, rules: StyleRule[]): Set<Element> {
     if (target == null) {
       continue;
     }
-    referenced.add(target);
+    link(target, use);
     for (const el of Array.from(target.querySelectorAll('*'))) {
-      referenced.add(el);
+      link(el, use);
     }
   }
-  return referenced;
+  return map;
 }
 
 /**
@@ -442,13 +479,13 @@ function renderedPaint(
 
 function collectColors(root: Element, rules: StyleRule[]): string[] {
   const colors: string[] = [];
-  const referenced = referencedElements(root, rules);
+  const referenceUses = referenceMap(root, rules);
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
     if (
       el.nodeName.toLowerCase() === 'style' ||
       isInside(el, root, FUNCTIONAL_CONTAINERS) ||
       isHidden(el, root, rules) ||
-      (isInside(el, root, TEMPLATE_CONTAINERS) && !referenced.has(el))
+      (isInside(el, root, TEMPLATE_CONTAINERS) && !referenceUses.has(el))
     ) {
       continue;
     }
@@ -457,9 +494,11 @@ function collectColors(root: Element, rules: StyleRule[]): string[] {
       if (!value || paintInvisible(el, root, rules, prop)) {
         continue;
       }
-      colors.push(
-        value.trim().toLowerCase() === CURRENT_COLOR ? resolveCurrentColor(el, root, rules) : value,
-      );
+      if (value.trim().toLowerCase() === CURRENT_COLOR) {
+        colors.push(...currentColorTones(el, root, rules, referenceUses.get(el)));
+      } else {
+        colors.push(value);
+      }
     }
   }
   colors.push(...colorsFromStyleBlocks(root, rules));
@@ -726,7 +765,11 @@ function targetHasDefaultBlackShape(target: Element, rules: StyleRule[]): boolea
  */
 function hasDefaultBlackUse(root: Element, rules: StyleRule[]): boolean {
   for (const use of Array.from(root.querySelectorAll('use'))) {
-    if (isInside(use, root, DEFERRED_CONTAINERS) || fillIsResolved(use, root, rules)) {
+    if (
+      isHidden(use, root, rules) ||
+      isInside(use, root, DEFERRED_CONTAINERS) ||
+      fillIsResolved(use, root, rules)
+    ) {
       continue;
     }
     const target = referencedTarget(use, root);
