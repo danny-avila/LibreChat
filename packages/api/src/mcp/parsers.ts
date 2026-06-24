@@ -147,6 +147,7 @@ export function formatToolContent(
     resourceUri?: string;
     csp?: UIResource['csp'];
     permissions?: UIResource['permissions'];
+    toolArgs?: Record<string, unknown>;
   },
 ): t.FormattedContentResult {
   if (!RECOGNIZED_PROVIDERS.has(provider)) {
@@ -205,6 +206,7 @@ export function formatToolContent(
           toolName: metadata?.toolName,
           csp: metadata?.csp,
           permissions: metadata?.permissions,
+          toolArgs: metadata?.toolArgs,
         };
         uiResources.push(uiResource);
         resourceText.push(`UI Resource ID: ${resourceId}`);
@@ -256,6 +258,7 @@ export function formatToolContent(
       content: result?.content,
       csp: metadata.csp,
       permissions: metadata.permissions,
+      toolArgs: metadata.toolArgs,
     });
     currentTextBlock +=
       (currentTextBlock ? '\n\n' : '') +

@@ -88,10 +88,17 @@ export function useAppBridge(
             resource.uri,
             user?.id,
           );
+          const resolvedPermissions = permissions ?? resource.permissions;
+          if (resolvedPermissions) {
+            const updatedAllow = buildAllowAttribute(
+              resolvedPermissions as Parameters<typeof buildAllowAttribute>[0],
+            );
+            if (updatedAllow) iframe.setAttribute('allow', updatedAllow);
+          }
           await bridge!.sendSandboxResourceReady({
             html,
             csp: (csp ?? resource.csp) as never,
-            permissions: (permissions ?? resource.permissions) as never,
+            permissions: resolvedPermissions as never,
             sandbox: 'allow-scripts allow-forms',
           });
         } catch (err) {

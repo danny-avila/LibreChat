@@ -8,7 +8,13 @@ interface UIResourceCarouselProps {
   uiResources: UIResource[];
 }
 
-function MCPAppCard({ resource }: { resource: UIResource }) {
+function MCPAppCard({
+  resource,
+  onHeightChange,
+}: {
+  resource: UIResource;
+  onHeightChange?: (height: number) => void;
+}) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const localize = useLocalize();
   const [loaded, setLoaded] = useState(false);
@@ -25,13 +31,23 @@ function MCPAppCard({ resource }: { resource: UIResource }) {
     };
   }, [resource.structuredContent, resource.content]);
 
-  const handleSizeChanged = React.useCallback((params: { height?: number; width?: number }) => {
-    if (params.height && params.height > 0) {
-      setLoaded(true);
-    }
-  }, []);
+  const handleSizeChanged = React.useCallback(
+    (params: { height?: number; width?: number }) => {
+      if (params.height && params.height > 0) {
+        setLoaded(true);
+        onHeightChange?.(params.height);
+      }
+    },
+    [onHeightChange],
+  );
 
-  useAppBridge(iframeRef, resource, undefined, toolResult, handleSizeChanged);
+  useAppBridge(
+    iframeRef,
+    resource,
+    resource.toolArgs as Record<string, unknown> | undefined,
+    toolResult,
+    handleSizeChanged,
+  );
 
   if (resource.toolName && resource.serverName) {
     return (
@@ -75,7 +91,12 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
+  const [cardHeights, setCardHeights] = useState<Record<number, number>>({});
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const handleCardHeightChange = React.useCallback((index: number, newHeight: number) => {
+    setCardHeights((prev) => ({ ...prev, [index]: newHeight }));
+  }, []);
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -156,7 +177,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
         className="hide-scrollbar flex gap-4 overflow-x-auto scroll-smooth"
       >
         {uiResources.map((uiResource, index) => {
-          const height = 360;
+          const cardHeight = cardHeights[index] ?? 360;
           const width = 230;
 
           return (
@@ -165,12 +186,15 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
               className="flex-shrink-0 transform-gpu transition-all duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-5"
               style={{
                 width: `${width}px`,
-                minHeight: `${height}px`,
+                height: `${cardHeight}px`,
                 animationDelay: `${index * 100}ms`,
               }}
             >
               <div className="flex h-full flex-col">
-                <MCPAppCard resource={uiResource} />
+                <MCPAppCard
+                  resource={uiResource}
+                  onHeightChange={(h) => handleCardHeightChange(index, h)}
+                />
               </div>
             </div>
           );

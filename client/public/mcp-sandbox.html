@@ -132,8 +132,9 @@
     }
 
     function buildCspMeta(csp) {
-      if (!csp || typeof csp !== 'object') return '';
-      const policy = buildCspPolicy(csp);
+      // Use an empty object as default so omitted csp still produces a restrictive policy.
+      const effective = (csp && typeof csp === 'object') ? csp : {};
+      const policy = buildCspPolicy(effective);
       if (!policy) return '';
       return '<meta http-equiv="Content-Security-Policy" content="' + escapeAttr(policy) + '">';
     }
@@ -149,6 +150,7 @@
         ("style-src 'unsafe-inline' " + resourceDomains).trim(),
         "connect-src " + connectDomains,
         ("img-src data: blob: " + resourceDomains).trim(),
+        ("media-src " + (resourceDomains || "'none'")).trim(),
         ("font-src " + (resourceDomains || "'none'")).trim(),
         "frame-src " + frameDomains,
         "object-src 'none'",

@@ -28,6 +28,7 @@ import {
   requiresOAuthMachinery,
   requiresUserScopedConnection,
 } from './utils';
+import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
@@ -35,7 +36,6 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
-import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
@@ -624,6 +624,7 @@ Please follow these instructions when using tools from the respective MCP server
         resourceUri: resourceMeta?.uri,
         csp: resourceMeta?.csp,
         permissions: resourceMeta?.permissions,
+        toolArgs: toolArguments,
       });
     } catch (error) {
       // Log with context and re-throw or handle as needed
@@ -740,6 +741,12 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
       const isDbSourced = isUserSourced(rawConfig);
+      if (!isDbSourced && mcpOptionsContainGraphTokenPlaceholder(rawConfig as t.MCPOptions)) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Server "${serverName}" requires Graph API token resolution which is not supported for app tool calls.`,
+        );
+      }
       const currentOptions = processMCPEnv({
         user,
         dbSourced: isDbSourced,

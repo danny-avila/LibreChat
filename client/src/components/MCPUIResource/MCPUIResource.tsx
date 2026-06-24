@@ -46,7 +46,13 @@ export function MCPUIResource(props: MCPUIResourceProps) {
     }
   }, []);
 
-  useAppBridge(iframeRef, uiResource ?? EMPTY_RESOURCE, undefined, toolResult, handleSizeChanged);
+  useAppBridge(
+    iframeRef,
+    uiResource ?? EMPTY_RESOURCE,
+    uiResource?.toolArgs as Record<string, unknown> | undefined,
+    toolResult,
+    handleSizeChanged,
+  );
 
   if (!uiResource) {
     return (
