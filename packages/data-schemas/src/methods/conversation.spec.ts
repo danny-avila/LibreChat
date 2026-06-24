@@ -927,6 +927,54 @@ describe('Conversation Operations', () => {
       expect(messages[0].expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
     });
 
+    it('preserves an earlier retained expiration when switching to ephemeral', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+      await SharedLink.deleteMany({});
+      const conversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Sooner retained all-mode chat',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+      await Message().create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'retained',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+      await SharedLink.create({
+        conversationId,
+        user: 'user123',
+        shareId: uuidv4(),
+        expiredAt: soonerExpiry,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const message = await Message().findOne({ conversationId }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const share = await SharedLink.findOne({ conversationId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
     it('re-caps an already temporary conversation and its messages to a shorter window', async () => {
       const conversationId = uuidv4();
       const longerExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);

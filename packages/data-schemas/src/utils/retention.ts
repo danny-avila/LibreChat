@@ -68,6 +68,22 @@ export const conversationNeedsForcedRetention = (
   return parent.expiredAt.getTime() > forcedExpiredAt.getTime();
 };
 
+export const capForcedRetentionExpiry = (
+  expiredAt: Date | null | undefined,
+  forcedExpiredAt: Date,
+): Date => {
+  if (!(expiredAt instanceof Date)) {
+    return forcedExpiredAt;
+  }
+
+  const existingTime = expiredAt.getTime();
+  if (!Number.isNaN(existingTime) && existingTime < forcedExpiredAt.getTime()) {
+    return expiredAt;
+  }
+
+  return forcedExpiredAt;
+};
+
 /**
  * Applies forced-retention deadlines to a conversation's messages that do not yet
  * conform to the forced window.
@@ -137,12 +153,12 @@ export const capForcedRetentionToParent = async (
   const parent = await Conversation.findOne({ conversationId, user: userId }, 'expiredAt').lean<{
     expiredAt?: Date | null;
   } | null>();
-  if (parent?.expiredAt instanceof Date && parent.expiredAt.getTime() < forcedExpiredAt.getTime()) {
-    await forceConversationMessagesTemporary(Message, userId, conversationId, parent.expiredAt);
-    await capConversationSharedLinks(SharedLink, userId, conversationId, parent.expiredAt);
-    return parent.expiredAt;
+  const expiredAt = capForcedRetentionExpiry(parent?.expiredAt, forcedExpiredAt);
+  if (expiredAt !== forcedExpiredAt) {
+    await forceConversationMessagesTemporary(Message, userId, conversationId, expiredAt);
+    await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
   }
-  return forcedExpiredAt;
+  return expiredAt;
 };
 
 /**
@@ -159,13 +175,18 @@ export const cascadeForcedConversationRetention = async (
   conversationId: string,
   forcedExpiredAt: Date,
 ): Promise<void> => {
+  const parent = await Conversation.findOne(
+    { conversationId, user: userId },
+    'isTemporary expiredAt',
+  ).lean<RetentionFilterDocument | null>();
+  const expiredAt = capForcedRetentionExpiry(parent?.expiredAt, forcedExpiredAt);
   const convoResult = await Conversation.updateOne(
-    { conversationId, user: userId, ...forcedRetentionGapFilter<IConversation>(forcedExpiredAt) },
-    { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+    { conversationId, user: userId, ...forcedRetentionGapFilter<IConversation>(expiredAt) },
+    { $set: { isTemporary: true, expiredAt } },
   );
   if (convoResult.modifiedCount > 0) {
-    await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
-    await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
+    await forceConversationMessagesTemporary(Message, userId, conversationId, expiredAt);
+    await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
   }
 };
 
@@ -187,34 +208,52 @@ export const cascadeForcedRetentionByTag = async (
 ): Promise<void> => {
   const taggedConversations = await Conversation.find(
     { user: userId, tags: tag },
-    'conversationId',
-  ).lean<Array<{ conversationId: string }>>();
+    'conversationId isTemporary expiredAt',
+  ).lean<Array<RetentionFilterDocument & { conversationId?: string }>>();
   if (taggedConversations.length === 0) {
     return;
   }
-  const conversationIds = taggedConversations.map((convo) => convo.conversationId);
-  await Conversation.updateMany(
-    {
-      user: userId,
-      conversationId: { $in: conversationIds },
-      ...forcedRetentionGapFilter<IConversation>(forcedExpiredAt),
-    },
-    { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
-  );
-  await Message.updateMany(
-    {
-      user: userId,
-      conversationId: { $in: conversationIds },
-      ...forcedRetentionGapFilter<IMessage>(forcedExpiredAt),
-    },
-    { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
-  );
-  await SharedLink.updateMany(
-    {
-      user: userId,
-      conversationId: { $in: conversationIds },
-      $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }],
-    },
-    { $set: { expiredAt: forcedExpiredAt } },
-  );
+
+  const retentionBuckets = new Map<number, { expiredAt: Date; conversationIds: string[] }>();
+  for (const convo of taggedConversations) {
+    if (typeof convo.conversationId !== 'string' || convo.conversationId.length === 0) {
+      continue;
+    }
+
+    const expiredAt = capForcedRetentionExpiry(convo.expiredAt, forcedExpiredAt);
+    const key = expiredAt.getTime();
+    const bucket = retentionBuckets.get(key);
+    if (bucket) {
+      bucket.conversationIds.push(convo.conversationId);
+      continue;
+    }
+    retentionBuckets.set(key, { expiredAt, conversationIds: [convo.conversationId] });
+  }
+
+  for (const { expiredAt, conversationIds } of retentionBuckets.values()) {
+    await Conversation.updateMany(
+      {
+        user: userId,
+        conversationId: { $in: conversationIds },
+        ...forcedRetentionGapFilter<IConversation>(expiredAt),
+      },
+      { $set: { isTemporary: true, expiredAt } },
+    );
+    await Message.updateMany(
+      {
+        user: userId,
+        conversationId: { $in: conversationIds },
+        ...forcedRetentionGapFilter<IMessage>(expiredAt),
+      },
+      { $set: { isTemporary: true, expiredAt } },
+    );
+    await SharedLink.updateMany(
+      {
+        user: userId,
+        conversationId: { $in: conversationIds },
+        $or: [{ expiredAt: null }, { expiredAt: { $gt: expiredAt } }],
+      },
+      { $set: { expiredAt } },
+    );
+  }
 };

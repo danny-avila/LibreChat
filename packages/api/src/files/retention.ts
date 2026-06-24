@@ -1,5 +1,5 @@
-import { isAllDataRetention } from 'librechat-data-provider';
 import { createFallbackRetentionDate } from '@librechat/data-schemas';
+import { RetentionMode, isAllDataRetention } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
@@ -177,10 +177,11 @@ const shouldRetainPersistentAgentFile = ({
   toolResource,
 }: AgentFileRetentionRequest): boolean => {
   const interfaceConfig = req?.config?.interfaceConfig;
+  const retentionMode = interfaceConfig?.retentionMode;
   return (
     isPersistentAgentResourceUpload({ messageAttachment, toolResource }) &&
-    (!isAllDataRetention(interfaceConfig?.retentionMode) ||
-      interfaceConfig?.retainAgentFiles === true)
+    (!isAllDataRetention(retentionMode) ||
+      (retentionMode === RetentionMode.ALL && interfaceConfig?.retainAgentFiles === true))
   );
 };
 
