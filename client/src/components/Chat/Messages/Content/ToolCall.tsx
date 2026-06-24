@@ -58,8 +58,9 @@ const MCPAppView = React.memo(function MCPAppView({
     return {
       content,
       ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
+      ...(app.isError === true ? { isError: true } : {}),
     };
-  }, [app.structuredContent, app.content]);
+  }, [app.structuredContent, app.content, app.isError]);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {
