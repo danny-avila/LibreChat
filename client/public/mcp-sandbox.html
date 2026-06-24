@@ -18,26 +18,21 @@
     let readyInterval = null;
     const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
 
-    // Derive the trusted origin from the referrer at startup.
-    // The sandbox is always served same-origin, so document.referrer is the LibreChat page URL.
-    let trustedOrigin = null;
-    try {
-      if (document.referrer) {
-        trustedOrigin = new URL(document.referrer).origin;
-      }
-    } catch {}
+    // The sandbox is always served same-origin with LibreChat, so window.location.origin
+    // is the exact expected parent origin. No referrer fallback or lazy-set needed.
+    const trustedOrigin = window.location.origin;
 
     function notifyReady() {
       window.parent.postMessage(
         { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
-        trustedOrigin || '*'
+        trustedOrigin
       );
       if (!readyInterval) {
         readyInterval = setInterval(() => {
           if (!innerFrame) {
             window.parent.postMessage(
               { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
-              trustedOrigin || '*'
+              trustedOrigin
             );
           }
         }, 500);
@@ -54,9 +49,7 @@
       if (!msg || msg.jsonrpc !== '2.0') return;
 
       if (event.source === window.parent) {
-        if (!trustedOrigin) {
-          trustedOrigin = event.origin;
-        } else if (event.origin !== trustedOrigin) {
+        if (event.origin !== trustedOrigin) {
           return;
         }
 
@@ -76,9 +69,7 @@
         if (msg.method && msg.method.startsWith(SANDBOX_PREFIX)) {
           return;
         }
-        if (trustedOrigin) {
-          window.parent.postMessage(msg, trustedOrigin);
-        }
+        window.parent.postMessage(msg, trustedOrigin);
       }
     });
 
