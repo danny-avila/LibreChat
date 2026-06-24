@@ -372,6 +372,23 @@ describe('appendYouTubeVideoParts', () => {
     expect(mediaParts).toHaveLength(1);
     expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('aaaaaaaaaaa'));
   });
+
+  it('strips a watch URL fully when it has a URL-valued param after the id (no orphan)', () => {
+    const text =
+      'summarize https://www.youtube.com/watch?v=dQw4w9WgXcQ&next=https://example.com please';
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text, max: 5 });
+
+    const parts = result as MessageContentComplex[];
+    const textPart = parts.find((p) => (p as Record<string, unknown>).type === 'text') as {
+      text: string;
+    };
+    expect(textPart.text).toBe('summarize please');
+    expect(textPart.text).not.toContain('example.com');
+
+    const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
 });
 
 describe('resolveYouTubeInjectionConfig', () => {
@@ -434,7 +451,7 @@ describe('ReDoS safety', () => {
   });
 
   it('returns quickly for many medium malformed watch tokens', () => {
-    const token = 'https://www.youtube.com/watch?'.repeat(50); // ~1.5KB, under the per-token cap
+    const token = 'https://www.youtube.com/watch?'.repeat(50); // ~1.5KB malformed token
     const malicious = `${token} `.repeat(2000); // ~3MB of whitespace-separated malformed tokens
     const start = Date.now();
     const result = extractYouTubeUrls(malicious, 5);

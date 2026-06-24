@@ -64,16 +64,19 @@ export function resolveYouTubeInjectionConfig(params: { provider?: string; model
 const ID = '[A-Za-z0-9_-]{11}';
 /**
  * Allowlist of characters that occur in a YouTube URL path/query; anything else ends the match.
- * Notably excludes `:` — it never appears in a real YouTube path/query, but `://` of a *nested*
- * URL does, so excluding it lets the scan stop and find e.g. `watch?url=https://youtu.be/<id>`.
+ * The detection tail excludes `:` — it never appears in a real YouTube path/query, but `://` of a
+ * *nested* URL does, so excluding it lets the scan stop and find e.g.
+ * `watch?url=https://youtu.be/<id>`. The strip tail re-adds `:` so the whole URL token (including a
+ * trailing URL-valued param like `&next=https://example.com`) is consumed and nothing is orphaned.
  */
-const URL_TAIL = '[A-Za-z0-9\\-._~%/?&=#@+]*';
+const DETECT_TAIL = '[A-Za-z0-9\\-._~%/?&=#@+]*';
+const STRIP_TAIL = '[A-Za-z0-9\\-._~%/?&=#@+:]*';
 
 /**
- * Linear YouTube URL matcher restricted to recognized single-video forms:
- *   - `youtu.be/<id>`                          (group 1 = id)
- *   - `youtube[-nocookie].com/(shorts|live|embed|v)/<id>` (group 2 = id)
- *   - `youtube[-nocookie].com/watch?<query>`   (group 3 = query, `v=` parsed afterwards)
+ * Builds the linear YouTube URL matcher (restricted to recognized single-video forms):
+ *   - `youtu.be/<id>`                                      (group 1 = id)
+ *   - `youtube[-nocookie].com/(shorts|live|embed|v)/<id>`  (group 2 = id)
+ *   - `youtube[-nocookie].com/watch?<query>`               (group 3 = query, `v=` parsed afterwards)
  *
  * Properties that matter:
  *   - Linear (no ReDoS): each branch consumes its match in a single greedy pass, the `v=` location
@@ -86,15 +89,22 @@ const URL_TAIL = '[A-Za-z0-9\\-._~%/?&=#@+]*';
  *   - The leading lookbehind rejects hosts embedded in a longer domain (`notyoutube.com`,
  *     `evil-youtube.com`).
  */
-const YOUTUBE_URL_REGEX = new RegExp(
-  '(?<![\\w.-])(?:https?:\\/\\/)?(?:' +
-    `youtu\\.be\\/(${ID})(?![A-Za-z0-9_-])${URL_TAIL}` +
-    '|(?:(?:[a-z0-9-]{1,63}\\.){0,10}youtube\\.com|(?:www\\.)?youtube-nocookie\\.com)\\/(?:' +
-    `(?:shorts|live|embed|v)\\/(${ID})(?![A-Za-z0-9_-])${URL_TAIL}` +
-    `|watch\\?(${URL_TAIL})` +
-    '))',
-  'gi',
-);
+function createYouTubeRegex(tail: string): RegExp {
+  return new RegExp(
+    '(?<![\\w.-])(?:https?:\\/\\/)?(?:' +
+      `youtu\\.be\\/(${ID})(?![A-Za-z0-9_-])${tail}` +
+      '|(?:(?:[a-z0-9-]{1,63}\\.){0,10}youtube\\.com|(?:www\\.)?youtube-nocookie\\.com)\\/(?:' +
+      `(?:shorts|live|embed|v)\\/(${ID})(?![A-Za-z0-9_-])${tail}` +
+      `|watch\\?(${tail})` +
+      '))',
+    'gi',
+  );
+}
+
+/** Detection matcher: `:`-excluded tail so nested video URLs are discoverable. */
+const YOUTUBE_URL_REGEX = createYouTubeRegex(DETECT_TAIL);
+/** Strip matcher: `:`-inclusive tail so a matched URL is removed whole (no orphaned `://...`). */
+const YOUTUBE_STRIP_REGEX = createYouTubeRegex(STRIP_TAIL);
 
 /** Matches an 11-char video id at the start of a string, rejecting longer id-like tokens. */
 const VIDEO_ID_REGEX = /^([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])/;
@@ -139,7 +149,7 @@ function stripYouTubeUrls(text: string, injectedIds: Set<string>): string {
     return text;
   }
   let changed = false;
-  const replaced = text.replace(YOUTUBE_URL_REGEX, (match, youtuBeId, pathId, watchQuery) => {
+  const replaced = text.replace(YOUTUBE_STRIP_REGEX, (match, youtuBeId, pathId, watchQuery) => {
     const id = videoIdFromGroups(youtuBeId, pathId, watchQuery);
     if (id == null || !injectedIds.has(id)) {
       return match;
