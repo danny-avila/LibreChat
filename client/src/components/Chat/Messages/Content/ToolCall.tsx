@@ -70,6 +70,19 @@ const MCPAppView = React.memo(function MCPAppView({
 
   useAppBridge(iframeRef, app, toolArgs, toolResult, handleSizeChanged);
 
+  if (app.text && (app.mimeType ?? 'text/html').includes('html')) {
+    return (
+      <div className="my-2">
+        <iframe
+          srcDoc={app.text}
+          sandbox="allow-scripts allow-forms"
+          style={{ width: '100%', minHeight: '200px', border: 'none' }}
+          title={app.uri}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="my-2" style={height ? { height } : { minHeight: 100 }}>
       {!loaded && !timedOut && (

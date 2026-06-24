@@ -50,7 +50,7 @@ function MCPAppCard({
     handleSizeChanged,
   );
 
-  if (resource.toolName && resource.serverName) {
+  if (resource.toolName && resource.serverName && !resource.text) {
     return (
       <>
         {!loaded && (

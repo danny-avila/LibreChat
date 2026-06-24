@@ -175,6 +175,17 @@ export class MCPServerInspector {
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
+      const uiMeta = (tool._meta as Record<string, unknown>)?.ui as
+        | Record<string, unknown>
+        | undefined;
+      const visibility = uiMeta?.visibility as string[] | undefined;
+      if (
+        Array.isArray(visibility) &&
+        visibility.includes('app') &&
+        !visibility.includes('model')
+      ) {
+        return;
+      }
       const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
       toolFunctions[name] = {
         type: 'function',

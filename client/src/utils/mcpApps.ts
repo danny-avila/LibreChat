@@ -11,7 +11,7 @@ export async function callMCPAppTool(
   toolName: string,
   args: Record<string, unknown>,
 ) {
-  return request.post('/api/mcp/app-tool-call', {
+  return request.post(`${apiBaseUrl()}/api/mcp/app-tool-call`, {
     serverName,
     toolName,
     arguments: args,
@@ -40,7 +40,7 @@ export async function readMCPResource(serverName: string, uri: string, userId?: 
     }
   }
 
-  const promise = request.post('/api/mcp/resources/read', { serverName, uri });
+  const promise = request.post(`${apiBaseUrl()}/api/mcp/resources/read`, { serverName, uri });
   resourceCache.set(key, { promise, ts: now });
   promise.catch(() => resourceCache.delete(key));
   return promise;

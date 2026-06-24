@@ -747,14 +747,19 @@ Please follow these instructions when using tools from the respective MCP server
           `${logPrefix} Server "${serverName}" requires Graph API token resolution which is not supported for app tool calls.`,
         );
       }
-      const currentOptions = processMCPEnv({
-        user,
-        dbSourced: isDbSourced,
-        options: rawConfig as t.MCPOptions,
-      });
-      const resolvedHeaders: Record<string, string> =
-        'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
-      connection.setRequestHeaders(resolvedHeaders);
+      // DB-sourced servers have their customUserVars (e.g. {{MCP_API_KEY}}) resolved during
+      // the original callTool setup. Re-processing without customUserVars would overwrite
+      // those resolved headers with unresolved placeholders, so skip for DB-sourced servers.
+      if (!isDbSourced) {
+        const currentOptions = processMCPEnv({
+          user,
+          dbSourced: false,
+          options: rawConfig as t.MCPOptions,
+        });
+        const resolvedHeaders: Record<string, string> =
+          'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+        connection.setRequestHeaders(resolvedHeaders);
+      }
     }
 
     const result = await connection.client.request(
