@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import type { TImageResult, TImageModelsConfig, TImageGalleryPage } from 'librechat-data-provider';
 
@@ -8,7 +8,10 @@ export const useImageModels = () =>
   });
 
 export const useImageGallery = () =>
-  useQuery<TImageGalleryPage>([QueryKeys.imageGallery], () => dataService.getImageGallery(), {
+  useInfiniteQuery<TImageGalleryPage>({
+    queryKey: [QueryKeys.imageGallery],
+    queryFn: ({ pageParam }) => dataService.getImageGallery(pageParam as string | undefined),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     refetchOnWindowFocus: false,
   });
 

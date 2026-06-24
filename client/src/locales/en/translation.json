@@ -1123,6 +1123,7 @@
   "com_ui_reference_image": "Reference",
   "com_ui_my_images": "My Images",
   "com_ui_no_images": "You haven't generated any images yet",
+  "com_ui_load_more": "Load more",
   "com_ui_image_generating": "Generating...",
   "com_ui_image_failed": "Generation failed",
   "com_ui_import": "Import",

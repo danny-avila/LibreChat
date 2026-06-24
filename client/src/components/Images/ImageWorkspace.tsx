@@ -5,6 +5,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { useImageModels, useGenerateImage, useImageResult } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import ImageControls from './ImageControls';
+import ImageGallery from './ImageGallery';
 
 export default function ImageWorkspace() {
   const localize = useLocalize();
@@ -164,7 +165,9 @@ export default function ImageWorkspace() {
         )}
       </div>
 
-      {/* ImageGallery (Task 7) mounts here */}
+      <div className="mt-10 w-full max-w-2xl">
+        <ImageGallery />
+      </div>
     </div>
   );
 }

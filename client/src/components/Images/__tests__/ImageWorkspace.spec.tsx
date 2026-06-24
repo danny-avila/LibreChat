@@ -61,6 +61,12 @@ jest.mock('~/data-provider', () => ({
   useImageResult: (_predictionId: string | null, enabled: boolean) => ({
     data: enabled ? mockImageResultHolder.data : undefined,
   }),
+  useImageGallery: () => ({
+    data: { pages: [] },
+    fetchNextPage: jest.fn(),
+    hasNextPage: false,
+    isFetchingNextPage: false,
+  }),
   // Required by AuthContextProvider in layout-test-utils wrapper
   useGetRole: () => ({ data: null }),
   useGetUserQuery: () => ({ data: null }),
