@@ -116,9 +116,22 @@ function stripYouTubeUrls(text: string, injectedIds: Set<string>): string {
    */
   const segments = text.split(/(\s+)/);
   let changed = false;
+  let scanned = 0;
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
-    if (segment.length === 0 || segment.length > MAX_URL_TOKEN_CHARS || /\s/.test(segment[0])) {
+    /**
+     * Bound the strip scan by the same total budget extraction used. Injected ids only come from
+     * the first {@link MAX_YOUTUBE_SCAN_CHARS}, so a URL beyond that is never in `injectedIds` and
+     * would not be removed anyway — leave the tail verbatim instead of regex-scanning all of it.
+     */
+    const withinBudget = scanned < MAX_YOUTUBE_SCAN_CHARS;
+    scanned += segment.length;
+    if (
+      !withinBudget ||
+      segment.length === 0 ||
+      segment.length > MAX_URL_TOKEN_CHARS ||
+      /\s/.test(segment[0])
+    ) {
       continue;
     }
     YOUTUBE_URL_STRIP_REGEX.lastIndex = 0;
