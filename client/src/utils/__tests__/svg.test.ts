@@ -232,6 +232,18 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#g" /></symbol><path id="g" fill="#333" d="M4 4h16v16H4z" /></defs><use href="#s" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('counts an outer use fill inherited through a nested use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#g" /></symbol><path id="g" d="M4 4h16v16H4z" /></defs><path fill="#000" d="M0 0h6v6H0z" /><use href="#s" fill="#fff" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a default-black glyph reached through a nested use with no instance fill', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#g" /></symbol><path id="g" d="M4 4h16v16H4z" /></defs><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('currentColor resolved against a fixed color', () => {
@@ -393,6 +405,18 @@ describe('isMonochromeSvg', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><style>.bg{fill:#f00}</style><path class="bg" style="fill:#333" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('parses CSS rules after a leading comment in the style block', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>/* generated */ .st0{fill:#e00}</style><path class="st0" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('parses CSS rules despite a comment containing braces', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>/* a } b */ .st0{fill:#e00}</style><path class="st0" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
 
@@ -597,6 +621,26 @@ describe('isMonochromeSvg', () => {
     it('still counts an opaque default-filled shape as black', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" /><path fill="#fff" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+  });
+
+  describe('visibility:hidden removes paint', () => {
+    it('ignores a colored shape hidden with the visibility attribute', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#f00" visibility="hidden" /><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a shape hidden by a CSS visibility:hidden rule', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.hide{visibility:hidden}</style><rect class="hide" width="24" height="24" fill="#f00" /><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('still counts a visible child inside a visibility:hidden group', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g visibility="hidden"><path fill="#f00" visibility="visible" d="M4 4h16v16H4z" /></g></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
