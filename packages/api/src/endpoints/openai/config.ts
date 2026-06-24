@@ -202,6 +202,19 @@ export function getOpenAIConfig(
     tools = openaiResult.tools;
   }
 
+  /**
+   * Within-run `reasoning_content` replay applies across every param-format
+   * branch above (OpenAI / Anthropic / Google gateway modes all resolve to the
+   * OpenAI client). `includeReasoningHistory` implies it, since reconstructed
+   * history reasoning is only sent when the within-run flag is set.
+   */
+  if (
+    options.customParams?.includeReasoningContent === true ||
+    options.customParams?.includeReasoningHistory === true
+  ) {
+    llmConfig.includeReasoningContent = true;
+  }
+
   const configOptions: t.OpenAIConfiguration = {};
   if (baseURL) {
     configOptions.baseURL = baseURL;

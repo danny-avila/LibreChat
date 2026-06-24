@@ -667,10 +667,10 @@ export function getOpenAILLMConfig({
   }
 
   /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
-  if (
+  const isDeepSeekModel =
     typeof modelOptions.model === 'string' &&
-    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
-  ) {
+    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''));
+  if (isDeepSeekModel) {
     llmConfig.includeReasoningContent = true;
   }
 
