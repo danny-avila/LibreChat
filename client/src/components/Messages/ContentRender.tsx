@@ -1,11 +1,19 @@
 import { useCallback, useMemo, memo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
-import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import {
+  useAttachments,
+  useLocalize,
+  useMessageActions,
+  useContentMetadata,
+  useScopeOverrideFeatureAccess,
+} from '~/hooks';
 import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import SaveSkillBanner from '~/components/Skills/SaveSkillBanner';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -95,6 +103,10 @@ const ContentRender = memo(function ContentRender({
   chatContext,
 }: ContentRenderProps) {
   const localize = useLocalize();
+  const hasSkillCreateAccess = useScopeOverrideFeatureAccess(
+    PermissionTypes.SKILLS,
+    Permissions.CREATE,
+  );
   const { attachments, searchResults } = useAttachments({
     messageId: msg?.messageId,
     attachments: msg?.attachments,
@@ -227,6 +239,9 @@ const ContentRender = memo(function ContentRender({
               content={msg.content as Array<TMessageContentParts | undefined>}
             />
           </div>
+          {!msg.isCreatedByUser && !isSubmitting && (
+            <SaveSkillBanner message={msg} hasCreateAccess={hasSkillCreateAccess} />
+          )}
           {hasNoChildren && isSubmitting ? (
             <PlaceholderRow />
           ) : (
