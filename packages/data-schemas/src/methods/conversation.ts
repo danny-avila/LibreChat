@@ -12,6 +12,7 @@ import type { MessageMethods } from './message';
 import {
   buildRetentionVisibilityFilter,
   capConversationSharedLinks,
+  capForcedRetentionExpiry,
   conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
@@ -274,11 +275,17 @@ export function createConversationMethods(
       if (interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
         update.isTemporary = true;
         try {
-          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+          update.expiredAt = capForcedRetentionExpiry(
+            parentRetention?.expiredAt,
+            createTempChatExpirationDate(interfaceConfig),
+          );
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
-          update.expiredAt = createFallbackRetentionDate();
+          update.expiredAt = capForcedRetentionExpiry(
+            parentRetention?.expiredAt,
+            createFallbackRetentionDate(),
+          );
         }
       } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {

@@ -304,6 +304,28 @@ describe('retention helpers', () => {
     expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
   });
 
+  it('applies ephemeral retention to persistent agent files even when retainAgentFiles is enabled', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({
+          config: {
+            interfaceConfig: {
+              retentionMode: RetentionMode.EPHEMERAL,
+              retainAgentFiles: true,
+            },
+          },
+        }),
+        messageAttachment: false,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
+  });
+
   it('still applies all-data retention to agent message attachments when retainAgentFiles is enabled', async () => {
     const result = await getAgentFileRetentionExpiry(
       {
