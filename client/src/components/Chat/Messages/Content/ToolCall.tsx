@@ -8,13 +8,14 @@ import {
   actionDelimiter,
   actionDomainSeparator,
 } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, Agents } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
+import ToolApproval from './ToolApproval';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -27,6 +28,8 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  approval,
+  toolCallId,
   hideAttachments = false,
   onExpand,
 }: {
@@ -38,6 +41,10 @@ export default function ToolCall({
   output?: string | null;
   attachments?: TAttachment[];
   auth?: string;
+  /** Approval metadata, present when this call is paused for human review. */
+  approval?: Agents.ToolCall['approval'];
+  /** Provider tool_call_id, needed to key the batched approval decision. */
+  toolCallId?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
 }) {
@@ -267,6 +274,9 @@ export default function ToolCall({
             {localize('com_assistants_allow_sites_you_trust')}
           </p>
         </div>
+      )}
+      {approval != null && toolCallId != null && toolCallId.length > 0 && !hasOutput && (
+        <ToolApproval approval={approval} toolCallId={toolCallId} args={_args} />
       )}
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />

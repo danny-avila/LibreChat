@@ -12,6 +12,7 @@ import {
   apiBaseUrl,
   UsageEvents,
   createPayload,
+  ApprovalEvents,
   ViolationTypes,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -29,10 +30,12 @@ import type { TResData } from '~/common';
 import {
   logger,
   clearAllDrafts,
+  applyPendingAction,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
   countTrailingOutputChars,
   markStreamStartFailedMetadata,
+  findPendingActionMessageIndex,
 } from '~/utils';
 import {
   useGetUserBalance,
@@ -449,6 +452,9 @@ export default function useResumableSSE(
   const submissionRef = useRef<TSubmission | null>(null);
   const optimisticStreamIdsRef = useRef(new Set<string>());
   const createdStreamIdsRef = useRef(new Set<string>());
+  /** Pending action whose tool-call content part hasn't rendered yet — retried
+   *  on the next frame so a fast pause-before-render race still attaches. */
+  const pendingActionRetryRef = useRef<number | null>(null);
 
   const {
     stepHandler,
@@ -507,6 +513,43 @@ export default function useResumableSSE(
         for (const event of preCreatedStepEvents.splice(0)) {
           stepHandler(event, submission);
         }
+      };
+
+      /**
+       * Maps a pending action onto the in-flight response message so the
+       * approval / ask-user UI renders. Syncs the result back into the step
+       * handler's map so subsequent deltas build on the approval-tagged content
+       * rather than clobbering it.
+       *
+       * If the mapping is a no-op (the paused tool-call content part hasn't
+       * rendered yet — a pause-before-render race), retry once on the next frame
+       * so the approval still attaches. `ask_user_question` always applies (it
+       * appends a synthetic part), so only `tool_approval` ever retries.
+       */
+      const applyPendingActionToMessages = (pendingAction: Agents.PendingAction, retry = true) => {
+        const messages = getMessages() ?? [];
+        const index = findPendingActionMessageIndex(messages, pendingAction);
+        if (index < 0) {
+          if (retry) {
+            pendingActionRetryRef.current = requestAnimationFrame(() =>
+              applyPendingActionToMessages(pendingAction, false),
+            );
+          }
+          return;
+        }
+        const updated = applyPendingAction(messages[index], pendingAction);
+        if (updated === messages[index]) {
+          if (retry) {
+            pendingActionRetryRef.current = requestAnimationFrame(() =>
+              applyPendingActionToMessages(pendingAction, false),
+            );
+          }
+          return;
+        }
+        const nextMessages = [...messages];
+        nextMessages[index] = updated;
+        setMessages(nextMessages);
+        syncStepMessage(updated);
       };
 
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
@@ -611,6 +654,12 @@ export default function useResumableSSE(
 
           if (data.event === UsageEvents.ON_TOKEN_USAGE) {
             usageHandler(data.data, { ...currentSubmission, userMessage });
+            return;
+          }
+
+          if (data.event === ApprovalEvents.ON_PENDING_ACTION) {
+            applyPendingActionToMessages(data.data as Agents.PendingAction);
+            setIsSubmitting(true);
             return;
           }
 
@@ -747,6 +796,15 @@ export default function useResumableSSE(
                 resetContentHandler();
                 syncStepMessage(newMessage);
               }
+            }
+
+            /**
+             * Re-pause on reconnect: the run is parked on a human-review
+             * interrupt. Re-apply the pending action so the approval / ask-user
+             * controls render after a reload or dropped connection.
+             */
+            if (data.resumeState?.pendingAction) {
+              applyPendingActionToMessages(data.resumeState.pendingAction as Agents.PendingAction);
             }
 
             if (data.resumeState?.titleEvent) {
@@ -1288,6 +1346,10 @@ export default function useResumableSSE(
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+      if (pendingActionRetryRef.current != null) {
+        cancelAnimationFrame(pendingActionRetryRef.current);
+        pendingActionRetryRef.current = null;
       }
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;

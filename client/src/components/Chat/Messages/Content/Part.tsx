@@ -22,16 +22,17 @@ import {
   BashCall,
   SubagentCall,
 } from './Parts';
+import { getCachedPreview, getAskUserQuestionPart } from '~/utils';
+import { isBashProgrammaticToolCall } from './routing';
 import { ErrorMessage } from './MessageContent';
+import AskUserQuestion from './AskUserQuestion';
 import RetrievalCall from './RetrievalCall';
-import { getCachedPreview } from '~/utils';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import Image from './Image';
-import { isBashProgrammaticToolCall } from './routing';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -56,6 +57,16 @@ const Part = memo(function Part({
 }: PartProps) {
   if (!part) {
     return null;
+  }
+
+  const askUserQuestion = getAskUserQuestionPart(part);
+  if (askUserQuestion) {
+    return (
+      <AskUserQuestion
+        actionId={askUserQuestion.ask_user_question.actionId}
+        question={askUserQuestion.ask_user_question.question}
+      />
+    );
   }
 
   if (part.type === ContentTypes.ERROR) {
@@ -289,6 +300,8 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           attachments={attachments}
           auth={toolCall.auth}
+          approval={toolCall.approval}
+          toolCallId={toolCall.id}
           isLast={isLast}
           hideAttachments={hideAttachments}
           onExpand={onToolExpand}
