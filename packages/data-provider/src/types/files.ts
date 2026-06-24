@@ -159,6 +159,11 @@ export type TFile = {
      * resolve via `resolveCodeEnvRef`.
      */
     codeEnvRef?: CodeEnvRef;
+    /** Generation metadata for files created by the image workspace (context: image_generation). */
+    imageGen?: {
+      prompt?: string;
+      predictionId?: string;
+    };
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

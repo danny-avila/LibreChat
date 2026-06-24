@@ -27,8 +27,7 @@ export default function ImageGallery() {
                   imagePath={file.filepath}
                   altText={file.filename}
                   args={{
-                    prompt: (file.metadata as { imageGen?: { prompt?: string } } | undefined)
-                      ?.imageGen?.prompt,
+                    prompt: file.metadata?.imageGen?.prompt,
                   }}
                   width={file.width}
                   height={file.height}
