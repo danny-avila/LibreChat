@@ -62,6 +62,21 @@ export async function loadEphemeralAgent(
       mcpServers.add(mcpServer);
     }
   }
+  /**
+   * Auto-include every globally-configured MCP server (the `mcpServers:` block,
+   * surfaced on the app config as `mcpConfig`) so a newly-registered server is
+   * exposed to the default ephemeral agent without also adding it to each
+   * modelSpec's `mcpServers` allowlist. Registration in the global block —
+   * where transport and auth live — is still required; only the per-spec
+   * exposure step is removed. Entries from the spec/ephemeral request above
+   * remain additive for any server not in the global config.
+   */
+  const configuredMcpServers = req.config?.mcpConfig;
+  if (configuredMcpServers) {
+    for (const serverName of Object.keys(configuredMcpServers)) {
+      mcpServers.add(serverName);
+    }
+  }
   const tools: string[] = [];
   if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
     tools.push(Tools.execute_code);

@@ -71,6 +71,38 @@ describe('loadAgent', () => {
     expect(result).toBeNull();
   });
 
+  test('auto-includes globally-configured MCP servers without a spec/ephemeral allowlist', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => {
+      if (server === 'smbteam-mcp') {
+        return { lead_follow_up_mcp_smbteam_mcp: {} };
+      }
+      return null;
+    });
+
+    const mockReq = {
+      user: { id: 'user123' },
+      // No ephemeralAgent.mcp and no modelSpec — exposure comes solely from the
+      // global mcpServers config (surfaced on app config as `mcpConfig`).
+      config: { mcpConfig: { 'smbteam-mcp': { url: 'https://mcp.smbteam.com/mcp' } } },
+      body: {},
+    };
+
+    const result = await loadAgent(
+      {
+        req: mockReq as unknown as LoadAgentParams['req'],
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith('user123', 'smbteam-mcp');
+    expect(result?.tools).toContain('lead_follow_up_mcp_smbteam_mcp');
+  });
+
   test('should test ephemeral agent loading logic', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 
