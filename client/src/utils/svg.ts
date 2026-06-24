@@ -42,6 +42,15 @@ const PAINT_PROPS = ['fill', 'stroke', 'stop-color'];
 const FILLABLE_SHAPES = 'path, rect, circle, ellipse, polygon, polyline, text';
 
 /**
+ * Elements that actually paint a tone, so a fill/stroke counts only when it lands
+ * here (own or inherited). A `<use>` paints the geometry it instantiates; `line`
+ * has no fill area but can stroke. Paint set on a pure container (`svg`, `g`) is
+ * ignored unless a painter below inherits it.
+ */
+const FILL_PAINTERS = `${FILLABLE_SHAPES}, use`;
+const STROKE_PAINTERS = `${FILLABLE_SHAPES}, line, use`;
+
+/**
  * Containers whose descendants supply functional paint (clipping, masking,
  * markers, tiles) that never appears as a visible tone. Their colors are ignored.
  * `defs`/`symbol` are intentionally excluded: their content renders as-is when
@@ -282,11 +291,17 @@ function hasOpaqueBackground(root: Element, rules: StyleRule[]): boolean {
 }
 
 /**
- * The tones a CSS `currentColor` paint contributes: it is resolved per element
- * the rule matches (against an inherited fixed `color`), so a fixed color is
- * preserved rather than recorded as the theme-following sentinel.
+ * The tones a CSS `currentColor` paint contributes: it is resolved per rendered
+ * element the rule matches (against an inherited fixed `color`), so a fixed color
+ * is preserved rather than recorded as the theme-following sentinel. Hidden,
+ * functional, or fully transparent matches paint nothing and are skipped.
  */
-function resolveCssCurrentColor(root: Element, selector: string, rules: StyleRule[]): string[] {
+function resolveCssCurrentColor(
+  root: Element,
+  selector: string,
+  rules: StyleRule[],
+  paintProp: string,
+): string[] {
   if (selector === '') {
     return [];
   }
@@ -299,7 +314,14 @@ function resolveCssCurrentColor(root: Element, selector: string, rules: StyleRul
   } catch {
     return [CURRENT_COLOR];
   }
-  return matched.map((el) => resolveCurrentColor(el, root, rules));
+  return matched
+    .filter(
+      (el) =>
+        !isHidden(el, root, rules) &&
+        !isInside(el, root, FUNCTIONAL_CONTAINERS) &&
+        !paintInvisible(el, root, rules, paintProp),
+    )
+    .map((el) => resolveCurrentColor(el, root, rules));
 }
 
 function colorsFromStyleBlocks(root: Element, rules: StyleRule[]): string[] {
@@ -315,7 +337,7 @@ function colorsFromStyleBlocks(root: Element, rules: StyleRule[]): string[] {
         const property = match[1].toLowerCase();
         const value = match[2].trim();
         if (value.toLowerCase() === CURRENT_COLOR) {
-          colors.push(...resolveCssCurrentColor(root, selector, rules));
+          colors.push(...resolveCssCurrentColor(root, selector, rules, property));
         } else if (selectorPaintsRendered(root, selector, rules, property)) {
           colors.push(value);
         }
@@ -399,6 +421,25 @@ function referencedElements(root: Element, rules: StyleRule[]): Set<Element> {
   return referenced;
 }
 
+/**
+ * The paint an element renders for a property, or null when it paints none.
+ * Fill/stroke are resolved through inheritance but only on actual painters, so a
+ * value declared on a pure container (`svg`, `g`) is ignored unless a painter
+ * inherits it. `stop-color` only paints on a gradient `<stop>`.
+ */
+function renderedPaint(
+  el: Element,
+  root: Element,
+  rules: StyleRule[],
+  property: string,
+): string | null {
+  if (property === 'stop-color') {
+    return el.matches('stop') ? readPaint(el, property) : null;
+  }
+  const painters = property === 'stroke' ? STROKE_PAINTERS : FILL_PAINTERS;
+  return el.matches(painters) ? resolvePaint(el, root, rules, property) : null;
+}
+
 function collectColors(root: Element, rules: StyleRule[]): string[] {
   const colors: string[] = [];
   const referenced = referencedElements(root, rules);
@@ -412,7 +453,7 @@ function collectColors(root: Element, rules: StyleRule[]): string[] {
       continue;
     }
     for (const prop of PAINT_PROPS) {
-      const value = readPaint(el, prop);
+      const value = renderedPaint(el, root, rules, prop);
       if (!value || paintInvisible(el, root, rules, prop)) {
         continue;
       }
@@ -556,10 +597,15 @@ function paintInvisible(
  * rendered through `<use>`, `boundary` is the referenced root (the instance
  * re-parents there).
  */
-function resolveFill(el: Element, boundary: Element, rules: StyleRule[]): string | null {
+function resolvePaint(
+  el: Element,
+  boundary: Element,
+  rules: StyleRule[],
+  property: string,
+): string | null {
   let current: Element | null = el;
   while (current != null) {
-    const value = styleValue(current, rules, 'fill');
+    const value = styleValue(current, rules, property);
     if (value != null && value !== 'inherit') {
       return value;
     }
@@ -569,6 +615,10 @@ function resolveFill(el: Element, boundary: Element, rules: StyleRule[]): string
     current = current.parentElement;
   }
   return null;
+}
+
+function resolveFill(el: Element, boundary: Element, rules: StyleRule[]): string | null {
+  return resolvePaint(el, boundary, rules, 'fill');
 }
 
 function fillIsResolved(el: Element, root: Element, rules: StyleRule[]): boolean {

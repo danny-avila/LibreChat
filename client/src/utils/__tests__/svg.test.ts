@@ -241,6 +241,18 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
+    it('ignores a CSS currentColor paint that only targets a hidden element', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.ghost{display:none;fill:currentColor}</style><path class="ghost" d="M0 0h4v4H0z" /><path fill="#333" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('still counts a CSS currentColor paint on a visible shape', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.a{fill:currentColor}</style><path class="a" d="M0 0h24v24H0z" /><path fill="#fff" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
     it('preserves a chromatic fill applied to the root via CSS', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><style>svg{fill:#f00}</style><path d="M4 4h16v16H4z" /></svg>';
@@ -250,6 +262,26 @@ describe('isMonochromeSvg', () => {
     it('preserves a root CSS currentColor fill fixed by the root color', () => {
       const svg =
         '<svg viewBox="0 0 24 24" color="#e00"><style>svg{fill:currentColor}</style><path d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+  });
+
+  describe('paint set on non-rendering containers', () => {
+    it('tints a glyph whose root fill is overridden by every rendered shape', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24" fill="#f00"><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph whose group fill no rendered shape inherits', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g fill="#f00"><path fill="#333" d="M4 4h16v16H4z" /></g></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('still counts a container fill inherited by an unpainted shape', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><g fill="#f00"><path d="M4 4h16v16H4z" /></g><path fill="#333" d="M0 0h4v4H0z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
