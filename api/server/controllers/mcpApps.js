@@ -75,9 +75,23 @@ const serveMCPSandbox = async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+
+    // The MCP Apps spec requires the Host and Sandbox to have different origins for web hosts.
+    // Default to same-origin framing; when a dedicated sandbox origin is deployed, the operator
+    // lists the allowed host origin(s) so the host page can frame this sandbox cross-origin.
+    const allowedParents = (process.env.MCP_SANDBOX_FRAME_ANCESTORS || '').trim();
+    if (allowedParents) {
+      const ancestors = allowedParents
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .join(' ');
+      res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${ancestors}`);
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    } else {
+      res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    }
 
     const sandboxPath = path.resolve(
       __dirname,

@@ -194,11 +194,14 @@ export function formatToolContent(
       const resourceText: string[] = [];
 
       if (isUiResource) {
-        const contentToHash =
+        const baseHash =
           'text' in item.resource && item.resource.text && typeof item.resource.text === 'string'
             ? item.resource.text
             : item.resource.uri;
-        const resourceId = generateResourceId(contentToHash);
+        const scKey =
+          result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '';
+        const argsKey = metadata?.toolArgs != null ? JSON.stringify(metadata.toolArgs) : '';
+        const resourceId = generateResourceId(baseHash + '\x00' + scKey + '\x00' + argsKey);
         const uiResource: UIResource = {
           ...item.resource,
           resourceId,

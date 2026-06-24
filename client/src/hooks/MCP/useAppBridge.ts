@@ -85,7 +85,16 @@ export function useAppBridge(
         ) as never;
 
       bridge.onopenlink = async ({ url }) => {
-        window.open(url, '_blank', 'noopener,noreferrer');
+        try {
+          const { protocol } = new URL(url);
+          if (protocol === 'http:' || protocol === 'https:') {
+            window.open(url, '_blank', 'noopener,noreferrer');
+          } else {
+            logger.warn('[MCP App] Blocked open-link with unsupported scheme', protocol);
+          }
+        } catch {
+          logger.warn('[MCP App] Blocked malformed open-link url');
+        }
         return {};
       };
 

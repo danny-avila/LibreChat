@@ -307,6 +307,25 @@ describe('formatToolContent', () => {
       expect(uiResourceArtifact?.content).toEqual(result.content);
     });
 
+    it('gives embedded ui:// resources distinct ids per tool result payload', () => {
+      const resourceIdFor = (sc: Record<string, unknown>) =>
+        formatToolContent(
+          {
+            content: [
+              {
+                type: 'resource',
+                resource: { uri: 'ui://app', mimeType: 'text/html', text: '<p>same</p>' },
+              },
+            ],
+            structuredContent: sc,
+          } as t.MCPToolCallResponse,
+          'openai',
+          { serverName: 'srv', toolName: 'do_thing' },
+        )[1]?.ui_resources?.data?.[0]?.resourceId;
+
+      expect(resourceIdFor({ a: 1 })).not.toEqual(resourceIdFor({ a: 2 }));
+    });
+
     it('should handle regular resources', () => {
       const result: t.MCPToolCallResponse = {
         content: [

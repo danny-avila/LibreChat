@@ -77,12 +77,20 @@ export async function fetchMCPResourceHtml(
   permissions?: ResourceUiMeta['permissions'];
 }> {
   const result = (await readMCPResource(serverName, uri, userId)) as {
-    contents?: Array<{ text?: string; _meta?: { ui?: ResourceUiMeta } }>;
+    contents?: Array<{ text?: string; blob?: string; _meta?: { ui?: ResourceUiMeta } }>;
   };
   const item = result?.contents?.[0];
   const uiMeta = item?._meta?.ui;
+  let html = item?.text ?? '';
+  if (!html && typeof item?.blob === 'string' && item.blob) {
+    try {
+      html = atob(item.blob);
+    } catch {
+      html = '';
+    }
+  }
   return {
-    html: item?.text ?? '',
+    html,
     csp: uiMeta?.csp,
     permissions: uiMeta?.permissions,
   };
