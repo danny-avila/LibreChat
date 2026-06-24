@@ -30,6 +30,7 @@ export * from './types/skills';
 export * from './types/runs';
 export * from './types/web';
 export * from './types/billing';
+export * from './types/images';
 /* access permissions */
 export * from './accessPermissions';
 /* query/mutation keys */
