@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { logger, tenantStorage } = require('@librechat/data-schemas');
 const { Constants, SCHEDULED_CONVO_TAG } = require('librechat-data-provider');
 const buildEndpointOption = require('~/server/middleware/buildEndpointOption');
-const initializeClient = require('~/server/services/Endpoints/agents/initialize');
+const { initializeClient } = require('~/server/services/Endpoints/agents/initialize');
 const { getAppConfig } = require('~/server/services/Config');
 const {
   buildHeadlessReq,
