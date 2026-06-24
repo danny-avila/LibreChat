@@ -9,6 +9,7 @@ import {
   Spinner,
   Button,
   OGDialog,
+  Separator,
   ThemeContext,
   OGDialogTitle,
   useMediaQuery,
@@ -263,7 +264,7 @@ function ShareHeader({
 
   return (
     <section className="mx-auto w-full px-2 pb-3 pt-4 md:px-5 md:pb-4 md:pt-6">
-      <div className="bg-surface-primary/80 relative mx-auto flex w-full max-w-[60rem] flex-col gap-3 rounded-2xl border border-border-light px-4 py-4 shadow-xl backdrop-blur md:gap-4 md:rounded-3xl md:px-6 md:py-5">
+      <div className="relative mx-auto flex w-full max-w-[60rem] flex-col gap-3 rounded-2xl border border-border-light bg-surface-primary/80 px-4 py-4 shadow-xl backdrop-blur md:gap-4 md:rounded-3xl md:px-6 md:py-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0 space-y-1.5 md:space-y-2">
             <h1 className="line-clamp-2 break-words text-2xl font-semibold text-text-primary md:text-4xl">
@@ -325,7 +326,7 @@ function ShareHeader({
                     onChange={onThemeChange}
                     popoverClassName="z-[150]"
                   />
-                  <div className="bg-border-medium/60 h-px w-full" />
+                  <Separator orientation="horizontal" className="bg-border-medium/60" />
                   <LangSelector
                     langcode={langcode}
                     onChange={onLangChange}
