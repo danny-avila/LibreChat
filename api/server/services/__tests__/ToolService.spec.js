@@ -1,3 +1,4 @@
+const { Constants: AgentConstants } = require('@librechat/agents');
 const {
   Tools,
   Constants,
@@ -963,6 +964,29 @@ describe('ToolService - Action Capability Gating', () => {
   describe('loadToolsForExecution — action tool gating', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = Tools.web_search;
+
+    it('does not load code execution tools that were not registered for the agent', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.web_search,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const toolRegistry = new Map([[Tools.web_search, { name: Tools.web_search }]]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_without_code', tools: [Tools.web_search] },
+        toolNames: [AgentConstants.BASH_TOOL, Tools.execute_code],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(result.loadedTools.map((tool) => tool.name)).toEqual([]);
+      expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+    });
 
     it('loads bash PTC under the legacy programmatic tool name when code capabilities are enabled', async () => {
       const capabilities = [

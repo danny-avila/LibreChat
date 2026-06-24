@@ -38,7 +38,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, getMessages, saveConvo, saveMessage } = require('~/models');
+const { getConvo, getFiles, getMessages, saveConvo, saveMessage } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -1314,6 +1314,242 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].files).toHaveLength(1);
       expect(userSave[0].files[0].file_id).toBe('file-abc');
+    });
+  });
+
+  describe('addPreviousAttachments authorization', () => {
+    const ownerFile = {
+      file_id: 'owner-file',
+      filename: 'owner.txt',
+      filepath: '/uploads/owner.txt',
+      source: 'local',
+      type: 'text/plain',
+      bytes: 100,
+      object: 'file',
+      user: 'user-1',
+      embedded: false,
+      usage: 0,
+      text: 'authorized owner text',
+      _id: 'owner-mongo-id',
+      metadata: {
+        codeEnvRef: {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'owner-session',
+          file_id: 'owner-code-file',
+        },
+      },
+    };
+
+    beforeEach(() => {
+      getFiles.mockReset();
+      TestClient.options.resendFiles = true;
+      TestClient.options.attachments = undefined;
+      TestClient.options.req = {
+        user: {
+          id: 'user-1',
+          tenantId: 'tenant-a',
+        },
+      };
+      TestClient.addFileContextToMessage = jest.fn(async (message, files) => {
+        const text = files
+          .map((file) => file.text)
+          .filter(Boolean)
+          .join('\n');
+        if (text) {
+          message.fileContext = text;
+        }
+      });
+      TestClient.processAttachments = jest.fn(async (_message, files) => files);
+      TestClient.checkVisionRequest = jest.fn();
+    });
+
+    test('rehydrates historical file refs from owner-scoped DB rows only', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-1',
+          text: 'Use the attachment',
+          files: [
+            {
+              file_id: 'owner-file',
+              filename: 'attacker-controlled-owner-name.txt',
+              filepath: '/forged/owner.txt',
+              text: 'forged owner text',
+            },
+            {
+              file_id: 'victim-file',
+              filename: 'victim.txt',
+              filepath: '/victim/private.txt',
+              text: 'victim private text',
+            },
+          ],
+          attachments: [
+            {
+              file_id: 'victim-file',
+              filename: 'victim-output.csv',
+              text: 'victim output text',
+            },
+          ],
+          fileContext: 'stale victim private text',
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file', 'victim-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(message, [ownerFile]);
+      expect(TestClient.processAttachments).toHaveBeenCalledWith(message, [ownerFile]);
+      expect(message.fileContext).toBe('authorized owner text');
+      expect(message.files).toEqual([
+        expect.objectContaining({
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          filepath: '/uploads/owner.txt',
+          source: 'local',
+          metadata: ownerFile.metadata,
+        }),
+      ]);
+      expect(message.files[0].text).toBeUndefined();
+      expect(message.files[0]._id).toBeUndefined();
+      expect(message.attachments).toBeUndefined();
+      expect(JSON.stringify(message)).not.toContain('victim');
+      expect(JSON.stringify(message)).not.toContain('forged owner text');
+    });
+
+    test('strips historical file context when no authenticated owner scope is available', async () => {
+      TestClient.options.req = {};
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-2',
+          files: [{ file_id: 'victim-file', filename: 'victim.txt' }],
+          fileContext: 'stale victim private text',
+        },
+      ]);
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(message.files).toBeUndefined();
+      expect(message.fileContext).toBeUndefined();
+    });
+
+    test('preserves repeated owner-authorized historical file refs after the first context use', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [firstMessage, secondMessage] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-repeat-1',
+          files: [{ file_id: 'owner-file', filename: 'first-forged.txt' }],
+        },
+        {
+          messageId: 'msg-repeat-2',
+          files: [{ file_id: 'owner-file', filename: 'second-forged.txt' }],
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledTimes(1);
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledTimes(1);
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(firstMessage, [ownerFile]);
+      expect(secondMessage.fileContext).toBeUndefined();
+      expect(firstMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(secondMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(JSON.stringify(secondMessage)).not.toContain('second-forged');
+    });
+
+    test('preserves download-only historical attachments without trusting file fields', async () => {
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-download-only',
+          attachments: [
+            {
+              filename: 'report.csv',
+              filepath: '/api/files/code/download/session/file',
+              expiresAt: 123456,
+              conversationId: 'conversation-1',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-1',
+              text: 'untrusted text should not survive',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+            },
+          ],
+          fileContext: 'stale context',
+        },
+      ]);
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(message.fileContext).toBeUndefined();
+      expect(message.attachments).toEqual([
+        {
+          filename: 'report.csv',
+          filepath: '/api/files/code/download/session/file',
+          expiresAt: 123456,
+          conversationId: 'conversation-1',
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-1',
+        },
+      ]);
+      expect(JSON.stringify(message)).not.toContain('untrusted text');
+      expect(JSON.stringify(message)).not.toContain('forged-source');
+      expect(JSON.stringify(message)).not.toContain('victim');
+    });
+
+    test('merges safe per-message metadata onto authorized DB-backed attachments', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-artifact',
+          attachments: [
+            {
+              file_id: 'owner-file',
+              filename: 'forged-artifact.csv',
+              filepath: '/forged/artifact.csv',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+              text: 'forged artifact text',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-2',
+            },
+          ],
+        },
+      ]);
+
+      expect(message.attachments).toEqual([
+        expect.objectContaining({
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          filepath: '/uploads/owner.txt',
+          source: 'local',
+          metadata: ownerFile.metadata,
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-2',
+        }),
+      ]);
+      expect(message.attachments[0].text).toBeUndefined();
+      expect(message.attachments[0]._id).toBeUndefined();
+      expect(JSON.stringify(message)).not.toContain('forged-artifact');
+      expect(JSON.stringify(message)).not.toContain('forged artifact text');
     });
   });
 

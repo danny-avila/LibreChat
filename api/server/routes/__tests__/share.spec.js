@@ -6,6 +6,10 @@ const mockGetSharedLinkExpiration = jest.fn();
 const mockGrantCreationPermissions = jest.fn();
 const mockUpdateSharedLinkPermissionsExpiration = jest.fn();
 const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
+const mockBuildSharedLinkStartupPayload = jest.fn();
+const mockCanAccessSharedLink = jest.fn((_req, _res, next) => next());
+const mockGetAppConfig = jest.fn();
+const mockGetTenantId = jest.fn(() => undefined);
 
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => true),
@@ -16,6 +20,7 @@ jest.mock('@librechat/api', () => ({
   ensureLinkPermissions: jest.fn(),
   isFileSnapshotEnabled: jest.fn(() => true),
   isFileSnapshotKillSwitchActive: jest.fn(() => false),
+  buildSharedLinkStartupPayload: (...args) => mockBuildSharedLinkStartupPayload(...args),
   deleteSharedLinkWithCleanup: jest.fn(),
   getSharedLinkExpiration: (...args) => mockGetSharedLinkExpiration(...args),
   isActiveExpirationDate: jest.fn((expiredAt) => expiredAt > new Date()),
@@ -23,9 +28,11 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
+  getTenantId: (...args) => mockGetTenantId(...args),
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
   runAsSystem: jest.fn((fn) => fn()),
   tenantStorage: { run: jest.fn((_ctx, fn) => fn()) },
+  SYSTEM_TENANT_ID: '__SYSTEM__',
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -84,11 +91,19 @@ jest.mock('~/server/utils/files', () => ({
   getContentDisposition: jest.fn((name, disposition = 'attachment') => `${disposition}; ${name}`),
 }));
 
-jest.mock('~/server/middleware/canAccessSharedLink', () => (_req, _res, next) => next());
+jest.mock(
+  '~/server/middleware/canAccessSharedLink',
+  () =>
+    (...args) =>
+      mockCanAccessSharedLink(...args),
+);
 jest.mock('~/server/middleware/optionalShareFileAuth', () => (_req, _res, next) => next());
 jest.mock('~/server/middleware/optionalJwtAuth', () => (req, _res, next) => next());
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
 jest.mock('~/server/middleware/config/app', () => (_req, _res, next) => next());
+jest.mock('~/server/services/Config/app', () => ({
+  getAppConfig: (...args) => mockGetAppConfig(...args),
+}));
 
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
@@ -129,9 +144,22 @@ const buildApp = ({ retentionMode = RetentionMode.TEMPORARY } = {}) => {
   return app;
 };
 
-describe('share routes retention', () => {
+describe('share routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetTenantId.mockReturnValue(undefined);
+    mockGetAppConfig.mockResolvedValue({
+      interfaceConfig: {
+        privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+      },
+    });
+    mockBuildSharedLinkStartupPayload.mockReturnValue({
+      appTitle: 'Shared Chat',
+      bundlerURL: 'https://bundler.example.com',
+      interface: {
+        privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+      },
+    });
     getRoleByName.mockResolvedValue({
       permissions: {
         SHARED_LINKS: {
@@ -140,6 +168,45 @@ describe('share routes retention', () => {
       },
     });
     mockGrantCreationPermissions.mockResolvedValue(undefined);
+  });
+
+  it('serves shared startup config after shared-link access is granted', async () => {
+    const response = await request(buildApp()).get('/api/share/share-123/config');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(mockCanAccessSharedLink).toHaveBeenCalled();
+    expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    expect(mockBuildSharedLinkStartupPayload).toHaveBeenCalledWith({
+      interfaceConfig: {
+        privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+      },
+    });
+    expect(response.body).toEqual({
+      appTitle: 'Shared Chat',
+      bundlerURL: 'https://bundler.example.com',
+      interface: {
+        privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+      },
+    });
+  });
+
+  it('uses tenant-scoped app config for shared startup config when tenant context is present', async () => {
+    mockGetTenantId.mockReturnValue('tenant-abc');
+
+    const response = await request(buildApp()).get('/api/share/share-123/config');
+
+    expect(response.status).toBe(200);
+    expect(mockGetAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-abc' });
+  });
+
+  it('uses base app config for shared startup config in system context', async () => {
+    mockGetTenantId.mockReturnValue('__SYSTEM__');
+
+    const response = await request(buildApp()).get('/api/share/share-123/config');
+
+    expect(response.status).toBe(200);
+    expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
 
   it('prevents successful shared message responses from being cached', async () => {

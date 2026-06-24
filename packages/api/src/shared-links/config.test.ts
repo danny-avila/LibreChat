@@ -1,5 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { isFileSnapshotEnabled } from './config';
+import { buildSharedLinkStartupPayload, isFileSnapshotEnabled } from './config';
 
 const withSharedLinks = (sharedLinks: unknown): AppConfig =>
   ({ interfaceConfig: { sharedLinks } }) as unknown as AppConfig;
@@ -39,5 +39,47 @@ describe('isFileSnapshotEnabled', () => {
   it('env override wins over yaml (env true beats yaml false)', () => {
     process.env.SHARED_LINKS_SNAPSHOT_FILES = 'true';
     expect(isFileSnapshotEnabled(withSharedLinks({ snapshotFiles: false }))).toBe(true);
+  });
+});
+
+describe('buildSharedLinkStartupPayload', () => {
+  it('builds the share-view startup allowlist', () => {
+    const payload = buildSharedLinkStartupPayload(
+      {
+        interfaceConfig: {
+          privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+          termsOfService: { externalUrl: 'https://example.com/tos' },
+          modelSelect: true,
+        },
+      } as AppConfig,
+      {
+        ANALYTICS_GTM_ID: 'GTM-XYZ',
+        APP_TITLE: 'Test Chat',
+        CUSTOM_FOOTER: 'Shared footer',
+        SANDPACK_BUNDLER_URL: 'https://bundler.example.com',
+        SANDPACK_STATIC_BUNDLER_URL: 'https://static-bundler.example.com',
+      },
+    );
+
+    expect(payload).toEqual({
+      appTitle: 'Test Chat',
+      analyticsGtmId: 'GTM-XYZ',
+      bundlerURL: 'https://bundler.example.com',
+      staticBundlerURL: 'https://static-bundler.example.com',
+      customFooter: 'Shared footer',
+      interface: {
+        privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+        termsOfService: { externalUrl: 'https://example.com/tos' },
+      },
+    });
+  });
+
+  it('defaults the app title and omits unrelated interface config', () => {
+    const payload = buildSharedLinkStartupPayload(
+      { interfaceConfig: { modelSelect: true } } as AppConfig,
+      {},
+    );
+
+    expect(payload).toEqual({ appTitle: 'LibreChat' });
   });
 });

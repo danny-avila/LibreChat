@@ -92,12 +92,16 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     const clearSelection = () => setSelection(null);
 
     document.addEventListener('mouseup', updateSelection);
+    /** Chromium commits a double-click word selection on `dblclick`, after
+     *  `mouseup` has already read a still-collapsed range, so listen here too. */
+    document.addEventListener('dblclick', updateSelection);
     document.addEventListener('keyup', updateSelection);
     document.addEventListener('scroll', clearSelection, true);
     window.addEventListener('resize', clearSelection);
 
     return () => {
       document.removeEventListener('mouseup', updateSelection);
+      document.removeEventListener('dblclick', updateSelection);
       document.removeEventListener('keyup', updateSelection);
       document.removeEventListener('scroll', clearSelection, true);
       window.removeEventListener('resize', clearSelection);

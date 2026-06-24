@@ -1,5 +1,8 @@
+import type { TSharedLinkStartupConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { isEnabled } from '~/utils';
+
+type SharedLinkStartupEnv = NodeJS.ProcessEnv;
 
 /**
  * Whether shared links should snapshot the files referenced by the shared chat
@@ -30,4 +33,36 @@ export function isFileSnapshotEnabled(appConfig?: AppConfig): boolean {
 export function isFileSnapshotKillSwitchActive(): boolean {
   const envValue = process.env.SHARED_LINKS_SNAPSHOT_FILES;
   return envValue !== undefined && !isEnabled(envValue);
+}
+
+export function buildSharedLinkStartupPayload(
+  appConfig?: AppConfig | null,
+  env: SharedLinkStartupEnv = process.env,
+): TSharedLinkStartupConfig {
+  const payload: TSharedLinkStartupConfig = {
+    appTitle: env.APP_TITLE || 'LibreChat',
+  };
+
+  if (typeof env.ANALYTICS_GTM_ID === 'string') {
+    payload.analyticsGtmId = env.ANALYTICS_GTM_ID;
+  }
+  if (typeof env.SANDPACK_BUNDLER_URL === 'string') {
+    payload.bundlerURL = env.SANDPACK_BUNDLER_URL;
+  }
+  if (typeof env.SANDPACK_STATIC_BUNDLER_URL === 'string') {
+    payload.staticBundlerURL = env.SANDPACK_STATIC_BUNDLER_URL;
+  }
+  if (typeof env.CUSTOM_FOOTER === 'string') {
+    payload.customFooter = env.CUSTOM_FOOTER;
+  }
+
+  const { privacyPolicy, termsOfService } = appConfig?.interfaceConfig ?? {};
+  if (privacyPolicy || termsOfService) {
+    payload.interface = {
+      ...(privacyPolicy ? { privacyPolicy } : {}),
+      ...(termsOfService ? { termsOfService } : {}),
+    };
+  }
+
+  return payload;
 }
