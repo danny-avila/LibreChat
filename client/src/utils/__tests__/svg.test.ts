@@ -208,6 +208,18 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><style>.hidden{display:none}</style><defs><path id="g" d="M6 6h12v12H6z" /></defs><path fill="#333" d="M0 0h4v4H0z" /><use href="#g" class="hidden" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('tints a referenced glyph whose own fill overrides the use fill', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="p" fill="#333" d="M4 4h16v16H4z" /></defs><use href="#p" fill="#000" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('still counts a use fill that the referenced shape inherits', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="p" d="M4 4h16v16H4z" /></defs><use href="#p" fill="#000" /><path fill="#ccc" d="M0 0h4v4H0z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
   });
 
   describe('currentColor resolved against a fixed color', () => {
@@ -306,6 +318,24 @@ describe('isMonochromeSvg', () => {
     it('still counts a container fill inherited by an unpainted shape', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><g fill="#f00"><path d="M4 4h16v16H4z" /></g><path fill="#333" d="M0 0h4v4H0z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a glyph whose root CSS fill is overridden by every rendered shape', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>svg{fill:#f00}</style><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('tints a glyph whose CSS group fill no rendered shape inherits', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>g{fill:#f00}</style><g><path fill="#333" d="M4 4h16v16H4z" /></g></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('still counts a CSS container fill inherited by an unpainted shape', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>g{fill:#f00}</style><g><path d="M4 4h16v16H4z" /></g></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
