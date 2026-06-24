@@ -255,6 +255,7 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.accessToken).toBe('the-access-token');
       expect(req.session.openidTokens.idToken).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('the-refresh-token');
+      expect(req.session.openidTokens.browserRefreshToken).toBe('the-refresh-token');
       expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
     });
 

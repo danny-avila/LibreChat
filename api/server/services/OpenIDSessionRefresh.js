@@ -35,6 +35,8 @@ const {
  * @property {string} [accessToken]            — IdP access token (may be opaque).
  * @property {string} [idToken]                — IdP ID token (always JWT).
  * @property {string} [refreshToken]           — IdP refresh token.
+ * @property {string} [browserRefreshToken]    — refresh token last known to be written to
+ *                                               the browser cookie.
  * @property {number} [expiresAt]              — SESSION cookie expiry (ms).
  * @property {number} [lastRefreshedAt]        — wall-clock ms of the last server-side rotation.
  * @property {number} [accessTokenExpiresAt]   — access token expiry (unix seconds), captured
@@ -158,6 +160,10 @@ function getAccessTokenExp(sessionTokens) {
   return typeof persisted === 'number' ? persisted : null;
 }
 
+function canWriteRefreshTokenCookie(res) {
+  return !!res && typeof res.cookie === 'function' && !res.headersSent;
+}
+
 /**
  * Returns true when the session token nominated by `tokenPreference` is still
  * valid for at least the skew buffer. Required argument (no default) so every
@@ -257,7 +263,7 @@ async function persistSession(req) {
  * @param {object} args
  * @param {import('express').Response} [args.res]
  * @param {string} args.newRefreshToken — the rotated token to sync
- * @param {string} [args.oldRefreshToken] — the token before rotation (required for bridge)
+ * @param {string} [args.oldRefreshToken] — the browser-cookie token to bridge from
  * @param {string} [args.userId] — user._id (required for bridge verification)
  * @param {string} [args.tenantId] — user.tenantId (optional, verified on bridge lookup)
  * @param {string} [args.openidIssuer] — user.openidIssuer (optional, verified on bridge lookup)
@@ -270,8 +276,7 @@ async function syncRefreshTokenCookie({
   tenantId,
   openidIssuer,
 }) {
-  const canSetCookie = res && typeof res.cookie === 'function' && !res.headersSent;
-  if (canSetCookie) {
+  if (canWriteRefreshTokenCookie(res)) {
     const expiryInMilliseconds = math(
       process.env.REFRESH_TOKEN_EXPIRY,
       DEFAULT_REFRESH_TOKEN_EXPIRY,
@@ -344,6 +349,9 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference) {
    */
   const nextIdToken = tokenset.id_token || sessionTokens.idToken;
   const nextRefreshToken = tokenset.refresh_token || refreshToken;
+  const browserRefreshToken = sessionTokens.browserRefreshToken || refreshToken;
+  const willWriteRefreshTokenCookie =
+    nextRefreshToken !== refreshToken && canWriteRefreshTokenCookie(res);
 
   /**
    * Capture the freshly-issued access-token's expiry (unix seconds) so the
@@ -374,6 +382,7 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference) {
     accessToken: tokenset.access_token,
     idToken: nextIdToken,
     refreshToken: nextRefreshToken,
+    browserRefreshToken: willWriteRefreshTokenCookie ? nextRefreshToken : browserRefreshToken,
     lastRefreshedAt: Date.now(),
   };
   if (nextAccessTokenExp != null) {
@@ -394,7 +403,7 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference) {
     await syncRefreshTokenCookie({
       res,
       newRefreshToken: nextRefreshToken,
-      oldRefreshToken: refreshToken,
+      oldRefreshToken: browserRefreshToken,
       userId: user?.id || user?._id?.toString?.() || req.user?.id || req.user?._id?.toString?.(),
       tenantId: user?.tenantId ?? req.user?.tenantId,
       openidIssuer: user?.openidIssuer ?? req.user?.openidIssuer,

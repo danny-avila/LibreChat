@@ -383,13 +383,17 @@ describe('OpenIDSessionRefresh', () => {
   });
 
   describe('rotated refresh-token cookie sync', () => {
-    const buildExpiredSession = (refreshToken) => {
+    const buildExpiredSession = (refreshToken, browserRefreshToken) => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
-      return {
+      const sessionTokens = {
         accessToken: makeJwt(expiredExp),
         idToken: makeJwt(expiredExp),
         refreshToken,
       };
+      if (browserRefreshToken) {
+        sessionTokens.browserRefreshToken = browserRefreshToken;
+      }
+      return sessionTokens;
     };
 
     it('writes the rotated refresh token to the cookie when res is writable', async () => {
@@ -414,6 +418,7 @@ describe('OpenIDSessionRefresh', () => {
         refreshExpiryMs: 1000 * 60 * 60 * 24 * 7,
       });
       expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(req.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
     });
 
     it('does not write the cookie when the IdP does not rotate the refresh token', async () => {
@@ -461,6 +466,31 @@ describe('OpenIDSessionRefresh', () => {
       });
       /** Session copy remains authoritative even when the cookie can't be set. */
       expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
+      expect(req.session.openidTokens.browserRefreshToken).toBe('rt-old');
+    });
+
+    it('keeps bridging from the stale browser cookie across repeated rotations', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-second-rotation',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-first-rotation', 'rt-browser-cookie'));
+      const res = buildRes({ headersSent: true });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-browser-cookie',
+        newRefreshToken: 'rt-second-rotation',
+        userId: 'local-id-1',
+        tenantId: undefined,
+        openidIssuer: undefined,
+      });
+      expect(req.session.openidTokens.refreshToken).toBe('rt-second-rotation');
+      expect(req.session.openidTokens.browserRefreshToken).toBe('rt-browser-cookie');
     });
 
     it('stores a recovery bridge when no res is provided', async () => {

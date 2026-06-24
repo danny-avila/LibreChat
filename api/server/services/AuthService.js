@@ -792,6 +792,7 @@ const setOpenIDAuthTokens = (
         accessToken: tokenset.access_token,
         idToken: logoutIdToken,
         refreshToken: refreshToken,
+        browserRefreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
         lastRefreshedAt: Date.now(),
       };
