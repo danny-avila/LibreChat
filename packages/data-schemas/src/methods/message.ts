@@ -547,6 +547,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
       return;
     }
+    if (typeof conversationId !== 'string' || conversationId.length === 0) {
+      logger.warn(
+        `[applyForcedRetention] Ignoring non-string conversationId (context: ${metadata?.context ?? 'n/a'})`,
+      );
+      return;
+    }
 
     let forcedExpiredAt: Date;
     try {
@@ -572,7 +578,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       );
     }
 
-    if (messageId) {
+    if (typeof messageId === 'string' && messageId.length > 0) {
       await Message.updateOne(
         { messageId, user: userId },
         { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
@@ -601,6 +607,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     metadata?: { context?: string },
   ): Promise<void> {
     if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
+      return;
+    }
+    if (typeof tag !== 'string' || tag.length === 0) {
+      logger.warn(
+        `[applyForcedRetentionToTag] Ignoring non-string tag (context: ${metadata?.context ?? 'n/a'})`,
+      );
       return;
     }
 
