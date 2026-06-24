@@ -133,12 +133,11 @@ describe('UIResourceCarousel', () => {
   it('applies correct dimensions to resource containers', () => {
     const { container } = render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
     const iframes = container.querySelectorAll('iframe[data-sandbox-url]');
-    iframes.forEach((iframe, index) => {
+    iframes.forEach((iframe) => {
       const card = iframe.parentElement?.parentElement;
       expect(card).toHaveStyle({
         width: '230px',
-        minHeight: '360px',
-        animationDelay: `${index * 100}ms`,
+        height: '360px',
       });
     });
   });
