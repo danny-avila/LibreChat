@@ -40,6 +40,7 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import { registerCodeExecutionTools } from './tools';
+import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -165,6 +166,12 @@ export type InitializedAgent = Agent & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
+  /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
+   *  registered for this agent. Authoritative LibreChat-only signal of the
+   *  inline memory opt-in for the execution path, since some contexts hold the
+   *  initialized config (the `memory` marker already expanded out of `tools`)
+   *  rather than the raw agent document. */
+  memoryToolsRegistered?: boolean;
   /** Whether the actions capability is enabled (resolved during tool loading) */
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
@@ -281,6 +288,10 @@ export interface InitializeAgentParams {
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /** Whether inline memory tools are available (memory capability enabled, memory
+   *  configured, and the user permitted). When true and the agent lists the `memory`
+   *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
+  memoryAvailable?: boolean;
   /** Per-user skill active/inactive overrides for filtering the skill catalog. */
   skillStates?: Record<string, boolean>;
   /** Admin-configured default for shared skills (`true` = shared skills auto-activate). */
@@ -905,6 +916,29 @@ export async function initializeAgent(
     );
   }
 
+  /**
+   * Expand the `memory` capability marker into the inline `set_memory` +
+   * `delete_memory` tool pair, mirroring the `execute_code` expansion above.
+   * `params.memoryAvailable` is the full run-level gate (capability enabled,
+   * memory configured, user permitted); the marker on `agent.tools` is the
+   * per-agent opt-in. The runtime instances are created in the tool service.
+   */
+  const agentRequestsMemory = (agent.tools ?? []).includes(Tools.memory);
+  const inlineMemoryRegistered = params.memoryAvailable === true && agentRequestsMemory;
+  if (inlineMemoryRegistered) {
+    const memoryResult = registerMemoryTools({
+      toolRegistry,
+      toolDefinitions,
+      validKeys: req.config?.memory?.validKeys,
+    });
+    toolDefinitions = memoryResult.toolDefinitions;
+    appendAdditionalInstructions(agent, memoryToolUsageGuard);
+  } else if (agentRequestsMemory) {
+    logger.debug(
+      `[initializeAgent] Agent "${agent.id}" requests memory but memoryAvailable=${String(params.memoryAvailable)}; skipping set_memory + delete_memory registration.`,
+    );
+  }
+
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
   const providerTools = resolveProviderToolConflicts({
@@ -1034,6 +1068,7 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     baseContextTokens,
+    memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     skillCount,
     accessibleSkillIds: executableSkillIds,

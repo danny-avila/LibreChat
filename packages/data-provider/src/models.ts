@@ -37,6 +37,7 @@ export type TModelSpec = {
   webSearch?: boolean;
   fileSearch?: boolean;
   executeCode?: boolean;
+  memory?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
 };
@@ -58,6 +59,7 @@ export const tModelSpecSchema = z.object({
   webSearch: z.boolean().optional(),
   fileSearch: z.boolean().optional(),
   executeCode: z.boolean().optional(),
+  memory: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
 });
