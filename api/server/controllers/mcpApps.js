@@ -1,9 +1,32 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
+const { Constants } = require('librechat-data-provider');
+const { getUserMCPAuthMap } = require('@librechat/api');
 const { getMCPManager } = require('~/config');
+const { resolveConfigServers } = require('~/server/services/MCP');
+const { findPluginAuthsByKeys } = require('~/models');
 
 // MCP SDK ErrorCode.InvalidRequest = -32600
 const MCP_INVALID_REQUEST = -32600;
+
+/**
+ * Resolves the request-scoped config and the user's custom variables for a server so app
+ * follow-up requests can connect to config-sourced servers and re-resolve credentialed headers
+ * even when the original tool-call connection is gone.
+ */
+const resolveAppContext = async (req, serverName) => {
+  const userId = req.user?.id;
+  const [configServers, userMCPAuthMap] = await Promise.all([
+    Promise.resolve()
+      .then(() => resolveConfigServers(req))
+      .catch(() => undefined),
+    Promise.resolve()
+      .then(() => getUserMCPAuthMap({ userId, servers: [serverName], findPluginAuthsByKeys }))
+      .catch(() => undefined),
+  ]);
+  const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+  return { configServers, customUserVars };
+};
 
 /** @route POST /api/mcp/resources/read */
 const readMCPResource = async (req, res) => {
@@ -25,7 +48,15 @@ const readMCPResource = async (req, res) => {
     }
 
     const mcpManager = getMCPManager();
-    const result = await mcpManager.readResource({ userId, serverName, uri, user: req.user });
+    const { configServers, customUserVars } = await resolveAppContext(req, serverName);
+    const result = await mcpManager.readResource({
+      userId,
+      serverName,
+      uri,
+      user: req.user,
+      configServers,
+      customUserVars,
+    });
     return res.json(result);
   } catch (error) {
     logger.error('[readMCPResource] Error:', error);
@@ -54,12 +85,15 @@ const appToolCall = async (req, res) => {
     }
 
     const mcpManager = getMCPManager();
+    const { configServers, customUserVars } = await resolveAppContext(req, serverName);
     const result = await mcpManager.appToolCall({
       userId,
       serverName,
       toolName,
       toolArguments: toolArgs || {},
       user: req.user,
+      configServers,
+      customUserVars,
     });
     return res.json(result);
   } catch (error) {

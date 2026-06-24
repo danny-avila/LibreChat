@@ -4,6 +4,7 @@ import { logger } from '@librechat/data-schemas';
 import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/app-bridge';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -1253,7 +1254,14 @@ export class MCPConnection extends EventEmitter {
         version: '1.2.3',
       },
       {
-        capabilities: {},
+        // Advertise MCP Apps support so servers using the ext-apps graceful-degradation path
+        // (getUiCapability) expose app-enhanced tools. The capability rides on the `extensions`
+        // field keyed by ext-apps EXTENSION_ID.
+        capabilities: {
+          extensions: {
+            'io.modelcontextprotocol/ui': { mimeTypes: [RESOURCE_MIME_TYPE] },
+          },
+        },
       },
     );
 

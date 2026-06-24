@@ -1205,7 +1205,7 @@ describe('MCPManager', () => {
       ).rejects.toThrow(/request body field/);
     });
 
-    it('does not overwrite resolved headers for non-DB servers with customUserVars', async () => {
+    it('preserves resolved headers for customUserVars servers when the route supplies no vars', async () => {
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
         source: 'yaml',
         type: 'sse',
@@ -1235,6 +1235,46 @@ describe('MCPManager', () => {
 
       expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
       expect(mockConnection.client.request).toHaveBeenCalled();
+    });
+
+    it('resolves headers with customUserVars when the app route supplies them', async () => {
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        headers: { Authorization: 'Bearer {{API_KEY}}' },
+        customUserVars: { API_KEY: { title: 'API Key' } },
+      });
+      mockProcessMCPEnv.mockImplementation((params) => ({
+        ...params.options,
+        headers: {
+          Authorization: `Bearer ${(params.customUserVars as Record<string, string>)?.API_KEY ?? '{{API_KEY}}'}`,
+        },
+      }));
+
+      const mockConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        fetchTools: jest.fn().mockResolvedValue([{ name: 'do_thing', _meta: {} }]),
+        timeout: 30000,
+        client: { request: jest.fn().mockResolvedValue({ content: [] }) },
+      } as unknown as MCPConnection;
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(mockConnection);
+
+      await manager.appToolCall({
+        userId: 'user-123',
+        serverName: 'cuv-server',
+        toolName: 'do_thing',
+        toolArguments: {},
+        user: mockUser as IUser,
+        customUserVars: { API_KEY: 'secret' },
+      });
+
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith({
+        Authorization: 'Bearer secret',
+      });
     });
   });
 

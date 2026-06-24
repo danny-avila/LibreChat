@@ -202,6 +202,9 @@ export function formatToolContent(
           result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '';
         const argsKey = metadata?.toolArgs != null ? JSON.stringify(metadata.toolArgs) : '';
         const resourceId = generateResourceId(baseHash + '\x00' + scKey + '\x00' + argsKey);
+        const itemUi = (item.resource._meta as { ui?: Record<string, unknown> } | undefined)?.ui as
+          | { csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
+          | undefined;
         const uiResource: UIResource = {
           ...item.resource,
           resourceId,
@@ -211,8 +214,8 @@ export function formatToolContent(
           content: result?.content,
           isError: result?.isError,
           resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
-          csp: metadata?.csp,
-          permissions: metadata?.permissions,
+          csp: itemUi?.csp ?? metadata?.csp,
+          permissions: itemUi?.permissions ?? metadata?.permissions,
           toolArgs: metadata?.toolArgs,
         };
         uiResources.push(uiResource);

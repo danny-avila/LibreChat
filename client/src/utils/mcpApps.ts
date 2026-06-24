@@ -66,7 +66,21 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 type CacheEntry = { promise: Promise<unknown>; ts: number };
 const resourceCache = new Map<string, CacheEntry>();
 
-export async function readMCPResource(serverName: string, uri: string, userId?: string) {
+export async function readMCPResource(
+  serverName: string,
+  uri: string,
+  userId?: string,
+  options?: { cache?: boolean },
+) {
+  const doRequest = () =>
+    request.post(`${apiBaseUrl()}/api/mcp/resources/read`, { serverName, uri });
+
+  // App-initiated reads (bridge onreadresource) may target dynamic or mutated resources, so they
+  // are never cached. Only the immutable app HTML fetch opts into the short-lived cache.
+  if (!options?.cache) {
+    return doRequest();
+  }
+
   const key = `${userId ?? ''}:${serverName}:${uri}`;
   const now = Date.now();
 
@@ -82,7 +96,7 @@ export async function readMCPResource(serverName: string, uri: string, userId?: 
     }
   }
 
-  const promise = request.post(`${apiBaseUrl()}/api/mcp/resources/read`, { serverName, uri });
+  const promise = doRequest();
   resourceCache.set(key, { promise, ts: now });
   promise.catch(() => resourceCache.delete(key));
   return promise;
@@ -112,7 +126,7 @@ export async function fetchMCPResourceHtml(
   csp?: ResourceUiMeta['csp'];
   permissions?: ResourceUiMeta['permissions'];
 }> {
-  const result = (await readMCPResource(serverName, uri, userId)) as {
+  const result = (await readMCPResource(serverName, uri, userId, { cache: true })) as {
     contents?: Array<{ text?: string; blob?: string; _meta?: { ui?: ResourceUiMeta } }>;
   };
   const item = result?.contents?.[0];

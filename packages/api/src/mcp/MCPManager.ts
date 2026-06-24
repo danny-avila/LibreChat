@@ -102,6 +102,7 @@ export class MCPManager extends UserConnectionManager {
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
       /** Pre-resolved config for config-source servers not in YAML/DB */
       serverConfig?: t.ParsedServerConfig;
+      customUserVars?: Record<string, string>;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
     const userId = args.user?.id;
@@ -718,13 +719,21 @@ Please follow these instructions when using tools from the respective MCP server
     serverName,
     userId,
     user,
+    configServers,
+    customUserVars,
   }: {
     serverName: string;
     userId: string;
     user?: IUser;
+    configServers?: Record<string, t.ParsedServerConfig>;
+    customUserVars?: Record<string, string>;
   }): Promise<MCPConnection> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
-    const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+    const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(
+      serverName,
+      userId,
+      configServers,
+    );
     const isDbSourced = rawConfig ? isUserSourced(rawConfig) : false;
     if (rawConfig) {
       if (rawConfig.obo) {
@@ -752,17 +761,20 @@ Please follow these instructions when using tools from the respective MCP server
       serverName,
       user,
       serverConfig: rawConfig ?? undefined,
+      customUserVars,
     });
 
-    // customUserVars are resolved into the connection's headers during the original callTool.
-    // The app context has no access to them, so re-processing here would overwrite resolved
-    // auth headers with bare placeholders. Only refresh when the config can be fully resolved
-    // without them (env-var headers on non-DB servers).
-    if (rawConfig && !isDbSourced && !hasCustomUserVars(rawConfig)) {
+    // Refresh headers when the config can be fully resolved: env-var-only configs always, and
+    // customUserVar configs only when the route supplied those vars. Without them, re-processing
+    // would overwrite the original connection's resolved auth headers with bare placeholders, so
+    // those are left to the existing/cold connection that was built with customUserVars.
+    const hasUserVars = !!customUserVars && Object.keys(customUserVars).length > 0;
+    if (rawConfig && !isDbSourced && (!hasCustomUserVars(rawConfig) || hasUserVars)) {
       const currentOptions = processMCPEnv({
         user,
         dbSourced: false,
         options: rawConfig as t.MCPOptions,
+        customUserVars,
       });
       const resolvedHeaders: Record<string, string> =
         'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
@@ -777,15 +789,25 @@ Please follow these instructions when using tools from the respective MCP server
     serverName,
     uri,
     user,
+    configServers,
+    customUserVars,
   }: {
     userId: string;
     serverName: string;
     uri: string;
     user?: import('@librechat/data-schemas').IUser;
+    configServers?: Record<string, t.ParsedServerConfig>;
+    customUserVars?: Record<string, string>;
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
     if (userId && user) this.updateUserLastActivity(userId);
-    const connection = await this.getAppConnection({ serverName, userId, user });
+    const connection = await this.getAppConnection({
+      serverName,
+      userId,
+      user,
+      configServers,
+      customUserVars,
+    });
 
     if (!(await connection.isConnected())) {
       throw new McpError(
@@ -816,16 +838,26 @@ Please follow these instructions when using tools from the respective MCP server
     toolName,
     toolArguments,
     user,
+    configServers,
+    customUserVars,
   }: {
     userId: string;
     serverName: string;
     toolName: string;
     toolArguments: Record<string, unknown>;
     user?: import('@librechat/data-schemas').IUser;
+    configServers?: Record<string, t.ParsedServerConfig>;
+    customUserVars?: Record<string, string>;
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
     if (userId && user) this.updateUserLastActivity(userId);
-    const connection = await this.getAppConnection({ serverName, userId, user });
+    const connection = await this.getAppConnection({
+      serverName,
+      userId,
+      user,
+      configServers,
+      customUserVars,
+    });
 
     if (!(await connection.isConnected())) {
       throw new McpError(
