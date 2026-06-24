@@ -3081,7 +3081,7 @@ body {
   width: 4.5rem;
 }
 
-/* NJ React Markdown styling (for our release notes page) */
+/* NJ React Markdown styling */
 .markdown-nj h1 {
   font-size: 1.875rem;
   line-height: 2.25rem;
@@ -3094,8 +3094,9 @@ body {
   margin-bottom: 1rem;
 }
 
+/* h3: used for agent guide */
 .markdown-nj h3 {
-  font-size: 1rem;
+  font-size: 1.25rem;
   line-height: 1.5rem;
   margin-bottom: 1rem;
 }

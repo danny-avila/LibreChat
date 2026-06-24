@@ -84,13 +84,13 @@ To switch agents, use the selector at the top or start your next message with "@
 
 Writing a good agent is similar to writing a good prompt, here’s some best practices. Below is an in-depth explanation and you can also [watch the explainer video](https://youtu.be/2MRLeVIS1Tw).
 
-### **Define the task that you want an agent to accomplish**
+### Define the task that you want an agent to accomplish
 
 Agents are best used when the task is well defined, meaning that you have a clear idea of what the task includes and what success looks like. This ensures that you know how to describe the task, articulate what the output should be, and know how to review the AI output for accuracy and completeness.
 
 Tip: In this article about [writing good AI prompts](https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context), if you can write out all the elements in the “sharing the right context” section, then you have the information needed for an agent.
 
-### **Use one agent for one defined task**
+### Use one agent for one defined task
 
 Each agent should generally be created for one defined task. This helps to ensure that the instructions are focused on what “success” looks like so the agent keeps that context in executing the task. As a best practice, agents are more accurate and effective if their instructions are detailed and specific.
 
@@ -100,7 +100,7 @@ As an example, if you write a lot of emails with most going to three different p
 
 Note: you can create a more generalized agent (such as the general Email Drafter). This is a great starting place to get a draft. Know that the more general the agent, the more you might edit the AI output to get what you need.
 
-### **Creating an effective agent**
+### Creating an effective agent
 
 An agent will foundationally use these three items to accomplish a task: the instructions, the file context, and the file search. There are additional elements you will see in the Agent builder panel. Let’s break these down to understand how to create an agent in the NJ AI Assistant.
 
