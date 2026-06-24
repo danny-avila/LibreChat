@@ -4,6 +4,7 @@ import type { AppConfig, IConversation, IMessage, ISharedLink } from '~/types';
 import {
   capForcedRetentionToParent,
   cascadeForcedConversationRetention,
+  cascadeForcedRetentionByTag,
   createFallbackRetentionDate,
 } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
@@ -46,6 +47,11 @@ export interface MessageMethods {
     ctx: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
     params: { conversationId: string; messageId?: string },
     metadata?: { context?: string; capExpiryToConversation?: boolean },
+  ): Promise<void>;
+  applyForcedRetentionToTag(
+    ctx: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    params: { tag: string },
+    metadata?: { context?: string },
   ): Promise<void>;
   deleteMessagesSince(
     userId: string,
@@ -420,6 +426,45 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Enforces forced (ephemeral) retention on every conversation carrying a bookmark tag,
+   * for tag-scoped writes that bypass `saveConvo`/`applyForcedRetention` — global tag renames
+   * and deletes that `Conversation.updateMany` the tag on/off existing chats. Without this an
+   * older permanent chat touched only by a tag change after an install switches to ephemeral
+   * would stay visible and never expire. A no-op outside forced retention.
+   */
+  async function applyForcedRetentionToTag(
+    { userId, interfaceConfig }: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    { tag }: { tag: string },
+    metadata?: { context?: string },
+  ): Promise<void> {
+    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
+      return;
+    }
+
+    let forcedExpiredAt: Date;
+    try {
+      forcedExpiredAt = createTempChatExpirationDate(interfaceConfig);
+    } catch (err) {
+      logger.error('Error creating temporary chat expiration date:', err);
+      logger.info(`---\`applyForcedRetentionToTag\` context: ${metadata?.context}`);
+      forcedExpiredAt = createFallbackRetentionDate();
+    }
+
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+
+    await cascadeForcedRetentionByTag(
+      Conversation,
+      Message,
+      SharedLink,
+      userId,
+      tag,
+      forcedExpiredAt,
+    );
+  }
+
+  /**
    * Deletes messages in a conversation since a specific message.
    */
   async function deleteMessagesSince(
@@ -556,6 +601,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessageText,
     updateMessage,
     applyForcedRetention,
+    applyForcedRetentionToTag,
     deleteMessagesSince,
     getMessages,
     getMessage,
