@@ -36,8 +36,9 @@ export function MCPUIResource(props: MCPUIResourceProps) {
     return {
       content,
       ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
+      ...(uiResource?.isError === true ? { isError: true } : {}),
     };
-  }, [uiResource?.structuredContent, uiResource?.content]);
+  }, [uiResource?.structuredContent, uiResource?.content, uiResource?.isError]);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {

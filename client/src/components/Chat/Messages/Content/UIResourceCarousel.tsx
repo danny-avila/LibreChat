@@ -28,8 +28,9 @@ function MCPAppCard({
     return {
       content,
       ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
+      ...(resource.isError === true ? { isError: true } : {}),
     };
-  }, [resource.structuredContent, resource.content]);
+  }, [resource.structuredContent, resource.content, resource.isError]);
 
   const handleSizeChanged = React.useCallback(
     (params: { height?: number; width?: number }) => {

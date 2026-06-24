@@ -1,9 +1,9 @@
-import { request } from 'librechat-data-provider';
+import { request, apiBaseUrl } from 'librechat-data-provider';
 
 export function getMCPSandboxUrl(): string {
   const configured = (import.meta.env as Record<string, string | undefined>).VITE_MCP_SANDBOX_URL;
   if (configured) return configured;
-  return `${window.location.origin}/api/mcp/sandbox`;
+  return `${window.location.origin}${apiBaseUrl()}/api/mcp/sandbox`;
 }
 
 export async function callMCPAppTool(

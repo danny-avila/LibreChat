@@ -247,7 +247,8 @@ export function formatToolContent(
     metadata.toolName
   ) {
     const scKey = result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '';
-    const resourceId = generateResourceId(metadata.resourceUri + '\x00' + scKey);
+    const argsKey = metadata.toolArgs != null ? JSON.stringify(metadata.toolArgs) : '';
+    const resourceId = generateResourceId(metadata.resourceUri + '\x00' + scKey + '\x00' + argsKey);
     uiResources.push({
       resourceId,
       uri: metadata.resourceUri,
@@ -259,6 +260,7 @@ export function formatToolContent(
       csp: metadata.csp,
       permissions: metadata.permissions,
       toolArgs: metadata.toolArgs,
+      isError: result?.isError,
     });
     currentTextBlock +=
       (currentTextBlock ? '\n\n' : '') +
