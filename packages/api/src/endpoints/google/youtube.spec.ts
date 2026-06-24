@@ -88,6 +88,15 @@ describe('extractYouTubeUrls', () => {
     expect(extractYouTubeUrls(text)).toEqual([WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')]);
   });
 
+  it('extracts adjacent links separated by semicolons or pipes', () => {
+    expect(extractYouTubeUrls('https://youtu.be/aaaaaaaaaaa;https://youtu.be/bbbbbbbbbbb')).toEqual(
+      [WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')],
+    );
+    expect(extractYouTubeUrls('https://youtu.be/aaaaaaaaaaa|https://youtu.be/bbbbbbbbbbb')).toEqual(
+      [WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')],
+    );
+  });
+
   it('matches capitalized watch/embed paths (case-insensitive)', () => {
     expect(extractYouTubeUrls('https://www.youtube.com/WATCH?v=dQw4w9WgXcQ')).toEqual([
       WATCH('dQw4w9WgXcQ'),
@@ -393,6 +402,15 @@ describe('ReDoS safety', () => {
 
     expect(result).toEqual([]);
     expect(elapsed).toBeLessThan(1000);
+  });
+
+  it('returns quickly for a malformed path of millions of slashes', () => {
+    const malicious = `https://www.youtube.com/${'/'.repeat(3_000_000)}`;
+    const start = Date.now();
+    const result = extractYouTubeUrls(malicious, 5);
+
+    expect(result).toEqual([]);
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 
   it('returns quickly for many medium malformed watch tokens', () => {
