@@ -30,13 +30,13 @@ AI Workforce Pro hides advanced and provider-facing controls so end users get a 
 
 ```yaml
 interface:
-  modelSelect: false
+  modelSelect: true
   parameters: false
   presets: false
   forking: false
   multiConvo: false
   prompts:
-    use: true
+    use: false
     create: false
     share: false
     public: false
@@ -47,10 +47,17 @@ interface:
     public: false
 ```
 
+> **`modelSelect: true`** surfaces the model picker so users can choose between the
+> curated OpenRouter specs (OpenAI + Google). With **`modelSpecs.enforce: true`** the
+> picker shows only those curated specs — the raw OpenRouter catalog is hidden in
+> `client/src/components/Chat/Menus/Endpoints/ModelSelector.tsx`. See `docs/OPENROUTER.md`.
+>
+> **`prompts.use: false`** hides the saved-prompts library from the menu.
+
 Related deployment settings (not under `interface`):
 
-- **`ENDPOINTS=anthropic`** (`.env`) — only the Claude built-in endpoint is enabled.
-- **`modelSpecs`** in yaml — default assistant preset (`claude-sonnet-4-6`) when model select is off.
+- **`OPENROUTER_KEY`** (`.env`) — powers the curated picker via `endpoints.custom` in yaml.
+- **`modelSpecs`** in yaml — the curated OpenRouter specs; `gpt-5.5-pro` is the default.
 
 ---
 

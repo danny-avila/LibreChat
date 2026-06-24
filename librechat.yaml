@@ -118,12 +118,12 @@ interface:
 
       By using AI Workforce Pro, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
-  modelSelect: false
+  modelSelect: true
   parameters: false
   presets: false
   forking: false
   prompts:
-    use: true
+    use: false
     create: false
     share: false
     public: false
@@ -435,6 +435,27 @@ endpoints:
     addParams:
       web_search: true
 
+  # OpenRouter — single OpenAI-compatible gateway powering the curated model picker.
+  # To add a model: add its slug to `models.default` below AND add a matching spec
+  # under `modelSpecs.list` (reuse the `*aiw_tools` / `*aiw_instructions` anchors).
+  custom:
+    - name: "OpenRouter"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default:
+          - openai/gpt-5.5-pro
+          - openai/gpt-5.5
+          - openai/o3
+          - google/gemini-2.5-pro
+          - google/gemini-2.5-flash
+        fetch: false
+      titleConvo: true
+      titleModel: "openai/gpt-5.5"
+      # OpenRouter models use varied stop tokens; dropping `stop` avoids 400s.
+      dropParams: ["stop"]
+      modelDisplayLabel: "OpenRouter"
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
@@ -466,36 +487,40 @@ endpoints:
   #     trace: "enabled"
 
 modelSpecs:
+  # enforce: only the curated specs below are selectable (raw OpenRouter catalog hidden).
+  enforce: true
   prioritize: true
   list:
-    - name: claude-sonnet-4-6
-      label: AI Assistant
-      description: Your AI assistant from SMB Team — ask anything to get started.
+    # ---- Shared tool flags (&aiw_tools) and system prompt (&aiw_instructions) are
+    # ---- defined once on this first spec and reused by every spec via merge keys.
+    - name: gpt-5.5-pro
+      <<: &aiw_tools
+        executeCode: true
+        fileSearch: true
+        webSearch: true
+        googleDrive: true
+        googleMail: true
+        googleCalendar: true
+        microsoftOneDrive: true
+        microsoftMail: true
+        microsoftCalendar: true
+        dropbox: true
+        clio: true
+        artifacts: true
+        mcpServers:
+          - filesystem
+          - excel
+        hideBadgeRow: true
+      label: GPT-5.5 Pro
+      description: OpenAI's most capable model for complex reasoning and long-form work.
       default: true
-      executeCode: true
-      fileSearch: true
-      googleDrive: true
-      googleMail: true
-      googleCalendar: true
-      microsoftOneDrive: true
-      microsoftMail: true
-      microsoftCalendar: true
-      dropbox: true
-      clio: true
-      artifacts: true
-      mcpServers:
-        - filesystem
-        - excel
-      hideBadgeRow: true
+      group: OpenAI
+      groupIcon: openAI
       preset:
-        endpoint: anthropic
-        model: claude-sonnet-4-6
+        endpoint: OpenRouter
+        model: openai/gpt-5.5-pro
         greeting: How can I help you today?
-        max_context_tokens: 200000
-        max_output_tokens: 64000
-        temperature: 1
-        top_p: 0.999
-        instructions: |
+        instructions: &aiw_instructions |
           You are the AI Workforce Pro assistant, built by SMB Team to help small and medium-sized businesses work more efficiently.
 
           You are not a generic AI assistant. Your focus is on practical business productivity: drafting documents, analyzing data, summarizing information, answering operational questions, and helping teams move faster on everyday work tasks.
@@ -562,6 +587,51 @@ modelSpecs:
 
           - Your focus is business productivity, but you can and should look up current information with web search when a task needs it (e.g. prices, news, market or company data).
           - If a request is genuinely outside your intended scope, briefly acknowledge it and redirect to what you can help with.
+
+    - <<: *aiw_tools
+      name: gpt-5.5
+      label: GPT-5.5
+      description: Balanced OpenAI flagship for everyday business tasks.
+      group: OpenAI
+      preset:
+        endpoint: OpenRouter
+        model: openai/gpt-5.5
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
+
+    - <<: *aiw_tools
+      name: o3
+      label: o3
+      description: OpenAI reasoning model for multi-step analysis, math, and coding.
+      group: OpenAI
+      preset:
+        endpoint: OpenRouter
+        model: openai/o3
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
+
+    - <<: *aiw_tools
+      name: gemini-2.5-pro
+      label: Gemini 2.5 Pro
+      description: Google's top-tier model for reasoning, coding, and scientific work.
+      group: Google
+      groupIcon: google
+      preset:
+        endpoint: OpenRouter
+        model: google/gemini-2.5-pro
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
+
+    - <<: *aiw_tools
+      name: gemini-2.5-flash
+      label: Gemini 2.5 Flash
+      description: Fast Google model with strong reasoning for quick workflows.
+      group: Google
+      preset:
+        endpoint: OpenRouter
+        model: google/gemini-2.5-flash
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
 
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
