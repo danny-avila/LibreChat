@@ -78,6 +78,25 @@ describe('extractYouTubeUrls', () => {
     expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
   });
 
+  it('extracts both URLs from a comma-separated pair in one token', () => {
+    const text = 'https://youtu.be/aaaaaaaaaaa,https://youtu.be/bbbbbbbbbbb';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')]);
+  });
+
+  it('extracts adjacent markdown-style links', () => {
+    const text = '[a](https://youtu.be/aaaaaaaaaaa)[b](https://youtu.be/bbbbbbbbbbb)';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')]);
+  });
+
+  it('matches capitalized watch/embed paths (case-insensitive)', () => {
+    expect(extractYouTubeUrls('https://www.youtube.com/WATCH?v=dQw4w9WgXcQ')).toEqual([
+      WATCH('dQw4w9WgXcQ'),
+    ]);
+    expect(extractYouTubeUrls('https://www.youtube.com/EMBED/dQw4w9WgXcQ')).toEqual([
+      WATCH('dQw4w9WgXcQ'),
+    ]);
+  });
+
   it('ignores non-YouTube URLs', () => {
     expect(extractYouTubeUrls('https://example.com/watch?v=dQw4w9WgXcQ')).toEqual([]);
   });

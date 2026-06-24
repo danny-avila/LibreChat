@@ -75,7 +75,12 @@ export function resolveYouTubeInjectionConfig(params: { provider?: string; model
 const YOUTUBE_URL_REGEX = new RegExp(
   '(?<![\\w.-])(?:https?:\\/\\/)?' +
     '((?:[a-z0-9-]{1,63}\\.){0,10}youtube\\.com|(?:www\\.)?youtube-nocookie\\.com|youtu\\.be)' +
-    '(\\/[^\\s]*)',
+    /**
+     * Path/query stops at whitespace and at characters that delimit URLs in prose (`,`, `)`, `]`,
+     * `<`, `>`) — none of which appear in a real YouTube URL — so adjacent links in one token
+     * (comma-separated or markdown `](url1)](url2)`) are matched separately rather than swallowed.
+     */
+    '(\\/[^\\s,<>)\\]]*)',
   'gi',
 );
 
@@ -98,9 +103,10 @@ function videoIdFromMatch(host: string, pathAndQuery: string): string | null {
     return VIDEO_ID_REGEX.exec(path.slice(1))?.[1] ?? null;
   }
 
-  /** youtube.com (+ subdomains) and youtube-nocookie.com. */
+  /** youtube.com (+ subdomains) and youtube-nocookie.com. Routes are matched case-insensitively
+   * because the detection regex itself is case-insensitive (e.g. `/WATCH?v=`, `/EMBED/`). */
   const segments = path.split('/');
-  const firstSegment = segments[1] ?? '';
+  const firstSegment = (segments[1] ?? '').toLowerCase();
   if (firstSegment === 'watch') {
     const query = queryIndex >= 0 ? pathAndQuery.slice(queryIndex + 1) : '';
     const value = V_PARAM_REGEX.exec(query)?.[1] ?? '';
