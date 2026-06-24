@@ -108,4 +108,35 @@ function stopSkillScheduler() {
   }
 }
 
-module.exports = { startSkillScheduler, stopSkillScheduler, computeNextRunAt };
+/**
+ * Runs a schedule on demand (the "Run now" button), tracking status on the
+ * schedule document. Unlike the poller it does NOT recompute `nextRunAt` or
+ * disable one-time schedules — a manual run is ad-hoc and must not disturb the
+ * configured cadence. Intended to be called fire-and-forget: the agent turn
+ * can outlast the HTTP request (gateway timeouts), so the client polls
+ * `lastStatus` instead of waiting on the response.
+ */
+async function runScheduleManually({ owner, schedule, conversationId }) {
+  try {
+    await runScheduledTurn({ owner, schedule, conversationId });
+    await db.markScheduleResult(schedule._id, {
+      status: 'success',
+      conversationId,
+      error: null,
+    });
+  } catch (error) {
+    logger.error(`[Scheduler] Manual run failed for schedule ${schedule._id}:`, error);
+    await db.markScheduleResult(schedule._id, {
+      status: 'error',
+      conversationId,
+      error: error?.message ?? String(error),
+    });
+  }
+}
+
+module.exports = {
+  startSkillScheduler,
+  stopSkillScheduler,
+  computeNextRunAt,
+  runScheduleManually,
+};

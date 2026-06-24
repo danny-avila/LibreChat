@@ -25,16 +25,16 @@ const { saveMessage, saveConvo, getUserById } = require('~/models');
  * @param {{ owner: object, schedule: object }} params
  * @returns {Promise<{ conversationId: string, responseMessageId?: string }>}
  */
-async function runScheduledTurn({ owner, schedule }) {
+async function runScheduledTurn({ owner, schedule, conversationId }) {
   return tenantStorage.run(
     { tenantId: owner.tenantId, userId: String(owner.id ?? owner._id), requestId: `sched_${schedule._id}` },
-    () => executeTurn({ owner, schedule }),
+    () => executeTurn({ owner, schedule, conversationId }),
   );
 }
 
-async function executeTurn({ owner, schedule }) {
+async function executeTurn({ owner, schedule, conversationId: providedConversationId }) {
   const userId = String(owner.id ?? owner._id);
-  const conversationId = crypto.randomUUID();
+  const conversationId = providedConversationId || crypto.randomUUID();
   const appConfig = await getAppConfig({
     role: owner.role,
     userId,
