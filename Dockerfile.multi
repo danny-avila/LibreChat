@@ -114,7 +114,7 @@ COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
-COPY --from=client-build /app/client/dist/mcp-sandbox.html ./client/public/mcp-sandbox.html
+COPY --from=client-build /app/client/public/mcp-sandbox.html ./client/public/mcp-sandbox.html
 # Propagate build metadata into runtime env so /api/config can expose it.
 # Declared here (after the heavy install/copy steps) so that commit/date
 # changing on every CI run does not bust the cache for those layers.
