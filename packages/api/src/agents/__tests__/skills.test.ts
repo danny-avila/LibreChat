@@ -377,6 +377,32 @@ describe('resolveAgentScopedSkillIds', () => {
         }),
       ).toEqual([]);
     });
+
+    it('returns the full catalog when autoDiscovery is on, even with the toggle off', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: ephemeralAgent(),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+        autoDiscovery: true,
+      });
+      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
+    });
+
+    it('still returns [] when autoDiscovery is on but the skills capability is disabled', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: ephemeralAgent(),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: false,
+          ephemeralSkillsToggle: false,
+          autoDiscovery: true,
+        }),
+      ).toEqual([]);
+    });
   });
 
   describe('persisted agent', () => {

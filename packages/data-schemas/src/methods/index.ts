@@ -46,6 +46,13 @@ import { createTransactionMethods, type TransactionMethods } from './transaction
 import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens';
 import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
 import {
+  createSkillScheduleMethods,
+  type SkillScheduleMethods,
+  type CreateSkillScheduleInput,
+  type UpdateSkillScheduleInput,
+  type MarkScheduleResultInput,
+} from './skillSchedule';
+import {
   createSkillMethods,
   type SkillMethods,
   type SkillDeps,
@@ -99,6 +106,7 @@ export type AllMethods = UserMethods &
   SpendTokensMethods &
   PromptMethods &
   SkillMethods &
+  SkillScheduleMethods &
   AgentMethods &
   ConfigMethods &
   TenantMethods &
@@ -179,6 +187,8 @@ export function createMethods(
   };
   const skillMethods = createSkillMethods(mongoose, skillDeps);
 
+  const skillScheduleMethods = createSkillScheduleMethods(mongoose);
+
   // Role methods with optional cache injection
   const roleDeps: RoleDeps = { getCache: deps.getCache };
   const roleMethods = createRoleMethods(mongoose, roleDeps);
@@ -228,6 +238,7 @@ export function createMethods(
     ...spendTokensMethods,
     ...promptMethods,
     ...skillMethods,
+    ...skillScheduleMethods,
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -277,6 +288,10 @@ export type {
   ListSkillsByAccessResult,
   UpdateSkillResult,
   ValidationIssue,
+  SkillScheduleMethods,
+  CreateSkillScheduleInput,
+  UpdateSkillScheduleInput,
+  MarkScheduleResultInput,
   AgentMethods,
   ConfigMethods,
   TenantMethods,

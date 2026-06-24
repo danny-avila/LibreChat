@@ -41,6 +41,7 @@ const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
+const { startSkillScheduler } = require('./services/Scheduler');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
@@ -219,6 +220,7 @@ const startServer = async () => {
   app.use('/api/presets', routes.presets);
   app.use('/api/prompts', routes.prompts);
   app.use('/api/skills', routes.skills);
+  app.use('/api/skill-schedules', routes.skillSchedules);
   app.use('/api/categories', routes.categories);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
@@ -301,6 +303,8 @@ const startServer = async () => {
         await initializeOAuthReconnectManager();
       });
       await checkMigrations();
+
+      startSkillScheduler();
 
       const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {

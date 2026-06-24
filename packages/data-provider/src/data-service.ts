@@ -7,6 +7,7 @@ import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
 import * as sk from './types/skills';
+import * as ss from './types/skillSchedules';
 import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
@@ -937,6 +938,32 @@ export function updateSkill(variables: sk.TUpdateSkillVariables): Promise<sk.TUp
 
 export function deleteSkill(id: string): Promise<sk.TDeleteSkillResponse> {
   return request.delete(endpoints.getSkill(id));
+}
+
+/* Skill Schedules */
+export function getSkillSchedules(): Promise<ss.TSkillSchedulesResponse> {
+  return request.get(endpoints.skillSchedules());
+}
+
+export function createSkillSchedule(
+  payload: ss.TCreateSkillSchedule,
+): Promise<ss.TSkillScheduleResponse> {
+  return request.post(endpoints.skillSchedules(), payload);
+}
+
+export function updateSkillSchedule(
+  id: string,
+  payload: ss.TUpdateSkillSchedule,
+): Promise<ss.TSkillScheduleResponse> {
+  return request.patch(endpoints.skillSchedule(id), payload);
+}
+
+export function deleteSkillSchedule(id: string): Promise<{ success: boolean }> {
+  return request.delete(endpoints.skillSchedule(id));
+}
+
+export function runSkillSchedule(id: string): Promise<ss.TRunSkillScheduleResponse> {
+  return request.post(endpoints.runSkillSchedule(id), {});
 }
 
 export function listSkillFiles(skillId: string): Promise<sk.TListSkillFilesResponse> {

@@ -550,6 +550,7 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      skillsAutoDiscovery: z.boolean().optional().default(true),
       remoteApi: remoteApiSchema.optional(),
     }),
   )
@@ -2212,6 +2213,13 @@ export enum Constants {
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
 }
+
+/**
+ * Conversation tag applied to chats produced by a scheduled skill run. The
+ * scheduler sets it after the run; the frontend filters on it to surface a
+ * "Scheduled" group. Backend and frontend must agree on this literal.
+ */
+export const SCHEDULED_CONVO_TAG = 'scheduled';
 
 /** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
 export const MAX_SUBAGENTS = 10;

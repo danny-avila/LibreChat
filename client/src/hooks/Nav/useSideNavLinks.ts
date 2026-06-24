@@ -3,6 +3,7 @@ import { MCPIcon, AttachmentIcon, OpenAIMinimalIcon } from '@librechat/client';
 import {
   Bot,
   Brain,
+  Clock,
   Bookmark,
   NotebookPen,
   ScrollText,
@@ -36,6 +37,7 @@ import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
+import { ScheduledSkillsPanel } from '~/components/ScheduledSkills';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -135,6 +137,13 @@ export default function useSideNavLinks({
         icon: ScrollText,
         id: 'skills',
         Component: SkillsAccordion,
+      });
+      links.push({
+        title: 'com_ui_scheduled_skills',
+        label: '',
+        icon: Clock,
+        id: 'scheduled-skills',
+        Component: ScheduledSkillsPanel,
       });
     }
 

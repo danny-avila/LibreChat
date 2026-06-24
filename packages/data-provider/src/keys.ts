@@ -80,6 +80,8 @@ export enum QueryKeys {
   skillFavorites = 'skillFavorites',
   /* Per-user skill active/inactive overrides */
   skillStates = 'skillStates',
+  /* Scheduled skill runs */
+  skillSchedules = 'skillSchedules',
   /* General user favorites */
   favorites = 'favorites',
 }
