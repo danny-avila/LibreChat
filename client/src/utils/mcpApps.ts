@@ -46,13 +46,38 @@ export async function readMCPResource(serverName: string, uri: string, userId?: 
   return promise;
 }
 
+type ResourceUiMeta = {
+  csp?: {
+    connectDomains?: string[];
+    resourceDomains?: string[];
+    frameDomains?: string[];
+    baseUriDomains?: string[];
+  };
+  permissions?: {
+    camera?: Record<string, never>;
+    microphone?: Record<string, never>;
+    geolocation?: Record<string, never>;
+    clipboardWrite?: Record<string, never>;
+  };
+};
+
 export async function fetchMCPResourceHtml(
   serverName: string,
   uri: string,
   userId?: string,
-): Promise<string> {
+): Promise<{
+  html: string;
+  csp?: ResourceUiMeta['csp'];
+  permissions?: ResourceUiMeta['permissions'];
+}> {
   const result = (await readMCPResource(serverName, uri, userId)) as {
-    contents?: Array<{ text?: string }>;
+    contents?: Array<{ text?: string; _meta?: { ui?: ResourceUiMeta } }>;
   };
-  return result?.contents?.[0]?.text ?? '';
+  const item = result?.contents?.[0];
+  const uiMeta = item?._meta?.ui;
+  return {
+    html: item?.text ?? '',
+    csp: uiMeta?.csp,
+    permissions: uiMeta?.permissions,
+  };
 }

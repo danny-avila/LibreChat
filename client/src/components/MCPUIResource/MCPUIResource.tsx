@@ -25,16 +25,23 @@ export function MCPUIResource(props: MCPUIResourceProps) {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
+  const [height, setHeight] = useState<number | undefined>(undefined);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
 
   const toolResult = useMemo(() => {
     const sc = uiResource?.structuredContent as Record<string, unknown> | undefined | null;
-    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
-    return { content: [] as [], structuredContent: sc };
-  }, [uiResource?.structuredContent]);
+    const content = (uiResource?.content as [] | undefined) ?? [];
+    if ((!sc || typeof sc !== 'object' || Array.isArray(sc)) && content.length === 0)
+      return undefined;
+    return {
+      content,
+      ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
+    };
+  }, [uiResource?.structuredContent, uiResource?.content]);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {
+      setHeight(params.height);
       setLoaded(true);
     }
   }, []);
@@ -54,7 +61,10 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   try {
     if (uiResource.toolName && uiResource.serverName && !uiResource.text) {
       return (
-        <span className="mx-1 inline-block w-full align-middle">
+        <span
+          className="mx-1 inline-block w-full align-middle"
+          style={height ? { height } : { minHeight: '200px' }}
+        >
           {!loaded && (
             <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
               {localize('com_ui_loading_interactive_view')}
@@ -66,7 +76,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
             sandbox="allow-scripts allow-forms"
             style={{
               width: '100%',
-              minHeight: '200px',
+              height: '100%',
               border: 'none',
               display: loaded ? 'block' : 'none',
             }}

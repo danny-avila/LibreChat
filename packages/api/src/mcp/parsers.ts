@@ -244,7 +244,8 @@ export function formatToolContent(
     metadata.serverName &&
     metadata.toolName
   ) {
-    const resourceId = generateResourceId(metadata.resourceUri);
+    const scKey = result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '';
+    const resourceId = generateResourceId(metadata.resourceUri + '\x00' + scKey);
     uiResources.push({
       resourceId,
       uri: metadata.resourceUri,
@@ -252,6 +253,7 @@ export function formatToolContent(
       serverName: metadata.serverName,
       toolName: metadata.toolName,
       structuredContent: result?.structuredContent,
+      content: result?.content,
       csp: metadata.csp,
       permissions: metadata.permissions,
     });

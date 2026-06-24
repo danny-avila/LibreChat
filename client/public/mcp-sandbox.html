@@ -16,6 +16,7 @@
     let innerFrame = null;
     let innerFrameBlobUrl = null;
     let trustedOrigin = null;
+    let readyInterval = null;
     const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
 
     function notifyReady() {
@@ -23,6 +24,16 @@
         { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
         '*'
       );
+      if (!readyInterval) {
+        readyInterval = setInterval(() => {
+          if (!innerFrame) {
+            window.parent.postMessage(
+              { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
+              '*'
+            );
+          }
+        }, 500);
+      }
     }
 
     window.addEventListener('message', (event) => {
@@ -42,6 +53,8 @@
         }
 
         if (msg.method === 'ui/notifications/sandbox-resource-ready') {
+          clearInterval(readyInterval);
+          readyInterval = null;
           createInnerFrame(msg.params);
           return;
         }
@@ -140,7 +153,7 @@
         ("font-src " + (resourceDomains || "'none'")).trim(),
         "frame-src " + frameDomains,
         "object-src 'none'",
-        "base-uri 'self'"
+        "base-uri " + (toDomainList(csp.baseUriDomains) || "'self'")
       ].join('; ');
     }
 

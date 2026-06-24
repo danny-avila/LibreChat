@@ -39,7 +39,7 @@ export function useAppBridge(
       bridge = new AppBridge(
         null,
         { name: 'LibreChat', version: '1.0.0' },
-        { openLinks: {}, serverTools: {}, serverResources: {}, logging: {} },
+        { openLinks: {}, serverTools: {}, logging: {} },
         {
           hostContext: {
             theme,
@@ -66,15 +66,15 @@ export function useAppBridge(
 
       bridge.addEventListener('sandboxready', async () => {
         try {
-          const html = await fetchMCPResourceHtml(
+          const { html, csp, permissions } = await fetchMCPResourceHtml(
             resource.serverName as string,
             resource.uri,
             user?.id,
           );
           await bridge!.sendSandboxResourceReady({
             html,
-            csp: resource.csp as never,
-            permissions: resource.permissions as never,
+            csp: (csp ?? resource.csp) as never,
+            permissions: (permissions ?? resource.permissions) as never,
             sandbox: 'allow-scripts allow-forms',
           });
         } catch (err) {

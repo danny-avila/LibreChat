@@ -1,7 +1,10 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { getToolUiResourceUri } from '@modelcontextprotocol/ext-apps/app-bridge';
+import {
+  getToolUiResourceUri,
+  isToolVisibilityModelOnly,
+} from '@modelcontextprotocol/ext-apps/app-bridge';
 import {
   CallToolResultSchema,
   ReadResourceResultSchema,
@@ -63,6 +66,8 @@ export class MCPManager extends UserConnectionManager {
     string,
     Map<string, { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }>
   >();
+
+  private readonly modelOnlyToolCache = new Map<string, Set<string>>();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -343,39 +348,67 @@ Please follow these instructions when using tools from the respective MCP server
 
   public clearResourceUriCache(serverName?: string): void {
     if (serverName) {
-      this.resourceUriCache.delete(serverName);
+      for (const key of this.resourceUriCache.keys()) {
+        if (key === serverName || key.startsWith(`${serverName}:`)) {
+          this.resourceUriCache.delete(key);
+          this.modelOnlyToolCache.delete(key);
+        }
+      }
     } else {
       this.resourceUriCache.clear();
+      this.modelOnlyToolCache.clear();
     }
+  }
+
+  private async populateToolCaches(connection: MCPConnection, cacheKey: string): Promise<void> {
+    const tools = await connection.fetchTools();
+    const serverMap = new Map<
+      string,
+      { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
+    >();
+    const modelOnly = new Set<string>();
+    for (const tool of tools) {
+      if (isToolVisibilityModelOnly(tool)) {
+        modelOnly.add(tool.name);
+      }
+      const uri = getToolUiResourceUri(tool);
+      if (uri) {
+        const meta = tool._meta as
+          | { ui?: { csp?: UIResource['csp']; permissions?: UIResource['permissions'] } }
+          | undefined;
+        serverMap.set(tool.name, { uri, csp: meta?.ui?.csp, permissions: meta?.ui?.permissions });
+      }
+    }
+    this.resourceUriCache.set(cacheKey, serverMap);
+    this.modelOnlyToolCache.set(cacheKey, modelOnly);
   }
 
   private async getResourceMeta(
     connection: MCPConnection,
     serverName: string,
     toolName: string,
+    userId?: string,
   ): Promise<
     { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] } | undefined
   > {
-    let serverMap = this.resourceUriCache.get(serverName);
-    if (!serverMap) {
-      const tools = await connection.fetchTools();
-      serverMap = new Map();
-      for (const tool of tools) {
-        const uri = getToolUiResourceUri(tool);
-        if (uri) {
-          const meta = tool._meta as
-            | { ui?: { csp?: UIResource['csp']; permissions?: UIResource['permissions'] } }
-            | undefined;
-          serverMap.set(tool.name, {
-            uri,
-            csp: meta?.ui?.csp,
-            permissions: meta?.ui?.permissions,
-          });
-        }
-      }
-      this.resourceUriCache.set(serverName, serverMap);
+    const cacheKey = `${serverName}:${userId ?? ''}`;
+    if (!this.resourceUriCache.has(cacheKey)) {
+      await this.populateToolCaches(connection, cacheKey);
     }
-    return serverMap.get(toolName);
+    return this.resourceUriCache.get(cacheKey)?.get(toolName);
+  }
+
+  private async isModelOnlyTool(
+    connection: MCPConnection,
+    serverName: string,
+    toolName: string,
+    userId?: string,
+  ): Promise<boolean> {
+    const cacheKey = `${serverName}:${userId ?? ''}`;
+    if (!this.modelOnlyToolCache.has(cacheKey)) {
+      await this.populateToolCaches(connection, cacheKey);
+    }
+    return this.modelOnlyToolCache.get(cacheKey)?.has(toolName) ?? false;
   }
 
   /**
@@ -584,7 +617,7 @@ Please follow these instructions when using tools from the respective MCP server
         | { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
         | undefined;
       try {
-        resourceMeta = await this.getResourceMeta(connection, serverName, toolName);
+        resourceMeta = await this.getResourceMeta(connection, serverName, toolName, userId);
         if (resourceMeta) {
           logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`);
         }
@@ -684,6 +717,32 @@ Please follow these instructions when using tools from the respective MCP server
         ErrorCode.InternalError,
         `${logPrefix} Connection is not active. Cannot execute app tool call.`,
       );
+    }
+
+    if (await this.isModelOnlyTool(connection, serverName, toolName, userId)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Tool "${toolName}" is restricted to model use only.`,
+      );
+    }
+
+    const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+    if (rawConfig) {
+      if (rawConfig.obo) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `${logPrefix} Server "${serverName}" requires per-call OBO token resolution which is not supported for app tool calls.`,
+        );
+      }
+      const isDbSourced = isUserSourced(rawConfig);
+      const currentOptions = processMCPEnv({
+        user,
+        dbSourced: isDbSourced,
+        options: rawConfig as t.MCPOptions,
+      });
+      const resolvedHeaders: Record<string, string> =
+        'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+      connection.setRequestHeaders(resolvedHeaders);
     }
 
     const result = await connection.client.request(

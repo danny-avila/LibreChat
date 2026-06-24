@@ -51,9 +51,14 @@ const MCPAppView = React.memo(function MCPAppView({
 
   const toolResult = useMemo(() => {
     const sc = app.structuredContent as Record<string, unknown> | undefined | null;
-    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
-    return { content: [] as [], structuredContent: sc };
-  }, [app.structuredContent]);
+    const content = (app.content as [] | undefined) ?? [];
+    if ((!sc || typeof sc !== 'object' || Array.isArray(sc)) && content.length === 0)
+      return undefined;
+    return {
+      content,
+      ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
+    };
+  }, [app.structuredContent, app.content]);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {
