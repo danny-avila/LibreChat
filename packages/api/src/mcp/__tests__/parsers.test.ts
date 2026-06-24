@@ -1,5 +1,5 @@
-import { formatToolContent } from '../parsers';
 import type * as t from '../types';
+import { formatToolContent } from '../parsers';
 
 describe('formatToolContent', () => {
   describe('unrecognized providers', () => {
@@ -280,6 +280,33 @@ describe('formatToolContent', () => {
       expect(uiResourceArtifact?.resourceId).toEqual(expect.any(String));
     });
 
+    it('attaches the tool result to embedded ui:// resources for the app bridge', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: 'text/html', text: '<p>hi</p>' },
+          },
+        ],
+        structuredContent: { count: 3 },
+        isError: false,
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+      });
+
+      const uiResourceArtifact = artifacts?.ui_resources?.data?.[0];
+      expect(uiResourceArtifact).toMatchObject({
+        uri: 'ui://app',
+        serverName: 'srv',
+        toolName: 'do_thing',
+        structuredContent: { count: 3 },
+      });
+      expect(uiResourceArtifact?.content).toEqual(result.content);
+    });
+
     it('should handle regular resources', () => {
       const result: t.MCPToolCallResponse = {
         content: [
@@ -396,6 +423,7 @@ describe('formatToolContent', () => {
               mimeType: 'application/json',
               text: '{"type": "line"}',
               resourceId: expect.any(String),
+              content: expect.any(Array),
             },
           ],
         },

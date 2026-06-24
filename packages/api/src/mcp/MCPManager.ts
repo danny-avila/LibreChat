@@ -22,6 +22,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  hasCustomUserVars,
   isOAuthServer,
   isUserSourced,
   requiresEphemeralUserConnection,
@@ -375,7 +376,14 @@ Please follow these instructions when using tools from the respective MCP server
     super.removeUserConnection(userId, serverName);
   }
 
-  private async populateToolCaches(connection: MCPConnection, cacheKey: string): Promise<void> {
+  private async buildToolCaches(connection: MCPConnection): Promise<{
+    serverMap: Map<
+      string,
+      { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
+    >;
+    modelOnly: Set<string>;
+    knownNames: Set<string>;
+  }> {
     const tools = await connection.fetchTools();
     const serverMap = new Map<
       string,
@@ -396,6 +404,11 @@ Please follow these instructions when using tools from the respective MCP server
         serverMap.set(tool.name, { uri, csp: meta?.ui?.csp, permissions: meta?.ui?.permissions });
       }
     }
+    return { serverMap, modelOnly, knownNames };
+  }
+
+  private async populateToolCaches(connection: MCPConnection, cacheKey: string): Promise<void> {
+    const { serverMap, modelOnly, knownNames } = await this.buildToolCaches(connection);
     this.resourceUriCache.set(cacheKey, serverMap);
     this.modelOnlyToolCache.set(cacheKey, modelOnly);
     this.knownToolNamesCache.set(cacheKey, knownNames);
@@ -406,9 +419,16 @@ Please follow these instructions when using tools from the respective MCP server
     serverName: string,
     toolName: string,
     userId?: string,
+    requestScoped = false,
   ): Promise<
     { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] } | undefined
   > {
+    // Request-scoped servers may expose different tool metadata per request, so their
+    // resourceUri/visibility must not be reused from the serverName:userId cache.
+    if (requestScoped) {
+      const { serverMap } = await this.buildToolCaches(connection);
+      return serverMap.get(toolName);
+    }
     const cacheKey = `${serverName}:${userId ?? ''}`;
     if (!this.resourceUriCache.has(cacheKey)) {
       await this.populateToolCaches(connection, cacheKey);
@@ -622,7 +642,13 @@ Please follow these instructions when using tools from the respective MCP server
         | { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
         | undefined;
       try {
-        resourceMeta = await this.getResourceMeta(connection, serverName, toolName, userId);
+        resourceMeta = await this.getResourceMeta(
+          connection,
+          serverName,
+          toolName,
+          userId,
+          requiresEphemeralUserConnection(rawConfig),
+        );
         if (resourceMeta) {
           logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`);
         }
@@ -710,7 +736,11 @@ Please follow these instructions when using tools from the respective MCP server
       serverConfig: rawConfig ?? undefined,
     });
 
-    if (rawConfig && !isDbSourced) {
+    // customUserVars are resolved into the connection's headers during the original callTool.
+    // The app context has no access to them, so re-processing here would overwrite resolved
+    // auth headers with bare placeholders. Only refresh when the config can be fully resolved
+    // without them (env-var headers on non-DB servers).
+    if (rawConfig && !isDbSourced && !hasCustomUserVars(rawConfig)) {
       const currentOptions = processMCPEnv({
         user,
         dbSourced: false,
