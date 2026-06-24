@@ -630,6 +630,15 @@ export const bedrockGuardrailConfigSchema = z.object({
       agentIds: z.array(z.string()).min(1).optional(),
       models: z.array(z.string()).min(1).optional(),
     })
+    // `.strict()` so a misspelled key (e.g. `agentId`/`model`) is rejected at
+    // config load instead of being silently stripped — which would leave an
+    // empty scope that matches every request (the opposite of scoping).
+    .strict()
+    // An `appliesTo` with no filters would also match everything; require at
+    // least one. To apply the guardrail to all conversations, omit `appliesTo`.
+    .refine((scope) => scope.agentIds != null || scope.models != null, {
+      message: 'guardrailConfig.appliesTo must specify at least one of agentIds or models',
+    })
     .optional(),
 });
 

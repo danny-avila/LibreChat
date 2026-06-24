@@ -100,6 +100,43 @@ describe('bedrockEndpointSchema', () => {
       expect(result.success).toBe(false);
     },
   );
+
+  it.each(['agentId', 'model', 'agents', 'modelIds'])(
+    'rejects a misspelled appliesTo key "%s" instead of silently applying to all',
+    (badKey) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        endpoints: {
+          bedrock: {
+            guardrailConfig: {
+              guardrailIdentifier: 'gr-scoped',
+              guardrailVersion: '1',
+              appliesTo: { [badKey]: ['anthropic.claude-sonnet-4-6'] },
+            },
+          },
+        },
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
+
+  it('rejects an empty appliesTo object (would otherwise apply to all)', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        bedrock: {
+          guardrailConfig: {
+            guardrailIdentifier: 'gr-scoped',
+            guardrailVersion: '1',
+            appliesTo: {},
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('resolveEndpointType', () => {
