@@ -7,6 +7,7 @@ import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
 import * as sk from './types/skills';
+import * as img from './types/images';
 import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
@@ -1276,3 +1277,16 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* Image Workspace */
+export const generateImage = (body: img.TImageGenRequest): Promise<img.TImagePrediction> =>
+  request.post(endpoints.imageGenerate(), body);
+
+export const getImageResult = (id: string): Promise<img.TImageResult> =>
+  request.get(endpoints.imageResult(id));
+
+export const getImageModels = (): Promise<img.TImageModelsConfig> =>
+  request.get(endpoints.imageModels());
+
+export const getImageGallery = (cursor?: string): Promise<img.TImageGalleryPage> =>
+  request.get(endpoints.imageList(cursor));

@@ -487,3 +487,11 @@ export const getEffectivePermissions = (resourceType: ResourceType, resourceId: 
 
 export const getAllEffectivePermissions = (resourceType: ResourceType) =>
   `${BASE_URL}/api/permissions/${resourceType}/effective/all`;
+
+/* Image Workspace */
+const imagesRoot = `${BASE_URL}/api/images`;
+export const imageGenerate = () => `${imagesRoot}/generate`;
+export const imageResult = (id: string) => `${imagesRoot}/result/${encodeURIComponent(id)}`;
+export const imageModels = () => `${imagesRoot}/models`;
+export const imageList = (cursor?: string, limit = 30) =>
+  `${imagesRoot}?limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
