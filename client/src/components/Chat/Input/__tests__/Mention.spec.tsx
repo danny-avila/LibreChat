@@ -185,8 +185,23 @@ describe('Mention keyboard navigation', () => {
     const input = getInput();
 
     fireEvent.change(input, { target: { value: 'zzz' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    const notPrevented = fireEvent.keyDown(input, { key: 'Enter' });
 
+    expect(notPrevented).toBe(false);
+    expect(mockSetShowPopover).toHaveBeenCalledWith(false);
+    expect(document.activeElement).toBe(textAreaRef.current);
+  });
+
+  it('prevents the default Tab action when closing on no matches so the refocus sticks', () => {
+    const { textAreaRef } = renderMention();
+    const input = getInput();
+
+    fireEvent.change(input, { target: { value: 'zzz' } });
+    const notPrevented = fireEvent.keyDown(input, { key: 'Tab' });
+
+    /* Without preventDefault the browser's default Tab would move focus off
+       the textarea right after we refocus it. */
+    expect(notPrevented).toBe(false);
     expect(mockSetShowPopover).toHaveBeenCalledWith(false);
     expect(document.activeElement).toBe(textAreaRef.current);
   });

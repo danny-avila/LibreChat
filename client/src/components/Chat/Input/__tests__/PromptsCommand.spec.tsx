@@ -184,9 +184,37 @@ describe('PromptsCommand keyboard navigation', () => {
     const input = getInput();
 
     fireEvent.change(input, { target: { value: 'zzz' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    const notPrevented = fireEvent.keyDown(input, { key: 'Enter' });
 
+    expect(notPrevented).toBe(false);
     expect(mockSetShowPromptsPopover).toHaveBeenCalledWith(false);
     expect(document.activeElement).toBe(textAreaRef.current);
+  });
+
+  it('prevents the default Tab action when closing on no matches so the refocus sticks', () => {
+    const { textAreaRef } = renderCommand();
+    const input = getInput();
+
+    fireEvent.change(input, { target: { value: 'zzz' } });
+    const notPrevented = fireEvent.keyDown(input, { key: 'Tab' });
+
+    /* Without preventDefault the browser's default Tab would move focus off
+       the textarea right after we refocus it. */
+    expect(notPrevented).toBe(false);
+    expect(mockSetShowPromptsPopover).toHaveBeenCalledWith(false);
+    expect(document.activeElement).toBe(textAreaRef.current);
+  });
+
+  it('clears the stale search filter when the popover closes', () => {
+    renderCommand();
+    const input = getInput();
+
+    fireEvent.change(input, { target: { value: 'zzz' } });
+    expect((input as HTMLInputElement).value).toBe('zzz');
+
+    /* PromptsCommand stays mounted across close (unlike Mention), so a leftover
+       no-match query has to be cleared or the popover reopens still filtered. */
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((getInput() as HTMLInputElement).value).toBe('');
   });
 });

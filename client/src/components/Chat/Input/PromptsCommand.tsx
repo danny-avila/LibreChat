@@ -138,10 +138,11 @@ function PromptsCommand({
   useEffect(() => {
     if (!open) {
       setActiveIndex(0);
+      setSearchValue('');
     } else {
       setVariableGroup(null);
     }
-  }, [open]);
+  }, [open, setSearchValue]);
 
   useEffect(() => {
     setActiveIndex((prev) => Math.min(prev, Math.max(matches.length - 1, 0)));
@@ -229,9 +230,7 @@ function PromptsCommand({
                 setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
               } else if (e.key === 'Enter' || e.key === 'Tab') {
                 if (matches.length === 0) {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                  }
+                  e.preventDefault();
                   setOpen(false);
                   setShowPromptsPopover(false);
                   textAreaRef.current?.focus();

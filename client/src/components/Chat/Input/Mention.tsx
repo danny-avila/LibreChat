@@ -1,8 +1,8 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { AutoSizer, List } from 'react-virtualized';
 import { Spinner, useCombobox } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { RecoilState } from 'recoil';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import { useGetConversation, useLocalize, TranslationKeys } from '~/hooks';
@@ -206,9 +206,7 @@ function MentionContent({
               setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
               if (matches.length === 0) {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                }
+                e.preventDefault();
                 setOpen(false);
                 setShowPopover(false);
                 textAreaRef.current?.focus();
