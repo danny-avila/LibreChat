@@ -82,6 +82,7 @@ const RESOLVED_DECLS = new Set([
   'stop-color',
   'color',
   'display',
+  'visibility',
   'opacity',
   'fill-opacity',
   'stroke-opacity',
@@ -467,7 +468,8 @@ function selectorSpecificity(selector: string): number {
 function parseStyleRules(root: Element): StyleRule[] {
   const rules: StyleRule[] = [];
   for (const style of Array.from(root.querySelectorAll('style'))) {
-    for (const rule of (style.textContent ?? '').split('}')) {
+    const css = (style.textContent ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const rule of css.split('}')) {
       const brace = rule.indexOf('{');
       if (brace === -1) {
         continue;
@@ -560,12 +562,28 @@ function styleNumber(el: Element, rules: StyleRule[], property: string): number 
   return Number.isNaN(number) ? null : number;
 }
 
-/** True when the element or an ancestor is removed from rendering via `display:none`. */
+/**
+ * True when the element does not render: an ancestor (or itself) sets
+ * `display:none`, which removes the whole subtree, or its effective `visibility`
+ * is `hidden`/`collapse`. Visibility is inherited but a descendant may override it
+ * back to `visible`, so the nearest declaration wins.
+ */
 function isHidden(el: Element, root: Element, rules: StyleRule[]): boolean {
   let current: Element | null = el;
   while (current != null) {
     if (styleValue(current, rules, 'display') === 'none') {
       return true;
+    }
+    if (current === root) {
+      break;
+    }
+    current = current.parentElement;
+  }
+  current = el;
+  while (current != null) {
+    const visibility = styleValue(current, rules, 'visibility');
+    if (visibility != null && visibility !== '') {
+      return visibility === 'hidden' || visibility === 'collapse';
     }
     if (current === root) {
       break;
@@ -726,8 +744,20 @@ function referencedTarget(use: Element, root: Element): Element | null {
  * True when a referenced template has a rendered painter that inherits `property`
  * rather than setting its own, so a `<use>` supplying that paint is what colors it.
  * For `fill` the painter must enclose an area; a stroke paints on any outline.
+ * Nested `<use>` are followed (their target inherits the outer instance's paint),
+ * unless the nested `<use>` sets the paint itself; `seen` guards reference cycles.
  */
-function targetInheritsPaint(target: Element, rules: StyleRule[], property: string): boolean {
+function targetInheritsPaint(
+  target: Element,
+  rules: StyleRule[],
+  property: string,
+  root: Element,
+  seen: Set<Element> = new Set(),
+): boolean {
+  if (seen.has(target)) {
+    return false;
+  }
+  seen.add(target);
   const painters = property === 'stroke' ? STROKE_PAINTERS : FILLABLE_SHAPES;
   const shapes = Array.from(target.querySelectorAll(painters));
   if (target.matches(painters)) {
@@ -745,12 +775,21 @@ function targetInheritsPaint(target: Element, rules: StyleRule[], property: stri
       return true;
     }
   }
+  for (const nested of Array.from(target.querySelectorAll('use'))) {
+    if (isHidden(nested, root, rules) || resolvePaint(nested, target, rules, property) != null) {
+      continue;
+    }
+    const nestedTarget = referencedTarget(nested, root);
+    if (nestedTarget != null && targetInheritsPaint(nestedTarget, rules, property, root, seen)) {
+      return true;
+    }
+  }
   return false;
 }
 
 /** True when a referenced template has a fillable shape with no fill of its own. */
-function targetHasDefaultBlackShape(target: Element, rules: StyleRule[]): boolean {
-  return targetInheritsPaint(target, rules, 'fill');
+function targetHasDefaultBlackShape(target: Element, root: Element, rules: StyleRule[]): boolean {
+  return targetInheritsPaint(target, rules, 'fill', root);
 }
 
 /** True when a `<use>`'s own paint reaches a referenced shape that inherits it. */
@@ -761,7 +800,7 @@ function instanceContributesPaint(
   property: string,
 ): boolean {
   const target = referencedTarget(use, root);
-  return target != null && targetInheritsPaint(target, rules, property);
+  return target != null && targetInheritsPaint(target, rules, property, root);
 }
 
 /**
@@ -779,7 +818,7 @@ function hasDefaultBlackUse(root: Element, rules: StyleRule[]): boolean {
       continue;
     }
     const target = referencedTarget(use, root);
-    if (target != null && targetHasDefaultBlackShape(target, rules)) {
+    if (target != null && targetHasDefaultBlackShape(target, root, rules)) {
       return true;
     }
   }
