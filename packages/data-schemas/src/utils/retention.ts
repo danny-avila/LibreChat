@@ -168,3 +168,53 @@ export const cascadeForcedConversationRetention = async (
     await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
   }
 };
+
+/**
+ * Bulk-applies forced retention to every conversation carrying a bookmark tag. A tag rename
+ * or delete writes conversation rows directly (`Conversation.updateMany`) without setting
+ * `isTemporary`/`expiredAt`, so a permanent chat tagged before the install switched to
+ * ephemeral would otherwise stay visible and never expire. One pass converts the chats,
+ * backfills their messages, and caps their shares; the gap filter keeps it a no-op for chats
+ * that already conform and never extends a chat that already expires sooner.
+ */
+export const cascadeForcedRetentionByTag = async (
+  Conversation: Model<IConversation>,
+  Message: Model<IMessage>,
+  SharedLink: Model<ISharedLink>,
+  userId: string,
+  tag: string,
+  forcedExpiredAt: Date,
+): Promise<void> => {
+  const taggedConversations = await Conversation.find(
+    { user: userId, tags: tag },
+    'conversationId',
+  ).lean<Array<{ conversationId: string }>>();
+  if (taggedConversations.length === 0) {
+    return;
+  }
+  const conversationIds = taggedConversations.map((convo) => convo.conversationId);
+  await Conversation.updateMany(
+    {
+      user: userId,
+      conversationId: { $in: conversationIds },
+      ...forcedRetentionGapFilter<IConversation>(forcedExpiredAt),
+    },
+    { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+  );
+  await Message.updateMany(
+    {
+      user: userId,
+      conversationId: { $in: conversationIds },
+      ...forcedRetentionGapFilter<IMessage>(forcedExpiredAt),
+    },
+    { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+  );
+  await SharedLink.updateMany(
+    {
+      user: userId,
+      conversationId: { $in: conversationIds },
+      $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }],
+    },
+    { $set: { expiredAt: forcedExpiredAt } },
+  );
+};

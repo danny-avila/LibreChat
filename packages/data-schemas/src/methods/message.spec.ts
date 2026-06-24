@@ -24,6 +24,7 @@ let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let applyForcedRetention: ReturnType<typeof createMessageMethods>['applyForcedRetention'];
+let applyForcedRetentionToTag: ReturnType<typeof createMessageMethods>['applyForcedRetentionToTag'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
@@ -44,6 +45,7 @@ beforeAll(async () => {
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   applyForcedRetention = methods.applyForcedRetention;
+  applyForcedRetentionToTag = methods.applyForcedRetentionToTag;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
   updateMessageText = methods.updateMessageText;
@@ -1401,6 +1403,101 @@ describe('Message Operations', () => {
       expect(convo?.expiredAt ?? null).toBeNull();
       const message = await Message.findOne({ messageId }).lean();
       expect(message?.expiredAt ?? null).toBeNull();
+    });
+  });
+
+  describe('applyForcedRetentionToTag', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+    });
+
+    it('converts every permanent conversation carrying the tag under ephemeral mode', async () => {
+      const taggedA = uuidv4();
+      const taggedB = uuidv4();
+      const untagged = uuidv4();
+      await Conversation().create([
+        { conversationId: taggedA, user: 'user123', endpoint: 'openAI', tags: ['work'] },
+        { conversationId: taggedB, user: 'user123', endpoint: 'openAI', tags: ['work', 'urgent'] },
+        { conversationId: untagged, user: 'user123', endpoint: 'openAI', tags: ['personal'] },
+      ]);
+      await Message.create([
+        { messageId: uuidv4(), conversationId: taggedA, user: 'user123', text: 'a' },
+        { messageId: uuidv4(), conversationId: taggedB, user: 'user123', text: 'b' },
+        { messageId: uuidv4(), conversationId: untagged, user: 'user123', text: 'c' },
+      ]);
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { tag: 'work' },
+        { context: 'DELETE /api/tags/:tag' },
+      );
+
+      for (const conversationId of [taggedA, taggedB]) {
+        const convo = await Conversation().findOne({ conversationId }).lean();
+        expect(convo?.isTemporary).toBe(true);
+        expect(convo?.expiredAt).toBeInstanceOf(Date);
+        const messages = await getMessages({ conversationId, user: 'user123' });
+        for (const message of messages) {
+          expect(message.isTemporary).toBe(true);
+          expect(message.expiredAt).toBeInstanceOf(Date);
+        }
+      }
+
+      const untouched = await Conversation().findOne({ conversationId: untagged }).lean();
+      expect(untouched?.isTemporary ?? null).not.toBe(true);
+      expect(untouched?.expiredAt ?? null).toBeNull();
+    });
+
+    it('does not extend a tagged conversation that already expires sooner', async () => {
+      const conversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        tags: ['work'],
+        isTemporary: true,
+        expiredAt: soonerExpiry,
+      });
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { tag: 'work' },
+        { context: 'PUT /api/tags/:tag' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
+    it('is a no-op outside forced retention', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        tags: ['work'],
+      });
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.ALL },
+        },
+        { tag: 'work' },
+        { context: 'PUT /api/tags/:tag' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt ?? null).toBeNull();
     });
   });
 
