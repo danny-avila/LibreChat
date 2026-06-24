@@ -1,7 +1,8 @@
 import React, { ReactNode } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { ChevronDown, FileText } from 'lucide-react';
+import { Button } from '@librechat/client';
 import { VisuallyHidden } from '@ariakit/react';
+import { ChevronDown, FileText } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -70,12 +71,13 @@ function FileHovercardContent({
     <>
       <div className="flex items-center gap-2">
         <FileText className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-        <button
+        <Button
+          variant="link"
           onClick={onClick}
-          className="min-w-0 truncate text-sm font-medium text-text-primary hover:underline"
+          className="h-auto min-w-0 justify-start truncate p-0 text-sm font-medium text-text-primary hover:underline"
         >
           {fileName}
-        </button>
+        </Button>
       </div>
       {(fileRelevance != null || (filePages && filePages.length > 0)) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">

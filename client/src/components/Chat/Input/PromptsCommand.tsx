@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
-import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { Input, Spinner, useCombobox } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
@@ -206,10 +206,10 @@ function PromptsCommand({
     >
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
-          <input
+          <Input
             ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
-            className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm text-text-primary focus:outline-none"
+            className="mb-1 h-auto w-full rounded-none border-0 bg-surface-tertiary-alt p-2 text-sm text-text-primary focus:outline-none"
             autoComplete="off"
             value={searchValue}
             onKeyDown={(e) => {

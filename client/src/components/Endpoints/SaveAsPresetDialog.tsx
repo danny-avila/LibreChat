@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
-import { OGDialogTemplate, OGDialog, Input, Label, useToastContext } from '@librechat/client';
+import {
+  OGDialogTemplate,
+  OGDialog,
+  Button,
+  Input,
+  Label,
+  useToastContext,
+} from '@librechat/client';
 import type { TEditPresetProps } from '~/common';
 import { cn, removeFocusOutlines, cleanupPreset, defaultTextProps } from '~/utils';
 import { NotificationSeverity } from '~/common';
@@ -81,11 +88,11 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
             </div>
           </div>
         }
-        selection={{
-          selectHandler: submitPreset,
-          selectClasses: 'bg-surface-submit hover:bg-surface-submit-hover text-white',
-          selectText: localize('com_ui_save'),
-        }}
+        buttons={
+          <Button variant="submit" onClick={submitPreset}>
+            {localize('com_ui_save')}
+          </Button>
+        }
       />
     </OGDialog>
   );

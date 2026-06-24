@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { FileUp } from 'lucide-react';
-import { cn } from '~/utils/';
+import { Button } from '@librechat/client';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils/';
 
 type FileUploadProps = {
   onFileSelected: (jsonData: Record<string, unknown>) => void;
@@ -71,8 +72,10 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         onClick={handleClick}
         className={cn(
           'mr-1 flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-normal text-text-secondary transition-colors hover:bg-surface-hover hover:text-status-success focus:ring-text-primary',
@@ -83,7 +86,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
       >
         <FileUp className="mr-1 flex w-[22px] items-center stroke-1" aria-hidden="true" />
         <span className="flex text-xs">{statusText}</span>
-      </button>
+      </Button>
       <input
         id={`file-upload-${id}`}
         value=""

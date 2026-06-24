@@ -1,3 +1,4 @@
+import { Button } from '@librechat/client';
 import { XCircle, PlusCircleIcon, Wrench } from 'lucide-react';
 import type { TPlugin, AgentToolType } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
@@ -51,8 +52,9 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
             {name}
           </div>
           {!isInstalled ? (
-            <button
-              className="btn btn-primary relative"
+            <Button
+              variant="submit"
+              className="relative"
               aria-label={`${localize('com_ui_add')} ${name}`}
               onClick={handleClick}
             >
@@ -60,10 +62,11 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
                 {localize('com_ui_add')}
                 <PlusCircleIcon className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
               </div>
-            </button>
+            </Button>
           ) : (
-            <button
-              className="btn relative bg-surface-tertiary hover:bg-surface-hover"
+            <Button
+              variant="outline"
+              className="relative"
               onClick={handleClick}
               aria-label={`${localize('com_nav_tool_remove')} ${name}`}
             >
@@ -71,7 +74,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
                 {localize('com_nav_tool_remove')}
                 <XCircle className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
               </div>
-            </button>
+            </Button>
           )}
         </div>
       </div>

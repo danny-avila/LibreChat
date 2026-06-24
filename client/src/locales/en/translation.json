@@ -1553,6 +1553,7 @@
   "com_ui_reject": "Reject",
   "com_ui_reject_reason_placeholder": "Optional: reason for rejecting (shared with the agent)",
   "com_ui_relevance": "Relevance",
+  "com_ui_reload_page": "Reload the page",
   "com_ui_remote_access": "Remote Access",
   "com_ui_remote_agent_role_editor": "Editor",
   "com_ui_remote_agent_role_editor_desc": "Can view and modify the agent via API",

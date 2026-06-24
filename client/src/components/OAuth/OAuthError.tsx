@@ -1,4 +1,5 @@
 import React from 'react';
+import { Button } from '@librechat/client';
 import { useSearchParams } from 'react-router-dom';
 import { useLocalize } from '~/hooks';
 
@@ -59,13 +60,13 @@ export default function OAuthError() {
           {localize('com_ui_oauth_error_title') || 'Authentication Failed'}
         </h1>
         <p className="mb-6 text-sm text-text-secondary">{getErrorMessage(error)}</p>
-        <button
+        <Button
+          variant="default"
           onClick={() => window.close()}
-          className="rounded-md bg-surface-inverted px-4 py-2 text-sm font-medium text-text-inverted hover:bg-surface-inverted-hover focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2"
-          aria-label={localize('com_ui_close_window') || 'Close Window'}
+          aria-label={localize('com_ui_close_window')}
         >
-          {localize('com_ui_close_window') || 'Close Window'}
-        </button>
+          {localize('com_ui_close_window')}
+        </Button>
       </div>
     </div>
   );

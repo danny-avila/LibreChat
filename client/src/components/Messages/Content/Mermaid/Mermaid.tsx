@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Spinner } from '@librechat/client';
+import { Button, Spinner } from '@librechat/client';
 import useSvgProcessing from './useSvgProcessing';
 import useMermaidZoom from './useMermaidZoom';
 import MermaidDialog from './MermaidDialog';
@@ -178,14 +178,15 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
             <span className="font-semibold text-text-destructive">
               {localize('com_ui_mermaid_failed')}
             </span>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={handleRetry}
-              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface-hover"
+              className="h-auto gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface-hover"
             >
               <RefreshCw className="h-3 w-3" />
               {localize('com_ui_retry')}
-            </button>
+            </Button>
           </div>
           <pre className="overflow-auto text-xs text-text-destructive">{error.message}</pre>
           {showCode && (

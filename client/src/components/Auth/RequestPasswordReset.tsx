@@ -1,12 +1,12 @@
-import { useForm } from 'react-hook-form';
 import { useState, ReactNode } from 'react';
-import { Spinner, Button, Alert } from '@librechat/client';
+import { useForm } from 'react-hook-form';
 import { useOutletContext } from 'react-router-dom';
-import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import { loginPage } from 'librechat-data-provider';
+import { Spinner, Button, Alert, Input } from '@librechat/client';
+import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
-import type { TLoginLayoutContext } from '~/common';
 import type { FC } from 'react';
+import type { TLoginLayoutContext } from '~/common';
 import { useLocalize } from '~/hooks';
 
 const BodyTextWrapper: FC<{ children: ReactNode }> = ({ children }) => {
@@ -84,7 +84,7 @@ function RequestPasswordReset() {
     >
       <div className="space-y-2">
         <div className="relative">
-          <input
+          <Input
             type="email"
             id="email"
             autoComplete="off"

@@ -72,7 +72,7 @@ function SelectDropDownPop({
                 'hover:bg-surface-hover radix-state-open:bg-surface-hover',
                 'min-w-[200px] max-w-[215px] sm:min-w-full sm:max-w-full',
               )}
-              aria-label={`Select ${title}`}
+              aria-label={localize('com_ui_select_var', { 0: title })}
               aria-haspopup="false"
             >
               {' '}

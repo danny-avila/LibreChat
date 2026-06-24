@@ -3,6 +3,7 @@ import { useMultiSearch } from '@librechat/client';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
 import type { TPlugin } from 'librechat-data-provider';
 import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 
 type SelectDropDownProps = {
@@ -32,6 +33,7 @@ function MultiSelectPop({
   optionValueKey = 'value',
   searchPlaceholder,
 }: SelectDropDownProps) {
+  const localize = useLocalize();
   const title = _title;
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
 
@@ -71,7 +73,7 @@ function MultiSelectPop({
                   )} */}
                   <span className="flex items-center gap-1">
                     <div className="flex gap-1">
-                      {value.length === 0 && 'None selected'}
+                      {value.length === 0 && localize('com_ui_none_selected')}
                       {value.map((v, i) => (
                         <div key={i} className="relative">
                           {v.icon ? (
