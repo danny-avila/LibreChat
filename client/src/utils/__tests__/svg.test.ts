@@ -358,6 +358,18 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><style>.hidden{display:none}</style><path d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('preserves a class glyph that a type rule would otherwise recolor', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.fg{fill:#000}.bg{fill:#fff}path{fill:#fff}</style><path class="bg" d="M0 0h6v6H0z" /><path class="fg" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints when a more specific class rule agrees with the type rule', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.fg{fill:#333}path{fill:#333}</style><path class="fg" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('multi-color icons (colors preserved)', () => {
@@ -543,6 +555,24 @@ describe('isMonochromeSvg', () => {
     it('still counts a paint whose fill-opacity is one under a visible group', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><g opacity="1"><path fill="#f00" fill-opacity="1" d="M4 4h16v16H4z" /></g></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('ignores a transparent default-filled shape via fill-opacity', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill-opacity="0" /><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a transparent default-filled shape via opacity', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" opacity="0" /><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('still counts an opaque default-filled shape as black', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" /><path fill="#fff" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
