@@ -914,6 +914,8 @@ export const vertexModelConfigSchema = z
   .object({
     /** The actual model ID/deployment name used by Vertex AI API */
     deploymentName: z.string().optional(),
+    /** The region/location override for this model */
+    region: z.string().optional(),
   })
   .or(z.boolean());
 
@@ -966,6 +968,23 @@ export const anthropicEndpointSchema = baseEndpointSchema.merge(
 );
 
 export type TAnthropicEndpoint = z.infer<typeof anthropicEndpointSchema>;
+
+export const googleEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    /** Optional: List of available models or a models object config */
+    models: z
+      .object({
+        default: z.array(modelItemSchema).min(1),
+        fetch: z.boolean().optional(),
+        userIdQuery: z.boolean().optional(),
+      })
+      .optional(),
+    /** Optional: Per-model location overrides */
+    perModelLocation: z.record(z.string(), z.string()).optional(),
+  }),
+);
+
+export type TGoogleEndpoint = z.infer<typeof googleEndpointSchema>;
 
 const ttsOpenaiSchema = z.object({
   url: z.string().optional(),
@@ -1759,7 +1778,7 @@ export const configSchema = z.object({
       allowedAddresses: allowedAddressesSchema,
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
-      [EModelEndpoint.google]: baseEndpointSchema.optional(),
+      [EModelEndpoint.google]: googleEndpointSchema.optional(),
       [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),

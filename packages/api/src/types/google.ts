@@ -31,4 +31,6 @@ export interface GoogleConfigOptions {
   forceVertex?: boolean;
   /** GCP project id for Vertex AI ADC/service-account authentication */
   projectId?: string;
+  /** Optional: Per-model location overrides */
+  perModelLocation?: Record<string, string>;
 }

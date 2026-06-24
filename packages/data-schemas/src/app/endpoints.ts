@@ -22,7 +22,7 @@ export const loadEndpoints = (
 ): {
   allowedAddresses?: string[];
   openAI?: Partial<import('librechat-data-provider').TEndpoint>;
-  google?: Partial<import('librechat-data-provider').TEndpoint>;
+  google?: import('librechat-data-provider').TGoogleEndpoint;
   bedrock?: Partial<import('librechat-data-provider').TEndpoint>;
   anthropic?: Partial<TAnthropicEndpoint> & {
     vertexConfig?: import('librechat-data-provider').TVertexAIConfig;
