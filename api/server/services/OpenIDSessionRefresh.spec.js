@@ -599,6 +599,63 @@ describe('OpenIDSessionRefresh', () => {
       expect(reqB.session.openidTokens.refreshToken).toBe('rt-B-rotated');
     });
 
+    it('does NOT share an in-flight refresh in the same session when refresh tokens differ', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const reqOld = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-old',
+        },
+        'session-rotated',
+      );
+      const reqCurrent = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-current',
+        },
+        'session-rotated',
+      );
+      let resolveOld;
+      let resolveCurrent;
+      const oldPromise = new Promise((resolve) => {
+        resolveOld = resolve;
+      });
+      const currentPromise = new Promise((resolve) => {
+        resolveCurrent = resolve;
+      });
+      openIdClient.refreshTokenGrant
+        .mockReturnValueOnce(oldPromise)
+        .mockReturnValueOnce(currentPromise);
+
+      const user = makeOpenIdUser();
+      const oldRefresh = refreshOpenIDSession(reqOld, undefined, user, 'access_token');
+      const currentRefresh = refreshOpenIDSession(reqCurrent, undefined, user, 'access_token');
+      await Promise.resolve();
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(2);
+
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      resolveOld({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-old-rotated',
+        expires_in: 3600,
+      });
+      resolveCurrent({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-current-rotated',
+        expires_in: 3600,
+      });
+
+      const [oldResult, currentResult] = await Promise.all([oldRefresh, currentRefresh]);
+      expect(oldResult).not.toBe(currentResult);
+      expect(reqOld.session.openidTokens.refreshToken).toBe('rt-old-rotated');
+      expect(reqCurrent.session.openidTokens.refreshToken).toBe('rt-current-rotated');
+    });
+
     it('clears in-flight slot on rejection so subsequent attempts can retry', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const sessionTokens = {

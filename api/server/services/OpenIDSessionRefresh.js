@@ -52,11 +52,12 @@ const UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 
 /**
  * In-flight upstream refreshes keyed by `getSingleFlightKey(req, user)` —
- * a composite of `tenantId:openidIssuer:openidId:sessionId`. See that helper
- * for the rationale on why each component is needed; in short, per-session
- * keying prevents refresh-token rotation from breaking sibling sessions, and
- * tenant+issuer keying prevents cross-tenant token crossover when distinct
- * users share an IdP `sub`.
+ * a composite of `tenantId:openidIssuer:openidId:sessionId:refreshTokenHash`.
+ * See that helper for the rationale on why each component is needed; in short,
+ * per-session keying prevents refresh-token rotation from breaking sibling
+ * sessions, tenant+issuer keying prevents cross-tenant token crossover when
+ * distinct users share an IdP `sub`, and refresh-token keying prevents a request
+ * carrying a newly-rotated session token from joining an older pending refresh.
  *
  * A fan-out of tool calls landing on an expired session within the SAME
  * session coalesces into one IdP refresh-token grant. Mirrors the
@@ -70,7 +71,8 @@ const inFlightRefreshes = new Map();
 
 /**
  * Returns the single-flight key for a refresh attempt, composed from the
- * Express session id, the user's tenant (if any), and the IdP issuer + sub.
+ * Express session id, the user's tenant (if any), the IdP issuer + sub, and
+ * the current session refresh token.
  * Tightening past `openidId` alone serves two purposes:
  *
  *  1. Same human, multiple sessions: refresh-token rotation by the IdP would
@@ -81,22 +83,24 @@ const inFlightRefreshes = new Map();
  *     (different issuers, same sub): tenant + issuer disambiguates them so
  *     tokens never cross tenant boundaries via shared in-flight Promises.
  *
- * Concurrent tool calls inside the SAME session still coalesce — the common
- * case the single-flight is designed for (a fan-out of MCP tool calls in one
- * agent run) is unaffected.
+ * Concurrent tool calls inside the SAME session with the SAME refresh token
+ * still coalesce — the common case the single-flight is designed for (a fan-out
+ * of MCP tool calls in one agent run) is unaffected.
  *
  * Returns null when there's no usable identity at all; callers fall through
  * to a non-coalesced refresh, which is safe but missing the optimization.
  */
 function getSingleFlightKey(req, user) {
   const sub = user?.openidId || user?.id || user?._id?.toString?.();
-  if (!sub) {
+  const refreshToken = req?.session?.openidTokens?.refreshToken;
+  if (!sub || !refreshToken) {
     return null;
   }
   const sessionId = req?.sessionID || 'no-session';
   const tenantId = user?.tenantId || 'no-tenant';
   const issuer = user?.openidIssuer || 'no-issuer';
-  return `${tenantId}:${issuer}:${sub}:${sessionId}`;
+  const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+  return `${tenantId}:${issuer}:${sub}:${sessionId}:${refreshTokenHash}`;
 }
 
 /**
