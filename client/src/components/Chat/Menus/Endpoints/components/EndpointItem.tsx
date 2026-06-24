@@ -7,7 +7,7 @@ import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem, CustomMenuSeparator } from '../CustomMenu';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
-import { filterModels, shouldRenderEndpointOption } from '../utils';
+import { filterModels, getSpecModelIds, shouldRenderEndpointOption } from '../utils';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
 import { ModelSpecItem } from './ModelSpecItem';
@@ -107,6 +107,14 @@ function EndpointMenuContent({
     return modelSpecs.filter((spec: TModelSpec) => spec.group === endpoint.value);
   }, [modelSpecs, endpoint.value]);
 
+  const visibleModels = useMemo(() => {
+    const specModelIds = getSpecModelIds(endpointSpecs);
+    if (!specModelIds.size) {
+      return endpoint.models;
+    }
+    return (endpoint.models || []).filter((model) => !specModelIds.has(model.name));
+  }, [endpoint.models, endpointSpecs]);
+
   if (isAssistantsEndpoint(endpoint.value) && endpoint.models === undefined) {
     return (
       <div
@@ -122,13 +130,13 @@ function EndpointMenuContent({
   const filteredModels = searchValue
     ? filterModels(
         endpoint,
-        (endpoint.models || []).map((model) => model.name),
+        (visibleModels || []).map((model) => model.name),
         searchValue,
         agentsMap,
         assistantsMap,
       )
     : null;
-  const renderedModels = filteredModels ?? endpoint.models?.map((model) => model.name) ?? [];
+  const renderedModels = filteredModels ?? visibleModels?.map((model) => model.name) ?? [];
   const showMarketplace =
     endpoint.showMarketplace === true && marketplaceSearchMatches(searchValue, localize);
   const hasSelectableRows = endpointSpecs.length > 0 || renderedModels.length > 0;
@@ -141,9 +149,9 @@ function EndpointMenuContent({
         <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
       ))}
       {filteredModels
-        ? renderEndpointModels(endpoint, endpoint.models || [], filteredModels, endpointIndex)
-        : endpoint.models &&
-          renderEndpointModels(endpoint, endpoint.models, undefined, endpointIndex)}
+        ? renderEndpointModels(endpoint, visibleModels || [], filteredModels, endpointIndex)
+        : visibleModels &&
+          renderEndpointModels(endpoint, visibleModels, undefined, endpointIndex)}
     </>
   );
 }

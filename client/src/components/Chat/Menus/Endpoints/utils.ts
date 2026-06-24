@@ -119,6 +119,21 @@ export function filterModels(
   });
 }
 
+/**
+ * Collects the underlying model ids referenced by a set of grouped model specs,
+ * so the raw endpoint models they represent can be hidden from the picker — a
+ * model surfaced as a friendly spec card should not also appear as a raw row.
+ */
+export function getSpecModelIds(specs: TModelSpec[]): Set<string> {
+  const modelIds = new Set<string>();
+  for (const spec of specs) {
+    if (spec.preset.model) {
+      modelIds.add(spec.preset.model);
+    }
+  }
+  return modelIds;
+}
+
 export function getSelectedIcon({
   mappedEndpoints,
   selectedValues,
