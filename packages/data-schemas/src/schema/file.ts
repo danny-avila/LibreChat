@@ -135,6 +135,13 @@ const file: Schema<IMongoFile> = new Schema(
         ),
         default: undefined,
       },
+      imageGen: {
+        type: new Schema(
+          { prompt: { type: String }, predictionId: { type: String, index: true } },
+          { _id: false },
+        ),
+        default: undefined,
+      },
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from

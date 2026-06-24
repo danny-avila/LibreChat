@@ -70,6 +70,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
      * derive the sessionKey explicitly.
      */
     codeEnvRef?: CodeEnvRef;
+    /** Image generation provenance — set on files produced by the image workspace. */
+    imageGen?: { prompt?: string; predictionId?: string };
   };
   expiresAt?: Date;
   expiredAt?: Date | null;
