@@ -24,6 +24,7 @@ jest.mock('~/hooks');
 jest.mock('~/hooks/Messages/useConversationUIResources');
 
 jest.mock('~/utils/mcpApps', () => ({
+  buildAppToolResult: jest.fn(),
   getMCPSandboxUrl: () => 'http://localhost/sandbox',
   callMCPAppTool: jest.fn(),
   readMCPResource: jest.fn(),

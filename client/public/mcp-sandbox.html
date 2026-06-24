@@ -167,9 +167,9 @@
       ].join('; ');
     }
 
-    // Only permit host patterns: optional scheme, optional wildcard subdomain prefix,
-    // hostname characters, optional port. Rejects CSP keywords and injection attempts.
-    const SAFE_HOST_RE = /^(?:https?:\/\/)?(?:\*\.)?[a-zA-Z0-9][a-zA-Z0-9\-.]*(?::\d{1,5})?$/;
+    // Only permit host patterns: optional http(s)/ws(s) scheme, optional wildcard subdomain
+    // prefix, hostname characters, optional port. Rejects CSP keywords and injection attempts.
+    const SAFE_HOST_RE = /^(?:(?:https?|wss?):\/\/)?(?:\*\.)?[a-zA-Z0-9][a-zA-Z0-9\-.]*(?::\d{1,5})?$/;
 
     function toDomainList(value) {
       if (!Array.isArray(value)) return '';

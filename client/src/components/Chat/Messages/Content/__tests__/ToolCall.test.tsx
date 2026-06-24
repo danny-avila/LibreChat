@@ -201,9 +201,10 @@ describe('ToolCall', () => {
         <ToolCall {...mockProps} attachments={attachments as any} />,
       );
 
-      const iframe = container.querySelector('iframe[srcdoc]');
+      // A server-bound inline resource renders through the sandbox bridge (not bare srcDoc),
+      // so its App.connect handshake receives tool input/results.
+      const iframe = container.querySelector('iframe[data-sandbox-url]');
       expect(iframe).toBeInTheDocument();
-      expect(iframe).toHaveAttribute('srcdoc', '<p>inline resource</p>');
     });
   });
 

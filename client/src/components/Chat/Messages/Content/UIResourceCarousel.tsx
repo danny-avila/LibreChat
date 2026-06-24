@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { UIResource } from 'librechat-data-provider';
-import { getMCPSandboxUrl } from '~/utils/mcpApps';
+import { getMCPSandboxUrl, buildAppToolResult } from '~/utils/mcpApps';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 
@@ -20,17 +20,7 @@ function MCPAppCard({
   const [loaded, setLoaded] = useState(false);
   const sandboxUrl = React.useMemo(() => getMCPSandboxUrl(), []);
 
-  const toolResult = React.useMemo(() => {
-    const sc = resource.structuredContent as Record<string, unknown> | undefined | null;
-    const content = (resource.content as [] | undefined) ?? [];
-    if ((!sc || typeof sc !== 'object' || Array.isArray(sc)) && content.length === 0)
-      return undefined;
-    return {
-      content,
-      ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
-      ...(resource.isError === true ? { isError: true } : {}),
-    };
-  }, [resource.structuredContent, resource.content, resource.isError]);
+  const toolResult = React.useMemo(() => buildAppToolResult(resource), [resource]);
 
   const handleSizeChanged = React.useCallback(
     (params: { height?: number; width?: number }) => {
@@ -50,7 +40,7 @@ function MCPAppCard({
     handleSizeChanged,
   );
 
-  if (resource.toolName && resource.serverName && !resource.text) {
+  if (resource.toolName && resource.serverName) {
     return (
       <>
         {!loaded && (

@@ -10,10 +10,10 @@ import {
   actionDomainSeparator,
 } from 'librechat-data-provider';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
+import { getMCPSandboxUrl, buildAppToolResult } from '~/utils/mcpApps';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useAppBridge } from '~/hooks/MCP';
-import { getMCPSandboxUrl } from '~/utils/mcpApps';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -50,17 +50,7 @@ const MCPAppView = React.memo(function MCPAppView({
     }
   }, [args]);
 
-  const toolResult = useMemo(() => {
-    const sc = app.structuredContent as Record<string, unknown> | undefined | null;
-    const content = (app.content as [] | undefined) ?? [];
-    if ((!sc || typeof sc !== 'object' || Array.isArray(sc)) && content.length === 0)
-      return undefined;
-    return {
-      content,
-      ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
-      ...(app.isError === true ? { isError: true } : {}),
-    };
-  }, [app.structuredContent, app.content, app.isError]);
+  const toolResult = useMemo(() => buildAppToolResult(app), [app]);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {
@@ -71,7 +61,8 @@ const MCPAppView = React.memo(function MCPAppView({
 
   useAppBridge(iframeRef, app, toolArgs, toolResult, handleSizeChanged);
 
-  if (app.text && (app.mimeType ?? 'text/html').includes('html')) {
+  const isAppBacked = !!(app.toolName && app.serverName);
+  if (!isAppBacked && app.text && (app.mimeType ?? 'text/html').includes('html')) {
     return (
       <div className="my-2">
         <iframe

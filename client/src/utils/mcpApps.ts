@@ -1,4 +1,40 @@
 import { request, apiBaseUrl } from 'librechat-data-provider';
+import type { UIResource } from 'librechat-data-provider';
+
+export type AppToolResult = {
+  content: [];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+};
+
+/**
+ * Builds the App Bridge tool result from a UI resource. App-backed resources (toolName +
+ * serverName) always produce a result so the app's ontoolresult fires even for empty output,
+ * and the tool result's _meta is forwarded for apps that hydrate from it.
+ */
+export function buildAppToolResult(resource: UIResource): AppToolResult | undefined {
+  const sc = resource.structuredContent as Record<string, unknown> | undefined | null;
+  const content = (resource.content as [] | undefined) ?? [];
+  const meta = resource.resultMeta as Record<string, unknown> | undefined;
+  const hasStructured = !!sc && typeof sc === 'object' && !Array.isArray(sc);
+  const isAppBacked = !!(resource.toolName && resource.serverName);
+  if (
+    !hasStructured &&
+    content.length === 0 &&
+    meta == null &&
+    resource.isError !== true &&
+    !isAppBacked
+  ) {
+    return undefined;
+  }
+  return {
+    content,
+    ...(hasStructured ? { structuredContent: sc } : {}),
+    ...(resource.isError === true ? { isError: true } : {}),
+    ...(meta != null ? { _meta: meta } : {}),
+  };
+}
 
 export function getMCPSandboxUrl(): string {
   const configured = (import.meta.env as Record<string, string | undefined>).VITE_MCP_SANDBOX_URL;

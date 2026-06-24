@@ -210,6 +210,7 @@ export function formatToolContent(
           structuredContent: result?.structuredContent,
           content: result?.content,
           isError: result?.isError,
+          resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
           csp: metadata?.csp,
           permissions: metadata?.permissions,
           toolArgs: metadata?.toolArgs,
@@ -267,6 +268,7 @@ export function formatToolContent(
       permissions: metadata.permissions,
       toolArgs: metadata.toolArgs,
       isError: result?.isError,
+      resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
     });
     currentTextBlock +=
       (currentTextBlock ? '\n\n' : '') +

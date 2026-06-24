@@ -6,6 +6,7 @@ import {
   buildAllowAttribute,
 } from '@modelcontextprotocol/ext-apps/app-bridge';
 import type { UIResource } from 'librechat-data-provider';
+import type { AppToolResult } from '~/utils/mcpApps';
 import { callMCPAppTool, fetchMCPResourceHtml, readMCPResource } from '~/utils/mcpApps';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { logger } from '~/utils';
@@ -19,7 +20,7 @@ export function useAppBridge(
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
   resource: UIResource,
   toolArgs: Record<string, unknown> | undefined,
-  toolResult: { content: []; structuredContent?: Record<string, unknown> } | undefined,
+  toolResult: AppToolResult | undefined,
   onSizeChanged: (params: SizeParams) => void,
 ) {
   const user = useRecoilValue(store.user);
@@ -64,7 +65,13 @@ export function useAppBridge(
       bridge = new AppBridge(
         null,
         { name: 'LibreChat', version: '1.0.0' },
-        { openLinks: {}, serverTools: {}, serverResources: {}, logging: {} },
+        {
+          openLinks: {},
+          serverTools: {},
+          serverResources: {},
+          logging: {},
+          message: { text: {} },
+        },
         {
           hostContext: {
             theme,
@@ -114,11 +121,11 @@ export function useAppBridge(
 
       bridge.addEventListener('sandboxready', async () => {
         try {
-          const { html, csp, permissions } = await fetchMCPResourceHtml(
-            resource.serverName as string,
-            resource.uri,
-            user?.id,
-          );
+          // Inline mcp-app resources already carry their HTML, so use it directly instead of a
+          // resources/read round trip; resourceUri-only apps are fetched from the server.
+          const { html, csp, permissions } = resource.text
+            ? { html: resource.text, csp: resource.csp, permissions: resource.permissions }
+            : await fetchMCPResourceHtml(resource.serverName as string, resource.uri, user?.id);
           const resolvedPermissions = permissions ?? resource.permissions;
           if (resolvedPermissions) {
             const updatedAllow = buildAllowAttribute(

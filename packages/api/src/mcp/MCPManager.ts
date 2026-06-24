@@ -70,6 +70,8 @@ export class MCPManager extends UserConnectionManager {
 
   private readonly modelOnlyToolCache = new Map<string, Set<string>>();
   private readonly knownToolNamesCache = new Map<string, Set<string>>();
+  /** createdAt of the connection each cache entry was built from, to detect reconnects. */
+  private readonly toolCacheConnStamp = new Map<string, number>();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -354,6 +356,7 @@ Please follow these instructions when using tools from the respective MCP server
       this.resourceUriCache.delete(cacheKey);
       this.modelOnlyToolCache.delete(cacheKey);
       this.knownToolNamesCache.delete(cacheKey);
+      this.toolCacheConnStamp.delete(cacheKey);
       return;
     }
     if (serverName) {
@@ -362,13 +365,27 @@ Please follow these instructions when using tools from the respective MCP server
           this.resourceUriCache.delete(key);
           this.modelOnlyToolCache.delete(key);
           this.knownToolNamesCache.delete(key);
+          this.toolCacheConnStamp.delete(key);
         }
       }
     } else {
       this.resourceUriCache.clear();
       this.modelOnlyToolCache.clear();
       this.knownToolNamesCache.clear();
+      this.toolCacheConnStamp.clear();
     }
+  }
+
+  /**
+   * App-level connections can be transparently recreated when a server config changes
+   * (ConnectionsRepository.get), so cached tool metadata is only valid while it was built
+   * from the current connection instance.
+   */
+  private isToolCacheFresh(cacheKey: string, connection: MCPConnection): boolean {
+    return (
+      this.knownToolNamesCache.has(cacheKey) &&
+      this.toolCacheConnStamp.get(cacheKey) === connection.createdAt
+    );
   }
 
   protected removeUserConnection(userId: string, serverName: string): void {
@@ -412,6 +429,7 @@ Please follow these instructions when using tools from the respective MCP server
     this.resourceUriCache.set(cacheKey, serverMap);
     this.modelOnlyToolCache.set(cacheKey, modelOnly);
     this.knownToolNamesCache.set(cacheKey, knownNames);
+    this.toolCacheConnStamp.set(cacheKey, connection.createdAt);
   }
 
   private async getResourceMeta(
@@ -430,7 +448,7 @@ Please follow these instructions when using tools from the respective MCP server
       return serverMap.get(toolName);
     }
     const cacheKey = `${serverName}:${userId ?? ''}`;
-    if (!this.resourceUriCache.has(cacheKey)) {
+    if (!this.isToolCacheFresh(cacheKey, connection)) {
       await this.populateToolCaches(connection, cacheKey);
     }
     return this.resourceUriCache.get(cacheKey)?.get(toolName);
@@ -817,7 +835,7 @@ Please follow these instructions when using tools from the respective MCP server
     }
 
     const cacheKey = `${serverName}:${userId ?? ''}`;
-    if (!this.knownToolNamesCache.has(cacheKey)) {
+    if (!this.isToolCacheFresh(cacheKey, connection)) {
       await this.populateToolCaches(connection, cacheKey);
     }
     if (!this.knownToolNamesCache.get(cacheKey)?.has(toolName)) {

@@ -1,7 +1,7 @@
 import React, { useRef, useState, useMemo, useCallback } from 'react';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import { getMCPSandboxUrl, buildAppToolResult } from '~/utils/mcpApps';
 import { useOptionalMessagesConversation } from '~/Providers';
-import { getMCPSandboxUrl } from '~/utils/mcpApps';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
@@ -28,17 +28,10 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   const [height, setHeight] = useState<number | undefined>(undefined);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
 
-  const toolResult = useMemo(() => {
-    const sc = uiResource?.structuredContent as Record<string, unknown> | undefined | null;
-    const content = (uiResource?.content as [] | undefined) ?? [];
-    if ((!sc || typeof sc !== 'object' || Array.isArray(sc)) && content.length === 0)
-      return undefined;
-    return {
-      content,
-      ...(sc && typeof sc === 'object' && !Array.isArray(sc) ? { structuredContent: sc } : {}),
-      ...(uiResource?.isError === true ? { isError: true } : {}),
-    };
-  }, [uiResource?.structuredContent, uiResource?.content, uiResource?.isError]);
+  const toolResult = useMemo(
+    () => (uiResource ? buildAppToolResult(uiResource) : undefined),
+    [uiResource],
+  );
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {
@@ -66,7 +59,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   }
 
   try {
-    if (uiResource.toolName && uiResource.serverName && !uiResource.text) {
+    if (uiResource.toolName && uiResource.serverName) {
       return (
         <span
           className="mx-1 inline-block w-full align-middle"

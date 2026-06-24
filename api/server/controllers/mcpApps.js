@@ -17,8 +17,11 @@ const readMCPResource = async (req, res) => {
     if (!serverName || !uri) {
       return res.status(400).json({ error: 'serverName and uri are required' });
     }
-    if (typeof uri !== 'string' || !uri.startsWith('ui://')) {
-      return res.status(400).json({ error: 'uri must use the ui:// scheme' });
+    // The serverResources capability lets an app read any resource the connected MCP server
+    // exposes (ui:// templates plus supporting data such as file:// or custom schemes), so the
+    // proxy only requires a non-empty string and leaves resource authorization to the server.
+    if (typeof uri !== 'string' || uri.length === 0) {
+      return res.status(400).json({ error: 'uri must be a non-empty string' });
     }
 
     const mcpManager = getMCPManager();
