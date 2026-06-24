@@ -166,6 +166,10 @@ export const conversationPreset: {
   web_search: {
     type: BooleanConstructor;
   };
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
+    type: BooleanConstructor;
+  };
   disableStreaming: {
     type: BooleanConstructor;
   };
@@ -326,6 +330,10 @@ export const conversationPreset: {
   },
   /** OpenAI Responses API / Anthropic API / Google API */
   web_search: {
+    type: Boolean,
+  },
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
     type: Boolean,
   },
   disableStreaming: {

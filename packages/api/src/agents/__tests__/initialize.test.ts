@@ -244,6 +244,13 @@ function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | un
   );
 }
 
+function countUrlContextTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => tool != null && typeof tool === 'object' && 'urlContext' in tool)
+      .length ?? 0
+  );
+}
+
 describe('initializeAgent — custom provider token lookup', () => {
   const CUSTOM_PROVIDER = 'EduGPT';
 
@@ -633,6 +640,62 @@ describe('initializeAgent — provider web_search precedence', () => {
 
     expect(result.tools).toEqual([nativeWebSearchTool]);
     expect(countNamedWebSearchTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('treats the Google urlContext tool as a native provider tool', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-1.5-flash',
+      providerTools: [{ urlContext: {} }],
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
+  });
+
+  it('preserves the Google urlContext tool when LibreChat web_search is also enabled', async () => {
+    /**
+     * url_context is unrelated to web search, so the LibreChat web_search conflict
+     * resolver must not strip the native urlContext tool. The combination of a
+     * provider tool with an agent tool requires a combination-capable Gemini model.
+     */
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [{ urlContext: {} }],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
 });
