@@ -97,6 +97,16 @@ describe('extractYouTubeUrls', () => {
     );
   });
 
+  it('finds a nested youtu.be link inside an unrecognized YouTube URL', () => {
+    const text = 'https://www.youtube.com/redirect?q=https://youtu.be/dQw4w9WgXcQ';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('ignores unrecognized YouTube routes with no nested video', () => {
+    expect(extractYouTubeUrls('https://www.youtube.com/results?search_query=cats')).toEqual([]);
+    expect(extractYouTubeUrls('https://www.youtube.com/@SomeChannel')).toEqual([]);
+  });
+
   it('matches capitalized watch/embed paths (case-insensitive)', () => {
     expect(extractYouTubeUrls('https://www.youtube.com/WATCH?v=dQw4w9WgXcQ')).toEqual([
       WATCH('dQw4w9WgXcQ'),
