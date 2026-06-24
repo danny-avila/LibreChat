@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Info, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Info, AlertTriangle } from 'lucide-react';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
-import { Input, Button, Skeleton, TextareaAutosize, useToastContext } from '@librechat/client';
+import {
+  Label,
+  Input,
+  Button,
+  Skeleton,
+  TextareaAutosize,
+  useToastContext,
+} from '@librechat/client';
 import {
   InvocationMode,
   SKILL_NAME_PATTERN,
@@ -278,13 +285,13 @@ export default function SkillForm({ skillId }: SkillFormProps) {
             }}
             render={({ field }) => (
               <div className="flex flex-col">
-                <label
+                <Label
                   htmlFor="skill-description"
                   className="mb-1 text-sm font-medium text-text-secondary"
                 >
                   {localize('com_ui_description')}
                   <span className="ml-0.5 text-text-destructive">*</span>
-                </label>
+                </Label>
                 <TextareaAutosize
                   {...field}
                   id="skill-description"

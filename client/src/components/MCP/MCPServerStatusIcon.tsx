@@ -1,6 +1,6 @@
 import React from 'react';
-import { Spinner } from '@librechat/client';
 import { PlugZap, SlidersHorizontal, X } from 'lucide-react';
+import { Button, Spinner, TooltipAnchor } from '@librechat/client';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -144,18 +144,23 @@ function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProp
 function LoadingStatusIcon({ serverName, onCancel, canCancel }: InitializingStatusProps) {
   if (canCancel) {
     return (
-      <button
-        type="button"
-        onClick={onCancel}
-        className="group flex size-6 items-center justify-center rounded p-1 hover:bg-status-error-subtle"
-        aria-label={localize('com_ui_cancel')}
-        title={localize('com_ui_cancel')}
-      >
-        <div className="relative size-4">
-          <Spinner className="size-4 text-text-primary group-hover:opacity-0" />
-          <X className="absolute inset-0 size-4 text-text-destructive opacity-0 group-hover:opacity-100" />
-        </div>
-      </button>
+      <TooltipAnchor
+        description={localize('com_ui_cancel')}
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onCancel}
+            className="group size-6 rounded p-1 hover:bg-status-error-subtle"
+            aria-label={localize('com_ui_cancel')}
+          >
+            <div className="relative size-4">
+              <Spinner className="size-4 text-text-primary group-hover:opacity-0" />
+              <X className="absolute inset-0 size-4 text-text-destructive opacity-0 group-hover:opacity-100" />
+            </div>
+          </Button>
+        }
+      />
     );
   }
 
@@ -183,27 +188,29 @@ function ConnectingSpinner({ serverName }: { serverName: string }) {
 /** Connect button - shown for disconnected/error states. Uses PlugZap icon. */
 function ConnectButton({ serverName, onConfigClick }: StatusIconProps) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon"
       onClick={onConfigClick}
-      className="flex size-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
+      className="size-6 rounded p-1 hover:bg-surface-secondary"
       aria-label={localize('com_nav_mcp_connect_server', { 0: serverName })}
     >
       <PlugZap className="size-4 text-text-secondary" aria-hidden="true" />
-    </button>
+    </Button>
   );
 }
 
 /** Configure button - shown for connected servers with custom vars. Uses SlidersHorizontal icon. */
 function ConfigureButton({ serverName, onConfigClick }: StatusIconProps) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon"
       onClick={onConfigClick}
-      className="flex size-6 items-center justify-center rounded p-1 hover:bg-surface-secondary"
+      className="size-6 rounded p-1 hover:bg-surface-secondary"
       aria-label={localize('com_nav_mcp_configure_server', { 0: serverName })}
     >
       <SlidersHorizontal className="size-4 text-text-secondary" aria-hidden="true" />
-    </button>
+    </Button>
   );
 }

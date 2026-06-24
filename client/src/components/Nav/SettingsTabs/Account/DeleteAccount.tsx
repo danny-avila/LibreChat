@@ -139,16 +139,17 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
                     )}
                   </InputOTP>
                 </div>
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   onClick={() => {
                     setUseBackup(!useBackup);
                     setOtpToken('');
                   }}
-                  className="text-sm text-text-primary hover:underline"
+                  className="h-auto p-0 text-sm font-normal text-text-primary hover:underline"
                 >
                   {useBackup ? localize('com_ui_use_2fa_code') : localize('com_ui_use_backup_code')}
-                </button>
+                </Button>
               </div>
             )}
             {renderDeleteButton(handleDeleteUser, isDeleting, isLocked || !otpReady, localize)}
@@ -166,9 +167,9 @@ const renderInput = (
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
 ) => (
   <div className="mb-4">
-    <label className="mb-1 block text-sm font-medium text-text-primary" htmlFor={id}>
+    <Label className="mb-1 text-sm font-medium" htmlFor={id}>
       {label}
-    </label>
+    </Label>
     <Input id={id} onChange={onChange} placeholder={value} />
   </div>
 );
@@ -179,10 +180,13 @@ const renderDeleteButton = (
   isLocked: boolean,
   localize: LocalizeFunction,
 ) => (
-  <button
+  <Button
+    variant="destructive"
     className={cn(
-      'mt-4 flex w-full items-center justify-center rounded-lg bg-surface-tertiary px-4 py-2 transition-all duration-200',
-      isLocked ? 'cursor-not-allowed opacity-30' : 'bg-surface-destructive text-white',
+      'mt-4 w-full gap-0 bg-surface-tertiary text-text-primary transition-all duration-200 hover:bg-surface-tertiary disabled:opacity-100',
+      isLocked
+        ? 'cursor-not-allowed opacity-30'
+        : 'bg-surface-destructive text-white hover:bg-surface-destructive-hover',
     )}
     onClick={handleDeleteUser}
     disabled={isDeleting || isLocked}
@@ -206,7 +210,7 @@ const renderDeleteButton = (
         )}
       </>
     )}
-  </button>
+  </Button>
 );
 
 export default DeleteAccount;

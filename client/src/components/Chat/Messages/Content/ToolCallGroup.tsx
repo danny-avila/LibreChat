@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Button } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
@@ -344,9 +345,10 @@ export default function ToolCallGroup({
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>
-      <button
+      <Button
+        variant="ghost"
         type="button"
-        className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+        className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={groupLabel}
@@ -399,7 +401,7 @@ export default function ToolCallGroup({
           )}
           aria-hidden="true"
         />
-      </button>
+      </Button>
       <div
         style={expandStyle}
         onTransitionEnd={handleTransitionEnd}

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Check, X } from 'lucide-react';
+import { Button, Input } from '@librechat/client';
 import type { KeyboardEvent } from 'react';
+import { cn } from '~/utils';
 
 interface RenameFormProps {
   titleInput: string;
@@ -45,10 +47,12 @@ const RenameForm: React.FC<RenameFormProps> = ({
       role="form"
       aria-label={localize('com_ui_rename_conversation')}
     >
-      <input
+      <Input
         ref={inputRef}
         type="text"
-        className="w-full rounded bg-transparent p-0.5 text-sm leading-tight focus-visible:outline-none"
+        className={cn(
+          'h-auto w-full rounded border-0 bg-transparent p-0.5 text-sm leading-tight focus-visible:outline-none',
+        )}
         value={titleInput}
         onChange={(e) => setTitleInput(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -56,22 +60,30 @@ const RenameForm: React.FC<RenameFormProps> = ({
         aria-label={localize('com_ui_new_conversation_title')}
       />
       <div className="flex gap-1" role="toolbar">
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => onCancel()}
-          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-text-primary"
+          className={cn(
+            'size-auto rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-text-primary',
+          )}
           aria-label={localize('com_ui_cancel')}
           type="button"
         >
           <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => onSubmit(titleInput)}
-          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-text-primary"
+          className={cn(
+            'size-auto rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-text-primary',
+          )}
           aria-label={localize('com_ui_save')}
           type="button"
         >
           <Check className="h-4 w-4" aria-hidden="true" />
-        </button>
+        </Button>
       </div>
     </div>
   );

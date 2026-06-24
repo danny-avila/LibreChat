@@ -193,21 +193,23 @@ export default function SharedLinks() {
         },
         cell: ({ row }) => {
           const { title, shareId } = row.original;
+          const link = (
+            <Link
+              to={`/share/${shareId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-text-primary"
+            >
+              <span className="truncate">{title}</span>
+              <ExternalLink
+                className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
+                aria-hidden="true"
+              />
+            </Link>
+          );
           return (
             <div className="flex items-center gap-2">
-              <Link
-                to={`/share/${shareId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-text-primary"
-                title={title}
-              >
-                <span className="truncate">{title}</span>
-                <ExternalLink
-                  className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
-                  aria-hidden="true"
-                />
-              </Link>
+              {title ? <TooltipAnchor description={title} render={link} /> : link}
             </div>
           );
         },
@@ -271,17 +273,18 @@ export default function SharedLinks() {
             <TooltipAnchor
               description={localize('com_ui_open_source_chat_new_tab')}
               render={
-                <a
-                  href={`/c/${row.original.conversationId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex h-8 w-8 items-center justify-center rounded-md p-0 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-text-primary"
-                  aria-label={localize('com_ui_open_source_chat_new_tab_title', {
-                    title: row.original.title || localize('com_ui_untitled'),
-                  })}
-                >
-                  <MessageSquare className="size-4" aria-hidden="true" />
-                </a>
+                <Button asChild variant="ghost" className="h-8 w-8 p-0 hover:bg-surface-hover">
+                  <a
+                    href={`/c/${row.original.conversationId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={localize('com_ui_open_source_chat_new_tab_title', {
+                      title: row.original.title || localize('com_ui_untitled'),
+                    })}
+                  >
+                    <MessageSquare className="size-4" aria-hidden="true" />
+                  </a>
+                </Button>
               }
             />
             <TooltipAnchor

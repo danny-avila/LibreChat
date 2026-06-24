@@ -3,6 +3,7 @@ import { JSX } from 'react/jsx-runtime';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { ThemeContext, isDark } from '../theme';
 import { useLocalize } from '../hooks';
+import { Button } from './Button';
 
 declare global {
   interface Window {
@@ -35,23 +36,19 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
   }, [nextTheme, onChange]);
 
   return (
-    <button
-      className="flex items-center gap-2 rounded-lg p-2 text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2"
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-auto w-auto p-2 text-text-primary"
       aria-label={localize('com_ui_toggle_theme')}
       aria-keyshortcuts="Ctrl+Shift+T"
       onClick={(e) => {
         e.preventDefault();
         onChange(nextTheme);
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onChange(nextTheme);
-        }
-      }}
     >
       {themeIcons[theme as ThemeType]}
-    </button>
+    </Button>
   );
 };
 

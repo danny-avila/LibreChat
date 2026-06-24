@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
-import { Button, Spinner } from '@librechat/client';
 import { Save, FileText, Circle } from 'lucide-react';
+import { Button, Spinner, Textarea } from '@librechat/client';
 import { useGetSkillNodeContentQuery, useUpdateSkillNodeContentMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -101,13 +101,14 @@ export default function SkillFileEditor({ skillId, nodeId, fileName }: SkillFile
         </Button>
       </div>
       <div className="relative flex-1 overflow-hidden">
-        <textarea
+        <Textarea
           ref={textareaRef}
           value={displayContent}
           onChange={handleChange}
           spellCheck={false}
           className={cn(
-            'size-full resize-none bg-transparent px-4 py-3 font-mono text-[13px] leading-6 text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
+            'size-full resize-none rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[13px] leading-6 text-text-primary outline-none',
+            'focus:ring-0 focus:ring-offset-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
             'selection:bg-blue-500/20',
           )}
           aria-label={`${localize('com_ui_edit')} ${fileName}`}

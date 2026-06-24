@@ -14,8 +14,10 @@ import {
 import {
   Button,
   OGDialog,
+  Textarea,
   OGDialogContent,
   OGDialogTitle,
+  TooltipAnchor,
   ThumbUpIcon,
   ThumbDownIcon,
 } from '@librechat/client';
@@ -55,19 +57,19 @@ function FeedbackOptionButton({
   const label = localize(tag.label as Parameters<typeof localize>[0]);
 
   return (
-    <button
+    <Button
+      variant="ghost"
       className={cn(
-        'flex w-full items-center gap-3 rounded-xl p-2 text-text-secondary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary',
+        'h-auto w-full justify-start gap-3 rounded-xl p-2 text-text-secondary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary',
         active && 'bg-surface-hover font-semibold text-text-primary',
       )}
       onClick={onClick}
-      type="button"
       aria-label={label}
       aria-pressed={active}
     >
       <Icon size="19" bold={active} aria-hidden="true" />
       <span>{label}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -146,16 +148,17 @@ function FeedbackButtons({
       <Ariakit.PopoverAnchor
         store={upStore}
         render={
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             className={buttonClasses(feedback?.rating === 'thumbsUp', isLast)}
             onClick={handleThumbsUpClick}
-            type="button"
             title={localize('com_ui_feedback_positive')}
             aria-pressed={feedback?.rating === 'thumbsUp'}
             aria-haspopup="menu"
           >
             <ThumbUpIcon size="19" bold={feedback?.rating === 'thumbsUp'} />
-          </button>
+          </Button>
         }
       />
       <Ariakit.Popover
@@ -180,16 +183,17 @@ function FeedbackButtons({
       <Ariakit.PopoverAnchor
         store={downStore}
         render={
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             className={buttonClasses(feedback?.rating === 'thumbsDown', isLast)}
             onClick={handleThumbsDownClick}
-            type="button"
             title={localize('com_ui_feedback_negative')}
             aria-pressed={feedback?.rating === 'thumbsDown'}
             aria-haspopup="menu"
           >
             <ThumbDownIcon size="19" bold={feedback?.rating === 'thumbsDown'} />
-          </button>
+          </Button>
         }
       />
       <Ariakit.Popover
@@ -216,7 +220,7 @@ function FeedbackButtons({
 
 function buttonClasses(isActive: boolean, isLast: boolean) {
   return cn(
-    'hover-button rounded-lg p-1.5 text-text-secondary-alt',
+    'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
     'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
     !isLast &&
@@ -284,21 +288,27 @@ export default function Feedback({
       ? localize('com_ui_feedback_positive')
       : localize('com_ui_feedback_negative');
     return (
-      <button
-        className={buttonClasses(true, isLast)}
-        onClick={() => {
-          if (isThumbsUp) {
-            handleButtonFeedback(undefined);
-          } else {
-            setOpenDialog(true);
-          }
-        }}
-        type="button"
-        title={label}
-        aria-pressed="true"
-      >
-        <Icon size="19" bold />
-      </button>
+      <TooltipAnchor
+        description={label}
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className={buttonClasses(true, isLast)}
+            onClick={() => {
+              if (isThumbsUp) {
+                handleButtonFeedback(undefined);
+              } else {
+                setOpenDialog(true);
+              }
+            }}
+            aria-label={label}
+            aria-pressed="true"
+          >
+            <Icon size="19" bold />
+          </Button>
+        }
+      />
     );
   };
 
@@ -319,8 +329,8 @@ export default function Feedback({
           <OGDialogTitle className="text-token-text-primary text-lg font-semibold leading-6">
             {localize('com_ui_feedback_more_information')}
           </OGDialogTitle>
-          <textarea
-            className="w-full rounded-xl border border-border-light bg-transparent p-2 text-text-primary"
+          <Textarea
+            className="h-auto w-full rounded-xl border-border-light p-2"
             value={feedback?.text || ''}
             onChange={handleTextChange}
             rows={4}
