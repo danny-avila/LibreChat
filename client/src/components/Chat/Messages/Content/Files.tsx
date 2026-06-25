@@ -2,7 +2,7 @@ import { useMemo, useState, useCallback, memo } from 'react';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import FilePreviewDialog from './FilePreviewDialog';
-import Image from './Image';
+import ImageFile from './ImageFile';
 
 const Files = ({ message }: { message?: TMessage }) => {
   const imageFiles = useMemo(() => {
@@ -33,13 +33,7 @@ const Files = ({ message }: { message?: TMessage }) => {
         ))}
       {imageFiles.length > 0 &&
         imageFiles.map((file) => (
-          <Image
-            key={file.file_id}
-            imagePath={file.preview ?? file.filepath ?? ''}
-            height={file.height ?? 1920}
-            width={file.width ?? 1080}
-            altText={file.filename ?? 'Uploaded Image'}
-          />
+          <ImageFile key={file.file_id} file={file} localPreview={file.preview} />
         ))}
       <FilePreviewDialog
         open={selectedFile !== null}

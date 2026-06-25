@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const mime = require('mime');
-const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const { getAzureContainerClient, deleteRagFile } = require('@librechat/api');
@@ -233,12 +232,17 @@ async function uploadFileToAzure({
  */
 async function getAzureFileStream(_req, fileURL) {
   try {
-    const response = await axios({
-      method: 'get',
-      url: fileURL,
-      responseType: 'stream',
-    });
-    return response.data;
+    const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
+    if (!containerClient) {
+      throw new Error('Azure Blob Service not initialized');
+    }
+    const blobPath = fileURL.split(`${AZURE_CONTAINER_NAME}/`)[1];
+    if (!blobPath) {
+      throw new Error(`Could not parse blob path from URL: ${fileURL}`);
+    }
+    const blobClient = containerClient.getBlobClient(blobPath);
+    const download = await blobClient.download();
+    return download.readableStreamBody;
   } catch (error) {
     logger.error('[getAzureFileStream] Error getting blob stream:', error);
     throw error;
