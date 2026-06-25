@@ -29,16 +29,19 @@ const {
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
-  isDeepSeekReasoningProvider,
+  anyAgentReplaysReasoningContent,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
+  getRequestMemories,
   createMemoryProcessor,
+  agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
   countFormattedMessageTokens,
   prependFileContext,
+  prependQuotes,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
@@ -48,6 +51,9 @@ const {
   buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
+  hasUrlContextTool,
+  appendYouTubeVideoParts,
+  resolveYouTubeInjectionConfig,
 } = require('@librechat/api');
 const {
   Callback,
@@ -377,12 +383,32 @@ class AgentClient extends BaseClient {
         prependFileContext(formattedMessage, message.fileContext);
       }
 
+      /**
+       * Durably re-merge quoted excerpts into every user turn that carries them
+       * (current and historical) so the model receives the referenced context on
+       * every prompt and the token count matches what was persisted. Applied to
+       * the memory copy too so the canonical per-message count includes them.
+       */
+      if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+        prependQuotes(formattedMessage, message.quotes);
+        prependQuotes(memoryFormattedMessage, message.quotes);
+      }
+
       memoryPayload.push(memoryFormattedMessage);
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
+      /**
+       * Force a recount when the message carries quotes: a plain text-only
+       * "Save" edit recomputes `tokenCount` from `text` alone while leaving
+       * `message.quotes` persisted, so the stored count would undercount the
+       * quote block this turn prepends. Recounting from the quote-merged memory
+       * copy keeps context accounting accurate (and self-heals stale counts).
+       */
       const needsCanonicalTokenCount =
-        !hasDbTokenCount || (this.isVisionModel && (message.image_urls || message.files));
+        !hasDbTokenCount ||
+        (this.isVisionModel && (message.image_urls || message.files)) ||
+        (Array.isArray(message.quotes) && message.quotes.length > 0);
 
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
@@ -438,6 +464,39 @@ class AgentClient extends BaseClient {
       return formattedMessage;
     });
 
+    /**
+     * Native YouTube -> video understanding: when Google `url_context` is enabled
+     * (resolved to the native `urlContext` provider tool), inject any YouTube URLs
+     * from the latest user turn as Gemini `fileData` video parts. The URL Context
+     * tool cannot read YouTube, so this routes those links through the video path
+     * while other URLs still flow through `urlContext`. Done after token counting
+     * (video tokens are reported by the provider) and only on the LLM payload, so
+     * the memory copy and persisted message are untouched.
+     */
+    const latestOrdered = orderedMessages[orderedMessages.length - 1];
+    const provider = this.options.agent?.provider;
+    if (
+      latestOrdered?.isCreatedByUser === true &&
+      (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) &&
+      hasUrlContextTool(this.options.agent?.tools)
+    ) {
+      const latestFormatted = formattedMessages[formattedMessages.length - 1];
+      /** Use the resolved run model (model_parameters override) rather than the saved base model. */
+      const resolvedModel =
+        this.options.agent?.model_parameters?.model ?? this.options.agent?.model;
+      const { max, mimeType } = resolveYouTubeInjectionConfig({
+        provider,
+        model: resolvedModel,
+      });
+      latestFormatted.content = appendYouTubeVideoParts({
+        enabled: true,
+        text: latestOrdered.text,
+        content: latestFormatted.content,
+        max,
+        mimeType,
+      });
+    }
+
     payload = formattedMessages;
     this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
@@ -459,11 +518,14 @@ class AgentClient extends BaseClient {
       }
     }
 
-    /** Memory context (user preferences/memories) */
-    const withoutKeys = await this.useMemory();
-    const memoryContext = withoutKeys
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
-      : undefined;
+    /** Memory context (user preferences/memories). Keyed context (with memory
+     *  keys + token metadata) is reserved for agents that can call
+     *  `delete_memory`; everyone else gets the unkeyed values only. */
+    const memories = await this.useMemory();
+    const buildMemoryContext = (text) =>
+      text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
+    const memoryContext = buildMemoryContext(memories?.withoutKeys);
+    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -514,8 +576,13 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
-        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
-          agentRunContextParts.push(memoryContext);
+        const agentHasMemory = agentHasInlineMemoryTools(agent);
+        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
+        if (
+          agentMemoryContext &&
+          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
+        ) {
+          agentRunContextParts.push(agentMemoryContext);
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -566,7 +633,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * @returns {Promise<string | undefined>}
+   * @returns {Promise<{ withKeys?: string; withoutKeys?: string } | undefined>}
    */
   async useMemory() {
     const user = this.options.req.user;
@@ -597,8 +664,12 @@ class AgentClient extends BaseClient {
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
-        return withoutKeys;
+        const { withKeys, withoutKeys } = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        return { withKeys, withoutKeys };
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -715,7 +786,20 @@ class AgentClient extends BaseClient {
     });
 
     this.processMemory = processMemory;
-    return withoutKeys;
+    let withKeys = withoutKeys;
+    try {
+      ({ withKeys } = await getRequestMemories({
+        req: this.options.req,
+        userId,
+        getFormattedMemories: db.getFormattedMemories,
+      }));
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
+        error,
+      );
+    }
+    return { withKeys, withoutKeys };
   }
 
   /**
@@ -1139,14 +1223,17 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
-      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
-      const hasDeepSeekAgent = (agent) =>
-        agent != null &&
-        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
-      const needsDeepSeekFormat =
-        hasDeepSeekAgent(this.options.agent) ||
-        (this.agentConfigs != null &&
-          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      /**
+       * Reconstruct `reasoning_content` on prior tool-call turns: DeepSeek
+       * thinking-mode (#13366) or custom endpoints opting in via
+       * `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+       * Walks subagents too — the opted-in endpoint may appear only as a
+       * nested subagent, not the primary or a top-level handoff agent.
+       */
+      const needsReasoningContentFormat = anyAgentReplaysReasoningContent([
+        this.options.agent,
+        ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+      ]);
       /**
        * Skills primed fresh this turn — manual ($ popover) and always-apply
        * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
@@ -1163,9 +1250,9 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const formatOptions =
-        needsDeepSeekFormat || freshSkillPrimeNames.size > 0
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
           ? {
-              ...(needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : {}),
+              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
               ...(freshSkillPrimeNames.size > 0
                 ? { skipSkillBodyNames: freshSkillPrimeNames }
                 : {}),
@@ -1429,11 +1516,12 @@ class AgentClient extends BaseClient {
         });
       }
     } catch (err) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
-        err,
-      );
-      if (!abortController.signal.aborted) {
+      if (abortController.signal.aborted) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
+          { conversationId: this.conversationId, name: err?.name, code: err?.code },
+        );
+      } else {
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,

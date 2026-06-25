@@ -108,6 +108,7 @@ export type TEphemeralAgent = {
   execute_code?: boolean;
   artifacts?: string;
   skills?: boolean;
+  memory?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &
@@ -377,6 +378,8 @@ export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
 export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
   shareId: string | null;
   success: boolean;
+  /** Per-link "share files" choice; absent on legacy links (treated as enabled). */
+  snapshotFiles?: boolean;
 };
 
 // type for getting conversation tags
@@ -420,6 +423,14 @@ export type TForkConvoResponse = {
   messages: TMessage[];
 };
 
+export type TForkSharedConvoRequest = {
+  shareId: string;
+  /** Index of the viewer's active message within the shared payload; reduces the
+   *  fork to that branch. An index is used because shared ids are re-anonymized
+   *  per request and `createdAt` can collide, while the payload order is stable. */
+  targetMessageIndex?: number;
+};
+
 export type TSearchResults = {
   conversations: TConversation[];
   messages: TMessage[];
@@ -454,6 +465,8 @@ export type TConfig = {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;
     reasoningKey?: ReasoningResponseKey;
+    includeReasoningContent?: boolean;
+    includeReasoningHistory?: boolean;
     paramDefinitions?: Partial<SettingDefinition>[];
   };
 };
@@ -736,10 +749,12 @@ export type TCustomConfigSpeechResponse = { [key: string]: string };
 
 export type TUserTermsResponse = {
   termsAccepted: boolean;
+  termsAcceptedAt: Date | string | null;
 };
 
 export type TAcceptTermsResponse = {
-  success: boolean;
+  message: string;
+  termsAcceptedAt: Date | string;
 };
 
 export type TBannerResponse = TBanner | null;

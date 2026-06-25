@@ -56,6 +56,7 @@ const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
   [Tools.web_search]: true,
+  [Tools.memory]: true,
 };
 
 const MAX_SEARCH_LEN = 100;
@@ -305,10 +306,14 @@ const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPr
   const ownerIdStr = ownerId.toString();
 
   try {
-    const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
-      file_id: 1,
-      user: 1,
-    });
+    const ownerFiles = await db.getFiles(
+      { file_id: { $in: referencedFileIds }, user: ownerIdStr },
+      null,
+      {
+        file_id: 1,
+        user: 1,
+      },
+    );
     const allowedIds = new Set(
       (ownerFiles ?? [])
         .filter((file) => file.user && file.user.toString() === ownerIdStr)

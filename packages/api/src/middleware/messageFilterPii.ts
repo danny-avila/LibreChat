@@ -6,6 +6,7 @@ import type {
   Response as ServerResponse,
 } from 'express';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
+import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
 
 type CompiledPattern = { id: string; label: string; pattern: RegExp };
 
@@ -122,8 +123,25 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       next();
       return;
     }
-    const text = req.body?.text;
-    if (typeof text !== 'string' || text.length === 0) {
+    /**
+     * Scan the typed text, each quoted excerpt, and — crucially — the merged
+     * blockquote+text exactly as `AgentClient` sends it to the model. Quotes are
+     * normalized via `getReferencedQuotes` first (matching `BaseClient`). Scanning
+     * the merged string catches a secret split across a quote and the typed text
+     * (each clean alone) that only matches once concatenated; scanning the raw
+     * pieces keeps anchored patterns working against un-prefixed excerpts.
+     */
+    const candidates: string[] = [];
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (text.length > 0) {
+      candidates.push(text);
+    }
+    const quotes = getReferencedQuotes(req.body?.quotes);
+    if (quotes != null) {
+      candidates.push(...quotes);
+      candidates.push(mergeQuotedText(text, quotes));
+    }
+    if (candidates.length === 0) {
       next();
       return;
     }
@@ -132,14 +150,16 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       next();
       return;
     }
-    const match = findMatch(text, patterns);
-    if (match == null) {
-      next();
-      return;
+    for (const candidate of candidates) {
+      const match = findMatch(candidate, patterns);
+      if (match != null) {
+        res.status(400).json({
+          error: 'message_filter_pii_block',
+          message: `Message contains a ${match.label}. Remove it and try again.`,
+        });
+        return;
+      }
     }
-    res.status(400).json({
-      error: 'message_filter_pii_block',
-      message: `Message contains a ${match.label}. Remove it and try again.`,
-    });
+    next();
   };
 }

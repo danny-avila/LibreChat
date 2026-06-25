@@ -2,9 +2,9 @@ import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
 import { Constants } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createShareMethods, type ShareMethods } from './share';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
+import { createShareMethods, type ShareMethods } from './share';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -12,6 +12,7 @@ describe('Share Methods', () => {
   let SharedLink: mongoose.Model<t.ISharedLink>;
   let Message: mongoose.Model<t.IMessage>;
   let Conversation: SchemaWithMeiliMethods;
+  let File: mongoose.Model<t.IMongoFile>;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -28,6 +29,29 @@ describe('Share Methods', () => {
         shareId: { type: String, index: true },
         targetMessageId: { type: String, required: false, index: true },
         expiredAt: { type: Date },
+        snapshotFiles: { type: Boolean },
+        fileSnapshots: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+      },
+      { timestamps: true },
+    );
+
+    const fileSchema = new mongoose.Schema(
+      {
+        user: { type: String, required: true },
+        file_id: { type: String, required: true, index: true },
+        filename: { type: String, required: true },
+        filepath: { type: String, required: true },
+        storageKey: String,
+        type: String,
+        bytes: Number,
+        source: String,
+        width: Number,
+        height: Number,
+        text: String,
+        textFormat: { type: String, enum: ['html', 'text'] },
+        status: { type: String, enum: ['pending', 'ready', 'failed'] },
+        previewError: String,
+        tenantId: String,
       },
       { timestamps: true },
     );
@@ -49,6 +73,7 @@ describe('Share Methods', () => {
         feedback: mongoose.Schema.Types.Mixed,
         manualSkills: [String],
         alwaysAppliedSkills: [String],
+        quotes: [String],
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
         files: [mongoose.Schema.Types.Mixed],
@@ -75,6 +100,7 @@ describe('Share Methods', () => {
         'Conversation',
         conversationSchema,
       )) as SchemaWithMeiliMethods;
+    File = mongoose.models.File || mongoose.model<t.IMongoFile>('File', fileSchema);
 
     // Create share methods
     shareMethods = createShareMethods(mongoose);
@@ -89,6 +115,7 @@ describe('Share Methods', () => {
     await SharedLink.deleteMany({});
     await Message.deleteMany({});
     await Conversation.deleteMany({});
+    await File.deleteMany({});
   });
 
   describe('createSharedLink', () => {
@@ -432,6 +459,7 @@ describe('Share Methods', () => {
         feedback: { rating: 'thumbsDown', tag: { key: 'inaccurate' }, text: 'private note' },
         manualSkills: ['research'],
         alwaysAppliedSkills: ['brand-voice'],
+        quotes: ['the quoted excerpt'],
         files: [
           {
             file_id: 'file123',
@@ -485,11 +513,16 @@ describe('Share Methods', () => {
       // Skill badges are non-sensitive UI metadata and should still render.
       expect(shared?.manualSkills).toEqual(['research']);
       expect(shared?.alwaysAppliedSkills).toEqual(['brand-voice']);
+      // Quoted excerpts are non-sensitive UI metadata and should still render in the share view.
+      expect(shared?.quotes).toEqual(['the quoted excerpt']);
 
-      // User-uploaded files keep their render URL (filepath/preview) but drop storage internals.
+      // Render metadata (filename/type/dims) is kept, storage internals dropped. The
+      // file isn't snapshotted (no backing File record), so its original render URL is
+      // neutralized — viewers can only load files through the authorized share route.
       const file = shared?.files?.[0];
       expect(file).toMatchObject({ filename: 'upload.png', type: 'image/png' });
-      expect(file?.filepath).toBe('/images/upload.png');
+      expect(file).not.toHaveProperty('filepath');
+      expect(file).not.toHaveProperty('preview');
       expect(file).not.toHaveProperty('storageKey');
       expect(file).not.toHaveProperty('user');
       expect(file).not.toHaveProperty('tenantId');
@@ -498,15 +531,15 @@ describe('Share Methods', () => {
       expect(file?.conversationId).toBe(shared?.conversationId);
       expect(file?.conversationId).not.toBe(conversationId);
 
-      // Tool-call attachments keep their correlation id, payload, and render URL so
-      // citations still render, while storage-only fields are removed.
+      // Tool-call attachments keep their correlation id and payload so citations still
+      // render, while storage-only fields AND the original render URL are removed.
       const attachment = shared?.attachments?.[0];
       expect(attachment).toMatchObject({
         toolCallId: 'call_abc',
         type: 'web_search',
         web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
-        filepath: '/images/result.json',
       });
+      expect(attachment).not.toHaveProperty('filepath');
       expect(attachment).not.toHaveProperty('storageKey');
       expect(attachment).not.toHaveProperty('metadata');
     });
@@ -1505,6 +1538,442 @@ describe('Share Methods', () => {
       const result = await shareMethods.getSharedMessages(shareId);
 
       expect(result?.messages[0].parentMessageId).toBe(Constants.NO_PARENT);
+    });
+  });
+
+  describe('file snapshots', () => {
+    const seedConversation = async (userId: string, conversationId: string) => {
+      await Conversation.create({ conversationId, title: 'Files Convo', user: userId });
+    };
+
+    const createFile = async (
+      userId: string,
+      overrides: Partial<t.IMongoFile> = {},
+    ): Promise<string> => {
+      const file_id = `file_${nanoid()}`;
+      await File.create({
+        user: userId,
+        file_id,
+        filename: 'report.pdf',
+        filepath: `/uploads/${userId}/${file_id}`,
+        type: 'application/pdf',
+        bytes: 1024,
+        source: 'local',
+        ...overrides,
+      });
+      return file_id;
+    };
+
+    test('createSharedLink captures snapshots from message files and attachments', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+
+      const imageId = await createFile(userId, {
+        type: 'image/png',
+        filename: 'pic.png',
+        filepath: `/images/${userId}/pic.png`,
+        width: 100,
+        height: 80,
+      });
+      const docId = await createFile(userId);
+
+      await Message.create([
+        {
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'with image',
+          isCreatedByUser: true,
+          files: [{ file_id: imageId, type: 'image/png', filepath: `/images/${userId}/pic.png` }],
+        },
+        {
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'with attachment',
+          isCreatedByUser: false,
+          attachments: [{ file_id: docId, type: 'application/pdf' }],
+        },
+      ]);
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(saved?.fileSnapshots).toHaveLength(2);
+      const byId = new Map(saved?.fileSnapshots?.map((s) => [s.file_id, s]));
+      expect(byId.get(imageId)?.source).toBe('local');
+      expect(byId.get(imageId)?.storageKey).toBeUndefined();
+      expect(byId.get(docId)?.filename).toBe('report.pdf');
+      expect(byId.get(docId)?.filepath).toBe(`/uploads/${userId}/${docId}`);
+    });
+
+    test('createSharedLink with snapshotFiles=false stores no snapshots', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'hi',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+
+      const result = await shareMethods.createSharedLink(
+        userId,
+        conversationId,
+        undefined,
+        undefined,
+        false,
+      );
+      const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
+      expect(saved?.fileSnapshots).toBeUndefined();
+    });
+
+    test('snapshots skip non-streamable sources and missing file records', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+
+      const remoteId = await createFile(userId, { source: 'openai' });
+      const ghostId = `file_${nanoid()}`; // referenced but no File doc
+
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'hi',
+        isCreatedByUser: true,
+        files: [{ file_id: remoteId }, { file_id: ghostId }],
+      });
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
+      expect(saved?.fileSnapshots ?? []).toHaveLength(0);
+    });
+
+    test('getSharedMessages rewrites snapshotted file URLs to the share route', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [
+          { file_id: docId, type: 'application/pdf', filepath: `/uploads/${userId}/${docId}` },
+        ],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const result = await shareMethods.getSharedMessages(shareId);
+
+      const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
+      expect(file.filepath).toBe(`/api/share/${shareId}/files/${docId}`);
+      // owner storage path must not leak
+      expect(String(file.filepath)).not.toContain(userId);
+    });
+
+    test('getSharedMessages neutralizes URLs for non-snapshotted files', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const remoteId = await createFile(userId, { source: 'openai' });
+      const originalPath = `/uploads/${userId}/${remoteId}`;
+
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: remoteId, filepath: originalPath }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const result = await shareMethods.getSharedMessages(shareId);
+      const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
+      // Non-snapshotted (non-streamable source): original URL must not leak.
+      expect(file.filepath).toBeUndefined();
+      expect(file.preview).toBeUndefined();
+    });
+
+    test('updateSharedLink recomputes snapshots from current messages', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'no files yet',
+        isCreatedByUser: true,
+      });
+
+      const created = await shareMethods.createSharedLink(userId, conversationId);
+      let saved = await SharedLink.findOne({ shareId: created.shareId }).lean();
+      expect(saved?.fileSnapshots ?? []).toHaveLength(0);
+
+      const docId = await createFile(userId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'now with a file',
+        isCreatedByUser: false,
+        files: [{ file_id: docId }],
+      });
+
+      const updated = await shareMethods.updateSharedLink(userId, created.shareId);
+      saved = await SharedLink.findOne({ shareId: updated.shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+      expect(saved?.fileSnapshots?.[0].file_id).toBe(docId);
+    });
+
+    test('getSharedLinkFile returns the entry, null for unknown files', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+
+      const found = await shareMethods.getSharedLinkFile(shareId, docId);
+      expect(found.file?.file_id).toBe(docId);
+      expect(found.hasSnapshots).toBe(true);
+
+      const missing = await shareMethods.getSharedLinkFile(shareId, 'file_does_not_exist');
+      expect(missing.file).toBeNull();
+      expect(missing.hasSnapshots).toBe(true);
+    });
+
+    test('backfillSharedLinkFiles populates a legacy share missing snapshots', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      // legacy share: no fileSnapshots
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const before = await shareMethods.getSharedLinkFile(shareId, docId);
+      expect(before.file).toBeNull();
+      expect(before.hasSnapshots).toBe(false);
+
+      const backfilled = await shareMethods.backfillSharedLinkFiles(shareId, docId);
+      expect((backfilled as t.SharedFileSnapshot)?.file_id).toBe(docId);
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+    });
+
+    test('does not snapshot a file owned by another user', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const otherUserId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      // File belongs to another user but is referenced in the sharer's message.
+      const victimId = await createFile(otherUserId);
+
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'borrowed file id',
+        isCreatedByUser: true,
+        files: [{ file_id: victimId }],
+      });
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
+      expect(saved?.fileSnapshots ?? []).toHaveLength(0);
+    });
+
+    test('getSharedMessages strips files when the admin feature is disabled', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const originalPath = `/uploads/${userId}/${docId}`;
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filepath: originalPath }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const result = await shareMethods.getSharedMessages(shareId, undefined, {
+        snapshotFiles: false,
+      });
+      // Files are stripped entirely, not just left unrewritten — no owner path leaks.
+      expect(result?.messages[0].files).toBeUndefined();
+    });
+
+    test('createSharedLink with snapshotFiles=false strips files and skips snapshots', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const originalPath = `/uploads/${userId}/${docId}`;
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc with file',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, type: 'image/png', filepath: originalPath }],
+      });
+
+      // User opts out of sharing files for this link.
+      const { shareId } = await shareMethods.createSharedLink(
+        userId,
+        conversationId,
+        undefined,
+        undefined,
+        false,
+      );
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.snapshotFiles).toBe(false);
+      expect(saved?.fileSnapshots).toBeUndefined();
+
+      // Even with the admin feature on, an opted-out link shows no files and is not
+      // backfilled on read (the prior bug: original paths leaked / snapshots re-created).
+      const result = await shareMethods.getSharedMessages(shareId, undefined, {
+        snapshotFiles: true,
+      });
+      expect(result?.messages[0].files).toBeUndefined();
+
+      const after = await SharedLink.findOne({ shareId }).lean();
+      expect(after?.fileSnapshots).toBeUndefined();
+    });
+
+    test('getSharedLink surfaces the per-link snapshotFiles choice', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'hi',
+        isCreatedByUser: true,
+      });
+
+      await shareMethods.createSharedLink(userId, conversationId, undefined, undefined, false);
+      const link = await shareMethods.getSharedLink(userId, conversationId);
+      expect(link.snapshotFiles).toBe(false);
+    });
+
+    test('getSharedMessages backfills and rewrites a legacy share on read', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filepath: `/uploads/${userId}/${docId}` }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
+      expect(file.filepath).toBe(`/api/share/${shareId}/files/${docId}`);
+
+      // snapshot persisted by the lazy backfill
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+    });
+
+    test('does not snapshot transient text-source files', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const textId = await createFile(userId, { source: 'text' });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'rag context',
+        isCreatedByUser: true,
+        files: [{ file_id: textId }],
+      });
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
+      expect(saved?.fileSnapshots ?? []).toHaveLength(0);
+    });
+
+    test('updateSharedLink clears snapshots when snapshotFiles is disabled', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+
+      const created = await shareMethods.createSharedLink(userId, conversationId);
+      let saved = await SharedLink.findOne({ shareId: created.shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+
+      const updated = await shareMethods.updateSharedLink(
+        userId,
+        created.shareId,
+        undefined,
+        undefined,
+        false,
+      );
+      saved = await SharedLink.findOne({ shareId: updated.shareId }).lean();
+      expect(saved?.fileSnapshots).toBeUndefined();
     });
   });
 });

@@ -172,24 +172,32 @@ export const usePinConversationMutation = (
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<
     t.TCreateShareLinkRequest,
-    { conversationId: string; targetMessageId?: string }
+    { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean }
   >,
 ): UseMutationResult<
   t.TSharedLinkResponse,
   unknown,
-  { conversationId: string; targetMessageId?: string },
+  { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean },
   unknown
 > => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
+    ({
+      conversationId,
+      targetMessageId,
+      snapshotFiles,
+    }: {
+      conversationId: string;
+      targetMessageId?: string;
+      snapshotFiles?: boolean;
+    }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
-      return dataService.createSharedLink(conversationId, targetMessageId);
+      return dataService.createSharedLink(conversationId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -203,17 +211,25 @@ export const useCreateSharedLinkMutation = (
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, t.TUpdateShareLinkRequest>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, t.TUpdateShareLinkRequest, unknown> => {
+  options?: t.MutationOptions<
+    t.TUpdateShareLinkRequest,
+    t.TUpdateShareLinkRequest & { snapshotFiles?: boolean }
+  >,
+): UseMutationResult<
+  t.TSharedLinkResponse,
+  unknown,
+  t.TUpdateShareLinkRequest & { snapshotFiles?: boolean },
+  unknown
+> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ shareId, targetMessageId }) => {
+    ({ shareId, targetMessageId, snapshotFiles }) => {
       if (!shareId) {
         throw new Error('Share ID is required');
       }
-      return dataService.updateSharedLink(shareId, targetMessageId);
+      return dataService.updateSharedLink(shareId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -679,6 +695,41 @@ export const useForkConvoMutation = (
   });
 };
 
+export const useForkSharedConvoMutation = (
+  options?: t.ForkSharedConvoOptions,
+): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkSharedConvoRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options ?? {};
+
+  return useMutation(
+    (payload: t.TForkSharedConvoRequest) =>
+      dataService.forkSharedConversation(payload.shareId, payload.targetMessageIndex),
+    {
+      onSuccess: (data, vars, context) => {
+        const forkedConversation = data.conversation;
+        const forkedConversationId = forkedConversation?.conversationId;
+        if (!forkedConversationId) {
+          return;
+        }
+
+        queryClient.setQueryData(
+          [QueryKeys.conversation, forkedConversationId],
+          forkedConversation,
+        );
+        addConvoToAllQueries(queryClient, forkedConversation);
+        queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.allConversations],
+          refetchPage: (_, index) => index === 0,
+        });
+
+        onSuccess?.(data, vars, context);
+      },
+      ..._options,
+    },
+  );
+};
+
 export const useUploadConversationsMutation = (
   _options?: t.MutationOptions<t.TImportResponse, FormData>,
 ) => {
@@ -1110,6 +1161,7 @@ export const useAcceptTermsMutation = (
     onSuccess: (data, variables, context) => {
       queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
         termsAccepted: true,
+        termsAcceptedAt: data.termsAcceptedAt,
       });
       options?.onSuccess?.(data, variables, context);
     },

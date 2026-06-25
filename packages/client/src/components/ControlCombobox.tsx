@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, memo, useEffect, MemoExoticComponent } from 
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
 import { Search, ChevronDown } from 'lucide-react';
-import { SelectRenderer } from '@ariakit/react-core/select/select-renderer';
+import { SelectRenderer } from '@ariakit/react-components/select/select-renderer';
 import type { OptionWithIcon } from '~/common';
 import './AnimatePopover.css';
 import { JSX } from 'react/jsx-runtime';

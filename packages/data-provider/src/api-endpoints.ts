@@ -71,6 +71,8 @@ export const messagesBranch = () => `${messagesRoot}/branch`;
 
 const shareRoot = `${BASE_URL}/api/share`;
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
+export const forkSharedMessages = (shareId: string) => `${shareRoot}/${shareId}/fork`;
+export const sharedStartupConfig = (shareId: string) => `${shareMessages(shareId)}/config`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
 export const getSharedLinks = (
   pageSize: number,
@@ -84,6 +86,13 @@ export const getSharedLinks = (
   }${cursor ? `&cursor=${cursor}` : ''}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
 export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
+/** Share-scoped file routes: serve snapshotted files via shared-link permission. */
+export const sharedFile = (shareId: string, fileId: string) =>
+  `${shareRoot}/${shareId}/files/${encodeURIComponent(fileId)}`;
+export const sharedFileDownload = (shareId: string, fileId: string) =>
+  `${sharedFile(shareId, fileId)}/download`;
+export const sharedFilePreview = (shareId: string, fileId: string) =>
+  `${sharedFile(shareId, fileId)}/preview`;
 
 const keysEndpoint = `${BASE_URL}/api/keys`;
 

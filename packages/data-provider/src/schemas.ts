@@ -328,6 +328,7 @@ export const defaultAgentFormValues = {
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
   [Tools.web_search]: false,
+  [Tools.memory]: false,
   category: 'general',
   support_contact: {
     name: '',
@@ -813,6 +814,14 @@ export const tMessageSchema = z.object({
    * what actually ran, not the current catalog).
    */
   alwaysAppliedSkills: z.array(z.string()).optional(),
+  /**
+   * Verbatim excerpts the user quoted (via the "Add to chat" selection
+   * popup) to reference on this turn. UI metadata that `MessageQuotes`
+   * renders above the user bubble so the references persist on reload. The
+   * excerpts are merged into the user message text sent to the model at
+   * request time and counted in the user message token count.
+   */
+  quotes: z.array(z.string()).optional(),
 });
 
 export type MemoryArtifact = {
@@ -946,6 +955,8 @@ export const tConversationSchema = z.object({
   thinkingDisplay: eThinkingDisplaySchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
+  /* Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: z.boolean().optional(),
   /* disable streaming */
   disableStreaming: z.boolean().optional(),
   /* assistant */
@@ -1056,6 +1067,8 @@ export const tQueryParamsSchema = tConversationSchema
     useResponsesApi: true,
     /** @endpoints openAI, anthropic, google */
     web_search: true,
+    /** @endpoints google */
+    url_context: true,
     /** @endpoints openAI, custom, azureOpenAI */
     disableStreaming: true,
     /** @endpoints google, anthropic, bedrock */
@@ -1177,6 +1190,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   thinkingBudget: true,
   thinkingLevel: true,
   web_search: true,
+  url_context: true,
   fileTokenLimit: true,
   iconURL: true,
   greeting: true,
@@ -1211,6 +1225,7 @@ export const googleGenConfigSchema = z
       })
       .optional(),
     web_search: z.boolean().optional(),
+    url_context: z.boolean().optional(),
   })
   .strip()
   .optional();

@@ -83,6 +83,7 @@ const refreshToken = (retry?: boolean): Promise<t.TRefreshTokenResponse | undefi
 
 const SHARE_PAGE_PATH_REGEX = /^\/share\/[^/]+\/?$/;
 const SHARED_MESSAGES_PATH_REGEX = /^\/api\/share\/[^/]+$/;
+const SHARE_FORK_PATH_REGEX = /^\/api\/share\/[^/]+\/fork$/;
 
 const normalizePathname = (pathname: string) =>
   pathname.startsWith('/') ? pathname : `/${pathname}`;
@@ -120,6 +121,14 @@ const getRequestPathname = (url?: string) => {
 const isSharedMessagesRequest = (url?: string, method?: string) =>
   method?.toLowerCase() === 'get' &&
   SHARED_MESSAGES_PATH_REGEX.test(stripBasePath(getRequestPathname(url)));
+
+/** The "continue this chat" fork is a deliberate authenticated action initiated
+ *  from a share page, so it must reach auth recovery/redirect like the shared
+ *  data request — otherwise a logged-out (or cold-loaded) viewer's 401 is
+ *  rejected silently instead of routing them through login. */
+const isShareForkRequest = (url?: string, method?: string) =>
+  method?.toLowerCase() === 'post' &&
+  SHARE_FORK_PATH_REGEX.test(stripBasePath(getRequestPathname(url)));
 
 const dispatchTokenUpdatedEvent = (token: string) => {
   setTokenHeader(token);
@@ -318,7 +327,11 @@ if (typeof window !== 'undefined') {
        *  recover auth/redirect without unrelated share-page queries forcing login. */
       if (
         !axios.defaults.headers.common['Authorization'] &&
-        !(isSharePage() && isSharedMessagesRequest(originalRequest.url, originalRequest.method))
+        !(
+          isSharePage() &&
+          (isSharedMessagesRequest(originalRequest.url, originalRequest.method) ||
+            isShareForkRequest(originalRequest.url, originalRequest.method))
+        )
       ) {
         return Promise.reject(error);
       }
@@ -347,8 +360,12 @@ if (typeof window !== 'undefined') {
 
           redirectToLoginOnce();
           return Promise.reject(error);
-        } catch (err) {
-          return Promise.reject(err);
+        } catch {
+          /** A rejected refresh (stale/invalid session → 401/403) must route to
+           *  login just like an empty-token refresh, otherwise the original 401
+           *  surfaces to the caller (e.g. the share fork button) with no redirect. */
+          redirectToLoginOnce();
+          return Promise.reject(error);
         }
       }
 

@@ -2709,6 +2709,15 @@ html {
   translate: 0;
 }
 
+.popover-ui.popover-from-left {
+  transform-origin: left;
+  translate: -0.5rem 0;
+  margin-top: 0;
+}
+.popover-ui.popover-from-left[data-enter] {
+  translate: 0 0;
+}
+
 .animate-popover-top,
 .animate-popover {
   transform-origin: top;

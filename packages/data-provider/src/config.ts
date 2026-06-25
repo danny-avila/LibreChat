@@ -572,6 +572,7 @@ export enum AgentCapabilities {
   actions = 'actions',
   context = 'context',
   skills = 'skills',
+  memory = 'memory',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -687,6 +688,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.actions,
   AgentCapabilities.context,
   AgentCapabilities.skills,
+  AgentCapabilities.memory,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -754,6 +756,51 @@ const remoteApiSchema = z.object({
   auth: remoteApiAuthSchema.optional(),
 });
 
+/**
+ * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s
+ * `ToolPolicyMode` 1:1.
+ *
+ * - `default`: ask the user about anything not explicitly allowed (default-on).
+ * - `dontAsk`: deny anything not explicitly allowed (headless / API-key flows).
+ * - `bypass`: auto-approve everything that isn't explicitly denied
+ *   (the user-facing "stop asking me" toggle).
+ *
+ * Subagents inherit the parent's mode; this is enforced by the SDK and not
+ * overridable per-subagent.
+ */
+export const toolApprovalModeSchema = z.enum(['default', 'dontAsk', 'bypass']);
+export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
+
+/**
+ * Per-endpoint tool-approval policy.
+ *
+ * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
+ * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
+ * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * just describes the surface.
+ *
+ * Conventions:
+ * - All list entries are matched as globs (`*`). Use `mcp:server:*` to scope
+ *   a rule to every tool from a single MCP server.
+ * - `deny` always wins, including under `bypass`.
+ * - `enabled: false` is a LibreChat-only kill switch that disables the entire
+ *   HITL machinery for this endpoint (no checkpointer, no hooks, no prompts).
+ *   This is admin-level; users toggle prompting via `mode: 'bypass'` instead.
+ */
+export const toolApprovalPolicySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    mode: toolApprovalModeSchema.optional(),
+    allow: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+    ask: z.array(z.string()).optional(),
+    /** Optional reason template surfaced in the prompt; `{tool}` is interpolated. */
+    reason: z.string().optional(),
+  })
+  .optional();
+
+export type TToolApprovalPolicy = z.infer<typeof toolApprovalPolicySchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -776,6 +823,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         })
         .optional(),
       remoteApi: remoteApiSchema.optional(),
+      /** Human-in-the-loop tool approval policy. Off by default. */
+      toolApproval: toolApprovalPolicySchema,
     }),
   )
   .default({
@@ -857,6 +906,10 @@ export const endpointSchema = baseEndpointSchema.merge(
         defaultParamsEndpoint: z.string().default('custom'),
         reasoningFormat: eReasoningParameterFormatSchema.optional(),
         reasoningKey: eReasoningResponseKeySchema.optional(),
+        /** Replays `reasoning_content` within a run's tool-call turns (e.g. Xiaomi MiMo, Kimi). */
+        includeReasoningContent: z.boolean().optional(),
+        /** Also reconstructs `reasoning_content` from persisted history across turns (implies `includeReasoningContent`). */
+        includeReasoningHistory: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
@@ -1248,6 +1301,7 @@ export const interfaceSchema = z
           create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
+          snapshotFiles: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -1311,6 +1365,7 @@ export const interfaceSchema = z
       create: true,
       share: true,
       public: true,
+      snapshotFiles: true,
     },
   });
 
@@ -1391,6 +1446,8 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Whether shared links snapshot conversation files (gates the per-link "share files" checkbox). */
+  sharedLinksSnapshotFilesEnabled?: boolean;
   /** Effective default timing for when conversation titles become fetchable.
    * `immediate` = fetch in parallel with the active stream (default);
    * `final` = fetch only after the stream completes (legacy). */
@@ -1442,6 +1499,19 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
 };
+
+export type TSharedLinkStartupInterface = Pick<
+  Partial<TInterfaceConfig>,
+  'privacyPolicy' | 'termsOfService'
+>;
+
+export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &
+  Pick<
+    Partial<TStartupConfig>,
+    'analyticsGtmId' | 'bundlerURL' | 'customFooter' | 'staticBundlerURL'
+  > & {
+    interface?: TSharedLinkStartupInterface;
+  };
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
@@ -2614,6 +2684,8 @@ export enum LocalStorageKeys {
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
   /** Last checked toggle for Skills per conversation ID */
   LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
+  /** Last checked toggle for Memory per conversation ID */
+  LAST_MEMORY_TOGGLE_ = 'LAST_MEMORY_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

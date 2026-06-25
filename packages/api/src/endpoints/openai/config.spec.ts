@@ -3,6 +3,7 @@ import {
   EModelEndpoint,
   ReasoningEffort,
   ReasoningSummary,
+  ReasoningResponseKey,
   ReasoningParameterFormat,
 } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
@@ -214,6 +215,84 @@ describe('getOpenAIConfig', () => {
     });
     expect(result.llmConfig.reasoning).toBeUndefined();
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should replay reasoning content when custom endpoint enables includeReasoningContent', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          reasoningKey: ReasoningResponseKey.reasoningContent,
+          includeReasoningContent: true,
+        },
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      },
+      'custom-endpoint',
+    );
+
+    expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+  });
+
+  it('should enable within-run replay when custom endpoint enables includeReasoningHistory', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          reasoningKey: ReasoningResponseKey.reasoningContent,
+          includeReasoningHistory: true,
+        },
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      },
+      'custom-endpoint',
+    );
+
+    expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+  });
+
+  it('should enable within-run replay for non-OpenAI param-format gateways (anthropic/google)', () => {
+    const anthropic = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          defaultParamsEndpoint: EModelEndpoint.anthropic,
+          includeReasoningContent: true,
+        },
+        modelOptions: { model: 'claude-3-7-sonnet' },
+      },
+      'custom-endpoint',
+    );
+    expect(anthropic.llmConfig).toHaveProperty('includeReasoningContent', true);
+
+    const google = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          defaultParamsEndpoint: EModelEndpoint.google,
+          includeReasoningHistory: true,
+        },
+        modelOptions: { model: 'gemini-2.5-pro' },
+      },
+      'custom-endpoint',
+    );
+    expect(google.llmConfig).toHaveProperty('includeReasoningContent', true);
+  });
+
+  it('should not replay reasoning content for custom endpoints by default', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        modelOptions: {
+          model: 'MiMo-VL-7B-RL',
+        },
+      },
+      'custom-endpoint',
+    );
+
+    expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
   });
 
   it('should default Vercel custom endpoints to reasoning object format', () => {
@@ -472,6 +551,43 @@ describe('getOpenAIConfig', () => {
 
     expect(result.configOptions?.fetchOptions).toBeDefined();
     expect((result.configOptions?.fetchOptions as RequestInit).dispatcher).toBeDefined();
+  });
+
+  it('should harden user-provided base URLs with a connect-time dispatcher and disabled redirects', () => {
+    const result = getOpenAIConfig(mockApiKey, {
+      reverseProxyUrl: 'https://user-provider.example.com/v1',
+      baseURLIsUserProvided: true,
+      allowedAddresses: ['10.0.0.5:443'],
+    });
+
+    expect(result.configOptions?.baseURL).toBe('https://user-provider.example.com/v1');
+    expect(result.configOptions?.fetchOptions).toEqual(
+      expect.objectContaining({
+        dispatcher: expect.any(Object),
+        redirect: 'error',
+      }),
+    );
+  });
+
+  it('should keep the SSRF-safe dispatcher when a proxy is configured for a user-provided URL', () => {
+    const result = getOpenAIConfig(mockApiKey, {
+      reverseProxyUrl: 'https://user-provider.example.com/v1',
+      baseURLIsUserProvided: true,
+      proxy: 'http://proxy.example.com:8080',
+    });
+
+    const unproxiedResult = getOpenAIConfig(mockApiKey, {
+      reverseProxyUrl: 'https://user-provider.example.com/v1',
+      baseURLIsUserProvided: true,
+    });
+
+    expect(result.configOptions?.fetchOptions?.dispatcher).toBeDefined();
+    expect(result.configOptions?.fetchOptions?.dispatcher?.constructor.name).toBe(
+      unproxiedResult.configOptions?.fetchOptions?.dispatcher?.constructor.name,
+    );
+    expect(result.configOptions?.fetchOptions).toEqual(
+      expect.objectContaining({ redirect: 'error' }),
+    );
   });
 
   it('should handle headers and defaultQuery', () => {

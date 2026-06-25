@@ -2,7 +2,14 @@ import { Types } from 'mongoose';
 import { Run, Providers } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import { processMemory } from './memory';
+import {
+  processMemory,
+  createMemoryTool,
+  createDeleteMemoryTool,
+  getRequestMemories,
+  invalidateRequestMemories,
+  agentHasInlineMemoryTools,
+} from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
 
@@ -558,5 +565,145 @@ describe('Memory Agent Header Resolution', () => {
     const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
 
     expect(runConfig.graphConfig.llmConfig.temperature).toBe(0.7);
+  });
+});
+
+describe('createMemoryTool tokenLimit enforcement', () => {
+  it('serializes parallel set_memory calls so they cannot collectively exceed tokenLimit', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** ~100 tokens; two of these (≈200) exceed the 150 limit, but each fits alone. */
+    const value = 'word '.repeat(100).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 0,
+    });
+
+    await Promise.all([tool.invoke({ key: 'k1', value }), tool.invoke({ key: 'k2', value })]);
+
+    /** Only the first write is committed; the second is rejected against the
+     *  updated running total instead of the stale construction-time total. */
+    expect(setMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows sequential writes that each fit within the remaining capacity', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const value = 'word '.repeat(10).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 1000,
+      totalTokens: 0,
+    });
+
+    await tool.invoke({ key: 'k1', value });
+    await tool.invoke({ key: 'k2', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects values longer than charLimit without writing', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const tool = createMemoryTool({ userId: 'user-1', setMemory, charLimit: 10 });
+
+    await tool.invoke({ key: 'k1', value: 'this value is far longer than ten characters' });
+
+    expect(setMemory).not.toHaveBeenCalled();
+  });
+
+  it('treats a repeat write to the same key as a replacement, not an addition', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** ~100 tokens; two distinct keys would exceed the 150 limit, but rewriting
+     *  the same key only replaces its value and must stay within the cap. */
+    const value = 'word '.repeat(100).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 0,
+    });
+
+    await tool.invoke({ key: 'k1', value });
+    await tool.invoke({ key: 'k1', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(2);
+  });
+
+  it('fires onWrite after a successful set, but not when the write fails', async () => {
+    const onWrite = jest.fn();
+    const okTool = createMemoryTool({
+      userId: 'user-1',
+      setMemory: jest.fn().mockResolvedValue({ ok: true }),
+      onWrite,
+    });
+    await okTool.invoke({ key: 'k1', value: 'a fact' });
+    expect(onWrite).toHaveBeenCalledTimes(1);
+
+    onWrite.mockClear();
+    const failTool = createMemoryTool({
+      userId: 'user-1',
+      setMemory: jest.fn().mockResolvedValue({ ok: false }),
+      onWrite,
+    });
+    await failTool.invoke({ key: 'k1', value: 'a fact' });
+    expect(onWrite).not.toHaveBeenCalled();
+  });
+
+  it('fires onWrite after a successful delete', async () => {
+    const onWrite = jest.fn();
+    const tool = createDeleteMemoryTool({
+      userId: 'user-1',
+      deleteMemory: jest.fn().mockResolvedValue({ ok: true }),
+      onWrite,
+    });
+
+    await tool.invoke({ key: 'k1' });
+
+    expect(onWrite).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('agentHasInlineMemoryTools', () => {
+  it('returns false for a nullish agent', () => {
+    expect(agentHasInlineMemoryTools(null)).toBe(false);
+    expect(agentHasInlineMemoryTools(undefined)).toBe(false);
+  });
+
+  it('honors an explicit memoryToolsRegistered flag over the raw marker', () => {
+    /** Initialized config whose registration was denied (memoryAvailable false)
+     *  but whose raw `memory` marker survived in tools must not be treated as
+     *  memory-enabled. */
+    expect(agentHasInlineMemoryTools({ memoryToolsRegistered: false, tools: ['memory'] })).toBe(
+      false,
+    );
+    expect(agentHasInlineMemoryTools({ memoryToolsRegistered: true, tools: [] })).toBe(true);
+  });
+
+  it('falls back to the raw memory marker when no flag is present', () => {
+    expect(agentHasInlineMemoryTools({ tools: ['memory'] })).toBe(true);
+    expect(agentHasInlineMemoryTools({ tools: [{ name: 'memory' }] })).toBe(true);
+    expect(agentHasInlineMemoryTools({ tools: ['execute_code'] })).toBe(false);
+    expect(agentHasInlineMemoryTools({ tools: [] })).toBe(false);
+  });
+});
+
+describe('getRequestMemories caching', () => {
+  it('memoizes per request, then re-fetches after invalidation', async () => {
+    const getFormattedMemories = jest
+      .fn()
+      .mockResolvedValue({ withKeys: '', withoutKeys: '', totalTokens: 10 });
+    const req = {};
+
+    await getRequestMemories({ req, userId: 'user-1', getFormattedMemories });
+    await getRequestMemories({ req, userId: 'user-1', getFormattedMemories });
+    /** A second memory-enabled agent in the same run reuses the first fetch. */
+    expect(getFormattedMemories).toHaveBeenCalledTimes(1);
+
+    /** A successful inline write invalidates the cache so a later tool round in
+     *  the same response re-reads the post-write usage total. */
+    invalidateRequestMemories(req);
+    await getRequestMemories({ req, userId: 'user-1', getFormattedMemories });
+    expect(getFormattedMemories).toHaveBeenCalledTimes(2);
   });
 });

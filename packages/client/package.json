@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.4.61",
+  "version": "0.4.63",
   "description": "React components for LibreChat",
   "repository": {
     "type": "git",
@@ -33,11 +33,13 @@
     "build:dev": "npm run clean && NODE_ENV=development tsdown",
     "b:build": "bun run b:clean && bun run tsdown",
     "build:watch": "tsdown --watch",
-    "dev": "tsdown --watch"
+    "dev": "tsdown --watch",
+    "test": "jest",
+    "test:ci": "jest --ci"
   },
   "peerDependencies": {
-    "@ariakit/react": "^0.4.16",
-    "@ariakit/react-core": "^0.4.17",
+    "@ariakit/react": "^0.4.29",
+    "@ariakit/react-components": "^0.1.2",
     "@dicebear/collection": "^9.4.1",
     "@dicebear/core": "^9.4.1",
     "@headlessui/react": "^2.1.2",

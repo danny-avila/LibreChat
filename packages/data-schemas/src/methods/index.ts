@@ -1,9 +1,9 @@
 import type { RoleMethods, RoleDeps } from './role';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
+import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
-import { createFileMethods, type FileMethods } from './file';
 import { createKeyMethods, type KeyMethods } from './key';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
@@ -25,6 +25,7 @@ import {
   AUDIT_SCHEMA_VERSION,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,
+  MAX_AUDIT_VERIFY_ROWS,
   type AuditLogMethods,
 } from './auditLog';
 import { createShareMethods, type ShareMethods } from './share';
@@ -108,7 +109,7 @@ export {
   deriveStructuredFrontmatterFields,
   inferSkillFileCategory,
 };
-export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT };
+export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -287,6 +288,7 @@ export type {
   RoleMethods,
   KeyMethods,
   FileMethods,
+  FileOwnerScope,
   MemoryMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,

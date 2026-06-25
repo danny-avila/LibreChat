@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.7-rc1",
+  "version": "v0.8.7",
   "description": "",
   "type": "module",
   "scripts": {
@@ -29,8 +29,8 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@ariakit/react": "^0.4.15",
-    "@ariakit/react-core": "^0.4.17",
+    "@ariakit/react": "^0.4.29",
+    "@ariakit/react-components": "^0.1.2",
     "@codesandbox/sandpack-react": "^2.19.10",
     "@dicebear/collection": "^9.4.1",
     "@dicebear/core": "^9.4.1",
