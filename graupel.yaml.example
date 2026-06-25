@@ -1,5 +1,13 @@
 # Graupel Configuration
-# Copy this file to `graupel.yaml` and adjust values.
+# Copy this file to `librechat.yaml` (or set CONFIG_PATH) and adjust values.
+#
+# 上游统一走 gptsapi.net(OpenAI 兼容中转,单 ${GPTSAPI_KEY}):
+# - 内置 openAI / anthropic 端点通过 .env 的 OPENAI_REVERSE_PROXY / ANTHROPIC_REVERSE_PROXY
+#   指向 gptsapi(gptsapi 兼容 OpenAI Chat Completions 与 Anthropic Messages 原生协议)。
+# - 内置 google 端点禁用(.env GOOGLE_KEY 留空,gptsapi 不支持 Google GenAI 原生协议),
+#   改用下方 name='Google' 的 custom 端点经 gptsapi 的 OpenAI 兼容接口托管 Gemini。
+# - Grok / DeepSeek / GLM / Kimi / MiniMax 同样用 custom 端点经 gptsapi 托管。
+# 模型选择器由 modelSpecs 策展(enforce 锁定,只显策展卡)。
 
 version: 1.3.11
 
@@ -20,46 +28,101 @@ registration:
     - github
 
 endpoints:
-  # OpenAI — GPT-5 family
+  # OpenAI — GPT-5 family（经 .env OPENAI_REVERSE_PROXY 路由到 gptsapi）
   openAI:
     titleConvo: true
-    titleModel: "gpt-5-mini"
+    titleModel: "gemini-2.5-flash-lite"   # 便宜模型做标题（经 gptsapi 可达）
     summarize: true
-    summaryModel: "gpt-5-mini"
-    # models are fetched from OpenAI API automatically
+    summaryModel: "gemini-2.5-flash-lite"
 
-  # Anthropic — Claude family
+  # Anthropic — Claude family（经 .env ANTHROPIC_REVERSE_PROXY 路由到 gptsapi）
   anthropic:
     titleConvo: true
-    titleModel: "claude-haiku-4-5"
+    titleModel: "gemini-2.5-flash-lite"
     summarize: true
-    summaryModel: "claude-haiku-4-5"
+    summaryModel: "gemini-2.5-flash-lite"
 
-  # Google — Gemini family
-  google:
-    titleConvo: true
-    titleModel: "gemini-2.5-flash"
-    summarize: true
-    summaryModel: "gemini-2.5-flash"
-
-  # Custom endpoints for providers without native support
+  # Custom endpoints — 全部经 gptsapi（OpenAI 兼容），单 ${GPTSAPI_KEY}
   custom:
+    # Google — Gemini family
+    - name: "Google"
+      apiKey: "${GPTSAPI_KEY}"
+      baseURL: "https://api.gptsapi.net/v1"
+      models:
+        default:
+          - "gemini-3.1-pro-preview"
+          - "gemini-3-flash-preview"
+          - "gemini-2.5-flash"
+          - "gemini-2.5-flash-lite"
+        fetch: false
+      titleConvo: true
+      titleModel: "gemini-2.5-flash-lite"
+      modelDisplayLabel: "Google"
+      iconURL: "google"
+      dropParams: ["stop"]
+
     # xAI — Grok family
     - name: "xAI"
-      apiKey: "${XAI_API_KEY}"
-      baseURL: "https://api.x.ai/v1"
+      apiKey: "${GPTSAPI_KEY}"
+      baseURL: "https://api.gptsapi.net/v1"
       models:
-        default: ["grok-4", "grok-3-mini"]
+        default:
+          - "grok-4.3"
+          - "grok-4-1-fast-non-reasoning"
+          - "grok-4.20-beta-0309-reasoning"
+          - "grok-4.20-beta-0309-non-reasoning"
+          - "grok-4.20-multi-agent-beta-0309"
+        fetch: false
       titleConvo: true
-      titleModel: "grok-3-mini"
+      titleModel: "gemini-2.5-flash-lite"
       modelDisplayLabel: "xAI"
+      iconURL: "xai"
+      dropParams: ["stop"]
 
     # DeepSeek
     - name: "DeepSeek"
-      apiKey: "${DEEPSEEK_API_KEY}"
-      baseURL: "https://api.deepseek.com/v1"
+      apiKey: "${GPTSAPI_KEY}"
+      baseURL: "https://api.gptsapi.net/v1"
       models:
-        default: ["deepseek-chat", "deepseek-reasoner"]
+        default: ["deepseek-v4-pro", "deepseek-v4-flash"]
+        fetch: false
       titleConvo: true
-      titleModel: "deepseek-chat"
+      titleModel: "gemini-2.5-flash-lite"
       modelDisplayLabel: "DeepSeek"
+      dropParams: ["stop"]
+
+    # GLM (Zhipu)
+    - name: "GLM"
+      apiKey: "${GPTSAPI_KEY}"
+      baseURL: "https://api.gptsapi.net/v1"
+      models:
+        default: ["glm-5.2", "glm-5-turbo"]
+        fetch: false
+      titleConvo: true
+      titleModel: "gemini-2.5-flash-lite"
+      modelDisplayLabel: "GLM"
+      dropParams: ["stop"]
+
+    # Kimi (Moonshot)
+    - name: "Kimi"
+      apiKey: "${GPTSAPI_KEY}"
+      baseURL: "https://api.gptsapi.net/v1"
+      models:
+        default: ["kimi-k2.6"]
+        fetch: false
+      titleConvo: true
+      titleModel: "gemini-2.5-flash-lite"
+      modelDisplayLabel: "Kimi"
+      dropParams: ["stop"]
+
+    # MiniMax
+    - name: "MiniMax"
+      apiKey: "${GPTSAPI_KEY}"
+      baseURL: "https://api.gptsapi.net/v1"
+      models:
+        default: ["MiniMax-M3"]
+        fetch: false
+      titleConvo: true
+      titleModel: "gemini-2.5-flash-lite"
+      modelDisplayLabel: "MiniMax"
+      dropParams: ["stop"]
