@@ -7,6 +7,7 @@ const {
   countTokens,
   sendFeedbackScore,
   traceIdForMessage,
+  mergeQuotedTextForCount,
 } = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
@@ -329,7 +330,22 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     const { text, index, model } = req.body;
 
     if (index === undefined) {
-      const tokenCount = await countTokens(text, model);
+      /** A user turn's persisted `quotes` are re-prepended into the prompt on
+       *  every send, but this edit only changes `text`. Count the merged
+       *  text+quotes so the stored `tokenCount` stays authoritative (matching the
+       *  send path); a plain text-only count under-reports by the quote block. */
+      const existing = (
+        await db.getMessages(
+          { conversationId, messageId, user: req.user.id },
+          'quotes isCreatedByUser',
+        )
+      )?.[0];
+      const textToCount = mergeQuotedTextForCount(
+        text,
+        existing?.quotes,
+        existing?.isCreatedByUser === true,
+      );
+      const tokenCount = await countTokens(textToCount, model);
       const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
       return res.status(200).json(result);
     }
