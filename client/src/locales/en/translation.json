@@ -949,6 +949,7 @@
   "com_ui_context_cost": "Cost",
   "com_ui_context_cost_branch": "Cost (this branch)",
   "com_ui_context_cost_total": "All branches",
+  "com_ui_context_estimated": "Estimated",
   "com_ui_context_filter_sort": "Filter and Sort by Context",
   "com_ui_context_free": "Free space",
   "com_ui_context_messages": "Messages",
