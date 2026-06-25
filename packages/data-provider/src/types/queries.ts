@@ -128,6 +128,8 @@ export type MCPServer = {
   authenticated: boolean;
   authConfig: s.TPluginAuthConfig[];
   tools: MCPTool[];
+  /** Server-level default: when true, all tools from this server defer by default */
+  deferLoading?: boolean;
 };
 
 export type MCPServersResponse = {

@@ -32,6 +32,8 @@ export interface ToolDefinition {
   parameters?: JsonSchemaType;
   /** MCP server name extracted from tool name */
   serverName?: string;
+  /** Server-level deferLoading default for this tool's MCP server. */
+  serverDeferLoading?: boolean;
 }
 
 /**
@@ -70,7 +72,10 @@ export function buildToolRegistryFromAgentOptions(
         ? agentOptions.allowed_callers
         : ['direct'];
 
-    const defer_loading = agentOptions?.defer_loading === true;
+    const defer_loading =
+      agentOptions?.defer_loading !== undefined
+        ? agentOptions.defer_loading
+        : tool.serverDeferLoading === true;
 
     const toolDef: LCTool = {
       name,
@@ -103,6 +108,8 @@ interface MCPToolInstance {
   mcpJsonSchema?: JsonSchemaType;
   /** Server this tool came from, carried from resolution instead of re-parsed */
   mcpRawServerName?: string;
+  /** Server-level deferLoading default, stamped at tool creation time */
+  mcpServerDeferLoading?: boolean;
 }
 
 /**
@@ -126,6 +133,10 @@ export function extractMCPToolDefinition(tool: MCPToolInstance): ToolDefinition 
   const serverName = tool.mcpRawServerName ?? getServerNameFromTool(tool.name);
   if (serverName) {
     def.serverName = serverName;
+  }
+
+  if (tool.mcpServerDeferLoading) {
+    def.serverDeferLoading = true;
   }
 
   return def;
@@ -171,6 +182,7 @@ function buildToolRegistry(
       description: toolDef.description,
       parameters: toolDef.parameters,
       serverName: toolDef.serverName,
+      defer_loading: toolDef.serverDeferLoading === true,
       toolType: 'mcp',
     });
   }
