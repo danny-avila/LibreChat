@@ -1,4 +1,15 @@
 {{- if .Values.langfuseFanout.enabled }}
+{{- $redisURI := .Values.langfuseFanout.redis.uri }}
+{{- if and (not $redisURI) .Values.redis.enabled }}
+{{- $redisURI = include "librechat.bundledRedisURI" . }}
+{{- end }}
+{{- if not $redisURI }}
+{{- fail "langfuseFanout.redis.uri is required when langfuseFanout.enabled=true unless redis.enabled=true" }}
+{{- end }}
+{{- $publicURL := .Values.langfuseFanout.publicUrl }}
+{{- if not $publicURL }}
+{{- $publicURL = printf "http://%s.%s.svc.cluster.local:%v" (include "librechat.langfuseFanout.fullname" .) (.Release.Namespace | lower) .Values.langfuseFanout.service.port }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/langfuse-fanout-config: {{ include (print $.Template.BasePath "/langfuse-fanout-configmap.yaml") . | sha256sum }}
+        checksum/langfuse-fanout-config: {{ toYaml .Values.langfuseFanout | sha256sum }}
         {{- with .Values.langfuseFanout.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -24,10 +35,9 @@ spec:
         {{- end }}
     spec:
       containers:
-        - name: otelcol
+        - name: langfuse-fanout
           image: "{{ .Values.langfuseFanout.image.repository }}:{{ .Values.langfuseFanout.image.tag }}"
           imagePullPolicy: {{ .Values.langfuseFanout.image.pullPolicy }}
-          args: ["--config=/etc/otelcol/otelcol.yaml"]
           ports:
             - name: otlp-http
               containerPort: 4318
@@ -40,6 +50,66 @@ spec:
                 secretKeyRef:
                   name: {{ required "langfuseFanout.central.authHeaderSecret.name is required when langfuseFanout.enabled=true" .Values.langfuseFanout.central.authHeaderSecret.name | quote }}
                   key: {{ .Values.langfuseFanout.central.authHeaderSecret.key | quote }}
+            {{- /* Validate destination keys before rendering the env map. */}}
+            {{- range $name, $_ := .Values.langfuseFanout.tenant.destinations }}
+            {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
+            {{- end }}
+            - name: LANGFUSE_FANOUT_TENANT_DESTINATIONS
+              value: {{ include "librechat.langfuseFanout.tenantDestinationsEnv" . | quote }}
+            - name: LANGFUSE_FANOUT_UPSTREAM_TIMEOUT
+              value: {{ .Values.langfuseFanout.upstreamTimeout | quote }}
+            - name: LANGFUSE_FANOUT_TRACE_COLLECTOR_URL
+              value: {{ .Values.langfuseFanout.traceCollectorUrl | quote }}
+            - name: LANGFUSE_FANOUT_TRACE_DESTINATION_KEYS
+              value: {{ include "librechat.langfuseFanout.tenantDestinationKeysEnv" . | quote }}
+            - name: LANGFUSE_FANOUT_REDIS_URI
+              value: {{ $redisURI | quote }}
+            {{- with .Values.langfuseFanout.redis.username }}
+            - name: LANGFUSE_FANOUT_REDIS_USERNAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.langfuseFanout.redis.passwordSecret.name }}
+            - name: LANGFUSE_FANOUT_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: {{ $.Values.langfuseFanout.redis.passwordSecret.key | quote }}
+            {{- end }}
+            - name: LANGFUSE_FANOUT_REDIS_KEY_PREFIX
+              value: {{ .Values.langfuseFanout.redis.keyPrefix | quote }}
+            - name: LANGFUSE_FANOUT_PUBLIC_URL
+              value: {{ $publicURL | quote }}
+            {{- with .Values.langfuseFanout.metrics.secret.name }}
+            - name: LANGFUSE_FANOUT_METRICS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: {{ $.Values.langfuseFanout.metrics.secret.key | quote }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.langfuseFanout.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.langfuseFanout.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.langfuseFanout.resources | nindent 12 }}
+        - name: otelcol
+          image: "{{ .Values.langfuseFanout.otelCollector.image.repository }}:{{ .Values.langfuseFanout.otelCollector.image.tag }}"
+          imagePullPolicy: {{ .Values.langfuseFanout.otelCollector.image.pullPolicy }}
+          args: ["--config=/etc/otelcol/otelcol.yaml"]
+          ports:
+            - name: otlp-internal
+              containerPort: 4319
+              protocol: TCP
+          env:
+            - name: LANGFUSE_FANOUT_CENTRAL_BASE_URL
+              value: {{ .Values.langfuseFanout.central.baseUrl | quote }}
+            - name: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "langfuseFanout.central.authHeaderSecret.name is required when langfuseFanout.enabled=true" .Values.langfuseFanout.central.authHeaderSecret.name | quote }}
+                  key: {{ .Values.langfuseFanout.central.authHeaderSecret.key | quote }}
+            - name: LANGFUSE_FANOUT_OTEL_RECEIVER_ENDPOINT
+              value: {{ .Values.langfuseFanout.otelCollector.receiverEndpoint | quote }}
             {{- range $name, $destination := .Values.langfuseFanout.tenant.destinations }}
             {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
             - name: LANGFUSE_FANOUT_TENANT_{{ $name | upper | replace "-" "_" }}_BASE_URL
@@ -61,7 +131,7 @@ spec:
               subPath: otelcol.yaml
               readOnly: true
           resources:
-            {{- toYaml .Values.langfuseFanout.resources | nindent 12 }}
+            {{- toYaml .Values.langfuseFanout.otelCollector.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:

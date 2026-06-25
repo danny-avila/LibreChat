@@ -9,7 +9,7 @@ receivers:
   otlp:
     protocols:
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: ${env:LANGFUSE_FANOUT_OTEL_RECEIVER_ENDPOINT}
         include_metadata: true
         traces_url_path: /api/public/otel/v1/traces
 
@@ -21,11 +21,11 @@ connectors:
         condition: attributes["librechat.langfuse.destination"] == "eu"
         pipelines: [traces/tenant_eu]
       - context: span
-        condition: attributes["librechat.langfuse.destination"] == "us"
-        pipelines: [traces/tenant_us]
-      - context: span
         condition: attributes["librechat.langfuse.destination"] == "jp"
         pipelines: [traces/tenant_jp]
+      - context: span
+        condition: attributes["librechat.langfuse.destination"] == "us"
+        pipelines: [traces/tenant_us]
 
 processors:
   memory_limiter:
@@ -51,16 +51,17 @@ processors:
     send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
     metadata_keys: [authorization]
     metadata_cardinality_limit: ${env:LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT}
-  batch/by_auth_us:
-    timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
-    send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
-    metadata_keys: [authorization]
-    metadata_cardinality_limit: ${env:LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT}
   batch/by_auth_jp:
     timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
     send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
     metadata_keys: [authorization]
     metadata_cardinality_limit: ${env:LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT}
+  batch/by_auth_us:
+    timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
+    send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
+    metadata_keys: [authorization]
+    metadata_cardinality_limit: ${env:LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT}
+
 exporters:
   otlphttp/central:
     # Langfuse Cloud base URL options: https://cloud.langfuse.com (EU),
@@ -75,18 +76,19 @@ exporters:
       authenticator: headers_setter/tenant_passthrough
     headers:
       x-langfuse-ingestion-version: '4'
-  otlphttp/tenant_us:
-    endpoint: '${env:LANGFUSE_FANOUT_TENANT_US_BASE_URL}/api/public/otel'
-    auth:
-      authenticator: headers_setter/tenant_passthrough
-    headers:
-      x-langfuse-ingestion-version: '4'
   otlphttp/tenant_jp:
     endpoint: '${env:LANGFUSE_FANOUT_TENANT_JP_BASE_URL}/api/public/otel'
     auth:
       authenticator: headers_setter/tenant_passthrough
     headers:
       x-langfuse-ingestion-version: '4'
+  otlphttp/tenant_us:
+    endpoint: '${env:LANGFUSE_FANOUT_TENANT_US_BASE_URL}/api/public/otel'
+    auth:
+      authenticator: headers_setter/tenant_passthrough
+    headers:
+      x-langfuse-ingestion-version: '4'
+
 service:
   extensions: [headers_setter/tenant_passthrough]
   pipelines:
@@ -102,11 +104,11 @@ service:
       receivers: [routing/langfuse_tenant_destination]
       processors: [attributes/drop_librechat_routing, batch/by_auth_eu]
       exporters: [otlphttp/tenant_eu]
-    traces/tenant_us:
-      receivers: [routing/langfuse_tenant_destination]
-      processors: [attributes/drop_librechat_routing, batch/by_auth_us]
-      exporters: [otlphttp/tenant_us]
     traces/tenant_jp:
       receivers: [routing/langfuse_tenant_destination]
       processors: [attributes/drop_librechat_routing, batch/by_auth_jp]
       exporters: [otlphttp/tenant_jp]
+    traces/tenant_us:
+      receivers: [routing/langfuse_tenant_destination]
+      processors: [attributes/drop_librechat_routing, batch/by_auth_us]
+      exporters: [otlphttp/tenant_us]

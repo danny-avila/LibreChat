@@ -87,6 +87,38 @@ already use the same lowercase key shape for collector routing to match.
 {{- end }}
 
 {{/*
+Render the fanout destination list consumed by LibreChat and the fanout gateway.
+*/}}
+{{- define "librechat.langfuseFanout.tenantDestinationsEnv" -}}
+{{- $tenantDestinations := list -}}
+{{- range $name, $destination := .Values.langfuseFanout.tenant.destinations -}}
+{{- include "librechat.langfuseFanout.validateDestinationKey" $name -}}
+{{- $tenantDestinations = append $tenantDestinations (printf "%s=%s" $name $destination.baseUrl) -}}
+{{- end -}}
+{{- join "," $tenantDestinations -}}
+{{- end }}
+
+{{/*
+Render the fanout destination key list consumed by the gateway as a startup
+guard against media destinations the collector cannot route traces to.
+*/}}
+{{- define "librechat.langfuseFanout.tenantDestinationKeysEnv" -}}
+{{- $tenantDestinationKeys := list -}}
+{{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations -}}
+{{- include "librechat.langfuseFanout.validateDestinationKey" $name -}}
+{{- $tenantDestinationKeys = append $tenantDestinationKeys $name -}}
+{{- end -}}
+{{- join "," $tenantDestinationKeys -}}
+{{- end }}
+
+{{/*
+Bundled Redis URI used when the Redis subchart is enabled.
+*/}}
+{{- define "librechat.bundledRedisURI" -}}
+{{- printf "redis://%s-master.%s.svc.cluster.local:6379" (include "common.names.fullname" .Subcharts.redis) (.Release.Namespace | lower) -}}
+{{- end }}
+
+{{/*
 RAG Selector labels
 */}}
 {{- define "rag.selectorLabels" -}}

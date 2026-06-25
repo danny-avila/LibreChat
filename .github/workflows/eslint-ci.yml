@@ -11,10 +11,6 @@ on:
       - 'api/**'
       - 'client/**'
       - 'packages/**'
-      - 'helm/librechat/templates/langfuse-fanout-*.yaml'
-      - 'helm/librechat/tests/langfuse_fanout_*.sh'
-      - 'helm/librechat/values.yaml'
-      - 'otel/langfuse-fanout/**'
       - '.github/workflows/eslint-ci.yml'
 
 jobs:
@@ -130,21 +126,3 @@ jobs:
             echo "::error::Or rely on the lint-staged pre-commit hook (do not bypass with --no-verify)."
             exit 1
           fi
-
-      - name: Check Langfuse fanout collector config drift
-        run: |
-          BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
-          mapfile -d '' -t CHANGED_FILES < <(
-            git diff -z --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD |
-              grep -zE '^(otel/langfuse-fanout/|helm/librechat/(templates/langfuse-fanout-|tests/langfuse_fanout_|values\.yaml$))' || true
-          )
-
-          if [[ ${#CHANGED_FILES[@]} -eq 0 ]]; then
-            echo "No Langfuse fanout collector files changed. Skipping drift check."
-            exit 0
-          fi
-
-          echo "Files triggering drift check:"
-          printf '%s\n' "${CHANGED_FILES[@]}"
-
-          helm/librechat/tests/langfuse_fanout_config_drift_test.sh

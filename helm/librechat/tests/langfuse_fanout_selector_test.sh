@@ -28,23 +28,22 @@ cp "${CHART_DIR}/templates/langfuse-fanout-service.yaml" \
   "${RENDER_CHART_DIR}/templates/langfuse-fanout-service.yaml"
 cp "${CHART_DIR}/templates/langfuse-fanout-deployment.yaml" \
   "${RENDER_CHART_DIR}/templates/langfuse-fanout-deployment.yaml"
-cp "${CHART_DIR}/templates/langfuse-fanout-configmap.yaml" \
-  "${RENDER_CHART_DIR}/templates/langfuse-fanout-configmap.yaml"
 
 helm template librechat "${RENDER_CHART_DIR}" \
   --set langfuseFanout.enabled=true \
   --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
+  --set langfuseFanout.redis.uri=redis://langfuse-fanout-redis:6379 \
   --show-only templates/service.yaml \
   --show-only templates/langfuse-fanout-service.yaml \
   --show-only templates/langfuse-fanout-deployment.yaml \
-  --show-only templates/langfuse-fanout-configmap.yaml \
   > "${RENDERED_FILE}"
 
 if helm template librechat "${RENDER_CHART_DIR}" \
   --set langfuseFanout.enabled=true \
   --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
+  --set langfuseFanout.redis.uri=redis://langfuse-fanout-redis:6379 \
   --set langfuseFanout.tenant.destinations.EU.baseUrl=https://cloud.langfuse.com \
-  --show-only templates/langfuse-fanout-configmap.yaml \
+  --show-only templates/langfuse-fanout-deployment.yaml \
   > /dev/null 2> "${INVALID_RENDER_ERROR}"; then
   echo "FAIL: Helm accepted invalid uppercase Langfuse fanout destination key" >&2
   exit 1
@@ -87,17 +86,25 @@ function isSubset(subset, labels) {
   return Object.entries(subset ?? {}).every(([key, value]) => labels?.[key] === value);
 }
 
+function envValue(env, name) {
+  return (env ?? []).find((entry) => entry.name === name)?.value;
+}
+
 const mainService = find('Service', 'librechat-librechat');
 const fanoutService = find('Service', 'librechat-librechat-langfuse-fanout');
 const fanoutDeployment = find('Deployment', 'librechat-librechat-langfuse-fanout');
-const fanoutConfigMap = find('ConfigMap', 'librechat-librechat-langfuse-fanout-config');
+const fanoutContainer = fanoutDeployment.spec?.template?.spec?.containers?.find(
+  (container) => container.name === 'langfuse-fanout',
+);
+if (!fanoutContainer) {
+  fail('missing langfuse-fanout container');
+}
 
 const mainSelector = mainService.spec?.selector ?? {};
 const fanoutSelector = fanoutService.spec?.selector ?? {};
 const fanoutMatchLabels = fanoutDeployment.spec?.selector?.matchLabels ?? {};
 const fanoutPodLabels = fanoutDeployment.spec?.template?.metadata?.labels ?? {};
 const fanoutMetadataLabels = fanoutDeployment.metadata?.labels ?? {};
-const fanoutConfigLabels = fanoutConfigMap.metadata?.labels ?? {};
 
 if (isSubset(mainSelector, fanoutPodLabels)) {
   fail('main Service selector matches fanout pod labels');
@@ -114,8 +121,20 @@ if (mainSelector['app.kubernetes.io/name'] === fanoutSelector['app.kubernetes.io
 if (fanoutMetadataLabels['app.kubernetes.io/name'] !== fanoutSelector['app.kubernetes.io/name']) {
   fail('fanout Deployment metadata labels do not use fanout app name');
 }
-if (fanoutConfigLabels['app.kubernetes.io/name'] !== fanoutSelector['app.kubernetes.io/name']) {
-  fail('fanout ConfigMap labels do not use fanout app name');
+if (envValue(fanoutContainer.env, 'LANGFUSE_FANOUT_REDIS_URI') !== 'redis://langfuse-fanout-redis:6379') {
+  fail('fanout Deployment did not render configured Redis URI');
+}
+if (
+  envValue(fanoutContainer.env, 'LANGFUSE_FANOUT_PUBLIC_URL') !==
+  'http://librechat-librechat-langfuse-fanout.default.svc.cluster.local:4318'
+) {
+  fail('fanout Deployment did not render derived public URL');
+}
+if (fanoutContainer.livenessProbe?.httpGet?.path !== '/healthz') {
+  fail('fanout Deployment missing /healthz liveness probe');
+}
+if (fanoutContainer.readinessProbe?.httpGet?.path !== '/healthz') {
+  fail('fanout Deployment missing /healthz readiness probe');
 }
 
 console.log('PASS: Langfuse fanout selectors are isolated from the main LibreChat Service');

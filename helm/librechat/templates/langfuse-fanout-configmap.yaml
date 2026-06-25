@@ -18,7 +18,7 @@ data:
       otlp:
         protocols:
           http:
-            endpoint: 0.0.0.0:4318
+            endpoint: ${env:LANGFUSE_FANOUT_OTEL_RECEIVER_ENDPOINT}
             include_metadata: true
             traces_url_path: /api/public/otel/v1/traces
 
