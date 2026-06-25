@@ -38,6 +38,7 @@ function MCPAppCard({
     resource.toolArgs as Record<string, unknown> | undefined,
     toolResult,
     handleSizeChanged,
+    () => setLoaded(true),
   );
 
   if (isMcpAppResource(resource)) {
@@ -64,7 +65,7 @@ function MCPAppCard({
     );
   }
 
-  if (resource.text && (resource.mimeType ?? 'text/html').includes('html')) {
+  if (resource.text) {
     return (
       <iframe
         srcDoc={resource.text}

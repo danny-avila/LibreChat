@@ -27,6 +27,7 @@ export function useAppBridge(
   toolArgs: Record<string, unknown> | undefined,
   toolResult: AppToolResult | undefined,
   onSizeChanged: (params: SizeParams) => void,
+  onLoaded?: () => void,
 ) {
   const user = useRecoilValue(store.user);
   const { ask } = useOptionalMessagesOperations();
@@ -41,10 +42,14 @@ export function useAppBridge(
   // mount time and are stable for a given resource identity because they derive from the same
   // tool-call snapshot that produced the resource.
   const onSizeChangedRef = useRef(onSizeChanged);
+  const onLoadedRef = useRef(onLoaded);
   const toolArgsRef = useRef(toolArgs);
   const toolResultRef = useRef(toolResult);
   useEffect(() => {
     onSizeChangedRef.current = onSizeChanged;
+  });
+  useEffect(() => {
+    onLoadedRef.current = onLoaded;
   });
   useEffect(() => {
     toolArgsRef.current = toolArgs;
@@ -58,6 +63,9 @@ export function useAppBridge(
     if (!iframe || !resource.serverName) return;
 
     let bridge: AppBridge | null = null;
+    // The sandbox proxy re-emits `sandbox-proxy-ready` every 500ms until it receives the resource,
+    // so fetch and send it only once to avoid overlapping reads and repeated inner-frame creation.
+    let sandboxReadyHandled = false;
 
     const handleLoad = async () => {
       if (!iframe.contentWindow) return;
@@ -128,6 +136,10 @@ export function useAppBridge(
       };
 
       bridge.addEventListener('sandboxready', async () => {
+        if (sandboxReadyHandled) {
+          return;
+        }
+        sandboxReadyHandled = true;
         try {
           // Inline mcp-app resources already carry their HTML, so use it directly instead of a
           // resources/read round trip; resourceUri-only apps are fetched from the server.
@@ -153,6 +165,9 @@ export function useAppBridge(
       });
 
       bridge.oninitialized = async () => {
+        // The app handshake completed: treat this as the load signal so apps that never emit a
+        // size-change (auto-resize disabled) are still revealed instead of stuck behind the spinner.
+        onLoadedRef.current?.();
         const args = toolArgsRef.current;
         const result = toolResultRef.current;
         // MCP Apps expect tool input exactly once before the result, even for no-argument tools,

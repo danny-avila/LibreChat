@@ -71,8 +71,11 @@ export class MCPManager extends UserConnectionManager {
 
   private readonly modelOnlyToolCache = new Map<string, Set<string>>();
   private readonly knownToolNamesCache = new Map<string, Set<string>>();
-  /** createdAt of the connection each cache entry was built from, to detect reconnects. */
-  private readonly toolCacheConnStamp = new Map<string, number>();
+  /**
+   * Stamp of the connection each cache entry was built from, to detect reconnects (createdAt) and
+   * live tools/list_changed notifications (toolListVersion) that createdAt alone would miss.
+   */
+  private readonly toolCacheConnStamp = new Map<string, string>();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -383,10 +386,14 @@ Please follow these instructions when using tools from the respective MCP server
    * (ConnectionsRepository.get), so cached tool metadata is only valid while it was built
    * from the current connection instance.
    */
+  private connStamp(connection: MCPConnection): string {
+    return `${connection.createdAt}:${connection.toolListVersion}`;
+  }
+
   private isToolCacheFresh(cacheKey: string, connection: MCPConnection): boolean {
     return (
       this.knownToolNamesCache.has(cacheKey) &&
-      this.toolCacheConnStamp.get(cacheKey) === connection.createdAt
+      this.toolCacheConnStamp.get(cacheKey) === this.connStamp(connection)
     );
   }
 
@@ -428,10 +435,16 @@ Please follow these instructions when using tools from the respective MCP server
 
   private async populateToolCaches(connection: MCPConnection, cacheKey: string): Promise<void> {
     const { serverMap, modelOnly, knownNames } = await this.buildToolCaches(connection);
+    // fetchTools returns [] both for genuinely tool-less servers and for a transient tools/list
+    // failure. Caching an empty list as authoritative would disable MCP Apps until reconnect, so
+    // leave the cache unpopulated when empty and re-fetch on the next call.
+    if (knownNames.size === 0) {
+      return;
+    }
     this.resourceUriCache.set(cacheKey, serverMap);
     this.modelOnlyToolCache.set(cacheKey, modelOnly);
     this.knownToolNamesCache.set(cacheKey, knownNames);
-    this.toolCacheConnStamp.set(cacheKey, connection.createdAt);
+    this.toolCacheConnStamp.set(cacheKey, this.connStamp(connection));
   }
 
   private async getResourceMeta(
@@ -658,32 +671,51 @@ Please follow these instructions when using tools from the respective MCP server
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
+      // The app routes (getAppConnection) reject OBO, Graph-token, and runtime body-placeholder
+      // configs, so do not advertise an MCP App for them: the iframe could never fetch its HTML or
+      // run follow-up calls. Such tools still render their content, just without the app bridge.
+      const appCompatible =
+        !rawConfig ||
+        (!rawConfig.obo &&
+          !(!isDbSourced && mcpOptionsContainGraphTokenPlaceholder(rawConfig as t.MCPOptions)) &&
+          getMissingRuntimeBodyPlaceholderFields(rawConfig).length === 0);
+
       let resourceMeta:
         | { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
         | undefined;
-      try {
-        resourceMeta = await this.getResourceMeta(
-          connection,
-          serverName,
-          toolName,
-          userId,
-          requiresEphemeralUserConnection(rawConfig),
-        );
-        if (resourceMeta) {
-          logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`);
+      if (appCompatible) {
+        try {
+          resourceMeta = await this.getResourceMeta(
+            connection,
+            serverName,
+            toolName,
+            userId,
+            requiresEphemeralUserConnection(rawConfig),
+          );
+          if (resourceMeta) {
+            logger.debug(
+              `[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`,
+            );
+          }
+        } catch {
+          // Non-critical -- tools render without the app UI
         }
-      } catch {
-        // Non-critical -- tools render without the app UI
       }
 
-      return formatToolContent(result as t.MCPToolCallResponse, provider, {
-        serverName,
-        toolName,
-        resourceUri: resourceMeta?.uri,
-        csp: resourceMeta?.csp,
-        permissions: resourceMeta?.permissions,
-        toolArgs: toolArguments,
-      });
+      return formatToolContent(
+        result as t.MCPToolCallResponse,
+        provider,
+        appCompatible
+          ? {
+              serverName,
+              toolName,
+              resourceUri: resourceMeta?.uri,
+              csp: resourceMeta?.csp,
+              permissions: resourceMeta?.permissions,
+              toolArgs: toolArguments,
+            }
+          : undefined,
+      );
     } catch (error) {
       // Log with context and re-throw or handle as needed
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);

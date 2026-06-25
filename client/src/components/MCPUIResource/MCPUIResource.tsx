@@ -46,6 +46,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
     uiResource?.toolArgs as Record<string, unknown> | undefined,
     toolResult,
     handleSizeChanged,
+    () => setLoaded(true),
   );
 
   if (!uiResource) {
@@ -86,7 +87,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
       );
     }
 
-    if (uiResource.text && (uiResource.mimeType ?? 'text/html').includes('html')) {
+    if (uiResource.text) {
       return (
         <span className="mx-1 inline-block w-full align-middle">
           <iframe

@@ -6,12 +6,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/app-bridge';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
+import {
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
@@ -1134,6 +1137,13 @@ export class MCPConnection extends EventEmitter {
    */
   public readonly createdAt: number;
 
+  /**
+   * Bumped on every tools/list_changed notification. Consumers that cache tool metadata can fold
+   * this into their freshness check to detect tool changes that happen on a live connection, which
+   * createdAt alone (stable until reconnect) cannot.
+   */
+  public toolListVersion = 0;
+
   private static circuitBreakers: Map<string, CircuitBreakerState> = new Map();
 
   public static clearCooldown(serverName: string): void {
@@ -1755,6 +1765,7 @@ export class MCPConnection extends EventEmitter {
     });
 
     this.subscribeToResources();
+    this.subscribeToToolChanges();
   }
 
   private async handleReconnection(): Promise<void> {
@@ -1833,6 +1844,13 @@ export class MCPConnection extends EventEmitter {
   private subscribeToResources(): void {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
       this.emit('resourcesChanged');
+    });
+  }
+
+  private subscribeToToolChanges(): void {
+    this.client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+      this.toolListVersion += 1;
+      this.emit('toolsChanged');
     });
   }
 

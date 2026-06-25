@@ -59,10 +59,10 @@ const MCPAppView = React.memo(function MCPAppView({
     }
   }, []);
 
-  useAppBridge(iframeRef, app, toolArgs, toolResult, handleSizeChanged);
+  useAppBridge(iframeRef, app, toolArgs, toolResult, handleSizeChanged, () => setLoaded(true));
 
   const isAppBacked = isMcpAppResource(app);
-  if (!isAppBacked && app.text && (app.mimeType ?? 'text/html').includes('html')) {
+  if (!isAppBacked && app.text) {
     return (
       <div className="my-2">
         <iframe
