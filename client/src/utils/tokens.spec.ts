@@ -111,6 +111,33 @@ describe('token index', () => {
     expect(totals.estTokens).toBe(10);
   });
 
+  it('estimates object-form content text and merged quote excerpts', () => {
+    buildIndex(CONVO, [
+      /** Assistant body lives only in object-form content (`text.value`). */
+      {
+        messageId: 'a1',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        content: [{ type: 'text', text: { value: 'y'.repeat(20) } }],
+      } as unknown as TMessage,
+      /** User turn whose quotes are merged into the prompt at send time. */
+      {
+        messageId: 'u1',
+        parentMessageId: 'a1',
+        isCreatedByUser: true,
+        conversationId: CONVO,
+        text: 'z'.repeat(16),
+        quotes: ['q'.repeat(8)],
+      } as TMessage,
+    ]);
+
+    /** a1: 20 content chars / 4 = 5; u1: (16 text + 8 quote) / 4 = 6. */
+    const totals = sumBranch(CONVO, 'u1');
+    expect(totals.counted).toBe(0);
+    expect(totals.estTokens).toBe(11);
+  });
+
   it('caps the branch at a summary marker instead of re-summing compacted history', () => {
     const summarized = {
       messageId: 'a2',

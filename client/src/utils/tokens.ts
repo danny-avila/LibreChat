@@ -144,6 +144,26 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
   }
 }
 
+/** Chars of a content part's text, handling both the string and `{ value }` forms. */
+function partTextChars(part: unknown): number {
+  if (part == null || typeof part !== 'object') {
+    return 0;
+  }
+  const text = (part as { text?: unknown }).text;
+  if (typeof text === 'string') {
+    return text.length;
+  }
+  if (
+    text != null &&
+    typeof text === 'object' &&
+    typeof (text as { value?: unknown }).value === 'string'
+  ) {
+    return (text as { value: string }).value.length;
+  }
+  const think = (part as { think?: unknown }).think;
+  return typeof think === 'string' ? think.length : 0;
+}
+
 /** Char length of a message's rendered text, for estimating count-less messages. */
 function messageChars(message: Partial<TMessage>): number {
   if (typeof message.text === 'string' && message.text.length > 0) {
@@ -152,14 +172,25 @@ function messageChars(message: Partial<TMessage>): number {
   if (Array.isArray(message.content)) {
     let chars = 0;
     for (const part of message.content) {
-      const partChars = getOutputChars(part);
-      if (partChars != null) {
-        chars += partChars;
-      }
+      chars += partTextChars(part);
     }
     return chars;
   }
   return 0;
+}
+
+/** Quoted excerpts the send path merges into a user message's prompt. */
+function quoteChars(message: Partial<TMessage>): number {
+  if (!Array.isArray(message.quotes)) {
+    return 0;
+  }
+  let chars = 0;
+  for (const quote of message.quotes) {
+    if (typeof quote === 'string') {
+      chars += quote.length;
+    }
+  }
+  return chars;
 }
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
@@ -168,8 +199,15 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
   return {
     tokenCount,
     /** Imported / pre-feature messages carry no `tokenCount`; estimate from text
-     *  length (uncalibrated) so a snapshot-less branch isn't under-counted. */
-    estTokens: tokenCount > 0 ? 0 : Math.round(messageChars(message) / 4),
+     *  length (uncalibrated) so a snapshot-less branch isn't under-counted. Quotes
+     *  are merged into a user message's prompt at send time, so include them. */
+    estTokens:
+      tokenCount > 0
+        ? 0
+        : Math.round(
+            (messageChars(message) + (message.isCreatedByUser === true ? quoteChars(message) : 0)) /
+              4,
+          ),
     isCreatedByUser: message.isCreatedByUser === true,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
