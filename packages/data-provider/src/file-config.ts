@@ -476,6 +476,7 @@ export const fileConfigSchema = z.object({
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
   fileTokenLimit: z.number().min(0).optional(),
+  deleteFilesOnConversationDelete: z.boolean().optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
