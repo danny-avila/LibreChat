@@ -27,9 +27,10 @@ export const EMPTY_USAGE: BranchUsage = {
 
 export interface TokenEntry {
   tokenCount: number;
-  /** Char/4 token estimate for text the stored `tokenCount` doesn't cover:
-   *  count-less (imported / pre-feature) message bodies, plus merged quote text
-   *  on user messages. Summed into the snapshot-less estimate. */
+  /** Char/4 token estimate used in place of `tokenCount` when the stored count is
+   *  absent (imported / pre-feature) or unreliable (quoted user turns, recounted
+   *  from merged text). Mutually exclusive with a counted `tokenCount`; summed
+   *  into the snapshot-less estimate. */
   estTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
@@ -202,16 +203,24 @@ function quoteChars(message: Partial<TMessage>): number {
 function toEntry(message: Partial<TMessage>): TokenEntry {
   const summaryUsedTokens = message.metadata?.summaryUsedTokens;
   const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
-  /** Estimate count-less imports/pre-feature messages from their text. Quotes are
-   *  merged into a user message's prompt at send time, but the edit route recounts
-   *  `tokenCount` from `text` only, so add the quote estimate even when a count is
-   *  present. */
-  const bodyChars = tokenCount > 0 ? 0 : messageChars(message);
-  const quoted = message.isCreatedByUser === true ? quoteChars(message) : 0;
+  const isCreatedByUser = message.isCreatedByUser === true;
+  const quoted = isCreatedByUser && Array.isArray(message.quotes) && message.quotes.length > 0;
+  /** Quoted user turns: the stored `tokenCount` is unreliable for the merged
+   *  prompt (the edit route recounts from `text` only, dropping the quote block),
+   *  so estimate the full merged text and ignore the stored count — matching the
+   *  removed projection, which always recounted quoted messages rather than
+   *  trusting (or adding to) the stored value. Other count-less imports/pre-feature
+   *  messages estimate from text alone. */
+  let estTokens = 0;
+  if (quoted) {
+    estTokens = Math.round((messageChars(message) + quoteChars(message)) / 4);
+  } else if (tokenCount === 0) {
+    estTokens = Math.round(messageChars(message) / 4);
+  }
   return {
-    tokenCount,
-    estTokens: Math.round((bodyChars + quoted) / 4),
-    isCreatedByUser: message.isCreatedByUser === true,
+    tokenCount: quoted ? 0 : tokenCount,
+    estTokens,
+    isCreatedByUser,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
     summaryUsedTokens:
@@ -332,10 +341,7 @@ export function sumBranch(
       } else {
         totals.output += entry.tokenCount;
       }
-    }
-    /** Separate from the count branch: a counted message can still carry a quote
-     *  top-up its stored `tokenCount` omits. */
-    if (!contextCapped && entry.estTokens > 0) {
+    } else if (!contextCapped && entry.estTokens > 0) {
       totals.estTokens += entry.estTokens;
     }
     /** Cost/usage is cumulative spend — never truncated at the summary boundary. */
