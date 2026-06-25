@@ -290,16 +290,6 @@ function ConvoOptions({
         ),
       },
       {
-        label: localize(isPinned ? 'com_ui_unpin' : 'com_ui_pin'),
-        onClick: handlePinClick,
-        hideOnClick: false,
-        icon: isPinLoading ? (
-          <Spinner className="size-4" />
-        ) : (
-          <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
-        ),
-      },
-      {
         label: localize('com_ui_rename'),
         onClick: renameHandler,
         icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
