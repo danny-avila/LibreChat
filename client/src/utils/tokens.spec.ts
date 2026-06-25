@@ -173,6 +173,26 @@ describe('token index', () => {
     expect(totals.estTokens).toBe(4);
   });
 
+  it('exposes the count-less tail estimate so live output is not double-counted', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 12),
+      /** In-flight / resumed response: count-less, so it lands in estTokens; it is
+       *  also covered by liveTokens, so the estimate path drops tailEstTokens. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'o'.repeat(20),
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** a1 is the tail: 20 / 4 = 5, surfaced both in estTokens and tailEstTokens. */
+    expect(totals.estTokens).toBe(5);
+    expect(totals.tailEstTokens).toBe(5);
+  });
+
   it('caps the branch at a summary marker instead of re-summing compacted history', () => {
     const summarized = {
       messageId: 'a2',

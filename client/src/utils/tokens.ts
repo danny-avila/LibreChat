@@ -53,6 +53,10 @@ export interface BranchTotals {
   /** Uncalibrated estimate sum for count-less branch messages (imports /
    *  pre-feature). Kept separate so known counts aren't re-estimated. */
   estTokens: number;
+  /** The tail (latest) message's own `estTokens`. When a stream is live the tail
+   *  is the in-flight response, already covered by `liveTokens`, so the estimate
+   *  path excludes this to avoid double-counting a resumed/partial response. */
+  tailEstTokens: number;
   tailId: string | null;
   /** Whether the latest run's anchor message is on this branch */
   containsAnchor: boolean;
@@ -71,6 +75,7 @@ export const EMPTY_BRANCH: BranchTotals = {
   counted: 0,
   total: 0,
   estTokens: 0,
+  tailEstTokens: 0,
   tailId: null,
   containsAnchor: false,
   usage: EMPTY_USAGE,
@@ -325,6 +330,9 @@ export function sumBranch(
   }
 
   const totals = { input: 0, output: 0, counted: 0, total: 0, estTokens: 0, containsAnchor: false };
+  /** The in-flight response, when streaming, is the branch tail and is covered by
+   *  `liveTokens`; expose its estimate so the estimate path can drop it. */
+  const tailEstTokens = index.get(tailId)?.estTokens ?? 0;
   const usage: BranchUsage = { ...EMPTY_USAGE };
   let summaryBaseline = 0;
   /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
@@ -370,7 +378,7 @@ export function sumBranch(
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailId, usage, summaryBaseline };
+  return { ...totals, tailEstTokens, tailId, usage, summaryBaseline };
 }
 
 /**

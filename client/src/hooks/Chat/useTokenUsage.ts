@@ -53,6 +53,9 @@ export interface TokenUsageView {
   /** Authoritative cost across all branches (shown when it differs from branch) */
   totalCost: number;
   liveTokens: number;
+  /** Estimated tokens for count-less messages (in-flight tail excluded while
+   *  streaming); 0 on snapshots. Rendered as its own breakdown row. */
+  estimatedTokens: number;
   rates?: TModelTokenomics;
 }
 
@@ -234,6 +237,7 @@ export default function useTokenUsage({
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
         liveTokens,
+        estimatedTokens: 0,
         rates: limits.rates,
       };
     }
@@ -248,10 +252,17 @@ export default function useTokenUsage({
      *  from re-summing the discarded pre-summary history (which otherwise pins the
      *  gauge at 100% after a compaction). */
     const maxTokens = limits.maxContextTokens;
+    /** When a stream is live the tail is the in-flight response, already counted
+     *  by `liveTokens`; drop its static estimate so a resumed/partial response
+     *  isn't double-counted on the estimate path. */
+    const estimatedTokens = Math.max(
+      0,
+      branchTotals.estTokens - (liveTokens > 0 ? branchTotals.tailEstTokens : 0),
+    );
     const rawUsed =
       branchTotals.input +
       branchTotals.output +
-      branchTotals.estTokens +
+      estimatedTokens +
       branchTotals.summaryBaseline +
       liveTokens;
     /** The send path prunes an over-window branch before calling the model, so the
@@ -273,6 +284,7 @@ export default function useTokenUsage({
       branchCost: branchUsage.cost,
       totalCost: totalUsage.cost,
       liveTokens,
+      estimatedTokens,
       rates: limits.rates,
     };
   }, [
