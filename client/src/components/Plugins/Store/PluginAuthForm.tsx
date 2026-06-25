@@ -5,6 +5,35 @@ import { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provid
 import PluginTooltip from './PluginTooltip';
 import { useLocalize } from '~/hooks';
 
+/**
+ * Format-hint placeholders per credential, keyed by the primary `authField`
+ * (the part before any `||` alternates). These are literal format tokens
+ * (e.g. an OpenAI key's `sk-` prefix), not translatable copy, so they are not
+ * localized. Fields without a recognizable format fall through to no
+ * placeholder.
+ */
+const AUTH_PLACEHOLDERS: Record<string, string> = {
+  // OpenAI-issued keys start with "sk-"
+  OPENAI_API_KEY: 'sk-...',
+  DALLE_API_KEY: 'sk-...',
+  DALLE2_API_KEY: 'sk-...',
+  DALLE3_API_KEY: 'sk-...',
+  IMAGE_GEN_OAI_API_KEY: 'sk-...',
+  // Google AI / Cloud keys start with "AIza"
+  GEMINI_API_KEY: 'AIza...',
+  GOOGLE_KEY: 'AIza...',
+  GOOGLE_SEARCH_API_KEY: 'AIza...',
+  GOOGLE_CSE_ID: 'a1b2c3d4e5f6g7h8i',
+  // Tavily keys start with "tvly-"
+  TAVILY_API_KEY: 'tvly-...',
+  // Wolfram AppID format
+  WOLFRAM_APP_ID: 'XXXXXX-XXXXXXXXXX',
+  // URL / endpoint / index-name fields
+  SD_WEBUI_URL: 'http://localhost:7860',
+  AZURE_AI_SEARCH_SERVICE_ENDPOINT: 'https://<service>.search.windows.net',
+  AZURE_AI_SEARCH_INDEX_NAME: 'my-index',
+};
+
 type TPluginAuthFormProps = {
   plugin: TPlugin | undefined;
   onSubmit: (installActionData: TPluginAction) => void;
@@ -44,6 +73,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
               'flex h-10 max-h-10 w-full resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-gray-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
             const sharedProps = {
               id: authField,
+              placeholder: AUTH_PLACEHOLDERS[authField],
               'aria-invalid': !!errors[authField],
               'aria-describedby': `${authField}-error`,
               'aria-label': config.label,

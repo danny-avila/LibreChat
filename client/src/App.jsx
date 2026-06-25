@@ -6,7 +6,7 @@ import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
-import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
+import { ScreenshotProvider, useApiErrorBoundary, useInputModality } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
@@ -17,6 +17,7 @@ import { router } from './routes';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
+  useInputModality();
 
   const queryClient = new QueryClient({
     defaultOptions: {

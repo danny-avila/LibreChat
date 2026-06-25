@@ -6,6 +6,22 @@ import { cn } from '~/utils';
 
 const DialogDepthContext = React.createContext(0);
 
+/** Current OGDialog nesting depth (0 when rendered outside any dialog). */
+export const useDialogDepth = (): number => React.useContext(DialogDepthContext);
+
+/**
+ * z-index for a portaled popover so it renders above the dialog it lives in.
+ * Outside any dialog (depth 0) it falls back to a low default (50).
+ */
+export const usePopoverZIndex = (): number => {
+  const depth = useDialogDepth();
+  if (depth <= 0) {
+    return 50;
+  }
+  const contentZIndex = 140 + (depth - 1) * 60;
+  return contentZIndex + 10;
+};
+
 interface OGDialogProps extends DialogPrimitive.DialogProps {
   triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>;
   triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>[];
@@ -162,7 +178,7 @@ const DialogContent: React.ForwardRefExoticComponent<
           {children}
           {showCloseButton && (
             <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-ring-primary ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-              <X className="h-6 w-6" aria-hidden="true" />
+              <X className="size-4" aria-hidden="true" />
               <span className="sr-only">Close</span>
             </DialogPrimitive.Close>
           )}

@@ -2,31 +2,26 @@ import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
-import {
-  HoverCard,
-  DropdownPopup,
-  AttachmentIcon,
-  CircleHelpIcon,
-  SharePointIcon,
-  HoverCardPortal,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@librechat/client';
+import { DropdownPopup, SharePointIcon } from '@librechat/client';
 import type { ExtendedFile } from '~/common';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
+import DropzoneContent, { dropzoneClassName } from './UploadDropzone';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetStartupConfig } from '~/data-provider';
-import { ESide, isEphemeralAgent } from '~/common';
+import SectionHeader from './SectionHeader';
+import { isEphemeralAgent } from '~/common';
 
 function FileContext({
   agent_id,
   files: _files,
+  showHeader = true,
 }: {
   agent_id: string;
   files?: [string, ExtendedFile][];
+  showHeader?: boolean;
 }) {
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,7 +46,7 @@ function FileContext({
   const { handleSharePointFiles, isProcessing, downloadProgress } =
     useSharePointFileHandlingNoChatContext(
       {
-        additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
+        additionalMetadata: { agent_id, tool_resource: EToolResources.context },
         endpointOverride,
         endpointTypeOverride: endpointType,
         fileSetter: setFiles,
@@ -68,6 +63,7 @@ function FileContext({
     750,
   );
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
+  const disabledUploadButton = isEphemeralAgent(agent_id);
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {
       await handleSharePointFiles(sharePointFiles);
@@ -99,37 +95,23 @@ function FileContext({
       icon: <SharePointIcon className="icon-md" />,
     },
   ];
+
+  const dropzoneLabel = localize('com_ui_upload_file_context');
+  const dropzoneHint = localize('com_ui_upload_files_hint');
+
   const menuTrigger = (
-    <Ariakit.MenuButton className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium">
-      <div className="flex w-full items-center justify-center gap-1">
-        <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-        {localize('com_ui_upload_file_context')}
-      </div>
+    <Ariakit.MenuButton disabled={disabledUploadButton} className={dropzoneClassName}>
+      <DropzoneContent label={dropzoneLabel} hint={dropzoneHint} />
     </Ariakit.MenuButton>
   );
   return (
     <div className="w-full">
-      <HoverCard openDelay={50}>
-        <div className="mb-2 flex items-center gap-2">
-          <HoverCardTrigger asChild>
-            <span className="flex items-center gap-2">
-              <label className="text-token-text-primary block text-sm font-medium">
-                {localize('com_agents_file_context_label')}
-              </label>
-              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
-            </span>
-          </HoverCardTrigger>
-          <HoverCardPortal>
-            <HoverCardContent side={ESide.Top} className="w-80">
-              <div className="space-y-2">
-                <p className="text-sm text-text-secondary">
-                  {localize('com_agents_file_context_description')}
-                </p>
-              </div>
-            </HoverCardContent>
-          </HoverCardPortal>
-        </div>
-      </HoverCard>
+      {showHeader && (
+        <SectionHeader
+          title={localize('com_agents_file_context_label')}
+          info={localize('com_agents_file_context_description')}
+        />
+      )}
       <div className="flex flex-col gap-3">
         {/* File Context Files */}
         <FileRow
@@ -141,30 +123,24 @@ function FileContext({
         />
         <div>
           {sharePointEnabled ? (
-            <>
-              <DropdownPopup
-                gutter={2}
-                menuId="file-search-upload-menu"
-                isOpen={isPopoverActive}
-                setIsOpen={setIsPopoverActive}
-                trigger={menuTrigger}
-                items={dropdownItems}
-                modal={true}
-                unmountOnHide={true}
-              />
-            </>
+            <DropdownPopup
+              gutter={2}
+              menuId="file-context-upload-menu"
+              isOpen={isPopoverActive}
+              setIsOpen={setIsPopoverActive}
+              trigger={menuTrigger}
+              items={dropdownItems}
+              modal={true}
+              unmountOnHide={true}
+            />
           ) : (
             <button
               type="button"
-              disabled={isEphemeralAgent(agent_id)}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
+              disabled={disabledUploadButton}
+              className={dropzoneClassName}
               onClick={handleLocalFileClick}
             >
-              <div className="flex w-full items-center justify-center gap-1">
-                <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-
-                {localize('com_ui_upload_file_context')}
-              </div>
+              <DropzoneContent label={dropzoneLabel} hint={dropzoneHint} />
             </button>
           )}
           <input
@@ -173,7 +149,7 @@ function FileContext({
             style={{ display: 'none' }}
             tabIndex={-1}
             ref={fileInputRef}
-            disabled={isEphemeralAgent(agent_id)}
+            disabled={disabledUploadButton}
             onChange={handleFileChange}
           />
         </div>

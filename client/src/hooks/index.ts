@@ -35,6 +35,7 @@ export { default as useScrollToRef } from './useScrollToRef';
 export { default as useIsActiveItem } from './useIsActiveItem';
 export { default as useLocalStorage } from './useLocalStorage';
 export { default as useDocumentTitle } from './useDocumentTitle';
+export { default as useInputModality } from './useInputModality';
 export { default as useSpeechToText } from './Input/useSpeechToText';
 export { default as useTextToSpeech } from './Input/useTextToSpeech';
 export { default as useGenerationsByLatest } from './useGenerationsByLatest';

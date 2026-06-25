@@ -1,0 +1,314 @@
+import { useState, useMemo, useCallback } from 'react';
+import { Plus } from 'lucide-react';
+import { useFormContext, useWatch } from 'react-hook-form';
+import { Label, OGDialog, OGDialogTemplate, useToastContext } from '@librechat/client';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { AgentForm } from '~/common';
+import type { AgentItem } from './items/types';
+import ToolRow from './ToolRow';
+import ItemDialog from './ItemDialog/ItemDialog';
+import SkillsDialog from './SkillsDialog';
+import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
+import { buildCatalog } from './items/catalog';
+import { deriveSelectedItems } from './items/selectors';
+import { computeToggleAction } from './items/mutations';
+import { useAgentPanelContext } from '~/Providers';
+import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
+import { useRemoveMCPTool } from '~/hooks/MCP';
+import { useLocalize, useHasAccess } from '~/hooks';
+import { isEphemeralAgent } from '~/common';
+
+interface Props {
+  agentId: string;
+}
+
+export default function ToolsSection({ agentId }: Props) {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const [open, setOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [dialogItem, setDialogItem] = useState<AgentItem | null>(null);
+  const [pendingActionRemoval, setPendingActionRemoval] = useState<string | null>(null);
+
+  const { control, getValues, setValue } = useFormContext<AgentForm>();
+  const { agentsConfig, regularTools, mcpServersMap, actions } = useAgentPanelContext();
+  const { removeTool: removeMCPTool } = useRemoveMCPTool();
+  const deleteAgentAction = useDeleteAgentAction({
+    onSuccess: () => {
+      showToast({
+        message: localize('com_assistants_delete_actions_success'),
+        status: 'success',
+      });
+    },
+    onError: (error) => {
+      showToast({
+        message: (error as Error).message || localize('com_assistants_delete_actions_error'),
+        status: 'error',
+      });
+    },
+  });
+
+  const hasMcpAccess = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+  const hasSkillsAccess = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.USE,
+  });
+  const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: hasSkillsAccess });
+
+  const tools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
+  const skills = (useWatch({ control, name: 'skills' }) ?? []) as string[];
+  const executeCode = (useWatch({ control, name: 'execute_code' }) ?? false) as boolean;
+  const webSearch = (useWatch({ control, name: 'web_search' }) ?? false) as boolean;
+  const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
+  const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
+  const agent = useWatch({ control, name: 'agent' });
+
+  const contextFiles = (agent?.context_files ?? []) as Array<[string, unknown]>;
+  const knowledgeFiles = (agent?.knowledge_files ?? []) as Array<[string, unknown]>;
+  const codeFiles = (agent?.code_files ?? []) as Array<[string, unknown]>;
+
+  const agentActions = useMemo(
+    () => (actions ?? []).filter((a) => a.agent_id === agentId),
+    [actions, agentId],
+  );
+
+  const catalog = useMemo(
+    () =>
+      buildCatalog({
+        agentsConfig: { capabilities: agentsConfig?.capabilities ?? [] },
+        regularTools: regularTools ?? [],
+        mcpServersMap: mcpServersMap ?? new Map(),
+        skills: skillsData?.skills ?? [],
+        actions: agentActions,
+        permissions: { mcp: hasMcpAccess, skills: hasSkillsAccess },
+      }),
+    [
+      agentsConfig,
+      regularTools,
+      mcpServersMap,
+      skillsData,
+      agentActions,
+      hasMcpAccess,
+      hasSkillsAccess,
+    ],
+  );
+
+  const selected = useMemo(
+    () =>
+      deriveSelectedItems(
+        {
+          execute_code: executeCode,
+          web_search: webSearch,
+          file_search: fileSearch,
+          artifacts,
+          tools,
+          skills,
+          context_files: contextFiles,
+          knowledge_files: knowledgeFiles,
+          code_files: codeFiles,
+        },
+        catalog,
+        agentActions,
+      ),
+    [
+      executeCode,
+      webSearch,
+      fileSearch,
+      artifacts,
+      tools,
+      skills,
+      contextFiles,
+      knowledgeFiles,
+      codeFiles,
+      catalog,
+      agentActions,
+    ],
+  );
+
+  const handleQuickRemove = useCallback(
+    (item: AgentItem) => {
+      if (item.kind === 'builtin' && item.id === 'context') {
+        setDialogItem(item);
+        return;
+      }
+      const patch = computeToggleAction(item, { selected: true });
+      switch (patch.type) {
+        case 'builtin':
+          setValue(patch.field as keyof AgentForm, patch.value as never, { shouldDirty: true });
+          break;
+        case 'tool-remove': {
+          const current = (getValues('tools') ?? []) as string[];
+          setValue(
+            'tools',
+            current.filter((t) => t !== patch.id),
+            { shouldDirty: true },
+          );
+          break;
+        }
+        case 'skill-remove': {
+          const current = (getValues('skills') ?? []) as string[];
+          setValue(
+            'skills',
+            current.filter((s) => s !== patch.id),
+            { shouldDirty: true },
+          );
+          break;
+        }
+        case 'mcp-remove':
+          removeMCPTool(patch.serverName);
+          break;
+        case 'action-remove':
+          setPendingActionRemoval(patch.actionId);
+          break;
+        default:
+          setOpen(true);
+      }
+    },
+    [getValues, setValue, removeMCPTool],
+  );
+
+  const confirmActionRemoval = useCallback(() => {
+    if (pendingActionRemoval == null) {
+      return;
+    }
+    if (isEphemeralAgent(agentId)) {
+      showToast({
+        message: localize('com_agents_no_agent_id_error'),
+        status: 'error',
+      });
+      setPendingActionRemoval(null);
+      return;
+    }
+    deleteAgentAction.mutate({ action_id: pendingActionRemoval, agent_id: agentId });
+    setPendingActionRemoval(null);
+  }, [pendingActionRemoval, agentId, deleteAgentAction, showToast, localize]);
+
+  const toolItems = useMemo(() => selected.filter((item) => item.kind !== 'skill'), [selected]);
+  const skillItems = useMemo(() => selected.filter((item) => item.kind === 'skill'), [selected]);
+
+  return (
+    <>
+      <SelectedSection
+        title={localize('com_ui_tools_section_title')}
+        addLabel={localize('com_ui_add_tools')}
+        emptyLabel={localize('com_ui_tools_empty')}
+        emptyHint={localize('com_ui_tools_empty_hint')}
+        items={toolItems}
+        onAdd={() => setOpen(true)}
+        onInfo={setDialogItem}
+        onRemove={handleQuickRemove}
+      />
+      {hasSkillsAccess && (
+        <SelectedSection
+          title={localize('com_ui_skills')}
+          addLabel={localize('com_ui_add_skills')}
+          emptyLabel={localize('com_ui_skills_empty')}
+          emptyHint={localize('com_ui_skills_empty_hint')}
+          items={skillItems}
+          onAdd={() => setSkillsOpen(true)}
+          onInfo={setDialogItem}
+          onRemove={handleQuickRemove}
+        />
+      )}
+      {open && <ToolsMarketplaceDialog open={open} onOpenChange={setOpen} agentId={agentId} />}
+      {skillsOpen && (
+        <SkillsDialog open={skillsOpen} onOpenChange={setSkillsOpen} agentId={agentId} />
+      )}
+      <ItemDialog item={dialogItem} agentId={agentId} onClose={() => setDialogItem(null)} />
+      <OGDialog
+        open={pendingActionRemoval != null}
+        onOpenChange={(value) => {
+          if (!value) {
+            setPendingActionRemoval(null);
+          }
+        }}
+      >
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_delete_action')}
+          className="max-w-[450px]"
+          main={
+            <Label className="text-left text-sm font-medium">
+              {localize('com_ui_delete_action_confirm')}
+            </Label>
+          }
+          selection={{
+            selectHandler: confirmActionRemoval,
+            selectClasses:
+              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+            selectText: localize('com_ui_delete'),
+          }}
+        />
+      </OGDialog>
+    </>
+  );
+}
+
+interface SelectedSectionProps {
+  title: string;
+  addLabel: string;
+  emptyLabel: string;
+  emptyHint: string;
+  items: AgentItem[];
+  onAdd: () => void;
+  onInfo: (item: AgentItem) => void;
+  onRemove: (item: AgentItem) => void;
+}
+
+function SelectedSection({
+  title,
+  addLabel,
+  emptyLabel,
+  emptyHint,
+  items,
+  onAdd,
+  onInfo,
+  onRemove,
+}: SelectedSectionProps) {
+  const localize = useLocalize();
+  return (
+    <div className="mb-3 flex flex-col">
+      <div className="mb-1 flex items-center justify-between">
+        <label className="block text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+          {title}
+          {items.length > 0 && (
+            <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-surface-tertiary px-1.5 text-[10px] font-medium normal-case tracking-normal text-text-secondary">
+              {items.length}
+            </span>
+          )}
+        </label>
+        <button
+          type="button"
+          onClick={onAdd}
+          aria-label={addLabel}
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {localize('com_ui_add')}
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-border-light px-2 py-4 text-text-secondary transition-colors hover:border-border-medium hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          <span className="text-xs">{emptyLabel}</span>
+          <span className="text-[11px] text-text-secondary">{emptyHint}</span>
+        </button>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {items.map((item) => (
+            <li key={`${item.kind}:${item.id}`}>
+              <ToolRow item={item} onInfo={onInfo} onRemove={onRemove} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

@@ -48,6 +48,17 @@ describe('PluginAuthForm', () => {
     expect(urlField.parentElement?.querySelector('button')).toBeNull();
   });
 
+  it('shows a format-hint placeholder for recognized credential fields', () => {
+    const openAiPlugin = {
+      pluginKey: 'dalle',
+      authConfig: [{ authField: 'DALLE3_API_KEY||DALLE_API_KEY', label: 'OpenAI API Key' }],
+    };
+    //@ts-ignore - dont need all props of plugin
+    render(<PluginAuthForm plugin={openAiPlugin} onSubmit={onSubmit} />);
+
+    expect(screen.getByLabelText('OpenAI API Key')).toHaveAttribute('placeholder', 'sk-...');
+  });
+
   it('calls the onSubmit function with the form data when submitted', async () => {
     //@ts-ignore - dont need all props of plugin
     render(<PluginAuthForm plugin={plugin} onSubmit={onSubmit} />);

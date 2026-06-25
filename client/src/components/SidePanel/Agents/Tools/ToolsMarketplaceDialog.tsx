@@ -1,0 +1,266 @@
+import { useState, useMemo, useCallback } from 'react';
+import { Search } from 'lucide-react';
+import { useFormContext, useWatch } from 'react-hook-form';
+import {
+  Input,
+  OGDialog,
+  OGDialogTitle,
+  OGDialogContent,
+  OGDialogDescription,
+} from '@librechat/client';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
+import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentForm } from '~/common';
+import { useLocalize, useHasAccess } from '~/hooks';
+import { useGetFavoritesQuery } from '~/data-provider';
+import { useAgentPanelContext } from '~/Providers';
+import MarketplaceSidebar from './MarketplaceSidebar';
+import MarketplaceCatalog from './MarketplaceCatalog';
+import ItemDialog from './ItemDialog/ItemDialog';
+import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
+import { computeToggleAction } from './items/mutations';
+import { deriveSelectedItems, itemKey } from './items/selectors';
+import { applyFilter } from './items/filtering';
+import { buildCatalog } from './items/catalog';
+
+interface ToolsMarketplaceDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  agentId: string;
+}
+
+type View = NonNullable<ItemFilter['view']>;
+type Kind = AgentItemKind | 'all';
+
+/** Sentinel id marking the ItemDialog as a create-new-action flow (see CREATE_ACTION contract). */
+const NEW_ACTION_ID = '__new_action__';
+
+export default function ToolsMarketplaceDialog({
+  open,
+  onOpenChange,
+  agentId,
+}: ToolsMarketplaceDialogProps) {
+  const localize = useLocalize();
+  const { control, getValues, setValue } = useFormContext<AgentForm>();
+  const { agentsConfig, regularTools, mcpServersMap, actions } = useAgentPanelContext();
+
+  const hasMcpAccess = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+
+  const { data: favorites } = useGetFavoritesQuery();
+
+  const favoritedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const favorite of favorites ?? []) {
+      if (favorite.agentId != null) ids.add(favorite.agentId);
+      if (favorite.spec != null) ids.add(favorite.spec);
+    }
+    return ids;
+  }, [favorites]);
+
+  const tools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
+  const executeCode = (useWatch({ control, name: 'execute_code' }) ?? false) as boolean;
+  const webSearch = (useWatch({ control, name: 'web_search' }) ?? false) as boolean;
+  const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
+  const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
+  const agent = useWatch({ control, name: 'agent' });
+  const contextFiles = (agent?.context_files ?? []) as Array<[string, unknown]>;
+  const knowledgeFiles = (agent?.knowledge_files ?? []) as Array<[string, unknown]>;
+  const codeFiles = (agent?.code_files ?? []) as Array<[string, unknown]>;
+
+  const [view, setView] = useState<View>('marketplace');
+  const [kind, setKind] = useState<Kind>('all');
+  const [search, setSearch] = useState('');
+  const [detailItem, setDetailItem] = useState<AgentItem | null>(null);
+  const [addMcpOpen, setAddMcpOpen] = useState(false);
+
+  const handleCreateNew = useCallback(
+    (createKind: 'mcp' | 'action') => {
+      if (createKind === 'mcp') {
+        setAddMcpOpen(true);
+        return;
+      }
+      setDetailItem({
+        kind: 'action',
+        id: NEW_ACTION_ID,
+        name: localize('com_ui_new_action' as TranslationKeys),
+        description: '',
+        iconKey: 'action',
+        endpointCount: 0,
+      });
+    },
+    [localize],
+  );
+
+  const agentActions = useMemo(
+    () => (actions ?? []).filter((a) => a.agent_id === agentId),
+    [actions, agentId],
+  );
+
+  const catalog = useMemo(
+    () =>
+      buildCatalog({
+        agentsConfig: { capabilities: agentsConfig?.capabilities ?? [] },
+        regularTools: regularTools ?? [],
+        mcpServersMap: mcpServersMap ?? new Map(),
+        skills: [],
+        actions: agentActions,
+        permissions: { mcp: hasMcpAccess, skills: false },
+      }),
+    [agentsConfig, regularTools, mcpServersMap, agentActions, hasMcpAccess],
+  );
+
+  const selectedItems = useMemo(
+    () =>
+      deriveSelectedItems(
+        {
+          execute_code: executeCode,
+          web_search: webSearch,
+          file_search: fileSearch,
+          artifacts,
+          tools,
+          skills: [],
+          context_files: contextFiles,
+          knowledge_files: knowledgeFiles,
+          code_files: codeFiles,
+        },
+        catalog,
+        agentActions,
+      ),
+    [
+      executeCode,
+      webSearch,
+      fileSearch,
+      artifacts,
+      tools,
+      contextFiles,
+      knowledgeFiles,
+      codeFiles,
+      catalog,
+      agentActions,
+    ],
+  );
+  const selectedIds = useMemo(() => new Set(selectedItems.map(itemKey)), [selectedItems]);
+
+  const counts = useMemo(
+    () => ({
+      builtin: catalog.filter((i) => i.kind === 'builtin').length,
+      tool: catalog.filter((i) => i.kind === 'tool').length,
+      mcp: catalog.filter((i) => i.kind === 'mcp').length,
+      skill: 0,
+      action: catalog.filter((i) => i.kind === 'action').length,
+    }),
+    [catalog],
+  );
+
+  const filtered = useMemo(
+    () => applyFilter(catalog, { search, kind, category: 'all', view }, { favoritedIds }),
+    [catalog, search, kind, view, favoritedIds],
+  );
+
+  const handleToggle = useCallback(
+    (item: AgentItem) => {
+      const patch = computeToggleAction(item, { selected: selectedIds.has(itemKey(item)) });
+      switch (patch.type) {
+        case 'builtin':
+          setValue(patch.field as keyof AgentForm, patch.value as never, { shouldDirty: true });
+          break;
+        case 'tool-add': {
+          const current = (getValues('tools') ?? []) as string[];
+          setValue('tools', Array.from(new Set([...current, patch.id])), { shouldDirty: true });
+          break;
+        }
+        case 'tool-remove': {
+          const current = (getValues('tools') ?? []) as string[];
+          setValue(
+            'tools',
+            current.filter((t) => t !== patch.id),
+            { shouldDirty: true },
+          );
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    [getValues, setValue, selectedIds],
+  );
+
+  const handleCardClick = useCallback(
+    (item: AgentItem) => {
+      if (item.kind === 'mcp' || item.kind === 'action') {
+        setDetailItem(item);
+        return;
+      }
+      if (item.kind === 'builtin' && item.id === 'context') {
+        setDetailItem(item);
+        return;
+      }
+      const wasSelected = selectedIds.has(itemKey(item));
+      if (!wasSelected && item.status === 'needs_setup') {
+        setDetailItem(item);
+        return;
+      }
+      handleToggle(item);
+    },
+    [handleToggle, selectedIds],
+  );
+
+  const handleConfigure = useCallback((item: AgentItem) => {
+    setDetailItem(item);
+  }, []);
+
+  return (
+    <OGDialog open={open} onOpenChange={onOpenChange}>
+      <OGDialogContent className="w-11/12 max-w-[1200px] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
+        <OGDialogTitle className="sr-only">{localize('com_ui_tools_marketplace')}</OGDialogTitle>
+        <OGDialogDescription className="sr-only">
+          {localize('com_ui_tools_marketplace_description' as TranslationKeys)}
+        </OGDialogDescription>
+        <div className="flex h-[88vh] max-h-[840px]">
+          <MarketplaceSidebar
+            activeView={view}
+            activeKind={kind}
+            onSelectView={setView}
+            onSelectKind={setKind}
+            counts={counts}
+            totalCount={catalog.length}
+            onCreateNew={handleCreateNew}
+          />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex items-center gap-2 px-6 py-4 pr-12">
+              <div className="relative flex-1">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 z-[1] size-4 -translate-y-1/2 text-text-tertiary"
+                  aria-hidden="true"
+                />
+                <Input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={localize('com_ui_tools_marketplace_search')}
+                  aria-label={localize('com_ui_tools_marketplace_search')}
+                  className="bg-transparent pl-9"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <MarketplaceCatalog
+                items={filtered}
+                selectedIds={selectedIds}
+                onToggle={handleCardClick}
+                onConfigure={handleConfigure}
+                view={view}
+              />
+            </div>
+          </div>
+        </div>
+        <ItemDialog item={detailItem} agentId={agentId} onClose={() => setDetailItem(null)} />
+        <AddMcpServerDialog open={addMcpOpen} onOpenChange={setAddMcpOpen} />
+      </OGDialogContent>
+    </OGDialog>
+  );
+}

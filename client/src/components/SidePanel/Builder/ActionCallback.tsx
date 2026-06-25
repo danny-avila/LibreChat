@@ -33,7 +33,7 @@ export default function ActionCallback({ action_id }: { action_id?: string }) {
                 readOnly
                 value={callbackURL}
                 className="w-full border-0 bg-transparent px-3 py-2 pr-12 text-sm text-text-secondary-alt focus:outline-none"
-                style={{ direction: 'rtl' }}
+                style={{ direction: 'ltr' }}
               />
             </div>
           </div>
