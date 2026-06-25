@@ -8,6 +8,7 @@ import {
 import {
   CallToolResultSchema,
   ReadResourceResultSchema,
+  ListResourcesResultSchema,
   ErrorCode,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -721,12 +722,16 @@ Please follow these instructions when using tools from the respective MCP server
     user,
     configServers,
     customUserVars,
+    flowManager,
+    tokenMethods,
   }: {
     serverName: string;
     userId: string;
     user?: IUser;
     configServers?: Record<string, t.ParsedServerConfig>;
     customUserVars?: Record<string, string>;
+    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+    tokenMethods?: TokenMethods;
   }): Promise<MCPConnection> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
     const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(
@@ -762,6 +767,8 @@ Please follow these instructions when using tools from the respective MCP server
       user,
       serverConfig: rawConfig ?? undefined,
       customUserVars,
+      flowManager,
+      tokenMethods,
     });
 
     // Refresh headers when the config can be fully resolved: env-var-only configs always, and
@@ -791,6 +798,8 @@ Please follow these instructions when using tools from the respective MCP server
     user,
     configServers,
     customUserVars,
+    flowManager,
+    tokenMethods,
   }: {
     userId: string;
     serverName: string;
@@ -798,6 +807,8 @@ Please follow these instructions when using tools from the respective MCP server
     user?: import('@librechat/data-schemas').IUser;
     configServers?: Record<string, t.ParsedServerConfig>;
     customUserVars?: Record<string, string>;
+    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+    tokenMethods?: TokenMethods;
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
     if (userId && user) this.updateUserLastActivity(userId);
@@ -807,6 +818,8 @@ Please follow these instructions when using tools from the respective MCP server
       user,
       configServers,
       customUserVars,
+      flowManager,
+      tokenMethods,
     });
 
     if (!(await connection.isConnected())) {
@@ -829,6 +842,60 @@ Please follow these instructions when using tools from the respective MCP server
   }
 
   /**
+   * Proxies an MCP App resources/list request to the server. Paired with readResource so the
+   * advertised serverResources capability is fully backed (resource-browser apps need listing).
+   */
+  async listResources({
+    userId,
+    serverName,
+    user,
+    cursor,
+    configServers,
+    customUserVars,
+    flowManager,
+    tokenMethods,
+  }: {
+    userId: string;
+    serverName: string;
+    user?: import('@librechat/data-schemas').IUser;
+    cursor?: string;
+    configServers?: Record<string, t.ParsedServerConfig>;
+    customUserVars?: Record<string, string>;
+    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+    tokenMethods?: TokenMethods;
+  }): Promise<unknown> {
+    const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    if (userId && user) this.updateUserLastActivity(userId);
+    const connection = await this.getAppConnection({
+      serverName,
+      userId,
+      user,
+      configServers,
+      customUserVars,
+      flowManager,
+      tokenMethods,
+    });
+
+    if (!(await connection.isConnected())) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `${logPrefix} Connection is not active. Cannot list resources.`,
+      );
+    }
+
+    const result = await connection.client.request(
+      {
+        method: 'resources/list',
+        params: cursor != null ? { cursor } : {},
+      },
+      ListResourcesResultSchema,
+      { timeout: connection.timeout },
+    );
+
+    return result;
+  }
+
+  /**
    * Proxies a tool call from an MCP App iframe to the MCP server.
    * Unlike callTool, this is a lightweight proxy without provider formatting.
    */
@@ -840,6 +907,8 @@ Please follow these instructions when using tools from the respective MCP server
     user,
     configServers,
     customUserVars,
+    flowManager,
+    tokenMethods,
   }: {
     userId: string;
     serverName: string;
@@ -848,6 +917,8 @@ Please follow these instructions when using tools from the respective MCP server
     user?: import('@librechat/data-schemas').IUser;
     configServers?: Record<string, t.ParsedServerConfig>;
     customUserVars?: Record<string, string>;
+    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+    tokenMethods?: TokenMethods;
   }): Promise<unknown> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
     if (userId && user) this.updateUserLastActivity(userId);
@@ -857,6 +928,8 @@ Please follow these instructions when using tools from the respective MCP server
       user,
       configServers,
       customUserVars,
+      flowManager,
+      tokenMethods,
     });
 
     if (!(await connection.isConnected())) {

@@ -1276,6 +1276,85 @@ describe('MCPManager', () => {
         Authorization: 'Bearer secret',
       });
     });
+
+    it('forwards configServers, flowManager, and tokenMethods to getConnection', async () => {
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+      });
+
+      const mockConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        fetchTools: jest.fn().mockResolvedValue([{ name: 'do_thing', _meta: {} }]),
+        timeout: 30000,
+        client: { request: jest.fn().mockResolvedValue({ content: [] }) },
+      } as unknown as MCPConnection;
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getConnectionSpy = jest
+        .spyOn(manager, 'getConnection')
+        .mockResolvedValue(mockConnection);
+
+      const flowManager = {} as never;
+      const tokenMethods = {} as never;
+      const configServers = { 'cfg-server': { type: 'sse', url: 'https://x' } } as never;
+
+      await manager.appToolCall({
+        userId: 'user-123',
+        serverName: 'cfg-server',
+        toolName: 'do_thing',
+        toolArguments: {},
+        user: mockUser as IUser,
+        configServers,
+        flowManager,
+        tokenMethods,
+      });
+
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
+        'cfg-server',
+        'user-123',
+        configServers,
+      );
+      expect(getConnectionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ flowManager, tokenMethods }),
+      );
+    });
+
+    it('proxies resources/list through the app connection', async () => {
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+      });
+
+      const request = jest.fn().mockResolvedValue({ resources: [{ uri: 'file://a' }] });
+      const mockConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        fetchTools: jest.fn().mockResolvedValue([]),
+        timeout: 30000,
+        client: { request },
+      } as unknown as MCPConnection;
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(mockConnection);
+
+      const result = await manager.listResources({
+        userId: 'user-123',
+        serverName: 'srv',
+        user: mockUser as IUser,
+        cursor: 'next',
+      });
+
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'resources/list', params: { cursor: 'next' } }),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(result).toEqual({ resources: [{ uri: 'file://a' }] });
+    });
   });
 
   describe('getConnection', () => {

@@ -62,11 +62,11 @@ export function MCPUIResource(props: MCPUIResourceProps) {
     if (uiResource.toolName && uiResource.serverName) {
       return (
         <span
-          className="mx-1 inline-block w-full align-middle"
+          className="relative mx-1 inline-block w-full align-middle"
           style={height ? { height } : { minHeight: '200px' }}
         >
           {!loaded && (
-            <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+            <div className="absolute inset-0 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
               {localize('com_ui_loading_interactive_view')}
             </div>
           )}
@@ -78,7 +78,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
               width: '100%',
               height: '100%',
               border: 'none',
-              display: loaded ? 'block' : 'none',
+              opacity: loaded ? 1 : 0,
             }}
             title={`MCP App: ${uiResource.toolName ?? ''}`}
           />

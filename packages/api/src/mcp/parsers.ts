@@ -9,6 +9,24 @@ function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
 }
 
+/**
+ * Derives a UI resource ID that is unique per result snapshot. The frontend indexes conversation
+ * resources by ID, so two calls that share a base (resourceUri/text) and args but differ in
+ * structuredContent, text content, _meta, or error state must not collide and overwrite each other.
+ */
+function deriveResourceId(base: string, result: t.MCPToolCallResponse, toolArgs: unknown): string {
+  const meta = (result as { _meta?: unknown } | undefined)?._meta;
+  const parts = [
+    base,
+    result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '',
+    result?.content != null ? JSON.stringify(result.content) : '',
+    meta != null ? JSON.stringify(meta) : '',
+    result?.isError === true ? '1' : '',
+    toolArgs != null ? JSON.stringify(toolArgs) : '',
+  ];
+  return generateResourceId(parts.join('\x00'));
+}
+
 function getMCPImageDataMaxBytes(): number {
   const raw = process.env.MCP_IMAGE_DATA_MAX_BYTES;
   if (!raw) {
@@ -198,10 +216,7 @@ export function formatToolContent(
           'text' in item.resource && item.resource.text && typeof item.resource.text === 'string'
             ? item.resource.text
             : item.resource.uri;
-        const scKey =
-          result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '';
-        const argsKey = metadata?.toolArgs != null ? JSON.stringify(metadata.toolArgs) : '';
-        const resourceId = generateResourceId(baseHash + '\x00' + scKey + '\x00' + argsKey);
+        const resourceId = deriveResourceId(baseHash, result, metadata?.toolArgs);
         const itemUi = (item.resource._meta as { ui?: Record<string, unknown> } | undefined)?.ui as
           | { csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
           | undefined;
@@ -256,9 +271,7 @@ export function formatToolContent(
     metadata.serverName &&
     metadata.toolName
   ) {
-    const scKey = result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '';
-    const argsKey = metadata.toolArgs != null ? JSON.stringify(metadata.toolArgs) : '';
-    const resourceId = generateResourceId(metadata.resourceUri + '\x00' + scKey + '\x00' + argsKey);
+    const resourceId = deriveResourceId(metadata.resourceUri, result, metadata.toolArgs);
     uiResources.push({
       resourceId,
       uri: metadata.resourceUri,

@@ -1,18 +1,25 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
-const { Constants } = require('librechat-data-provider');
+const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getUserMCPAuthMap } = require('@librechat/api');
-const { getMCPManager } = require('~/config');
+const { getMCPManager, getFlowStateManager } = require('~/config');
 const { resolveConfigServers } = require('~/server/services/MCP');
-const { findPluginAuthsByKeys } = require('~/models');
+const {
+  findPluginAuthsByKeys,
+  findToken,
+  createToken,
+  updateToken,
+  deleteTokens,
+} = require('~/models');
+const { getLogStores } = require('~/cache');
 
 // MCP SDK ErrorCode.InvalidRequest = -32600
 const MCP_INVALID_REQUEST = -32600;
 
 /**
- * Resolves the request-scoped config and the user's custom variables for a server so app
- * follow-up requests can connect to config-sourced servers and re-resolve credentialed headers
- * even when the original tool-call connection is gone.
+ * Resolves the request-scoped config, the user's custom variables, and the OAuth flow/token
+ * context for a server so app follow-up requests can connect to config-sourced servers and
+ * re-resolve credentialed or OAuth connections even when the original tool-call connection is gone.
  */
 const resolveAppContext = async (req, serverName) => {
   const userId = req.user?.id;
@@ -25,7 +32,9 @@ const resolveAppContext = async (req, serverName) => {
       .catch(() => undefined),
   ]);
   const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
-  return { configServers, customUserVars };
+  const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
+  const tokenMethods = { findToken, createToken, updateToken, deleteTokens };
+  return { configServers, customUserVars, flowManager, tokenMethods };
 };
 
 /** @route POST /api/mcp/resources/read */
@@ -48,7 +57,10 @@ const readMCPResource = async (req, res) => {
     }
 
     const mcpManager = getMCPManager();
-    const { configServers, customUserVars } = await resolveAppContext(req, serverName);
+    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
+      req,
+      serverName,
+    );
     const result = await mcpManager.readResource({
       userId,
       serverName,
@@ -56,11 +68,51 @@ const readMCPResource = async (req, res) => {
       user: req.user,
       configServers,
       customUserVars,
+      flowManager,
+      tokenMethods,
     });
     return res.json(result);
   } catch (error) {
     logger.error('[readMCPResource] Error:', error);
     return res.status(500).json({ error: 'Failed to read resource' });
+  }
+};
+
+/** @route POST /api/mcp/resources/list */
+const listMCPResources = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { serverName, cursor } = req.body;
+    if (!serverName) {
+      return res.status(400).json({ error: 'serverName is required' });
+    }
+    if (cursor !== undefined && typeof cursor !== 'string') {
+      return res.status(400).json({ error: 'cursor must be a string' });
+    }
+
+    const mcpManager = getMCPManager();
+    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
+      req,
+      serverName,
+    );
+    const result = await mcpManager.listResources({
+      userId,
+      serverName,
+      user: req.user,
+      cursor,
+      configServers,
+      customUserVars,
+      flowManager,
+      tokenMethods,
+    });
+    return res.json(result);
+  } catch (error) {
+    logger.error('[listMCPResources] Error:', error);
+    return res.status(500).json({ error: 'Failed to list resources' });
   }
 };
 
@@ -85,7 +137,10 @@ const appToolCall = async (req, res) => {
     }
 
     const mcpManager = getMCPManager();
-    const { configServers, customUserVars } = await resolveAppContext(req, serverName);
+    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
+      req,
+      serverName,
+    );
     const result = await mcpManager.appToolCall({
       userId,
       serverName,
@@ -94,6 +149,8 @@ const appToolCall = async (req, res) => {
       user: req.user,
       configServers,
       customUserVars,
+      flowManager,
+      tokenMethods,
     });
     return res.json(result);
   } catch (error) {
@@ -153,4 +210,4 @@ const serveMCPSandbox = async (_req, res) => {
   }
 };
 
-module.exports = { readMCPResource, appToolCall, serveMCPSandbox };
+module.exports = { readMCPResource, listMCPResources, appToolCall, serveMCPSandbox };

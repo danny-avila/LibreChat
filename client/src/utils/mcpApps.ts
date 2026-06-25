@@ -102,6 +102,10 @@ export async function readMCPResource(
   return promise;
 }
 
+export async function listMCPResources(serverName: string, cursor?: string) {
+  return request.post(`${apiBaseUrl()}/api/mcp/resources/list`, { serverName, cursor });
+}
+
 type ResourceUiMeta = {
   csp?: {
     connectDomains?: string[];

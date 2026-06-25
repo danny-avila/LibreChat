@@ -7,7 +7,12 @@ import {
 } from '@modelcontextprotocol/ext-apps/app-bridge';
 import type { UIResource } from 'librechat-data-provider';
 import type { AppToolResult } from '~/utils/mcpApps';
-import { callMCPAppTool, fetchMCPResourceHtml, readMCPResource } from '~/utils/mcpApps';
+import {
+  callMCPAppTool,
+  fetchMCPResourceHtml,
+  readMCPResource,
+  listMCPResources,
+} from '~/utils/mcpApps';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { logger } from '~/utils';
 import store from '~/store';
@@ -107,6 +112,9 @@ export function useAppBridge(
 
       bridge.onreadresource = async (params) =>
         readMCPResource(resource.serverName as string, params.uri, user?.id) as never;
+
+      bridge.onlistresources = async (params) =>
+        listMCPResources(resource.serverName as string, params?.cursor) as never;
 
       bridge.onmessage = async ({ content }) => {
         const text = (content as MessageContentBlock[])

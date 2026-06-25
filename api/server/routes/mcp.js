@@ -31,7 +31,12 @@ const {
   getMCPServerById,
   getMCPTools,
 } = require('~/server/controllers/mcp');
-const { readMCPResource, appToolCall, serveMCPSandbox } = require('~/server/controllers/mcpApps');
+const {
+  readMCPResource,
+  listMCPResources,
+  appToolCall,
+  serveMCPSandbox,
+} = require('~/server/controllers/mcpApps');
 const mcpAppToolCallLimiter = require('~/server/middleware/limiters/mcpAppToolCallLimiter');
 const {
   getOAuthReconnectionManager,
@@ -987,6 +992,12 @@ router.delete(
  * @route POST /api/mcp/resources/read
  */
 router.post('/resources/read', requireJwtAuth, checkMCPUsePermissions, readMCPResource);
+
+/**
+ * List resources available on an MCP server
+ * @route POST /api/mcp/resources/list
+ */
+router.post('/resources/list', requireJwtAuth, checkMCPUsePermissions, listMCPResources);
 
 /**
  * Proxy tool calls from MCP App iframe to MCP server

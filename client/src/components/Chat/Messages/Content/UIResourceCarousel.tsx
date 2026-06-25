@@ -44,7 +44,7 @@ function MCPAppCard({
     return (
       <>
         {!loaded && (
-          <div className="flex h-full items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
             {localize('com_ui_loading_interactive_view')}
           </div>
         )}
@@ -56,7 +56,7 @@ function MCPAppCard({
             width: '100%',
             height: '100%',
             border: 'none',
-            display: loaded ? 'block' : 'none',
+            opacity: loaded ? 1 : 0,
           }}
           title={`MCP App: ${resource.toolName ?? ''}`}
         />
@@ -181,7 +181,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
                 animationDelay: `${index * 100}ms`,
               }}
             >
-              <div className="flex h-full flex-col">
+              <div className="relative flex h-full flex-col">
                 <MCPAppCard
                   resource={uiResource}
                   onHeightChange={(h) => handleCardHeightChange(index, h)}

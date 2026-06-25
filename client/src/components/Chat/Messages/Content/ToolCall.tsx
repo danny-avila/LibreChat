@@ -76,9 +76,9 @@ const MCPAppView = React.memo(function MCPAppView({
   }
 
   return (
-    <div className="my-2" style={height ? { height } : { minHeight: 100 }}>
+    <div className="relative my-2" style={height ? { height } : { minHeight: 100 }}>
       {!loaded && !timedOut && (
-        <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+        <div className="absolute inset-0 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
           <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle
               className="opacity-25"
@@ -98,7 +98,7 @@ const MCPAppView = React.memo(function MCPAppView({
         </div>
       )}
       {timedOut && !loaded && (
-        <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+        <div className="absolute inset-0 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
           {localize('com_ui_mcp_app_failed_to_load')}
         </div>
       )}
@@ -110,7 +110,7 @@ const MCPAppView = React.memo(function MCPAppView({
           width: '100%',
           height: '100%',
           border: 'none',
-          display: loaded ? 'block' : 'none',
+          opacity: loaded ? 1 : 0,
         }}
         title={`MCP App: ${app.toolName ?? ''}`}
       />
