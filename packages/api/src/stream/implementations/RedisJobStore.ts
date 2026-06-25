@@ -660,6 +660,12 @@ export class RedisJobStore implements IJobStore {
                 error: 'Approval expired before a decision was made',
                 completedAt: Date.now(),
               },
+              // Scope the CAS to the action we observed as stale: if the user resolved it
+              // and the run re-paused on a fresh action between the read and here, the
+              // pendingActionId no longer matches and this no-ops instead of aborting the
+              // valid new pause. (Undefined for a missing/malformed pendingAction — nothing
+              // to protect — so it falls back to the status-only check.)
+              expectActionId: job.pendingAction?.actionId,
             });
             return 1;
           }

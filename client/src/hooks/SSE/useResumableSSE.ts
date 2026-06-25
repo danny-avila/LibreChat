@@ -522,28 +522,32 @@ export default function useResumableSSE(
        * rather than clobbering it.
        *
        * If the mapping is a no-op (the paused tool-call content part hasn't
-       * rendered yet — a pause-before-render race), retry once on the next frame
+       * rendered yet — a pause-before-render race), retry on subsequent frames
        * so the approval still attaches. `ask_user_question` always applies (it
        * appends a synthetic part), so only `tool_approval` ever retries.
        */
-      const applyPendingActionToMessages = (pendingAction: Agents.PendingAction, retry = true) => {
+      // Keep retrying across frames (not just once): Recoil/React message updates from
+      // the preceding created/step events are async and can take several frames under
+      // load, so a single retry would drop a valid pause and leave the run with no
+      // approval controls. Bounded so a genuinely-absent target can't spin forever.
+      const PENDING_ACTION_MAX_RETRY_FRAMES = 120;
+      const applyPendingActionToMessages = (pendingAction: Agents.PendingAction, attempt = 0) => {
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            pendingActionRetryRef.current = requestAnimationFrame(() =>
+              applyPendingActionToMessages(pendingAction, attempt + 1),
+            );
+          }
+        };
         const messages = getMessages() ?? [];
         const index = findPendingActionMessageIndex(messages, pendingAction);
         if (index < 0) {
-          if (retry) {
-            pendingActionRetryRef.current = requestAnimationFrame(() =>
-              applyPendingActionToMessages(pendingAction, false),
-            );
-          }
+          retryNextFrame();
           return;
         }
         const updated = applyPendingAction(messages[index], pendingAction);
         if (updated === messages[index]) {
-          if (retry) {
-            pendingActionRetryRef.current = requestAnimationFrame(() =>
-              applyPendingActionToMessages(pendingAction, false),
-            );
-          }
+          retryNextFrame();
           return;
         }
         const nextMessages = [...messages];

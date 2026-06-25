@@ -172,6 +172,21 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.approvals.expire(streamId)).toBe(false);
     });
 
+    test('a mismatched expectedActionId no-ops (protects a re-paused action from a stale sweep)', async () => {
+      const streamId = 'stream-expire-mismatch';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId, { actionId: 'action-A' }));
+
+      // A sweep that observed an OLDER (now-resolved) action must not abort the current
+      // pause — its CAS only fires when the live pendingActionId still matches.
+      expect(await manager.approvals.expire(streamId, 'stale-other-action')).toBe(false);
+      expect(await manager.getJobStatus(streamId)).toBe('requires_action');
+
+      // The matching id still expires it.
+      expect(await manager.approvals.expire(streamId, 'action-A')).toBe(true);
+      expect(await manager.getJobStatus(streamId)).toBe('aborted');
+    });
+
     test('sets completedAt so terminal cleanup can reclaim the job', async () => {
       const streamId = 'stream-expire-completed';
       await manager.createJob(streamId, 'user-1');

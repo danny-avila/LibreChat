@@ -1832,9 +1832,12 @@ class AgentClient extends BaseClient {
       }
 
       const streamId = this.options.req?._resumableStreamId;
-      if (streamId && run.Graph) {
-        GenerationJobManager.setGraph(streamId, run.Graph);
-      }
+      // Do NOT cache the rebuilt graph on resume: it was created with `messages: []`, so
+      // RedisJobStore.getContentParts() (which prefers a cached graph over reconstructing
+      // from the chunk log) would return only the resumed segment and drop the pre-pause
+      // assistant/tool-call content on a same-replica reload/status poll. Skipping it makes
+      // introspection fall back to the durable chunk reconstruction, which is complete.
+      // `setContentParts` still points the in-memory store at the seeded client content.
       if (streamId && this.contentParts) {
         GenerationJobManager.setContentParts(streamId, this.contentParts);
       }

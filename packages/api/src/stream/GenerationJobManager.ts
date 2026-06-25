@@ -1647,7 +1647,11 @@ class GenerationJobManagerClass {
       if (!job || job.status !== 'requires_action' || !isPendingActionExpired(job)) {
         continue;
       }
-      const expired = await this._approvals.expire(streamId);
+      // Pass the OBSERVED action id so the expire CAS only fires for the action we read
+      // as stale. Between this read and the CAS, the user could resolve it and the run
+      // re-pause on a fresh action; without the id, the CAS (status-only) would abort
+      // that valid new pause and leave it terminal.
+      const expired = await this._approvals.expire(streamId, job.pendingAction?.actionId);
       if (!expired) {
         continue;
       }
