@@ -5,13 +5,13 @@ import type { AgentForm } from '~/common';
 
 interface UseMCPToolOptionsReturn {
   formToolOptions: AgentToolOptions | undefined;
-  isToolDeferred: (toolId: string) => boolean;
+  isToolDeferred: (toolId: string, serverDefault?: boolean) => boolean;
   isToolProgrammatic: (toolId: string) => boolean;
-  toggleToolDefer: (toolId: string) => void;
+  toggleToolDefer: (toolId: string, serverDefault?: boolean) => void;
   toggleToolProgrammatic: (toolId: string) => void;
-  areAllToolsDeferred: (tools: AgentToolType[]) => boolean;
+  areAllToolsDeferred: (tools: AgentToolType[], serverDefault?: boolean) => boolean;
   areAllToolsProgrammatic: (tools: AgentToolType[]) => boolean;
-  toggleDeferAll: (tools: AgentToolType[]) => void;
+  toggleDeferAll: (tools: AgentToolType[], serverDefault?: boolean) => void;
   toggleProgrammaticAll: (tools: AgentToolType[]) => void;
 }
 
@@ -20,7 +20,8 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
   const formToolOptions = useWatch({ control, name: 'tool_options' });
 
   const isToolDeferred = useCallback(
-    (toolId: string): boolean => formToolOptions?.[toolId]?.defer_loading === true,
+    (toolId: string, serverDefault = false): boolean =>
+      formToolOptions?.[toolId]?.defer_loading ?? serverDefault,
     [formToolOptions],
   );
 
@@ -31,25 +32,26 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
   );
 
   const toggleToolDefer = useCallback(
-    (toolId: string) => {
+    (toolId: string, serverDefault = false) => {
       const currentOptions = getValues('tool_options') || {};
       const currentToolOptions = currentOptions[toolId] || {};
-      const newDeferred = !currentToolOptions.defer_loading;
+      const effective = currentToolOptions.defer_loading ?? serverDefault;
+      const target = !effective;
 
       const updatedOptions: AgentToolOptions = { ...currentOptions };
 
-      if (newDeferred) {
-        updatedOptions[toolId] = {
-          ...currentToolOptions,
-          defer_loading: true,
-        };
-      } else {
+      if (target === serverDefault) {
         const { defer_loading: _, ...restOptions } = currentToolOptions;
         if (Object.keys(restOptions).length === 0) {
           delete updatedOptions[toolId];
         } else {
           updatedOptions[toolId] = restOptions;
         }
+      } else {
+        updatedOptions[toolId] = {
+          ...currentToolOptions,
+          defer_loading: target,
+        };
       }
 
       setValue('tool_options', updatedOptions, { shouldDirty: true });
@@ -94,9 +96,11 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
   );
 
   const areAllToolsDeferred = useCallback(
-    (tools: AgentToolType[]): boolean =>
+    (tools: AgentToolType[], serverDefault = false): boolean =>
       tools.length > 0 &&
-      tools.every((tool) => formToolOptions?.[tool.tool_id]?.defer_loading === true),
+      tools.every(
+        (tool) => (formToolOptions?.[tool.tool_id]?.defer_loading ?? serverDefault) === true,
+      ),
     [formToolOptions],
   );
 
@@ -111,26 +115,26 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
   );
 
   const toggleDeferAll = useCallback(
-    (tools: AgentToolType[]) => {
+    (tools: AgentToolType[], serverDefault = false) => {
       if (tools.length === 0) return;
 
-      const shouldDefer = !areAllToolsDeferred(tools);
+      const target = !areAllToolsDeferred(tools, serverDefault);
       const currentOptions = getValues('tool_options') || {};
       const updatedOptions: AgentToolOptions = { ...currentOptions };
 
       for (const tool of tools) {
-        if (shouldDefer) {
-          updatedOptions[tool.tool_id] = {
-            ...(updatedOptions[tool.tool_id] || {}),
-            defer_loading: true,
-          };
-        } else {
+        if (target === serverDefault) {
           if (updatedOptions[tool.tool_id]) {
             delete updatedOptions[tool.tool_id].defer_loading;
             if (Object.keys(updatedOptions[tool.tool_id]).length === 0) {
               delete updatedOptions[tool.tool_id];
             }
           }
+        } else {
+          updatedOptions[tool.tool_id] = {
+            ...(updatedOptions[tool.tool_id] || {}),
+            defer_loading: target,
+          };
         }
       }
 

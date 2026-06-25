@@ -53,6 +53,8 @@ export interface ActionToolDefinition {
 export interface LoadToolDefinitionsDeps {
   /** Gets MCP server tools - first checks cache, then initializes server if needed */
   getOrFetchMCPServerTools: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
+  /** Resolves the server-level `deferLoading` default from the merged MCP config */
+  getServerDeferLoading?: (userId: string, serverName: string) => Promise<boolean>;
   /** Checks if a tool name is a known built-in tool */
   isBuiltInTool: (toolName: string) => boolean;
   /** Loads action tool definitions (schemas) from OpenAPI specs */
@@ -88,7 +90,12 @@ export async function loadToolDefinitions(
     codeExecutionEnabled = false,
     provider,
   } = params;
-  const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
+  const {
+    getOrFetchMCPServerTools,
+    getServerDeferLoading,
+    isBuiltInTool,
+    getActionToolDefinitions,
+  } = deps;
 
   const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
 
@@ -112,6 +119,7 @@ export async function loadToolDefinitions(
   }
 
   const mcpServerToolsCache = new Map<string, MCPServerTools>();
+  const mcpServerDeferLoadingCache = new Map<string, boolean>();
   const mcpToolDefs: ToolDefinition[] = [];
   const builtInToolDefs: ToolDefinition[] = [];
   let actionToolDefs: ToolDefinition[] = [];
@@ -161,12 +169,18 @@ export async function loadToolDefinitions(
     if (!mcpServerToolsCache.has(serverName)) {
       const serverTools = await getOrFetchMCPServerTools(userId, serverName);
       mcpServerToolsCache.set(serverName, serverTools || {});
+      const serverDeferLoading = getServerDeferLoading
+        ? await getServerDeferLoading(userId, serverName)
+        : false;
+      mcpServerDeferLoadingCache.set(serverName, serverDeferLoading);
     }
 
     const serverTools = mcpServerToolsCache.get(serverName);
     if (!serverTools) {
       continue;
     }
+
+    const serverDeferLoading = mcpServerDeferLoadingCache.get(serverName) === true;
 
     if (toolName.startsWith(mcpAllPattern)) {
       for (const [actualToolName, toolDef] of Object.entries(serverTools)) {
@@ -176,6 +190,7 @@ export async function loadToolDefinitions(
             description: toolDef.function.description || undefined,
             parameters: buildMcpParameters(toolDef.function.parameters),
             serverName,
+            serverDeferLoading,
           });
         }
       }
@@ -189,6 +204,7 @@ export async function loadToolDefinitions(
         description: toolDef.function.description || undefined,
         parameters: buildMcpParameters(toolDef.function.parameters),
         serverName,
+        serverDeferLoading,
       });
     }
   }
@@ -207,6 +223,7 @@ export async function loadToolDefinitions(
     description: def.description,
     mcp: true as const,
     mcpJsonSchema: def.parameters,
+    mcpServerDeferLoading: def.serverDeferLoading,
   })) as unknown as GenericTool[];
 
   const classificationResult = await buildToolClassification({

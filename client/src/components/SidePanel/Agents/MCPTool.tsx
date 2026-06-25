@@ -60,6 +60,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
 
   const currentServerName = serverInfo.serverName;
   const tools = serverInfo.tools || [];
+  const serverDefaultDefer = serverInfo.deferLoading ?? false;
 
   const getSelectedTools = () => {
     const formTools = getValues('tools') || [];
@@ -82,7 +83,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
 
   const selectedTools = getSelectedTools();
   const isExpanded = accordionValue === currentServerName;
-  const allDeferred = areAllToolsDeferred(tools);
+  const allDeferred = areAllToolsDeferred(tools, serverDefaultDefer);
   const allProgrammatic = areAllToolsProgrammatic(tools);
 
   const statusIconProps = getServerStatusIconProps(currentServerName);
@@ -213,13 +214,13 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                             )}
                             onClick={(e) => {
                               e.stopPropagation();
-                              toggleDeferAll(tools);
+                              toggleDeferAll(tools, serverDefaultDefer);
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                toggleDeferAll(tools);
+                                toggleDeferAll(tools, serverDefaultDefer);
                               }
                             }}
                           >
@@ -328,12 +329,14 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                   key={tool.tool_id}
                   tool={tool}
                   isSelected={selectedTools.includes(tool.tool_id)}
-                  isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
+                  isDeferred={
+                    deferredToolsEnabled && isToolDeferred(tool.tool_id, serverDefaultDefer)
+                  }
                   isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
                   deferredToolsEnabled={deferredToolsEnabled}
                   programmaticToolsEnabled={programmaticToolsEnabled}
                   onToggleSelect={() => toggleToolSelect(tool.tool_id)}
-                  onToggleDefer={() => toggleToolDefer(tool.tool_id)}
+                  onToggleDefer={() => toggleToolDefer(tool.tool_id, serverDefaultDefer)}
                   onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
                 />
               ))}
