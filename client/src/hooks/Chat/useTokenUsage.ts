@@ -54,6 +54,9 @@ export interface TokenUsageView {
   /** Authoritative cost across all branches (shown when it differs from branch) */
   totalCost: number;
   liveTokens: number;
+  /** Calibrated estimate for count-less branch messages; 0 on snapshots. Shown as
+   *  its own breakdown row so a count-less branch's tokens aren't invisible. */
+  estimatedTokens: number;
   rates?: TModelTokenomics;
 }
 
@@ -236,6 +239,7 @@ export default function useTokenUsage({
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
         liveTokens,
+        estimatedTokens: 0,
         rates: limits.rates,
       };
     }
@@ -249,13 +253,18 @@ export default function useTokenUsage({
      *  only — adding it keeps the estimate from re-summing the discarded
      *  pre-summary history (which otherwise pins the gauge at 100% after a
      *  compaction). */
-    const usedTokens =
+    const maxTokens = limits.maxContextTokens;
+    const estimatedTokens = Math.round(branchTotals.estTokens * calibrationRatio);
+    const rawUsed =
       branchTotals.input +
       branchTotals.output +
-      Math.round(branchTotals.estTokens * calibrationRatio) +
+      estimatedTokens +
       branchTotals.summaryBaseline +
       liveTokens;
-    const maxTokens = limits.maxContextTokens;
+    /** The send path prunes an over-window branch before calling the model, so the
+     *  live gauge never actually exceeds the window; clamp the display to the
+     *  window rather than show impossible values (e.g. 50k / 8k). */
+    const usedTokens = maxTokens != null && maxTokens > 0 ? Math.min(rawUsed, maxTokens) : rawUsed;
     return {
       usedTokens,
       maxTokens,
@@ -271,6 +280,7 @@ export default function useTokenUsage({
       branchCost: branchUsage.cost,
       totalCost: totalUsage.cost,
       liveTokens,
+      estimatedTokens,
       rates: limits.rates,
     };
   }, [
