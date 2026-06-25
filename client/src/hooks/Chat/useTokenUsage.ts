@@ -21,6 +21,7 @@ import {
   clearIndex,
   mergeUsage,
   sumTotalUsage,
+  prunedBranchTokens,
   findBranchSnapshotAnchor,
 } from '~/utils';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
@@ -252,23 +253,32 @@ export default function useTokenUsage({
      *  from re-summing the discarded pre-summary history (which otherwise pins the
      *  gauge at 100% after a compaction). */
     const maxTokens = limits.maxContextTokens;
+    const liveOnTail = liveTokens > 0;
     /** When a stream is live the tail is the in-flight response, already counted
      *  by `liveTokens`; drop its static estimate so a resumed/partial response
      *  isn't double-counted on the estimate path. */
     const estimatedTokens = Math.max(
       0,
-      branchTotals.estTokens - (liveTokens > 0 ? branchTotals.tailEstTokens : 0),
+      branchTotals.estTokens - (liveOnTail ? branchTotals.tailEstTokens : 0),
     );
-    const rawUsed =
-      branchTotals.input +
-      branchTotals.output +
-      estimatedTokens +
-      branchTotals.summaryBaseline +
-      liveTokens;
-    /** The send path prunes an over-window branch before calling the model, so the
-     *  live gauge never actually exceeds the window; clamp the display to the
-     *  window rather than show impossible values (e.g. 50k / 8k). */
-    const usedTokens = maxTokens != null && maxTokens > 0 ? Math.min(rawUsed, maxTokens) : rawUsed;
+    let messageTokens = branchTotals.input + branchTotals.output + estimatedTokens;
+    /** The send path prunes an over-window branch oldest-first before calling the
+     *  model, so the next call can sit well under the window even when the full
+     *  branch exceeds it. Mirror that: when the raw sum overflows the message
+     *  window (max minus the always-sent summary baseline), report the newest
+     *  messages that actually fit instead of clamping the whole branch to 100%. */
+    if (maxTokens != null && maxTokens > 0) {
+      const messageBudget = Math.max(0, maxTokens - branchTotals.summaryBaseline);
+      if (messageTokens > messageBudget) {
+        messageTokens = prunedBranchTokens(
+          conversationKey,
+          branchTotals.tailId,
+          messageBudget,
+          liveOnTail,
+        );
+      }
+    }
+    const usedTokens = messageTokens + branchTotals.summaryBaseline + liveTokens;
     return {
       usedTokens,
       maxTokens,
@@ -297,5 +307,6 @@ export default function useTokenUsage({
     liveTokens,
     limits,
     branchSnapshot,
+    conversationKey,
   ]);
 }
