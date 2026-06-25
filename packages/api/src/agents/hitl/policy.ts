@@ -132,6 +132,8 @@ export interface AgentRequestFingerprintFields {
   agent_id?: string | null;
   model?: string | null;
   spec?: string | null;
+  /** Ephemeral agents derive their system instructions from this; pin it too. */
+  promptPrefix?: string | null;
   ephemeralAgent?: Record<string, unknown> | null;
 }
 
@@ -162,6 +164,7 @@ export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFi
     agent_id: fields.agent_id ?? null,
     model: fields.model ?? null,
     spec: fields.spec ?? null,
+    promptPrefix: fields.promptPrefix ?? null,
     ephemeralAgent: normalizeEphemeralAgent(fields.ephemeralAgent),
   });
   return createHash('sha256').update(canonical).digest('hex');

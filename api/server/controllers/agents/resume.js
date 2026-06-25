@@ -69,29 +69,38 @@ async function resolveAccumulatedAttachments({ client, conversationId, responseM
   return mergeAttachments(existing, resolved);
 }
 
+/** Resolve the segment's content for an unfinished save (mirrors finalize's source). */
+async function resolveSegmentContent(client, streamId) {
+  const liveContent = Array.isArray(client?.contentParts) ? client.contentParts : [];
+  const rawContent =
+    liveContent.length > 0
+      ? liveContent
+      : ((await GenerationJobManager.getResumeState(streamId))?.aggregatedContent ?? []);
+  return filterMalformedContentParts(rawContent);
+}
+
 /**
- * A resumed segment that produced tool artifacts and then paused AGAIN must persist
- * those artifacts before returning — the next resume rebuilds a fresh client with an
- * empty `artifactPromises`, so otherwise they'd never be linked to the saved message.
- * Best-effort; saved as a partial (`$set`) so the unfinished row's content is preserved.
+ * A resumed segment that streamed content / produced artifacts and then paused AGAIN
+ * must persist that progress before returning. The next resume rebuilds a fresh client
+ * (empty `contentParts`/`artifactPromises`), so without this an approval that later
+ * expires or is reaped would leave only the EARLIER pause's content on the saved row —
+ * the user loses everything streamed during this segment. Saved as a partial (`$set`,
+ * still `unfinished`) so a subsequent successful resume overwrites it on finalize.
  */
-async function persistRePauseArtifacts({ req, client, job, conversationId }) {
-  const promises = Array.isArray(client?.artifactPromises) ? client.artifactPromises : [];
-  if (promises.length === 0) {
-    return;
-  }
+async function persistRePauseProgress({ req, client, job, streamId, conversationId }) {
   const userId = req.user.id;
   const meta = job.metadata ?? {};
   const responseMessageId = meta.responseMessageId ?? client.responseMessageId;
   if (!responseMessageId) {
     return;
   }
+  const content = await resolveSegmentContent(client, streamId);
   const attachments = await resolveAccumulatedAttachments({
     client,
     conversationId,
     responseMessageId,
   });
-  if (attachments.length === 0) {
+  if (content.length === 0 && attachments.length === 0) {
     return;
   }
   try {
@@ -101,11 +110,18 @@ async function persistRePauseArtifacts({ req, client, job, conversationId }) {
         isTemporary: meta.isTemporary ?? req.body?.isTemporary,
         interfaceConfig: req?.config?.interfaceConfig,
       },
-      { messageId: responseMessageId, conversationId, attachments, unfinished: true, user: userId },
-      { context: 'api/server/controllers/agents/resume.js - re-pause artifact persist' },
+      {
+        messageId: responseMessageId,
+        conversationId,
+        ...(content.length > 0 && { content }),
+        ...(attachments.length > 0 && { attachments }),
+        unfinished: true,
+        user: userId,
+      },
+      { context: 'api/server/controllers/agents/resume.js - re-pause progress persist' },
     );
   } catch (err) {
-    logger.error('[ResumeAgentController] Failed to persist re-pause artifacts', err);
+    logger.error('[ResumeAgentController] Failed to persist re-pause progress', err);
   }
 }
 
@@ -453,9 +469,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // action is already persisted + emitted; leave the job `requires_action`.
     if (client.pendingApproval) {
       logger.debug(`[ResumeAgentController] Re-paused for approval: ${streamId}`);
-      // Persist any artifacts this segment produced before the fresh client (next
-      // resume) drops them — finalize later merges them onto the saved message.
-      await persistRePauseArtifacts({ req, client, job, conversationId });
+      // Persist this segment's content + artifacts before the fresh client (next
+      // resume) drops them, so an expiring re-pause doesn't lose them; finalize later
+      // overwrites content and merges attachments onto the saved message.
+      await persistRePauseProgress({ req, client, job, streamId, conversationId });
       return;
     }
 

@@ -241,6 +241,9 @@ export function useResumeSubmit() {
       agent_id: conversation?.agent_id,
       model: conversation?.model,
       spec: conversation?.spec,
+      // Ephemeral agents derive their instructions from promptPrefix — re-send it so
+      // the resumed run rebuilds the same graph and matches the server fingerprint.
+      promptPrefix: conversation?.promptPrefix,
       ephemeralAgent: getEphemeralAgent(conversationId),
     };
   }, [conversation, getEphemeralAgent]);

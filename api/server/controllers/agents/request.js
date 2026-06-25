@@ -94,7 +94,10 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
   return `${messageId.replace(/_+$/, '')}_`;
 }
 
-function getPreliminaryUserMessage({ messageId, parentMessageId, text, quotes }, conversationId) {
+function getPreliminaryUserMessage(
+  { messageId, parentMessageId, text, quotes, manualSkills, alwaysAppliedSkills },
+  conversationId,
+) {
   if (typeof messageId !== 'string' || messageId.length === 0) {
     return null;
   }
@@ -113,6 +116,12 @@ function getPreliminaryUserMessage({ messageId, parentMessageId, text, quotes },
     conversationId,
     text,
     ...(referencedQuotes != null && { quotes: referencedQuotes }),
+    // Carry skill selections so a HITL-resumed turn's reconstructed `requestMessage`
+    // keeps its skill pills — the client's final handler replaces the user bubble from
+    // this object, and they'd otherwise vanish until a full reload refetches the row.
+    ...(Array.isArray(manualSkills) && manualSkills.length > 0 && { manualSkills }),
+    ...(Array.isArray(alwaysAppliedSkills) &&
+      alwaysAppliedSkills.length > 0 && { alwaysAppliedSkills }),
   };
 }
 

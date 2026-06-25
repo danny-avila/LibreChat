@@ -228,14 +228,18 @@ export class RedisJobStore implements IJobStore {
     const key = KEYS.job(streamId);
     const userJobsKey = KEYS.userJobs(userId, tenantId);
 
-    // A reused streamId overlays onto any existing hash, so paused-run fields
-    // from a prior generation could survive. Drop the HITL fields so the fresh
-    // running job never exposes stale approval metadata and cleanup keys off the
-    // new createdAt rather than a leftover lastActiveAt.
+    // A reused streamId overlays onto any existing hash, so per-turn fields from a
+    // prior generation could survive. Drop the HITL fields so the fresh running job
+    // never exposes stale approval metadata and cleanup keys off the new createdAt
+    // rather than a leftover lastActiveAt. `agent_id` is included because
+    // updateMetadata only writes it when truthy — without clearing it here, a
+    // conversation that switches from a saved agent to an ephemeral/no-agent turn
+    // would keep the old agent_id and the resume guard would reject the valid pause.
     const staleHitlFields: Array<keyof SerializableJobData> = [
       'pendingAction',
       'pendingActionId',
       'lastActiveAt',
+      'agent_id',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots

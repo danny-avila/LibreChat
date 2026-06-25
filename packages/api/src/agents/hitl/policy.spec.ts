@@ -256,6 +256,17 @@ describe('computeAgentRequestFingerprint', () => {
     );
   });
 
+  it('differs when promptPrefix changes (ephemeral instructions)', () => {
+    const base = { endpoint: 'agents', promptPrefix: 'be terse' };
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, promptPrefix: 'be verbose' }),
+    );
+    // null vs absent are treated the same
+    expect(computeAgentRequestFingerprint({ endpoint: 'agents' })).toBe(
+      computeAgentRequestFingerprint({ endpoint: 'agents', promptPrefix: null }),
+    );
+  });
+
   it('normalizes ephemeralAgent so key/array order does not matter', () => {
     const x = computeAgentRequestFingerprint({
       endpoint: 'agents',

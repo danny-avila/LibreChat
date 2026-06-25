@@ -324,6 +324,30 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('createJob clears a stale agent_id from a reused conversation hash', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `stale-agent-${Date.now()}`;
+      // Turn 1: a saved agent.
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.updateJob(streamId, { agent_id: 'saved-agent-1' });
+      expect((await store.getJob(streamId))?.agent_id).toBe('saved-agent-1');
+
+      // Turn 2 on the SAME conversation switches to an ephemeral/no-agent turn. The job
+      // hash is keyed by conversationId, so without clearing, the old agent_id would
+      // survive and the resume guard would reject a valid pause as a different agent.
+      await store.createJob(streamId, 'user-1', streamId);
+      expect((await store.getJob(streamId))?.agent_id).toBeUndefined();
+
+      await store.destroy();
+    });
+
     test('should not drop paused jobs from user tracking when cleanup sees a stale running index', async () => {
       if (!ioredisClient) {
         return;

@@ -55,6 +55,9 @@ export interface ResumeAgentFields {
   agent_id?: string | null;
   model?: string | null;
   spec?: string | null;
+  /** Ephemeral agents derive instructions from this; re-sent so resume rebuilds the
+   *  same graph (and matches the server's request fingerprint). */
+  promptPrefix?: string | null;
   ephemeralAgent?: TEphemeralAgent | null;
   isTemporary?: boolean;
 }
