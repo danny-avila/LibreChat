@@ -4,6 +4,7 @@ import {
   mapAskUserAnswer,
   findUndecidedToolCalls,
   findDisallowedDecisions,
+  findIncompleteDecisions,
 } from './resume';
 
 describe('mapToolApprovalResolutions', () => {
@@ -130,5 +131,41 @@ describe('findDisallowedDecisions', () => {
     expect(findDisallowedDecisions(payload, [{ tool_call_id: 'z', decision: 'approve' }])).toEqual([
       'z',
     ]);
+  });
+});
+
+describe('findIncompleteDecisions', () => {
+  it('flags an edit decision without editedArguments', () => {
+    expect(findIncompleteDecisions([{ tool_call_id: 'a', decision: 'edit' }])).toEqual(['a']);
+  });
+
+  it('flags an edit decision whose editedArguments is not a plain object', () => {
+    expect(
+      findIncompleteDecisions([
+        {
+          tool_call_id: 'a',
+          decision: 'edit',
+          editedArguments: [] as unknown as Record<string, unknown>,
+        },
+      ]),
+    ).toEqual(['a']);
+  });
+
+  it('flags a respond decision without responseText (or empty)', () => {
+    expect(findIncompleteDecisions([{ tool_call_id: 'a', decision: 'respond' }])).toEqual(['a']);
+    expect(
+      findIncompleteDecisions([{ tool_call_id: 'b', decision: 'respond', responseText: '' }]),
+    ).toEqual(['b']);
+  });
+
+  it('accepts complete edit/respond and ignores approve/reject', () => {
+    expect(
+      findIncompleteDecisions([
+        { tool_call_id: 'a', decision: 'edit', editedArguments: { q: 1 } },
+        { tool_call_id: 'b', decision: 'respond', responseText: 'done' },
+        { tool_call_id: 'c', decision: 'approve' },
+        { tool_call_id: 'd', decision: 'reject', reason: 'no' },
+      ]),
+    ).toEqual([]);
   });
 });

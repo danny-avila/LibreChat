@@ -353,6 +353,75 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
     });
 
+    it('400 when an edit decision omits editedArguments', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['approve', 'edit'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      const res = await post(
+        approveBody({ decisions: [{ tool_call_id: 'tc1', decision: 'edit' }] }),
+      );
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/editedArguments/i);
+      expect(res.body.incomplete).toEqual(['tc1']);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('400 when a respond decision omits responseText', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['approve', 'respond'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      const res = await post(
+        approveBody({ decisions: [{ tool_call_id: 'tc1', decision: 'respond' }] }),
+      );
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/responseText/i);
+    });
+
+    it('accepts a complete edit decision (editedArguments present)', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', allowed_decisions: ['approve', 'edit'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      const res = await post(
+        approveBody({
+          decisions: [{ tool_call_id: 'tc1', decision: 'edit', editedArguments: { q: 'x' } }],
+        }),
+      );
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+    });
+
+    it('403 when the resume request fingerprint does not match the paused config', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.requestFingerprint = 'fingerprint-of-a-different-config';
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      const res = await post(approveBody());
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/different agent configuration/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('proceeds when the resume request fingerprint matches the paused config', async () => {
+      const { computeAgentRequestFingerprint } = jest.requireActual('@librechat/api');
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.requestFingerprint = computeAgentRequestFingerprint({
+        endpoint: 'agents',
+        agent_id: AGENT_ID,
+      });
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(CONVO_ID, ACTION_ID);
+      await settled;
+      await flush();
+    });
+
     it('400 when an ask_user_question resume carries no answer', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
       const res = await post({

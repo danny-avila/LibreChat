@@ -34,6 +34,7 @@ const {
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
+  computeAgentRequestFingerprint,
   getApprovalTtlMs,
   isHITLEnabled,
   deleteAgentCheckpoint,
@@ -1207,6 +1208,10 @@ class AgentClient extends BaseClient {
       // fall back to it when the SDK doesn't echo threadId on the interrupt.
       threadId: interrupt.threadId ?? this.conversationId,
       ttlMs: getApprovalTtlMs(checkpointerCfg),
+      // Pin the graph-determining request fields so resume can't rebuild this paused
+      // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
+      // undefined so the id guard can't tell two configs apart).
+      requestFingerprint: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
     });
 
     const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);
@@ -1762,10 +1767,33 @@ class AgentClient extends BaseClient {
         agents.push(...this.agentConfigs.values());
       }
 
+      // Re-prime skill files invoked in the pre-pause segment (mirrors the normal path's
+      // `primeInvokedSkills(payload)`), so an approved code/file-backed tool keeps the
+      // injected skill-file session refs instead of running without them. The pre-pause
+      // content carries the `skill` tool_calls, so it stands in for the message payload.
+      let skillSessions;
+      if (
+        typeof this.options.primeInvokedSkills === 'function' &&
+        Array.isArray(seedContent) &&
+        seedContent.length > 0
+      ) {
+        try {
+          const primed = await this.options.primeInvokedSkills([
+            { role: 'assistant', content: seedContent },
+          ]);
+          skillSessions = primed?.initialSessions;
+        } catch (err) {
+          logger.warn(
+            '[api/server/controllers/agents/client.js #resumeCompletion] Failed to re-prime skill sessions',
+            err?.message ?? err,
+          );
+        }
+      }
+
       // Seed code-env / skill tool sessions so an approved code/file/skill-backed tool
       // runs with the same uploaded-file context the pre-pause run had — the rebuilt
       // graph otherwise has no `Graph.sessions` entries (especially cross-replica).
-      const initialSessions = buildInitialToolSessions({ agents });
+      const initialSessions = buildInitialToolSessions({ skillSessions, agents });
 
       run = await createRun({
         agents,

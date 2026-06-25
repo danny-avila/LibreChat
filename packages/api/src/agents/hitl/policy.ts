@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import type { ToolPolicyConfig } from '@librechat/agents';
 
@@ -121,6 +121,50 @@ export interface PendingActionContext {
   interruptId?: string;
   /** LangGraph `thread_id` (`RunInterruptResult.threadId`) for cross-process resume. */
   threadId?: string;
+  /** Fingerprint of the graph-determining request fields; see {@link computeAgentRequestFingerprint}. */
+  requestFingerprint?: string;
+}
+
+/** Request fields that decide which agent/graph + tool set a turn runs. */
+export interface AgentRequestFingerprintFields {
+  endpoint?: string | null;
+  endpointType?: string | null;
+  agent_id?: string | null;
+  model?: string | null;
+  spec?: string | null;
+  ephemeralAgent?: Record<string, unknown> | null;
+}
+
+/** Stable, order-independent serialization of the ephemeral capability config. */
+function normalizeEphemeralAgent(ephemeral: Record<string, unknown> | null | undefined): unknown {
+  if (ephemeral == null || typeof ephemeral !== 'object') {
+    return null;
+  }
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(ephemeral).sort()) {
+    const value = ephemeral[key];
+    out[key] = Array.isArray(value) ? [...value].sort() : value;
+  }
+  return out;
+}
+
+/**
+ * Fingerprint the request fields that determine which agent/graph + tool set a turn
+ * runs. Persisted on the pending action at pause time and recomputed on resume; a
+ * mismatch means the resume would rebuild a DIFFERENT graph. This is the guard that
+ * catches an ephemeral-agent config swap — those have an undefined `agent_id`, so the
+ * id check alone can't tell two ephemeral configs apart.
+ */
+export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFields): string {
+  const canonical = JSON.stringify({
+    endpoint: fields.endpoint ?? null,
+    endpointType: fields.endpointType ?? null,
+    agent_id: fields.agent_id ?? null,
+    model: fields.model ?? null,
+    spec: fields.spec ?? null,
+    ephemeralAgent: normalizeEphemeralAgent(fields.ephemeralAgent),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 /**
@@ -146,5 +190,6 @@ export function buildPendingAction(
     expiresAt: typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined,
     interruptId: ctx.interruptId,
     threadId: ctx.threadId,
+    requestFingerprint: ctx.requestFingerprint,
   };
 }

@@ -7,6 +7,8 @@ const {
   mapAskUserAnswer,
   findUndecidedToolCalls,
   findDisallowedDecisions,
+  findIncompleteDecisions,
+  computeAgentRequestFingerprint,
   deleteAgentCheckpoint,
   buildAbortedResponseMetadata,
   sanitizeMessageForTransmit,
@@ -130,6 +132,16 @@ function resolveResumeValue(pendingAction, body) {
     const disallowed = findDisallowedDecisions(payload, resolutions);
     if (disallowed.length > 0) {
       return { status: 403, error: 'Decision not permitted for one or more tools', disallowed };
+    }
+    // `edit`/`respond` must carry their payload — otherwise toSdkDecision's defensive
+    // defaults ({} / '') would resume with an empty input/result the user didn't approve.
+    const incomplete = findIncompleteDecisions(resolutions);
+    if (incomplete.length > 0) {
+      return {
+        status: 400,
+        error: 'edit requires editedArguments and respond requires responseText',
+        incomplete,
+      };
     }
     return { resumeValue: mapToolApprovalResolutions(resolutions) };
   }
@@ -357,9 +369,25 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(409).json({ error: 'This decision targets a stale action' });
   }
 
+  // Pin the graph identity: the resume must rebuild the SAME agent/graph + tool set the
+  // run paused on. The agent_id + endpoint guards above cover saved agents; the
+  // fingerprint additionally catches an ephemeral-agent config swap (its agent_id is
+  // undefined, so the id guard can't tell two ephemeral configs apart). Enforced only
+  // when the paused action carries a fingerprint (in-flight pauses from before this
+  // change won't), and recomputed from the resume body's graph-determining fields.
+  const pinnedFingerprint = pendingAction.requestFingerprint;
+  if (pinnedFingerprint && pinnedFingerprint !== computeAgentRequestFingerprint(req.body ?? {})) {
+    return res.status(403).json({ error: 'Cannot resume with a different agent configuration' });
+  }
+
   const mapped = resolveResumeValue(pendingAction, req.body);
   if (mapped.error) {
-    return res.status(mapped.status).json({ error: mapped.error, undecided: mapped.undecided });
+    return res.status(mapped.status).json({
+      error: mapped.error,
+      ...(mapped.undecided && { undecided: mapped.undecided }),
+      ...(mapped.disallowed && { disallowed: mapped.disallowed }),
+      ...(mapped.incomplete && { incomplete: mapped.incomplete }),
+    });
   }
 
   // Count the resume against the concurrency limit. The original turn released its slot

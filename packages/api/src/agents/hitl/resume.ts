@@ -86,3 +86,34 @@ export function findDisallowedDecisions(
     .filter((r) => !allowedByToolCallId.get(r.tool_call_id)?.has(r.decision))
     .map((r) => r.tool_call_id);
 }
+
+/**
+ * Enforce that `edit` and `respond` decisions carry their required payload. Returns
+ * the `tool_call_id`s whose decision is structurally incomplete:
+ *   - `edit` without an object `editedArguments`, or
+ *   - `respond` without a non-empty `responseText`.
+ *
+ * Without this, {@link toSdkDecision}'s defensive defaults (`{}` / `''`) would turn a
+ * crafted or buggy submission into an empty tool input or an empty synthetic result —
+ * resuming the run with behavior the user never actually approved. The route rejects
+ * these (400) rather than mapping them.
+ */
+export function findIncompleteDecisions(
+  resolutions: readonly Agents.ToolApprovalResolution[],
+): string[] {
+  return resolutions
+    .filter((r) => {
+      if (r.decision === 'edit') {
+        return (
+          r.editedArguments == null ||
+          typeof r.editedArguments !== 'object' ||
+          Array.isArray(r.editedArguments)
+        );
+      }
+      if (r.decision === 'respond') {
+        return typeof r.responseText !== 'string' || r.responseText.length === 0;
+      }
+      return false;
+    })
+    .map((r) => r.tool_call_id);
+}

@@ -403,6 +403,14 @@ export namespace Agents {
      * worker that didn't originate the run.
      */
     threadId?: string;
+    /**
+     * Fingerprint of the request fields that determine the agent/graph + tool set
+     * (endpoint, agent_id, model, spec, ephemeralAgent), captured at pause time. The
+     * resume route recomputes it from the resume request and rejects a mismatch — the
+     * guard that catches an ephemeral-agent config swap, where `agent_id` is undefined
+     * so the id check can't.
+     */
+    requestFingerprint?: string;
   }
 
   /**

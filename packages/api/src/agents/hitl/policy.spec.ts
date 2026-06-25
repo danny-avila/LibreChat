@@ -5,6 +5,7 @@ import {
   buildToolApprovalPayload,
   buildAskUserQuestionPayload,
   buildPendingAction,
+  computeAgentRequestFingerprint,
 } from './policy';
 
 describe('isHITLEnabled', () => {
@@ -225,5 +226,57 @@ describe('buildPendingAction', () => {
     expect(action.expiresAt).toBeDefined();
     expect(action.expiresAt).toBeGreaterThanOrEqual(before);
     expect(action.expiresAt).toBeLessThanOrEqual(after);
+  });
+});
+
+describe('computeAgentRequestFingerprint', () => {
+  it('is stable for the same graph-determining fields (ignoring other body keys)', () => {
+    const a = computeAgentRequestFingerprint({
+      endpoint: 'agents',
+      agent_id: 'agent-1',
+      model: 'gpt',
+    });
+    // Extra/unknown fields on the body must not change the fingerprint.
+    const b = computeAgentRequestFingerprint({
+      endpoint: 'agents',
+      agent_id: 'agent-1',
+      model: 'gpt',
+      ...({ conversationId: 'c', decisions: [] } as Record<string, unknown>),
+    });
+    expect(a).toBe(b);
+  });
+
+  it('differs when a graph-determining field changes', () => {
+    const base = { endpoint: 'agents', agent_id: 'agent-1', model: 'gpt' };
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, model: 'other' }),
+    );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, agent_id: 'agent-2' }),
+    );
+  });
+
+  it('normalizes ephemeralAgent so key/array order does not matter', () => {
+    const x = computeAgentRequestFingerprint({
+      endpoint: 'agents',
+      ephemeralAgent: { mcp: ['b', 'a'], execute_code: true },
+    });
+    const y = computeAgentRequestFingerprint({
+      endpoint: 'agents',
+      ephemeralAgent: { execute_code: true, mcp: ['a', 'b'] },
+    });
+    expect(x).toBe(y);
+  });
+
+  it('distinguishes a different ephemeral capability set (the swap it guards against)', () => {
+    const a = computeAgentRequestFingerprint({
+      endpoint: 'agents',
+      ephemeralAgent: { execute_code: true },
+    });
+    const b = computeAgentRequestFingerprint({
+      endpoint: 'agents',
+      ephemeralAgent: { execute_code: false, mcp: ['evil'] },
+    });
+    expect(a).not.toBe(b);
   });
 });
