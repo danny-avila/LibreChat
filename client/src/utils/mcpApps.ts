@@ -73,46 +73,8 @@ export async function callMCPAppTool(
   });
 }
 
-const CACHE_MAX_SIZE = 20;
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-type CacheEntry = { promise: Promise<unknown>; ts: number };
-const resourceCache = new Map<string, CacheEntry>();
-
-export async function readMCPResource(
-  serverName: string,
-  uri: string,
-  userId?: string,
-  options?: { cache?: boolean },
-) {
-  const doRequest = () =>
-    request.post(`${apiBaseUrl()}/api/mcp/resources/read`, { serverName, uri });
-
-  // App-initiated reads (bridge onreadresource) may target dynamic or mutated resources, so they
-  // are never cached. Only the immutable app HTML fetch opts into the short-lived cache.
-  if (!options?.cache) {
-    return doRequest();
-  }
-
-  const key = `${userId ?? ''}:${serverName}:${uri}`;
-  const now = Date.now();
-
-  const existing = resourceCache.get(key);
-  if (existing && now - existing.ts < CACHE_TTL_MS) {
-    return existing.promise;
-  }
-
-  if (resourceCache.size >= CACHE_MAX_SIZE) {
-    const oldest = resourceCache.keys().next().value;
-    if (oldest) {
-      resourceCache.delete(oldest);
-    }
-  }
-
-  const promise = doRequest();
-  resourceCache.set(key, { promise, ts: now });
-  promise.catch(() => resourceCache.delete(key));
-  return promise;
+export async function readMCPResource(serverName: string, uri: string) {
+  return request.post(`${apiBaseUrl()}/api/mcp/resources/read`, { serverName, uri });
 }
 
 export async function listMCPResources(serverName: string, cursor?: string) {
@@ -137,13 +99,12 @@ type ResourceUiMeta = {
 export async function fetchMCPResourceHtml(
   serverName: string,
   uri: string,
-  userId?: string,
 ): Promise<{
   html: string;
   csp?: ResourceUiMeta['csp'];
   permissions?: ResourceUiMeta['permissions'];
 }> {
-  const result = (await readMCPResource(serverName, uri, userId, { cache: true })) as {
+  const result = (await readMCPResource(serverName, uri)) as {
     contents?: Array<{ text?: string; blob?: string; _meta?: { ui?: ResourceUiMeta } }>;
   };
   const item = result?.contents?.[0];

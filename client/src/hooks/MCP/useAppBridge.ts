@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AppBridge,
   PostMessageTransport,
@@ -31,32 +33,21 @@ export function useAppBridge(
 ) {
   const user = useRecoilValue(store.user);
   const { ask } = useOptionalMessagesOperations();
+  const queryClient = useQueryClient();
   const bridgeRef = useRef<AppBridge | null>(null);
+  // The bridge mounts once per resourceId and reads these only inside its handlers, so a changed
+  // callback or tool-call snapshot never tears down the live AppBridge. Synced at render time
+  // (idempotent under Strict Mode) rather than via an effect that would only mirror props.
   const askRef = useRef(ask);
-  useEffect(() => {
-    askRef.current = ask;
-  });
-
-  // Refs keep latest values accessible inside the stable effect closure without triggering remount.
-  // The bridge mounts once per resourceId; toolArgs/toolResult/onSizeChanged are captured at
-  // mount time and are stable for a given resource identity because they derive from the same
-  // tool-call snapshot that produced the resource.
   const onSizeChangedRef = useRef(onSizeChanged);
   const onLoadedRef = useRef(onLoaded);
   const toolArgsRef = useRef(toolArgs);
   const toolResultRef = useRef(toolResult);
-  useEffect(() => {
-    onSizeChangedRef.current = onSizeChanged;
-  });
-  useEffect(() => {
-    onLoadedRef.current = onLoaded;
-  });
-  useEffect(() => {
-    toolArgsRef.current = toolArgs;
-  });
-  useEffect(() => {
-    toolResultRef.current = toolResult;
-  });
+  askRef.current = ask;
+  onSizeChangedRef.current = onSizeChanged;
+  onLoadedRef.current = onLoaded;
+  toolArgsRef.current = toolArgs;
+  toolResultRef.current = toolResult;
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -119,7 +110,7 @@ export function useAppBridge(
       };
 
       bridge.onreadresource = async (params) =>
-        readMCPResource(resource.serverName as string, params.uri, user?.id) as never;
+        readMCPResource(resource.serverName as string, params.uri) as never;
 
       bridge.onlistresources = async (params) =>
         listMCPResources(resource.serverName as string, params?.cursor) as never;
@@ -145,7 +136,16 @@ export function useAppBridge(
           // resources/read round trip; resourceUri-only apps are fetched from the server.
           const { html, csp, permissions } = resource.text
             ? { html: resource.text, csp: resource.csp, permissions: resource.permissions }
-            : await fetchMCPResourceHtml(resource.serverName as string, resource.uri, user?.id);
+            : await queryClient.fetchQuery({
+                queryKey: [
+                  QueryKeys.mcpAppResourceHtml,
+                  resource.serverName,
+                  resource.uri,
+                  user?.id,
+                ],
+                queryFn: () => fetchMCPResourceHtml(resource.serverName as string, resource.uri),
+                staleTime: 5 * 60 * 1000,
+              });
           const resolvedPermissions = permissions ?? resource.permissions;
           if (resolvedPermissions) {
             const updatedAllow = buildAllowAttribute(
