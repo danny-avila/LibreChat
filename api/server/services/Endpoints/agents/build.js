@@ -11,7 +11,11 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
   const agentPromise = loadAgent({
     req,
     spec,
-    agent_id: isAgentsEndpoint(endpoint) ? agent_id : Constants.EPHEMERAL_AGENT_ID,
+    // On the agents endpoint an empty agent_id means an ephemeral (model-spec)
+    // run — a new chat's first message carries no concrete agent id — so default
+    // to EPHEMERAL_AGENT_ID. Without this, loadAgent treats '' as a saved-agent
+    // lookup and throws "Agent not found". Non-agents endpoints always ephemeral.
+    agent_id: isAgentsEndpoint(endpoint) && agent_id ? agent_id : Constants.EPHEMERAL_AGENT_ID,
     endpoint,
     model_parameters,
   }).catch((error) => {
