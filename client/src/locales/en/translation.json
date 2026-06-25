@@ -34,6 +34,7 @@
   "com_agents_chat_with": "Chat with {{name}}",
   "com_agents_clear_search": "Clear search",
   "com_agents_contact": "Contact",
+  "com_agents_no_contact_available": "No contact available",
   "com_agents_copy_link": "Copy Link",
   "com_agents_create_error": "There was an error creating your agent.",
   "com_agents_created_by": "by",

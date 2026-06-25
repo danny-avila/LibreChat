@@ -48,6 +48,7 @@ const {
   resolveConfigServers,
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
+const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -517,13 +518,15 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     });
     agent.isPublic = isPublic;
 
+    await attachOwnerContacts([agent]);
+
     if (agent.author !== author) {
       delete agent.author;
     }
 
     if (!expandProperties) {
       // VIEW permission: Basic agent info only
-      return res.status(200).json({
+      const responseAgent = {
         _id: agent._id,
         id: agent.id,
         name: agent.name,
@@ -538,7 +541,16 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         // Safe metadata
         createdAt: agent.createdAt,
         updatedAt: agent.updatedAt,
-      });
+      };
+
+      if (agent.support_contact !== undefined) {
+        responseAgent.support_contact = agent.support_contact;
+      }
+      if (agent.owner_contact !== undefined) {
+        responseAgent.owner_contact = agent.owner_contact;
+      }
+
+      return res.status(200).json(responseAgent);
     }
 
     // EDIT permission: Full agent details including sensitive configuration
@@ -709,6 +721,8 @@ const updateAgentHandler = async (req, res) => {
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
     }
+
+    await attachOwnerContacts([updatedAgent]);
 
     if (updatedAgent.author !== req.user.id) {
       delete updatedAgent.author;
@@ -1045,9 +1059,10 @@ const getListAgentsHandler = async (req, res) => {
     }
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
+    const agentsWithContacts = await attachOwnerContacts(agents);
 
     const urlCache = cachedRefresh?.urlCache;
-    data.data = agents.map((agent) => {
+    data.data = agentsWithContacts.map((agent) => {
       if (accessibleSkillSet) {
         sanitizeViewerSkillScope(agent, accessibleSkillSet);
       }
@@ -1153,6 +1168,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const updatedAgent = await db.updateAgent({ id: agent_id }, data, {
       updatingUserId: req.user.id,
     });
+    await attachOwnerContacts([updatedAgent]);
 
     try {
       const avatarCache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
@@ -1256,6 +1272,8 @@ const revertAgentVersionHandler = async (req, res) => {
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
     }
+
+    await attachOwnerContacts([updatedAgent]);
 
     if (updatedAgent.author !== req.user.id) {
       delete updatedAgent.author;

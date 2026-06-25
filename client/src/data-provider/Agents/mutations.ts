@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, PermissionBits, QueryKeys } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import type { QueryClient, UseMutationResult } from '@tanstack/react-query';
+import type * as t from 'librechat-data-provider';
 
 /**
  * AGENTS
@@ -10,6 +10,7 @@ export const allAgentViewAndEditQueryKeys: t.AgentListParams[] = [
   { requiredPermission: PermissionBits.VIEW },
   { requiredPermission: PermissionBits.EDIT },
 ];
+
 /**
  * Create a new agent
  */
