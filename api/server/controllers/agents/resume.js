@@ -6,6 +6,7 @@ const {
   mapToolApprovalResolutions,
   mapAskUserAnswer,
   findUndecidedToolCalls,
+  findDisallowedDecisions,
   deleteAgentCheckpoint,
   buildAbortedResponseMetadata,
   sanitizeMessageForTransmit,
@@ -31,6 +32,12 @@ function resolveResumeValue(pendingAction, body) {
     if (undecided.length > 0) {
       return { status: 400, error: 'Every paused tool call must be decided', undecided };
     }
+    // Enforce the policy's per-tool allowed_decisions — a crafted POST must not
+    // approve a tool the policy restricted to (e.g.) reject/respond.
+    const disallowed = findDisallowedDecisions(payload, resolutions);
+    if (disallowed.length > 0) {
+      return { status: 403, error: 'Decision not permitted for one or more tools', disallowed };
+    }
     return { resumeValue: mapToolApprovalResolutions(resolutions) };
   }
   if (payload?.type === 'ask_user_question') {
@@ -55,6 +62,9 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   const userMessage = meta.userMessage;
   const parentMessageId = userMessage?.messageId ?? Constants.NO_PARENT;
   const responseMessageId = meta.responseMessageId ?? `${userMessage?.messageId ?? 'resumed'}_`;
+  // Sourced from the paused job (persisted at creation), not the resume body — a
+  // temporary chat must stay temporary on resume so its messages aren't persisted.
+  const isTemporary = meta.isTemporary ?? req.body?.isTemporary;
 
   // Read the raw job data BEFORE completeJob deletes it — its tracked token/context
   // usage backs the response message's cost rollup (parity with normal completion).
@@ -82,8 +92,8 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     isCreatedByUser: false,
     user: userId,
   };
-  if (req.body?.agent_id) {
-    responseMessage.agent_id = req.body.agent_id;
+  if (meta.agent_id ?? req.body?.agent_id) {
+    responseMessage.agent_id = meta.agent_id ?? req.body.agent_id;
   }
   const responseMetadata = jobData ? buildAbortedResponseMetadata(jobData) : null;
   if (responseMetadata) {
@@ -91,17 +101,42 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   }
 
   await saveMessage(
-    {
-      userId,
-      isTemporary: req?.body?.isTemporary,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
+    { userId, isTemporary, interfaceConfig: req?.config?.interfaceConfig },
     responseMessage,
     { context: 'api/server/controllers/agents/resume.js - resumed response end' },
   );
 
   const convo = await getConvo(userId, conversationId);
   const conversation = { ...(convo ?? {}), conversationId };
+
+  // First-turn pause: the title was deferred when the turn paused. Generate it BEFORE
+  // completing the stream so the `title` event still reaches the live client (emitChunk
+  // no-ops once completeJob tears down the runtime) and the final event carries the real
+  // title instead of "New Chat". Best-effort — a failure must not fail the resumed turn.
+  if (
+    addTitle &&
+    parentMessageId === Constants.NO_PARENT &&
+    !isTemporary &&
+    userMessage?.text &&
+    (!convo || !convo.title || convo.title === 'New Chat')
+  ) {
+    try {
+      await addTitle(req, {
+        text: userMessage.text,
+        conversationId,
+        client,
+        onTitleGenerated: ({ conversationId: titleConvoId, title }) => {
+          conversation.title = title;
+          return GenerationJobManager.emitChunk(streamId, {
+            event: 'title',
+            data: { conversationId: titleConvoId, title },
+          });
+        },
+      });
+    } catch (err) {
+      logger.error('[ResumeAgentController] Title generation failed after resume', err);
+    }
+  }
   conversation.title = conversation.title || 'New Chat';
 
   const finalEvent = {
@@ -123,31 +158,6 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     logger.error('[ResumeAgentController] Failed to complete resumed turn', completeErr);
   }
   await deleteAgentCheckpoint(conversationId, checkpointerCfg);
-
-  // First-turn pause: the title was deferred when the turn paused. Generate it now
-  // (best-effort — a failure must not fail the resumed turn).
-  if (
-    addTitle &&
-    parentMessageId === Constants.NO_PARENT &&
-    !req.body?.isTemporary &&
-    userMessage?.text &&
-    (!convo || !convo.title || convo.title === 'New Chat')
-  ) {
-    try {
-      await addTitle(req, {
-        text: userMessage.text,
-        conversationId,
-        client,
-        onTitleGenerated: ({ conversationId: titleConvoId, title }) =>
-          GenerationJobManager.emitChunk(streamId, {
-            event: 'title',
-            data: { conversationId: titleConvoId, title },
-          }),
-      });
-    } catch (err) {
-      logger.error('[ResumeAgentController] Title generation failed after resume', err);
-    }
-  }
 }
 
 /**
@@ -223,6 +233,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // ACK immediately; the continuation streams over the client's existing SSE.
   res.json({ streamId, conversationId, status: 'resuming' });
   req._resumableStreamId = streamId;
+
+  // Seed the original thread parent BEFORE initializeClient: initializeAgent scopes
+  // thread files / code artifacts off `req.body.parentMessageId`, and the resume body
+  // doesn't carry it. This is the user message's parent (the thread position);
+  // `client.parentMessageId` below is a different value — the response's parent, i.e.
+  // the user message id.
+  req.body.parentMessageId = job.metadata.userMessage?.parentMessageId ?? Constants.NO_PARENT;
 
   let client = null;
   try {

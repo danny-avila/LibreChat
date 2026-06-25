@@ -251,6 +251,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // Persist the originating agent so a HITL resume can refuse to rebuild this
       // paused run on a different agent (see resume.js).
       agent_id: endpointOption.agent_id ?? req.body?.agent_id,
+      // Persist temporary-chat state so a HITL resume keeps the resumed response
+      // non-persisted instead of trusting the resume request to re-send the flag.
+      isTemporary: req.body?.isTemporary,
       responseMessageId: preliminaryResponseMessageId,
       userMessage: preliminaryUserMessage,
     });

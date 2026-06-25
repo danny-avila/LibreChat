@@ -17,8 +17,17 @@ async function moderateText(req, res, next) {
      * `getReferencedQuotes` first (matching `BaseClient`); moderating the merged
      * string also covers content split across a quote and the typed body. The
      * moderation API accepts an array of inputs.
+     *
+     * `answer` covers the HITL resume payload (POST /agents/chat/resume) for an
+     * ask-user question — the user's free-form text — so it's moderated like a typed
+     * message. A tool-approval resume carries no user text and is skipped below.
      */
-    const safeText = typeof text === 'string' ? text : '';
+    let safeText = '';
+    if (typeof text === 'string') {
+      safeText = text;
+    } else if (typeof req.body.answer === 'string') {
+      safeText = req.body.answer;
+    }
     const inputs = [];
     if (safeText.length > 0) {
       inputs.push(safeText);
@@ -28,7 +37,13 @@ async function moderateText(req, res, next) {
       inputs.push(...quotes);
       inputs.push(mergeQuotedText(safeText, quotes));
     }
-    const input = inputs.length > 1 ? inputs : (inputs[0] ?? text);
+    // Nothing to moderate (e.g. a tool-approval resume carries `decisions`, no text) —
+    // don't post an empty/undefined `input`, which the moderation API rejects and which
+    // would otherwise deny the request.
+    if (inputs.length === 0) {
+      return next();
+    }
+    const input = inputs.length > 1 ? inputs : inputs[0];
 
     const response = await axios.post(
       process.env.OPENAI_MODERATION_REVERSE_PROXY || 'https://api.openai.com/v1/moderations',

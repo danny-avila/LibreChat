@@ -75,6 +75,13 @@ export interface SerializableJobData {
   agent_id?: string;
 
   /**
+   * Whether the originating turn was a temporary (non-persisted) chat. Persisted so
+   * a HITL resume keeps the resumed response temporary instead of saving it — the
+   * resume request can't be trusted to re-send the flag.
+   */
+  isTemporary?: boolean;
+
+  /**
    * Set when status is `requires_action`. Describes the human review the
    * run is waiting on. Cleared by the resume path before the job returns to `running`.
    */

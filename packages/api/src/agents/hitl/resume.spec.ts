@@ -1,5 +1,10 @@
 import type { Agents } from 'librechat-data-provider';
-import { mapToolApprovalResolutions, mapAskUserAnswer, findUndecidedToolCalls } from './resume';
+import {
+  mapToolApprovalResolutions,
+  mapAskUserAnswer,
+  findUndecidedToolCalls,
+  findDisallowedDecisions,
+} from './resume';
 
 describe('mapToolApprovalResolutions', () => {
   test('maps each decision type to the SDK discriminated shape, keyed by tool_call_id', () => {
@@ -86,5 +91,44 @@ describe('findUndecidedToolCalls', () => {
         { tool_call_id: 'z', decision: 'approve' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('findDisallowedDecisions', () => {
+  const payload: Agents.ToolApprovalInterruptPayload = {
+    type: 'tool_approval',
+    action_requests: [
+      { tool_call_id: 'a', name: 'read', arguments: {} },
+      { tool_call_id: 'b', name: 'write', arguments: {} },
+    ],
+    review_configs: [
+      { action_name: 'read', tool_call_id: 'a', allowed_decisions: ['approve', 'reject'] },
+      { action_name: 'write', tool_call_id: 'b', allowed_decisions: ['reject', 'respond'] },
+    ],
+  };
+
+  test('returns [] when every decision is permitted by its review config', () => {
+    expect(
+      findDisallowedDecisions(payload, [
+        { tool_call_id: 'a', decision: 'approve' },
+        { tool_call_id: 'b', decision: 'respond', responseText: 'x' },
+      ]),
+    ).toEqual([]);
+  });
+
+  test('flags a decision the policy does not allow for that tool', () => {
+    // `b` is restricted to reject/respond — approving it must be rejected.
+    expect(
+      findDisallowedDecisions(payload, [
+        { tool_call_id: 'a', decision: 'approve' },
+        { tool_call_id: 'b', decision: 'approve' },
+      ]),
+    ).toEqual(['b']);
+  });
+
+  test('fails closed for a tool_call_id with no matching review config', () => {
+    expect(findDisallowedDecisions(payload, [{ tool_call_id: 'z', decision: 'approve' }])).toEqual([
+      'z',
+    ]);
   });
 });

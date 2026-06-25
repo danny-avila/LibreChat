@@ -5,6 +5,8 @@ const {
   hasPersistableAbortContent,
   buildAbortedResponseMetadata,
   isPendingActionStale,
+  isHITLEnabled,
+  deleteAgentCheckpoint,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -287,6 +289,17 @@ router.post('/chat/abort', async (req, res) => {
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
       abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
     });
+
+    // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
+    // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
+    // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when
+    // HITL is off or nothing was written.
+    const agentsCfg = req.config?.endpoints?.agents;
+    if (isHITLEnabled(agentsCfg?.toolApproval)) {
+      await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer).catch((err) =>
+        logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
+      );
+    }
 
     // CRITICAL: Save partial response BEFORE returning to prevent race condition.
     // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.

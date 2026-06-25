@@ -66,3 +66,23 @@ export function findUndecidedToolCalls(
   const decided = new Set(resolutions.map((r) => r.tool_call_id));
   return payload.action_requests.map((a) => a.tool_call_id).filter((id) => !decided.has(id));
 }
+
+/**
+ * Enforce the policy's per-tool `allowed_decisions`. Returns the `tool_call_id`s
+ * whose submitted decision is NOT one the interrupt's `review_configs` permits for
+ * that tool — so the resume route can reject a crafted request that, e.g., approves
+ * a tool the policy restricted to `reject`/`respond`. A resolution for a tool with
+ * no matching review_config (shouldn't happen) is treated as disallowed (fail closed).
+ */
+export function findDisallowedDecisions(
+  payload: Agents.ToolApprovalInterruptPayload,
+  resolutions: readonly Agents.ToolApprovalResolution[],
+): string[] {
+  const allowedByToolCallId = new Map<string, Set<Agents.ToolApprovalDecisionType>>();
+  for (const config of payload.review_configs) {
+    allowedByToolCallId.set(config.tool_call_id, new Set(config.allowed_decisions));
+  }
+  return resolutions
+    .filter((r) => !allowedByToolCallId.get(r.tool_call_id)?.has(r.decision))
+    .map((r) => r.tool_call_id);
+}

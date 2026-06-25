@@ -1514,6 +1514,15 @@ class AgentClient extends BaseClient {
 
         /** @deprecated Agent Chain */
         config.configurable.last_agent_id = agents[agents.length - 1].id;
+
+        // HITL: clear any checkpoint orphaned by a prior paused turn in this
+        // conversation (one that expired or was aborted while paused) so this fresh
+        // turn starts clean instead of rehydrating a stale interrupt — thread_id is
+        // the stable conversationId. No-op when HITL is off or nothing is orphaned.
+        if (streamId && isHITLEnabled(agentsEConfig?.toolApproval)) {
+          await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
+        }
+
         await run.processStream({ messages }, config, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,

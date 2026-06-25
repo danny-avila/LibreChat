@@ -1216,6 +1216,7 @@ export class RedisJobStore implements IJobStore {
       model: data.model || undefined,
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       agent_id: data.agent_id || undefined,
+      isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,

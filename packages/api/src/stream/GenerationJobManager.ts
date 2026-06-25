@@ -498,6 +498,8 @@ class GenerationJobManagerClass {
         // Surface the originating agent so the resume route can refuse to rebuild a
         // paused run on a different agent.
         agent_id: jobData.agent_id,
+        // Surface whether the turn was temporary so a resume keeps it non-persisted.
+        isTemporary: jobData.isTemporary,
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
@@ -1406,6 +1408,9 @@ class GenerationJobManagerClass {
     }
     if (metadata.agent_id) {
       updates.agent_id = metadata.agent_id;
+    }
+    if (metadata.isTemporary !== undefined) {
+      updates.isTemporary = metadata.isTemporary;
     }
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;
