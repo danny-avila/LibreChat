@@ -8,6 +8,8 @@ interface UIResourceCarouselProps {
   uiResources: UIResource[];
 }
 
+const SPINNER_TIMEOUT_MS = 10_000;
+
 function MCPAppCard({
   resource,
   onHeightChange,
@@ -18,8 +20,17 @@ function MCPAppCard({
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const localize = useLocalize();
   const [loaded, setLoaded] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const [tornDown, setTornDown] = useState(false);
   const sandboxUrl = React.useMemo(() => getMCPSandboxUrl(), []);
+
+  React.useEffect(() => {
+    if (loaded) {
+      return;
+    }
+    const timer = setTimeout(() => setTimedOut(true), SPINNER_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loaded]);
 
   const toolResult = React.useMemo(() => buildAppToolResult(resource), [resource]);
 
@@ -50,9 +61,14 @@ function MCPAppCard({
   if (isMcpAppResource(resource)) {
     return (
       <>
-        {!loaded && (
+        {!loaded && !timedOut && (
           <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
             {localize('com_ui_loading_interactive_view')}
+          </div>
+        )}
+        {timedOut && !loaded && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
+            {localize('com_ui_mcp_app_failed_to_load')}
           </div>
         )}
         <iframe
