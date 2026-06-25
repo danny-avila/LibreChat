@@ -217,6 +217,11 @@ export namespace Agents {
     parentMessageId?: string;
     conversationId?: string;
     text?: string;
+    /** Skill selections on the turn, carried so a HITL-resumed turn's reconstructed
+     *  requestMessage keeps its skill pills (they aren't on the DB row the client refetches
+     *  until reload). */
+    manualSkills?: string[];
+    alwaysAppliedSkills?: string[];
   }
 
   /** State data sent to reconnecting clients */

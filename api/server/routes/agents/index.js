@@ -340,7 +340,10 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
         await saveMessage(
           {
             userId: req?.user?.id,
-            isTemporary: req?.body?.isTemporary,
+            // Source from the job, not the request: the stop button posts only the
+            // conversationId, so trusting req.body.isTemporary would persist an aborted
+            // temporary-chat partial as a normal (orphaned) message.
+            isTemporary: jobData?.isTemporary ?? req?.body?.isTemporary,
             interfaceConfig: req?.config?.interfaceConfig,
           },
           responseMessage,

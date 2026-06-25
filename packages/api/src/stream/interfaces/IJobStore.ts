@@ -32,6 +32,9 @@ export interface SerializableJobData {
     /** Quoted excerpts referenced on this turn, carried so resumable/aborted
      *  reconstructions of the user message keep their `MessageQuotes`. */
     quotes?: string[];
+    /** Skill selections, carried so a HITL-resumed turn's requestMessage keeps its pills. */
+    manualSkills?: string[];
+    alwaysAppliedSkills?: string[];
   };
 
   /** Response message ID for reconnection */

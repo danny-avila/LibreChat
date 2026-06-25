@@ -295,13 +295,14 @@ describe('computeAgentRequestFingerprint', () => {
 });
 
 describe('pickResumeContext / applyResumeContext', () => {
-  it('picks only the graph-determining fields, dropping unrelated body keys', () => {
+  it('picks only the graph-determining fields (incl. addedConvo), dropping unrelated keys', () => {
     const ctx = pickResumeContext({
       endpoint: 'agents',
       agent_id: 'a1',
       model: 'gpt',
       promptPrefix: 'be terse',
       ephemeralAgent: { execute_code: true },
+      addedConvo: { agent_id: 'secondary' },
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -312,6 +313,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       model: 'gpt',
       promptPrefix: 'be terse',
       ephemeralAgent: { execute_code: true },
+      addedConvo: { agent_id: 'secondary' },
     });
   });
 

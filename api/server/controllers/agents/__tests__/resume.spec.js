@@ -195,7 +195,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockAddTitle = jest.fn().mockResolvedValue(undefined);
     mockInitializeClient = jest.fn(async ({ req }) => {
       // Capture the request state the controller seeds BEFORE reconstruction.
-      capturedInit = { parentMessageId: req.body.parentMessageId };
+      capturedInit = { parentMessageId: req.body.parentMessageId, files: req.body.files };
       return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
     });
 
@@ -525,6 +525,19 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           userMCPAuthMap: { server1: { token: 't' } },
         }),
       );
+    });
+
+    it('restores the paused user message files before reconstruction (execute-code files)', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      // The resume body carries no files; the controller must source them from the
+      // persisted user message so an approved code/read-file tool keeps its uploads.
+      mockGetMessages.mockResolvedValue([{ files: [{ file_id: 'f1' }] }]);
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(capturedInit.files).toEqual([{ file_id: 'f1' }]);
     });
 
     it('persists the finished response, emits done, completes the job, and prunes the checkpoint', async () => {

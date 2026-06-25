@@ -821,6 +821,10 @@ export default function useResumableSSE(
                   contextHandler(replayEvent.data, resumeSubmission);
                 } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {
                   usageHandler(replayEvent.data, resumeSubmission);
+                } else if (replayEvent.event === ApprovalEvents.ON_PENDING_ACTION) {
+                  // A pause that landed after the resume snapshot must still render its
+                  // controls (mirror the live handler), not fall through to stepHandler.
+                  applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -842,6 +846,12 @@ export default function useResumableSSE(
                   contextHandler(pendingEvent.data, resumeSubmission);
                 } else if (pendingEvent.event === UsageEvents.ON_TOKEN_USAGE) {
                   usageHandler(pendingEvent.data, resumeSubmission);
+                } else if (pendingEvent.event === ApprovalEvents.ON_PENDING_ACTION) {
+                  // In-memory mode can surface a pause that landed between getResumeState()
+                  // and the subscription here; route it to the same handler as a live event
+                  // so the approval / ask-user controls render (else the stream sits paused
+                  // with no UI until a full status reload).
+                  applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||

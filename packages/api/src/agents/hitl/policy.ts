@@ -174,6 +174,9 @@ export const RESUME_CONTEXT_KEYS = [
   'model',
   'promptPrefix',
   'ephemeralAgent',
+  // The agents build reads addedConvo into endpointOption to add parallel/secondary
+  // agents; the resume POST can't reconstruct it, so replay it from the paused request.
+  'addedConvo',
 ] as const;
 
 export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>>;

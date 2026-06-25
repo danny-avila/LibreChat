@@ -440,6 +440,31 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // the user message id.
   req.body.parentMessageId = job.metadata.userMessage?.parentMessageId ?? Constants.NO_PARENT;
 
+  // Restore the paused user message's OWN uploaded files. initializeAgent rebuilds
+  // code/file sessions by walking the conversation from `parentMessageId`, but
+  // execute-code files are excluded from that lookup, so files uploaded on the paused
+  // turn would be dropped — an approved code/read-file tool would resume without them.
+  // The resume body doesn't carry them, so source them from the persisted user message.
+  if (!Array.isArray(req.body.files) || req.body.files.length === 0) {
+    const pausedUserMessageId = job.metadata.userMessage?.messageId;
+    if (pausedUserMessageId) {
+      try {
+        const [row] = await getMessages(
+          { conversationId, messageId: pausedUserMessageId },
+          'files',
+        );
+        if (Array.isArray(row?.files) && row.files.length > 0) {
+          req.body.files = row.files;
+        }
+      } catch (err) {
+        logger.warn(
+          '[ResumeAgentController] Failed to restore paused user message files',
+          err?.message ?? err,
+        );
+      }
+    }
+  }
+
   let client = null;
   try {
     const result = await initializeClient({

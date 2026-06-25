@@ -1359,6 +1359,7 @@ class GenerationJobManagerClass {
     }
 
     const { message } = event;
+    const skills = message as { manualSkills?: string[]; alwaysAppliedSkills?: string[] };
     const updates: Partial<SerializableJobData> = {
       createdEventEmitted: true,
       userMessage: {
@@ -1367,6 +1368,15 @@ class GenerationJobManagerClass {
         conversationId: message.conversationId,
         text: message.text,
         quotes: message.quotes,
+        // Carry skill selections so a HITL resume's reconstructed requestMessage keeps
+        // its pills — this is the authoritative writer of job.metadata.userMessage and
+        // would otherwise drop them (the emitted created message includes them).
+        ...(Array.isArray(skills.manualSkills) &&
+          skills.manualSkills.length > 0 && { manualSkills: skills.manualSkills }),
+        ...(Array.isArray(skills.alwaysAppliedSkills) &&
+          skills.alwaysAppliedSkills.length > 0 && {
+            alwaysAppliedSkills: skills.alwaysAppliedSkills,
+          }),
       },
     };
 
