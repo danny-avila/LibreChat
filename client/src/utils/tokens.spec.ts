@@ -138,6 +138,38 @@ describe('token index', () => {
     expect(totals.estTokens).toBe(11);
   });
 
+  it('tops up counted quoted messages and excludes reasoning parts', () => {
+    buildIndex(CONVO, [
+      /** Counted user turn whose stored count omits its merged quote (8 chars). */
+      {
+        messageId: 'u1',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        conversationId: CONVO,
+        tokenCount: 10,
+        text: 'hello',
+        quotes: ['q'.repeat(8)],
+      } as TMessage,
+      /** Count-less assistant turn: reasoning is not sent as context, only text. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        content: [
+          { type: 'think', think: 'r'.repeat(40) },
+          { type: 'text', text: 't'.repeat(12) },
+        ],
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    expect(totals.input).toBe(10);
+    expect(totals.counted).toBe(1);
+    /** u1 quote top-up round(8/4)=2; a1 text-only round(12/4)=3 (think skipped). */
+    expect(totals.estTokens).toBe(5);
+  });
+
   it('caps the branch at a summary marker instead of re-summing compacted history', () => {
     const summarized = {
       messageId: 'a2',

@@ -27,8 +27,9 @@ export const EMPTY_USAGE: BranchUsage = {
 
 export interface TokenEntry {
   tokenCount: number;
-  /** Uncalibrated char/4 estimate, set only when `tokenCount` is absent
-   *  (imported / pre-feature messages). Calibrated once at display time. */
+  /** Char/4 token estimate for text the stored `tokenCount` doesn't cover:
+   *  count-less (imported / pre-feature) message bodies, plus merged quote text
+   *  on user messages. Summed into the snapshot-less estimate. */
   estTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
@@ -144,9 +145,15 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
   }
 }
 
-/** Chars of a content part's text, handling both the string and `{ value }` forms. */
+/** Chars of a content part's text, handling both the string and `{ value }` forms.
+ *  Reasoning (`think`) and error parts are excluded — the send path strips them
+ *  before counting, so they aren't part of the next call's context. */
 function partTextChars(part: unknown): number {
   if (part == null || typeof part !== 'object') {
+    return 0;
+  }
+  const type = (part as { type?: unknown }).type;
+  if (type === 'think' || type === 'error') {
     return 0;
   }
   const text = (part as { text?: unknown }).text;
@@ -160,8 +167,7 @@ function partTextChars(part: unknown): number {
   ) {
     return (text as { value: string }).value.length;
   }
-  const think = (part as { think?: unknown }).think;
-  return typeof think === 'string' ? think.length : 0;
+  return 0;
 }
 
 /** Char length of a message's rendered text, for estimating count-less messages. */
@@ -196,18 +202,15 @@ function quoteChars(message: Partial<TMessage>): number {
 function toEntry(message: Partial<TMessage>): TokenEntry {
   const summaryUsedTokens = message.metadata?.summaryUsedTokens;
   const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
+  /** Estimate count-less imports/pre-feature messages from their text. Quotes are
+   *  merged into a user message's prompt at send time, but the edit route recounts
+   *  `tokenCount` from `text` only, so add the quote estimate even when a count is
+   *  present. */
+  const bodyChars = tokenCount > 0 ? 0 : messageChars(message);
+  const quoted = message.isCreatedByUser === true ? quoteChars(message) : 0;
   return {
     tokenCount,
-    /** Imported / pre-feature messages carry no `tokenCount`; estimate from text
-     *  length (uncalibrated) so a snapshot-less branch isn't under-counted. Quotes
-     *  are merged into a user message's prompt at send time, so include them. */
-    estTokens:
-      tokenCount > 0
-        ? 0
-        : Math.round(
-            (messageChars(message) + (message.isCreatedByUser === true ? quoteChars(message) : 0)) /
-              4,
-          ),
+    estTokens: Math.round((bodyChars + quoted) / 4),
     isCreatedByUser: message.isCreatedByUser === true,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
@@ -329,7 +332,10 @@ export function sumBranch(
       } else {
         totals.output += entry.tokenCount;
       }
-    } else if (!contextCapped && entry.estTokens > 0) {
+    }
+    /** Separate from the count branch: a counted message can still carry a quote
+     *  top-up its stored `tokenCount` omits. */
+    if (!contextCapped && entry.estTokens > 0) {
       totals.estTokens += entry.estTokens;
     }
     /** Cost/usage is cumulative spend — never truncated at the summary boundary. */

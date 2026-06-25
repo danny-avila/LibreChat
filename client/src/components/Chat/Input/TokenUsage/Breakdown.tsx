@@ -150,8 +150,11 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
               label={localize('com_ui_output')}
               value={view.branchTotals.output + view.liveTokens}
             />
-            {view.estimatedTokens > 0 && (
-              <Row label={localize('com_ui_context_estimated')} value={view.estimatedTokens} />
+            {view.branchTotals.estTokens > 0 && (
+              <Row
+                label={localize('com_ui_context_estimated')}
+                value={view.branchTotals.estTokens}
+              />
             )}
             {maxTokens == null && (
               <p className="text-xs text-text-secondary">{localize('com_ui_context_unknown')}</p>

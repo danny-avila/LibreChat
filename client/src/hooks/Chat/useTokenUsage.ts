@@ -10,7 +10,6 @@ import {
   totalUsageFamily,
   removeUsageAtoms,
   hydrateSnapshots,
-  calibrationFamily,
   pendingUsageFamily,
   branchTotalsFamily,
   contextSnapshotFamily,
@@ -54,9 +53,6 @@ export interface TokenUsageView {
   /** Authoritative cost across all branches (shown when it differs from branch) */
   totalCost: number;
   liveTokens: number;
-  /** Calibrated estimate for count-less branch messages; 0 on snapshots. Shown as
-   *  its own breakdown row so a count-less branch's tokens aren't invisible. */
-  estimatedTokens: number;
   rates?: TModelTokenomics;
 }
 
@@ -79,7 +75,6 @@ export default function useTokenUsage({
   const totalUsageBase = useAtomValue(totalUsageFamily(conversationKey));
   const branchTotals = useAtomValue(branchTotalsFamily(conversationKey));
   const liveTokens = useAtomValue(liveTokensFamily(conversationKey));
-  const calibrationRatio = useAtomValue(calibrationFamily(conversationKey));
   const setBranchTotals = useSetAtom(branchTotalsFamily(conversationKey));
   const setTotalUsage = useSetAtom(totalUsageFamily(conversationKey));
   const limits = useTokenLimits(conversation);
@@ -239,26 +234,24 @@ export default function useTokenUsage({
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
         liveTokens,
-        estimatedTokens: 0,
         rates: limits.rates,
       };
     }
 
     /** Snapshot-less estimate, computed from the in-memory message index — no
-     *  server round-trip. Known per-message counts feed the sum as-is; only the
-     *  char-based estimate for count-less imports is calibrated to provider scale
-     *  via the last learned ratio (mirrors `estimateTokens`). `summaryBaseline`
-     *  is the compacted-context size from the deepest summarized response on the
-     *  branch (0 if none); the walk stops there, so input/output are post-summary
-     *  only — adding it keeps the estimate from re-summing the discarded
-     *  pre-summary history (which otherwise pins the gauge at 100% after a
-     *  compaction). */
+     *  server round-trip. All terms are local per-message counts / char estimates
+     *  (uncalibrated): the learned calibration ratio reconciles provider-injected
+     *  context that isn't present in this visible text, so applying it here would
+     *  over-inflate. `summaryBaseline` is the compacted-context size from the
+     *  deepest summarized response on the branch (0 if none); the walk stops
+     *  there, so input/output are post-summary only — adding it keeps the estimate
+     *  from re-summing the discarded pre-summary history (which otherwise pins the
+     *  gauge at 100% after a compaction). */
     const maxTokens = limits.maxContextTokens;
-    const estimatedTokens = Math.round(branchTotals.estTokens * calibrationRatio);
     const rawUsed =
       branchTotals.input +
       branchTotals.output +
-      estimatedTokens +
+      branchTotals.estTokens +
       branchTotals.summaryBaseline +
       liveTokens;
     /** The send path prunes an over-window branch before calling the model, so the
@@ -280,7 +273,6 @@ export default function useTokenUsage({
       branchCost: branchUsage.cost,
       totalCost: totalUsage.cost,
       liveTokens,
-      estimatedTokens,
       rates: limits.rates,
     };
   }, [
@@ -293,6 +285,5 @@ export default function useTokenUsage({
     liveTokens,
     limits,
     branchSnapshot,
-    calibrationRatio,
   ]);
 }
