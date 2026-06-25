@@ -341,7 +341,7 @@ describe('MCPServerInspector', () => {
       expect(result.apiKey?.source).toBe('admin');
     });
 
-    it('should still detect OAuth when apiKey.source is user', async () => {
+    it('should set requiresOAuth to false when apiKey.source is user', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'sse',
         url: 'https://api.example.com/sse',
@@ -351,16 +351,20 @@ describe('MCPServerInspector', () => {
         },
       };
 
+      // A credential-less probe of a bearer server returns the same 401 challenge as
+      // an OAuth server. Detection must be skipped so the user's API key is honored
+      // instead of forcing an OAuth flow.
       mockDetectOAuthRequirement.mockResolvedValue({
-        requiresOAuth: true,
+        requiresOAuth: true, // This would be returned if called, but it shouldn't be
         method: 'protected-resource-metadata',
       });
 
       const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
 
-      // Should call OAuth detection for user-provided API key
-      expect(mockDetectOAuthRequirement).toHaveBeenCalled();
-      expect(result.requiresOAuth).toBe(true);
+      // Should NOT call OAuth detection for user-provided API key
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.apiKey?.source).toBe('user');
     });
 
     it('should fetch capabilities when server has no tools', async () => {

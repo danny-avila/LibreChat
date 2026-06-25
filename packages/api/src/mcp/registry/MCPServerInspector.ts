@@ -126,8 +126,10 @@ export class MCPServerInspector {
       return;
     }
 
-    // Admin-provided API key means no OAuth flow is needed
-    if (this.config.apiKey?.source === 'admin') {
+    // API key auth (admin- or user-provided) is mutually exclusive with OAuth. A
+    // credential-less probe of a bearer server returns the same 401 challenge as an
+    // OAuth server, so detection would misclassify it; trust the configured auth method.
+    if (this.config.apiKey != null) {
       this.config.requiresOAuth = false;
       return;
     }
