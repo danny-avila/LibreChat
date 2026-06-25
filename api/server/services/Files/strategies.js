@@ -13,6 +13,7 @@ const {
   uploadMistralOCR,
   saveURLToCloudFrontWithMetadata,
   uploadAzureMistralOCR,
+  uploadCustomOCR,
   uploadFileToCloudFront,
   saveBufferToCloudFront,
   getCloudFrontFileStream,
@@ -286,6 +287,26 @@ const vertexMistralOCRStrategy = () => ({
   handleFileUpload: uploadGoogleVertexMistralOCR,
 });
 
+const customOCRStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: uploadCustomOCR,
+});
+
 const documentParserStrategy = () => ({
   /** @type {typeof saveFileFromURL | null} */
   saveURL: null,
@@ -332,6 +353,8 @@ const getStrategyFunctions = (fileSource) => {
     return azureMistralOCRStrategy();
   } else if (fileSource === FileSources.vertexai_mistral_ocr) {
     return vertexMistralOCRStrategy();
+  } else if (fileSource === FileSources.custom_ocr) {
+    return customOCRStrategy();
   } else if (fileSource === FileSources.document_parser) {
     return documentParserStrategy();
   } else if (fileSource === FileSources.text) {

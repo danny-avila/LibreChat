@@ -9,6 +9,7 @@ export * from './files';
 export * from './google';
 export * from './http';
 export * from './mistral';
+export * from './ocr';
 export type * from './openai';
 export * from './prompts';
 export * from './run';

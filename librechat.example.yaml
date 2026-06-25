@@ -92,6 +92,26 @@ cache: true
 #         # first, or use a new source id for the new tenant.
 #         # tenantId: your-tenant-id
 
+# OCR configuration (optional) — used for the "Upload as Text" document path
+# Built-in strategies: "mistral_ocr", "azure_mistral_ocr", "vertexai_mistral_ocr",
+# "document_parser", and "custom_ocr".
+# ocr:
+#   strategy: "mistral_ocr"          # default
+#   apiKey: "${OCR_API_KEY}"
+#   baseURL: "${OCR_BASEURL}"
+#   mistralModel: "mistral-ocr-latest"
+#
+# Custom OCR (no fork required): point LibreChat at your own OCR module that is
+# mounted into the container. The module must export an async function (or an
+# object with a `handleFileUpload` function) with the signature:
+#   async ({ req, file, loadAuthValues }) => ({ text, filename?, bytes?, filepath?, images? })
+# Only `text` is required; the other fields are filled in automatically.
+# ocr:
+#   strategy: "custom_ocr"
+#   # Absolute path, relative path, or installed package name. May also be set
+#   # via the OCR_CUSTOM_STRATEGY_MODULE environment variable.
+#   customStrategyModule: "/app/ocr/my-ocr.js"
+
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'

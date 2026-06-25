@@ -15,6 +15,7 @@ import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { envVarRegex, extractEnvVariable } from './utils';
 export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
@@ -1584,12 +1585,31 @@ export const webSearchSchema = z.object({
 
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
-export const ocrSchema = z.object({
-  mistralModel: z.string().optional(),
-  apiKey: z.string().optional().default('${OCR_API_KEY}'),
-  baseURL: z.string().optional().default('${OCR_BASEURL}'),
-  strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
-});
+export const ocrSchema = z
+  .object({
+    mistralModel: z.string().optional(),
+    apiKey: z.string().optional().default('${OCR_API_KEY}'),
+    baseURL: z.string().optional().default('${OCR_BASEURL}'),
+    strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
+    customStrategyModule: z.string().optional().default('${OCR_CUSTOM_STRATEGY_MODULE}'),
+  })
+  .superRefine((data, ctx) => {
+    if (data.strategy !== OCRStrategy.CUSTOM_OCR) {
+      return;
+    }
+    const configured = (data.customStrategyModule ?? '').trim();
+    const resolved = envVarRegex.test(configured)
+      ? extractEnvVariable(configured).trim()
+      : configured;
+    if (!resolved || envVarRegex.test(resolved)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customStrategyModule'],
+        message:
+          'customStrategyModule is required when ocr.strategy is "custom_ocr". Set it in librechat.yaml or via the OCR_CUSTOM_STRATEGY_MODULE environment variable.',
+      });
+    }
+  });
 
 export const balanceSchema = z.object({
   enabled: z.boolean().optional().default(false),
