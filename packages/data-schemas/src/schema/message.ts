@@ -142,6 +142,15 @@ const messageSchema: Schema<IMessage> = new Schema(
      * the user bubble to preserve the audit trail of what actually ran.
      */
     alwaysAppliedSkills: { type: [String], default: undefined },
+    /**
+     * Verbatim excerpts the user quoted (via the "Add to chat" selection
+     * popup) to reference on this turn. UI metadata only — `MessageQuotes`
+     * renders these on the user bubble so the references persist through
+     * reload and history. The excerpts are merged into the user message text
+     * sent to the model at request time (counted in the user message token
+     * count), so they are not duplicated into the stored `text`.
+     */
+    quotes: { type: [String], default: undefined },
     /*
     attachments: {
       type: [

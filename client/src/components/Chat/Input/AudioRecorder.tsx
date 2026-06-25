@@ -11,13 +11,11 @@ export default memo(function AudioRecorder({
   disabled,
   ask,
   methods,
-  textAreaRef,
   isSubmitting,
 }: {
   disabled: boolean;
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
   isSubmitting: boolean;
 }) {
   const { setValue, reset, getValues } = methods;
@@ -81,10 +79,6 @@ export default memo(function AudioRecorder({
     setText,
     onTranscriptionComplete,
   );
-
-  if (!textAreaRef.current) {
-    return null;
-  }
 
   const handleStartRecording = async () => {
     existingTextRef.current = getValues('text') || '';

@@ -1,4 +1,4 @@
-import { Dispatcher, ProxyAgent } from 'undici';
+import { Agent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
@@ -8,6 +8,7 @@ import {
   ThinkingDisplay,
   AuthKeys,
 } from 'librechat-data-provider';
+import type { Dispatcher } from 'undici';
 import type {
   AnthropicLLMConfigResult,
   AnthropicConfigOptions,
@@ -26,8 +27,43 @@ import {
   isAnthropicVertexCredentials,
   getVertexDeploymentName,
 } from './vertex';
+import { createSSRFSafeUndiciConnect } from '~/auth';
+import { getProxyDispatcher } from '~/utils/proxy';
+import { mergeHeaders } from '~/utils/headers';
 
 const WEB_SEARCH_BETA = 'web-search-2025-03-05';
+
+type FetchOptions = { dispatcher?: Dispatcher; redirect?: RequestRedirect };
+
+function getEffectiveURLPort(baseURL: string): string | null {
+  try {
+    const parsed = new URL(baseURL);
+    if (parsed.port) {
+      return parsed.port;
+    }
+    if (parsed.protocol === 'http:') {
+      return '80';
+    }
+    if (parsed.protocol === 'https:') {
+      return '443';
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function mergeFetchOptions(
+  clientOptions: NonNullable<AnthropicClientOptions['clientOptions']>,
+  options: FetchOptions,
+): void {
+  const currentOptions = (clientOptions.fetchOptions ?? {}) as FetchOptions;
+  clientOptions.fetchOptions = {
+    ...currentOptions,
+    ...options,
+  } as NonNullable<AnthropicClientOptions['clientOptions']>['fetchOptions'];
+}
 
 /**
  * Parses credentials from string or object format
@@ -112,6 +148,8 @@ function getLLMConfig(
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
+    promptCacheTtl:
+      options.modelOptions?.promptCacheTtl ?? anthropicSettings.promptCacheTtl.default,
     thinkingBudget:
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
     effort: options.modelOptions?.effort ?? anthropicSettings.effort.default,
@@ -124,6 +162,7 @@ function getLLMConfig(
   if (options.modelOptions) {
     delete options.modelOptions.thinking;
     delete options.modelOptions.promptCache;
+    delete options.modelOptions.promptCacheTtl;
     delete options.modelOptions.thinkingBudget;
     delete options.modelOptions.effort;
     delete options.modelOptions.thinkingDisplay;
@@ -220,6 +259,10 @@ function getLLMConfig(
   /** Pass promptCache boolean for downstream cache_control application */
   if (supportsCacheControl) {
     (requestOptions as Record<string, unknown>).promptCache = true;
+    /** Pass an explicit TTL when configured; otherwise the agents SDK defaults to 1h */
+    if (systemOptions.promptCacheTtl != null) {
+      (requestOptions as Record<string, unknown>).promptCacheTtl = systemOptions.promptCacheTtl;
+    }
   }
 
   const headers = getClaudeHeaders(requestOptions.model ?? '', supportsCacheControl);
@@ -227,11 +270,13 @@ function getLLMConfig(
     requestOptions.clientOptions.defaultHeaders = headers;
   }
 
-  if (options.proxy && requestOptions.clientOptions) {
-    const proxyAgent = new ProxyAgent(options.proxy);
-    requestOptions.clientOptions.fetchOptions = {
-      dispatcher: proxyAgent,
-    };
+  const shouldProtectUserBaseURL =
+    options.baseURLIsUserProvided === true && !!options.reverseProxyUrl;
+  const proxyDispatcher = getProxyDispatcher(options.proxy);
+  if (proxyDispatcher && !shouldProtectUserBaseURL && requestOptions.clientOptions) {
+    mergeFetchOptions(requestOptions.clientOptions, {
+      dispatcher: proxyDispatcher,
+    });
   }
 
   if (options.reverseProxyUrl && requestOptions.clientOptions) {
@@ -295,6 +340,11 @@ function getLLMConfig(
         delete (requestOptions.invocationKwargs as Record<string, unknown>)[param];
       }
     });
+
+    /** A TTL is meaningless without caching — drop it alongside promptCache. */
+    if (options.dropParams.includes('promptCache')) {
+      delete (requestOptions as Record<string, unknown>).promptCacheTtl;
+    }
   }
 
   if (shouldOmitSamplingParameters) {
@@ -331,6 +381,36 @@ function getLLMConfig(
       requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
       FINE_GRAINED_TOOL_STREAMING_BETA,
     );
+  }
+
+  /**
+   * Attach admin-configured custom headers (e.g. AI-gateway metadata) beneath
+   * the provider-managed headers above, so beta/protocol headers always win.
+   * Placeholders are kept intact here and resolved at request time.
+   */
+  if (options.headers && Object.keys(options.headers).length > 0 && !shouldDropClientOptions) {
+    if (!requestOptions.clientOptions) {
+      requestOptions.clientOptions = {};
+    }
+    requestOptions.clientOptions.defaultHeaders = mergeHeaders(
+      options.headers,
+      requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
+    );
+  }
+
+  if (shouldProtectUserBaseURL) {
+    if (!requestOptions.clientOptions) {
+      requestOptions.clientOptions = {};
+    }
+    mergeFetchOptions(requestOptions.clientOptions, {
+      dispatcher: new Agent({
+        connect: createSSRFSafeUndiciConnect(
+          options.allowedAddresses,
+          getEffectiveURLPort(options.reverseProxyUrl ?? ''),
+        ),
+      }),
+      redirect: 'error',
+    });
   }
 
   return {

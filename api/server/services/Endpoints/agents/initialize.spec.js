@@ -539,6 +539,48 @@ describe('initializeClient — subagent loading', () => {
     expect(arg.actionsEnabled).toBe(true);
   });
 
+  it('threads run-scoped MCP tool definitions into ON_TOOL_EXECUTE loading', async () => {
+    /** Regression guard for the request-scoped MCP/PTC handoff: the
+     *  `mcpAvailableTools` discovered at run start must survive
+     *  `buildAgentToolContext` and reach `loadToolsForExecution`, otherwise
+     *  request-scoped servers reinitialize on every programmatic tool call
+     *  and can trip the MCP circuit breaker under parallel calls. */
+    const mcpTool = 'list_tables_mcp_ClickHouse';
+    const mcpAvailableTools = {
+      ClickHouse: {
+        [mcpTool]: {
+          type: 'function',
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      },
+    };
+    const primaryConfig = {
+      ...makePrimaryConfig({}),
+      toolRegistry: new Map([[mcpTool, { name: mcpTool }]]),
+      mcpAvailableTools,
+    };
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(capturedToolExecuteOptions?.loadTools).toBeInstanceOf(Function);
+    await capturedToolExecuteOptions.loadTools([mcpTool], PRIMARY_ID);
+
+    expect(mockLoadToolsForExecution).toHaveBeenCalledTimes(1);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ mcpAvailableTools }),
+    );
+  });
+
   it('deduplicates repeated ids in subagents.agent_ids', async () => {
     const subAgent = await createAgent({
       id: DUPLICATE_SUBAGENT_ID,

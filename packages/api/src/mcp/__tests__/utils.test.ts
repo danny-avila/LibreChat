@@ -236,13 +236,93 @@ describe('redactServerSecrets', () => {
     expect(redacted.customUserVars).toEqual(config.customUserVars);
   });
 
-  it('should pass URLs through unchanged', () => {
+  it('should pass URLs through unchanged when caller has edit authority', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
-      url: 'https://mcp.example.com/sse?param=value',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+    };
+    const redacted = redactServerSecrets(config, { canEdit: true });
+    expect(redacted.url).toBe('https://infra.internal/mcp');
+  });
+
+  it('should strip url and oauth flow URLs for non-user-sourced configs without edit authority', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      oauth: {
+        client_id: 'cid',
+        authorization_url: 'https://infra.internal/oauth/authorize',
+        token_url: 'https://infra.internal/oauth/token',
+        revocation_endpoint: 'https://infra.internal/oauth/revoke',
+        scope: 'read',
+      },
     };
     const redacted = redactServerSecrets(config);
-    expect(redacted.url).toBe('https://mcp.example.com/sse?param=value');
+    expect(redacted.url).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.revocation_endpoint).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+    expect(redacted.oauth?.scope).toBe('read');
+  });
+
+  it('should strip url for a VIEW-shared user-sourced config when caller lacks edit', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://owner-private.example.com/mcp',
+      source: 'user',
+      dbId: 'abc123',
+      oauth: {
+        client_id: 'cid',
+        authorization_url: 'https://owner-private.example.com/oauth/authorize',
+        token_url: 'https://owner-private.example.com/oauth/token',
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.url).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+  });
+
+  it('should retain non-sensitive oauth fields when stripping oauth flow URLs', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      oauth: {
+        client_id: 'cid',
+        client_secret: 'csecret',
+        authorization_url: 'https://infra.internal/oauth/authorize',
+        token_url: 'https://infra.internal/oauth/token',
+        scope: 'read',
+        redirect_uri: 'https://app.example.com/callback',
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.oauth?.client_secret).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+    expect(redacted.oauth?.scope).toBe('read');
+    expect(redacted.oauth?.redirect_uri).toBe('https://app.example.com/callback');
+  });
+
+  it('should preserve customUserVars metadata for non-user-sourced configs without edit authority', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      customUserVars: {
+        API_KEY: { title: 'API Key', description: 'Your key', sensitive: true },
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.customUserVars).toEqual({
+      API_KEY: { title: 'API Key', description: 'Your key', sensitive: true },
+    });
   });
 
   it('should only include explicitly allowlisted fields', () => {
@@ -294,6 +374,55 @@ describe('redactAllServerSecrets', () => {
     expect(redacted['server-b'].oauth?.client_secret).toBeUndefined();
     expect(redacted['server-b'].oauth?.client_id).toBe('cid-b');
     expect((redacted['server-c'] as Record<string, unknown>).command).toBeUndefined();
+  });
+
+  it('should pass canEdit through per-server via canEditByServer map', () => {
+    const configs: Record<string, ParsedServerConfig> = {
+      'config-server': {
+        type: 'sse',
+        url: 'https://infra.internal/mcp',
+        source: 'config',
+        oauth: {
+          client_id: 'cid',
+          authorization_url: 'https://infra.internal/oauth/authorize',
+        },
+      },
+      'user-server-owner': {
+        type: 'sse',
+        url: 'https://owner.example.com/mcp',
+        source: 'user',
+        dbId: 'owner-id',
+      },
+      'user-server-shared': {
+        type: 'sse',
+        url: 'https://shared.example.com/mcp',
+        source: 'user',
+        dbId: 'shared-id',
+      },
+    };
+    const canEditByServer = new Map<string, boolean>([
+      ['config-server', false],
+      ['user-server-owner', true],
+      ['user-server-shared', false],
+    ]);
+    const redacted = redactAllServerSecrets(configs, { canEditByServer });
+    expect(redacted['config-server'].url).toBeUndefined();
+    expect(redacted['config-server'].oauth?.authorization_url).toBeUndefined();
+    expect(redacted['user-server-owner'].url).toBe('https://owner.example.com/mcp');
+    expect(redacted['user-server-shared'].url).toBeUndefined();
+  });
+
+  it('should expose URL for non-user-sourced configs when canEditByServer is true', () => {
+    const configs: Record<string, ParsedServerConfig> = {
+      'config-server': {
+        type: 'sse',
+        url: 'https://infra.internal/mcp',
+        source: 'config',
+      },
+    };
+    const canEditByServer = new Map<string, boolean>([['config-server', true]]);
+    const redacted = redactAllServerSecrets(configs, { canEditByServer });
+    expect(redacted['config-server'].url).toBe('https://infra.internal/mcp');
   });
 });
 
@@ -557,26 +686,28 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
 });
 
 describe('requiresEphemeralUserConnection', () => {
-  it('returns true when request-varying placeholders affect oauth_headers', () => {
+  it('returns true when BODY placeholders affect oauth_headers', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         url: 'https://example.com/mcp',
         oauth_headers: {
-          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
         },
       }),
     ).toBe(true);
   });
 
-  it('returns true when request-varying placeholders affect connection fields', () => {
+  it('returns true when BODY placeholders affect connection fields', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         url: 'https://example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toBe(true);
+  });
 
+  it('does not treat Graph placeholders as request-scoped by themselves', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'config',
@@ -584,16 +715,16 @@ describe('requiresEphemeralUserConnection', () => {
           GRAPH_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
         },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('returns true when OpenID token placeholders affect connection fields', () => {
+  it('does not treat OpenID token placeholders as request-scoped by themselves', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         args: ['--id-token={{LIBRECHAT_OPENID_ID_TOKEN}}'],
       }),
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       requiresEphemeralUserConnection({
@@ -602,16 +733,15 @@ describe('requiresEphemeralUserConnection', () => {
           Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
         },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('returns true when request-varying placeholders affect remote transport headers', () => {
+  it('returns true when BODY placeholders affect remote transport headers', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         headers: {
           'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
-          'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
         },
       }),
     ).toBe(true);

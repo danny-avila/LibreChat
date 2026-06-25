@@ -13,6 +13,7 @@ import {
   useLocalize,
   useNewConvo,
   useShowMarketplace,
+  useElementSize,
 } from '~/hooks';
 import { clearMessagesCache, cn, groupConversationsByDate } from '~/utils';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
@@ -141,6 +142,7 @@ ChatsHeader.displayName = 'ChatsHeader';
 
 const PinnedHeader: FC = memo(() => {
   const localize = useLocalize();
+  // NJ: Upstream uses a smaller font, ignore it
   return <h2 className="pl-1 pt-1 text-xs text-text-secondary">{localize('com_ui_pinned')}</h2>;
 });
 
@@ -190,6 +192,11 @@ const Conversations: FC<ConversationsProps> = ({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+  const {
+    ref: listContainerRef,
+    width: listWidth,
+    height: listHeight,
+  } = useElementSize<HTMLDivElement>();
 
   const favoritesContentKeyRef = useRef('');
 
@@ -282,7 +289,8 @@ const Conversations: FC<ConversationsProps> = ({
             return `pinned-${item.convo.conversationId}`;
           }
           if (item.type === 'header') {
-            return `header-${item.groupName}`;
+            const firstHeaderIndex = flattenedItemsRef.current[0]?.type === 'favorites' ? 1 : 0;
+            return `header-${item.groupName}-${index === firstHeaderIndex ? 'first' : 'sub'}`;
           }
           if (item.type === 'convo') {
             return `convo-${item.convo.conversationId}`;
@@ -322,6 +330,17 @@ const Conversations: FC<ConversationsProps> = ({
     return () => cancelAnimationFrame(frameId);
   }, [search.query, cache, containerRef]);
 
+  /** Grid only re-derives row offsets when the row count changes; reorders that
+   *  keep the count (e.g. a convo bumped across date groups) need an explicit recompute. */
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [flattenedItems, containerRef]);
+
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
       const item = flattenedItems[index];
@@ -339,6 +358,28 @@ const Conversations: FC<ConversationsProps> = ({
         return (
           <MeasuredRow key={key} {...rowProps}>
             <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
+          </MeasuredRow>
+        );
+      }
+
+      if (item.type === 'pinned-header') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <PinnedHeader />
+          </MeasuredRow>
+        );
+      }
+
+      if (item.type === 'pinned-convo') {
+        const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <Convo
+              conversation={item.convo}
+              retainView={moveToTop}
+              toggleNav={toggleNav}
+              isGenerating={isGenerating}
+            />
           </MeasuredRow>
         );
       }
@@ -429,28 +470,24 @@ const Conversations: FC<ConversationsProps> = ({
           <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
-        <div className="flex-1">
-          <AutoSizer>
-            {({ width, height }) => (
-              <List
-                ref={containerRef}
-                width={width}
-                height={height}
-                deferredMeasurementCache={cache}
-                rowCount={flattenedItems.length}
-                rowHeight={getRowHeight}
-                rowRenderer={rowRenderer}
-                overscanRowCount={10}
-                aria-readonly={false}
-                className="outline-none"
-                aria-label="Conversations"
-                onRowsRendered={handleRowsRendered}
-                tabIndex={-1}
-                style={{ outline: 'none' }}
-                containerRole="rowgroup"
-              />
-            )}
-          </AutoSizer>
+        <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+          <List
+            ref={containerRef}
+            width={listWidth}
+            height={listHeight}
+            deferredMeasurementCache={cache}
+            rowCount={flattenedItems.length}
+            rowHeight={getRowHeight}
+            rowRenderer={rowRenderer}
+            overscanRowCount={10}
+            aria-readonly={false}
+            className="outline-none"
+            aria-label="Conversations"
+            onRowsRendered={handleRowsRendered}
+            tabIndex={-1}
+            style={{ outline: 'none' }}
+            containerRole="rowgroup"
+          />
         </div>
       )}
     </div>

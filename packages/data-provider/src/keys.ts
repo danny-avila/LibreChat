@@ -1,6 +1,7 @@
 export enum QueryKeys {
   messages = 'messages',
   sharedMessages = 'sharedMessages',
+  sharedStartupConfig = 'sharedStartupConfig',
   sharedLinks = 'sharedLinks',
   allConversations = 'allConversations',
   archivedConversations = 'archivedConversations',
@@ -12,6 +13,8 @@ export enum QueryKeys {
   models = 'models',
   balance = 'balance',
   endpoints = 'endpoints',
+  tokenConfig = 'tokenConfig',
+  contextProjection = 'contextProjection',
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',

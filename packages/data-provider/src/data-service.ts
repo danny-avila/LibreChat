@@ -1,7 +1,7 @@
 import type { AxiosResponse } from 'axios';
+import type { TContextProjectionRequest, TContextUsageEvent } from './types/runs';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
-import { TPinConversationRequest, TPinConversationResponse } from 'src/nj/convos';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
 import * as mcp from './types/mcpServers';
@@ -65,6 +65,10 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
   return request.get(endpoints.shareMessages(shareId));
 }
 
+export function getSharedStartupConfig(shareId: string): Promise<config.TSharedLinkStartupConfig> {
+  return request.get(endpoints.sharedStartupConfig(shareId));
+}
+
 export const listSharedLinks = async (
   params: q.SharedLinksListParams,
 ): Promise<q.SharedLinksResponse> => {
@@ -80,15 +84,20 @@ export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetR
 export function createSharedLink(
   conversationId: string,
   targetMessageId?: string,
+  snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
+  return request.post(endpoints.createSharedLink(conversationId), {
+    targetMessageId,
+    snapshotFiles,
+  });
 }
 
 export function updateSharedLink(
   shareId: string,
   targetMessageId?: string,
+  snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId });
+  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId, snapshotFiles });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
@@ -245,6 +254,16 @@ export const getStartupConfig = (
 
 export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
   return request.get(endpoints.aiEndpoints());
+};
+
+export const getTokenConfig = (): Promise<t.TTokenConfigMap> => {
+  return request.get(endpoints.tokenConfig());
+};
+
+export const getContextProjection = (
+  payload: TContextProjectionRequest,
+): Promise<TContextUsageEvent | null> => {
+  return request.post(endpoints.contextProjection(), payload);
 };
 
 export const getModels = async (): Promise<t.TModelsConfig> => {
@@ -426,6 +445,11 @@ export const getFiles = (): Promise<f.TFile[]> => {
  */
 export const getFilePreview = (fileId: string): Promise<f.TFilePreview> => {
   return request.get(endpoints.filePreview(fileId));
+};
+
+/** Preview status for a snapshotted file served through a shared link. */
+export const getSharedFilePreview = (shareId: string, fileId: string): Promise<f.TFilePreview> => {
+  return request.get(endpoints.sharedFilePreview(shareId, fileId));
 };
 
 export const getAgentFiles = (agentId: string): Promise<f.TFile[]> => {
@@ -714,6 +738,19 @@ export const getFileDownloadURL = async (
   return request.get(`${endpoints.files()}/download-url/${userId}/${file_id}`);
 };
 
+/** Blob download for a snapshotted file served through a shared link. */
+export const getSharedFileDownload = async (
+  shareId: string,
+  file_id: string,
+): Promise<AxiosResponse> => {
+  return request.getResponse(endpoints.sharedFileDownload(shareId, file_id), {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
+  });
+};
+
 export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {
   return request.getResponse(url, {
     responseType: 'blob',
@@ -829,8 +866,8 @@ export function assignConversationToProject(
 }
 
 export function pinConversation(
-  payload: TPinConversationRequest,
-): Promise<TPinConversationResponse> {
+  payload: t.TPinConversationRequest,
+): Promise<t.TPinConversationResponse> {
   return request.post(endpoints.pinConversation(), { arg: payload });
 }
 
@@ -1090,6 +1127,29 @@ export const updateSkillNodeContent = (variables: {
     updatedAt: now,
   });
 };
+
+export function getGitHubSkillSyncStatus(): Promise<sk.TGitHubSkillSyncStatusResponse> {
+  return request.get(endpoints.adminSkillsSyncStatus());
+}
+
+export function runGitHubSkillSync(): Promise<sk.TGitHubSkillSyncManualRunResponse> {
+  return request.post(endpoints.adminSkillsSyncRun());
+}
+
+export function setGitHubSkillSyncCredential(variables: {
+  credentialKey: string;
+  token: string;
+}): Promise<sk.TGitHubSkillSyncCredentialSummary> {
+  return request.put(endpoints.adminSkillsSyncCredential(variables.credentialKey), {
+    token: variables.token,
+  } satisfies sk.TGitHubSkillSyncCredentialUpdateRequest);
+}
+
+export function deleteGitHubSkillSyncCredential(
+  credentialKey: string,
+): Promise<{ credentialKey: string; deleted: boolean }> {
+  return request.delete(endpoints.adminSkillsSyncCredential(credentialKey));
+}
 
 /* Roles */
 export function listRoles(): Promise<q.ListRolesResponse> {

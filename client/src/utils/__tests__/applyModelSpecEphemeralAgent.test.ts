@@ -126,7 +126,7 @@ describe('applyModelSpecEphemeralAgent', () => {
       applyModelSpecEphemeralAgent({ convoId: null, modelSpec, updateEphemeralAgent });
 
       const agent = updateEphemeralAgent.mock.calls[0][1] as TEphemeralAgent;
-      expect(agent.subagents).toBeUndefined();
+      expect('subagents' in agent).toBe(false);
     });
   });
 

@@ -36,7 +36,13 @@ export * from './accessPermissions';
 export * from './keys';
 /* api call helpers */
 export * from './headers-helpers';
-export { loginPage, registerPage, apiBaseUrl, buildLoginRedirectUrl } from './api-endpoints';
+export {
+  loginPage,
+  registerPage,
+  apiBaseUrl,
+  sharedFileDownload,
+  buildLoginRedirectUrl,
+} from './api-endpoints';
 export { default as request } from './request';
 export { dataService };
 import * as dataService from './data-service';
@@ -54,4 +60,3 @@ export * from './codeEnvRef';
 
 /* NJ: custom code for ourselves */
 export * from './nj/files';
-export * from './nj/convos';

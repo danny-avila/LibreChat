@@ -13,8 +13,8 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
-import { sanitizeRequestSubagents } from './subagents';
 
 const { mcp_all, mcp_delimiter } = Constants;
 type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
@@ -80,7 +80,13 @@ export async function loadEphemeralAgent(
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      const serverTools = await deps.getMCPServerTools(userId, mcpServer);
+      /** Request-tier overlays are invisible to the cache service's registry
+       *  resolver — overlay-scoped servers expand fresh via `mcp_all` instead */
+      const overlayConfig = req.config?.mcpConfig?.[mcpServer];
+      const serverTools =
+        overlayConfig && requiresEphemeralUserConnection(overlayConfig)
+          ? null
+          : await deps.getMCPServerTools(userId, mcpServer);
       if (!serverTools) {
         tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
         addedServers.add(mcpServer);
@@ -138,11 +144,6 @@ export async function loadEphemeralAgent(
   }
   if (modelSpec?.subagents) {
     result.subagents = modelSpec.subagents;
-  } else {
-    const requestSubagents = sanitizeRequestSubagents(ephemeralAgent?.subagents);
-    if (requestSubagents) {
-      result.subagents = requestSubagents;
-    }
   }
   if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
     if (modelSpec.skills === true) {

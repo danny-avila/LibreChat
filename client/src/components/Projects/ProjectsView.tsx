@@ -1,14 +1,15 @@
 import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { ArrowUpDown, Check, Folder, Plus, Search } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowUpDown, Check, Folder, Plus, Search } from 'lucide-react';
+import { Input, Button, Spinner, DropdownPopup, useMediaQuery } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
-import { Input, Button, Spinner, DropdownPopup } from '@librechat/client';
 import type { MenuItemProps, RenderProp } from '~/common';
+import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { useProjectsInfiniteQuery } from '~/data-provider';
+import ProjectCreateDialog from './ProjectCreateDialog';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import ProjectCreateDialog from './ProjectCreateDialog';
 
 type ProjectSort = 'name' | 'createdAt' | 'lastConversationAt';
 
@@ -49,6 +50,7 @@ export default function ProjectsView() {
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const deferredSearch = useDeferredValue(search);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading } = useProjectsInfiniteQuery({
     search: deferredSearch || undefined,
@@ -103,9 +105,12 @@ export default function ProjectsView() {
     <main className="flex h-full min-h-0 flex-col overflow-auto bg-surface-primary text-text-primary">
       <div className="container mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 md:px-6 lg:pt-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-text-primary md:text-3xl">
-            {localize('com_ui_projects')}
-          </h1>
+          <div className="flex min-w-0 items-center gap-2.5">
+            {isSmallScreen ? <OpenSidebar /> : null}
+            <h1 className="text-2xl font-bold tracking-tight text-text-primary md:text-3xl">
+              {localize('com_ui_projects')}
+            </h1>
+          </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm text-text-secondary sm:inline">
               {localize('com_ui_sort_by')}

@@ -23,9 +23,9 @@ import {
   useDeleteConversationMutation,
   useGetStartupConfig,
   useArchiveConvoMutation,
+  usePinConversationMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
-import { usePinConversationMutation } from '~/nj/data-provider/convo-mutations';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
 import ProjectButton from './ProjectButton';
@@ -279,6 +279,16 @@ function ConvoOptions({
         render: (props) => <button {...props} />,
       },
       */
+      {
+        label: localize(isPinned ? 'com_ui_unpin' : 'com_ui_pin'),
+        onClick: handlePinClick,
+        hideOnClick: false,
+        icon: isPinLoading ? (
+          <Spinner className="size-4" />
+        ) : (
+          <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+        ),
+      },
       {
         label: localize(isPinned ? 'com_ui_unpin' : 'com_ui_pin'),
         onClick: handlePinClick,

@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 
 import type { MCPOAuthFlowMetadata, MCPOAuthTokens } from './types';
 import type { FlowStateManager } from '~/flow/manager';
@@ -60,7 +60,7 @@ export async function getReplayablePendingMCPOAuthStart({
   }
 
   try {
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
     const flowState = await flowManager.getFlowState(flowId, MCP_OAUTH_FLOW_TYPE);
     return getReplayablePendingMCPOAuthStartFromFlow(flowState);
   } catch (error) {

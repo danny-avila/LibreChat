@@ -1,8 +1,13 @@
-import { logger, getTenantId } from '@librechat/data-schemas';
+import { logger, getTenantId, tenantStorage } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { TokenMethods, TenantContext } from '@librechat/data-schemas';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import type { TokenMethods } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, OAuthMetadata, MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type {
+  MCPOAuthTokens,
+  OAuthMetadata,
+  MCPOAuthFlowMetadata,
+  OAuthProtectedResourceMetadata,
+} from '~/mcp/oauth';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
@@ -28,6 +33,14 @@ export interface ToolDiscoveryResult {
   oauthUrl: string | null;
 }
 
+type OAuthRequiredEvent = {
+  serverUrl?: string;
+  error?: unknown;
+  status?: number;
+  statusCode?: number;
+  skipSilentRefresh?: boolean;
+};
+
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
  * Handles OAuth flows, token management, and connection retry logic.
@@ -41,19 +54,52 @@ export class MCPConnectionFactory {
   protected readonly useSSRFProtection: boolean;
   protected readonly allowedDomains?: string[] | null;
   protected readonly allowedAddresses?: string[] | null;
+  protected readonly ephemeralConnection: boolean;
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
   protected readonly user?: t.OAuthConnectionOptions['user'];
   protected readonly flowManager?: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods?: TokenMethods;
-  protected readonly signal?: AbortSignal;
-  protected readonly oauthStart?: t.OAuthStartHandler;
-  protected readonly oauthEnd?: () => Promise<void>;
-  protected readonly returnOnOAuth?: boolean;
+  protected signal?: AbortSignal;
+  protected oauthStart?: t.OAuthStartHandler;
+  protected oauthEnd?: () => Promise<void>;
+  protected returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
+  private connectionReady = false;
+  /**
+   * Snapshot of the tenant context at factory construction time. Captured eagerly
+   * because the OAuth handler runs later inside an EventEmitter callback,
+   * outside the original request's async context - `getTenantId()` called
+   * from the listener would return the wrong tenant (or none at all).
+   */
+  protected readonly tenantId?: string;
+  protected readonly tenantContext?: TenantContext;
+
+  /**
+   * Process-local in-flight silent refresh promises, keyed by
+   * `tenantId:userId:serverName`. Coalesces concurrent `attemptSilentTokenRefresh`
+   * calls within this process so a single refresh-token redemption serves every
+   * waiter in the same tenant — important when multiple connections (or repeated
+   * 401s) race the same refresh and the OAuth provider rotates refresh tokens.
+   * The map only holds in-flight promises (no result caching), so each new 401
+   * after the previous attempt resolves triggers a fresh redemption.
+   *
+   * NOTE: this is a single-process lock. Across multiple worker processes the
+   * race with `getOAuthTokens()`'s `mcp_get_tokens` flow remains; that's an
+   * inherent limitation of process-local coalescing and tracked separately.
+   */
+  private static inflightSilentRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
+
+  /**
+   * Silent refresh is a best-effort optimization before interactive OAuth.
+   * Keep the cap short so a stalled refresh still leaves most of the factory
+   * connect budget for OAuth discovery, registration, and `oauthStart`.
+   */
+  private static readonly SILENT_REFRESH_TIMEOUT_MS = 5_000;
+  private static readonly SILENT_REFRESH_ABORT_GRACE_MS = 1_000;
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
@@ -62,6 +108,15 @@ export class MCPConnectionFactory {
   ): Promise<MCPConnection> {
     const factory = new this(await this.prepareBasicConnectionOptions(basic, oauth), oauth);
     return factory.createConnection();
+  }
+
+  static attachRequestOAuthHandler(
+    basic: t.BasicConnectionOptions,
+    oauth: t.OAuthConnectionOptions,
+    connection: MCPConnection,
+  ): () => void {
+    const factory = new this(basic, oauth);
+    return factory.handleOAuthEvents(connection, 'oauthReauthenticationRequired');
   }
 
   /**
@@ -121,6 +176,7 @@ export class MCPConnectionFactory {
       oauthTokens,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      ephemeralConnection: this.ephemeralConnection,
     });
 
     const oauthHandler = () => {
@@ -194,6 +250,7 @@ export class MCPConnectionFactory {
       oauthTokens: null,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      ephemeralConnection: this.ephemeralConnection,
     });
 
     unauthConnection.on('oauthRequired', () => {
@@ -232,18 +289,23 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ) {
-    this.serverConfig = processMCPEnv({
-      user: options?.user,
-      body: options?.requestBody,
-      dbSourced: basic.dbSourced,
-      options: basic.serverConfig,
-      customUserVars: options?.customUserVars,
-    });
+    this.serverConfig = basic.skipEnvProcessing
+      ? basic.serverConfig
+      : processMCPEnv({
+          user: options?.user,
+          body: options?.requestBody,
+          dbSourced: basic.dbSourced,
+          options: basic.serverConfig,
+          customUserVars: options?.customUserVars,
+        });
     this.serverName = basic.serverName;
     this.useSSRFProtection = basic.useSSRFProtection === true;
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
+    this.ephemeralConnection = basic.ephemeralConnection === true;
     this.connectionTimeout = options?.connectionTimeout;
+    this.tenantContext = tenantStorage?.getStore?.();
+    this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
     this.logPrefix = options?.user
       ? `[MCP][${basic.serverName}][${options.user.id}]`
       : `[MCP][${basic.serverName}]`;
@@ -338,6 +400,7 @@ export class MCPConnectionFactory {
       oauthTokens,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      ephemeralConnection: this.ephemeralConnection,
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
@@ -361,9 +424,10 @@ export class MCPConnectionFactory {
         await this.initiateOAuthBeforeConnect(connection);
       }
       await this.attemptToConnect(connection);
-      if (cleanupOAuthHandlers) {
-        cleanupOAuthHandlers();
-      }
+      this.connectionReady = true;
+      // Keep the `oauthRequired` listener for cached-connection 401 recovery,
+      // but drop response/tool-call callbacks from the completed request.
+      this.releaseRequestScopedOAuthState();
       return connection;
     } catch (error) {
       if (cleanupOAuthHandlers) {
@@ -378,6 +442,13 @@ export class MCPConnectionFactory {
       return false;
     }
     return isOAuthServer(this.serverConfig);
+  }
+
+  protected releaseRequestScopedOAuthState(): void {
+    this.signal = undefined;
+    this.oauthStart = undefined;
+    this.oauthEnd = undefined;
+    this.returnOnOAuth = false;
   }
 
   private getServerUrl(): string | undefined {
@@ -435,6 +506,8 @@ export class MCPConnectionFactory {
         error: new Error('OAuth tokens missing before connection'),
         serverUrl,
         userId: this.userId,
+        /** `getOAuthTokens` just exhausted the stored-token/refresh path; go straight to interactive OAuth */
+        skipSilentRefresh: true,
       });
 
       if (!emitted) {
@@ -444,25 +517,58 @@ export class MCPConnectionFactory {
     });
   }
 
+  private async runWithCapturedTenant<T>(fn: () => Promise<T>): Promise<T> {
+    const context = this.tenantContext ?? (this.tenantId ? { tenantId: this.tenantId } : undefined);
+    if (!context || !tenantStorage?.run) {
+      return fn();
+    }
+    return tenantStorage.run(context, fn);
+  }
+
+  private getConnectionOAuthTimeoutMs(): number {
+    const factoryConnectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    const connectionOAuthTimeout = this.serverConfig.initTimeout ?? 60000 * 2;
+    return Math.min(factoryConnectTimeout, connectionOAuthTimeout);
+  }
+
+  private getSilentRefreshTimeoutMs(): number {
+    const oauthTimeout = this.getConnectionOAuthTimeoutMs();
+    const silentRefreshBudgetMs = Math.floor(oauthTimeout * 0.4);
+    return Math.max(
+      1,
+      Math.min(MCPConnectionFactory.SILENT_REFRESH_TIMEOUT_MS, silentRefreshBudgetMs),
+    );
+  }
+
+  private getBaseFlowId(): string {
+    return MCPOAuthHandler.generateFlowId(this.userId!, this.serverName, this.tenantId);
+  }
+
+  private getTokenFlowId(): string {
+    return MCPOAuthHandler.generateTokenFlowId(this.userId!, this.serverName, this.tenantId);
+  }
+
   /** Retrieves existing OAuth tokens from storage or returns null */
   protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
     if (!this.tokenMethods?.findToken) return null;
 
     try {
-      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+      const flowId = this.getTokenFlowId();
       const tokens = await this.flowManager!.createFlowWithHandler(
         flowId,
         'mcp_get_tokens',
         async () => {
-          return await MCPTokenStorage.getTokens({
-            userId: this.userId!,
-            serverName: this.serverName,
-            findToken: this.tokenMethods!.findToken!,
-            createToken: this.tokenMethods!.createToken,
-            updateToken: this.tokenMethods!.updateToken,
-            deleteTokens: this.tokenMethods!.deleteTokens,
-            refreshTokens: this.createRefreshTokensFunction(),
-          });
+          return await this.runWithCapturedTenant(async () =>
+            MCPTokenStorage.getTokens({
+              userId: this.userId!,
+              serverName: this.serverName,
+              findToken: this.tokenMethods!.findToken!,
+              createToken: this.tokenMethods!.createToken,
+              updateToken: this.tokenMethods!.updateToken,
+              deleteTokens: this.tokenMethods!.deleteTokens,
+              refreshTokens: this.createRefreshTokensFunction(),
+            }),
+          );
         },
         this.signal,
       );
@@ -489,9 +595,11 @@ export class MCPConnectionFactory {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      resource?: string;
     },
+    signal?: AbortSignal,
   ) => Promise<MCPOAuthTokens> {
-    return async (refreshToken, metadata) => {
+    return async (refreshToken, metadata, signal) => {
       return await MCPOAuthHandler.refreshOAuthTokens(
         refreshToken,
         {
@@ -500,13 +608,267 @@ export class MCPConnectionFactory {
           clientInfo: metadata.clientInfo,
           storedTokenEndpoint: metadata.storedTokenEndpoint,
           storedAuthMethods: metadata.storedAuthMethods,
+          resource: metadata.resource,
         },
         this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
         this.allowedDomains,
         this.allowedAddresses,
+        signal,
       );
     };
+  }
+
+  /**
+   * Attempts to silently refresh OAuth tokens using the stored refresh token,
+   * bypassing the local `expires_at` check. Use this when the server has
+   * signaled token invalidity (a 401 emitted as `oauthRequired`) to avoid
+   * forcing the user through an interactive OAuth flow when the refresh token
+   * is still valid.
+   *
+   * Coalesces via `inflightSilentRefreshes` rather than `FlowStateManager` —
+   * the latter caches the completed result for the new token's TTL, which
+   * would hand back stale tokens on a subsequent 401 (e.g. when the freshly
+   * minted token is revoked before its local expiry). Caching only the
+   * in-flight promise means every fresh 401 after settlement triggers a
+   * fresh redemption.
+   */
+  protected async attemptSilentTokenRefresh(): Promise<MCPOAuthTokens | null> {
+    if (!this.tokenMethods?.findToken || !this.tokenMethods?.createToken) {
+      return null;
+    }
+
+    // Scope the lock by tenant so two tenants that share the same `userId`
+    // and `serverName` (common with username-based IDs in multi-tenant setups)
+    // can never join each other's refresh and have those tokens applied to the
+    // wrong connection.
+    const lockKey = `${this.tenantId ?? ''}:${this.userId ?? ''}:${this.serverName}`;
+    const inflight = MCPConnectionFactory.inflightSilentRefreshes.get(lockKey);
+    if (inflight) {
+      logger.debug(`${this.logPrefix} Joining in-flight silent refresh attempt`);
+      return inflight;
+    }
+
+    const timeoutMs = this.getSilentRefreshTimeoutMs();
+    const abortController = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let abortGraceTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    const refreshPromise = this.runSilentRefresh(abortController.signal);
+    const promise = new Promise<MCPOAuthTokens | null>((resolve) => {
+      timeoutId = setTimeout(() => {
+        abortController.abort();
+        abortGraceTimeoutId = setTimeout(
+          releaseLock,
+          MCPConnectionFactory.SILENT_REFRESH_ABORT_GRACE_MS,
+        );
+        logger.info(
+          `${this.logPrefix} Silent token refresh timed out after ${timeoutMs}ms, falling back to interactive OAuth`,
+        );
+        resolve(null);
+      }, timeoutMs);
+
+      refreshPromise.then(resolve, (error: unknown) => {
+        logger.info(
+          `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
+          error,
+        );
+        resolve(null);
+      });
+    }).finally(() => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    });
+    function releaseLock() {
+      if (abortGraceTimeoutId) {
+        clearTimeout(abortGraceTimeoutId);
+        abortGraceTimeoutId = null;
+      }
+      if (MCPConnectionFactory.inflightSilentRefreshes.get(lockKey) === promise) {
+        MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
+      }
+    }
+    MCPConnectionFactory.inflightSilentRefreshes.set(lockKey, promise);
+    void refreshPromise.then(releaseLock, releaseLock);
+    return await promise;
+  }
+
+  /**
+   * Executes a single force-refresh attempt against the OAuth provider and
+   * persists the new tokens. Called by `attemptSilentTokenRefresh` under the
+   * `inflightSilentRefreshes` coalescing lock.
+   */
+  private async runSilentRefresh(signal: AbortSignal): Promise<MCPOAuthTokens | null> {
+    try {
+      const tokens = await this.runWithCapturedTenant(async () =>
+        MCPTokenStorage.forceRefreshTokens({
+          userId: this.userId!,
+          serverName: this.serverName,
+          findToken: this.tokenMethods!.findToken!,
+          createToken: this.tokenMethods!.createToken,
+          updateToken: this.tokenMethods!.updateToken,
+          deleteTokens: this.tokenMethods!.deleteTokens,
+          refreshTokens: this.createRefreshTokensFunction(),
+          signal,
+        }),
+      );
+
+      if (tokens) {
+        // Drop any previously cached `mcp_get_tokens` result so the next call
+        // to `getOAuthTokens` reads the freshly persisted tokens from the
+        // token store rather than the now-stale flow-cached value.
+        await this.invalidateGetTokensFlow(tokens);
+      }
+
+      if (tokens) {
+        logger.info(`${this.logPrefix} Silent token refresh succeeded`);
+      } else {
+        logger.info(`${this.logPrefix} Silent token refresh returned no tokens`);
+      }
+      return tokens;
+    } catch (error) {
+      if (error instanceof ReauthenticationRequiredError) {
+        logger.info(`${this.logPrefix} ${error.message}, falling back to interactive OAuth`);
+      } else {
+        logger.info(
+          `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
+          error,
+        );
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Clears stale token-fetch cache after fresh credentials are known. COMPLETED
+   * entries are deleted; PENDING entries are completed with fresh tokens so
+   * concurrent waiters do not fail or later publish server-rejected tokens.
+   */
+  protected async invalidateGetTokensFlow(freshTokens?: MCPOAuthTokens): Promise<void> {
+    if (!this.flowManager || !this.userId) {
+      return;
+    }
+    const flowId = this.getTokenFlowId();
+    try {
+      const state = await this.flowManager.getFlowState(flowId, 'mcp_get_tokens');
+      if (!state) {
+        return;
+      }
+      if (state.status === 'PENDING' && freshTokens) {
+        await this.flowManager.completeFlow(flowId, 'mcp_get_tokens', freshTokens);
+        return;
+      }
+      if (state.status !== 'COMPLETED') {
+        return;
+      }
+      await this.flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+    } catch (err) {
+      logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err);
+    }
+  }
+
+  /**
+   * Drops any cached COMPLETED `mcp_oauth` flow state so that
+   * `handleOAuthRequired`'s recent-completion fast path can't re-serve the
+   * tokens that the resource server just rejected.
+   */
+  protected async invalidateCompletedOAuthFlow(): Promise<void> {
+    if (!this.flowManager || !this.userId) {
+      return;
+    }
+    const flowId = this.getBaseFlowId();
+    try {
+      const existing = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
+      if (!existing || existing.status !== 'COMPLETED') {
+        return;
+      }
+      const meta = existing.metadata as MCPOAuthFlowMetadata | undefined;
+      if (!this.isCurrentTenantOAuthFlow(meta)) {
+        logger.debug(
+          `${this.logPrefix} Skipping completed mcp_oauth invalidation for a different tenant`,
+        );
+        return;
+      }
+      const oldState = meta?.state;
+      await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+      if (oldState) {
+        await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager);
+      }
+    } catch (err) {
+      logger.debug(`${this.logPrefix} Failed to invalidate completed mcp_oauth cache`, err);
+    }
+  }
+
+  private isCurrentTenantOAuthFlow(meta: MCPOAuthFlowMetadata | undefined): boolean {
+    const flowTenantId = meta?.tenantId;
+    if (!this.tenantId) {
+      return !flowTenantId;
+    }
+    return flowTenantId === this.tenantId;
+  }
+
+  private getOAuthRequiredStatusCode(data: OAuthRequiredEvent): number | undefined {
+    if (typeof data.status === 'number') {
+      return data.status;
+    }
+    if (typeof data.statusCode === 'number') {
+      return data.statusCode;
+    }
+
+    const error = data.error;
+    if (!error || typeof error !== 'object') {
+      return undefined;
+    }
+
+    const errorLike = error as {
+      code?: unknown;
+      status?: unknown;
+      statusCode?: unknown;
+      message?: unknown;
+    };
+    for (const value of [errorLike.code, errorLike.status, errorLike.statusCode]) {
+      if (typeof value === 'number' && Number.isInteger(value)) {
+        return value;
+      }
+    }
+
+    if (typeof errorLike.message === 'string') {
+      const statusMatch = errorLike.message.match(/\b(4\d{2}|5\d{2})\b/);
+      if (statusMatch) {
+        return Number.parseInt(statusMatch[1], 10);
+      }
+    }
+
+    return undefined;
+  }
+
+  private shouldAttemptSilentTokenRefresh(data: OAuthRequiredEvent): boolean {
+    const statusCode = this.getOAuthRequiredStatusCode(data);
+    if (statusCode === 403) {
+      logger.info(
+        `${this.logPrefix} OAuth server returned 403; skipping silent refresh and starting interactive OAuth`,
+      );
+      return false;
+    }
+
+    const error = data.error;
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        const normalized = message.toLowerCase();
+        if (
+          normalized.includes('insufficient_scope') ||
+          normalized.includes('insufficient scope')
+        ) {
+          logger.info(
+            `${this.logPrefix} OAuth server reported insufficient scope; skipping silent refresh`,
+          );
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   private getOAuthReplayExpiresAt(createdAt?: number): number | undefined {
@@ -519,14 +881,48 @@ export class MCPConnectionFactory {
   }
 
   /** Sets up OAuth event handlers for the connection */
-  protected handleOAuthEvents(connection: MCPConnection): () => void {
-    const oauthHandler = async (data: { serverUrl?: string }) => {
+  protected handleOAuthEvents(
+    connection: MCPConnection,
+    eventName: 'oauthRequired' | 'oauthReauthenticationRequired' = 'oauthRequired',
+  ): () => void {
+    const oauthHandler = async (data: OAuthRequiredEvent) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
+
+      if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
+        const refreshedTokens = await this.attemptSilentTokenRefresh();
+        if (refreshedTokens) {
+          connection.setOAuthTokens(refreshedTokens);
+          connection.emit('oauthHandled');
+          return;
+        }
+      }
+
+      // Silent refresh failed and we're about to fall through to interactive
+      // OAuth. Invalidate any COMPLETED `mcp_oauth` flow first so
+      // `handleOAuthRequired`'s recent-completion fast path can't re-serve the
+      // tokens the resource server just rejected (see the `PENDING_STALE_MS`
+      // window in `handleOAuthRequired`).
+      await this.invalidateCompletedOAuthFlow();
+
+      if (this.connectionReady) {
+        const emitted = connection.emit('oauthReauthenticationRequired', {
+          ...data,
+          skipSilentRefresh: true,
+        });
+        if (emitted) {
+          return;
+        }
+        logger.info(
+          `${this.logPrefix} Silent refresh did not recover cached connection; requiring fresh OAuth prompt`,
+        );
+        connection.emit('oauthFailed', new Error('OAuth reauthentication required'));
+        return;
+      }
 
       if (this.returnOnOAuth) {
         try {
           const config = this.serverConfig;
-          const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+          const flowId = this.getBaseFlowId();
           const existingFlow = await this.flowManager!.getFlowState(flowId, 'mcp_oauth');
 
           if (existingFlow?.status === 'PENDING') {
@@ -568,29 +964,32 @@ export class MCPConnectionFactory {
             authorizationUrl,
             flowId: newFlowId,
             flowMetadata,
-          } = await MCPOAuthHandler.initiateOAuthFlow(
-            this.serverName,
-            data.serverUrl || '',
-            this.userId!,
-            config?.oauth_headers ?? {},
-            config?.oauth,
-            this.allowedDomains,
-            // Only reuse stored client when deleteTokens is available for stale-client cleanup
-            this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
-            this.allowedAddresses,
+          } = await this.runWithCapturedTenant(() =>
+            MCPOAuthHandler.initiateOAuthFlow(
+              this.serverName,
+              data.serverUrl || '',
+              this.userId!,
+              config?.oauth_headers ?? {},
+              config?.oauth,
+              this.allowedDomains,
+              // Only reuse stored client when deleteTokens is available for stale-client cleanup
+              this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
+              this.allowedAddresses,
+              this.tenantId,
+            ),
           );
 
           if (existingFlow) {
             const oldMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
             const oldState = oldMeta?.state;
-            await this.flowManager!.deleteFlow(newFlowId, 'mcp_oauth');
+            await this.flowManager!.deleteFlow(flowId, 'mcp_oauth');
             if (oldState) {
               await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager!);
             }
           }
 
           // Store flow state BEFORE redirecting so the callback can find it
-          const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: getTenantId() };
+          const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
           await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
 
@@ -621,18 +1020,29 @@ export class MCPConnectionFactory {
       const result = await this.handleOAuthRequired();
 
       if (result?.tokens && this.tokenMethods?.createToken) {
+        const { tokens } = result;
         try {
-          connection.setOAuthTokens(result.tokens);
-          await MCPTokenStorage.storeTokens({
-            userId: this.userId!,
-            serverName: this.serverName,
-            tokens: result.tokens,
-            createToken: this.tokenMethods.createToken,
-            updateToken: this.tokenMethods.updateToken,
-            findToken: this.tokenMethods.findToken,
-            clientInfo: result.clientInfo,
-            metadata: result.metadata,
-          });
+          connection.setOAuthTokens(tokens);
+          await this.runWithCapturedTenant(() =>
+            MCPTokenStorage.storeTokens({
+              userId: this.userId!,
+              serverName: this.serverName,
+              tokens,
+              createToken: this.tokenMethods!.createToken,
+              updateToken: this.tokenMethods!.updateToken,
+              findToken: this.tokenMethods!.findToken,
+              clientInfo: result.clientInfo,
+              metadata: MCPOAuthHandler.buildStoredClientMetadata(
+                result.metadata,
+                result.resourceMetadata,
+              ),
+            }),
+          );
+          // Same rationale as the silent-refresh success path: invalidate the
+          // `mcp_get_tokens` cache so the next `getOAuthTokens` reads the
+          // freshly stored tokens rather than the just-rejected ones the
+          // interactive flow replaced.
+          await this.invalidateGetTokensFlow(tokens);
           logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
         } catch (error) {
           logger.error(`${this.logPrefix} Failed to save OAuth tokens to storage`, error);
@@ -649,10 +1059,10 @@ export class MCPConnectionFactory {
       }
     };
 
-    connection.on('oauthRequired', oauthHandler);
+    connection.on(eventName, oauthHandler);
 
     return () => {
-      connection.removeListener('oauthRequired', oauthHandler);
+      connection.removeListener(eventName, oauthHandler);
     };
   }
 
@@ -717,11 +1127,13 @@ export class MCPConnectionFactory {
     if (!MCPConnectionFactory.isClientRejection(error)) {
       return;
     }
-    await MCPTokenStorage.deleteClientRegistration({
-      userId: this.userId!,
-      serverName: this.serverName,
-      deleteTokens: this.tokenMethods.deleteTokens,
-    }).catch((err) => {
+    await this.runWithCapturedTenant(() =>
+      MCPTokenStorage.deleteClientRegistration({
+        userId: this.userId!,
+        serverName: this.serverName,
+        deleteTokens: this.tokenMethods!.deleteTokens,
+      }),
+    ).catch((err) => {
       logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
     });
   }
@@ -789,6 +1201,7 @@ export class MCPConnectionFactory {
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
     metadata?: OAuthMetadata;
+    resourceMetadata?: OAuthProtectedResourceMetadata;
     reusedStoredClient?: boolean;
     error?: unknown;
   } | null> {
@@ -811,7 +1224,7 @@ export class MCPConnectionFactory {
       logger.debug(`${this.logPrefix} Checking for existing OAuth flow for ${this.serverName}...`);
 
       /** Flow ID to check if a flow already exists */
-      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+      const flowId = this.getBaseFlowId();
 
       /** Check if there's already an ongoing OAuth flow for this flowId */
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
@@ -853,6 +1266,7 @@ export class MCPConnectionFactory {
               tokens,
               clientInfo: flowMeta?.clientInfo,
               metadata: flowMeta?.metadata,
+              resourceMetadata: flowMeta?.resourceMetadata,
               reusedStoredClient,
             };
           }
@@ -879,6 +1293,7 @@ export class MCPConnectionFactory {
               tokens: cachedTokens,
               clientInfo: flowMeta?.clientInfo,
               metadata: flowMeta?.metadata,
+              resourceMetadata: flowMeta?.resourceMetadata,
             };
           }
         }
@@ -902,21 +1317,24 @@ export class MCPConnectionFactory {
         authorizationUrl,
         flowId: newFlowId,
         flowMetadata,
-      } = await MCPOAuthHandler.initiateOAuthFlow(
-        this.serverName,
-        serverUrl,
-        this.userId!,
-        this.serverConfig.oauth_headers ?? {},
-        this.serverConfig.oauth,
-        this.allowedDomains,
-        this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
-        this.allowedAddresses,
+      } = await this.runWithCapturedTenant(() =>
+        MCPOAuthHandler.initiateOAuthFlow(
+          this.serverName,
+          serverUrl,
+          this.userId!,
+          this.serverConfig.oauth_headers ?? {},
+          this.serverConfig.oauth,
+          this.allowedDomains,
+          this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
+          this.allowedAddresses,
+          this.tenantId,
+        ),
       );
 
       reusedStoredClient = flowMetadata.reusedStoredClient === true;
 
       // Store flow state BEFORE redirecting so the callback can find it
-      const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: getTenantId() };
+      const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
       await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
 
@@ -941,6 +1359,7 @@ export class MCPConnectionFactory {
         tokens,
         clientInfo: flowMetadata.clientInfo,
         metadata: flowMetadata.metadata,
+        resourceMetadata: flowMetadata.resourceMetadata,
         reusedStoredClient,
       };
     } catch (error) {

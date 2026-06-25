@@ -27,6 +27,7 @@ export interface IConversation extends Document {
   file_ids?: string[];
   resendImages?: boolean;
   promptCache?: boolean;
+  promptCacheTtl?: '5m' | '1h';
   thinking?: boolean;
   thinkingBudget?: number;
   effort?: string;
@@ -52,6 +53,7 @@ export interface IConversation extends Document {
   verbosity?: string;
   useResponsesApi?: boolean;
   web_search?: boolean;
+  url_context?: boolean;
   disableStreaming?: boolean;
   fileTokenLimit?: number;
   // Additional fields

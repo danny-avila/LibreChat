@@ -5,6 +5,7 @@ import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
 import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -134,6 +135,7 @@ export default function Message(props: TMessageProps) {
                     {getHeaderPrefixForScreenReader(message, localize)}
                   </span>
                   {name}
+                  <MessageTimestamp value={message.createdAt ?? message.clientTimestamp} />
                 </h2>
               )}
               <div className="flex flex-col gap-1">

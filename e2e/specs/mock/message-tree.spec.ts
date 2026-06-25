@@ -51,6 +51,9 @@ const countedPrompt = (label: string) => `E2E_COUNTED_REPLY:${label}`;
 const countedReplyText = (label: string, count: number) => `E2E counted reply ${label} #${count}`;
 const slowPrompt = (label: string) => `E2E_SLOW_REPLY:${label}`;
 const slowReplyPrefix = (label: string) => `E2E slow reply ${label}`;
+const slowCountedPrompt = (label: string) => `E2E_SLOW_COUNTED_REPLY:${label}`;
+const slowCountedReplyText = (label: string, count: number) =>
+  `E2E slow counted reply ${label} #${count}`;
 
 const messagesView = (page: Page) => page.getByTestId('messages-view');
 const messageRender = (page: Page, text: string) =>
@@ -770,6 +773,104 @@ test.describe('message tree stream operations', () => {
     expect(messages.some((message) => messageText(message).includes(firstReply))).toBe(true);
     expect(messages.some((message) => messageText(message).includes(regeneratedReply))).toBe(false);
     expect(messages.some((message) => messageText(message).includes(followReply))).toBe(false);
+  });
+
+  test('shows the regenerating response immediately when regenerating a non-latest sibling', async ({
+    page,
+  }) => {
+    // A parent with multiple siblings, switched to an older one, then
+    // regenerated: the optimistic slice drops the target but keeps the other
+    // siblings, so the child count is unchanged and MultiMessage's
+    // length-change reset never fires. Without an explicit focus the view stays
+    // on the kept (newer) sibling and the streaming response is hidden until the
+    // server restores the dropped sibling at finalize. A slow reply keeps the
+    // stream open long enough to assert the during-stream state.
+    const label = uniqueLabel('regen-nonlatest');
+    const prompt = slowCountedPrompt(label);
+    const reply1 = slowCountedReplyText(label, 1);
+    const reply2 = slowCountedReplyText(label, 2);
+    const reply3 = slowCountedReplyText(label, 3);
+    const stopButton = page.getByRole('button', { name: 'Stop generating' });
+
+    await openMockChat(page);
+    await sendMessage(page, prompt);
+    await expect(messagesView(page).getByText(reply1)).toBeVisible({ timeout: 30000 });
+    await expect(stopButton).toBeHidden({ timeout: 30000 });
+
+    // First regenerate adds a sibling; the parent now has two responses.
+    await waitForGenerationStart(page, () => clickMessageTitleButton(page, reply1, 'Regenerate'));
+    await expect(messagesView(page).getByText(reply2)).toBeVisible({ timeout: 30000 });
+    await expect(stopButton).toBeHidden({ timeout: 30000 });
+
+    // View the older sibling, then regenerate it (the non-latest one).
+    await clickSibling(page, reply2, 'Previous');
+    await expect(messagesView(page).getByText(reply1)).toBeVisible();
+    await expect(messagesView(page).getByText(reply2)).toBeHidden();
+
+    await waitForGenerationStart(page, () => clickMessageTitleButton(page, reply1, 'Regenerate'));
+    // Still streaming (slow reply): the regenerating response must be visible
+    // now — not the kept sibling — and well before finalize.
+    await expect(stopButton).toBeVisible({ timeout: 30000 });
+    await expect(messagesView(page).getByText(reply3)).toBeVisible({ timeout: 4000 });
+    await expect(messagesView(page).getByText(reply2)).toBeHidden();
+
+    // It stays put after finalize too.
+    await expect(stopButton).toBeHidden({ timeout: 30000 });
+    await expect(messagesView(page).getByText(reply3)).toBeVisible();
+  });
+
+  test('does not flash the kept sibling before the created event when regenerating a non-latest sibling', async ({
+    page,
+  }) => {
+    // Same hazard at the optimistic (pre-`created`) render: useChatFunctions
+    // appends the placeholder and renders it before the request resolves. Gate
+    // the regenerate request so only that optimistic frame is on screen — with
+    // no `created` event to fall back on — and assert the kept sibling is
+    // already gone (the regenerating placeholder took its place). This isolates
+    // the optimistic focus; the createdHandler focus cannot mask a regression
+    // because `created` never arrives during the assertion.
+    const label = uniqueLabel('regen-precreated');
+    const prompt = countedPrompt(label);
+    const reply1 = countedReplyText(label, 1);
+    const reply2 = countedReplyText(label, 2);
+    const reply3 = countedReplyText(label, 3);
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, prompt, reply1);
+
+    await waitForGenerationStart(page, () => clickMessageTitleButton(page, reply1, 'Regenerate'));
+    await expect(messagesView(page).getByText(reply2)).toBeVisible({ timeout: 30000 });
+
+    await clickSibling(page, reply2, 'Previous');
+    await expect(messagesView(page).getByText(reply1)).toBeVisible();
+    await expect(messagesView(page).getByText(reply2)).toBeHidden();
+
+    // Hold the SSE stream so the `created` event cannot arrive: the optimistic
+    // render is all there is. The chat POST returns a stream id; the stream
+    // itself is a separate GET (/api/agents/chat/stream/<id>) — gate that one,
+    // not the POST, which must complete to hand back the id.
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(/\/api\/agents\/chat\/stream\//, async (route: Route) => {
+      await gate;
+      return route.continue();
+    });
+
+    try {
+      await clickMessageTitleButton(page, reply1, 'Regenerate');
+      // The stream is gated, so the regenerating response has no text yet.
+      await expect(messagesView(page).getByText(reply3)).toBeHidden();
+      // Pre-`created` window: the kept sibling must not be the one on screen —
+      // the regenerating placeholder has already taken its place.
+      await expect(messagesView(page).getByText(reply2)).toBeHidden({ timeout: 5000 });
+      await expect(messagesView(page).getByText(reply1)).toBeHidden();
+    } finally {
+      release();
+    }
+
+    await expect(messagesView(page).getByText(reply3)).toBeVisible({ timeout: 30000 });
   });
 
   test('resumes pending OAuth on the selected older branch after reload', async ({ page }) => {

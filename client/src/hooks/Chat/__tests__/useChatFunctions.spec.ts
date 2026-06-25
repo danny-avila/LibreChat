@@ -90,4 +90,40 @@ describe('regenerate response targeting', () => {
       }).map((message) => message.messageId),
     ).toEqual(['user-1']);
   });
+
+  it('keeps unrelated sibling branches when regenerating (no flat-array drop)', () => {
+    // user-1 has two responses: the original chain (assistant-1 -> ... ) and a
+    // regenerated sibling (assistant-1b) that sits LATER in the flat array.
+    const messages = [
+      userMessage('user-1'),
+      assistantMessage('assistant-1', 'user-1'),
+      userMessage('user-2', 'assistant-1'),
+      assistantMessage('assistant-2', 'user-2'),
+      assistantMessage('assistant-1b', 'user-1'),
+    ];
+
+    // Regenerating the latest response on the original branch must drop only
+    // that response, NOT the unrelated assistant-1b branch.
+    expect(
+      getRegenerateSubmissionMessages({
+        messages,
+        targetResponseMessage: messages[3],
+        initialResponseId: 'assistant-2_',
+      })
+        .map((message) => message.messageId)
+        .sort(),
+    ).toEqual(['assistant-1', 'assistant-1b', 'user-1', 'user-2']);
+
+    // Regenerating an earlier response drops its subtree (user-2, assistant-2)
+    // but still keeps the unrelated assistant-1b branch.
+    expect(
+      getRegenerateSubmissionMessages({
+        messages,
+        targetResponseMessage: messages[1],
+        initialResponseId: 'assistant-1_',
+      })
+        .map((message) => message.messageId)
+        .sort(),
+    ).toEqual(['assistant-1b', 'user-1']);
+  });
 });
