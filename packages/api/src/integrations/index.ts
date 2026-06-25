@@ -37,11 +37,14 @@ export {
   buildGoogleDriveFullTextQuery,
   createGoogleDriveDocument,
   downloadGoogleDriveFile,
+  getGoogleDriveFileMetadata,
+  readGoogleDriveFileAsText,
   searchGoogleDriveFiles,
 } from './googleDrive/driveApi';
 export type {
   CreateGoogleDriveDocumentOptions,
   GoogleDriveDocumentCreated,
+  GoogleDriveFileContent,
   GoogleDriveFileSummary,
   GoogleDriveSearchOptions,
   GoogleDriveSearchResult,
@@ -82,8 +85,21 @@ export {
 export type { OutlookCalendarListOptions } from './microsoft/outlookCalendarApi';
 export { getOutlookMailMessageAsText, searchOutlookMailMessages } from './microsoft/outlookMailApi';
 export type { OutlookMailSearchOptions } from './microsoft/outlookMailApi';
-export { getGmailMessageAsText, searchGmailMessages } from './googleMail/mailApi';
+export {
+  createGmailDraft,
+  getGmailMessageAsText,
+  listGmailLabels,
+  modifyGmailMessageLabels,
+  searchGmailMessages,
+  sendGmailMessage,
+} from './googleMail/mailApi';
 export type {
+  GmailComposeOptions,
+  GmailDraftCreated,
+  GmailLabel,
+  GmailLabelModification,
+  GmailLabelModificationResult,
+  GmailMessageSent,
   GmailMessageSummary,
   GmailSearchOptions,
   GmailSearchResult,
