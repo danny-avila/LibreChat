@@ -27,10 +27,9 @@ export const EMPTY_USAGE: BranchUsage = {
 
 export interface TokenEntry {
   tokenCount: number;
-  /** Char/4 token estimate used in place of `tokenCount` when the stored count is
-   *  absent (imported / pre-feature) or unreliable (quoted user turns, recounted
-   *  from merged text). Mutually exclusive with a counted `tokenCount`; summed
-   *  into the snapshot-less estimate. */
+  /** Char/4 token estimate for count-less (imported / pre-feature) messages,
+   *  including a user turn's merged quotes and tool-call name/args/output. Used
+   *  only when `tokenCount` is absent; summed into the snapshot-less estimate. */
   estTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
@@ -157,6 +156,23 @@ function partTextChars(part: unknown): number {
   if (type === 'think' || type === 'error') {
     return 0;
   }
+  if (type === 'tool_call') {
+    const call = (part as { tool_call?: { name?: unknown; args?: unknown; output?: unknown } })
+      .tool_call;
+    if (call == null) {
+      return 0;
+    }
+    let chars = typeof call.name === 'string' ? call.name.length : 0;
+    if (typeof call.args === 'string') {
+      chars += call.args.length;
+    } else if (call.args != null) {
+      chars += JSON.stringify(call.args).length;
+    }
+    if (typeof call.output === 'string') {
+      chars += call.output.length;
+    }
+    return chars;
+  }
   const text = (part as { text?: unknown }).text;
   if (typeof text === 'string') {
     return text.length;
@@ -204,21 +220,19 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
   const summaryUsedTokens = message.metadata?.summaryUsedTokens;
   const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
   const isCreatedByUser = message.isCreatedByUser === true;
-  const quoted = isCreatedByUser && Array.isArray(message.quotes) && message.quotes.length > 0;
-  /** Quoted user turns: the stored `tokenCount` is unreliable for the merged
-   *  prompt (the edit route recounts from `text` only, dropping the quote block),
-   *  so estimate the full merged text and ignore the stored count — matching the
-   *  removed projection, which always recounted quoted messages rather than
-   *  trusting (or adding to) the stored value. Other count-less imports/pre-feature
-   *  messages estimate from text alone. */
+  /** Trust a present `tokenCount`: it already reflects the merged-quote prompt and
+   *  any calibration the send path applied, and the client has no accurate
+   *  tokenizer to improve on it (a char/4 recount would be coarser). Only
+   *  count-less imports / pre-feature messages are estimated from text, including a
+   *  user turn's merged quotes. */
   let estTokens = 0;
-  if (quoted) {
-    estTokens = Math.round((messageChars(message) + quoteChars(message)) / 4);
-  } else if (tokenCount === 0) {
-    estTokens = Math.round(messageChars(message) / 4);
+  if (tokenCount === 0) {
+    estTokens = Math.round(
+      (messageChars(message) + (isCreatedByUser ? quoteChars(message) : 0)) / 4,
+    );
   }
   return {
-    tokenCount: quoted ? 0 : tokenCount,
+    tokenCount,
     estTokens,
     isCreatedByUser,
     parentMessageId: message.parentMessageId ?? null,

@@ -138,20 +138,21 @@ describe('token index', () => {
     expect(totals.estTokens).toBe(11);
   });
 
-  it('recounts quoted user turns from merged text and excludes reasoning parts', () => {
+  it('trusts stored counts (incl. quoted turns), counts tool calls, skips reasoning', () => {
     buildIndex(CONVO, [
-      /** Quoted user turn: the stored count can be a stale text-only value, so the
-       *  estimate recounts the full merged prompt and ignores tokenCount entirely. */
+      /** Counted quoted user turn: stored count already reflects the merged quote,
+       *  so trust it rather than re-estimating with the coarse char/4 path. */
       {
         messageId: 'u1',
         parentMessageId: Constants.NO_PARENT,
         isCreatedByUser: true,
         conversationId: CONVO,
-        tokenCount: 999,
-        text: 'hello!!',
-        quotes: ['q'.repeat(9)],
+        tokenCount: 30,
+        text: 'hi',
+        quotes: ['q'.repeat(40)],
       } as TMessage,
-      /** Count-less assistant turn: reasoning is not sent as context, only text. */
+      /** Count-less assistant turn: tool-call name/args/output count toward the
+       *  estimate (sent back as context); reasoning does not. */
       {
         messageId: 'a1',
         parentMessageId: 'u1',
@@ -159,17 +160,17 @@ describe('token index', () => {
         conversationId: CONVO,
         content: [
           { type: 'think', think: 'r'.repeat(40) },
-          { type: 'text', text: 't'.repeat(12) },
+          { type: 'tool_call', tool_call: { name: 'sub', args: 'aa', output: 'o'.repeat(11) } },
         ],
       } as unknown as TMessage,
     ]);
 
     const totals = sumBranch(CONVO, 'a1');
-    /** u1: stored 999 ignored; (7 text + 9 quote) / 4 = 4. a1: text-only 12 / 4 = 3
-     *  (think skipped). Quoted turn never feeds input/counted. */
-    expect(totals.input).toBe(0);
-    expect(totals.counted).toBe(0);
-    expect(totals.estTokens).toBe(7);
+    /** u1 trusts stored 30; a1 tool_call name 3 + args 2 + output 11 = 16 / 4 = 4
+     *  (think skipped). */
+    expect(totals.input).toBe(30);
+    expect(totals.counted).toBe(1);
+    expect(totals.estTokens).toBe(4);
   });
 
   it('caps the branch at a summary marker instead of re-summing compacted history', () => {
