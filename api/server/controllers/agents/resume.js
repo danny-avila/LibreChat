@@ -100,12 +100,27 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   if (meta.agent_id ?? req.body?.agent_id) {
     responseMessage.agent_id = meta.agent_id ?? req.body.agent_id;
   }
-  // Use the normal-completion metadata (contextUsage, thoughtSignatures, …) — the
-  // resumed turn finished normally, so the abort-only helper would drop those fields.
-  // Fall back to the job's tracked usage if the client metadata isn't available.
-  const responseMetadata =
-    client?.buildResponseMetadata?.() ?? (jobData ? buildAbortedResponseMetadata(jobData) : null);
-  if (responseMetadata) {
+  // Persist tool artifacts (code files, images, UI resources) the resumed continuation
+  // produced — BaseClient.sendMessage awaits these before saving, but the lean resume
+  // path bypasses it, so do it here or they vanish on reload / for late subscribers.
+  if (Array.isArray(client?.artifactPromises) && client.artifactPromises.length > 0) {
+    responseMessage.attachments = (await Promise.all(client.artifactPromises)).filter(Boolean);
+  }
+
+  // Response metadata: the resume client only sees POST-resume usage, while the job's
+  // tracked tokenUsage is cumulative across the pause. Take the cumulative usage (+
+  // summary marker) from the job, and contextUsage / thoughtSignatures from the client
+  // (which the abort-only helper drops). Cumulative usage wins so cost isn't underreported.
+  const clientMeta = client?.buildResponseMetadata?.() ?? null;
+  const cumulativeMeta = jobData ? buildAbortedResponseMetadata(jobData) : null;
+  const responseMetadata = {
+    ...(clientMeta ?? {}),
+    ...(cumulativeMeta?.usage ? { usage: cumulativeMeta.usage } : {}),
+    ...(cumulativeMeta?.summaryUsedTokens != null
+      ? { summaryUsedTokens: cumulativeMeta.summaryUsedTokens }
+      : {}),
+  };
+  if (Object.keys(responseMetadata).length > 0) {
     responseMessage.metadata = responseMetadata;
   }
 
@@ -291,6 +306,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       resumeValue: mapped.resumeValue,
       seedContent,
       abortController: job.abortController,
+      // Carry the user's MCP auth so approved MCP tools run with their credentials.
+      userMCPAuthMap: result.userMCPAuthMap,
     });
 
     // The model may pause AGAIN (another tool, or a follow-up question). The pending

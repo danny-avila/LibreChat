@@ -1713,6 +1713,7 @@ class AgentClient extends BaseClient {
     seedContent = [],
     abortController = null,
     commandOptions,
+    userMCPAuthMap,
   }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -1761,11 +1762,17 @@ class AgentClient extends BaseClient {
         agents.push(...this.agentConfigs.values());
       }
 
+      // Seed code-env / skill tool sessions so an approved code/file/skill-backed tool
+      // runs with the same uploaded-file context the pre-pause run had — the rebuilt
+      // graph otherwise has no `Graph.sessions` entries (especially cross-replica).
+      const initialSessions = buildInitialToolSessions({ agents });
+
       run = await createRun({
         agents,
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
+        initialSessions,
         runId: this.responseMessageId,
         signal: abortController.signal,
         customHandlers: this.options.eventHandlers,
@@ -1797,6 +1804,12 @@ class AgentClient extends BaseClient {
       }
       if (streamId && this.contentParts) {
         GenerationJobManager.setContentParts(streamId, this.contentParts);
+      }
+
+      // Carry the user's MCP auth into the rebuilt run so an approved MCP tool executes
+      // with the same OAuth/user credentials it had before the pause.
+      if (userMCPAuthMap != null) {
+        config.configurable.userMCPAuthMap = userMCPAuthMap;
       }
 
       /** @deprecated Agent Chain */
