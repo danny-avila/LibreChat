@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # v0.8.6-rc1
 
 # Base node image
@@ -38,7 +39,10 @@ COPY --chown=node:node packages/data-schemas/package.json ./packages/data-schema
 COPY --chown=node:node packages/api/package.json ./packages/api/package.json
 COPY --chown=node:node config/patch-agents.js ./config/patch-agents.js
 
-RUN \
+# Persist the npm download cache across builds (BuildKit cache mount, owned by
+# the `node` user). Keeps `npm ci` fast even when package files change and it
+# has to re-run; the cache lives outside the image layer so it doesn't bloat it.
+RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
     # Allow mounting of these files, which have no default
     touch .env ; \
     # Create directories for the volumes to inherit the correct permissions
@@ -60,11 +64,16 @@ RUN \
 
 COPY --chown=node:node . .
 
-RUN \
-    # React client build with configurable memory
-    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
-    npm prune --production; \
-    npm cache clean --force
+# Build via Turborepo (parallel + content-hash cached) instead of the sequential
+# `npm run frontend`. The `.turbo` cache mount persists across builds, so a push
+# that doesn't change a given package's inputs is a cache hit and that package's
+# build is skipped — a backend-only change skips the (slow) client build entirely.
+# `--no-daemon` avoids a background turbo process inside the container build.
+RUN --mount=type=cache,target=/app/.turbo,uid=1000,gid=1000 \
+    --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
+    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" \
+    npx turbo run build --no-daemon --cache-dir=/app/.turbo/cache ; \
+    npm prune --production
 
 # Node API setup
 EXPOSE 3080
