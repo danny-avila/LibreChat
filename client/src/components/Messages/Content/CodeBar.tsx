@@ -1,6 +1,8 @@
 import React from 'react';
 import { InfoIcon } from 'lucide-react';
 import type { CodeBarProps } from '~/common';
+import useDownloadCode from '~/components/Messages/Content/useDownloadCode';
+import DownloadButton from '~/components/Messages/Content/DownloadButton';
 import useCopyCode from '~/components/Messages/Content/useCopyCode';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import LangIcon from '~/components/Messages/Content/LangIcon';
@@ -11,6 +13,7 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
   ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true }) => {
     const localize = useLocalize();
     const { isCopied, handleCopy } = useCopyCode(codeRef);
+    const { isDownloaded, handleDownload } = useDownloadCode(codeRef, lang);
 
     return (
       <div className="flex items-center justify-between bg-surface-primary-alt px-1.5 py-1.5 font-sans text-xs text-text-secondary dark:bg-transparent">
@@ -26,11 +29,18 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
               <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} />
             )}
             {error !== true && (
-              <CopyButton
-                isCopied={isCopied}
-                onClick={handleCopy}
-                label={localize('com_ui_copy_code')}
-              />
+              <>
+                <DownloadButton
+                  isDownloaded={isDownloaded}
+                  onClick={handleDownload}
+                  label={localize('com_ui_download_code')}
+                />
+                <CopyButton
+                  isCopied={isCopied}
+                  onClick={handleCopy}
+                  label={localize('com_ui_copy_code')}
+                />
+              </>
             )}
           </div>
         )}
