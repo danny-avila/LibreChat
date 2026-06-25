@@ -18,12 +18,27 @@ FROM jupyter/scipy-notebook:latest
 RUN pip install --no-cache-dir \
       openpyxl \
       xlsxwriter \
+      xlrd \
       python-docx \
+      docxtpl \
       python-pptx \
       reportlab \
       fpdf2 \
+      pypdf \
+      pdfplumber \
+      pymupdf \
+      plotly \
+      kaleido \
       pillow \
+      qrcode \
+      markdown \
+      beautifulsoup4 \
+      lxml \
+      html5lib \
+      jinja2 \
+      python-dateutil \
       tabulate \
       pyyaml \
       requests \
- && python -c "import openpyxl, docx, pptx, reportlab, fpdf, PIL, matplotlib, pandas, numpy; print('sandbox packages OK')"
+      httpx \
+ && python -c "import openpyxl, xlsxwriter, docx, pptx, reportlab, fpdf, pypdf, pdfplumber, fitz, plotly, kaleido, PIL, qrcode, markdown, bs4, lxml, jinja2, dateutil, tabulate, yaml, requests, httpx, matplotlib, pandas, numpy; print('sandbox packages OK')"

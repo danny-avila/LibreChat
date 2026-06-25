@@ -9,7 +9,7 @@ const {
   listSkillSchedules,
   updateSkillSchedule,
   deleteSkillSchedule,
-  markScheduleResult,
+  claimScheduleForRun,
   getUserById,
   getRoleByName,
 } = require('~/models');
@@ -19,6 +19,9 @@ const { computeNextRunAt, runScheduleManually } = require('~/server/services/Sch
 const { assertValidCron } = require('~/server/services/Scheduler/cron');
 
 const router = express.Router();
+
+/** A manual run's claim is considered abandoned after this long (crash safety). */
+const MANUAL_RUN_LOCK_TTL_MS = 10 * 60 * 1000;
 
 const checkSkillAccess = generateCheckAccess({
   permissionType: PermissionTypes.SKILLS,
@@ -193,14 +196,28 @@ router.post('/:id/run', async (req, res) => {
     }
 
     const conversationId = crypto.randomUUID();
-    await markScheduleResult(schedule._id, { status: 'running', conversationId, error: null });
+    /**
+     * Atomically claim the schedule before running. If it's already locked
+     * (a duplicate submit/retry, or the poller), the claim returns null and we
+     * run nothing — preventing the duplicate "scheduled chat" the double-run
+     * bug produced. The claim sets lastStatus='running' + lastConversationId.
+     */
+    const claimed = await claimScheduleForRun(
+      schedule._id,
+      `manual-${req.user.id}`,
+      MANUAL_RUN_LOCK_TTL_MS,
+      conversationId,
+    );
+    if (!claimed) {
+      return res.status(202).json({ status: 'running' });
+    }
 
     /**
      * Fire-and-forget: an agent turn can take longer than the gateway's
      * request timeout (504). We respond immediately with the conversation id
      * and `running` status; the client polls `lastStatus` for completion.
      */
-    runScheduleManually({ owner, schedule, conversationId }).catch((error) => {
+    runScheduleManually({ owner, schedule: claimed, conversationId }).catch((error) => {
       logger.error('[skillSchedules] background manual run error:', error);
     });
 

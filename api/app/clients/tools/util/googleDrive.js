@@ -6,6 +6,7 @@ const {
   isNangoConfigured,
   buildGoogleDriveFullTextQuery,
   createGoogleDriveDocument,
+  readGoogleDriveFileAsText,
   searchGoogleDriveFiles,
 } = require('@librechat/api');
 const { Tools } = require('librechat-data-provider');
@@ -16,9 +17,9 @@ const googleDriveJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['search', 'create_document'],
+      enum: ['search', 'read', 'create_document'],
       description:
-        'Use "search" to list or find files. Use "create_document" to create a new Google Doc from a title and body text.',
+        'Use "search" to list or find files. Use "read" to read the contents of a file by file_id. Use "create_document" to create a new Google Doc from a title and body text.',
     },
     query: {
       type: 'string',
@@ -28,6 +29,10 @@ const googleDriveJsonSchema = {
     page_size: {
       type: 'number',
       description: 'For search: maximum files to return (1-20). Defaults to 10.',
+    },
+    file_id: {
+      type: 'string',
+      description: 'For read: the Drive file ID (from search results) whose contents to read.',
     },
     title: {
       type: 'string',
@@ -60,7 +65,7 @@ function createNangoServiceInstance() {
  */
 async function createGoogleDriveTool({ user }) {
   return tool(
-    async ({ action = 'search', query, page_size = 10, title, content, folder_id }) => {
+    async ({ action = 'search', query, page_size = 10, file_id, title, content, folder_id }) => {
       if (!isNangoConfigured()) {
         return JSON.stringify({
           error: 'Google Drive integration is not configured on this server.',
@@ -70,6 +75,14 @@ async function createGoogleDriveTool({ user }) {
       try {
         const nangoService = createNangoServiceInstance();
         const token = await nangoService.getProviderAccessToken(user, 'google-drive');
+
+        if (action === 'read') {
+          if (!file_id) {
+            return JSON.stringify({ error: 'file_id is required to read a file.' });
+          }
+          const file = await readGoogleDriveFileAsText(token.accessToken, file_id);
+          return JSON.stringify({ file });
+        }
 
         if (action === 'create_document') {
           const document = await createGoogleDriveDocument(token.accessToken, {
@@ -104,7 +117,7 @@ async function createGoogleDriveTool({ user }) {
     {
       name: Tools.google_drive,
       description:
-        'Search, list, or create files in the connected user Google Drive account. Use action create_document with title and content when the user asks to write or save a document to Drive. The user must connect Google Drive first.',
+        'Search, read, or create files in the connected user Google Drive account. Use action read with a file_id to read the contents of a file (Google Docs, Sheets, Slides, and text files). Use action create_document with title and content when the user asks to write or save a document to Drive. The user must connect Google Drive first.',
       schema: googleDriveJsonSchema,
     },
   );

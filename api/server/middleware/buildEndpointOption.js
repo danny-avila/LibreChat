@@ -57,6 +57,15 @@ async function buildEndpointOption(req, res, next) {
 
   const appConfig = req.config;
   let appliedModelSpecPrivateFields = new Set();
+  /**
+   * On the agents endpoint a tool-enabled spec runs as an ephemeral agent: the
+   * request `endpoint` is `agents` while the spec's `preset.endpoint` is the
+   * underlying provider (e.g. `anthropic`). We still APPLY the spec preset here
+   * (it populates `model`, instructions, and params — without it the ephemeral
+   * agent has no model and fails validation with MISSING_MODEL), but we skip the
+   * strict `isModelSpecEndpointMatch` rejection, which would otherwise falsely
+   * fail the agents/provider mismatch.
+   */
   if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = appConfig.modelSpecs;
@@ -71,7 +80,7 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'Invalid model spec' });
     }
 
-    if (!isModelSpecEndpointMatch(currentModelSpec, endpoint)) {
+    if (!isAgents && !isModelSpecEndpointMatch(currentModelSpec, endpoint)) {
       return handleError(res, { text: 'Model spec mismatch' });
     }
 
@@ -93,7 +102,7 @@ async function buildEndpointOption(req, res, next) {
   } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
     const modelSpec = findModelSpecByName(appConfig.modelSpecs, parsedBody.spec);
     if (modelSpec) {
-      if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
+      if (!isAgents && !isModelSpecEndpointMatch(modelSpec, endpoint)) {
         return handleError(res, { text: 'Model spec mismatch' });
       }
 

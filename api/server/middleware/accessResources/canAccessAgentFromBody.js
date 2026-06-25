@@ -160,15 +160,17 @@ const canAccessAgentFromBody = (options) => {
       const { endpoint, agent_id } = req.body;
       let agentId = agent_id;
 
-      if (!isAgentsEndpoint(endpoint)) {
+      /**
+       * Non-agents endpoints always run as ephemeral agents. On the agents
+       * endpoint, a missing `agent_id` likewise means an ephemeral
+       * (model-spec) run rather than a saved agent — every chat in an
+       * `ENDPOINTS=agents` deployment is spec-driven — so fall back to the
+       * ephemeral id instead of hard-rejecting. This mirrors the non-agents
+       * branch and prevents a spurious "agent_id is required" 400 when the
+       * client submits a spec-backed turn without a concrete agent id.
+       */
+      if (!isAgentsEndpoint(endpoint) || !agentId) {
         agentId = Constants.EPHEMERAL_AGENT_ID;
-      }
-
-      if (!agentId) {
-        return res.status(400).json({
-          error: 'Bad Request',
-          message: 'agent_id is required in request body',
-        });
       }
 
       const afterPrimaryCheck = () => addedConvoMiddleware(req, res, next);

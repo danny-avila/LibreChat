@@ -1,4 +1,10 @@
-import { replaceSpecialVars, parseConvo, parseCompactConvo, parseTextParts } from '../src/parsers';
+import {
+  replaceSpecialVars,
+  parseConvo,
+  parseCompactConvo,
+  parseTextParts,
+  extractMemory,
+} from '../src/parsers';
 import { specialVariables } from '../src/config';
 import { EModelEndpoint, Providers } from '../src/schemas';
 import { ContentTypes } from '../src/types/runs';
@@ -669,5 +675,55 @@ describe('parseTextParts', () => {
       { type: ContentTypes.TEXT, text: 'World' },
     ];
     expect(parseTextParts(parts)).toBe('Hello World');
+  });
+});
+
+describe('extractMemory', () => {
+  test('extracts a trailing memory block and strips it from the text', () => {
+    const text =
+      'Got it, I will keep that in mind.\n<memory key="preferences">The user prefers dark mode and concise answers.</memory>';
+    const result = extractMemory(text);
+    expect(result.text).toBe('Got it, I will keep that in mind.');
+    expect(result.memory).toEqual({
+      key: 'preferences',
+      value: 'The user prefers dark mode and concise answers.',
+    });
+  });
+
+  test('trims whitespace from key and value', () => {
+    const text = 'Sure.\n<memory key=" work_info " >  The user is a paralegal.  </memory>';
+    const result = extractMemory(text);
+    expect(result.memory).toEqual({ key: 'work_info', value: 'The user is a paralegal.' });
+  });
+
+  test('accepts single-quoted key attribute', () => {
+    const text = "Noted.\n<memory key='interests'>The user enjoys hiking.</memory>";
+    const result = extractMemory(text);
+    expect(result.memory).toEqual({ key: 'interests', value: 'The user enjoys hiking.' });
+  });
+
+  test('returns null memory and original text when no block is present', () => {
+    const text = 'Just a normal reply with no memory block.';
+    const result = extractMemory(text);
+    expect(result.text).toBe(text);
+    expect(result.memory).toBeNull();
+  });
+
+  test('hides an unclosed (streaming) memory tail without parsing it', () => {
+    const text = 'Here is my answer.\n<memory key="preferences">The user prefers';
+    const result = extractMemory(text);
+    expect(result.text).toBe('Here is my answer.');
+    expect(result.memory).toBeNull();
+  });
+
+  test('strips a malformed block with an empty value as null memory', () => {
+    const text = 'Reply.\n<memory key="preferences"></memory>';
+    const result = extractMemory(text);
+    expect(result.text).toBe('Reply.');
+    expect(result.memory).toBeNull();
+  });
+
+  test('handles empty input', () => {
+    expect(extractMemory('')).toEqual({ text: '', memory: null });
   });
 });

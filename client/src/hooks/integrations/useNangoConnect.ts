@@ -10,6 +10,7 @@ import {
 import type { IntegrationConnectionStatus, IntegrationProviderKey } from 'librechat-data-provider';
 import {
   useCreateIntegrationConnectSessionMutation,
+  useDisconnectIntegrationMutation,
   useGetStartupConfig,
   useIntegrationStatusQuery,
   useSyncIntegrationConnectionMutation,
@@ -45,7 +46,9 @@ export function useNangoConnect({
 
   const connectSessionMutation = useCreateIntegrationConnectSessionMutation();
   const syncMutation = useSyncIntegrationConnectionMutation();
+  const disconnectMutation = useDisconnectIntegrationMutation();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const connectInFlightRef = useRef(false);
 
   const status: IntegrationConnectionStatus | undefined = statusData?.integration?.status;
@@ -180,17 +183,47 @@ export function useNangoConnect({
     return connect();
   }, [integrationsEnabled, isConnected, connect]);
 
+  const disconnect = useCallback(async (): Promise<boolean> => {
+    if (!integrationsEnabled) {
+      return false;
+    }
+
+    setIsDisconnecting(true);
+    try {
+      await disconnectMutation.mutateAsync(providerKey);
+      await syncStatus();
+      showToast({
+        message: localize('com_integrations_disconnect_success'),
+        status: 'success',
+      });
+      return true;
+    } catch {
+      showToast({
+        message: localize('com_integrations_disconnect_error'),
+        status: 'error',
+      });
+      return false;
+    } finally {
+      setIsDisconnecting(false);
+    }
+  }, [integrationsEnabled, disconnectMutation, providerKey, syncStatus, showToast, localize]);
+
+  const canDisconnect = isConnected || needsReconnect;
+
   return {
     providerKey,
     labelKey,
     status,
     isConnected,
     needsReconnect,
+    canDisconnect,
     isConnecting,
+    isDisconnecting,
     isLoading,
     integrationsEnabled,
     connect,
     ensureConnected,
+    disconnect,
     refetch: syncStatus,
   };
 }

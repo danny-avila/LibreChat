@@ -356,9 +356,9 @@ export const googleDriveSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['search', 'create_document'],
+      enum: ['search', 'read', 'create_document'],
       description:
-        'Use "search" to list or find files. Use "create_document" to create a new Google Doc from a title and body text.',
+        'Use "search" to list or find files. Use "read" to read the contents of a file by file_id. Use "create_document" to create a new Google Doc from a title and body text.',
     },
     query: {
       type: 'string',
@@ -368,6 +368,10 @@ export const googleDriveSchema: ExtendedJsonSchema = {
     page_size: {
       type: 'number',
       description: 'For search: maximum files to return (1-20). Defaults to 10.',
+    },
+    file_id: {
+      type: 'string',
+      description: 'For read: the Drive file ID (from search results) whose contents to read.',
     },
     title: {
       type: 'string',
@@ -388,14 +392,70 @@ export const googleDriveSchema: ExtendedJsonSchema = {
 export const googleMailSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
+    action: {
+      type: 'string',
+      enum: [
+        'search',
+        'read_message',
+        'create_draft',
+        'send_message',
+        'list_labels',
+        'modify_labels',
+      ],
+      description:
+        'Use "search" to find emails (default). "read_message" to read one full email by message_id. "create_draft" to save a draft without sending. "send_message" to send an email immediately. "list_labels" to list available labels. "modify_labels" to add/remove labels on a message.',
+    },
     query: {
       type: 'string',
       description:
-        'Optional Gmail search query (same syntax as Gmail search box). Leave empty to list recent messages.',
+        'For search: optional Gmail search query (same syntax as Gmail search box). Leave empty to list recent messages.',
     },
     page_size: {
       type: 'number',
-      description: 'Maximum number of messages to return (1-20). Defaults to 10.',
+      description: 'For search: maximum number of messages to return (1-20). Defaults to 10.',
+    },
+    message_id: {
+      type: 'string',
+      description: 'For read_message and modify_labels: the Gmail message ID (from search results).',
+    },
+    to: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'For create_draft/send_message: recipient email addresses.',
+    },
+    cc: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'For create_draft/send_message: optional CC email addresses.',
+    },
+    bcc: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'For create_draft/send_message: optional BCC email addresses.',
+    },
+    subject: {
+      type: 'string',
+      description: 'For create_draft/send_message: the email subject line.',
+    },
+    body: {
+      type: 'string',
+      description: 'For create_draft/send_message: the plain-text email body.',
+    },
+    reply_to_message_id: {
+      type: 'string',
+      description:
+        'For create_draft/send_message: optional message ID to reply to; keeps the email in the same thread.',
+    },
+    add_label_ids: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'For modify_labels: label IDs to add (system IDs like "STARRED", "IMPORTANT", or a user label ID from list_labels).',
+    },
+    remove_label_ids: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'For modify_labels: label IDs to remove (e.g. "UNREAD", "INBOX").',
     },
   },
 };
@@ -608,14 +668,14 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google_drive: {
     name: 'google_drive',
     description:
-      'Search, list, or create files in the connected user Google Drive account. Use create_document to save a new Google Doc from a title and text body. Returns file metadata and web links.',
+      'Search, read, or create files in the connected user Google Drive account. Use read with a file_id to read file contents, and create_document to save a new Google Doc from a title and text body. Returns file metadata and web links.',
     schema: googleDriveSchema,
     toolType: 'builtin',
   },
   google_mail: {
     name: 'google_mail',
     description:
-      'Search and list emails in the connected user Gmail account. Returns subject, sender, date, and snippet.',
+      'Read and manage the connected user Gmail account: search emails, read a full message, create drafts, send messages, and add or remove labels. Sending email is irreversible — confirm recipients and content with the user before using send_message.',
     schema: googleMailSchema,
     toolType: 'builtin',
   },

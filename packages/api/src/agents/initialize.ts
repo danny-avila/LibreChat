@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import { logger } from '@librechat/data-schemas';
+import { logger, isMemoryEnabled } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
@@ -40,7 +40,9 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import { registerCodeExecutionTools } from './tools';
+import { buildFileBridgeNote } from './mcpFileBridge';
 import { SUGGESTIONS_PROMPT } from './suggestions';
+import { MEMORY_PROMPT } from './memoryPrompt';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -939,6 +941,10 @@ export async function initializeAgent(
 
   appendAdditionalInstructions(agent, SUGGESTIONS_PROMPT);
 
+  if (isMemoryEnabled(req.config?.memory)) {
+    appendAdditionalInstructions(agent, MEMORY_PROMPT);
+  }
+
   let skillCount = 0;
   /**
    * IDs authorized for runtime skill execution — starts as the ACL-scoped set
@@ -983,6 +989,26 @@ export async function initializeAgent(
     finalAttachments.length > 0
       ? finalAttachments
       : requestAttachments.concat(agentContextAttachments);
+
+  /**
+   * When MCP tools are present and the turn carries files, teach the model
+   * the `@librechat-file:<id>` upload convention so it routes binary files to
+   * storage/drive tools via the host bridge instead of falling back to a text
+   * document. Gated on MCP-tool presence so non-MCP agents are unaffected.
+   */
+  const hasMCPTool = (toolDefinitions ?? []).some((d) =>
+    d.name.includes(Constants.mcp_delimiter),
+  );
+  if (hasMCPTool && compatibilityAttachments.length > 0) {
+    const bridgeNote = buildFileBridgeNote(
+      compatibilityAttachments.map((f) => ({
+        file_id: f.file_id,
+        filename: f.filename,
+        type: f.type,
+      })),
+    );
+    appendAdditionalInstructions(agent, bridgeNote);
+  }
 
   const endpointConfigs = req.config?.endpoints;
   const providerConfig =

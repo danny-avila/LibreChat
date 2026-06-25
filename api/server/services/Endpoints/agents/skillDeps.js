@@ -64,6 +64,12 @@ const skillToolDeps = {
   getSkillByName: db.getSkillByName,
   listSkillFiles: db.listSkillFiles,
   getStrategyFunctions,
+  /**
+   * Conversation file lookup for the MCP file bridge: resolves
+   * `@librechat-file:<id>` references in MCP tool arguments to real base64
+   * bytes before dispatch (e.g. Google Drive `create_file.base64Content`).
+   */
+  getFiles: db.getFiles,
   batchUploadCodeEnvFiles,
   getSessionInfo,
   checkIfActive,

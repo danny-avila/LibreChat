@@ -212,6 +212,11 @@ router.get('/', async function (req, res) {
       payload.webSearch = webSearch;
     }
 
+    const memoryConfig = appConfig?.memory;
+    if (memoryConfig && memoryConfig.disabled !== true && Array.isArray(memoryConfig.validKeys)) {
+      payload.memory = { validKeys: memoryConfig.validKeys };
+    }
+
     if (!payload.allowAccountDeletion) {
       try {
         const userId = req.user.id ?? req.user._id?.toString();

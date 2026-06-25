@@ -1127,6 +1127,10 @@ export type TStartupConfig = {
     scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
   };
+  /** Memory feature surface for the client (e.g. the valid category keys). */
+  memory?: {
+    validKeys?: string[];
+  };
   cloudFront?: {
     cookieRefresh?: {
       endpoint: string;

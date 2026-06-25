@@ -146,7 +146,9 @@ function isSafePath(p: string): boolean {
 }
 
 /** Type guard for validation errors thrown by data-schemas. */
-function isValidationError(error: unknown): error is Error & { code: string; issues: unknown[] } {
+export function isValidationError(
+  error: unknown,
+): error is Error & { code: string; issues: unknown[] } {
   return (
     error instanceof Error &&
     (error as Error & { code?: string }).code === 'SKILL_VALIDATION_FAILED'
@@ -154,7 +156,7 @@ function isValidationError(error: unknown): error is Error & { code: string; iss
 }
 
 /** Type guard for MongoDB duplicate key errors. */
-function isDuplicateKeyError(error: unknown): boolean {
+export function isDuplicateKeyError(error: unknown): boolean {
   return (
     error != null &&
     typeof error === 'object' &&
@@ -163,11 +165,28 @@ function isDuplicateKeyError(error: unknown): boolean {
   );
 }
 
-export interface ImportSkillDeps {
-  limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
+/**
+ * Minimal dependency surface needed to turn a markdown string into a persisted
+ * skill: create the row, grant ownership, and roll back via delete on failure.
+ * `ImportSkillDeps` extends this so the importer and the create-from-file path
+ * share a single `createSkillFromMarkdown` implementation.
+ */
+export interface CreateSkillFromMarkdownDeps {
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
-  getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
+  grantPermission: (params: {
+    principalType: string;
+    principalId: string;
+    resourceType: string;
+    resourceId: Types.ObjectId;
+    accessRoleId: string;
+    grantedBy: string;
+  }) => Promise<unknown>;
+}
+
+export interface ImportSkillDeps extends CreateSkillFromMarkdownDeps {
+  limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
+  getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   saveBuffer: (
     req: Request,
@@ -184,14 +203,6 @@ export interface ImportSkillDeps {
     req: Request,
     file: { filepath: string; source: string; [key: string]: unknown },
   ) => Promise<void>;
-  grantPermission: (params: {
-    principalType: string;
-    principalId: string;
-    resourceType: string;
-    resourceId: Types.ObjectId;
-    accessRoleId: string;
-    grantedBy: string;
-  }) => Promise<unknown>;
 }
 
 interface ServerRequest extends Request {
@@ -275,7 +286,7 @@ function getAuthorInfo(req: ServerRequest) {
 
 /** Grant SKILL_OWNER permission to the uploader. Rolls back skill on failure. */
 async function grantOwnership(
-  deps: ImportSkillDeps,
+  deps: CreateSkillFromMarkdownDeps,
   userId: string,
   skillId: Types.ObjectId,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -300,43 +311,82 @@ async function grantOwnership(
   }
 }
 
-async function handleMarkdown(
+export interface CreateSkillFromMarkdownInput {
+  content: string;
+  originalname: string;
+  nameOverride?: string;
+  descriptionOverride?: string;
+}
+
+/**
+ * Outcome of `createSkillFromMarkdown`. The `ok: false` branch carries an HTTP
+ * `status` + JSON `body` so route handlers map failures to the same responses
+ * the importer has always returned (400 validation, 409 duplicate, 500 grant).
+ */
+export type CreateSkillFromMarkdownResult =
+  | { ok: true; skill: ISkill & { _id: Types.ObjectId } }
+  | { ok: false; status: number; body: Record<string, unknown> };
+
+/**
+ * Parse markdown frontmatter, infer the skill name, create the skill, and grant
+ * SKILL_OWNER to the requesting user. Shared by the `/import` markdown path and
+ * the `from-file` path. `nameOverride`/`descriptionOverride` (when non-empty)
+ * take precedence over the parsed frontmatter so the in-chat banner can edit
+ * the name before saving.
+ */
+export async function createSkillFromMarkdown(
+  deps: CreateSkillFromMarkdownDeps,
   req: ServerRequest,
-  res: Response,
-  deps: ImportSkillDeps,
-  file: Express.Multer.File,
-) {
-  const content = file.buffer.toString('utf-8');
+  input: CreateSkillFromMarkdownInput,
+): Promise<CreateSkillFromMarkdownResult> {
+  const { content, originalname, nameOverride, descriptionOverride } = input;
 
   const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(content);
   if (invalidBooleans.length > 0) {
-    return res.status(400).json({
-      error: 'Validation failed',
-      issues: invalidBooleans.map((key) => ({
-        field: `frontmatter.${key}`,
-        code: 'INVALID_TYPE',
-        message: `"${key}" must be a boolean (true or false)`,
-      })),
-    });
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: 'Validation failed',
+        issues: invalidBooleans.map((key) => ({
+          field: `frontmatter.${key}`,
+          code: 'INVALID_TYPE',
+          message: `"${key}" must be a boolean (true or false)`,
+        })),
+      },
+    };
   }
+
+  const trimmedNameOverride = nameOverride?.trim();
   const inferredName =
+    (trimmedNameOverride && trimmedNameOverride.length > 0 ? trimmedNameOverride : '') ||
     name ||
-    file.originalname
+    originalname
       .replace(/\.md$/i, '')
       .replace(/[^a-z0-9-]/gi, '-')
       .replace(/^-+/, '')
       .toLowerCase();
   if (!inferredName) {
-    return res
-      .status(400)
-      .json({ error: 'Could not determine skill name from file or frontmatter' });
+    return {
+      ok: false,
+      status: 400,
+      body: { error: 'Could not determine skill name from file or frontmatter' },
+    };
   }
+
+  const trimmedDescriptionOverride = descriptionOverride?.trim();
+  const resolvedDescription =
+    (trimmedDescriptionOverride && trimmedDescriptionOverride.length > 0
+      ? trimmedDescriptionOverride
+      : '') ||
+    description ||
+    inferredName;
 
   const { authorId, authorName, tenantId } = getAuthorInfo(req);
 
   const result = await deps.createSkill({
     name: inferredName,
-    description: description || inferredName,
+    description: resolvedDescription,
     body: content,
     author: authorId,
     authorName,
@@ -347,10 +397,27 @@ async function handleMarkdown(
   const skill = result.skill as ISkill & { _id: Types.ObjectId };
   const grant = await grantOwnership(deps, req.user.id, skill._id);
   if (!grant.ok) {
-    return res.status(500).json({ error: grant.error });
+    return { ok: false, status: 500, body: { error: grant.error } };
   }
 
-  return res.status(201).json(skill);
+  return { ok: true, skill };
+}
+
+async function handleMarkdown(
+  req: ServerRequest,
+  res: Response,
+  deps: ImportSkillDeps,
+  file: Express.Multer.File,
+) {
+  const content = file.buffer.toString('utf-8');
+  const result = await createSkillFromMarkdown(deps, req, {
+    content,
+    originalname: file.originalname,
+  });
+  if (!result.ok) {
+    return res.status(result.status).json(result.body);
+  }
+  return res.status(201).json(result.skill);
 }
 
 async function handleZip(
