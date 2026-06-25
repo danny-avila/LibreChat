@@ -177,6 +177,13 @@ const AttachFileMenu = ({
     ? integrationConnectors[connectPromptProvider]
     : null;
 
+  const handleMenuIntegrationDisconnect = useCallback(
+    (providerKey: IntegrationProviderKey) => {
+      void integrationConnectors[providerKey]?.disconnect();
+    },
+    [integrationConnectors],
+  );
+
   const openIntegrationReconnect = useCallback(
     (providerKey: IntegrationProviderKey) => {
       setActiveIntegrationPicker(null);
@@ -432,6 +439,7 @@ const AttachFileMenu = ({
               status: 'info',
             });
           },
+          onDisconnect: handleMenuIntegrationDisconnect,
           sharePointItem,
         }),
       );
@@ -478,6 +486,7 @@ const AttachFileMenu = ({
     openMicrosoftOutlookCalendarPicker,
     setIsSharePointDialogOpen,
     setActiveIntegrationPicker,
+    handleMenuIntegrationDisconnect,
     showToast,
   ]);
 
@@ -510,6 +519,17 @@ const AttachFileMenu = ({
 
     const connected = await connectPromptConnector.connect();
     if (connected) {
+      setConnectPromptProvider(null);
+    }
+  };
+
+  const handleIntegrationDisconnect = async () => {
+    if (!connectPromptConnector) {
+      return;
+    }
+
+    const disconnected = await connectPromptConnector.disconnect();
+    if (disconnected) {
       setConnectPromptProvider(null);
     }
   };
@@ -777,6 +797,9 @@ const AttachFileMenu = ({
         status={connectPromptConnector?.status}
         isConnecting={connectPromptConnector?.isConnecting}
         onConnect={handleIntegrationConnect}
+        canDisconnect={connectPromptConnector?.canDisconnect}
+        isDisconnecting={connectPromptConnector?.isDisconnecting}
+        onDisconnect={handleIntegrationDisconnect}
       />
     </>
   );

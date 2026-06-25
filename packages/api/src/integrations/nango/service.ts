@@ -367,7 +367,10 @@ export function createNangoService(deps: NangoServiceDeps) {
           },
           error,
         );
-        throw error;
+        // The local record is stale — e.g. the connection was deleted directly
+        // in the Nango dashboard. Clear it so we fall through to a fresh connect
+        // session instead of repeatedly failing to reconnect a dead connection.
+        await deleteNangoConnectionByUserAndProvider(userId, providerKey);
       }
     }
 
@@ -490,7 +493,19 @@ export function createNangoService(deps: NangoServiceDeps) {
     const existing = await findNangoConnectionByUserAndProvider(userId, providerKey);
     if (existing?.connectionId) {
       const nango = getClient();
-      await nango.deleteConnection(provider.nangoIntegrationId, existing.connectionId);
+      try {
+        await nango.deleteConnection(provider.nangoIntegrationId, existing.connectionId);
+      } catch (error) {
+        // The remote connection may already be gone (e.g. deleted in the Nango
+        // dashboard). Log and continue so the local record is still removed.
+        logger.error('[integrations] disconnectProvider: failed to delete Nango connection', {
+          userId,
+          providerKey,
+          nangoIntegrationId: provider.nangoIntegrationId,
+          connectionId: existing.connectionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     await deleteNangoConnectionByUserAndProvider(userId, providerKey);
