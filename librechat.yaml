@@ -361,6 +361,21 @@ mcpServers:
       - "@guillehr2/excel-mcp-server@latest"
     timeout: 180000             # 180s — Python wrapper + first-run install is slow
 
+  # AI Workforce Pro skills server (the ~45 SMB_Team skills). Tracked here so it
+  # survives deploys — the deployed librechat.yaml is this repo copy (bind-mounted
+  # + config-only fast deploy), so a server added only on the VM gets overwritten.
+  # Auth: `apiKey:` (NOT `headers:`) so LibreChat uses static bearer auth and skips
+  # OAuth metadata probing. The raw key lives in env (set SMBTEAM_MCP_API_KEY on the
+  # VM / in .env — value is in LastPass 'AIWP backend (production)'); never commit it.
+  smbteam-mcp:
+    type: streamable-http
+    url: https://mcp.smbteam.com/mcp
+    apiKey:
+      key: ${SMBTEAM_MCP_API_KEY}
+      source: admin
+      authorization_type: bearer
+    timeout: 60000
+
   # Note: PDF reading is handled via execute_code (Python pdfplumber/pymupdf).
   # @modelcontextprotocol/server-pdf is omitted — it requires pdfjs-dist as a
   # peer dep that npx does not install, causing a crash on every init.
