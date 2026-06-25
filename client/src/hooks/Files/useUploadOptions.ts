@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { mergeFileConfig, defaultAgentCapabilities } from 'librechat-data-provider';
+import { Constants, mergeFileConfig, defaultAgentCapabilities } from 'librechat-data-provider';
 import type { EToolResources } from 'librechat-data-provider';
 import useAgentToolPermissions from '~/hooks/Agents/useAgentToolPermissions';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
@@ -19,7 +19,9 @@ export default function useUploadOptions() {
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
   const { agentsConfig } = useGetAgentsConfig();
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
-  const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
+  const ephemeralAgent = useRecoilValue(
+    ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
+  );
   const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
     agentId,
     ephemeralAgent,

@@ -9,6 +9,7 @@ import {
   TerminalSquareIcon,
 } from 'lucide-react';
 import {
+  Constants,
   Providers,
   EToolResources,
   EModelEndpoint,
@@ -27,7 +28,9 @@ const DragDropModal = () => {
   const localize = useLocalize();
   const { isVisible, files, closeModal } = useUploadModalContext();
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
-  const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId ?? ''));
+  const ephemeralAgent = useRecoilValue(
+    ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
+  );
   const { provider } = useAgentToolPermissions(agentId, ephemeralAgent);
   const getOptions = useUploadOptions();
   const routeFiles = useFileUploadRouter();
