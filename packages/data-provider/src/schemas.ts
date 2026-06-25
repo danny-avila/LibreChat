@@ -1335,7 +1335,11 @@ export type TBanner = z.infer<typeof tBannerSchema>;
 
 export const compactAgentsBaseSchema = tConversationSchema.pick({
   spec: true,
-  // model: true,
+  // A model-spec-driven ephemeral agent (new chat's first message) carries its
+  // model at the top level via the applied spec preset. The compact reparse in
+  // `applyModelSpecPreset` runs through this schema, so `model` must be picked
+  // here or it is stripped and the ephemeral agent fails with MISSING_MODEL.
+  model: true,
   iconURL: true,
   greeting: true,
   agent_id: true,
