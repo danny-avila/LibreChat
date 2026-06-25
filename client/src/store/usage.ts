@@ -127,6 +127,37 @@ export function clearUsageFolded(conversationId: string): void {
   foldedUsageKeys.delete(conversationId);
 }
 
+/**
+ * Per-agent/model instruction+tool overhead — the system prompt + tool-schema
+ * tokens the next call always sends — cached from the breakdown the live
+ * `ON_CONTEXT_USAGE` event emits. Keyed by agent/model (NOT per conversation),
+ * so a snapshot-less branch (import / never-generated) can reuse the overhead
+ * once the same agent has run anywhere this session, making its prune budget and
+ * gauge account for the fixed overhead the client can't otherwise know. Never
+ * cleared on convo switch; bounded by the number of distinct configs used.
+ */
+const modelOverhead = new Map<string, number>();
+
+/** Stable cache key; the writer (usage handler) and reader (estimate) build it
+ *  identically so a snapshot-less branch resolves the right config's overhead. */
+export function overheadKey(
+  endpoint?: string | null,
+  model?: string | null,
+  agentId?: string | null,
+): string {
+  return `${endpoint ?? ''}::${model ?? ''}::${agentId ?? ''}`;
+}
+
+export function setModelOverhead(key: string, tokens: number): void {
+  if (tokens > 0) {
+    modelOverhead.set(key, tokens);
+  }
+}
+
+export function getModelOverhead(key: string): number {
+  return modelOverhead.get(key) ?? 0;
+}
+
 /** Jotai atomFamily entries are never GC'd — call on conversation switch/cleanup */
 export function removeUsageAtoms(conversationId: string): void {
   branchTotalsFamily.remove(conversationId);

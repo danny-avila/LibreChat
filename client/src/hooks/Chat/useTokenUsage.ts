@@ -6,6 +6,8 @@ import type { TMessage, TConversation, TModelTokenomics } from 'librechat-data-p
 import type { BranchTotals, BranchUsage } from '~/utils/tokens';
 import type { ContextSnapshot } from '~/store/usage';
 import {
+  overheadKey,
+  getModelOverhead,
   liveTokensFamily,
   totalUsageFamily,
   removeUsageAtoms,
@@ -57,6 +59,9 @@ export interface TokenUsageView {
   /** Estimated tokens for count-less messages (in-flight tail excluded while
    *  streaming); 0 on snapshots. Rendered as its own breakdown row. */
   estimatedTokens: number;
+  /** Cached instruction + tool overhead applied to a snapshot-less estimate; 0 on
+   *  snapshots (which carry their own breakdown) and until the agent has run. */
+  overheadTokens: number;
   rates?: TModelTokenomics;
 }
 
@@ -239,6 +244,7 @@ export default function useTokenUsage({
         totalCost: totalUsage.cost,
         liveTokens,
         estimatedTokens: 0,
+        overheadTokens: 0,
         rates: limits.rates,
       };
     }
@@ -254,6 +260,19 @@ export default function useTokenUsage({
      *  gauge at 100% after a compaction). */
     const maxTokens = limits.maxContextTokens;
     const liveOnTail = liveTokens > 0;
+    /** Fixed instruction + tool-schema overhead for this agent/model (the latter is
+     *  already folded into `instructionTokens`), cached from live usage events. The
+     *  client can't otherwise know it for a snapshot-less branch, so reserve it from
+     *  the prune budget and add it to used — making over-window pruning faithful and
+     *  the gauge consistent with snapshots. 0 until the agent has run once this
+     *  session (then falls back to message-only, as before). */
+    const overheadTokens = getModelOverhead(
+      overheadKey(
+        limits.endpoint ?? conversation?.endpoint,
+        limits.model ?? conversation?.model,
+        conversation?.agent_id,
+      ),
+    );
     /** When a stream is live the tail is the in-flight response, already counted
      *  by `liveTokens`; drop its static estimate so a resumed/partial response
      *  isn't double-counted on the estimate path. */
@@ -265,10 +284,11 @@ export default function useTokenUsage({
     /** The send path prunes an over-window branch oldest-first before calling the
      *  model, so the next call can sit well under the window even when the full
      *  branch exceeds it. Mirror that: when the raw sum overflows the message
-     *  window (max minus the always-sent summary baseline), report the newest
-     *  messages that actually fit instead of clamping the whole branch to 100%. */
+     *  window (max minus the always-sent summary baseline and instruction
+     *  overhead), report the newest messages that actually fit instead of clamping
+     *  the whole branch to 100%. */
     if (maxTokens != null && maxTokens > 0) {
-      const messageBudget = Math.max(0, maxTokens - branchTotals.summaryBaseline);
+      const messageBudget = Math.max(0, maxTokens - branchTotals.summaryBaseline - overheadTokens);
       if (messageTokens > messageBudget) {
         messageTokens = prunedBranchTokens(
           conversationKey,
@@ -278,7 +298,7 @@ export default function useTokenUsage({
         );
       }
     }
-    const usedTokens = messageTokens + branchTotals.summaryBaseline + liveTokens;
+    const usedTokens = overheadTokens + branchTotals.summaryBaseline + messageTokens + liveTokens;
     return {
       usedTokens,
       maxTokens,
@@ -295,6 +315,7 @@ export default function useTokenUsage({
       totalCost: totalUsage.cost,
       liveTokens,
       estimatedTokens,
+      overheadTokens,
       rates: limits.rates,
     };
   }, [
@@ -308,5 +329,6 @@ export default function useTokenUsage({
     limits,
     branchSnapshot,
     conversationKey,
+    conversation,
   ]);
 }
