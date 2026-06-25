@@ -1,4 +1,5 @@
 {{- if .Values.langfuseFanout.enabled }}
+{{- include "librechat.langfuseFanout.validateDestinationKeys" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -72,7 +73,7 @@ data:
       {{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations }}
       {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
       otlphttp/tenant_{{ $name }}:
-        endpoint: "${env:LANGFUSE_FANOUT_TENANT_{{ $name | upper | replace "-" "_" }}_BASE_URL}/api/public/otel"
+        endpoint: "${env:{{ include "librechat.langfuseFanout.destinationBaseUrlEnvName" $name }}}/api/public/otel"
         auth:
           authenticator: headers_setter/tenant_passthrough
         headers:

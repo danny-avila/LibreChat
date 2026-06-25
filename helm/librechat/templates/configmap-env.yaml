@@ -31,9 +31,9 @@ data:
   LANGFUSE_FANOUT_COLLECTOR_URL: http://{{ include "librechat.langfuseFanout.fullname" . }}.{{ .Release.Namespace | lower }}.svc.cluster.local:{{ .Values.langfuseFanout.service.port }}
   {{- end }}
   {{- if and .Values.langfuseFanout.enabled (not (hasKey $configEnv "LANGFUSE_FANOUT_TENANT_DESTINATIONS")) }}
+  {{- include "librechat.langfuseFanout.validateDestinationKeys" . }}
   {{- $tenantDestinations := list }}
   {{- range $name, $destination := .Values.langfuseFanout.tenant.destinations }}
-  {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
   {{- $tenantDestinations = append $tenantDestinations (printf "%s=%s" $name $destination.baseUrl) }}
   {{- end }}
   LANGFUSE_FANOUT_TENANT_DESTINATIONS: {{ join "," $tenantDestinations | quote }}

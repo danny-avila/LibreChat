@@ -615,6 +615,47 @@ func TestMediaCreateRejectsDifferentMediaIDs(t *testing.T) {
 	}
 }
 
+func TestMediaCreateRecordsUploadURLPresenceDivergenceIndependentOfOrder(t *testing.T) {
+	t.Parallel()
+
+	central := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != mediaPath {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusCreated, mediaUploadResponse{MediaID: "same-media-id"})
+	}))
+	defer central.Close()
+
+	tenant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != mediaPath {
+			http.NotFound(w, r)
+			return
+		}
+		uploadURL := "http://" + r.Host + "/upload"
+		writeJSON(w, http.StatusCreated, mediaUploadResponse{
+			MediaID:   "same-media-id",
+			UploadURL: &uploadURL,
+		})
+	}))
+	defer tenant.Close()
+
+	gw := newTestGateway(central.URL, map[string]string{"eu": tenant.URL})
+	req := httptest.NewRequest(http.MethodPost, tenantPrefix+"eu"+mediaPath, strings.NewReader(`{"contentLength":5}`))
+	req.Header.Set("Authorization", "Basic tenant")
+	resp := httptest.NewRecorder()
+
+	gw.handle(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+
+	metrics := scrapeMetrics(t, gw)
+	if !strings.Contains(metrics, `langfuse_fanout_media_divergence_total{destination="central",kind="upload_url_presence"} 1`) {
+		t.Fatalf("missing upload_url_presence divergence metric:\n%s", metrics)
+	}
+}
+
 func TestMetricsEndpointRequiresBearerToken(t *testing.T) {
 	t.Parallel()
 

@@ -12,7 +12,8 @@ REPO_ROOT="$(cd "${CHART_DIR}/../.." && pwd)"
 RENDER_CHART_DIR="$(mktemp -d -t librechat-fanout-chart.XXXXXX)"
 RENDERED_FILE="$(mktemp -t librechat-fanout-render.XXXXXX)"
 INVALID_RENDER_ERROR="$(mktemp -t librechat-fanout-invalid-key.XXXXXX)"
-trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}" "${INVALID_RENDER_ERROR}"' EXIT
+COLLISION_RENDER_ERROR="$(mktemp -t librechat-fanout-colliding-key.XXXXXX)"
+trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}" "${INVALID_RENDER_ERROR}" "${COLLISION_RENDER_ERROR}"' EXIT
 
 if ! command -v helm >/dev/null 2>&1; then
   echo "FAIL: helm not on PATH" >&2
@@ -52,6 +53,24 @@ fi
 if ! grep -q 'langfuseFanout.tenant.destinations key "EU" is invalid' "${INVALID_RENDER_ERROR}"; then
   echo "FAIL: invalid destination key render did not explain the key contract" >&2
   cat "${INVALID_RENDER_ERROR}" >&2
+  exit 1
+fi
+
+if helm template librechat "${RENDER_CHART_DIR}" \
+  --set langfuseFanout.enabled=true \
+  --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
+  --set langfuseFanout.redis.uri=redis://langfuse-fanout-redis:6379 \
+  --set langfuseFanout.tenant.destinations.foo-bar.baseUrl=https://foo-bar.example.com \
+  --set langfuseFanout.tenant.destinations.foo_bar.baseUrl=https://foo-bar.example.com \
+  --show-only templates/langfuse-fanout-deployment.yaml \
+  > /dev/null 2> "${COLLISION_RENDER_ERROR}"; then
+  echo "FAIL: Helm accepted colliding Langfuse fanout destination env var keys" >&2
+  exit 1
+fi
+
+if ! grep -q 'both render LANGFUSE_FANOUT_TENANT_FOO_BAR_BASE_URL' "${COLLISION_RENDER_ERROR}"; then
+  echo "FAIL: colliding destination key render did not explain the env var collision" >&2
+  cat "${COLLISION_RENDER_ERROR}" >&2
   exit 1
 fi
 

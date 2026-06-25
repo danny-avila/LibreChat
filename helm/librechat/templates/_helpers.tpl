@@ -87,12 +87,37 @@ already use the same lowercase key shape for collector routing to match.
 {{- end }}
 
 {{/*
+Render the environment variable name used by the collector for a destination.
+*/}}
+{{- define "librechat.langfuseFanout.destinationBaseUrlEnvName" -}}
+{{- printf "LANGFUSE_FANOUT_TENANT_%s_BASE_URL" (. | printf "%v" | upper | replace "-" "_") -}}
+{{- end }}
+
+{{/*
+Validate the full destination key set. Destination keys can contain hyphens and
+underscores, but the collector base URL env vars replace hyphens with
+underscores. Reject keys such as foo-bar and foo_bar because they would render
+the same LANGFUSE_FANOUT_TENANT_FOO_BAR_BASE_URL env var.
+*/}}
+{{- define "librechat.langfuseFanout.validateDestinationKeys" -}}
+{{- $seenEnvNames := dict -}}
+{{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations -}}
+{{- include "librechat.langfuseFanout.validateDestinationKey" $name -}}
+{{- $envName := include "librechat.langfuseFanout.destinationBaseUrlEnvName" $name -}}
+{{- if hasKey $seenEnvNames $envName -}}
+{{- fail (printf "langfuseFanout.tenant.destinations keys %q and %q both render %s; use destination keys that remain unique after uppercasing and replacing '-' with '_' for env vars" (get $seenEnvNames $envName) $name $envName) -}}
+{{- end -}}
+{{- $_ := set $seenEnvNames $envName $name -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Render the fanout destination list consumed by LibreChat and the fanout gateway.
 */}}
 {{- define "librechat.langfuseFanout.tenantDestinationsEnv" -}}
+{{- include "librechat.langfuseFanout.validateDestinationKeys" . -}}
 {{- $tenantDestinations := list -}}
 {{- range $name, $destination := .Values.langfuseFanout.tenant.destinations -}}
-{{- include "librechat.langfuseFanout.validateDestinationKey" $name -}}
 {{- $tenantDestinations = append $tenantDestinations (printf "%s=%s" $name $destination.baseUrl) -}}
 {{- end -}}
 {{- join "," $tenantDestinations -}}
@@ -103,9 +128,9 @@ Render the fanout destination key list consumed by the gateway as a startup
 guard against media destinations the collector cannot route traces to.
 */}}
 {{- define "librechat.langfuseFanout.tenantDestinationKeysEnv" -}}
+{{- include "librechat.langfuseFanout.validateDestinationKeys" . -}}
 {{- $tenantDestinationKeys := list -}}
 {{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations -}}
-{{- include "librechat.langfuseFanout.validateDestinationKey" $name -}}
 {{- $tenantDestinationKeys = append $tenantDestinationKeys $name -}}
 {{- end -}}
 {{- join "," $tenantDestinationKeys -}}

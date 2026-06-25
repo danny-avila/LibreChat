@@ -1,4 +1,5 @@
 {{- if .Values.langfuseFanout.enabled }}
+{{- include "librechat.langfuseFanout.validateDestinationKeys" . }}
 {{- $redisURI := .Values.langfuseFanout.redis.uri }}
 {{- if and (not $redisURI) .Values.redis.enabled }}
 {{- $redisURI = include "librechat.bundledRedisURI" . }}
@@ -50,10 +51,6 @@ spec:
                 secretKeyRef:
                   name: {{ required "langfuseFanout.central.authHeaderSecret.name is required when langfuseFanout.enabled=true" .Values.langfuseFanout.central.authHeaderSecret.name | quote }}
                   key: {{ .Values.langfuseFanout.central.authHeaderSecret.key | quote }}
-            {{- /* Validate destination keys before rendering the env map. */}}
-            {{- range $name, $_ := .Values.langfuseFanout.tenant.destinations }}
-            {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
-            {{- end }}
             - name: LANGFUSE_FANOUT_TENANT_DESTINATIONS
               value: {{ include "librechat.langfuseFanout.tenantDestinationsEnv" . | quote }}
             - name: LANGFUSE_FANOUT_UPSTREAM_TIMEOUT
@@ -111,8 +108,7 @@ spec:
             - name: LANGFUSE_FANOUT_OTEL_RECEIVER_ENDPOINT
               value: {{ .Values.langfuseFanout.otelCollector.receiverEndpoint | quote }}
             {{- range $name, $destination := .Values.langfuseFanout.tenant.destinations }}
-            {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
-            - name: LANGFUSE_FANOUT_TENANT_{{ $name | upper | replace "-" "_" }}_BASE_URL
+            - name: {{ include "librechat.langfuseFanout.destinationBaseUrlEnvName" $name }}
               value: {{ $destination.baseUrl | quote }}
             {{- end }}
             - name: LANGFUSE_FANOUT_MEMORY_LIMIT_MIB

@@ -378,17 +378,23 @@ func (g *gateway) handleMediaCreate(w http.ResponseWriter, r *http.Request, rout
 	_ = json.Unmarshal(body, &requestBody)
 	uploadPlan.ContentLength = requestBody.ContentLength
 
+	hadUploadURL := false
+	missingUploadURLDestinations := []string{}
 	for _, response := range responses {
 		if response.response.UploadURL == nil || *response.response.UploadURL == "" {
-			if len(uploadPlan.Destinations) > 0 {
-				g.recordMediaDivergence("upload_url_presence", response.destination.name)
-			}
+			missingUploadURLDestinations = append(missingUploadURLDestinations, response.destination.name)
 			continue
 		}
+		hadUploadURL = true
 		uploadPlan.Destinations = append(uploadPlan.Destinations, uploadDestination{
 			Name:      response.destination.name,
 			UploadURL: *response.response.UploadURL,
 		})
+	}
+	if hadUploadURL {
+		for _, destination := range missingUploadURLDestinations {
+			g.recordMediaDivergence("upload_url_presence", destination)
+		}
 	}
 
 	result := mediaUploadResponse{MediaID: mediaID}

@@ -1369,6 +1369,35 @@ describe('Langfuse run config', () => {
     },
   );
 
+  it('does not append a tenant route to baseUrl when fanout is disabled', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'false';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toMatchObject({
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+      baseUrl: 'https://central.langfuse.example',
+    });
+    expect(callArgs.langfuse).not.toMatchObject({
+      baseUrl: 'http://collector-from-env:4318/tenant/eu',
+      librechatTraceAttributes: expect.any(Object),
+    });
+  });
+
   it('uses central env Langfuse config when fanout has no collector URL', async () => {
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
     process.env.LANGFUSE_SECRET_KEY = 'sk-central';
