@@ -1,5 +1,12 @@
 const express = require('express');
-const { createMessageFilterPii, generateCheckAccess, skipAgentCheck } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const {
+  createMessageFilterPii,
+  generateCheckAccess,
+  skipAgentCheck,
+  applyResumeContext,
+  GenerationJobManager,
+} = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const {
   moderateText,
@@ -26,6 +33,31 @@ const checkAgentResourceAccess = canAccessAgentFromBody({
   requiredPermission: PermissionBits.VIEW,
 });
 
+/**
+ * Replay the paused turn's graph-determining config onto a resume request BEFORE the
+ * rest of the chain (PII filter, agent-access, buildEndpointOption) reads it. The client
+ * can't reliably re-send the ephemeral-agent config after a reload/cross-session, so the
+ * server restores it from the pending action — the resume then rebuilds the SAME
+ * agent/graph the run paused on (and a crafted resume can't swap the tool set). No-op for
+ * every non-resume route.
+ */
+const restoreResumeContext = async (req, res, next) => {
+  if (req.path !== '/resume') {
+    return next();
+  }
+  try {
+    const streamId = req.body?.conversationId;
+    if (streamId) {
+      const job = await GenerationJobManager.getJob(streamId);
+      applyResumeContext(req.body, job?.metadata?.pendingAction?.resumeContext);
+    }
+  } catch (err) {
+    logger.warn('[agents/chat] Failed to restore resume context', err?.message ?? err);
+  }
+  next();
+};
+
+router.use(restoreResumeContext);
 router.use(createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }));
 router.use(moderateText);
 router.use(checkAgentAccess);

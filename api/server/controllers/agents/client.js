@@ -35,6 +35,7 @@ const {
   resolveRecursionLimit,
   buildPendingAction,
   computeAgentRequestFingerprint,
+  pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
   deleteAgentCheckpoint,
@@ -1212,6 +1213,10 @@ class AgentClient extends BaseClient {
       // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
       // undefined so the id guard can't tell two configs apart).
       requestFingerprint: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
+      // Persist those same fields verbatim so the resume route can REPLAY them — a
+      // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
+      // so the server restores it and rebuilds the same graph (and the fingerprint matches).
+      resumeContext: pickResumeContext(this.options.req?.body),
     });
 
     const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);

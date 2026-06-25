@@ -253,6 +253,12 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   if (Object.keys(responseMetadata).length > 0) {
     responseMessage.metadata = responseMetadata;
   }
+  // Carry the resumed run's context-window calibration (BaseClient.sendMessage persists
+  // this on the response). Without it, the NEXT turn can't seed its pruner from this
+  // run and falls back to uncalibrated token accounting.
+  if (client?.contextMeta != null) {
+    responseMessage.contextMeta = client.contextMeta;
+  }
 
   await saveMessage(
     { userId, isTemporary, interfaceConfig: req?.config?.interfaceConfig },

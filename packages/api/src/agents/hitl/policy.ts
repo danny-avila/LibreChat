@@ -123,6 +123,8 @@ export interface PendingActionContext {
   threadId?: string;
   /** Fingerprint of the graph-determining request fields; see {@link computeAgentRequestFingerprint}. */
   requestFingerprint?: string;
+  /** Graph-determining fields to replay on resume; see {@link RESUME_CONTEXT_KEYS}. */
+  resumeContext?: Record<string, unknown>;
 }
 
 /** Request fields that decide which agent/graph + tool set a turn runs. */
@@ -157,6 +159,54 @@ function normalizeEphemeralAgent(ephemeral: Record<string, unknown> | null | und
  * catches an ephemeral-agent config swap — those have an undefined `agent_id`, so the
  * id check alone can't tell two ephemeral configs apart.
  */
+/**
+ * Request fields that determine the agent/graph + tool set, persisted with the pending
+ * action so the resume can REPLAY them server-side. The client can't reliably re-send
+ * these after a reload (e.g. the ephemeralAgent state resets), so replaying them from
+ * the job guarantees the rebuilt run is the SAME graph the pause used — durable resume
+ * works across reloads/replicas, and a crafted resume can't swap the tool set.
+ */
+export const RESUME_CONTEXT_KEYS = [
+  'endpoint',
+  'endpointType',
+  'agent_id',
+  'spec',
+  'model',
+  'promptPrefix',
+  'ephemeralAgent',
+] as const;
+
+export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>>;
+
+/** Extract the graph-determining fields from a request body for durable replay. */
+export function pickResumeContext(body: Record<string, unknown> | undefined | null): ResumeContext {
+  const ctx: ResumeContext = {};
+  if (body == null) {
+    return ctx;
+  }
+  for (const key of RESUME_CONTEXT_KEYS) {
+    if (body[key] !== undefined) {
+      ctx[key] = body[key];
+    }
+  }
+  return ctx;
+}
+
+/** Replay a persisted resume context onto a request body, overwriting client values. */
+export function applyResumeContext(
+  body: Record<string, unknown> | undefined | null,
+  ctx: ResumeContext | undefined | null,
+): void {
+  if (body == null || ctx == null) {
+    return;
+  }
+  for (const key of RESUME_CONTEXT_KEYS) {
+    if (ctx[key] !== undefined) {
+      body[key] = ctx[key];
+    }
+  }
+}
+
 export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFields): string {
   const canonical = JSON.stringify({
     endpoint: fields.endpoint ?? null,
@@ -194,5 +244,6 @@ export function buildPendingAction(
     interruptId: ctx.interruptId,
     threadId: ctx.threadId,
     requestFingerprint: ctx.requestFingerprint,
+    resumeContext: ctx.resumeContext,
   };
 }

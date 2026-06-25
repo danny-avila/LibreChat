@@ -411,6 +411,13 @@ export namespace Agents {
      * so the id check can't.
      */
     requestFingerprint?: string;
+    /**
+     * Graph-determining request fields (endpoint, agent_id, model, spec, promptPrefix,
+     * ephemeralAgent) captured at pause. The resume route REPLAYS these onto the request
+     * before rebuilding the run, so a reload/cross-replica resume — where the client can
+     * no longer reconstruct the ephemeral config — still rebuilds the same agent/graph.
+     */
+    resumeContext?: Record<string, unknown>;
   }
 
   /**

@@ -6,6 +6,8 @@ import {
   buildAskUserQuestionPayload,
   buildPendingAction,
   computeAgentRequestFingerprint,
+  pickResumeContext,
+  applyResumeContext,
 } from './policy';
 
 describe('isHITLEnabled', () => {
@@ -289,5 +291,72 @@ describe('computeAgentRequestFingerprint', () => {
       ephemeralAgent: { execute_code: false, mcp: ['evil'] },
     });
     expect(a).not.toBe(b);
+  });
+});
+
+describe('pickResumeContext / applyResumeContext', () => {
+  it('picks only the graph-determining fields, dropping unrelated body keys', () => {
+    const ctx = pickResumeContext({
+      endpoint: 'agents',
+      agent_id: 'a1',
+      model: 'gpt',
+      promptPrefix: 'be terse',
+      ephemeralAgent: { execute_code: true },
+      conversationId: 'c',
+      decisions: [],
+      actionId: 'x',
+    });
+    expect(ctx).toEqual({
+      endpoint: 'agents',
+      agent_id: 'a1',
+      model: 'gpt',
+      promptPrefix: 'be terse',
+      ephemeralAgent: { execute_code: true },
+    });
+  });
+
+  it('omits absent (undefined) fields but keeps explicit null', () => {
+    const ctx = pickResumeContext({ endpoint: 'agents', ephemeralAgent: null });
+    expect(ctx).toEqual({ endpoint: 'agents', ephemeralAgent: null });
+    expect('agent_id' in ctx).toBe(false);
+  });
+
+  it('replays the persisted context onto a body, overwriting what the client sent', () => {
+    // The reload case: the client lost ephemeralAgent (null); the server restores it.
+    const body: Record<string, unknown> = {
+      conversationId: 'c',
+      actionId: 'x',
+      ephemeralAgent: null,
+      promptPrefix: 'tampered',
+    };
+    applyResumeContext(body, {
+      endpoint: 'agents',
+      ephemeralAgent: { execute_code: true, mcp: ['srv'] },
+      promptPrefix: 'original',
+    });
+    expect(body.ephemeralAgent).toEqual({ execute_code: true, mcp: ['srv'] });
+    expect(body.promptPrefix).toBe('original');
+    expect(body.endpoint).toBe('agents');
+    // Non-context fields are untouched.
+    expect(body.conversationId).toBe('c');
+    expect(body.actionId).toBe('x');
+  });
+
+  it('is a no-op for a null/undefined context', () => {
+    const body: Record<string, unknown> = { ephemeralAgent: null };
+    applyResumeContext(body, undefined);
+    expect(body.ephemeralAgent).toBeNull();
+  });
+
+  it('round-trips through buildPendingAction so replay restores the original body', () => {
+    const original = { endpoint: 'agents', ephemeralAgent: { execute_code: true }, promptPrefix: 'p' };
+    const action = buildPendingAction(
+      { type: 'ask_user_question', question: { question: 'q' } } as Agents.HumanInterruptPayload,
+      { streamId: 's', resumeContext: pickResumeContext(original) },
+    );
+    const reloadedBody: Record<string, unknown> = { ephemeralAgent: null };
+    applyResumeContext(reloadedBody, action.resumeContext);
+    expect(reloadedBody.ephemeralAgent).toEqual({ execute_code: true });
+    expect(reloadedBody.promptPrefix).toBe('p');
   });
 });

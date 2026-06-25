@@ -465,6 +465,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               conversationId: userMsg.conversationId,
               text: userMsg.text,
               quotes: userMsg.quotes,
+              // Skill selections aren't on `userMsg` yet at onStart (BaseClient adds them
+              // later), so source them from the request — otherwise this update overwrites
+              // the preliminary metadata and a HITL-resumed turn loses its skill pills.
+              ...(Array.isArray(req.body?.manualSkills) &&
+                req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+              ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+                req.body.alwaysAppliedSkills.length > 0 && {
+                  alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+                }),
             },
           });
 

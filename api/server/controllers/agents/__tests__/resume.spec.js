@@ -665,6 +665,42 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('persists the resumed run context calibration (contextMeta) onto the saved response', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const contextMeta = { calibrationRatio: 0.8 };
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ contextMeta }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ contextMeta }),
+        expect.anything(),
+      );
+    });
+
+    it('carries manualSkills/alwaysAppliedSkills onto the resumed requestMessage', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.manualSkills = ['skill-a'];
+      job.metadata.userMessage.alwaysAppliedSkills = ['skill-b'];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      const [, finalEvent] = mockGenerationJobManager.emitDone.mock.calls[0];
+      expect(finalEvent.requestMessage).toMatchObject({
+        manualSkills: ['skill-a'],
+        alwaysAppliedSkills: ['skill-b'],
+      });
+    });
+
     it('attaches client response metadata to the saved message when present', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       const contextUsage = { tokenCount: 1234 };

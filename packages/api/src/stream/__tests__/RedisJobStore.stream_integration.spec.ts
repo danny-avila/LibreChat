@@ -324,7 +324,7 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('createJob clears a stale agent_id from a reused conversation hash', async () => {
+    test('createJob clears stale per-turn identity (agent_id, isTemporary) from a reused hash', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -334,16 +334,21 @@ describe('RedisJobStore Integration Tests', () => {
       await store.initialize();
 
       const streamId = `stale-agent-${Date.now()}`;
-      // Turn 1: a saved agent.
+      // Turn 1: a saved agent in a temporary chat.
       await store.createJob(streamId, 'user-1', streamId);
-      await store.updateJob(streamId, { agent_id: 'saved-agent-1' });
-      expect((await store.getJob(streamId))?.agent_id).toBe('saved-agent-1');
+      await store.updateJob(streamId, { agent_id: 'saved-agent-1', isTemporary: true });
+      const turn1 = await store.getJob(streamId);
+      expect(turn1?.agent_id).toBe('saved-agent-1');
+      expect(turn1?.isTemporary).toBe(true);
 
-      // Turn 2 on the SAME conversation switches to an ephemeral/no-agent turn. The job
-      // hash is keyed by conversationId, so without clearing, the old agent_id would
-      // survive and the resume guard would reject a valid pause as a different agent.
+      // Turn 2 on the SAME conversation switches to an ephemeral / non-temporary turn.
+      // The hash is keyed by conversationId, so without clearing, the old agent_id and
+      // isTemporary would survive — the resume guard would reject the valid pause as a
+      // different agent, and the resumed response would be saved as temporary.
       await store.createJob(streamId, 'user-1', streamId);
-      expect((await store.getJob(streamId))?.agent_id).toBeUndefined();
+      const turn2 = await store.getJob(streamId);
+      expect(turn2?.agent_id).toBeUndefined();
+      expect(turn2?.isTemporary).toBeUndefined();
 
       await store.destroy();
     });

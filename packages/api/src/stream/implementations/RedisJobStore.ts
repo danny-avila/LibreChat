@@ -240,6 +240,10 @@ export class RedisJobStore implements IJobStore {
       'pendingActionId',
       'lastActiveAt',
       'agent_id',
+      // Same reasoning as agent_id: updateMetadata only writes isTemporary when the new
+      // metadata carries it, so a prior temporary turn's isTemporary=1 would otherwise
+      // survive and a later non-temporary resume would save its response as temporary.
+      'isTemporary',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
