@@ -10,6 +10,7 @@ import {
   mergeUsage,
   setEntryUsage,
   sumTotalUsage,
+  prunedBranchTokens,
   findBranchSnapshotAnchor,
   estimateTokens,
   normalizeUsageUnits,
@@ -216,6 +217,34 @@ describe('token index', () => {
     /** a1 is the tail: 20 / 4 = 5, surfaced both in estTokens and tailEstTokens. */
     expect(totals.estTokens).toBe(5);
     expect(totals.tailEstTokens).toBe(5);
+  });
+
+  describe('prunedBranchTokens (over-window mirror of getMessagesWithinTokenLimit)', () => {
+    /** u1 ← a1(huge, old) ← u2 ← a2(tail). */
+    const buildChain = () =>
+      buildIndex(CONVO, [
+        msg('u1', Constants.NO_PARENT, true, 2),
+        msg('a1', 'u1', false, 10),
+        msg('u2', 'a1', true, 2),
+        msg('a2', 'u2', false, 2),
+      ]);
+
+    it('keeps the newest messages that fit and stops at the first overflow', () => {
+      buildChain();
+      /** Budget 8: a2(2)+u2(2)=4 fit; a1(10) would overflow → pruned. */
+      expect(prunedBranchTokens(CONVO, 'a2', 8, false)).toBe(4);
+    });
+
+    it('returns the full branch sum when it fits the budget', () => {
+      buildChain();
+      expect(prunedBranchTokens(CONVO, 'a2', 100, false)).toBe(16);
+    });
+
+    it('skips the in-flight tail when excludeTail is set', () => {
+      buildChain();
+      /** Skip a2; a1(10)+u2(2)+u1(2)=14 all fit under 100. */
+      expect(prunedBranchTokens(CONVO, 'a2', 100, true)).toBe(14);
+    });
   });
 
   it('caps the branch at a summary marker instead of re-summing compacted history', () => {

@@ -388,6 +388,59 @@ export function sumBranch(
 }
 
 /**
+ * Message tokens that would actually be sent for an over-window branch. The send
+ * path prunes oldest-first to fit (`getMessagesWithinTokenLimit`), so walk the
+ * branch newest→oldest and stop once the next message would exceed `budget`,
+ * mirroring its "newest-that-fits" behavior for the gauge. Approximation: it omits
+ * the instruction/tool-schema overhead and tool-call pairing the real pruner also
+ * accounts for, which the client can't know for a snapshot-less branch — close
+ * enough for an estimate, and superseded by an exact snapshot once generated.
+ * `budget` is the message window (max minus the always-sent summary baseline);
+ * when `excludeTail`, the in-flight tail response is skipped (it rides on
+ * `liveTokens`). Per-message contribution matches `sumBranch`: stored `tokenCount`
+ * when counted, else the char-based `estTokens`.
+ */
+export function prunedBranchTokens(
+  conversationId: string,
+  tailId: string | null | undefined,
+  budget: number,
+  excludeTail: boolean,
+): number {
+  const index = registry.get(conversationId);
+  if (!index || !tailId || budget <= 0) {
+    return 0;
+  }
+
+  let total = 0;
+  let currentId: string | null = tailId;
+  let guard = index.size;
+  let isTail = true;
+
+  while (currentId && currentId !== Constants.NO_PARENT && guard-- > 0) {
+    const entry: TokenEntry | undefined = index.get(currentId);
+    if (!entry) {
+      break;
+    }
+    const skip = isTail && excludeTail;
+    isTail = false;
+    if (!skip) {
+      const contribution = entry.tokenCount > 0 ? entry.tokenCount : entry.estTokens;
+      if (total + contribution > budget) {
+        break;
+      }
+      total += contribution;
+    }
+    /** Pre-summary turns are subsumed by the baseline the caller already reserved,
+     *  so stop after counting the summarizing turn — mirrors `sumBranch`. */
+    if (entry.summaryUsedTokens != null && entry.summaryUsedTokens > 0) {
+      break;
+    }
+    currentId = entry.parentMessageId;
+  }
+  return total;
+}
+
+/**
  * Sums provider usage/cost across EVERY message in the conversation (all
  * branches, including regenerated/abandoned responses) — the conversation
  * total, shown alongside the branch figure when they differ.
