@@ -34,6 +34,7 @@ const MCPAppView = React.memo(function MCPAppView({
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
+  const [tornDown, setTornDown] = useState(false);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
 
   useEffect(() => {
@@ -59,7 +60,19 @@ const MCPAppView = React.memo(function MCPAppView({
     }
   }, []);
 
-  useAppBridge(iframeRef, app, toolArgs, toolResult, handleSizeChanged, () => setLoaded(true));
+  useAppBridge(
+    iframeRef,
+    app,
+    toolArgs,
+    toolResult,
+    handleSizeChanged,
+    () => setLoaded(true),
+    () => setTornDown(true),
+  );
+
+  if (tornDown) {
+    return null;
+  }
 
   const isAppBacked = isMcpAppResource(app);
   if (!isAppBacked && app.text) {

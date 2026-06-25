@@ -18,6 +18,7 @@ function MCPAppCard({
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const localize = useLocalize();
   const [loaded, setLoaded] = useState(false);
+  const [tornDown, setTornDown] = useState(false);
   const sandboxUrl = React.useMemo(() => getMCPSandboxUrl(), []);
 
   const toolResult = React.useMemo(() => buildAppToolResult(resource), [resource]);
@@ -39,7 +40,12 @@ function MCPAppCard({
     toolResult,
     handleSizeChanged,
     () => setLoaded(true),
+    () => setTornDown(true),
   );
+
+  if (tornDown) {
+    return null;
+  }
 
   if (isMcpAppResource(resource)) {
     return (

@@ -51,7 +51,7 @@ export function buildAppToolResult(resource: UIResource): AppToolResult | undefi
 
 export function getMCPSandboxUrl(): string {
   const configured = (import.meta.env as Record<string, string | undefined>).VITE_MCP_SANDBOX_URL;
-  const base = configured ?? `${window.location.origin}${apiBaseUrl()}/api/mcp/sandbox`;
+  const base = configured ?? `${apiBaseUrl()}/api/mcp/sandbox`;
   try {
     const url = new URL(base, window.location.origin);
     url.searchParams.set('parentOrigin', window.location.origin);

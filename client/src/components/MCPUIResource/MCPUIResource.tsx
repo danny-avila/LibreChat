@@ -25,6 +25,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
+  const [tornDown, setTornDown] = useState(false);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
 
@@ -47,7 +48,12 @@ export function MCPUIResource(props: MCPUIResourceProps) {
     toolResult,
     handleSizeChanged,
     () => setLoaded(true),
+    () => setTornDown(true),
   );
+
+  if (tornDown) {
+    return null;
+  }
 
   if (!uiResource) {
     return (

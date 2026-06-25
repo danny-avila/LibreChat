@@ -208,7 +208,12 @@ export function formatToolContent(
     },
 
     resource: (item) => {
-      const isUiResource = item.resource.uri.startsWith('ui://');
+      // MCP Apps defines a single renderable resource type, text/html;profile=mcp-app, and the
+      // host renders HTML only. ui:// resources with other mime types (json, remote-dom) have no
+      // renderer, so they fall through to plain resource text instead of an unrenderable marker.
+      const mimeType =
+        typeof item.resource.mimeType === 'string' ? item.resource.mimeType : 'text/html';
+      const isUiResource = item.resource.uri.startsWith('ui://') && mimeType.includes('html');
       const resourceText: string[] = [];
 
       if (isUiResource) {

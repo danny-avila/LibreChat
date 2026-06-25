@@ -30,6 +30,7 @@ export function useAppBridge(
   toolResult: AppToolResult | undefined,
   onSizeChanged: (params: SizeParams) => void,
   onLoaded?: () => void,
+  onTeardown?: () => void,
 ) {
   const user = useRecoilValue(store.user);
   const { ask } = useOptionalMessagesOperations();
@@ -41,11 +42,13 @@ export function useAppBridge(
   const askRef = useRef(ask);
   const onSizeChangedRef = useRef(onSizeChanged);
   const onLoadedRef = useRef(onLoaded);
+  const onTeardownRef = useRef(onTeardown);
   const toolArgsRef = useRef(toolArgs);
   const toolResultRef = useRef(toolResult);
   askRef.current = ask;
   onSizeChangedRef.current = onSizeChanged;
   onLoadedRef.current = onLoaded;
+  onTeardownRef.current = onTeardown;
   toolArgsRef.current = toolArgs;
   toolResultRef.current = toolResult;
 
@@ -54,6 +57,10 @@ export function useAppBridge(
     if (!iframe || !resource.serverName) return;
 
     let bridge: AppBridge | null = null;
+    // A resourceId switch or unmount can run cleanup while the iframe is still loading or
+    // bridge.connect() is pending; this flag stops the stale handleLoad from attaching a second
+    // bridge to the same iframe.
+    let cancelled = false;
     // The sandbox proxy re-emits `sandbox-proxy-ready` every 500ms until it receives the resource,
     // so fetch and send it only once to avoid overlapping reads and repeated inner-frame creation.
     let sandboxReadyHandled = false;
@@ -186,6 +193,7 @@ export function useAppBridge(
 
       bridge.addEventListener('requestteardown', async () => {
         await bridge!.teardownResource({}).catch(() => {});
+        onTeardownRef.current?.();
       });
 
       bridge.addEventListener('loggingmessage', (event) => {
@@ -196,6 +204,10 @@ export function useAppBridge(
       await bridge
         .connect(transport)
         .catch((err: unknown) => logger.error('[MCP App] bridge.connect failed', err));
+      if (cancelled) {
+        bridge.close();
+        return;
+      }
       bridgeRef.current = bridge;
     };
 
@@ -207,9 +219,12 @@ export function useAppBridge(
     iframe.src = iframe.getAttribute('data-sandbox-url') ?? '';
 
     return () => {
+      cancelled = true;
+      iframe.removeEventListener('load', handleLoad);
       bridgeRef.current?.teardownResource({}).catch(() => {});
       bridgeRef.current?.close();
       bridgeRef.current = null;
+      bridge?.close();
       bridge = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
