@@ -27,6 +27,9 @@ export const EMPTY_USAGE: BranchUsage = {
 
 export interface TokenEntry {
   tokenCount: number;
+  /** Uncalibrated char/4 estimate, set only when `tokenCount` is absent
+   *  (imported / pre-feature messages). Calibrated once at display time. */
+  estTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
   /** Per-response provider usage from `metadata.usage` (response messages only) */
@@ -46,6 +49,9 @@ export interface BranchTotals {
   counted: number;
   /** Total messages on the branch */
   total: number;
+  /** Uncalibrated estimate sum for count-less branch messages (imports /
+   *  pre-feature). Kept separate so known counts aren't re-estimated. */
+  estTokens: number;
   tailId: string | null;
   /** Whether the latest run's anchor message is on this branch */
   containsAnchor: boolean;
@@ -63,6 +69,7 @@ export const EMPTY_BRANCH: BranchTotals = {
   output: 0,
   counted: 0,
   total: 0,
+  estTokens: 0,
   tailId: null,
   containsAnchor: false,
   usage: EMPTY_USAGE,
@@ -137,10 +144,32 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
   }
 }
 
+/** Char length of a message's rendered text, for estimating count-less messages. */
+function messageChars(message: Partial<TMessage>): number {
+  if (typeof message.text === 'string' && message.text.length > 0) {
+    return message.text.length;
+  }
+  if (Array.isArray(message.content)) {
+    let chars = 0;
+    for (const part of message.content) {
+      const partChars = getOutputChars(part);
+      if (partChars != null) {
+        chars += partChars;
+      }
+    }
+    return chars;
+  }
+  return 0;
+}
+
 function toEntry(message: Partial<TMessage>): TokenEntry {
   const summaryUsedTokens = message.metadata?.summaryUsedTokens;
+  const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
   return {
-    tokenCount: typeof message.tokenCount === 'number' ? message.tokenCount : 0,
+    tokenCount,
+    /** Imported / pre-feature messages carry no `tokenCount`; estimate from text
+     *  length (uncalibrated) so a snapshot-less branch isn't under-counted. */
+    estTokens: tokenCount > 0 ? 0 : Math.round(messageChars(message) / 4),
     isCreatedByUser: message.isCreatedByUser === true,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
@@ -231,7 +260,7 @@ export function sumBranch(
     return EMPTY_BRANCH;
   }
 
-  const totals = { input: 0, output: 0, counted: 0, total: 0, containsAnchor: false };
+  const totals = { input: 0, output: 0, counted: 0, total: 0, estTokens: 0, containsAnchor: false };
   const usage: BranchUsage = { ...EMPTY_USAGE };
   let summaryBaseline = 0;
   /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
@@ -262,6 +291,8 @@ export function sumBranch(
       } else {
         totals.output += entry.tokenCount;
       }
+    } else if (!contextCapped && entry.estTokens > 0) {
+      totals.estTokens += entry.estTokens;
     }
     /** Cost/usage is cumulative spend — never truncated at the summary boundary. */
     addUsage(usage, entry.usage);

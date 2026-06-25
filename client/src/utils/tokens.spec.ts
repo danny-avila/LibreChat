@@ -88,6 +88,29 @@ describe('token index', () => {
     expect(altTotals.output).toBe(1019);
   });
 
+  it('estimates count-less messages by text length without inflating counted totals', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 12),
+      /** Imported message with no `tokenCount`: 40 chars of text → ~10 est tokens. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'x'.repeat(40),
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** Known counts feed input/output/counted; the count-less message stays out
+     *  of those and lands in the separate (uncalibrated) estimate bucket. */
+    expect(totals.input).toBe(12);
+    expect(totals.output).toBe(0);
+    expect(totals.counted).toBe(1);
+    expect(totals.total).toBe(2);
+    expect(totals.estTokens).toBe(10);
+  });
+
   it('caps the branch at a summary marker instead of re-summing compacted history', () => {
     const summarized = {
       messageId: 'a2',
