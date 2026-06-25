@@ -155,29 +155,33 @@ export function getAskUserQuestionPart(
 }
 
 /**
- * Resolves the response message a pending action targets within `messages`.
- * Prefers an explicit `responseMessageId`, then the conventional `<userMsg>_`
- * placeholder / a child of the user message. Returns the index or -1.
+ * Resolves the assistant response message a pending action targets within
+ * `messages`. Returns the index, or -1 when the assistant placeholder isn't present
+ * yet (the caller retries on the next frame).
+ *
+ * Only ever matches an ASSISTANT message. The `responseMessageId` for a fresh turn
+ * is the user message id with a trailing underscore (`<userMsg>_`), so a naive
+ * underscore-strip would resolve to the just-created USER message before the
+ * assistant placeholder exists — appending the prompt to the wrong bubble and never
+ * triggering the retry. Matching strictly on assistant messages avoids that.
  */
 export function findPendingActionMessageIndex(
   messages: TMessage[],
   pendingAction: Agents.PendingAction,
 ): number {
+  const isAssistant = (message: TMessage | undefined) => message?.isCreatedByUser === false;
   const { responseMessageId } = pendingAction;
   if (responseMessageId) {
-    const exact = messages.findIndex((message) => message.messageId === responseMessageId);
+    const exact = messages.findIndex(
+      (message) => message.messageId === responseMessageId && isAssistant(message),
+    );
     if (exact >= 0) {
       return exact;
     }
-    const unpadded = responseMessageId.replace(/_+$/, '');
-    const unpaddedIdx = messages.findIndex((message) => message.messageId === unpadded);
-    if (unpaddedIdx >= 0) {
-      return unpaddedIdx;
-    }
   }
-  /** Fall back to the last assistant message (the in-flight response). */
+  /** Fall back to the last assistant message (the in-flight response placeholder). */
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.isCreatedByUser === false) {
+    if (isAssistant(messages[i])) {
       return i;
     }
   }
