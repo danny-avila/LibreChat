@@ -966,7 +966,7 @@ Please follow these instructions when using tools from the respective MCP server
         },
       },
       CallToolResultSchema,
-      { timeout: connection.timeout },
+      { timeout: connection.timeout, resetTimeoutOnProgress: true },
     );
 
     return result;

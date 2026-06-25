@@ -155,11 +155,11 @@ export function useAppBridge(
       bridge.oninitialized = async () => {
         const args = toolArgsRef.current;
         const result = toolResultRef.current;
-        if (args) {
-          await bridge!
-            .sendToolInput({ arguments: args })
-            .catch((err: unknown) => logger.error('[MCP App] sendToolInput failed', err));
-        }
+        // MCP Apps expect tool input exactly once before the result, even for no-argument tools,
+        // so apps that initialize from ontoolinput always receive it.
+        await bridge!
+          .sendToolInput({ arguments: args ?? {} })
+          .catch((err: unknown) => logger.error('[MCP App] sendToolInput failed', err));
         if (result) {
           await bridge!
             .sendToolResult(result as never)
