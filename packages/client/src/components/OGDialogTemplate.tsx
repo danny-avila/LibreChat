@@ -93,7 +93,7 @@ const OGDialogTemplate: ForwardRefExoticComponent<
   const { selectHandler, selectClasses, selectText, isLoading } = legacySelection ?? {};
 
   const defaultSelect =
-    'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';
+    'bg-surface-submit text-primary-foreground transition-colors hover:bg-surface-submit-hover disabled:cursor-not-allowed disabled:opacity-50';
 
   let selectionContent = null;
   if (isLegacySelection) {
