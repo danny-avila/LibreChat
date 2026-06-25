@@ -593,11 +593,21 @@ export async function initializeAgent(
 
   let currentFiles: IMongoFile[] | undefined;
 
+  const endpointModelOptions =
+    isInitialAgent === true ? (endpointOption?.model_parameters ?? {}) : {};
+  const agentModelOptions = agent.model_parameters ?? { model: agent.model };
+  const resolvedMaxContextTokens = optionalChainWithEmptyCheck(
+    endpointModelOptions.maxContextTokens as number | undefined,
+    agentModelOptions.maxContextTokens as number | undefined,
+    isInitialAgent === true ? endpointOption?.maxContextTokens : undefined,
+  );
+
   const _modelOptions = structuredClone(
     Object.assign(
       { model: agent.model },
-      agent.model_parameters ?? { model: agent.model },
-      isInitialAgent === true ? endpointOption?.model_parameters : {},
+      agentModelOptions,
+      endpointModelOptions,
+      resolvedMaxContextTokens != null ? { maxContextTokens: resolvedMaxContextTokens } : {},
     ),
   );
 
