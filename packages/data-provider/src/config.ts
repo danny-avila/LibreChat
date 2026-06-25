@@ -362,6 +362,23 @@ const skillSyncTenantIdSchema = z
     message: 'must not be the reserved system tenant id',
   });
 
+/**
+ * GitHub App credential block. Used as an alternative to `token` /
+ * `credentialKey` when the organization can't issue PATs but has a GitHub
+ * App available. The sync runner mints short-lived installation access tokens
+ * from these at sync time; see `packages/api/src/skills/sync/github-app-auth.ts`.
+ *
+ * `appId` and `privateKey` are required and reference environment variables
+ * (the App's numeric id / client id and the App's RSA private key PEM).
+ * `installationId` is optional — when omitted the sync runner discovers it via
+ * `GET /repos/{owner}/{repo}/installation`.
+ */
+const skillSyncGitHubAppConfigSchema = z.object({
+  appId: skillSyncTokenReferenceSchema,
+  privateKey: skillSyncTokenReferenceSchema,
+  installationId: skillSyncTokenReferenceSchema.optional(),
+});
+
 export const skillSyncGitHubSourceSchema = z
   .object({
     id: skillSyncIdentifierSchema,
@@ -372,21 +389,24 @@ export const skillSyncGitHubSourceSchema = z
     skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
     credentialKey: skillSyncIdentifierSchema.optional(),
     token: skillSyncTokenReferenceSchema.optional(),
+    app: skillSyncGitHubAppConfigSchema.optional(),
     tenantId: skillSyncTenantIdSchema.optional(),
   })
   .superRefine((source, ctx) => {
-    if (!source.credentialKey && !source.token) {
+    const credentialCount =
+      (source.credentialKey ? 1 : 0) + (source.token ? 1 : 0) + (source.app ? 1 : 0);
+    if (credentialCount === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['credentialKey'],
-        message: 'Either credentialKey or token is required',
+        message: 'Either credentialKey, token, or app is required',
       });
     }
-    if (source.credentialKey && source.token) {
+    if (credentialCount > 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['token'],
-        message: 'Use either credentialKey or token, not both',
+        message: 'Use exactly one of credentialKey, token, or app — not multiple',
       });
     }
   });

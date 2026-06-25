@@ -913,6 +913,120 @@ describe('configSchema skillSync', () => {
     expect(duplicateCredentialSources.success).toBe(false);
   });
 
+  it('accepts a GitHub skill sync source with a GitHub App credential', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'stord-marketplace',
+              owner: 'stordco',
+              repo: 'claude-ai-marketplace',
+              paths: ['.'],
+              skillDiscoveryDepth: 3,
+              app: {
+                appId: '${GH_AI_APP_ID}',
+                privateKey: '${GH_AI_APP_PEM}',
+              },
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.skillSync?.github?.sources[0]?.app?.appId).toBe('${GH_AI_APP_ID}');
+    expect(result.data?.skillSync?.github?.sources[0]?.app?.privateKey).toBe('${GH_AI_APP_PEM}');
+  });
+
+  it('accepts a GitHub App credential with an optional installationId', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'stord-marketplace',
+              owner: 'stordco',
+              repo: 'claude-ai-marketplace',
+              paths: ['.'],
+              app: {
+                appId: '${GH_AI_APP_ID}',
+                privateKey: '${GH_AI_APP_PEM}',
+                installationId: '${GH_AI_APP_INSTALLATION_ID}',
+              },
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects combining app with token or credentialKey', () => {
+    const appAndToken = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'stord-marketplace',
+              owner: 'stordco',
+              repo: 'claude-ai-marketplace',
+              paths: ['.'],
+              token: '${GITHUB_SKILLS_TOKEN}',
+              app: { appId: '${GH_AI_APP_ID}', privateKey: '${GH_AI_APP_PEM}' },
+            },
+          ],
+        },
+      },
+    });
+    const appAndCredentialKey = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'stord-marketplace',
+              owner: 'stordco',
+              repo: 'claude-ai-marketplace',
+              paths: ['.'],
+              credentialKey: 'github-skills-prod',
+              app: { appId: '${GH_AI_APP_ID}', privateKey: '${GH_AI_APP_PEM}' },
+            },
+          ],
+        },
+      },
+    });
+    expect(appAndToken.success).toBe(false);
+    expect(appAndCredentialKey.success).toBe(false);
+  });
+
+  it('rejects literal values in app.appId or app.privateKey (must be env refs)', () => {
+    const literalAppId = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'stord-marketplace',
+              owner: 'stordco',
+              repo: 'claude-ai-marketplace',
+              paths: ['.'],
+              app: { appId: '12345', privateKey: '${GH_AI_APP_PEM}' },
+            },
+          ],
+        },
+      },
+    });
+    expect(literalAppId.success).toBe(false);
+  });
+
   it('rejects GitHub skill sync discovery depths outside the allowed range', () => {
     const result = configSchema.safeParse({
       version: '1.3.11',

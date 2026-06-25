@@ -243,6 +243,409 @@ function createDeps(
   return deps;
 }
 
+describe('createGitHubSkillSyncRunner with GitHub App auth', () => {
+  const TEST_PEM = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  }).privateKey;
+
+  beforeEach(() => {
+    process.env.GH_APP_AUTH_TEST_ID = '99999';
+    process.env.GH_APP_AUTH_TEST_PEM = TEST_PEM;
+  });
+
+  afterEach(() => {
+    delete process.env.GH_APP_AUTH_TEST_ID;
+    delete process.env.GH_APP_AUTH_TEST_PEM;
+  });
+
+  it('mints an installation token via the App and uses it for sync', async () => {
+    const authByUrl: Array<{ url: string; auth: string | undefined }> = [];
+    const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const baseFetch = githubFetch();
+    const fetchFn = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const auth =
+        (init?.headers as Record<string, string> | undefined)?.authorization ??
+        (init?.headers as Record<string, string> | undefined)?.Authorization;
+      authByUrl.push({ url, auth });
+      if (url.endsWith('/repos/LibreChat/skills/installation')) {
+        return response({ id: 42 });
+      }
+      if (url.endsWith('/app/installations/42/access_tokens')) {
+        return response({ token: 'ghs_minted', expires_at: expiresAt });
+      }
+      return (baseFetch as unknown as typeof fetch)(input, init);
+    }) as unknown as typeof fetch;
+
+    const deps = createDeps({
+      fetchFn,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-integration',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).toHaveBeenCalledWith(expect.objectContaining({ name: 'research' }));
+    // Sync calls (commit/tree/blob) carry the minted installation token.
+    const syncAuth = authByUrl
+      .filter((e) => !e.url.endsWith('/installation') && !e.url.endsWith('/access_tokens'))
+      .map((e) => e.auth);
+    expect(syncAuth.length).toBeGreaterThan(0);
+    expect(syncAuth.every((a) => a === 'Bearer ghs_minted')).toBe(true);
+    // The two App-auth endpoints must be called with an App JWT (3-segment
+    // signed token) — never with the installation token, which would be a
+    // boundary-of-the-feature regression that the unit-level JWT test can't
+    // catch.
+    const jwtShape = /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+    const installationCall = authByUrl.find((e) => e.url.endsWith('/installation'));
+    const tokenCall = authByUrl.find((e) => e.url.endsWith('/access_tokens'));
+    expect(installationCall?.auth).toMatch(jwtShape);
+    expect(tokenCall?.auth).toMatch(jwtShape);
+  });
+
+  it('reuses the cached App token provider across runOnce() calls (one mint, two syncs)', async () => {
+    let mintCount = 0;
+    const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const baseFetch = githubFetch();
+    const fetchFn = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/repos/LibreChat/skills/installation')) {
+        return response({ id: 42 });
+      }
+      if (url.endsWith('/app/installations/42/access_tokens')) {
+        mintCount += 1;
+        return response({ token: 'ghs_cached', expires_at: expiresAt });
+      }
+      return (baseFetch as unknown as typeof fetch)(input, init);
+    }) as unknown as typeof fetch;
+
+    const config = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: false,
+        sources: [
+          {
+            id: 'app-auth-memoize',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            app: {
+              appId: '${GH_APP_AUTH_TEST_ID}',
+              privateKey: '${GH_APP_AUTH_TEST_PEM}',
+            },
+          },
+        ],
+      },
+    };
+    const deps = createDeps({ fetchFn, getConfig: () => config });
+    const runner = createGitHubSkillSyncRunner(deps);
+    await runner.runOnce();
+    await runner.runOnce();
+    // Two sync runs, one installation token mint — the module-scope cache
+    // engaged across runs.
+    expect(mintCount).toBe(1);
+  });
+
+  it('reads installationId from env and skips installation discovery', async () => {
+    process.env.GH_APP_AUTH_TEST_INSTALL = '77';
+    const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const baseFetch = githubFetch();
+    const seenUrls: string[] = [];
+    const fetchFn = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      seenUrls.push(url);
+      if (url.endsWith('/app/installations/77/access_tokens')) {
+        return response({ token: 'ghs_pinned', expires_at: expiresAt });
+      }
+      return (baseFetch as unknown as typeof fetch)(input, init);
+    }) as unknown as typeof fetch;
+
+    const deps = createDeps({
+      fetchFn,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-pinned-install',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+                installationId: '${GH_APP_AUTH_TEST_INSTALL}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    expect(result.status).toBe('completed');
+    // Discovery endpoint MUST NOT be called when installationId is pinned.
+    expect(seenUrls.some((u) => /\/repos\/[^/]+\/[^/]+\/installation$/.test(u))).toBe(false);
+    expect(seenUrls.some((u) => u.endsWith('/app/installations/77/access_tokens'))).toBe(true);
+    delete process.env.GH_APP_AUTH_TEST_INSTALL;
+  });
+
+  it('getStatus() reports credentialPresent=true for a fully-resolved App source', async () => {
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-status',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const status = await runner.getStatus();
+    expect(status.sources[0]?.credentialPresent).toBe(true);
+  });
+
+  it('getStatus() reports credentialPresent=false when an App env var is unset', async () => {
+    delete process.env.GH_APP_AUTH_TEST_PEM;
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-status-missing',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const status = await runner.getStatus();
+    expect(status.sources[0]?.credentialPresent).toBe(false);
+  });
+
+  it('fails fast when the App appId env var is missing and names it in the status', async () => {
+    delete process.env.GH_APP_AUTH_TEST_ID;
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-missing-appid',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    expect(result.status).toBe('failed');
+    const failed = deps.statuses.find((s) => s.status === 'failed');
+    expect(failed?.errorCode).toBe('GITHUB_APP_AUTH_FAILED');
+    expect(failed?.errorMessage).toMatch(/GH_APP_AUTH_TEST_ID/);
+  });
+
+  it('fails fast when the App privateKey env var is missing and names it in the status', async () => {
+    delete process.env.GH_APP_AUTH_TEST_PEM;
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-missing-pem',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    expect(result.status).toBe('failed');
+    const failed = deps.statuses.find((s) => s.status === 'failed');
+    expect(failed?.errorCode).toBe('GITHUB_APP_AUTH_FAILED');
+    expect(failed?.errorMessage).toMatch(/GH_APP_AUTH_TEST_PEM/);
+  });
+
+  it('fails fast when a configured installationId env var is unset (no silent discovery fallback)', async () => {
+    // Do NOT set GH_APP_AUTH_TEST_INSTALL — config references it but it's unset.
+    const fetchFn = jest.fn(async () => response({}, 404)) as unknown as typeof fetch;
+    const deps = createDeps({
+      fetchFn,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-missing-install',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+                installationId: '${GH_APP_AUTH_TEST_INSTALL}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    expect(result.status).toBe('failed');
+    const failed = deps.statuses.find((s) => s.status === 'failed');
+    expect(failed?.errorCode).toBe('GITHUB_APP_AUTH_FAILED');
+    expect(failed?.errorMessage).toMatch(/GH_APP_AUTH_TEST_INSTALL/);
+    // Critical: nothing should have been fetched at all — fail-loud, not fall-through.
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a malformed-PEM as GITHUB_APP_AUTH_FAILED via the runner (deferred validation)', async () => {
+    process.env.GH_APP_AUTH_TEST_PEM = 'not-a-real-pem';
+    const fetchFn = jest.fn(async () => response({}, 404)) as unknown as typeof fetch;
+    const deps = createDeps({
+      fetchFn,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-bad-pem',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    expect(result.status).toBe('failed');
+    const failed = deps.statuses.find((s) => s.status === 'failed');
+    expect(failed?.errorCode).toBe('GITHUB_APP_AUTH_FAILED');
+    expect(failed?.errorMessage).toMatch(/privateKey|PEM/i);
+  });
+
+  it('surfaces a 404 from installation lookup as GITHUB_APP_AUTH_FAILED', async () => {
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/installation')) return response({ message: 'Not Found' }, 404);
+      return response({}, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({
+      fetchFn,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'app-auth-404',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              app: {
+                appId: '${GH_APP_AUTH_TEST_ID}',
+                privateKey: '${GH_APP_AUTH_TEST_PEM}',
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    expect(result.status).toBe('failed');
+    const failed = deps.statuses.find((s) => s.status === 'failed');
+    expect(failed?.errorCode).toBe('GITHUB_APP_AUTH_FAILED');
+    expect(failed?.errorMessage).toMatch(/not be installed on LibreChat\/skills/);
+  });
+});
+
 describe('createGitHubSkillSyncRunner', () => {
   it('creates a GitHub skill and syncs bundled files from a configured path', async () => {
     const deps = createDeps();
