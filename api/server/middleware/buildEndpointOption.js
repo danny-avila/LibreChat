@@ -57,7 +57,16 @@ async function buildEndpointOption(req, res, next) {
 
   const appConfig = req.config;
   let appliedModelSpecPrivateFields = new Set();
-  if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce) {
+  /**
+   * Skip server-side model-spec handling on the agents endpoint. A tool-enabled
+   * spec runs as an ephemeral agent: the request `endpoint` is `agents` while the
+   * spec's `preset.endpoint` is the underlying provider (e.g. `anthropic`), so the
+   * strict `isModelSpecEndpointMatch` check would falsely reject it ("Model spec
+   * mismatch"). The client already merged the full preset (model, instructions,
+   * params) into the body, and `loadEphemeralAgent` applies the spec's capabilities
+   * from `req.config` — so re-applying here is redundant and the match check is wrong.
+   */
+  if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce && !isAgents) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = appConfig.modelSpecs;
     const { spec } = parsedBody;
@@ -90,7 +99,7 @@ async function buildEndpointOption(req, res, next) {
       logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
       return handleError(res, { text: 'Error parsing model spec' });
     }
-  } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
+  } else if (parsedBody.spec && appConfig.modelSpecs?.list && !isAgents) {
     const modelSpec = findModelSpecByName(appConfig.modelSpecs, parsedBody.spec);
     if (modelSpec) {
       if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
