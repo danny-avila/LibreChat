@@ -19,6 +19,7 @@ import type {
   TSkillFile,
   TCreateSkill,
   TCreateSkillFromFilePayload,
+  TCreateSkillFromContentPayload,
   TUpdateSkillVariables,
   TUpdateSkillResponse,
   TDeleteSkillResponse,
@@ -315,6 +316,8 @@ export type ImportSkillOptions = MutationOptions<TSkill, FormData>;
 export type CreateSkillOptions = MutationOptions<TSkill, TCreateSkill>;
 
 export type CreateSkillFromFileOptions = MutationOptions<TSkill, TCreateSkillFromFilePayload>;
+
+export type CreateSkillFromContentOptions = MutationOptions<TSkill, TCreateSkillFromContentPayload>;
 
 export type UpdateSkillOptions = MutationOptions<
   TUpdateSkillResponse,

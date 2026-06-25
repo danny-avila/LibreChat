@@ -368,6 +368,7 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 export const skills = () => `${BASE_URL}/api/skills`;
 export const importSkill = () => `${skills()}/import`;
 export const skillFromFile = () => `${skills()}/from-file`;
+export const skillFromContent = () => `${skills()}/from-content`;
 export const skillFilePreview = (fileId: string) =>
   `${skills()}/file-preview?fileId=${encodeURIComponent(fileId)}`;
 

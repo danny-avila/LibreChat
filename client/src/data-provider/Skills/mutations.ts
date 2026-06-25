@@ -7,6 +7,8 @@ import type {
   TCreateSkill,
   TCreateSkillFromFilePayload,
   CreateSkillFromFileOptions,
+  TCreateSkillFromContentPayload,
+  CreateSkillFromContentOptions,
   TUpdateSkillVariables,
   TUpdateSkillResponse,
   TDeleteSkillResponse,
@@ -165,6 +167,29 @@ export const useCreateSkillFromFileMutation = (
     onSuccess: (skill, variables, context) => {
       queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);
       addSkillToCachedLists(queryClient, skill);
+      if (onSuccess) onSuccess(skill, variables, context);
+    },
+  });
+};
+
+/**
+ * Create a skill from markdown the assistant emitted as an in-chat artifact
+ * (the in-chat "save as skill" banner). On success, writes the new skill into
+ * the detail and list caches so any open listing UI updates immediately.
+ */
+export const useCreateSkillFromContentMutation = (
+  options?: CreateSkillFromContentOptions,
+): UseMutationResult<TSkill, unknown, TCreateSkillFromContentPayload> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...rest } = options ?? {};
+  return useMutation({
+    mutationFn: (payload: TCreateSkillFromContentPayload) =>
+      dataService.createSkillFromContent(payload),
+    ...rest,
+    onSuccess: (skill, variables, context) => {
+      queryClient.setQueryData<TSkill>([QueryKeys.skill, skill._id], skill);
+      addSkillToCachedLists(queryClient, skill);
+      queryClient.invalidateQueries([QueryKeys.skills]);
       if (onSuccess) onSuccess(skill, variables, context);
     },
   });

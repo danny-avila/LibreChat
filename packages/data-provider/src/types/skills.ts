@@ -312,6 +312,19 @@ export type TCreateSkillFromFilePayload = {
 };
 
 /**
+ * Body for POST `/api/skills/from-content` — the in-chat banner's primary path.
+ * The assistant emits SKILL.md as a LibreChat artifact inside the message
+ * content rather than as a stored file, so the client parses the markdown out
+ * and posts it directly (no `fileId`). `name`/`description` carry the banner's
+ * edited values.
+ */
+export type TCreateSkillFromContentPayload = {
+  content: string;
+  name?: string;
+  description?: string;
+};
+
+/**
  * Per-user skill active/inactive overrides (GET response and POST body payload).
  * Key = skill ObjectId string, value = explicit active state.
  * Skills absent from the map use the ownership-based default:

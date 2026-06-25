@@ -998,6 +998,17 @@ export function createSkillFromFile(
   return request.post(endpoints.skillFromFile(), payload);
 }
 
+/**
+ * Create a skill from markdown the assistant emitted as an in-chat artifact.
+ * The in-chat banner parses the SKILL.md out of the message content and posts
+ * it directly — no stored file involved.
+ */
+export function createSkillFromContent(
+  payload: sk.TCreateSkillFromContentPayload,
+): Promise<sk.TSkill> {
+  return request.post(endpoints.skillFromContent(), payload);
+}
+
 export function getSkillFileContent(
   skillId: string,
   relativePath: string,

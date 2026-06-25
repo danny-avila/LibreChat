@@ -6,6 +6,7 @@ const {
   createSkillsHandlers,
   createImportHandler,
   createSkillFromFileHandlers,
+  createSkillFromContentHandler,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -183,6 +184,13 @@ const { previewSkillFile, createFromFile } = createSkillFromFileHandlers({
   grantPermission,
 });
 
+// In-chat "save as skill" from an artifact's markdown content (no stored file).
+const { createFromContent } = createSkillFromContentHandler({
+  createSkill,
+  deleteSkill,
+  grantPermission,
+});
+
 // ---------------------------------------------------------------------------
 // Per-file upload handler (add a single file to an existing skill)
 // ---------------------------------------------------------------------------
@@ -301,6 +309,7 @@ router.post(
 // Registered before `/:id` so these literal paths aren't captured as ids.
 router.get('/file-preview', previewSkillFile);
 router.post('/from-file', checkSkillCreate, restoreTenantContextFromReq, createFromFile);
+router.post('/from-content', checkSkillCreate, restoreTenantContextFromReq, createFromContent);
 
 router.get('/', handlers.list);
 router.post('/', checkSkillCreate, handlers.create);
