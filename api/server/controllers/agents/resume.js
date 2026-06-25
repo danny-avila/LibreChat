@@ -224,13 +224,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
-  // The resume must rebuild the SAME agent that paused. A client passing a different
-  // agent_id (even one it can access) would resume Agent A's checkpoint state on
-  // Agent B's graph. The conversation's agent is stable, so a correct client always
-  // sends the right one — reject a mismatch rather than silently swapping agents.
+  // The resume must rebuild the SAME agent/endpoint that paused. Require an EXACT
+  // agent_id match when the paused job had one — a request that omits agent_id (or
+  // claims an ephemeral / non-agents endpoint) must not rebuild the claimed checkpoint
+  // on a different graph. The conversation's agent is stable, so a correct client always
+  // sends the right one.
   const originalAgentId = job.metadata?.agent_id;
-  if (originalAgentId && req.body.agent_id && req.body.agent_id !== originalAgentId) {
+  if (originalAgentId && req.body.agent_id !== originalAgentId) {
     return res.status(403).json({ error: 'Cannot resume with a different agent' });
+  }
+  const originalEndpoint = job.metadata?.endpoint;
+  if (originalEndpoint && req.body.endpoint && req.body.endpoint !== originalEndpoint) {
+    return res.status(403).json({ error: 'Cannot resume on a different endpoint' });
   }
 
   const pendingAction = job.metadata?.pendingAction;

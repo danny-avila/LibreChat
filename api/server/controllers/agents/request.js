@@ -526,6 +526,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
             delete response.databasePromise;
           }
+          // BaseClient saved the response as completed (unfinished:false), but the turn
+          // is paused awaiting a decision. Re-mark it unfinished so an expired / never-
+          // resumed approval doesn't leave a "finished" response in history; the resume
+          // path overwrites it with the full completed message on success.
+          if (response?.messageId) {
+            try {
+              await saveMessage(
+                {
+                  userId,
+                  isTemporary: req?.body?.isTemporary,
+                  interfaceConfig: req?.config?.interfaceConfig,
+                },
+                { ...response, endpoint: endpointOption.endpoint, unfinished: true, user: userId },
+                {
+                  context:
+                    'api/server/controllers/agents/request.js - HITL pause (mark unfinished)',
+                },
+              );
+            } catch (saveErr) {
+              logger.error(
+                '[ResumableAgentController] Failed to mark paused response unfinished',
+                saveErr,
+              );
+            }
+          }
           titleAbortController.abort();
           acceptsTitleEvents = false;
           resolveConvoReady();

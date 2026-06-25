@@ -37,12 +37,26 @@ async function moderateText(req, res, next) {
       inputs.push(...quotes);
       inputs.push(mergeQuotedText(safeText, quotes));
     }
-    // A tool-approval resume can carry user-authored `respond` text in `decisions[]`
-    // (the substitute tool result the model receives) — moderate it like typed text.
+    // A tool-approval resume can carry user-authored text in `decisions[]`: the
+    // `respond` substitute result, a `reject` reason, and `edit`ed tool arguments —
+    // moderate all of them like typed text (edited args stringified).
     if (Array.isArray(req.body.decisions)) {
       for (const decision of req.body.decisions) {
         if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
           inputs.push(decision.responseText);
+        }
+        if (typeof decision?.reason === 'string' && decision.reason.length > 0) {
+          inputs.push(decision.reason);
+        }
+        if (decision?.editedArguments != null) {
+          try {
+            const edited = JSON.stringify(decision.editedArguments);
+            if (typeof edited === 'string' && edited.length > 0) {
+              inputs.push(edited);
+            }
+          } catch {
+            /* ignore unstringifiable edited args */
+          }
         }
       }
     }
