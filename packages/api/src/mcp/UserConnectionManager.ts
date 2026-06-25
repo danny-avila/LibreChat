@@ -643,7 +643,7 @@ export abstract class UserConnectionManager {
   }): Promise<t.ParsedServerConfig> {
     if (
       config.requiresOAuth != null ||
-      config.apiKey != null ||
+      (config.apiKey != null && config.oauth == null) ||
       !hasRuntimeUrlPlaceholders(config)
     ) {
       return config;

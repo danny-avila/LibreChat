@@ -341,7 +341,7 @@ describe('MCPServerInspector', () => {
       expect(result.apiKey?.source).toBe('admin');
     });
 
-    it('should set requiresOAuth to false when apiKey.source is user', async () => {
+    it('should set requiresOAuth to false and skip probing when apiKey.source is user', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'sse',
         url: 'https://api.example.com/sse',
@@ -359,12 +359,41 @@ describe('MCPServerInspector', () => {
         method: 'protected-resource-metadata',
       });
 
-      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+      // No connection provided: the user's key is supplied per-user at connect time, so
+      // inspection must NOT open an unauthenticated connection (it would 401 and fail save).
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
 
-      // Should NOT call OAuth detection for user-provided API key
       expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
       expect(result.requiresOAuth).toBe(false);
       expect(result.apiKey?.source).toBe('user');
+    });
+
+    it('should honor an explicit oauth block even when a user apiKey is present', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com/sse',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+        oauth: {
+          authorization_url: 'https://api.example.com/oauth/authorize',
+          token_url: 'https://api.example.com/oauth/token',
+          scope: 'read',
+        },
+      };
+
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: true,
+        method: 'protected-resource-metadata',
+      });
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      // An explicit oauth config must take precedence over the apiKey short-circuit.
+      expect(mockDetectOAuthRequirement).toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(true);
     });
 
     it('should fetch capabilities when server has no tools', async () => {
