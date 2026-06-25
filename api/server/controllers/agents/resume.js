@@ -10,6 +10,8 @@ const {
   deleteAgentCheckpoint,
   buildAbortedResponseMetadata,
   sanitizeMessageForTransmit,
+  decrementPendingRequest,
+  checkAndIncrementPendingRequest,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { saveMessage, getConvo } = require('~/models');
@@ -60,7 +62,10 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   const checkpointerCfg = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
   const meta = job.metadata ?? {};
   const userMessage = meta.userMessage;
+  // The response hangs off the user message; the *user* message's own parent decides
+  // whether this is the first turn of the conversation (title eligibility).
   const parentMessageId = userMessage?.messageId ?? Constants.NO_PARENT;
+  const isFirstTurn = (userMessage?.parentMessageId ?? Constants.NO_PARENT) === Constants.NO_PARENT;
   const responseMessageId = meta.responseMessageId ?? `${userMessage?.messageId ?? 'resumed'}_`;
   // Sourced from the paused job (persisted at creation), not the resume body — a
   // temporary chat must stay temporary on resume so its messages aren't persisted.
@@ -95,7 +100,11 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   if (meta.agent_id ?? req.body?.agent_id) {
     responseMessage.agent_id = meta.agent_id ?? req.body.agent_id;
   }
-  const responseMetadata = jobData ? buildAbortedResponseMetadata(jobData) : null;
+  // Use the normal-completion metadata (contextUsage, thoughtSignatures, …) — the
+  // resumed turn finished normally, so the abort-only helper would drop those fields.
+  // Fall back to the job's tracked usage if the client metadata isn't available.
+  const responseMetadata =
+    client?.buildResponseMetadata?.() ?? (jobData ? buildAbortedResponseMetadata(jobData) : null);
   if (responseMetadata) {
     responseMessage.metadata = responseMetadata;
   }
@@ -115,7 +124,7 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   // title instead of "New Chat". Best-effort — a failure must not fail the resumed turn.
   if (
     addTitle &&
-    parentMessageId === Constants.NO_PARENT &&
+    isFirstTurn &&
     !isTemporary &&
     userMessage?.text &&
     (!convo || !convo.title || convo.title === 'New Chat')
@@ -213,7 +222,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   if (job.status !== 'requires_action' || isPendingActionStale({ pendingAction })) {
     return res.status(409).json({ error: 'No live pending action to resume' });
   }
-  if (actionId && pendingAction.actionId !== actionId) {
+  // Require the actionId the UI sends: without it, a stale/malformed client could
+  // resolve whatever action is currently pending (e.g. answer a different question).
+  if (!actionId) {
+    return res.status(400).json({ error: 'actionId is required to resume' });
+  }
+  if (pendingAction.actionId !== actionId) {
     return res.status(409).json({ error: 'This decision targets a stale action' });
   }
 
@@ -222,11 +236,20 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(mapped.status).json({ error: mapped.error, undecided: mapped.undecided });
   }
 
+  // Count the resume against the concurrency limit. The original turn released its slot
+  // when it paused, so resuming must re-acquire one — otherwise pausing several turns
+  // and resuming them at once would bypass LIMIT_CONCURRENT_MESSAGES.
+  const { allowed } = await checkAndIncrementPendingRequest(userId);
+  if (!allowed) {
+    return res.status(429).json({ error: 'Too many concurrent requests' });
+  }
+
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
   // re-execute tools and double-bill.
   const claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
   if (!claimed) {
+    await decrementPendingRequest(userId);
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
   }
 
@@ -255,12 +278,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     client.conversationId = streamId;
     client.responseMessageId = job.metadata.responseMessageId;
     client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
+    // Read the pre-pause content BEFORE swapping the store's content reference: the
+    // in-memory store's setContentParts REPLACES the stored array, so reading the
+    // resume state afterward would see the new (empty) client array and lose the seed.
+    const resumeState = await GenerationJobManager.getResumeState(streamId);
+    const seedContent = resumeState?.aggregatedContent ?? [];
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts);
     }
-
-    const resumeState = await GenerationJobManager.getResumeState(streamId);
-    const seedContent = resumeState?.aggregatedContent ?? [];
 
     await client.resumeCompletion({
       resumeValue: mapped.resumeValue,
@@ -308,6 +333,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
     );
   } finally {
+    // Release the concurrency slot taken above — on a normal finish, a re-pause, or an
+    // error. A re-pause re-acquires its own slot via the next resume request.
+    await decrementPendingRequest(userId);
     if (client) {
       disposeClient(client);
     }

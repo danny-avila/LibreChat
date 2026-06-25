@@ -37,7 +37,16 @@ async function moderateText(req, res, next) {
       inputs.push(...quotes);
       inputs.push(mergeQuotedText(safeText, quotes));
     }
-    // Nothing to moderate (e.g. a tool-approval resume carries `decisions`, no text) —
+    // A tool-approval resume can carry user-authored `respond` text in `decisions[]`
+    // (the substitute tool result the model receives) — moderate it like typed text.
+    if (Array.isArray(req.body.decisions)) {
+      for (const decision of req.body.decisions) {
+        if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
+          inputs.push(decision.responseText);
+        }
+      }
+    }
+    // Nothing to moderate (e.g. a tool-approval resume with no `respond` text) —
     // don't post an empty/undefined `input`, which the moderation API rejects and which
     // would otherwise deny the request.
     if (inputs.length === 0) {
