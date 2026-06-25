@@ -164,23 +164,31 @@ describe('findPendingActionMessageIndex', () => {
     expect(idx).toBe(1);
   });
 
-  it('skips a user message that shares the responseMessageId and falls back to the last assistant', () => {
-    // `<userMsg>_` style ids could collide with the user bubble — the function must
-    // never resolve to a user message.
+  it('returns -1 (retry) when a provided responseMessageId matches only a user message', () => {
+    // `<userMsg>_` style ids could collide with the user bubble — never resolve to it;
+    // -1 makes the caller retry on the next frame once the assistant placeholder renders.
     const messages = [user('shared'), assistant('r-last')];
     const idx = findPendingActionMessageIndex(
       messages,
       toolApprovalAction({ responseMessageId: 'shared' }),
     );
-    expect(idx).toBe(1);
+    expect(idx).toBe(-1);
   });
 
-  it('falls back to the last assistant message when there is no exact match', () => {
+  it('returns -1 (retry) when a provided responseMessageId is not found at all', () => {
+    // Provided-but-absent means the in-flight assistant placeholder is not in the list
+    // yet — defer rather than attach the prompt/approval to a prior reply.
     const messages = [assistant('r1'), user('u1'), assistant('r2')];
     const idx = findPendingActionMessageIndex(
       messages,
       toolApprovalAction({ responseMessageId: 'missing' }),
     );
+    expect(idx).toBe(-1);
+  });
+
+  it('falls back to the last assistant message only when no responseMessageId is provided', () => {
+    const messages = [assistant('r1'), user('u1'), assistant('r2')];
+    const idx = findPendingActionMessageIndex(messages, toolApprovalAction());
     expect(idx).toBe(2);
   });
 

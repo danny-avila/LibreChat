@@ -287,6 +287,43 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('appendChunk preserves a paused job’s extended TTL (does not reset to running)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `paused-chunk-ttl-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.appendChunk(streamId, { event: 'on_message_delta', data: { text: 'hello' } });
+
+      // Pause: transitionStatus extends the chunk-key TTL to the long approval window.
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(60);
+
+      // The on_pending_action chunk is appended AFTER the pause. The bug Codex flagged was
+      // that appendChunk unconditionally reset the TTL back to the (short) running TTL,
+      // evicting the pre-pause content before resume. It must now leave the long TTL intact.
+      await store.appendChunk(streamId, {
+        event: 'on_pending_action',
+        data: buildPendingAction(streamId),
+      });
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(60);
+      // The chunk was still appended (XADD ran), so resume can read the full stream.
+      expect(await ioredisClient.xlen(chunkKey)).toBeGreaterThanOrEqual(2);
+
+      await store.destroy();
+    });
+
     test('should not drop paused jobs from user tracking when cleanup sees a stale running index', async () => {
       if (!ioredisClient) {
         return;

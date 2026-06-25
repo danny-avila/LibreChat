@@ -172,14 +172,17 @@ export function findPendingActionMessageIndex(
   const isAssistant = (message: TMessage | undefined) => message?.isCreatedByUser === false;
   const { responseMessageId } = pendingAction;
   if (responseMessageId) {
-    const exact = messages.findIndex(
+    // When the id is provided, ONLY an exact assistant match counts. A miss means the
+    // assistant placeholder for this turn hasn't been inserted yet — return -1 so the
+    // caller retries on the next frame. Falling back to the last assistant here would
+    // attach the prompt/approval to a PRIOR reply (applyAskUserQuestion always appends),
+    // and the retry would never run. The id is the in-flight response, so once it renders
+    // the retry resolves it.
+    return messages.findIndex(
       (message) => message.messageId === responseMessageId && isAssistant(message),
     );
-    if (exact >= 0) {
-      return exact;
-    }
   }
-  /** Fall back to the last assistant message (the in-flight response placeholder). */
+  /** No responseMessageId: best-effort to the last assistant (the in-flight placeholder). */
   for (let i = messages.length - 1; i >= 0; i--) {
     if (isAssistant(messages[i])) {
       return i;

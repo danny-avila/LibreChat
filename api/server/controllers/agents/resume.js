@@ -10,11 +10,102 @@ const {
   deleteAgentCheckpoint,
   buildAbortedResponseMetadata,
   sanitizeMessageForTransmit,
+  filterMalformedContentParts,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
-const { saveMessage, getConvo } = require('~/models');
+const { saveMessage, getConvo, getMessages } = require('~/models');
+
+/** De-duplicate a merged attachment list by a stable artifact identity. */
+function mergeAttachments(existing, incoming) {
+  const seen = new Set();
+  const out = [];
+  for (const attachment of [...(existing ?? []), ...(incoming ?? [])]) {
+    if (!attachment) {
+      continue;
+    }
+    const key =
+      attachment.file_id ??
+      attachment.filepath ??
+      attachment.filename ??
+      JSON.stringify(attachment);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(attachment);
+  }
+  return out;
+}
+
+/**
+ * Resolve the current segment's tool artifacts and merge them with any already
+ * persisted on the response row. A resumed turn can span multiple pause segments;
+ * each rebuilt client has its own `artifactPromises`, and the final finalize would
+ * otherwise OVERWRITE the row's attachments with only the last segment's. Reading
+ * the persisted row and merging keeps every segment's artifacts on the saved message.
+ */
+async function resolveAccumulatedAttachments({ client, conversationId, responseMessageId }) {
+  const promises = Array.isArray(client?.artifactPromises) ? client.artifactPromises : [];
+  const resolved = promises.length > 0 ? (await Promise.all(promises)).filter(Boolean) : [];
+  let existing = [];
+  if (responseMessageId) {
+    try {
+      const [row] = await getMessages(
+        { conversationId, messageId: responseMessageId },
+        'attachments',
+      );
+      existing = Array.isArray(row?.attachments) ? row.attachments : [];
+    } catch (err) {
+      logger.warn(
+        '[ResumeAgentController] Failed to read prior attachments for merge',
+        err?.message ?? err,
+      );
+    }
+  }
+  return mergeAttachments(existing, resolved);
+}
+
+/**
+ * A resumed segment that produced tool artifacts and then paused AGAIN must persist
+ * those artifacts before returning — the next resume rebuilds a fresh client with an
+ * empty `artifactPromises`, so otherwise they'd never be linked to the saved message.
+ * Best-effort; saved as a partial (`$set`) so the unfinished row's content is preserved.
+ */
+async function persistRePauseArtifacts({ req, client, job, conversationId }) {
+  const promises = Array.isArray(client?.artifactPromises) ? client.artifactPromises : [];
+  if (promises.length === 0) {
+    return;
+  }
+  const userId = req.user.id;
+  const meta = job.metadata ?? {};
+  const responseMessageId = meta.responseMessageId ?? client.responseMessageId;
+  if (!responseMessageId) {
+    return;
+  }
+  const attachments = await resolveAccumulatedAttachments({
+    client,
+    conversationId,
+    responseMessageId,
+  });
+  if (attachments.length === 0) {
+    return;
+  }
+  try {
+    await saveMessage(
+      {
+        userId,
+        isTemporary: meta.isTemporary ?? req.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
+      { messageId: responseMessageId, conversationId, attachments, unfinished: true, user: userId },
+      { context: 'api/server/controllers/agents/resume.js - re-pause artifact persist' },
+    );
+  } catch (err) {
+    logger.error('[ResumeAgentController] Failed to persist re-pause artifacts', err);
+  }
+}
 
 /** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
 function hasTenantMismatch(job, user) {
@@ -78,10 +169,14 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   // content) and avoids a Redis re-read that can race appendChunk writes still in
   // flight. Fall back to the aggregated store content only when the live array is empty.
   const liveContent = Array.isArray(client?.contentParts) ? client.contentParts : [];
-  const content =
+  const rawContent =
     liveContent.length > 0
       ? liveContent
       : ((await GenerationJobManager.getResumeState(streamId))?.aggregatedContent ?? []);
+  // Parity with the normal agents path (AgentClient strips these before saving):
+  // drop empty/malformed tool_call parts so a resumed turn can't persist an invalid
+  // part that breaks reload/rendering.
+  const content = filterMalformedContentParts(rawContent);
 
   const responseMessage = {
     messageId: responseMessageId,
@@ -103,8 +198,15 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   // Persist tool artifacts (code files, images, UI resources) the resumed continuation
   // produced — BaseClient.sendMessage awaits these before saving, but the lean resume
   // path bypasses it, so do it here or they vanish on reload / for late subscribers.
-  if (Array.isArray(client?.artifactPromises) && client.artifactPromises.length > 0) {
-    responseMessage.attachments = (await Promise.all(client.artifactPromises)).filter(Boolean);
+  // MERGE with any already on the row (earlier pause segments) rather than overwrite —
+  // the final segment's client only holds its own segment's artifacts.
+  const attachments = await resolveAccumulatedAttachments({
+    client,
+    conversationId,
+    responseMessageId,
+  });
+  if (attachments.length > 0) {
+    responseMessage.attachments = attachments;
   }
 
   // Response metadata: the resume client only sees POST-resume usage, while the job's
@@ -233,8 +335,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   if (originalAgentId && req.body.agent_id !== originalAgentId) {
     return res.status(403).json({ error: 'Cannot resume with a different agent' });
   }
+  // Require an EXACT endpoint match (like agent_id): a request that OMITS endpoint must
+  // not fall through — the shared chat middleware treats a missing/non-agents endpoint
+  // as the ephemeral agent, so omitting it could rebuild the claimed checkpoint on a
+  // different graph. A correct client always echoes the paused endpoint.
   const originalEndpoint = job.metadata?.endpoint;
-  if (originalEndpoint && req.body.endpoint && req.body.endpoint !== originalEndpoint) {
+  if (originalEndpoint && req.body.endpoint !== originalEndpoint) {
     return res.status(403).json({ error: 'Cannot resume on a different endpoint' });
   }
 
@@ -319,6 +425,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // action is already persisted + emitted; leave the job `requires_action`.
     if (client.pendingApproval) {
       logger.debug(`[ResumeAgentController] Re-paused for approval: ${streamId}`);
+      // Persist any artifacts this segment produced before the fresh client (next
+      // resume) drops them — finalize later merges them onto the saved message.
+      await persistRePauseArtifacts({ req, client, job, conversationId });
       return;
     }
 

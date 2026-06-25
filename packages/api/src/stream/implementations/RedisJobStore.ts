@@ -39,6 +39,28 @@ const JOB_CAS_LUA =
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'return 1';
 
+/**
+ * XADD a chunk + refresh the chunk-stream TTL WITHOUT ever shrinking it.
+ *
+ * During a live stream the running TTL is refreshed on every chunk. But when a job
+ * pauses for HITL review, `transitionStatus` extends the chunk-key TTL to the (much
+ * longer) approval window; the very next chunk is the `on_pending_action` event, and
+ * an unconditional `EXPIRE running` would reset that long TTL back to ~20m. The
+ * pre-pause aggregated content would then be evicted before the user resolves the
+ * approval, so `getResumeState()` loses the tool call + earlier content. Only set the
+ * running TTL when the current TTL is shorter (or unset), so a paused key keeps its
+ * extended window.
+ *
+ *   KEYS: [chunks]
+ *   ARGV: [eventJson, runningTtl]
+ */
+const CHUNK_APPEND_LUA =
+  'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
+  'local run = tonumber(ARGV[2]) ' +
+  'local cur = redis.call("TTL", KEYS[1]) ' +
+  'if cur < run then redis.call("EXPIRE", KEYS[1], run) end ' +
+  'return 1';
+
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
 const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
 
@@ -937,14 +959,18 @@ export class RedisJobStore implements IJobStore {
    */
   async appendChunk(streamId: string, event: unknown): Promise<void> {
     const key = KEYS.chunks(streamId);
-    // Pipeline XADD + EXPIRE in a single round-trip.
-    // EXPIRE is O(1) and idempotent — refreshing TTL on every chunk is better than
-    // only setting it once, since the original approach could let the TTL expire
-    // during long-running streams.
-    const pipeline = this.redis.pipeline();
-    pipeline.xadd(key, '*', 'event', JSON.stringify(event));
-    pipeline.expire(key, this.ttl.running);
-    await pipeline.exec();
+    // XADD + extend-only EXPIRE in a single atomic eval. Refreshing the TTL on every
+    // chunk (vs only once) keeps the key alive through long streams, but it must NEVER
+    // shrink an already-longer TTL — a paused (requires_action) job extends this key to
+    // the approval window, and the on_pending_action append would otherwise reset it to
+    // the short running TTL, evicting the pre-pause content before resume.
+    await this.redis.eval(
+      CHUNK_APPEND_LUA,
+      1,
+      key,
+      JSON.stringify(event),
+      String(this.ttl.running),
+    );
   }
 
   /**

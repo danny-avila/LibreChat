@@ -63,6 +63,7 @@ const mockCheckAndIncrementPendingRequest = jest.fn();
 
 const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
+const mockGetMessages = jest.fn();
 const mockDisposeClient = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -81,6 +82,7 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  getMessages: (...args) => mockGetMessages(...args),
 }));
 
 jest.mock('~/server/cleanup', () => ({
@@ -171,6 +173,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
     mockSaveMessage.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue(null);
+    mockGetMessages.mockResolvedValue([]);
     mockJobStore.getJob.mockResolvedValue({ tokenUsage: null, contextUsage: null });
     mockJobStore.updateJob.mockResolvedValue(undefined);
     mockGenerationJobManager.getResumeState.mockResolvedValue({ aggregatedContent: [] });
@@ -281,6 +284,14 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.body.error).toMatch(/different endpoint/i);
     });
 
+    it('403 when the resume OMITS the paused endpoint (no fall-through to ephemeral)', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const res = await post(approveBody({ endpoint: undefined }));
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/different endpoint/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
     it('409 when the job is not in requires_action', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob({ status: 'running' }));
       const res = await post(approveBody());
@@ -344,7 +355,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
     it('400 when an ask_user_question resume carries no answer', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
-      const res = await post({ conversationId: CONVO_ID, actionId: ACTION_ID, agent_id: AGENT_ID });
+      const res = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+      });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/answer is required/i);
     });
@@ -519,6 +535,51 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('strips malformed tool_call parts from the saved content', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          contentParts: [
+            { type: 'text', text: 'kept' },
+            { type: 'tool_call' }, // malformed: no tool_call payload — must be filtered
+          ],
+        }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ content: [{ type: 'text', text: 'kept' }] }),
+        expect.anything(),
+      );
+    });
+
+    it('merges previously persisted attachments with the resumed segment artifacts', async () => {
+      const priorArtifact = { type: 'image', file_id: 'prior-1' };
+      const newArtifact = { type: 'image', file_id: 'new-1' };
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      // An earlier pause segment already saved an attachment on the response row.
+      mockGetMessages.mockResolvedValue([{ attachments: [priorArtifact] }]);
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ artifactPromises: [Promise.resolve(newArtifact)] }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ attachments: [priorArtifact, newArtifact] }),
+        expect.anything(),
+      );
+    });
+
     it('attaches client response metadata to the saved message when present', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       const contextUsage = { tokenCount: 1234 };
@@ -544,6 +605,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         conversationId: CONVO_ID,
         actionId: ACTION_ID,
         agent_id: AGENT_ID,
+        endpoint: 'agents',
         answer: 'call it report.pdf',
       });
       expect(res.status).toBe(200);
@@ -611,6 +673,34 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       // The slot is still released and the client disposed.
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockDisposeClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-pause: persists artifacts produced before pausing again (unfinished)', async () => {
+      const artifact = { type: 'image', file_id: 'seg-1' };
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          pendingApproval: true,
+          artifactPromises: [Promise.resolve(artifact)],
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      // No finalize, but the segment's artifact is persisted unfinished so the next
+      // resume's finalize can merge it (otherwise the fresh client drops it).
+      expect(mockGenerationJobManager.emitDone).not.toHaveBeenCalled();
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ attachments: [artifact], unfinished: true }),
+        expect.objectContaining({
+          context: 'api/server/controllers/agents/resume.js - re-pause artifact persist',
+        }),
+      );
     });
 
     it('abort-during-resume: lets the abort route finalize, does not double-save', async () => {
