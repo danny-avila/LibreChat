@@ -39,10 +39,17 @@ jobs:
 
       - name: Rebuild and restart containers (full deploy)
         if: steps.scope.outputs.type == 'full'
+        env:
+          # Required for the Dockerfile's `--mount=type=cache` build cache (npm +
+          # Turborepo). BuildKit is the compose v2 default, but set it explicitly
+          # so the build can't fall back to the legacy builder (which errors on
+          # the cache-mount syntax).
+          DOCKER_BUILDKIT: '1'
+          COMPOSE_DOCKER_CLI_BUILD: '1'
         run: |
           set -e
           cd ${{ vars.GCP_VM_APP_DIR }}
-          echo "==> Building image from source (this takes ~15 min)..."
+          echo "==> Building image from source (cached layers + Turbo cache)..."
           docker compose build api
           echo "==> Restarting containers..."
           docker compose up -d
