@@ -138,18 +138,19 @@ describe('token index', () => {
     expect(totals.estTokens).toBe(11);
   });
 
-  it('trusts stored counts (incl. quoted turns), counts tool calls, skips reasoning', () => {
+  it('recounts quoted user turns (ignoring stale counts), counts tool calls, skips reasoning', () => {
     buildIndex(CONVO, [
-      /** Counted quoted user turn: stored count already reflects the merged quote,
-       *  so trust it rather than re-estimating with the coarse char/4 path. */
+      /** Quoted user turn with a stale text-only stored count: the send path
+       *  recounts the merged prompt every turn, so the estimate ignores the count
+       *  and recounts from text+quotes. */
       {
         messageId: 'u1',
         parentMessageId: Constants.NO_PARENT,
         isCreatedByUser: true,
         conversationId: CONVO,
-        tokenCount: 30,
+        tokenCount: 999,
         text: 'hi',
-        quotes: ['q'.repeat(40)],
+        quotes: ['q'.repeat(38)],
       } as TMessage,
       /** Count-less assistant turn: tool-call name/args/output count toward the
        *  estimate (sent back as context); reasoning does not. */
@@ -166,11 +167,11 @@ describe('token index', () => {
     ]);
 
     const totals = sumBranch(CONVO, 'a1');
-    /** u1 trusts stored 30; a1 tool_call name 3 + args 2 + output 11 = 16 / 4 = 4
-     *  (think skipped). */
-    expect(totals.input).toBe(30);
-    expect(totals.counted).toBe(1);
-    expect(totals.estTokens).toBe(4);
+    /** u1 quoted: stored 999 ignored; (2 text + 38 quote) / 4 = 10. a1 tool_call
+     *  name 3 + args 2 + output 11 = 16 / 4 = 4 (think skipped). */
+    expect(totals.input).toBe(0);
+    expect(totals.counted).toBe(0);
+    expect(totals.estTokens).toBe(14);
   });
 
   it('exposes the count-less tail estimate so live output is not double-counted', () => {

@@ -27,9 +27,10 @@ export const EMPTY_USAGE: BranchUsage = {
 
 export interface TokenEntry {
   tokenCount: number;
-  /** Char/4 token estimate for count-less (imported / pre-feature) messages,
-   *  including a user turn's merged quotes and tool-call name/args/output. Used
-   *  only when `tokenCount` is absent; summed into the snapshot-less estimate. */
+  /** Char/4 token estimate used in place of `tokenCount`: count-less (imported /
+   *  pre-feature) message bodies, plus quoted user turns (recounted from merged
+   *  text+quotes, since the send path ignores their stored count). Includes
+   *  tool-call name/args/output. Mutually exclusive with a counted `tokenCount`. */
   estTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
@@ -225,19 +226,21 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
   const summaryUsedTokens = message.metadata?.summaryUsedTokens;
   const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
   const isCreatedByUser = message.isCreatedByUser === true;
-  /** Trust a present `tokenCount`: it already reflects the merged-quote prompt and
-   *  any calibration the send path applied, and the client has no accurate
-   *  tokenizer to improve on it (a char/4 recount would be coarser). Only
-   *  count-less imports / pre-feature messages are estimated from text, including a
-   *  user turn's merged quotes. */
+  const quoted = isCreatedByUser && Array.isArray(message.quotes) && message.quotes.length > 0;
+  /** A quoted user turn's stored `tokenCount` is unreliable: a text-only Save edit
+   *  recomputes it from `text` alone, and the send path recounts the quote-merged
+   *  prompt every turn regardless (`needsCanonicalTokenCount` in agents/client.js).
+   *  So mirror the server — estimate quoted turns from the merged text+quotes and
+   *  ignore the stored count. Other count-less imports / pre-feature messages
+   *  estimate from text. */
   let estTokens = 0;
-  if (tokenCount === 0) {
-    estTokens = Math.round(
-      (messageChars(message) + (isCreatedByUser ? quoteChars(message) : 0)) / 4,
-    );
+  if (quoted) {
+    estTokens = Math.round((messageChars(message) + quoteChars(message)) / 4);
+  } else if (tokenCount === 0) {
+    estTokens = Math.round(messageChars(message) / 4);
   }
   return {
-    tokenCount,
+    tokenCount: quoted ? 0 : tokenCount,
     estTokens,
     isCreatedByUser,
     parentMessageId: message.parentMessageId ?? null,
