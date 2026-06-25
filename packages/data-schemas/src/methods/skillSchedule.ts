@@ -154,6 +154,39 @@ export function createSkillScheduleMethods(mongoose: typeof import('mongoose')) 
     await SkillSchedule.updateOne({ _id: id }, { $set: set });
   }
 
+  /**
+   * Atomically claims a specific schedule for a manual ("Run now") execution.
+   * Locks it only when it isn't already locked (or the lock is stale), so a
+   * duplicate trigger — a double-submitted request, a retry, or the poller —
+   * returns `null` and runs nothing. Mirrors `claimDueSchedule`'s lock so the
+   * manual and scheduled paths are mutually exclusive. Returns the locked doc
+   * or `null` when a run is already in progress.
+   */
+  async function claimScheduleForRun(
+    id: string | Types.ObjectId,
+    instanceId: string,
+    lockTtlMs: number,
+    conversationId?: string,
+  ): Promise<ISkillScheduleDocument | null> {
+    const SkillSchedule = getModel();
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - lockTtlMs);
+    const set: Record<string, unknown> = {
+      lockedAt: now,
+      lockedBy: instanceId,
+      lastStatus: 'running',
+      lastRunAt: now,
+    };
+    if (conversationId !== undefined) {
+      set.lastConversationId = conversationId;
+    }
+    return SkillSchedule.findOneAndUpdate(
+      { _id: id, $or: [{ lockedAt: null }, { lockedAt: { $lte: staleBefore } }] },
+      { $set: set },
+      { new: true },
+    ).lean<ISkillScheduleDocument>();
+  }
+
   return {
     createSkillSchedule,
     getSkillScheduleById,
@@ -161,6 +194,7 @@ export function createSkillScheduleMethods(mongoose: typeof import('mongoose')) 
     updateSkillSchedule,
     deleteSkillSchedule,
     claimDueSchedule,
+    claimScheduleForRun,
     markScheduleResult,
   };
 }
