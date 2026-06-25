@@ -349,7 +349,11 @@ describe('pickResumeContext / applyResumeContext', () => {
   });
 
   it('round-trips through buildPendingAction so replay restores the original body', () => {
-    const original = { endpoint: 'agents', ephemeralAgent: { execute_code: true }, promptPrefix: 'p' };
+    const original = {
+      endpoint: 'agents',
+      ephemeralAgent: { execute_code: true },
+      promptPrefix: 'p',
+    };
     const action = buildPendingAction(
       { type: 'ask_user_question', question: { question: 'q' } } as Agents.HumanInterruptPayload,
       { streamId: 's', resumeContext: pickResumeContext(original) },
