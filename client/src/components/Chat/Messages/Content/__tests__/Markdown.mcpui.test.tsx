@@ -24,6 +24,8 @@ jest.mock('~/hooks');
 jest.mock('~/hooks/Messages/useConversationUIResources');
 
 jest.mock('~/utils/mcpApps', () => ({
+  isMcpAppResource: (r) =>
+    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
   buildAppToolResult: jest.fn(),
   getMCPSandboxUrl: () => 'http://localhost/sandbox',
   callMCPAppTool: jest.fn(),
@@ -77,14 +79,14 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
     const paris = {
       resourceId: 'abc123',
       uri: 'ui://weather/paris',
-      mimeType: 'text/html',
+      mimeType: 'text/html;profile=mcp-app',
       toolName: 'get_weather',
       serverName: 'weather-server',
     };
     const nyc = {
       resourceId: 'def456',
       uri: 'ui://weather/nyc',
-      mimeType: 'text/html',
+      mimeType: 'text/html;profile=mcp-app',
       toolName: 'get_weather',
       serverName: 'weather-server',
     };

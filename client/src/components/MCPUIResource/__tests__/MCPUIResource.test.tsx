@@ -19,6 +19,8 @@ jest.mock('~/hooks/MCP', () => ({
 }));
 
 jest.mock('~/utils/mcpApps', () => ({
+  isMcpAppResource: (r) =>
+    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
   buildAppToolResult: jest.fn(),
   getMCPSandboxUrl: () => 'http://localhost/sandbox',
   callMCPAppTool: jest.fn(),
@@ -41,7 +43,7 @@ const mockUseLocalize = useLocalize as jest.MockedFunction<typeof useLocalize>;
 const makeResource = (overrides: Partial<UIResource> = {}): UIResource => ({
   resourceId: 'resource-1',
   uri: 'ui://test/resource',
-  mimeType: 'text/html',
+  mimeType: 'text/html;profile=mcp-app',
   toolName: 'test-tool',
   serverName: 'test-server',
   ...overrides,

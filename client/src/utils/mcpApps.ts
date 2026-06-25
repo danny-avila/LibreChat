@@ -9,6 +9,19 @@ export type AppToolResult = {
 };
 
 /**
+ * An MCP App resource is server-bound and declares the MCP Apps HTML profile
+ * (`text/html;profile=mcp-app`). Only these run the App Bridge handshake; plain `text/html`
+ * resources are static and must render through a srcDoc iframe instead.
+ */
+export function isMcpAppResource(resource: UIResource): boolean {
+  return (
+    !!resource.toolName &&
+    !!resource.serverName &&
+    (resource.mimeType ?? '').includes('profile=mcp-app')
+  );
+}
+
+/**
  * Builds the App Bridge tool result from a UI resource. App-backed resources (toolName +
  * serverName) always produce a result so the app's ontoolresult fires even for empty output,
  * and the tool result's _meta is forwarded for apps that hydrate from it.
@@ -138,7 +151,10 @@ export async function fetchMCPResourceHtml(
   let html = item?.text ?? '';
   if (!html && typeof item?.blob === 'string' && item.blob) {
     try {
-      html = atob(item.blob);
+      // Decode base64 as UTF-8 so non-ASCII HTML (localized text, inline JSON) is not mojibake;
+      // atob alone yields a Latin-1 string.
+      const bytes = Uint8Array.from(atob(item.blob), (char) => char.charCodeAt(0));
+      html = new TextDecoder('utf-8').decode(bytes);
     } catch {
       html = '';
     }

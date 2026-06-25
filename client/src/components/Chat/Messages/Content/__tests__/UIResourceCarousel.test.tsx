@@ -8,6 +8,8 @@ jest.mock('~/hooks/MCP', () => ({
 }));
 
 jest.mock('~/utils/mcpApps', () => ({
+  isMcpAppResource: (r) =>
+    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
   buildAppToolResult: jest.fn(),
   getMCPSandboxUrl: () => 'http://localhost/sandbox',
   callMCPAppTool: jest.fn(),
@@ -23,7 +25,7 @@ Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
 
 const makeResource = (n: number): UIResource => ({
   uri: `resource${n}`,
-  mimeType: 'text/html',
+  mimeType: 'text/html;profile=mcp-app',
   resourceId: `r${n}`,
   toolName: 'test-tool',
   serverName: 'test-server',

@@ -187,7 +187,7 @@ describe('ToolCall', () => {
           [Tools.ui_resources]: [
             {
               uri: 'ui://test-server/inline.html',
-              mimeType: 'text/html',
+              mimeType: 'text/html;profile=mcp-app',
               text: '<p>inline resource</p>',
               resourceId: 'inline-1',
               toolName: 'test-tool',

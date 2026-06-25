@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo, useCallback } from 'react';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import { getMCPSandboxUrl, buildAppToolResult } from '~/utils/mcpApps';
+import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
 import { useOptionalMessagesConversation } from '~/Providers';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
@@ -59,7 +59,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   }
 
   try {
-    if (uiResource.toolName && uiResource.serverName) {
+    if (isMcpAppResource(uiResource)) {
       return (
         <span
           className="relative mx-1 inline-block w-full align-middle"

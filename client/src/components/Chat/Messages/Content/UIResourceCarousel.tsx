@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { UIResource } from 'librechat-data-provider';
-import { getMCPSandboxUrl, buildAppToolResult } from '~/utils/mcpApps';
+import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 
@@ -40,7 +40,7 @@ function MCPAppCard({
     handleSizeChanged,
   );
 
-  if (resource.toolName && resource.serverName) {
+  if (isMcpAppResource(resource)) {
     return (
       <>
         {!loaded && (
