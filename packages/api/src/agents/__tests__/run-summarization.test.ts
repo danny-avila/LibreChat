@@ -1202,7 +1202,7 @@ describe('Langfuse run config', () => {
       deterministicTraceId: true,
       publicKey: 'pk-tenant-1',
       secretKey: 'sk-tenant-1',
-      baseUrl: 'http://langfuse-fanout-collector:4318',
+      baseUrl: 'http://langfuse-fanout-collector:4318/tenant/eu',
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       librechatTraceAttributes: {
         'librechat.langfuse.tenant_export.enabled': 'true',
@@ -1282,13 +1282,31 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toMatchObject({
       publicKey: 'pk-tenant-1',
       secretKey: 'sk-tenant-1',
-      baseUrl: 'http://collector-from-env:4318',
+      baseUrl: 'http://collector-from-env:4318/tenant/us',
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       librechatTraceAttributes: {
         'librechat.langfuse.tenant_export.enabled': 'true',
         'librechat.langfuse.destination': 'us',
       },
     });
+  });
+
+  it('normalizes trailing slashes when building the tenant-scoped fanout URL', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318/';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse?.baseUrl).toBe('http://collector-from-env:4318/tenant/eu');
   });
 
   it.each(['1', 'yes', 'on'])(
@@ -1311,7 +1329,7 @@ describe('Langfuse run config', () => {
       expect(callArgs.langfuse).toMatchObject({
         publicKey: 'pk-tenant-1',
         secretKey: 'sk-tenant-1',
-        baseUrl: 'http://collector-from-env:4318',
+        baseUrl: 'http://collector-from-env:4318/tenant/us',
         librechatTraceAttributes: {
           'librechat.langfuse.tenant_export.enabled': 'true',
           'librechat.langfuse.destination': 'us',
@@ -1492,7 +1510,7 @@ describe('Langfuse run config', () => {
 
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
-      baseUrl: 'http://collector-from-env:4318',
+      baseUrl: 'http://collector-from-env:4318/tenant/eu',
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       publicKey: 'pk-tenant-1',
       secretKey: 'sk-tenant-1',
@@ -1555,7 +1573,7 @@ describe('Langfuse run config', () => {
 
       expect(callArgs.langfuse).toEqual({
         deterministicTraceId: true,
-        baseUrl: 'http://collector-from-env:4318',
+        baseUrl: 'http://collector-from-env:4318/tenant/eu',
         metadata: { 'librechat.tenant.id': 'tenant-1' },
         publicKey: 'pk-tenant-1',
         secretKey: 'sk-tenant-1',

@@ -16,6 +16,10 @@ const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
 const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
+function appendPath(baseUrl: string, path: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}${path}`;
+}
+
 export function isLangfuseTenantExportEnabled(): boolean {
   return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
 }
@@ -107,7 +111,10 @@ export function buildLangfuseConfig({
   if (tenantExportEnabled) {
     langfuse.publicKey = publicKey;
     langfuse.secretKey = secretKey;
-    langfuse.baseUrl = fanoutCollectorUrl;
+    langfuse.baseUrl = appendPath(fanoutCollectorUrl, `/tenant/${tenantDestination.key}`);
+    // TODO: Add support in @librechat/agents for Langfuse additionalHeaders and
+    // route by headers if we need multiple tenant Langfuse exports for one run.
+    // The destination-scoped URL is the current app-to-gateway routing contract.
     langfuse.librechatTraceAttributes = {
       ...(langfuse.librechatTraceAttributes ?? {}),
       [TENANT_EXPORT_ATTRIBUTE]: 'true',
