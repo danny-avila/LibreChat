@@ -465,6 +465,38 @@ export function extractSuggestions(text: string): { text: string; suggestions: s
   return { text, suggestions: [] };
 }
 
+export type ExtractedMemory = { key: string; value: string };
+
+/**
+ * Splits a trailing `<memory key="...">...</memory>` block out of assistant
+ * text, returning the visible text (block removed) and the parsed memory
+ * `{ key, value }`. While streaming, an unclosed opening tail is hidden so the
+ * partial block never flashes. Malformed blocks (missing key or empty value)
+ * are stripped with `memory: null` rather than shown raw.
+ */
+export function extractMemory(text: string): {
+  text: string;
+  memory: ExtractedMemory | null;
+} {
+  if (!text) {
+    return { text: text ?? '', memory: null };
+  }
+  const closed = text.match(
+    /\n*<memory\s+key=["']([^"']+)["']\s*>\s*([\s\S]*?)\s*<\/memory>\s*$/i,
+  );
+  if (closed && closed.index != null) {
+    const key = closed[1].trim();
+    const value = closed[2].trim();
+    const memory = key && value ? { key, value } : null;
+    return { text: text.slice(0, closed.index).trimEnd(), memory };
+  }
+  const open = text.match(/\n*<memory\b[\s\S]*$/i);
+  if (open && open.index != null) {
+    return { text: text.slice(0, open.index).trimEnd(), memory: null };
+  }
+  return { text, memory: null };
+}
+
 export function findLastSeparatorIndex(text: string, separators = SEPARATORS): number {
   let lastIndex = -1;
   for (const separator of separators) {

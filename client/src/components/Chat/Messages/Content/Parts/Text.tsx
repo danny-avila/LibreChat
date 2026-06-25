@@ -1,9 +1,11 @@
 import { memo, useMemo, ReactElement } from 'react';
 import { useRecoilValue } from 'recoil';
-import { extractSuggestions } from 'librechat-data-provider';
+import { extractSuggestions, extractMemory } from 'librechat-data-provider';
+import type { ExtractedMemory } from 'librechat-data-provider';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import SuggestedReplies from '~/components/Chat/Messages/Content/SuggestedReplies';
+import SaveMemoryBanner from '~/components/Chat/Messages/Content/SaveMemoryBanner';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -25,20 +27,32 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
 
   /**
-   * Assistant replies may end with a hidden `<suggestions>` block. Strip it
-   * from the visible text and surface it as clickable chips below the latest
-   * assistant message once streaming settles. User messages are untouched.
+   * Assistant replies may end with hidden `<suggestions>` and/or `<memory>`
+   * blocks. Strip both from the visible text and surface them below the latest
+   * assistant message once streaming settles: suggestions as clickable chips,
+   * a memory block as an editable "Save to memory?" banner. User messages are
+   * untouched.
    */
-  const { displayText, suggestions } = useMemo(() => {
+  const { displayText, suggestions, memory } = useMemo(() => {
     if (isCreatedByUser) {
-      return { displayText: text, suggestions: [] as string[] };
+      return {
+        displayText: text,
+        suggestions: [] as string[],
+        memory: null as ExtractedMemory | null,
+      };
     }
-    const parsed = extractSuggestions(text);
-    return { displayText: parsed.text, suggestions: parsed.suggestions };
+    const withoutSuggestions = extractSuggestions(text);
+    const withoutMemory = extractMemory(withoutSuggestions.text);
+    return {
+      displayText: withoutMemory.text,
+      suggestions: withoutSuggestions.suggestions,
+      memory: withoutMemory.memory,
+    };
   }, [isCreatedByUser, text]);
 
-  const showSuggestions =
-    !isCreatedByUser && isLatestMessage && !isSubmitting && suggestions.length > 0;
+  const isLatestSettled = !isCreatedByUser && isLatestMessage && !isSubmitting;
+  const showSuggestions = isLatestSettled && suggestions.length > 0;
+  const showMemory = isLatestSettled && memory != null;
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
@@ -62,6 +76,7 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
     >
       {content}
       {showSuggestions && <SuggestedReplies suggestions={suggestions} />}
+      {showMemory && memory != null && <SaveMemoryBanner memory={memory} />}
     </div>
   );
 });

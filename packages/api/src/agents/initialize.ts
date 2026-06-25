@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import { logger } from '@librechat/data-schemas';
+import { logger, isMemoryEnabled } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
@@ -42,6 +42,7 @@ import {
 import { registerCodeExecutionTools } from './tools';
 import { buildFileBridgeNote } from './mcpFileBridge';
 import { SUGGESTIONS_PROMPT } from './suggestions';
+import { MEMORY_PROMPT } from './memoryPrompt';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -939,6 +940,10 @@ export async function initializeAgent(
   }
 
   appendAdditionalInstructions(agent, SUGGESTIONS_PROMPT);
+
+  if (isMemoryEnabled(req.config?.memory)) {
+    appendAdditionalInstructions(agent, MEMORY_PROMPT);
+  }
 
   let skillCount = 0;
   /**
