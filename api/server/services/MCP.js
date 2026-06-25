@@ -115,14 +115,21 @@ async function getAppConfigForUser(userId, user) {
  * Resolves config-source MCP servers from admin Config overrides for the current
  * request context. Returns the parsed configs keyed by server name.
  * @param {import('express').Request} req - Express request with user context
+ * @param {{ throwOnError?: boolean }} [options] - When throwOnError is set, a resolution failure
+ *   rejects instead of degrading to an empty set. Callers that route a request to a specific
+ *   server (app follow-up requests) must fail closed so a transient error cannot silently fall
+ *   back to the base config for the same server name.
  * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
  */
-async function resolveConfigServers(req) {
+async function resolveConfigServers(req, { throwOnError = false } = {}) {
   try {
     const registry = getMCPServersRegistry();
     const appConfig = await getAppConfigForRequest(req);
     return await registry.ensureConfigServers(appConfig?.mcpConfig || {});
   } catch (error) {
+    if (throwOnError) {
+      throw error;
+    }
     logger.warn(
       '[resolveConfigServers] Failed to resolve config servers, degrading to empty:',
       error,

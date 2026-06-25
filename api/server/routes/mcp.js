@@ -34,6 +34,7 @@ const {
 const {
   readMCPResource,
   listMCPResources,
+  listMCPResourceTemplates,
   appToolCall,
   serveMCPSandbox,
 } = require('~/server/controllers/mcpApps');
@@ -998,6 +999,17 @@ router.post('/resources/read', requireJwtAuth, checkMCPUsePermissions, readMCPRe
  * @route POST /api/mcp/resources/list
  */
 router.post('/resources/list', requireJwtAuth, checkMCPUsePermissions, listMCPResources);
+
+/**
+ * List resource templates available on an MCP server
+ * @route POST /api/mcp/resources/templates/list
+ */
+router.post(
+  '/resources/templates/list',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  listMCPResourceTemplates,
+);
 
 /**
  * Proxy tool calls from MCP App iframe to MCP server

@@ -23,10 +23,11 @@ const MCP_INVALID_REQUEST = -32600;
  */
 const resolveAppContext = async (req, serverName) => {
   const userId = req.user?.id;
+  // Fail closed on config resolution: an app request targets one server by name, so a transient
+  // failure must reject rather than fall back to the base config for that name and proxy to the
+  // wrong server. Auth map resolution may still degrade, since a missing var fails closed downstream.
   const [configServers, userMCPAuthMap] = await Promise.all([
-    Promise.resolve()
-      .then(() => resolveConfigServers(req))
-      .catch(() => undefined),
+    resolveConfigServers(req, { throwOnError: true }),
     Promise.resolve()
       .then(() => getUserMCPAuthMap({ userId, servers: [serverName], findPluginAuthsByKeys }))
       .catch(() => undefined),
@@ -113,6 +114,44 @@ const listMCPResources = async (req, res) => {
   } catch (error) {
     logger.error('[listMCPResources] Error:', error);
     return res.status(500).json({ error: 'Failed to list resources' });
+  }
+};
+
+/** @route POST /api/mcp/resources/templates/list */
+const listMCPResourceTemplates = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { serverName, cursor } = req.body;
+    if (!serverName) {
+      return res.status(400).json({ error: 'serverName is required' });
+    }
+    if (cursor !== undefined && typeof cursor !== 'string') {
+      return res.status(400).json({ error: 'cursor must be a string' });
+    }
+
+    const mcpManager = getMCPManager();
+    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
+      req,
+      serverName,
+    );
+    const result = await mcpManager.listResourceTemplates({
+      userId,
+      serverName,
+      user: req.user,
+      cursor,
+      configServers,
+      customUserVars,
+      flowManager,
+      tokenMethods,
+    });
+    return res.json(result);
+  } catch (error) {
+    logger.error('[listMCPResourceTemplates] Error:', error);
+    return res.status(500).json({ error: 'Failed to list resource templates' });
   }
 };
 
@@ -210,4 +249,10 @@ const serveMCPSandbox = async (_req, res) => {
   }
 };
 
-module.exports = { readMCPResource, listMCPResources, appToolCall, serveMCPSandbox };
+module.exports = {
+  readMCPResource,
+  listMCPResources,
+  listMCPResourceTemplates,
+  appToolCall,
+  serveMCPSandbox,
+};

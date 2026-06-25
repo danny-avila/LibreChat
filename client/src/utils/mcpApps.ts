@@ -81,6 +81,10 @@ export async function listMCPResources(serverName: string, cursor?: string) {
   return request.post(`${apiBaseUrl()}/api/mcp/resources/list`, { serverName, cursor });
 }
 
+export async function listMCPResourceTemplates(serverName: string, cursor?: string) {
+  return request.post(`${apiBaseUrl()}/api/mcp/resources/templates/list`, { serverName, cursor });
+}
+
 type ResourceUiMeta = {
   csp?: {
     connectDomains?: string[];

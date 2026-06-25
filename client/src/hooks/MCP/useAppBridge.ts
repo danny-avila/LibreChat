@@ -14,6 +14,7 @@ import {
   fetchMCPResourceHtml,
   readMCPResource,
   listMCPResources,
+  listMCPResourceTemplates,
 } from '~/utils/mcpApps';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { logger } from '~/utils';
@@ -121,6 +122,9 @@ export function useAppBridge(
 
       bridge.onlistresources = async (params) =>
         listMCPResources(resource.serverName as string, params?.cursor) as never;
+
+      bridge.onlistresourcetemplates = async (params) =>
+        listMCPResourceTemplates(resource.serverName as string, params?.cursor) as never;
 
       bridge.onmessage = async ({ content }) => {
         const text = (content as MessageContentBlock[])

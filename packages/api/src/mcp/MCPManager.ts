@@ -9,6 +9,7 @@ import {
   CallToolResultSchema,
   ReadResourceResultSchema,
   ListResourcesResultSchema,
+  ListResourceTemplatesResultSchema,
   ErrorCode,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -921,6 +922,56 @@ Please follow these instructions when using tools from the respective MCP server
         params: cursor != null ? { cursor } : {},
       },
       ListResourcesResultSchema,
+      { timeout: connection.timeout },
+    );
+
+    return result;
+  }
+
+  async listResourceTemplates({
+    userId,
+    serverName,
+    user,
+    cursor,
+    configServers,
+    customUserVars,
+    flowManager,
+    tokenMethods,
+  }: {
+    userId: string;
+    serverName: string;
+    user?: import('@librechat/data-schemas').IUser;
+    cursor?: string;
+    configServers?: Record<string, t.ParsedServerConfig>;
+    customUserVars?: Record<string, string>;
+    flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+    tokenMethods?: TokenMethods;
+  }): Promise<unknown> {
+    const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    if (userId && user) this.updateUserLastActivity(userId);
+    const connection = await this.getAppConnection({
+      serverName,
+      userId,
+      user,
+      configServers,
+      customUserVars,
+      flowManager,
+      tokenMethods,
+    });
+
+    if (!(await connection.isConnected())) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `${logPrefix} Connection is not active. Cannot list resource templates.`,
+      );
+    }
+
+    const result = await connection.client.request(
+      {
+        method: 'resources/templates/list',
+        params: cursor != null ? { cursor } : {},
+      },
+      ListResourceTemplatesResultSchema,
       { timeout: connection.timeout },
     );
 
