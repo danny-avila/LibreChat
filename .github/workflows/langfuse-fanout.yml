@@ -28,6 +28,16 @@ jobs:
           go-version-file: otel/langfuse-fanout/go.mod
           cache-dependency-path: otel/langfuse-fanout/go.sum
 
+      - name: Check Go formatting
+        working-directory: otel/langfuse-fanout
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::Go files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: Run Go tests
         working-directory: otel/langfuse-fanout
         run: go test ./...
