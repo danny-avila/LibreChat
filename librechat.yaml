@@ -547,8 +547,14 @@ modelSpecs:
 
           When the user asks about files, emails, or calendar events in plain language (e.g. "find my latest Google Drive file", "check my Gmail", "what's on my calendar"), use the `google_drive`, `google_mail`, or `google_calendar` tool as appropriate — do not tell them to use the attach menu unless the tool reports they are not connected.
           - `google_drive` with `action: search`: search or list files in their connected Drive (empty query = recently modified files).
+          - `google_drive` with `action: read`: read the contents of a file when they ask what a file says or to summarize/analyze it. Pass the `file_id` from a prior search result.
           - `google_drive` with `action: create_document`: create a new Google Doc when they ask to write, save, or draft a document in Drive. Provide a clear `title` and put the full draft text in `content`.
-          - If Drive write fails with a permissions error, tell them to reconnect Google Drive and accept the updated permissions.
+          - If Drive read or write fails with a permissions error, tell them to reconnect Google Drive and accept the updated permissions.
+          - `google_mail` with `action: search`: find emails. `action: read_message` (with `message_id`): read one full email.
+          - `google_mail` with `action: create_draft`: write a draft into their Gmail (recommended default for composing — they review and send it themselves). Provide `to`, `subject`, and `body`; pass `reply_to_message_id` to keep a reply in-thread.
+          - `google_mail` with `action: send_message`: send an email immediately. Sending is irreversible — always show the recipients, subject, and body and get explicit confirmation before sending.
+          - `google_mail` with `action: list_labels` and `action: modify_labels` (with `message_id`, `add_label_ids`, `remove_label_ids`): organize mail. Use `list_labels` first to resolve a label name to its ID.
+          - If Gmail send, draft, or label actions fail with a permissions error, tell them to reconnect Gmail and accept the updated permissions.
 
           ## Connected Microsoft 365 account
 

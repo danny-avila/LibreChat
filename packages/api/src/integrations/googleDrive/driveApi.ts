@@ -223,3 +223,101 @@ export async function createGoogleDriveDocument(
 
   return created;
 }
+
+const GOOGLE_APPS_TEXT_EXPORT: Record<string, string> = {
+  'application/vnd.google-apps.document': 'text/plain',
+  'application/vnd.google-apps.spreadsheet': 'text/csv',
+  'application/vnd.google-apps.presentation': 'text/plain',
+};
+
+const TEXTUAL_MIME_TYPES = new Set([
+  'application/json',
+  'application/xml',
+  'application/rtf',
+  'application/csv',
+  'application/javascript',
+]);
+
+const MAX_READ_CONTENT_CHARS = 50_000;
+
+export interface GoogleDriveFileContent {
+  id: string;
+  name: string;
+  mimeType: string;
+  webViewLink?: string;
+  modifiedTime?: string;
+  size?: string;
+  content: string;
+  truncated: boolean;
+  note?: string;
+}
+
+function isTextualMimeType(mimeType: string): boolean {
+  return mimeType.startsWith('text/') || TEXTUAL_MIME_TYPES.has(mimeType);
+}
+
+export async function getGoogleDriveFileMetadata(
+  accessToken: string,
+  fileId: string,
+): Promise<GoogleDriveFileSummary> {
+  const params = new URLSearchParams({
+    fields: 'id,name,mimeType,webViewLink,modifiedTime,size',
+    supportsAllDrives: 'true',
+  });
+
+  const response = await fetch(`${DRIVE_FILES_URL}/${fileId}?${params.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Google Drive API error (${response.status}): ${body}`);
+  }
+
+  return (await response.json()) as GoogleDriveFileSummary;
+}
+
+export async function readGoogleDriveFileAsText(
+  accessToken: string,
+  fileId: string,
+): Promise<GoogleDriveFileContent> {
+  const metadata = await getGoogleDriveFileMetadata(accessToken, fileId);
+  const exportMimeType = GOOGLE_APPS_TEXT_EXPORT[metadata.mimeType];
+  const readableAsText = Boolean(exportMimeType) || isTextualMimeType(metadata.mimeType);
+
+  if (!readableAsText) {
+    return {
+      ...metadata,
+      content: '',
+      truncated: false,
+      note: `This file type (${metadata.mimeType}) cannot be read as text. Use the attach menu to add it to the conversation instead.`,
+    };
+  }
+
+  const url = exportMimeType
+    ? `${DRIVE_FILES_URL}/${fileId}/export?mimeType=${encodeURIComponent(exportMimeType)}`
+    : `${DRIVE_FILES_URL}/${fileId}?alt=media&supportsAllDrives=true`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Google Drive read failed (${response.status}): ${body}`);
+  }
+
+  const rawText = await response.text();
+  const truncated = rawText.length > MAX_READ_CONTENT_CHARS;
+  const content = truncated ? rawText.slice(0, MAX_READ_CONTENT_CHARS) : rawText;
+
+  return {
+    ...metadata,
+    content,
+    truncated,
+  };
+}

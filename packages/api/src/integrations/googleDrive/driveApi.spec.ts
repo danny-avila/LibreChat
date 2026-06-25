@@ -2,6 +2,7 @@ import {
   buildGoogleDriveFullTextQuery,
   createGoogleDriveDocument,
   downloadGoogleDriveFile,
+  readGoogleDriveFileAsText,
   searchGoogleDriveFiles,
 } from './driveApi';
 
@@ -169,6 +170,57 @@ describe('createGoogleDriveDocument', () => {
 
     const createInit = mockFetch.mock.calls[0]?.[1] as RequestInit;
     expect(createInit.body).toContain('"name":"Untitled document"');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('readGoogleDriveFileAsText', () => {
+  const originalFetch = global.fetch;
+  const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('exports a Google Doc as plain text', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'doc-1',
+          name: 'Notes',
+          mimeType: 'application/vnd.google-apps.document',
+        }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => 'The document body',
+      } as unknown as Response);
+
+    const result = await readGoogleDriveFileAsText('token-123', 'doc-1');
+
+    expect(result.content).toBe('The document body');
+    expect(result.truncated).toBe(false);
+    expect(mockFetch.mock.calls[1]?.[0]).toBe(
+      'https://www.googleapis.com/drive/v3/files/doc-1/export?mimeType=text%2Fplain',
+    );
+  });
+
+  it('returns a note for binary file types that cannot be read as text', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 'pdf-1', name: 'Scan.pdf', mimeType: 'application/pdf' }),
+    } as unknown as Response);
+
+    const result = await readGoogleDriveFileAsText('token-123', 'pdf-1');
+
+    expect(result.content).toBe('');
+    expect(result.note).toContain('cannot be read as text');
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
