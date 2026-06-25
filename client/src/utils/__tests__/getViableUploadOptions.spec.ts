@@ -110,6 +110,34 @@ describe('getViableUploadOptions', () => {
       });
       expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], ctx)).toEqual([undefined]);
     });
+
+    it('honors a custom endpoint allowlist for direct attach', () => {
+      const ctx = baseCtx({
+        provider: 'MyGateway',
+        endpoint: 'MyGateway',
+        endpointType: 'custom',
+        fileSearchEnabled: false,
+        codeEnabled: false,
+        contextEnabled: false,
+        endpointSupportedMimeTypes: [
+          /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
+        ],
+      });
+      expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], ctx)).toEqual([undefined]);
+    });
+
+    it('rejects a type absent from the custom endpoint allowlist', () => {
+      const ctx = baseCtx({
+        provider: 'MyGateway',
+        endpoint: 'MyGateway',
+        endpointType: 'custom',
+        fileSearchEnabled: false,
+        codeEnabled: false,
+        contextEnabled: false,
+        endpointSupportedMimeTypes: [/^application\/pdf$/],
+      });
+      expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], ctx)).toEqual([]);
+    });
   });
 
   it('drops an option when the agent disallows it', () => {

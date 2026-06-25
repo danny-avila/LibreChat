@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useMemo } from 'react';
 import debounce from 'lodash/debounce';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
@@ -293,6 +293,12 @@ export default function useTextarea({
           timestampedFiles.push(newFile);
         }
 
+        /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
+        if (isAssistantsEndpoint(conversation?.endpoint)) {
+          routeFiles(timestampedFiles);
+          return;
+        }
+
         const options = getUploadOptions(timestampedFiles);
         if (options.length === 0) {
           showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
@@ -301,20 +307,25 @@ export default function useTextarea({
         }
         if (options.length === 1) {
           routeFiles(timestampedFiles, options[0]);
-          showToast({
-            message:
-              options[0] === EToolResources.context
-                ? localize('com_ui_file_attached_as_text')
-                : localize('com_ui_file_attached'),
-            status: 'success',
-          });
+          if (options[0] === EToolResources.context) {
+            showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
+          }
           return;
         }
         setFilesLoading(false);
         openModal(timestampedFiles);
       }
     },
-    [localize, showToast, openModal, routeFiles, textAreaRef, setFilesLoading, getUploadOptions],
+    [
+      localize,
+      showToast,
+      openModal,
+      routeFiles,
+      conversation,
+      textAreaRef,
+      setFilesLoading,
+      getUploadOptions,
+    ],
   );
 
   return {

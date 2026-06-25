@@ -1146,7 +1146,6 @@
   "com_ui_field_max_length": "{{field}} must be less than {{length}} characters",
   "com_ui_field_required": "This field is required",
   "com_ui_file": "File",
-  "com_ui_file_attached": "File attached",
   "com_ui_file_attached_as_text": "Attached as text",
   "com_ui_file_input_avatar_label": "File input for avatar",
   "com_ui_file_modified": "Modified",

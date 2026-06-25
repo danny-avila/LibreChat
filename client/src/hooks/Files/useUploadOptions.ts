@@ -1,6 +1,11 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Constants, mergeFileConfig, defaultAgentCapabilities } from 'librechat-data-provider';
+import {
+  Constants,
+  mergeFileConfig,
+  getEndpointFileConfig,
+  defaultAgentCapabilities,
+} from 'librechat-data-provider';
 import type { EToolResources } from 'librechat-data-provider';
 import useAgentToolPermissions from '~/hooks/Agents/useAgentToolPermissions';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
@@ -43,6 +48,8 @@ export default function useUploadOptions() {
         fileSearchAllowedByAgent,
         codeAllowedByAgent,
         fileConfig,
+        endpointSupportedMimeTypes: getEndpointFileConfig({ fileConfig, endpoint, endpointType })
+          .supportedMimeTypes,
       }),
     [
       provider,

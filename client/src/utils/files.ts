@@ -335,6 +335,7 @@ export type UploadOptionContext = {
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
   fileConfig: FileConfig | null;
+  endpointSupportedMimeTypes?: RegExp[];
 };
 
 const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean => {
@@ -352,6 +353,12 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
     isDocumentSupportedProvider(currentProvider) ||
     isAzureWithResponsesApi
   ) {
+    /** Custom endpoints are admin-configured; honor their upload allowlist rather than hardcoding */
+    if (ctx.endpointType === EModelEndpoint.custom) {
+      return (
+        ctx.endpointSupportedMimeTypes != null && checkType(type, ctx.endpointSupportedMimeTypes)
+      );
+    }
     if (currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER) {
       return (
         type.startsWith('image/') ||
