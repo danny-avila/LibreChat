@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import {
+  Tools,
   Constants,
   mergeFileConfig,
   getEndpointFileConfig,
@@ -14,11 +15,12 @@ import { useGetFileConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { getViableUploadOptions } from '~/utils';
 import { useDragDropContext } from '~/Providers';
+import { isEphemeralAgent } from '~/common';
 
 /**
- * Returns a function that resolves which upload destinations a set of files can be routed
- * to, given the active endpoint and agent capabilities. Shared by the paste, drag, and
- * modal flows so they make the same decision from one source.
+ * Resolves which upload destinations a file set can be routed to, plus whether uploads are
+ * disabled for the endpoint. Shared by the paste, drag, and modal flows so they decide
+ * consistently from one source.
  */
 export default function useUploadOptions() {
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
@@ -27,15 +29,24 @@ export default function useUploadOptions() {
   const ephemeralAgent = useRecoilValue(
     ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
+  const { provider, tools } = useAgentToolPermissions(agentId, ephemeralAgent);
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
-  return useCallback(
+  /**
+   * Tools are offerable unless a saved agent omits them; in direct/ephemeral chats selecting
+   * one enables the ephemeral capability, matching the original drag-and-drop behavior.
+   */
+  const isSavedAgent = agentId != null && agentId !== '' && !isEphemeralAgent(agentId);
+  const fileSearchAllowedByAgent = !isSavedAgent || (tools?.includes(Tools.file_search) ?? false);
+  const codeAllowedByAgent = !isSavedAgent || (tools?.includes(Tools.execute_code) ?? false);
+
+  const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint, endpointType });
+  const uploadsDisabled = endpointFileConfig.disabled === true;
+  const endpointSupportedMimeTypes = endpointFileConfig.supportedMimeTypes;
+
+  const getOptions = useCallback(
     (files: File[]): (EToolResources | undefined)[] =>
       getViableUploadOptions(files, {
         provider,
@@ -48,8 +59,7 @@ export default function useUploadOptions() {
         fileSearchAllowedByAgent,
         codeAllowedByAgent,
         fileConfig,
-        endpointSupportedMimeTypes: getEndpointFileConfig({ fileConfig, endpoint, endpointType })
-          .supportedMimeTypes,
+        endpointSupportedMimeTypes,
       }),
     [
       provider,
@@ -62,6 +72,9 @@ export default function useUploadOptions() {
       fileSearchAllowedByAgent,
       codeAllowedByAgent,
       fileConfig,
+      endpointSupportedMimeTypes,
     ],
   );
+
+  return { getOptions, uploadsDisabled };
 }

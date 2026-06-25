@@ -16,6 +16,7 @@ import {
   EModelEndpoint,
   retrievalMimeTypes,
   isBedrockDocumentType,
+  isPermissiveMimeConfig,
   codeInterpreterMimeTypes,
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
@@ -353,11 +354,14 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
     isDocumentSupportedProvider(currentProvider) ||
     isAzureWithResponsesApi
   ) {
-    /** Custom endpoints are admin-configured; honor their upload allowlist rather than hardcoding */
-    if (ctx.endpointType === EModelEndpoint.custom) {
-      return (
-        ctx.endpointSupportedMimeTypes != null && checkType(type, ctx.endpointSupportedMimeTypes)
-      );
+    /** Custom endpoints that the admin opened up (permissive config) honor that allowlist,
+     * matching the file picker; an inherited default config is not treated as opened up. */
+    if (
+      ctx.endpointType === EModelEndpoint.custom &&
+      ctx.endpointSupportedMimeTypes != null &&
+      isPermissiveMimeConfig(ctx.endpointSupportedMimeTypes)
+    ) {
+      return checkType(type, ctx.endpointSupportedMimeTypes);
     }
     if (currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER) {
       return (

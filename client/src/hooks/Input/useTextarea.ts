@@ -51,7 +51,7 @@ export default function useTextarea({
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
   const { showToast } = useToastContext();
-  const getUploadOptions = useUploadOptions();
+  const { getOptions: getUploadOptions, uploadsDisabled } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
   const assistantMap = useAssistantsMapContext();
@@ -293,6 +293,12 @@ export default function useTextarea({
           timestampedFiles.push(newFile);
         }
 
+        if (uploadsDisabled) {
+          showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
+          setFilesLoading(false);
+          return;
+        }
+
         /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
         if (isAssistantsEndpoint(conversation?.endpoint)) {
           routeFiles(timestampedFiles);
@@ -323,6 +329,7 @@ export default function useTextarea({
       routeFiles,
       conversation,
       textAreaRef,
+      uploadsDisabled,
       setFilesLoading,
       getUploadOptions,
     ],

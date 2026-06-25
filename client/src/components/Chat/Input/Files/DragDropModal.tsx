@@ -32,7 +32,7 @@ const DragDropModal = () => {
     ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
   const { provider } = useAgentToolPermissions(agentId, ephemeralAgent);
-  const getOptions = useUploadOptions();
+  const { getOptions } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
 
   const isProviderDocSupported = useMemo(() => {

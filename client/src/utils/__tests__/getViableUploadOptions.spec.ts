@@ -111,7 +111,7 @@ describe('getViableUploadOptions', () => {
       expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], ctx)).toEqual([undefined]);
     });
 
-    it('honors a custom endpoint allowlist for direct attach', () => {
+    it('honors a permissive custom endpoint config for direct attach', () => {
       const ctx = baseCtx({
         provider: 'MyGateway',
         endpoint: 'MyGateway',
@@ -119,14 +119,12 @@ describe('getViableUploadOptions', () => {
         fileSearchEnabled: false,
         codeEnabled: false,
         contextEnabled: false,
-        endpointSupportedMimeTypes: [
-          /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
-        ],
+        endpointSupportedMimeTypes: [/.*/],
       });
       expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], ctx)).toEqual([undefined]);
     });
 
-    it('rejects a type absent from the custom endpoint allowlist', () => {
+    it('does not treat a non-permissive custom config as broad provider support', () => {
       const ctx = baseCtx({
         provider: 'MyGateway',
         endpoint: 'MyGateway',

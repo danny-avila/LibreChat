@@ -30,7 +30,7 @@ export default function useDragHelpers() {
     [conversation?.endpoint],
   );
 
-  const getOptions = useUploadOptions();
+  const { getOptions } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
 
