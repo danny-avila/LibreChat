@@ -24,13 +24,16 @@
       "outputs": ["dist/**"]
     },
     "@librechat/data-schemas#build": {
-      "dependsOn": ["^build", "librechat-data-provider#build"]
+      "dependsOn": ["^build", "librechat-data-provider#build"],
+      "outputs": ["dist/**"]
     },
     "@librechat/api#build": {
-      "dependsOn": ["^build", "librechat-data-provider#build", "@librechat/data-schemas#build"]
+      "dependsOn": ["^build", "librechat-data-provider#build", "@librechat/data-schemas#build"],
+      "outputs": ["dist/**"]
     },
     "@librechat/client#build": {
-      "dependsOn": ["^build", "librechat-data-provider#build"]
+      "dependsOn": ["^build", "librechat-data-provider#build"],
+      "outputs": ["dist/**"]
     }
   }
 }
