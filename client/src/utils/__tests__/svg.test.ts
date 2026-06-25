@@ -471,6 +471,44 @@ describe('isMonochromeSvg', () => {
     });
   });
 
+  describe('filter colors', () => {
+    it('preserves a black glyph with a chromatic drop shadow', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="shadow"><feDropShadow dx="1" dy="1" flood-color="#f00" /></filter></defs><path filter="url(#shadow)" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves a glyph with a chromatic flood filter color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="flood"><feFlood flood-color="#e00" /></filter></defs><path filter="url(#flood)" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves a glyph with a chromatic lighting filter color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="light"><feDiffuseLighting lighting-color="#0a0" /></filter></defs><path filter="url(#light)" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('ignores an unreferenced chromatic filter color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="unused"><feFlood flood-color="#f00" /></filter></defs><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a chromatic flood color with zero flood opacity', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="shadow"><feDropShadow flood-color="#f00" flood-opacity="0" /></filter></defs><path filter="url(#shadow)" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a chromatic filter attached to an opacity-zero element', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="shadow"><feDropShadow flood-color="#f00" /></filter></defs><path filter="url(#shadow)" opacity="0" fill="#000" d="M0 0h4v4H0z" /><path fill="#333" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+  });
+
   describe('opaque background (not tintable as a mask)', () => {
     it('rejects a white background rect with a black glyph', () => {
       const svg =

@@ -35,6 +35,19 @@ const GRAY_LEVELS = new Map<string, number>([
 /** Paint properties whose color values determine whether an SVG is monochrome. */
 const PAINT_PROPS = ['fill', 'stroke', 'stop-color'];
 
+/** Filter primitive color properties that can add visible tones to an SVG. */
+const FILTER_COLOR_PROPS = ['flood-color', 'lighting-color'];
+
+const FILTER_COLOR_ELEMENTS = new Map<string, Set<string>>([
+  ['flood-color', new Set(['feflood', 'fedropshadow'])],
+  ['lighting-color', new Set(['fediffuselighting', 'fespecularlighting'])],
+]);
+
+const FILTER_COLOR_DEFAULTS = new Map<string, string>([
+  ['flood-color', 'black'],
+  ['lighting-color', 'white'],
+]);
+
 /**
  * Shapes that render with SVG's default black fill when none is supplied. Includes
  * `polyline` (SVG closes it for fill painting) but not `line`, which has no area.
@@ -73,6 +86,7 @@ const PAINT_OPACITY = new Map([
   ['fill', 'fill-opacity'],
   ['stroke', 'stroke-opacity'],
   ['stop-color', 'stop-opacity'],
+  ['flood-color', 'flood-opacity'],
 ]);
 
 /** Declarations resolved from `<style>` rules for tint detection. */
@@ -80,13 +94,17 @@ const RESOLVED_DECLS = new Set([
   'fill',
   'stroke',
   'stop-color',
+  'flood-color',
+  'lighting-color',
   'color',
+  'filter',
   'display',
   'visibility',
   'opacity',
   'fill-opacity',
   'stroke-opacity',
   'stop-opacity',
+  'flood-opacity',
 ]);
 
 /** A `<style>` rule reduced to the paint/opacity declarations we resolve, with its
@@ -413,14 +431,23 @@ function renderedPaint(
   return resolvePaint(el, root, rules, property);
 }
 
-function collectColors(root: Element, rules: StyleRule[]): string[] {
+function normalizeColors(colors: string[]): string[] {
+  return colors
+    .map((color) => color.trim().toLowerCase())
+    .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color) && paintAlpha(color) !== 0);
+}
+
+function collectColors(
+  root: Element,
+  rules: StyleRule[],
+  referenceUses: Map<Element, Element[]>,
+): string[] {
   const colors: string[] = [];
-  const referenceUses = referenceMap(root, rules);
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
     if (
       el.nodeName.toLowerCase() === 'style' ||
       isInside(el, root, FUNCTIONAL_CONTAINERS) ||
-      isHidden(el, root, rules) ||
+      instanceInvisible(el, root, rules) ||
       (isInside(el, root, TEMPLATE_CONTAINERS) && !referenceUses.has(el))
     ) {
       continue;
@@ -437,9 +464,81 @@ function collectColors(root: Element, rules: StyleRule[]): string[] {
       }
     }
   }
-  return colors
-    .map((color) => color.trim().toLowerCase())
-    .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color) && paintAlpha(color) !== 0);
+  return normalizeColors(colors);
+}
+
+function localUrlRefs(value: string): string[] {
+  const refs: string[] = [];
+  const pattern = /url\(\s*(['"]?)#([^'")\s]+)\1\s*\)/gi;
+  for (const match of value.matchAll(pattern)) {
+    refs.push(match[2]);
+  }
+  return refs;
+}
+
+function referencedFilterIds(el: Element, rules: StyleRule[]): string[] {
+  const value = styleValue(el, rules, 'filter');
+  return value != null && value !== 'none' ? localUrlRefs(value) : [];
+}
+
+function renderedFilterColor(
+  el: Element,
+  filter: Element,
+  rules: StyleRule[],
+  property: string,
+): string | null {
+  const elements = FILTER_COLOR_ELEMENTS.get(property);
+  if (!elements?.has(el.nodeName.toLowerCase()) || paintInvisible(el, filter, rules, property)) {
+    return null;
+  }
+  const value = resolvePaint(el, filter, rules, property) ?? FILTER_COLOR_DEFAULTS.get(property);
+  if (value == null) {
+    return null;
+  }
+  return value === CURRENT_COLOR ? resolveCurrentColor(el, filter, rules) : value;
+}
+
+function collectFilterPrimitiveColors(filter: Element, rules: StyleRule[]): string[] {
+  const colors: string[] = [];
+  for (const el of [filter, ...Array.from(filter.querySelectorAll('*'))]) {
+    if (isHidden(el, filter, rules)) {
+      continue;
+    }
+    for (const prop of FILTER_COLOR_PROPS) {
+      const value = renderedFilterColor(el, filter, rules, prop);
+      if (value != null) {
+        colors.push(value);
+      }
+    }
+  }
+  return colors;
+}
+
+function collectFilterColors(
+  root: Element,
+  rules: StyleRule[],
+  referenceUses: Map<Element, Element[]>,
+): string[] {
+  const filters = new Set<Element>();
+  for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
+    if (
+      el.nodeName.toLowerCase() === 'style' ||
+      isInside(el, root, FUNCTIONAL_CONTAINERS) ||
+      instanceInvisible(el, root, rules) ||
+      (isInside(el, root, TEMPLATE_CONTAINERS) && !referenceUses.has(el))
+    ) {
+      continue;
+    }
+    for (const id of referencedFilterIds(el, rules)) {
+      const filter = elementById(root, id);
+      if (filter?.nodeName.toLowerCase() === 'filter') {
+        filters.add(filter);
+      }
+    }
+  }
+  return normalizeColors(
+    Array.from(filters).flatMap((filter) => collectFilterPrimitiveColors(filter, rules)),
+  );
 }
 
 /**
@@ -740,13 +839,8 @@ function hasDefaultBlackShape(root: Element, rules: StyleRule[]): boolean {
   return false;
 }
 
-/** The element a `<use>` references by local id (`href`/`xlink:href`), or null. */
-function referencedTarget(use: Element, root: Element): Element | null {
-  const ref = use.getAttribute('href') ?? use.getAttribute('xlink:href');
-  if (ref == null || !ref.startsWith('#')) {
-    return null;
-  }
-  const id = ref.slice(1);
+/** The element with the local id, or null when it is absent. */
+function elementById(root: Element, id: string): Element | null {
   if (id === '') {
     return null;
   }
@@ -756,6 +850,15 @@ function referencedTarget(use: Element, root: Element): Element | null {
     }
   }
   return null;
+}
+
+/** The element a `<use>` references by local id (`href`/`xlink:href`), or null. */
+function referencedTarget(use: Element, root: Element): Element | null {
+  const ref = use.getAttribute('href') ?? use.getAttribute('xlink:href');
+  if (ref == null || !ref.startsWith('#')) {
+    return null;
+  }
+  return elementById(root, ref.slice(1));
 }
 
 /**
@@ -866,8 +969,12 @@ export function isMonochromeSvg(svg: string): boolean {
   if (hasOpaqueBackground(root, rules)) {
     return false;
   }
+  const referenceUses = referenceMap(root, rules);
   const levels = new Set<number>();
-  for (const color of collectColors(root, rules)) {
+  for (const color of [
+    ...collectColors(root, rules, referenceUses),
+    ...collectFilterColors(root, rules, referenceUses),
+  ]) {
     if (color === CURRENT_COLOR) {
       levels.add(CURRENT_COLOR_TONE);
       continue;
