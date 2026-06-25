@@ -1306,7 +1306,9 @@ describe('Langfuse run config', () => {
       } as AppConfig,
     });
 
-    expect(callArgs.langfuse?.baseUrl).toBe('http://collector-from-env:4318/tenant/eu');
+    expect((callArgs.langfuse as { baseUrl?: string } | undefined)?.baseUrl).toBe(
+      'http://collector-from-env:4318/tenant/eu',
+    );
   });
 
   it.each(['1', 'yes', 'on'])(

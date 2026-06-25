@@ -101,24 +101,29 @@ export function buildLangfuseConfig({
     normalizeString(fanout?.collectorUrl) ??
     normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   const tenantDestination = resolveLangfuseTenantDestination(config?.baseUrl);
+  const tenantExportDestination = hasTenantCredentials ? tenantDestination : undefined;
+  const tenantExportCollectorUrl = fanoutCollectorUrl;
   const tenantExportEnabled =
     hasTenantCredentials &&
     fanoutEnabled &&
     isLangfuseTenantExportEnabled() &&
-    Boolean(tenantDestination) &&
-    Boolean(fanoutCollectorUrl);
+    tenantExportDestination != null &&
+    tenantExportCollectorUrl != null;
 
-  if (tenantExportEnabled) {
+  if (tenantExportEnabled && tenantExportDestination && tenantExportCollectorUrl) {
     langfuse.publicKey = publicKey;
     langfuse.secretKey = secretKey;
-    langfuse.baseUrl = appendPath(fanoutCollectorUrl, `/tenant/${tenantDestination.key}`);
+    langfuse.baseUrl = appendPath(
+      tenantExportCollectorUrl,
+      `/tenant/${tenantExportDestination.key}`,
+    );
     // TODO: Add support in @librechat/agents for Langfuse additionalHeaders and
     // route by headers if we need multiple tenant Langfuse exports for one run.
     // The destination-scoped URL is the current app-to-gateway routing contract.
     langfuse.librechatTraceAttributes = {
       ...(langfuse.librechatTraceAttributes ?? {}),
       [TENANT_EXPORT_ATTRIBUTE]: 'true',
-      [TENANT_DESTINATION_ATTRIBUTE]: tenantDestination?.key,
+      [TENANT_DESTINATION_ATTRIBUTE]: tenantExportDestination.key,
     };
   } else if (fanoutEnabled && fanoutCollectorUrl) {
     langfuse.baseUrl = fanoutCollectorUrl;
