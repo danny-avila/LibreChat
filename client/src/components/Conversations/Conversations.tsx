@@ -4,7 +4,7 @@ import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
+import { CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import { NewChatIcon, Spinner, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import {
@@ -358,28 +358,6 @@ const Conversations: FC<ConversationsProps> = ({
         return (
           <MeasuredRow key={key} {...rowProps}>
             <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
-          </MeasuredRow>
-        );
-      }
-
-      if (item.type === 'pinned-header') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <PinnedHeader />
-          </MeasuredRow>
-        );
-      }
-
-      if (item.type === 'pinned-convo') {
-        const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <Convo
-              conversation={item.convo}
-              retainView={moveToTop}
-              toggleNav={toggleNav}
-              isGenerating={isGenerating}
-            />
           </MeasuredRow>
         );
       }
