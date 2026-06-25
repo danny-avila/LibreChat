@@ -193,17 +193,20 @@ function partTextChars(part: unknown): number {
   return 0;
 }
 
-/** Char length of a message's rendered text, for estimating count-less messages. */
+/** Char length of a message's rendered text, for estimating count-less messages.
+ *  Prefer structured `content` when present — the send path formats from it (incl.
+ *  tool calls), so a message carrying both `text` and `content` (e.g. a stopped
+ *  agent response) would otherwise drop its content/tool-call tokens. */
 function messageChars(message: Partial<TMessage>): number {
-  if (typeof message.text === 'string' && message.text.length > 0) {
-    return message.text.length;
-  }
-  if (Array.isArray(message.content)) {
+  if (Array.isArray(message.content) && message.content.length > 0) {
     let chars = 0;
     for (const part of message.content) {
       chars += partTextChars(part);
     }
     return chars;
+  }
+  if (typeof message.text === 'string') {
+    return message.text.length;
   }
   return 0;
 }

@@ -174,6 +174,30 @@ describe('token index', () => {
     expect(totals.estTokens).toBe(14);
   });
 
+  it('prefers content over text for count-less messages carrying both', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 8),
+      /** Stopped agent response: saved with both a short `text` and structured
+       *  `content` (a tool call). The send path formats from content, so the
+       *  estimate must use content (tool tokens), not the shorter text. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'hi',
+        content: [
+          { type: 'tool_call', tool_call: { name: 'run', args: 'aa', output: 'o'.repeat(13) } },
+        ],
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** a1 uses content (name 3 + args 2 + output 13 = 18 / 4 = 5), not text 'hi'. */
+    expect(totals.input).toBe(8);
+    expect(totals.estTokens).toBe(5);
+  });
+
   it('exposes the count-less tail estimate so live output is not double-counted', () => {
     buildIndex(CONVO, [
       msg('u1', Constants.NO_PARENT, true, 12),
