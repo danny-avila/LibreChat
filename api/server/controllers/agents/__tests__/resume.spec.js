@@ -349,6 +349,28 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.body.error).toMatch(/answer is required/i);
     });
 
+    it('400 on an unsupported pending-action type', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload = { type: 'totally_unknown' };
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      const res = await post(approveBody());
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/unsupported pending action/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('proceeds (does not 403) for a pre-multi-tenancy job with no tenantId', async () => {
+      // hasTenantMismatch only blocks when the job carries a tenantId that differs;
+      // an untenanted (legacy) job must still resume once the userId check passes.
+      const job = makeToolApprovalJob({ metadata: { tenantId: undefined } });
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(CONVO_ID, ACTION_ID);
+      await settled;
+      await flush();
+    });
+
     it('429 when the concurrency gate rejects the resume', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: false });
@@ -428,14 +450,92 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         }),
       );
 
-      expect(mockGenerationJobManager.emitDone).toHaveBeenCalledWith(
-        CONVO_ID,
-        expect.objectContaining({ final: true, responseMessage: expect.any(Object) }),
-      );
+      // Assert the finalEvent STRUCTURE, not just the hardcoded `final: true` literal —
+      // a `final: true`-only check would still pass if the entire content / title /
+      // requestMessage build in finalizeResumedTurn were deleted.
+      const [doneStreamId, finalEvent] = mockGenerationJobManager.emitDone.mock.calls[0];
+      expect(doneStreamId).toBe(CONVO_ID);
+      expect(finalEvent).toMatchObject({
+        final: true,
+        conversation: { conversationId: CONVO_ID },
+        responseMessage: {
+          messageId: RESPONSE_MSG_ID,
+          content: [{ type: 'text', text: 'resumed answer' }],
+          unfinished: false,
+        },
+        requestMessage: { messageId: USER_MSG_ID, isCreatedByUser: true },
+      });
+      expect(typeof finalEvent.title).toBe('string');
+
       expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID);
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(CONVO_ID, { type: 'mongo' });
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockDisposeClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('persists tool artifacts produced by the resumed continuation as attachments', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const artifact = { type: 'image', file_id: 'img-1' };
+      // The lean resume path bypasses BaseClient.sendMessage's artifact await, so the
+      // controller must await client.artifactPromises itself (and drop null results).
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          artifactPromises: [Promise.resolve(artifact), Promise.resolve(null)],
+        }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ attachments: [artifact] }),
+        expect.anything(),
+      );
+    });
+
+    it('falls back to the aggregated store content when the live client content is empty', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      // No live content on the rebuilt client → the saved response must use the
+      // pre-pause aggregated content from the store, not an empty array.
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ contentParts: [] }),
+        userMCPAuthMap: {},
+      });
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [{ type: 'text', text: 'from-store' }],
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ content: [{ type: 'text', text: 'from-store' }] }),
+        expect.anything(),
+      );
+    });
+
+    it('attaches client response metadata to the saved message when present', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const contextUsage = { tokenCount: 1234 };
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ buildResponseMetadata: jest.fn(() => ({ contextUsage })) }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ metadata: expect.objectContaining({ contextUsage }) }),
+        expect.anything(),
+      );
     });
 
     it('resumes an ask_user_question with the free-form answer', async () => {
@@ -469,6 +569,24 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(mockAddTitle).toHaveBeenCalledTimes(1);
       // Title is emitted (and the job completed) — order matters but both must happen.
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID);
+    });
+
+    it('still finalizes the turn when first-turn title generation throws', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockGetConvo.mockResolvedValue({ title: 'New Chat' });
+      // Title generation is best-effort: a throw must not break the resumed turn.
+      mockAddTitle.mockRejectedValue(new Error('title service down'));
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockLogger.error).toHaveBeenCalled();
+      expect(mockSaveMessage).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.emitDone).toHaveBeenCalledWith(CONVO_ID, expect.any(Object));
       expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID);
     });
   });
@@ -533,6 +651,29 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(CONVO_ID, { type: 'mongo' });
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockSaveMessage).not.toHaveBeenCalled();
+    });
+
+    it('forces a terminal job state when completeJob also fails during a resume error', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn().mockRejectedValue(new Error('boom')),
+        }),
+        userMCPAuthMap: {},
+      });
+      // The error path's completeJob also fails → last-resort updateJob must force a
+      // terminal state so the job isn't orphaned in `running`.
+      mockGenerationJobManager.completeJob.mockRejectedValue(new Error('complete failed'));
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockJobStore.updateJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.objectContaining({ status: 'error', error: 'Resume failed' }),
+      );
+      expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
     });
   });
 });
