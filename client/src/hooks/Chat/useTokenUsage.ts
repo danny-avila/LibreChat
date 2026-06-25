@@ -62,6 +62,12 @@ export interface TokenUsageView {
   /** Cached instruction + tool overhead applied to a snapshot-less estimate; 0 on
    *  snapshots (which carry their own breakdown) and until the agent has run. */
   overheadTokens: number;
+  /** Final message-token portion of a snapshot-less estimate (pruned when over
+   *  window, excludes live); 0 on snapshots. */
+  messageTokens: number;
+  /** True when over-window pruning replaced the raw message sum, so the breakdown
+   *  shows a single pruned Messages row instead of input/output/estimated. */
+  messagesPruned: boolean;
   rates?: TModelTokenomics;
 }
 
@@ -245,6 +251,8 @@ export default function useTokenUsage({
         liveTokens,
         estimatedTokens: 0,
         overheadTokens: 0,
+        messageTokens: 0,
+        messagesPruned: false,
         rates: limits.rates,
       };
     }
@@ -264,15 +272,20 @@ export default function useTokenUsage({
      *  already folded into `instructionTokens`), cached from live usage events. The
      *  client can't otherwise know it for a snapshot-less branch, so reserve it from
      *  the prune budget and add it to used — making over-window pruning faithful and
-     *  the gauge consistent with snapshots. 0 until the agent has run once this
+     *  the gauge consistent with snapshots. Skipped when a summary baseline exists:
+     *  `computeSummaryUsedTokens` already folds the overhead into that marker, so
+     *  adding it again would double-count. 0 until the agent has run once this
      *  session (then falls back to message-only, as before). */
-    const overheadTokens = getModelOverhead(
-      overheadKey(
-        limits.endpoint ?? conversation?.endpoint,
-        limits.model ?? conversation?.model,
-        conversation?.agent_id,
-      ),
-    );
+    const overheadTokens =
+      branchTotals.summaryBaseline > 0
+        ? 0
+        : getModelOverhead(
+            overheadKey(
+              limits.endpoint ?? conversation?.endpoint,
+              limits.model ?? conversation?.model,
+              conversation?.agent_id,
+            ),
+          );
     /** When a stream is live the tail is the in-flight response, already counted
      *  by `liveTokens`; drop its static estimate so a resumed/partial response
      *  isn't double-counted on the estimate path. */
@@ -280,13 +293,14 @@ export default function useTokenUsage({
       0,
       branchTotals.estTokens - (liveOnTail ? branchTotals.tailEstTokens : 0),
     );
-    let messageTokens = branchTotals.input + branchTotals.output + estimatedTokens;
+    const rawMessageTokens = branchTotals.input + branchTotals.output + estimatedTokens;
+    let messageTokens = rawMessageTokens;
     /** The send path prunes an over-window branch oldest-first before calling the
      *  model, so the next call can sit well under the window even when the full
-     *  branch exceeds it. Mirror that: when the raw sum overflows the message
-     *  window (max minus the always-sent summary baseline and instruction
-     *  overhead), report the newest messages that actually fit instead of clamping
-     *  the whole branch to 100%. */
+     *  branch exceeds it. Mirror that: when the raw sum overflows the message window
+     *  (max minus the always-sent summary baseline and instruction overhead), report
+     *  the newest messages that actually fit instead of clamping the whole branch to
+     *  100%. */
     if (maxTokens != null && maxTokens > 0) {
       const messageBudget = Math.max(0, maxTokens - branchTotals.summaryBaseline - overheadTokens);
       if (messageTokens > messageBudget) {
@@ -298,6 +312,10 @@ export default function useTokenUsage({
         );
       }
     }
+    /** When pruning replaced the raw sum, the per-category input/output/estimated
+     *  rows no longer describe what's sent, so the breakdown collapses them into a
+     *  single pruned Messages row to stay consistent with the gauge. */
+    const messagesPruned = messageTokens < rawMessageTokens;
     const usedTokens = overheadTokens + branchTotals.summaryBaseline + messageTokens + liveTokens;
     return {
       usedTokens,
@@ -316,6 +334,8 @@ export default function useTokenUsage({
       liveTokens,
       estimatedTokens,
       overheadTokens,
+      messageTokens,
+      messagesPruned,
       rates: limits.rates,
     };
   }, [

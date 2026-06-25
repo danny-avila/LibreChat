@@ -1,26 +1,34 @@
 import { overheadKey, setModelOverhead, getModelOverhead } from './usage';
 
 describe('model overhead cache', () => {
-  it('builds a stable key and round-trips overhead per config', () => {
-    const key = overheadKey('agents', 'gpt-5', 'agent_123');
-    /** Writer (usage handler) and reader (estimate) must build the same key. */
-    expect(key).toBe('agents::gpt-5::agent_123');
+  it('keys agents by agentId so the resolved reader and raw writer agree', () => {
+    /** The writer stores under the raw `agents` submission (no resolved model);
+     *  the reader resolves to the agent's real provider/model. Both must produce
+     *  the same key, or the cache misses for the main agents case. */
+    const writerKey = overheadKey('agents', '', 'agent_123');
+    const readerKey = overheadKey('openAI', 'gpt-4', 'agent_123');
+    expect(writerKey).toBe('agent:agent_123');
+    expect(readerKey).toBe('agent:agent_123');
+
+    setModelOverhead(writerKey, 1500);
+    expect(getModelOverhead(readerKey)).toBe(1500);
+  });
+
+  it('keys non-agent configs by endpoint:model and round-trips overhead', () => {
+    const key = overheadKey('openAI', 'gpt-4', null);
+    expect(key).toBe('openAI::gpt-4');
 
     /** Unknown config defaults to 0 (estimate falls back to message-only). */
     expect(getModelOverhead(key)).toBe(0);
 
-    setModelOverhead(key, 1500);
-    expect(getModelOverhead(key)).toBe(1500);
+    setModelOverhead(key, 800);
+    expect(getModelOverhead(key)).toBe(800);
 
     /** Non-positive overhead is ignored, keeping the last good value. */
     setModelOverhead(key, 0);
-    expect(getModelOverhead(key)).toBe(1500);
+    expect(getModelOverhead(key)).toBe(800);
 
-    /** A different agent/model is isolated. */
-    expect(getModelOverhead(overheadKey('openAI', 'gpt-4', null))).toBe(0);
-  });
-
-  it('treats missing endpoint/model/agentId as empty segments', () => {
-    expect(overheadKey(undefined, 'gpt-4', undefined)).toBe('::gpt-4::');
+    /** A different config is isolated. */
+    expect(getModelOverhead(overheadKey('google', 'gemini', null))).toBe(0);
   });
 });

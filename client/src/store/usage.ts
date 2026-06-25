@@ -138,14 +138,20 @@ export function clearUsageFolded(conversationId: string): void {
  */
 const modelOverhead = new Map<string, number>();
 
-/** Stable cache key; the writer (usage handler) and reader (estimate) build it
- *  identically so a snapshot-less branch resolves the right config's overhead. */
+/** Stable cache key the writer (usage handler) and reader (estimate) build
+ *  identically. An agent resolves to its real provider/model only after its data
+ *  loads, so the reader (resolved) and writer (raw `agents` submission) would key
+ *  differently — key by `agentId` when present so both agree; non-agent configs
+ *  key by endpoint:model. */
 export function overheadKey(
   endpoint?: string | null,
   model?: string | null,
   agentId?: string | null,
 ): string {
-  return `${endpoint ?? ''}::${model ?? ''}::${agentId ?? ''}`;
+  if (agentId != null && agentId !== '') {
+    return `agent:${agentId}`;
+  }
+  return `${endpoint ?? ''}::${model ?? ''}`;
 }
 
 export function setModelOverhead(key: string, tokens: number): void {
