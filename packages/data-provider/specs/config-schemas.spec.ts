@@ -778,6 +778,53 @@ describe('configSchema skillSync', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts an optional apiUrl on a GitHub skill sync source', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              apiUrl: 'https://github.example.com/api/v3',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.skillSync?.github?.sources[0]?.apiUrl).toBe(
+      'https://github.example.com/api/v3',
+    );
+  });
+
+  it('rejects an invalid apiUrl on a GitHub skill sync source', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              apiUrl: 'not-a-url',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects enabled GitHub skill sync without sources', () => {
     const result = configSchema.safeParse({
       version: '1.3.11',
