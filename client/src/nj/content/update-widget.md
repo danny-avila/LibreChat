@@ -16,4 +16,4 @@ Learn how to build and use agents
 
 # Release notes link
 
-[https://ai-assistant.nj.gov/nj/agent-guide](https://ai-assistant.nj.gov/nj/agent-guide)   
+https://ai-assistant.nj.gov/nj/agent-guide   

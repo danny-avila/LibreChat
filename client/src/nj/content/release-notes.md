@@ -1,18 +1,17 @@
 # Release notes
 
 ---
-## June 23, 2026
+## June 29, 2026
 
 Features Released:
 
-* **Agents** — We've heard from many of you that you use NJ AI Assistant for the same types of tasks over and over. Agents let you save instructions and files once, then reuse them anytime — no need to retype the same prompts repeatedly.  The agents are easy to use and include useful features that allow you to:  
-  * **Get started immediately with Platform Agents** — Use [ready-made agents](https://ai-assistant.nj.gov/agents) for common tasks like drafting emails, summarizing meetings, proofreading documents, brainstorming ideas, and improving prompts.  
-  * **Build agents for your specific workflow** — Create custom agents using the agent builder in the left sidebar. Add detailed instructions and reference files for tasks you do regularly, like drafting reports using a structured format and align them with specific policies.  
-  * **Add multiple files to improve the AI response** — Add files to provide context and direction so your agent produces a high-quality output and saves you time.   
-  * **Link multiple agents to perform complex tasks** — For complex tasks, you define multiple agents needed for a complex task and link them to work in a specific order. Each agent will do their task and then pass it off to the next agent (called “agent chaining”). 
+* **Agents** — We've heard from many of you that you use NJ AI Assistant for the same types of tasks over and over. Agents let you save instructions and files once, then reuse them anytime — no need to retype the same prompts repeatedly.  The agents are easy to use and include useful features that allow you to:
+  * **Get started immediately with Platform Agents** — Use [ready-made agents](https://ai-assistant.nj.gov/agents) for common tasks like drafting emails, summarizing meetings, proofreading documents, brainstorming ideas, and improving prompts.
+  * **Build agents for your specific workflow** — Create custom agents using the agent builder in the left sidebar. Add detailed instructions and reference files for tasks you do regularly, like drafting reports using a structured format and align them with specific policies.
+  * **Add multiple files to improve the AI response** — Add files to provide context and direction so your agent produces a high-quality output and saves you time.
+  * **Link multiple agents to perform complex tasks** — For complex tasks, you define multiple agents needed for a complex task and link them to work in a specific order. Each agent will do their task and then pass it off to the next agent (called “agent chaining”).
 
 See more details about agents in the ["How to Build & Use Agents" guide](https://ai-assistant.nj.gov/nj/agent-guide).
-
 
 ## June 17, 2026
 
