@@ -176,7 +176,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
   async function deleteTokenById(id: string): Promise<TokenDeleteResult> {
     try {
       if (!mongoose.Types.ObjectId.isValid(id)) {
-        return { acknowledged: true, deletedCount: 0 };
+        return { deletedCount: 0 };
       }
       const Token = mongoose.models.Token;
       return await Token.deleteOne({ _id: id });

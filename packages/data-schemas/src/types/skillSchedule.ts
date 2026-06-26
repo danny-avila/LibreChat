@@ -15,7 +15,7 @@ export type SkillScheduleStatus = 'pending' | 'running' | 'success' | 'error';
  * Schedules are private to their owner: every query is scoped by `user`, so
  * there is no ACL/sharing layer (unlike Skill).
  */
-export interface ISkillSchedule {
+export interface ISkillSchedule extends Omit<Document, 'model'> {
   /** Owning user. All reads/writes are scoped to this id. */
   user: Types.ObjectId;
   /** Tenant the owner belongs to; runs execute inside this tenant's context. */
@@ -72,4 +72,4 @@ export interface ISkillSchedule {
   updatedAt?: Date;
 }
 
-export type ISkillScheduleDocument = ISkillSchedule & Document;
+export type ISkillScheduleDocument = ISkillSchedule;
