@@ -47,6 +47,8 @@ let methods: ReturnType<typeof createAgentMethods>;
 
 let createAgent: AgentMethods['createAgent'];
 let getAgent: AgentMethods['getAgent'];
+let getAgentVersions: AgentMethods['getAgentVersions'];
+let getAgentWithVersionCount: AgentMethods['getAgentWithVersionCount'];
 let updateAgent: AgentMethods['updateAgent'];
 let deleteAgent: AgentMethods['deleteAgent'];
 let deleteUserAgents: AgentMethods['deleteUserAgents'];
@@ -90,6 +92,8 @@ beforeAll(async () => {
   });
   createAgent = methods.createAgent;
   getAgent = methods.getAgent;
+  getAgentVersions = methods.getAgentVersions;
+  getAgentWithVersionCount = methods.getAgentWithVersionCount;
   updateAgent = methods.updateAgent;
   deleteAgent = methods.deleteAgent;
   deleteUserAgents = methods.deleteUserAgents;
@@ -1474,6 +1478,55 @@ describe('Agent Methods', () => {
       expect(agent!.versions![0].name).toBe('Test Agent');
       expect(agent!.versions![0].provider).toBe('test');
       expect(agent!.versions![0].model).toBe('test-model');
+    });
+
+    test('getAgentVersions returns only the versions array', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        name: 'First Name',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { name: 'Second Name' });
+
+      const versions = await getAgentVersions({ id: agentId });
+
+      expect(Array.isArray(versions)).toBe(true);
+      expect(versions).toHaveLength(2);
+      expect(versions![0].name).toBe('First Name');
+      expect(versions![1].name).toBe('Second Name');
+    });
+
+    test('getAgentVersions returns null for a non-existent agent', async () => {
+      const versions = await getAgentVersions({ id: `agent_${uuidv4()}` });
+      expect(versions).toBeNull();
+    });
+
+    test('getAgentWithVersionCount returns the count without the versions array', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        name: 'First Name',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { name: 'Second Name' });
+      await updateAgent({ id: agentId }, { name: 'Third Name' });
+
+      const agent = await getAgentWithVersionCount({ id: agentId });
+
+      expect(agent).not.toBeNull();
+      expect(agent!.name).toBe('Third Name');
+      expect(agent!.version).toBe(3);
+      expect(agent!.versions).toBeUndefined();
+    });
+
+    test('getAgentWithVersionCount returns null for a non-existent agent', async () => {
+      const agent = await getAgentWithVersionCount({ id: `agent_${uuidv4()}` });
+      expect(agent).toBeNull();
     });
 
     test('should accumulate version history across multiple updates', async () => {

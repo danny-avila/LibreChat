@@ -79,6 +79,7 @@ jest.mock('~/cache', () => ({
 const {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
+  getAgentVersions: getAgentVersionsHandler,
   duplicateAgent: duplicateAgentHandler,
   revertAgentVersion: revertAgentVersionHandler,
   updateAgent: updateAgentHandler,
@@ -600,6 +601,45 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         email: 'support@example.com',
       });
       expect(response.owner_contact).toBeUndefined();
+    });
+  });
+
+  describe('getAgentVersionsHandler', () => {
+    test('returns the version history and excludes it from the basic VIEW response', async () => {
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Versioned Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        versions: [
+          { name: 'V1', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
+          { name: 'V2', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
+        ],
+      });
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes);
+      const basicResponse = mockRes.json.mock.calls[0][0];
+      expect(basicResponse.versions).toBeUndefined();
+      expect(basicResponse.version).toBe(2);
+
+      mockRes.json.mockClear();
+      await getAgentVersionsHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const versions = mockRes.json.mock.calls[0][0];
+      expect(Array.isArray(versions)).toBe(true);
+      expect(versions).toHaveLength(2);
+      expect(versions.map((v) => v.name)).toEqual(['V1', 'V2']);
+    });
+
+    test('returns 404 when the agent does not exist', async () => {
+      mockReq.params = { id: `agent_${uuidv4()}` };
+
+      await getAgentVersionsHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(404);
     });
   });
 
