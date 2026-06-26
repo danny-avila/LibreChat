@@ -331,6 +331,8 @@ describe('pickResumeContext / applyResumeContext', () => {
       addedConvo: { agent_id: 'secondary' },
       // Feeds temporal prompt vars; must round-trip so resume compiles the same prompt.
       timezone: 'America/New_York',
+      // Graph-determining: skill allowed-tools union into the tool set.
+      manualSkills: ['code-reviewer'],
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -343,7 +345,19 @@ describe('pickResumeContext / applyResumeContext', () => {
       ephemeralAgent: { execute_code: true },
       addedConvo: { agent_id: 'secondary' },
       timezone: 'America/New_York',
+      manualSkills: ['code-reviewer'],
     });
+  });
+
+  it('replays a dropped manualSkills and drops a client-injected one', () => {
+    // Reload case: the resume client lost manualSkills; the server restores it.
+    const restored: Record<string, unknown> = { conversationId: 'c', actionId: 'x' };
+    applyResumeContext(restored, { endpoint: 'agents', manualSkills: ['code-reviewer'] });
+    expect(restored.manualSkills).toEqual(['code-reviewer']);
+    // Security: a paused turn with no manual skill can't be made to inject one.
+    const injected: Record<string, unknown> = { conversationId: 'c', manualSkills: ['evil-skill'] };
+    applyResumeContext(injected, { endpoint: 'agents', agent_id: 'a1' });
+    expect('manualSkills' in injected).toBe(false);
   });
 
   it('omits absent (undefined) fields but keeps explicit null', () => {

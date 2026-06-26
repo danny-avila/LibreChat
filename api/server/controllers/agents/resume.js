@@ -308,7 +308,17 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     conversation,
     title: conversation.title,
     requestMessage: userMessage
-      ? sanitizeMessageForTransmit({ ...userMessage, conversationId, isCreatedByUser: true })
+      ? sanitizeMessageForTransmit({
+          ...userMessage,
+          conversationId,
+          isCreatedByUser: true,
+          // job.metadata.userMessage is persisted without files; carry the restored
+          // uploads (seeded onto req.body.files before reconstruction) so the final SSE
+          // doesn't blank the user bubble's attachments — matching the normal path.
+          ...(Array.isArray(req.body?.files) && req.body.files.length > 0
+            ? { files: req.body.files }
+            : {}),
+        })
       : null,
     responseMessage: { ...responseMessage },
   };

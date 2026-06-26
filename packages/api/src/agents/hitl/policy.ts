@@ -229,6 +229,13 @@ export const RESUME_CONTEXT_KEYS = [
   // resume POST omits it, so without replay a different-tz client (or none) compiles a
   // different system prompt than the paused graph. Replay-only — not in the fingerprint.
   'timezone',
+  // Manually-selected skills union their allowed-tools into the tool set before tools
+  // load (initializeAgent → resolveManualSkills), so they're graph-determining. The
+  // resume POST can't reliably re-send them after a reload; replay them, and the
+  // delete-absent half of applyResumeContext stops a crafted resume from injecting a
+  // different skill's tools (manualSkills isn't covered by the fingerprint). Replay-only.
+  // (alwaysAppliedSkills is NOT here — it's resolved server-side from the DB, not req.body.)
+  'manualSkills',
 ] as const;
 
 export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>>;

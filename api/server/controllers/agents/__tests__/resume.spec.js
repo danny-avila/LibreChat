@@ -595,6 +595,24 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(capturedInit.files).toEqual([{ file_id: 'f1' }]);
     });
 
+    it('carries the restored files onto the final requestMessage (user bubble keeps attachments)', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      // job.metadata.userMessage is persisted without files; the final SSE must still
+      // carry the restored uploads or the user bubble loses its attachments on resume.
+      mockGetMessages.mockResolvedValue([{ files: [{ file_id: 'f1', filename: 'a.pdf' }] }]);
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      const [, finalEvent] = mockGenerationJobManager.emitDone.mock.calls[0];
+      expect(finalEvent.requestMessage).toMatchObject({
+        messageId: USER_MSG_ID,
+        isCreatedByUser: true,
+        files: [{ file_id: 'f1', filename: 'a.pdf' }],
+      });
+    });
+
     it('persists the finished response, emits done, completes the job, and prunes the checkpoint', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       await post(approveBody());

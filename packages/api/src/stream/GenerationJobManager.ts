@@ -1644,6 +1644,27 @@ class GenerationJobManagerClass {
         );
         continue;
       }
+      // Loser-replica relay: in a multi-replica deployment another replica's store
+      // cleanup (`cleanupRequiresActionIndex`) can win the requires_action → aborted
+      // approval-expiry CAS — it sets the hash error but cannot emit (the store has no
+      // event transport). A client subscribed on THIS replica would then never get a
+      // terminal event until the reap path. If the job is already aborted *for approval
+      // expiry* and we haven't emitted here, relay the terminal error to our subscriber.
+      // The `errorEvent` flag (set by emitError) keeps this idempotent vs the win path.
+      const runtime = this.runtimeState.get(streamId);
+      if (
+        job?.status === 'aborted' &&
+        job.error === APPROVAL_EXPIRED_ERROR &&
+        !runtime?.errorEvent
+      ) {
+        try {
+          await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
+        } catch (err) {
+          logger.error(`[GenerationJobManager] Failed to relay expired approval ${streamId}`, err);
+        }
+        changed = this.runningJobs.delete(streamId) || changed;
+        continue;
+      }
       if (!job || job.status !== 'requires_action' || !isPendingActionExpired(job)) {
         continue;
       }
