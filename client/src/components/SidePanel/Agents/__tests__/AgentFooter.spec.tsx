@@ -272,7 +272,7 @@ describe('AgentFooter', () => {
       render(<AgentFooter {...defaultProps} />);
       expect(screen.getByText('Save')).toBeInTheDocument();
       expect(screen.getByTestId('advanced-button')).toBeInTheDocument();
-      expect(screen.getByTestId('version-button')).toBeInTheDocument();
+      expect(screen.queryByTestId('version-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument(); // NJ: Removed
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
       expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument(); // NJ: Removed

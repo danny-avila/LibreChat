@@ -138,6 +138,7 @@ export default function AgentFooter({
       )}
 
       {/* Version history */}
+      {/* NJ: Temporarily turn this off for launch (it's having bugs). TODO: Fix bugs, turn on!
       {showButtons && agent_id && (
         <div data-testid="version-button">
           <NewJerseyPanelButton
@@ -151,6 +152,7 @@ export default function AgentFooter({
           <hr />
         </div>
       )}
+      */}
 
       {/* Admin settings (permissions & sharing) - we only let admins share agents atm */}
       {user?.role === SystemRoles.ADMIN && showButtons && (
