@@ -1,8 +1,8 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { Panel } from '~/common/types';
 import VersionContent from '../VersionContent';
 import VersionPanel from '../VersionPanel';
+import { Panel } from '~/common/types';
 
 const mockAgentData = {
   name: 'Test Agent',
@@ -10,31 +10,38 @@ const mockAgentData = {
   instructions: 'Test Instructions',
   tools: ['tool1', 'tool2'],
   capabilities: ['capability1', 'capability2'],
-  versions: [
-    {
-      name: 'Version 1',
-      description: 'Description 1',
-      instructions: 'Instructions 1',
-      tools: ['tool1'],
-      capabilities: ['capability1'],
-      createdAt: '2023-01-01T00:00:00Z',
-      updatedAt: '2023-01-01T00:00:00Z',
-    },
-    {
-      name: 'Version 2',
-      description: 'Description 2',
-      instructions: 'Instructions 2',
-      tools: ['tool1', 'tool2'],
-      capabilities: ['capability1', 'capability2'],
-      createdAt: '2023-01-02T00:00:00Z',
-      updatedAt: '2023-01-02T00:00:00Z',
-    },
-  ],
 };
 
+const mockVersions = [
+  {
+    name: 'Version 1',
+    description: 'Description 1',
+    instructions: 'Instructions 1',
+    tools: ['tool1'],
+    capabilities: ['capability1'],
+    createdAt: '2023-01-01T00:00:00Z',
+    updatedAt: '2023-01-01T00:00:00Z',
+  },
+  {
+    name: 'Version 2',
+    description: 'Description 2',
+    instructions: 'Instructions 2',
+    tools: ['tool1', 'tool2'],
+    capabilities: ['capability1', 'capability2'],
+    createdAt: '2023-01-02T00:00:00Z',
+    updatedAt: '2023-01-02T00:00:00Z',
+  },
+];
+
 jest.mock('~/data-provider', () => ({
-  useGetAgentByIdQuery: jest.fn(() => ({
+  useGetExpandedAgentByIdQuery: jest.fn(() => ({
     data: mockAgentData,
+    isLoading: false,
+    error: null,
+    refetch: jest.fn(),
+  })),
+  useGetAgentVersionsQuery: jest.fn(() => ({
+    data: mockVersions,
     isLoading: false,
     error: null,
     refetch: jest.fn(),
@@ -67,12 +74,20 @@ describe('VersionPanel', () => {
     '~/Providers/AgentPanelContext',
   ).useAgentPanelContext;
 
-  const mockUseGetAgentByIdQuery = jest.requireMock('~/data-provider').useGetAgentByIdQuery;
+  const mockUseGetExpandedAgentByIdQuery =
+    jest.requireMock('~/data-provider').useGetExpandedAgentByIdQuery;
+  const mockUseGetAgentVersionsQuery = jest.requireMock('~/data-provider').useGetAgentVersionsQuery;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseGetAgentByIdQuery.mockReturnValue({
+    mockUseGetExpandedAgentByIdQuery.mockReturnValue({
       data: mockAgentData,
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+    mockUseGetAgentVersionsQuery.mockReturnValue({
+      data: mockVersions,
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -126,7 +141,13 @@ describe('VersionPanel', () => {
     );
 
     // Test with null data
-    mockUseGetAgentByIdQuery.mockReturnValueOnce({
+    mockUseGetExpandedAgentByIdQuery.mockReturnValueOnce({
+      data: null,
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+    mockUseGetAgentVersionsQuery.mockReturnValueOnce({
       data: null,
       isLoading: false,
       error: null,
@@ -150,8 +171,8 @@ describe('VersionPanel', () => {
     );
 
     // 3. versions is undefined
-    mockUseGetAgentByIdQuery.mockReturnValueOnce({
-      data: { ...mockAgentData, versions: undefined },
+    mockUseGetAgentVersionsQuery.mockReturnValueOnce({
+      data: undefined,
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -165,7 +186,7 @@ describe('VersionPanel', () => {
     );
 
     // 4. loading state
-    mockUseGetAgentByIdQuery.mockReturnValueOnce({
+    mockUseGetAgentVersionsQuery.mockReturnValueOnce({
       data: null,
       isLoading: true,
       error: null,
@@ -179,7 +200,7 @@ describe('VersionPanel', () => {
 
     // 5. error state
     const testError = new Error('Test error');
-    mockUseGetAgentByIdQuery.mockReturnValueOnce({
+    mockUseGetAgentVersionsQuery.mockReturnValueOnce({
       data: null,
       isLoading: false,
       error: testError,
@@ -193,8 +214,14 @@ describe('VersionPanel', () => {
   });
 
   test('memoizes agent data correctly', () => {
-    mockUseGetAgentByIdQuery.mockReturnValueOnce({
+    mockUseGetExpandedAgentByIdQuery.mockReturnValueOnce({
       data: mockAgentData,
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+    mockUseGetAgentVersionsQuery.mockReturnValueOnce({
+      data: mockVersions,
       isLoading: false,
       error: null,
       refetch: jest.fn(),

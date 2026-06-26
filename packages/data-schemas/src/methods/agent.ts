@@ -252,6 +252,10 @@ export function createAgentMethods(
   deps: AgentDeps,
 ): {
   getAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  getAgentVersions: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent['versions'] | null>;
+  getAgentWithVersionCount: (
+    searchParameter: FilterQuery<IAgent>,
+  ) => Promise<(IAgent & { version: number }) | null>;
   getAgents: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent[]>;
   createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
   hasAgentWithMCPServerName: ({
@@ -364,6 +368,40 @@ export function createAgentMethods(
   async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     return await Agent.findOne(searchParameter).lean<IAgent>();
+  }
+
+  /**
+   * Get an agent's version history only, without the rest of the document.
+   * Returns an empty array when the agent exists but has no versions, or `null`
+   * when no agent matches the search parameter.
+   */
+  async function getAgentVersions(
+    searchParameter: FilterQuery<IAgent>,
+  ): Promise<IAgent['versions'] | null> {
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const result = await Agent.findOne(searchParameter, { versions: 1, _id: 0 }).lean<
+      Pick<IAgent, 'versions'>
+    >();
+    if (!result) {
+      return null;
+    }
+    return result.versions ?? [];
+  }
+
+  /**
+   * Get an agent document with a `version` count, excluding the heavy `versions` array.
+   * Used when loading the editor so large version histories aren't transferred eagerly.
+   */
+  async function getAgentWithVersionCount(
+    searchParameter: FilterQuery<IAgent>,
+  ): Promise<(IAgent & { version: number }) | null> {
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const [agent] = await Agent.aggregate<IAgent & { version: number }>([
+      { $match: searchParameter },
+      { $addFields: { version: { $size: { $ifNull: ['$versions', []] } } } },
+      { $project: { versions: 0 } },
+    ]);
+    return agent ?? null;
   }
 
   /**
@@ -994,6 +1032,8 @@ export function createAgentMethods(
 
   return {
     getAgent,
+    getAgentVersions,
+    getAgentWithVersionCount,
     getAgents,
     createAgent,
     hasAgentWithMCPServerName,

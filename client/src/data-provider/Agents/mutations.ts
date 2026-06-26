@@ -379,6 +379,11 @@ export const useRevertAgentVersionMutation = (
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (revertedAgent, variables, context) => {
         queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], revertedAgent);
+        queryClient.setQueryData<t.Agent>(
+          [QueryKeys.agent, variables.agent_id, 'expanded'],
+          revertedAgent,
+        );
+        queryClient.invalidateQueries([QueryKeys.agent, variables.agent_id, 'versions']);
 
         ((keys: t.AgentListParams[]) => {
           keys.forEach((key) => {

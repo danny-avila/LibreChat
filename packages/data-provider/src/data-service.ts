@@ -525,6 +525,14 @@ export const getExpandedAgentById = ({ agent_id }: { agent_id: string }): Promis
   );
 };
 
+export const getAgentVersions = ({ agent_id }: { agent_id: string }): Promise<a.Agent[]> => {
+  return request.get(
+    endpoints.agents({
+      path: `${agent_id}/versions`,
+    }),
+  );
+};
+
 export const updateAgent = ({
   agent_id,
   data,
