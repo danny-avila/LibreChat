@@ -248,6 +248,11 @@ export default function FavoritesList({
   });
 
   const staleAgentIdsKey = useMemo(() => {
+    // Only persist cleanup once the global map has loaded. A revoked AGENTS.USE role
+    // makes every getAgentById return a global 403, which must not delete favorites.
+    if (agentsMap === undefined) {
+      return '';
+    }
     const ids: string[] = [];
     for (let i = 0; i < agentIdsToFetch.length; i++) {
       const query = agentQueries[i];
@@ -256,7 +261,7 @@ export default function FavoritesList({
       }
     }
     return ids.sort().join(',');
-  }, [agentIdsToFetch, agentQueries]);
+  }, [agentIdsToFetch, agentQueries, agentsMap]);
 
   const cleanupAttemptedRef = useRef('');
 

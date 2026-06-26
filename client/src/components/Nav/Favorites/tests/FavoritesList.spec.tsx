@@ -272,6 +272,30 @@ describe('FavoritesList', () => {
       expect(queryAllByTestId('favorite-item')).toHaveLength(0);
     });
 
+    it('does not delete favorites on a global 403 while the agents map is unavailable', async () => {
+      const mockReorderFavorites = jest.fn();
+      // A revoked AGENTS.USE role makes the list query (and thus the map) fail, so the
+      // map stays undefined and every getAgentById returns a global 403.
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockUseFavorites.mockImplementation(() => ({
+        favorites: [{ agentId: 'agent-a' }, { agentId: 'agent-b' }],
+        reorderFavorites: mockReorderFavorites,
+        isLoading: false,
+      }));
+
+      (dataService.getAgentById as jest.Mock).mockRejectedValue({ response: { status: 403 } });
+
+      const { queryAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      await waitFor(() => {
+        expect(dataService.getAgentById as jest.Mock).toHaveBeenCalledWith({ agent_id: 'agent-a' });
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockReorderFavorites).not.toHaveBeenCalled();
+      expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
     it('keeps a pinned agent as a skeleton on a transient error while the map is still loading', async () => {
       const mockReorderFavorites = jest.fn();
       mockUseAgentsMapContext.mockImplementation(() => undefined);
