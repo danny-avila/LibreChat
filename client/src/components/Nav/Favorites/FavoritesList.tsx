@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { LayoutGrid } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
@@ -213,15 +213,15 @@ export default function FavoritesList({
     [safeFavorites],
   );
 
-  const missingAgentIds = useMemo(() => {
+  const agentIdsToFetch = useMemo(() => {
     if (agentsMap === undefined) {
-      return [];
+      return allAgentIds;
     }
     return allAgentIds.filter((id) => !agentsMap[id]);
   }, [allAgentIds, agentsMap]);
 
-  const missingAgentQueries = useQueries({
-    queries: missingAgentIds.map((agentId) => ({
+  const agentQueries = useQueries({
+    queries: agentIdsToFetch.map((agentId) => ({
       queryKey: [QueryKeys.agent, agentId],
       queryFn: async (): Promise<AgentQueryResult> => {
         try {
@@ -244,14 +244,14 @@ export default function FavoritesList({
 
   const staleAgentIdsKey = useMemo(() => {
     const ids: string[] = [];
-    for (let i = 0; i < missingAgentIds.length; i++) {
-      const query = missingAgentQueries[i];
+    for (let i = 0; i < agentIdsToFetch.length; i++) {
+      const query = agentQueries[i];
       if (query.data && !query.data.found) {
-        ids.push(missingAgentIds[i]);
+        ids.push(agentIdsToFetch[i]);
       }
     }
     return ids.sort().join(',');
-  }, [missingAgentIds, missingAgentQueries]);
+  }, [agentIdsToFetch, agentQueries]);
 
   const cleanupAttemptedRef = useRef('');
 
@@ -293,26 +293,23 @@ export default function FavoritesList({
   }, [staleSpecNamesKey, safeFavorites, reorderFavorites]);
 
   const combinedAgentsMap = useMemo(() => {
-    if (agentsMap === undefined) {
-      return undefined;
-    }
     const combined: Record<string, Agent> = {};
-    for (const [key, value] of Object.entries(agentsMap)) {
-      if (value) {
-        combined[key] = value;
+    if (agentsMap) {
+      for (const [key, value] of Object.entries(agentsMap)) {
+        if (value) {
+          combined[key] = value;
+        }
       }
     }
-    missingAgentQueries.forEach((query) => {
+    agentQueries.forEach((query) => {
       if (query.data?.found) {
         combined[query.data.agent.id] = query.data.agent;
       }
     });
     return combined;
-  }, [agentsMap, missingAgentQueries]);
+  }, [agentsMap, agentQueries]);
 
-  const isAgentsLoading =
-    (allAgentIds.length > 0 && agentsMap === undefined) ||
-    (missingAgentIds.length > 0 && missingAgentQueries.some((q) => q.isLoading));
+  const isAgentsLoading = agentIdsToFetch.length > 0 && agentQueries.some((q) => q.isLoading);
 
   const draggedFavoritesRef = useRef(safeFavorites);
 

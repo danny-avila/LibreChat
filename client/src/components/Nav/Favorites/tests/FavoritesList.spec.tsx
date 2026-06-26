@@ -60,9 +60,10 @@ jest.mock('~/hooks', () => ({
   useGetConversation: () => () => null,
 }));
 
+const mockUseAgentsMapContext = jest.fn((): Record<string, Agent> | undefined => ({}));
 jest.mock('~/Providers', () => ({
   useAssistantsMapContext: () => ({}),
-  useAgentsMapContext: () => ({}),
+  useAgentsMapContext: () => mockUseAgentsMapContext(),
 }));
 
 const mockOnSelectSpec = jest.fn();
@@ -123,6 +124,7 @@ describe('FavoritesList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFavorites.length = 0;
+    mockUseAgentsMapContext.mockImplementation(() => ({}));
     mockUseFavorites.mockImplementation(() => ({
       favorites: mockFavorites,
       reorderFavorites: jest.fn(),
@@ -211,6 +213,28 @@ describe('FavoritesList', () => {
 
       // No favorite items should be rendered (deleted agent is filtered out)
       expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('renders pinned agents via direct fetch while the global agents map is still loading', async () => {
+      const validAgent: Agent = {
+        id: 'pinned-agent',
+        name: 'Pinned Agent',
+        author: 'test-author',
+      } as Agent;
+
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockFavorites.push({ agentId: 'pinned-agent' });
+
+      (dataService.getAgentById as jest.Mock).mockResolvedValue(validAgent);
+
+      const { findAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      const favoriteItems = await findAllByTestId('favorite-item');
+      expect(favoriteItems).toHaveLength(1);
+      expect(favoriteItems[0]).toHaveTextContent('Pinned Agent');
+      expect(dataService.getAgentById as jest.Mock).toHaveBeenCalledWith({
+        agent_id: 'pinned-agent',
+      });
     });
 
     it('should treat 403 the same as 404 — agent not rendered', async () => {
