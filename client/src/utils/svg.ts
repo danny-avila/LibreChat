@@ -391,7 +391,9 @@ function currentColorTones(
  * the innermost reference outward; nested `<use>` inside a referenced template are
  * followed (a symbol may reference another template) with the outer chain preserved,
  * so an outer `<use color>` reaches a nested `currentColor` shape. Hidden or
- * opacity-zero uses render nothing and are skipped; a `seen` set guards cycles.
+ * opacity-zero uses render nothing and are skipped; a per-path guard prevents
+ * reference cycles without dropping a target's other instantiation chains (the same
+ * template may be instantiated more than once with different colors).
  */
 function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[][]> {
   const map = new Map<Element, Element[][]>();
@@ -403,11 +405,11 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
     }
     map.set(el, [chain]);
   };
-  const linkTarget = (target: Element, chain: Element[], seen: Set<Element>) => {
-    if (seen.has(target)) {
+  const linkTarget = (target: Element, chain: Element[], path: Set<Element>) => {
+    if (path.has(target)) {
       return;
     }
-    seen.add(target);
+    path.add(target);
     link(target, chain);
     for (const el of Array.from(target.querySelectorAll('*'))) {
       link(el, chain);
@@ -418,9 +420,10 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
       }
       const nestedTarget = referencedTarget(nested, root);
       if (nestedTarget != null) {
-        linkTarget(nestedTarget, [nested, ...chain], seen);
+        linkTarget(nestedTarget, [nested, ...chain], path);
       }
     }
+    path.delete(target);
   };
   for (const use of Array.from(root.querySelectorAll('use'))) {
     if (instanceInvisible(use, root, rules) || isInside(use, root, DEFERRED_CONTAINERS)) {
@@ -497,10 +500,31 @@ function collectColors(
   return normalizeColors(colors);
 }
 
+/** A local `url(#id)` reference. The id is case-sensitive, so it must survive the
+ * value lowercasing that normalizes colors and keywords for comparison. */
+const LOCAL_URL_REF = /url\(\s*(['"]?)#([^'")\s]+)\1\s*\)/gi;
+
+/**
+ * Lowercases a value for case-insensitive matching while preserving the casing of
+ * any local `url(#id)` fragment, since element ids are matched case-sensitively.
+ */
+function lowerPreservingRefs(value: string): string {
+  if (!/url\(/i.test(value)) {
+    return value.toLowerCase();
+  }
+  let result = '';
+  let last = 0;
+  for (const match of value.matchAll(LOCAL_URL_REF)) {
+    const start = match.index ?? 0;
+    result += value.slice(last, start).toLowerCase() + `url(#${match[2]})`;
+    last = start + match[0].length;
+  }
+  return result + value.slice(last).toLowerCase();
+}
+
 function localUrlRefs(value: string): string[] {
   const refs: string[] = [];
-  const pattern = /url\(\s*(['"]?)#([^'")\s]+)\1\s*\)/gi;
-  for (const match of value.matchAll(pattern)) {
+  for (const match of value.matchAll(LOCAL_URL_REF)) {
     refs.push(match[2]);
   }
   return refs;
@@ -619,13 +643,7 @@ function parseStyleRules(root: Element): StyleRule[] {
         }
         const property = declaration.slice(0, colon).trim().toLowerCase();
         if (RESOLVED_DECLS.has(property)) {
-          declarations.set(
-            property,
-            declaration
-              .slice(colon + 1)
-              .trim()
-              .toLowerCase(),
-          );
+          declarations.set(property, lowerPreservingRefs(declaration.slice(colon + 1).trim()));
         }
       }
       if (declarations.size > 0) {
@@ -671,14 +689,16 @@ function cssDecl(el: Element, rules: StyleRule[], property: string): string | nu
 function styleValue(el: Element, rules: StyleRule[], property: string): string | null {
   const inline = inlineStyleValue(el, property);
   if (inline != null && inline.trim() !== '') {
-    return inline.trim().toLowerCase();
+    return lowerPreservingRefs(inline.trim());
   }
   const css = cssDecl(el, rules, property);
   if (css != null && css !== '') {
     return css;
   }
   const attribute = el.getAttribute(property);
-  return attribute != null && attribute.trim() !== '' ? attribute.trim().toLowerCase() : null;
+  return attribute != null && attribute.trim() !== ''
+    ? lowerPreservingRefs(attribute.trim())
+    : null;
 }
 
 /** Parses a property to a number, or null when absent/unparseable. */
