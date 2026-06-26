@@ -145,6 +145,58 @@ describe('countTaggedApprovalParts', () => {
   });
 });
 
+describe('applyPendingAction — subagent-nested tool calls', () => {
+  const subagentMsg = (childId: string): TMessage =>
+    msg({
+      content: [
+        {
+          type: ContentTypes.TOOL_CALL,
+          [ContentTypes.TOOL_CALL]: {
+            id: 'sub1',
+            name: 'subagent',
+            args: '{}',
+            subagent_content: [toolCallPart(childId)],
+          },
+        } as unknown as TMessageContentParts,
+      ],
+    });
+
+  const childAction = () =>
+    toolApprovalAction({
+      payload: {
+        type: 'tool_approval',
+        action_requests: [{ name: 'search', arguments: '{}', tool_call_id: 'child-tc1' }],
+        review_configs: [
+          {
+            action_name: 'search',
+            tool_call_id: 'child-tc1',
+            allowed_decisions: ['approve', 'reject'],
+          },
+        ],
+      },
+    });
+
+  it('tags a tool paused inside a subagent and makes it countable', () => {
+    const message = subagentMsg('child-tc1');
+    const result = applyPendingAction(message, childAction());
+    expect(result).not.toBe(message); // new reference
+
+    const parentToolCall = getToolCall(result.content?.[0] as TMessageContentParts) as
+      | { subagent_content?: TMessageContentParts[] }
+      | undefined;
+    const nested = parentToolCall?.subagent_content?.[0];
+    expect(getToolCall(nested)?.approval).toMatchObject({ actionId: 'a1' });
+    // The retry loop's "all tagged" check is now reachable for the nested call.
+    expect(countTaggedApprovalParts(result, 'a1')).toBe(1);
+  });
+
+  it('returns the same message when no nested tool call matches', () => {
+    const message = subagentMsg('child-other');
+    expect(applyPendingAction(message, childAction())).toBe(message);
+    expect(countTaggedApprovalParts(message, 'a1')).toBe(0);
+  });
+});
+
 describe('applyPendingAction — ask_user_question', () => {
   it('appends a synthetic ask-user-question part carrying the actionId and question', () => {
     const message = msg({ content: [textPart('hello')] });

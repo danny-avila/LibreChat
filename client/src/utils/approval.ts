@@ -33,13 +33,82 @@ const isAskUserQuestionPart = (part: TMessageContentParts | undefined): boolean 
 const getToolCallId = (part: TMessageContentParts | undefined): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
 
+/** A tool-call value that may carry approval state and/or nested subagent content. */
+type ToolCallWithApproval = Agents.ToolCall & {
+  approval?: unknown;
+  subagent_content?: TMessageContentParts[];
+};
+
 /**
- * Maps a tool-approval pending action onto a message's tool-call content parts.
+ * Tags one tool-call part with the pending action's approval when it matches an
+ * `action_request` (joined by `tool_call_id`, NOT position) and is still unresolved.
  *
- * For each `action_request`, the matching tool-call part (joined by
- * `tool_call_id`) gets its `approval` field set, using the `allowed_decisions`
- * from the review config with the same `tool_call_id` (NOT by position — the
- * same tool can appear twice in one batch).
+ * Recurses into a subagent's `subagent_content`: a tool paused INSIDE a subagent
+ * lives there, not as a top-level part, so without this the approval never attaches
+ * and the user gets no controls. Returns a NEW part only when something changed.
+ */
+function tagApprovalOnPart(
+  part: TMessageContentParts,
+  actionId: string,
+  requestByToolCallId: Map<string, Agents.ToolApprovalRequest>,
+  reviewByToolCallId: Map<string, Agents.ToolReviewConfig>,
+): { part: TMessageContentParts; changed: boolean } {
+  if (part?.type !== ContentTypes.TOOL_CALL) {
+    return { part, changed: false };
+  }
+  const toolCall = part[ContentTypes.TOOL_CALL] as ToolCallWithApproval | undefined;
+  if (!toolCall) {
+    return { part, changed: false };
+  }
+
+  let nextToolCall = toolCall;
+  let changed = false;
+
+  // Descend into nested subagent tool calls first.
+  if (Array.isArray(toolCall.subagent_content) && toolCall.subagent_content.length > 0) {
+    let nestedChanged = false;
+    const nextNested = toolCall.subagent_content.map((nestedPart) => {
+      const res = tagApprovalOnPart(nestedPart, actionId, requestByToolCallId, reviewByToolCallId);
+      if (res.changed) {
+        nestedChanged = true;
+      }
+      return res.part;
+    });
+    if (nestedChanged) {
+      nextToolCall = { ...nextToolCall, subagent_content: nextNested };
+      changed = true;
+    }
+  }
+
+  // Tag this call itself when it's one of the paused requests and still unresolved
+  // (an `output` means the pause already resolved — leave it alone).
+  const toolCallId = getToolCallId(part);
+  const request = toolCallId ? requestByToolCallId.get(toolCallId) : undefined;
+  if (request && (nextToolCall.output?.length ?? 0) === 0) {
+    const reviewConfig = reviewByToolCallId.get(toolCallId);
+    nextToolCall = {
+      ...nextToolCall,
+      approval: {
+        actionId,
+        allowed_decisions: reviewConfig?.allowed_decisions ?? [],
+        description: request.description,
+      },
+    };
+    changed = true;
+  }
+
+  if (!changed) {
+    return { part, changed: false };
+  }
+  return {
+    part: { ...part, [ContentTypes.TOOL_CALL]: nextToolCall } as TMessageContentParts,
+    changed: true,
+  };
+}
+
+/**
+ * Maps a tool-approval pending action onto a message's tool-call content parts,
+ * including tool calls nested inside subagents (see {@link tagApprovalOnPart}).
  *
  * Returns a NEW message only when something changed (referential stability lets
  * React bail out of needless re-renders); otherwise the original is returned.
@@ -65,32 +134,11 @@ function applyToolApproval(
 
   let changed = false;
   const nextContent = content.map((part) => {
-    if (part?.type !== ContentTypes.TOOL_CALL) {
-      return part;
+    const res = tagApprovalOnPart(part, actionId, requestByToolCallId, reviewByToolCallId);
+    if (res.changed) {
+      changed = true;
     }
-    const toolCallId = getToolCallId(part);
-    const request = toolCallId ? requestByToolCallId.get(toolCallId) : undefined;
-    if (!request) {
-      return part;
-    }
-    const reviewConfig = reviewByToolCallId.get(toolCallId);
-    const toolCall = part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined;
-    /** Leave completed calls alone — an output means the pause already resolved. */
-    if (!toolCall || (toolCall.output?.length ?? 0) > 0) {
-      return part;
-    }
-    changed = true;
-    return {
-      ...part,
-      [ContentTypes.TOOL_CALL]: {
-        ...toolCall,
-        approval: {
-          actionId,
-          allowed_decisions: reviewConfig?.allowed_decisions ?? [],
-          description: request.description,
-        },
-      },
-    } as TMessageContentParts;
+    return res.part;
   });
 
   if (!changed) {
@@ -159,19 +207,25 @@ export function countTaggedApprovalParts(message: TMessage, actionId: string): n
   if (!Array.isArray(content)) {
     return 0;
   }
-  let count = 0;
-  for (const part of content) {
-    if (part?.type !== ContentTypes.TOOL_CALL) {
-      continue;
+  const countIn = (parts: TMessageContentParts[]): number => {
+    let count = 0;
+    for (const part of parts) {
+      if (part?.type !== ContentTypes.TOOL_CALL) {
+        continue;
+      }
+      const toolCall = part[ContentTypes.TOOL_CALL] as ToolCallWithApproval | undefined;
+      if ((toolCall?.approval as { actionId?: string } | undefined)?.actionId === actionId) {
+        count += 1;
+      }
+      // Nested subagent tool calls count too, so the retry loop's "all tagged" check
+      // is reachable for a tool paused inside a subagent.
+      if (Array.isArray(toolCall?.subagent_content)) {
+        count += countIn(toolCall.subagent_content);
+      }
     }
-    const toolCall = part[ContentTypes.TOOL_CALL] as
-      | (Agents.ToolCall & { approval?: { actionId?: string } })
-      | undefined;
-    if (toolCall?.approval?.actionId === actionId) {
-      count += 1;
-    }
-  }
-  return count;
+    return count;
+  };
+  return countIn(content);
 }
 
 /** Returns the ask-user-question synthetic part when `part` is one, else undefined. */
