@@ -134,7 +134,9 @@
     "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50",
     "migrate:code-file-duplicates:dry-run": "node config/migrate-code-file-duplicates.js --dry-run",
     "migrate:code-file-duplicates": "node config/migrate-code-file-duplicates.js",
-    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50"
+    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50",
+    "migrate:ephemeral-retention:dry-run": "node config/migrate-ephemeral-retention.js --dry-run",
+    "migrate:ephemeral-retention": "node config/migrate-ephemeral-retention.js"
   },
   "repository": {
     "type": "git",
