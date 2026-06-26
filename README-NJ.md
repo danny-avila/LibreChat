@@ -161,6 +161,16 @@ Depending on the urgency of the change, there are two strategies you can use for
 2. **Simultaneously merge into our repo while contribution upstream**: if a change is needed ASAP in our repo, then we
    have no choice but to do it twice. Be wary of potential future merge conflicts!
 
+### Updating Static Content
+
+"Static content" are things like the "about" & "guide" pages, release notes, or the landing page.
+
+We try to make as much of this content updateable by non-engineers (by using Google Docs → Markdown conversion &
+rendering the markdown). You can
+see [the static markdown files & how to update them here](https://github.com/newjersey/nj-ai-assistant/tree/newjersey/client/src/nj/content).
+
+Some static content (like the landing page) is too complex to use Markdown, so it's just coded into the client.
+
 ### Adding New Models
 
 We're using AWS Bedrock for all our model invocations.
@@ -177,6 +187,44 @@ be updated every time we add a new model
 
 Warning: Any AIA conversation started with model "XYZ" is linked to model "XYZ". As such, **you should never remove old
 models from the model specs** (or else old conversations will no longer accept new prompts).
+
+### Adding Feature Flags
+
+Feature flags allow us to deploy releases without having to reveal features still in development.
+
+We use environment variables for flags, which allows us to turn a feature on or off for an entire environment (local,
+dev, prod). There are a few files to edit for that:
+
+- [`render-env.yml`](render-env.yml), which determines the flag's value for each environment.
+    - Example: `export FOO_FLAG=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)`
+- [`nj.env.template`](nj.env.template), which puts the env vars defined in `render-env.yml` into our environment.
+    - Example: `FOO_FLAG=$FOO_FLAG`
+- Your personal `.env` file, for local development.
+    - Example: `FOO_FLAG=true`
+
+If you want the environment variable to drive a setting in [`nj-librechat.yaml`](nj-librechat.yaml), then you'll want to
+also edit [`interface.ts`](interface.ts). Use calls to `getEnvBoolean()` to replace the given configuration value.
+
+Make sure to remove the feature flag after the feature has been released!
+
+### Content Security Policy
+
+The [Content Security Policy (CSP) header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP) determines
+which resources can be loaded onto our website. It's important to know about CSP if we ever need to load new external
+resources (such as serving files from a CDN). It's especially important to know because, when developing locally,
+CSP doesn't actually block anything - thus something that seems to work fine during development breaks when deployed.
+
+If you need to modify our CSP, it's located in [`nj-helment.js`](nj-helment.js).
+
+_(Keep in mind that Imperva also adds its own CSP headers, so the CSP may look different deployed behind Imperva than it
+does when running locally.)_
+
+### Dealing with Dependabot
+
+NJIA has Dependabot run on all its repos, regardless of their configuration. This is at odds with our desire to stay
+locked to upstream.
+
+We just close any Dependabot updates as a result, and rely on upstream merges for dependency updates.
 
 ## Releasing to Prod
 
