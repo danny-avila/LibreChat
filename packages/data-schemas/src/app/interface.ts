@@ -1,5 +1,5 @@
 import { removeNullishValues } from 'librechat-data-provider';
-import type { TCustomConfig, TConfigDefaults } from 'librechat-data-provider';
+import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '~/types/app';
 import { isMemoryEnabled } from './memory';
 
@@ -26,13 +26,6 @@ export async function loadDefaultInterface({
   const memoryEnabled = isMemoryEnabled(memoryConfig);
   /** Only disable memories if memory config is present and explicitly disabled */
   const shouldDisableMemories = memoryConfig && !memoryEnabled;
-
-  // Environment variable helper for permissions
-  const getEnvBoolean = (envVar: string): boolean | undefined => {
-    const value = process.env[envVar];
-    if (value === undefined) return undefined;
-    return value.toLowerCase().trim() === 'true';
-  };
 
   // If an env var is set, let it control agents' `create` alone (we always want `use` enabled)
   let agents = interfaceConfig?.agents;
@@ -85,4 +78,23 @@ export async function loadDefaultInterface({
   });
 
   return loadedInterface;
+}
+
+/**
+ * Helper for NJ feature flags.
+ *
+ * If you want feature flags to control app config, you can use this pattern (e.g. for file search):
+ *
+ * ```
+ * const loadedInterface: AppConfig['interfaceConfig'] = removeNullishValues({
+ *   ...
+ *   fileSearch: getEnvBoolean('INTERFACE_FILE_SEARCH') ?? interfaceConfig?.fileSearch,
+ *   ...
+ * });
+ * ```
+ */
+function getEnvBoolean(envVar: string): boolean | undefined {
+  const value = process.env[envVar];
+  if (value === undefined) return undefined;
+  return value.toLowerCase().trim() === 'true';
 }
