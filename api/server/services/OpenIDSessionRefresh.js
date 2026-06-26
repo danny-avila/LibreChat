@@ -51,6 +51,7 @@ const {
  * which the controller is about to rotate also triggers an inline refresh here.
  */
 const UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
 
 /**
  * In-flight upstream refreshes keyed by `getSingleFlightKey(req, user)` —
@@ -230,6 +231,25 @@ function buildOIDCTokensFromSession(sessionTokens, tokenPreference, expiresAtOve
     refresh_token: sessionTokens?.refreshToken,
     expires_at: expiresAt ?? undefined,
   };
+}
+
+function attachBrowserRefreshTokenMarker(tokens, browserRefreshToken) {
+  if (!tokens || !browserRefreshToken) {
+    return tokens;
+  }
+  Object.defineProperty(tokens, INTERNAL_BROWSER_REFRESH_TOKEN_FIELD, {
+    value: browserRefreshToken,
+    enumerable: false,
+    configurable: true,
+  });
+  return tokens;
+}
+
+function getBrowserRefreshTokenMarker(tokens) {
+  const browserRefreshToken = tokens?.[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
+  return typeof browserRefreshToken === 'string' && browserRefreshToken
+    ? browserRefreshToken
+    : null;
 }
 
 async function persistSession(req) {
@@ -416,10 +436,13 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference) {
    * OIDCTokens carries it directly, regardless of token preference. After
    * refresh the IdP's value is authoritative and supersedes any decode.
    */
-  return buildOIDCTokensFromSession(
-    updatedSessionTokens,
-    tokenPreference,
-    nextAccessTokenExp ?? undefined,
+  return attachBrowserRefreshTokenMarker(
+    buildOIDCTokensFromSession(
+      updatedSessionTokens,
+      tokenPreference,
+      nextAccessTokenExp ?? undefined,
+    ),
+    updatedSessionTokens.browserRefreshToken,
   );
 }
 
@@ -505,12 +528,22 @@ async function hydrateSessionFromResolvedTokens(req, resolvedTokens) {
     resolvedTokens.id_token != null && existing.idToken !== resolvedTokens.id_token;
   const refreshTokenChanged =
     resolvedTokens.refresh_token != null && existing.refreshToken !== resolvedTokens.refresh_token;
+  const resolvedBrowserRefreshToken = getBrowserRefreshTokenMarker(resolvedTokens);
+  const browserRefreshTokenChanged =
+    resolvedBrowserRefreshToken != null &&
+    existing.browserRefreshToken !== resolvedBrowserRefreshToken;
   const hasResolvedExpiry = typeof resolvedTokens.expires_at === 'number';
   const expiresAtChanged = hasResolvedExpiry
     ? existing.accessTokenExpiresAt !== resolvedTokens.expires_at
     : accessTokenChanged && existing.accessTokenExpiresAt !== undefined;
 
-  if (!accessTokenChanged && !idTokenChanged && !refreshTokenChanged && !expiresAtChanged) {
+  if (
+    !accessTokenChanged &&
+    !idTokenChanged &&
+    !refreshTokenChanged &&
+    !browserRefreshTokenChanged &&
+    !expiresAtChanged
+  ) {
     return;
   }
 
@@ -519,6 +552,7 @@ async function hydrateSessionFromResolvedTokens(req, resolvedTokens) {
     accessToken: resolvedTokens.access_token,
     idToken: resolvedTokens.id_token ?? existing.idToken,
     refreshToken: resolvedTokens.refresh_token ?? existing.refreshToken,
+    browserRefreshToken: resolvedBrowserRefreshToken ?? existing.browserRefreshToken,
     lastRefreshedAt: Date.now(),
   };
   if (hasResolvedExpiry) {

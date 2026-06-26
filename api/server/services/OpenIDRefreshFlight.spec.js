@@ -103,6 +103,29 @@ describe('OpenIDRefreshFlight', () => {
     });
   });
 
+  it('preserves non-enumerable browser refresh-token metadata for shared flight joiners', async () => {
+    const tokens = {
+      access_token: 'access',
+      refresh_token: 'refresh',
+      expires_at: 123,
+    };
+    Object.defineProperty(tokens, '__browserRefreshToken', {
+      value: 'browser-refresh',
+      enumerable: false,
+    });
+
+    await completeOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      tokens,
+      ttl: 60000,
+    });
+
+    const serializedTokens = JSON.parse(encryptV2.mock.calls[0][0]);
+    expect(serializedTokens.__browserRefreshToken).toBe('browser-refresh');
+    expect(Object.keys(tokens)).not.toContain('__browserRefreshToken');
+  });
+
   it('marks a flight failed with a non-sensitive message', async () => {
     await failOpenIDRefreshFlight({
       key: 'flight-key',
@@ -155,5 +178,16 @@ describe('OpenIDRefreshFlight', () => {
         encryptedResult: `encrypted:${JSON.stringify(tokens)}`,
       }),
     ).resolves.toEqual(tokens);
+  });
+
+  it('restores browser refresh-token metadata as non-enumerable', async () => {
+    const result = await __internals.readCompletedFlight({
+      status: 'completed',
+      encryptedResult:
+        'encrypted:{"access_token":"access","__browserRefreshToken":"browser-refresh"}',
+    });
+
+    expect(result.__browserRefreshToken).toBe('browser-refresh');
+    expect(Object.keys(result)).toEqual(['access_token']);
   });
 });

@@ -73,6 +73,34 @@ describe('OpenIDRefreshFlight Methods', () => {
     expect(reclaimed.flight?.ownerId).toBe('owner-2');
   });
 
+  it('reclaims a failed flight immediately so transient failures can retry', async () => {
+    await methods.acquireOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt: new Date(Date.now() + 60000),
+    });
+
+    await methods.failOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-1',
+      errorMessage: 'upstream timeout',
+      expiresAt: new Date(Date.now() + 60000),
+    });
+
+    const reclaimed = await methods.acquireOpenIDRefreshFlight({
+      key: 'flight-key',
+      ownerId: 'owner-2',
+      lockExpiresAt: new Date(Date.now() + 30000),
+      expiresAt: new Date(Date.now() + 60000),
+    });
+
+    expect(reclaimed.acquired).toBe(true);
+    expect(reclaimed.flight?.ownerId).toBe('owner-2');
+    expect(reclaimed.flight?.status).toBe('pending');
+    expect(reclaimed.flight?.errorMessage).toBeUndefined();
+  });
+
   it('completes a flight only for the owning pending worker', async () => {
     await methods.acquireOpenIDRefreshFlight({
       key: 'flight-key',

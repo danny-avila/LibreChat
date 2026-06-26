@@ -1,71 +1,59 @@
-jest.mock(
-  '@librechat/data-schemas',
-  () => ({
-    logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
-    getTenantId: jest.fn(() => undefined),
-    DEFAULT_SESSION_EXPIRY: 900000,
-    DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
-  }),
-  { virtual: true },
-);
-jest.mock(
-  'librechat-data-provider',
-  () => ({
-    ErrorTypes: {},
-    SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
-    errorsToString: jest.fn(),
-  }),
-  { virtual: true },
-);
-jest.mock(
-  '@librechat/api',
-  () => {
-    const shouldUseSecureCookie = jest.fn(() => false);
-    return {
-      isEnabled: jest.fn((val) => val === 'true' || val === true),
-      checkEmailConfig: jest.fn(),
-      isEmailDomainAllowed: jest.fn(),
-      math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
-      shouldUseSecureCookie,
-      setRefreshTokenCookie: jest.fn((res, refreshToken, expires) => {
-        res.cookie('refreshToken', refreshToken, {
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+  getTenantId: jest.fn(() => undefined),
+  DEFAULT_SESSION_EXPIRY: 900000,
+  DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
+}));
+jest.mock('librechat-data-provider', () => ({
+  ErrorTypes: {},
+  SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
+  errorsToString: jest.fn(),
+}));
+jest.mock('@librechat/api', () => {
+  const shouldUseSecureCookie = jest.fn(() => false);
+  return {
+    isEnabled: jest.fn((val) => val === 'true' || val === true),
+    checkEmailConfig: jest.fn(),
+    isEmailDomainAllowed: jest.fn(),
+    math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
+    shouldUseSecureCookie,
+    setRefreshTokenCookie: jest.fn((res, refreshToken, expires) => {
+      res.cookie('refreshToken', refreshToken, {
+        expires,
+        httpOnly: true,
+        secure: shouldUseSecureCookie(),
+        sameSite: 'strict',
+      });
+    }),
+    setOpenIDMarkerCookies: jest.fn((res, { userId, expires }) => {
+      res.cookie('token_provider', 'openid', {
+        expires,
+        httpOnly: true,
+        secure: shouldUseSecureCookie(),
+        sameSite: 'strict',
+      });
+      if (userId) {
+        res.cookie('openid_user_id', `signed:${userId}`, {
           expires,
           httpOnly: true,
           secure: shouldUseSecureCookie(),
           sameSite: 'strict',
         });
-      }),
-      setOpenIDMarkerCookies: jest.fn((res, { userId, expires }) => {
-        res.cookie('token_provider', 'openid', {
-          expires,
-          httpOnly: true,
-          secure: shouldUseSecureCookie(),
-          sameSite: 'strict',
-        });
-        if (userId) {
-          res.cookie('openid_user_id', `signed:${userId}`, {
-            expires,
-            httpOnly: true,
-            secure: shouldUseSecureCookie(),
-            sameSite: 'strict',
-          });
-        }
-      }),
-      resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
-      setCloudFrontCookies: jest.fn(() => true),
-      getCloudFrontConfig: jest.fn(() => ({
-        domain: 'https://cdn.example.com',
-        imageSigning: 'cookies',
-        cookieDomain: '.example.com',
-        privateKey: 'test-private-key',
-        keyPairId: 'K123ABC',
-      })),
-      parseCloudFrontCookieScope: jest.fn(() => null),
-      CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
-    };
-  },
-  { virtual: true },
-);
+      }
+    }),
+    resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+    setCloudFrontCookies: jest.fn(() => true),
+    getCloudFrontConfig: jest.fn(() => ({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieDomain: '.example.com',
+      privateKey: 'test-private-key',
+      keyPairId: 'K123ABC',
+    })),
+    parseCloudFrontCookieScope: jest.fn(() => null),
+    CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
+  };
+});
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   findToken: jest.fn(),
@@ -99,43 +87,80 @@ jest.mock('~/strategies/validators', () => ({
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
-const {
-  checkEmailConfig,
-  shouldUseSecureCookie,
-  isEmailDomainAllowed,
-  resolveAppConfigForUser,
-  setCloudFrontCookies,
-  getCloudFrontConfig,
-  parseCloudFrontCookieScope,
-} = require('@librechat/api');
-const jwt = require('jsonwebtoken');
-const { logger, getTenantId } = require('@librechat/data-schemas');
-const {
-  findUser,
-  findToken,
-  createUser,
-  updateUser,
-  countUsers,
-  getUserById,
-  generateToken,
-  generateRefreshToken,
-  createSession,
-  createToken,
-  deleteTokens,
-} = require('~/models');
-const { getAppConfig } = require('~/server/services/Config');
-const { sendEmail } = require('~/server/utils');
-const bcrypt = require('bcryptjs');
-const {
-  setOpenIDAuthTokens,
-  requestPasswordReset,
-  registerUser,
-  resetPassword,
-  resendVerificationEmail,
-  setAuthTokens,
-  setCloudFrontAuthCookies,
-  verifyEmail,
-} = require('./AuthService');
+let checkEmailConfig;
+let isEmailDomainAllowed;
+let resolveAppConfigForUser;
+let setRefreshTokenCookie;
+let setOpenIDMarkerCookies;
+let setCloudFrontCookies;
+let getCloudFrontConfig;
+let parseCloudFrontCookieScope;
+let jwt;
+let logger;
+let getTenantId;
+let findUser;
+let findToken;
+let createUser;
+let updateUser;
+let countUsers;
+let getUserById;
+let generateToken;
+let generateRefreshToken;
+let createSession;
+let createToken;
+let deleteTokens;
+let getAppConfig;
+let sendEmail;
+let bcrypt;
+let setOpenIDAuthTokens;
+let requestPasswordReset;
+let registerUser;
+let resetPassword;
+let resendVerificationEmail;
+let setAuthTokens;
+let setCloudFrontAuthCookies;
+let verifyEmail;
+
+jest.isolateModules(() => {
+  ({
+    checkEmailConfig,
+    isEmailDomainAllowed,
+    resolveAppConfigForUser,
+    setRefreshTokenCookie,
+    setOpenIDMarkerCookies,
+    setCloudFrontCookies,
+    getCloudFrontConfig,
+    parseCloudFrontCookieScope,
+  } = require('@librechat/api'));
+  jwt = require('jsonwebtoken');
+  ({ logger, getTenantId } = require('@librechat/data-schemas'));
+  ({
+    findUser,
+    findToken,
+    createUser,
+    updateUser,
+    countUsers,
+    getUserById,
+    generateToken,
+    generateRefreshToken,
+    createSession,
+    createToken,
+    deleteTokens,
+  } = require('~/models'));
+  ({ getAppConfig } = require('~/server/services/Config'));
+  ({ sendEmail } = require('~/server/utils'));
+  bcrypt = require('bcryptjs');
+  ({
+    setOpenIDAuthTokens,
+    requestPasswordReset,
+    registerUser,
+    resetPassword,
+    resendVerificationEmail,
+    setAuthTokens,
+    setCloudFrontAuthCookies,
+    verifyEmail,
+  } = require('./AuthService'));
+});
 
 /** Helper to build a mock Express response */
 function mockResponse() {
@@ -379,8 +404,8 @@ describe('setOpenIDAuthTokens', () => {
     });
   });
 
-  describe('cookie secure flag', () => {
-    it('should call shouldUseSecureCookie for every cookie set', () => {
+  describe('OpenID cookie delegation', () => {
+    it('delegates session-path refresh and marker cookies to shared cookie helpers', () => {
       const tokenset = {
         id_token: 'the-id-token',
         access_token: 'the-access-token',
@@ -391,37 +416,29 @@ describe('setOpenIDAuthTokens', () => {
 
       setOpenIDAuthTokens(tokenset, req, res, 'user-123');
 
-      // token_provider + openid_user_id (session path, so no refreshToken/openid_access_token cookies)
-      const secureCalls = shouldUseSecureCookie.mock.calls.length;
-      expect(secureCalls).toBeGreaterThanOrEqual(2);
-
-      // Verify all cookies use the result of shouldUseSecureCookie
-      for (const [, cookie] of Object.entries(res._cookies)) {
-        expect(cookie.options.secure).toBe(false);
-      }
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(
+        res,
+        'the-refresh-token',
+        expect.any(Date),
+      );
+      expect(setOpenIDMarkerCookies).toHaveBeenCalledWith(res, {
+        userId: 'user-123',
+        expires: expect.any(Date),
+        refreshExpiryMs: 604800000,
+      });
+      expect(res.cookie).not.toHaveBeenCalledWith(
+        'openid_access_token',
+        expect.any(String),
+        expect.any(Object),
+      );
+      expect(res.cookie).not.toHaveBeenCalledWith(
+        'openid_id_token',
+        expect.any(String),
+        expect.any(Object),
+      );
     });
 
-    it('should set secure: true when shouldUseSecureCookie returns true', () => {
-      shouldUseSecureCookie.mockReturnValue(true);
-
-      const tokenset = {
-        id_token: 'the-id-token',
-        access_token: 'the-access-token',
-        refresh_token: 'the-refresh-token',
-      };
-      const req = mockRequest();
-      const res = mockResponse();
-
-      setOpenIDAuthTokens(tokenset, req, res, 'user-123');
-
-      for (const [, cookie] of Object.entries(res._cookies)) {
-        expect(cookie.options.secure).toBe(true);
-      }
-    });
-
-    it('should use shouldUseSecureCookie for cookie fallback path (no session)', () => {
-      shouldUseSecureCookie.mockReturnValue(false);
-
+    it('uses cookie fallback for OpenID access tokens when no session is available', () => {
       const tokenset = {
         id_token: 'the-id-token',
         access_token: 'the-access-token',
@@ -432,21 +449,33 @@ describe('setOpenIDAuthTokens', () => {
 
       setOpenIDAuthTokens(tokenset, req, res, 'user-123');
 
-      // In the cookie fallback path, we get: refreshToken, openid_access_token, token_provider, openid_user_id
-      expect(res.cookie).toHaveBeenCalledWith(
-        'refreshToken',
-        expect.any(String),
-        expect.objectContaining({ secure: false }),
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(
+        res,
+        'the-refresh-token',
+        expect.any(Date),
       );
+      expect(setOpenIDMarkerCookies).toHaveBeenCalledWith(res, {
+        userId: 'user-123',
+        expires: expect.any(Date),
+        refreshExpiryMs: 604800000,
+      });
       expect(res.cookie).toHaveBeenCalledWith(
         'openid_access_token',
-        expect.any(String),
-        expect.objectContaining({ secure: false }),
+        'the-access-token',
+        expect.objectContaining({
+          expires: expect.any(Date),
+          httpOnly: true,
+          sameSite: 'strict',
+        }),
       );
       expect(res.cookie).toHaveBeenCalledWith(
-        'token_provider',
-        'openid',
-        expect.objectContaining({ secure: false }),
+        'openid_id_token',
+        'the-id-token',
+        expect.objectContaining({
+          expires: expect.any(Date),
+          httpOnly: true,
+          sameSite: 'strict',
+        }),
       );
     });
   });

@@ -7,6 +7,7 @@ const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
 const DEFAULT_LOCK_TTL_MS = 30 * 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = DEFAULT_LOCK_TTL_MS + 1000;
 const DEFAULT_WAIT_INTERVAL_MS = 100;
+const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -68,7 +69,13 @@ async function completeOpenIDRefreshFlight({ key, ownerId, tokens, ttl = DEFAULT
     return null;
   }
 
-  const encryptedResult = await encryptV2(JSON.stringify(tokens));
+  const serializedTokens = { ...tokens };
+  const browserRefreshToken = tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
+  if (typeof browserRefreshToken === 'string' && browserRefreshToken) {
+    // The marker is non-enumerable in memory; re-add it enumerably so JSON.stringify preserves it.
+    serializedTokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD] = browserRefreshToken;
+  }
+  const encryptedResult = await encryptV2(JSON.stringify(serializedTokens));
   return db.completeOpenIDRefreshFlight({
     key,
     ownerId,
@@ -107,7 +114,17 @@ async function readCompletedFlight(flight) {
   }
 
   const decrypted = await decryptV2(flight.encryptedResult);
-  return JSON.parse(decrypted);
+  const tokens = JSON.parse(decrypted);
+  const browserRefreshToken = tokens?.[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
+  if (typeof browserRefreshToken === 'string' && browserRefreshToken) {
+    delete tokens[INTERNAL_BROWSER_REFRESH_TOKEN_FIELD];
+    Object.defineProperty(tokens, INTERNAL_BROWSER_REFRESH_TOKEN_FIELD, {
+      value: browserRefreshToken,
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return tokens;
 }
 
 async function waitForOpenIDRefreshFlight({

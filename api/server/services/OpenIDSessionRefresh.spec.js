@@ -782,6 +782,52 @@ describe('OpenIDSessionRefresh', () => {
       expect(joinerTokens.refresh_token).toBe('rt-rotated');
       // The joiner's OWN session is hydrated so a later OBO call won't replay rt-stale.
       expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
+      expect(joinerReq.session.openidTokens.browserRefreshToken).toBe('rt-stale');
+      expect(joinerReq.session.save).toHaveBeenCalled();
+    });
+
+    it('hydrates a joining request with the rotated browser marker when the leader wrote cookies', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const makeExpiredSession = () => ({
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-stale',
+        browserRefreshToken: 'rt-stale',
+      });
+      const leaderReq = buildReq(makeExpiredSession(), 'session-cookie-joined');
+      const joinerReq = buildReq(makeExpiredSession(), 'session-cookie-joined');
+      const leaderRes = buildRes({ headersSent: false });
+      const user = makeOpenIdUser();
+
+      let resolveGrant;
+      const grantPromise = new Promise((resolve) => {
+        resolveGrant = resolve;
+      });
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(grantPromise);
+
+      const leaderPromise = refreshOpenIDSession(leaderReq, leaderRes, user, 'access_token');
+      const joinerPromise = refreshOpenIDSession(joinerReq, undefined, user, 'access_token');
+      await Promise.resolve();
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      resolveGrant({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+
+      const [leaderTokens, joinerTokens] = await Promise.all([leaderPromise, joinerPromise]);
+
+      expect(leaderTokens.refresh_token).toBe('rt-rotated');
+      expect(joinerTokens.refresh_token).toBe('rt-rotated');
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(leaderRes, 'rt-rotated', expect.any(Date));
+      expect(leaderReq.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
+      expect(joinerReq.session.openidTokens.refreshToken).toBe('rt-rotated');
+      expect(joinerReq.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
+      expect(Object.keys(joinerTokens)).not.toContain('__browserRefreshToken');
       expect(joinerReq.session.save).toHaveBeenCalled();
     });
 

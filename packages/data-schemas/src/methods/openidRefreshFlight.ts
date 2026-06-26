@@ -57,7 +57,11 @@ export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoo
       const reclaimed = await OpenIDRefreshFlight.findOneAndUpdate(
         {
           key: data.key,
-          $or: [{ expiresAt: { $lte: now } }, { status: 'pending', lockExpiresAt: { $lte: now } }],
+          $or: [
+            { status: 'failed' },
+            { expiresAt: { $lte: now } },
+            { status: 'pending', lockExpiresAt: { $lte: now } },
+          ],
         },
         {
           $set: {
