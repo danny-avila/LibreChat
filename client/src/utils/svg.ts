@@ -333,54 +333,84 @@ function resolveCurrentColor(el: Element, boundary: Element, rules: StyleRule[])
 }
 
 /**
+ * The fixed color a `currentColor` paint resolves to for one instantiation chain.
+ * The chain lists the `<use>` elements from the innermost reference (closest to the
+ * painted element) outward to the visible instance. The template is resolved up to
+ * the innermost referenced root, then each `<use>` is walked in turn up to the root
+ * of the template it lives in (its own instantiation boundary), so `color` set on an
+ * outer `<use>` is inherited through nested references. The first fixed color wins;
+ * the theme-following sentinel is returned when none is in scope.
+ */
+function currentColorThroughChain(
+  el: Element,
+  root: Element,
+  rules: StyleRule[],
+  chain: Element[],
+): string {
+  const target = referencedTarget(chain[0], root);
+  const within = target != null ? resolveCurrentColor(el, target, rules) : CURRENT_COLOR;
+  if (within !== CURRENT_COLOR) {
+    return within;
+  }
+  for (let i = 0; i < chain.length; i++) {
+    const outer = chain[i + 1];
+    const boundary = outer != null ? (referencedTarget(outer, root) ?? root) : root;
+    const color = resolveCurrentColor(chain[i], boundary, rules);
+    if (color !== CURRENT_COLOR) {
+      return color;
+    }
+  }
+  return CURRENT_COLOR;
+}
+
+/**
  * The fixed colors a `currentColor` paint resolves to. Directly-rendered content
- * resolves against its own ancestry. Content pulled in through `<use>` resolves
- * the template up to the referenced root, then falls back to the `color` inherited
- * at each instantiating `<use>` (the instance context), so a use that supplies a
- * fixed color is honored instead of recording the theme-following sentinel.
+ * resolves against its own ancestry. Content pulled in through `<use>` resolves once
+ * per instantiation chain: the template up to the referenced root, then the `color`
+ * inherited at each `<use>` from the innermost instance outward, so a use that
+ * supplies a fixed color (inner or outer) is honored instead of recording the
+ * theme-following sentinel.
  */
 function currentColorTones(
   el: Element,
   root: Element,
   rules: StyleRule[],
-  uses: Element[] | undefined,
+  chains: Element[][] | undefined,
 ): string[] {
-  if (uses == null || uses.length === 0) {
+  if (chains == null || chains.length === 0) {
     return [resolveCurrentColor(el, root, rules)];
   }
-  return uses.map((use) => {
-    const target = referencedTarget(use, root);
-    const within = target != null ? resolveCurrentColor(el, target, rules) : CURRENT_COLOR;
-    return within !== CURRENT_COLOR ? within : resolveCurrentColor(use, root, rules);
-  });
+  return chains.map((chain) => currentColorThroughChain(el, root, rules, chain));
 }
 
 /**
  * Maps each element rendered through a visible `<use>` (target subtrees) to the
- * instantiating `<use>` elements, so its template paint counts even though it
- * lives in a deferred container, and `currentColor` can resolve against the
- * instance's inherited `color`. Nested `<use>` inside a referenced template are
- * followed too (a symbol may reference another template). Hidden or opacity-zero
- * uses render nothing and are skipped; a `seen` set guards against reference cycles.
+ * instantiation chains that render it, so its template paint counts even though it
+ * lives in a deferred container, and `currentColor` can resolve against the `color`
+ * inherited at any `<use>` in the chain. Each chain lists the `<use>` elements from
+ * the innermost reference outward; nested `<use>` inside a referenced template are
+ * followed (a symbol may reference another template) with the outer chain preserved,
+ * so an outer `<use color>` reaches a nested `currentColor` shape. Hidden or
+ * opacity-zero uses render nothing and are skipped; a `seen` set guards cycles.
  */
-function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]> {
-  const map = new Map<Element, Element[]>();
-  const link = (el: Element, use: Element) => {
+function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[][]> {
+  const map = new Map<Element, Element[][]>();
+  const link = (el: Element, chain: Element[]) => {
     const existing = map.get(el);
     if (existing) {
-      existing.push(use);
+      existing.push(chain);
       return;
     }
-    map.set(el, [use]);
+    map.set(el, [chain]);
   };
-  const linkTarget = (target: Element, use: Element, seen: Set<Element>) => {
+  const linkTarget = (target: Element, chain: Element[], seen: Set<Element>) => {
     if (seen.has(target)) {
       return;
     }
     seen.add(target);
-    link(target, use);
+    link(target, chain);
     for (const el of Array.from(target.querySelectorAll('*'))) {
-      link(el, use);
+      link(el, chain);
     }
     for (const nested of Array.from(target.querySelectorAll('use'))) {
       if (instanceInvisible(nested, root, rules)) {
@@ -388,7 +418,7 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
       }
       const nestedTarget = referencedTarget(nested, root);
       if (nestedTarget != null) {
-        linkTarget(nestedTarget, nested, seen);
+        linkTarget(nestedTarget, [nested, ...chain], seen);
       }
     }
   };
@@ -398,7 +428,7 @@ function referenceMap(root: Element, rules: StyleRule[]): Map<Element, Element[]
     }
     const target = referencedTarget(use, root);
     if (target != null) {
-      linkTarget(target, use, new Set());
+      linkTarget(target, [use], new Set());
     }
   }
   return map;
@@ -440,7 +470,7 @@ function normalizeColors(colors: string[]): string[] {
 function collectColors(
   root: Element,
   rules: StyleRule[],
-  referenceUses: Map<Element, Element[]>,
+  referenceUses: Map<Element, Element[][]>,
 ): string[] {
   const colors: string[] = [];
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
@@ -517,7 +547,7 @@ function collectFilterPrimitiveColors(filter: Element, rules: StyleRule[]): stri
 function collectFilterColors(
   root: Element,
   rules: StyleRule[],
-  referenceUses: Map<Element, Element[]>,
+  referenceUses: Map<Element, Element[][]>,
 ): string[] {
   const filters = new Set<Element>();
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
