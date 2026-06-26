@@ -119,7 +119,7 @@ For maintenance purposes, the Platform team and OIT can access the information s
 
 * Choose an agent using the selector at the top of the screen (where you usually see the AI model)   
 * Select an agent in the Agent Library, shown at the top of the chat panel  
-* Start a new chat conversation by typing “@\\[agent name\\],”, press enter, and the conversation starts with that agent   
+* Start a new chat conversation by typing “@\\[agent name\\]”, press enter, and the conversation starts with that agent
 * Use an agent mid-conversation by typing “@\\[agent name\\]” to activate it. The agent name appears at the top 
 
 Once you activate an agent, you can see its name at the top of the screen, regardless of activation method. See the ["How to Build & Use Agents" guide](https://ai-assistant.nj.gov/nj/agent-guide) to learn more.`,
