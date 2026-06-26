@@ -4,6 +4,7 @@ import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IConversation, IMessage, ISharedLink } from '..';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { sweepForcedRetention } from '../utils/retention';
 import { createMessageMethods } from './message';
 import { createModels } from '../models';
 import logger from '~/config/winston';
@@ -1369,6 +1370,104 @@ describe('Message Operations', () => {
       const convo = await Conversation().findOne({ conversationId }).lean();
       expect(convo?.isTemporary ?? null).not.toBe(true);
       expect(convo?.expiredAt ?? null).toBeNull();
+    });
+  });
+
+  describe('sweepForcedRetention', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+    const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+      await SharedLink().deleteMany({});
+    });
+
+    it('converts untouched permanent conversations, messages, and shares and skips conforming ones', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const permanentId = uuidv4();
+      const conformingId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+
+      await Conversation().create([
+        { conversationId: permanentId, user: 'user123', endpoint: 'openAI', isTemporary: false },
+        {
+          conversationId: conformingId,
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: true,
+          expiredAt: soonerExpiry,
+        },
+      ]);
+      await Message.create([
+        { messageId: uuidv4(), conversationId: permanentId, user: 'user123', text: 'permanent' },
+        {
+          messageId: uuidv4(),
+          conversationId: conformingId,
+          user: 'user123',
+          text: 'conforming',
+          isTemporary: true,
+          expiredAt: soonerExpiry,
+        },
+      ]);
+      await SharedLink().create({
+        conversationId: permanentId,
+        user: 'user123',
+        shareId: uuidv4(),
+      });
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        forcedExpiredAt,
+      );
+      expect(result).toEqual({ conversations: 1, errors: 0 });
+
+      const permanent = await Conversation().findOne({ conversationId: permanentId }).lean();
+      expect(permanent?.isTemporary).toBe(true);
+      expect(permanent?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const permanentMessages = await getMessages({ conversationId: permanentId, user: 'user123' });
+      for (const message of permanentMessages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+      }
+
+      const share = await SharedLink().findOne({ conversationId: permanentId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const conforming = await Conversation().findOne({ conversationId: conformingId }).lean();
+      expect(conforming?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
+    it('aligns a permanent message to a sooner parent deadline instead of the forced window', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+      const permanentMessageId = uuidv4();
+      await Message.create({
+        messageId: permanentMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'permanent',
+        isTemporary: false,
+      });
+
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), forcedExpiredAt);
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+      const message = await Message.findOne({ messageId: permanentMessageId }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
     });
   });
 

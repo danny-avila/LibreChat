@@ -109,7 +109,9 @@
     "migrate:shared-link-permissions:batch": "node config/migrate-shared-link-permissions.js --batch-size=50",
     "migrate:orphaned-agent-files:dry-run": "node config/migrate-orphaned-agent-files.js --dry-run",
     "migrate:orphaned-agent-files": "node config/migrate-orphaned-agent-files.js",
-    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50"
+    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50",
+    "migrate:ephemeral-retention:dry-run": "node config/migrate-ephemeral-retention.js --dry-run",
+    "migrate:ephemeral-retention": "node config/migrate-ephemeral-retention.js"
   },
   "repository": {
     "type": "git",

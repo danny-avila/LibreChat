@@ -262,3 +262,46 @@ export const cascadeForcedRetentionByTag = async (
     );
   }
 };
+
+/**
+ * One-time backfill of forced (ephemeral) retention over pre-existing data. Convert-on-touch
+ * only converts conversations that are subsequently written, so enabling ephemeral mode on a
+ * deployment with existing chats leaves untouched permanent rows visible and non-expiring.
+ *
+ * Streams every conversation that does not yet conform to the forced window and converts it,
+ * its messages, and its shares one conversation at a time. Each conversation is capped to the
+ * earlier of its own deadline and the forced window, and its messages and shares are capped to
+ * that same per-conversation deadline, so the sweep never extends data that already expires
+ * sooner and never lets a message outlive its conversation. It is idempotent: re-running skips
+ * conversations that already conform.
+ */
+export const sweepForcedRetention = async (
+  Conversation: Model<IConversation>,
+  Message: Model<IMessage>,
+  SharedLink: Model<ISharedLink>,
+  forcedExpiredAt: Date,
+): Promise<{ conversations: number; errors: number }> => {
+  const result = { conversations: 0, errors: 0 };
+  const cursor = Conversation.find(forcedRetentionGapFilter<IConversation>(forcedExpiredAt))
+    .select('_id conversationId user expiredAt')
+    .lean()
+    .cursor();
+
+  for await (const convo of cursor) {
+    const { conversationId, user } = convo;
+    if (typeof conversationId !== 'string' || !conversationId || !user) {
+      continue;
+    }
+    try {
+      const expiredAt = capForcedRetentionExpiry(convo.expiredAt, forcedExpiredAt);
+      await Conversation.updateOne({ _id: convo._id }, { $set: { isTemporary: true, expiredAt } });
+      await forceConversationMessagesTemporary(Message, user, conversationId, expiredAt);
+      await capConversationSharedLinks(SharedLink, user, conversationId, expiredAt);
+      result.conversations += 1;
+    } catch {
+      result.errors += 1;
+    }
+  }
+
+  return result;
+};
