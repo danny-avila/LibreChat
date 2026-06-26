@@ -370,6 +370,28 @@ describe('pickResumeContext / applyResumeContext', () => {
     expect(body.actionId).toBe('x');
   });
 
+  it('drops graph-determining fields the client sent that the persisted context lacks', () => {
+    // Security: the paused turn carried no addedConvo/spec, so a crafted resume must not
+    // be able to inject them (addedConvo isn't covered by the fingerprint). Any
+    // RESUME_CONTEXT_KEY absent from the persisted context is cleared from the body.
+    const body: Record<string, unknown> = {
+      conversationId: 'c',
+      actionId: 'x',
+      addedConvo: { agent_id: 'injected-secondary' },
+      spec: 'injected-spec',
+    };
+    applyResumeContext(body, { endpoint: 'agents', agent_id: 'a1' });
+    // Persisted keys are restored...
+    expect(body.endpoint).toBe('agents');
+    expect(body.agent_id).toBe('a1');
+    // ...and client-injected graph-determining fields absent from the context are gone.
+    expect('addedConvo' in body).toBe(false);
+    expect('spec' in body).toBe(false);
+    // Non-context fields are untouched.
+    expect(body.conversationId).toBe('c');
+    expect(body.actionId).toBe('x');
+  });
+
   it('is a no-op for a null/undefined context', () => {
     const body: Record<string, unknown> = { ephemeralAgent: null };
     applyResumeContext(body, undefined);

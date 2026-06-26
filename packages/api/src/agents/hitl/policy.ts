@@ -243,7 +243,15 @@ export function pickResumeContext(body: Record<string, unknown> | undefined | nu
   return ctx;
 }
 
-/** Replay a persisted resume context onto a request body, overwriting client values. */
+/**
+ * Replay a persisted resume context onto a request body so the rebuilt run matches the
+ * paused one. Every graph-determining field is forced to the persisted value: a key the
+ * context HAS overwrites whatever the client sent; a key it LACKS is deleted from the
+ * body. The delete is the security half — without it, a field the paused turn never
+ * carried (e.g. `addedConvo`, which {@link computeAgentRequestFingerprint} does NOT
+ * cover) could be injected by a crafted resume to rebuild the paused single-agent
+ * checkpoint as a different multi-agent graph/tool set.
+ */
 export function applyResumeContext(
   body: Record<string, unknown> | undefined | null,
   ctx: ResumeContext | undefined | null,
@@ -254,6 +262,8 @@ export function applyResumeContext(
   for (const key of RESUME_CONTEXT_KEYS) {
     if (ctx[key] !== undefined) {
       body[key] = ctx[key];
+    } else {
+      delete body[key];
     }
   }
 }

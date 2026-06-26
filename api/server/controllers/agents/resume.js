@@ -17,6 +17,10 @@ const {
   checkAndIncrementPendingRequest,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
+const {
+  getMCPRequestContext,
+  cleanupMCPRequestContextForReq,
+} = require('~/server/services/MCPRequestContext');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /** De-duplicate a merged attachment list by a stable artifact identity. */
@@ -429,9 +433,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
   }
 
+  // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
+  // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)
+  // sees `res` as ended and returns undefined, leaving the resumed run without its MCP
+  // connection store — approved MCP / OAuth-overlay tools would then run without their
+  // request-scoped connections. Pre-seeding with a null `res` + `cleanupOnResponse:false`
+  // mirrors the normal stream path (request.js); torn down in the `finally` below.
+  req._resumableStreamId = streamId;
+  getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
+
   // ACK immediately; the continuation streams over the client's existing SSE.
   res.json({ streamId, conversationId, status: 'resuming' });
-  req._resumableStreamId = streamId;
 
   // Seed the original thread parent BEFORE initializeClient: initializeAgent scopes
   // thread files / code artifacts off `req.body.parentMessageId`, and the resume body
@@ -540,6 +552,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
     );
   } finally {
+    // Tear down the MCP request-context store seeded before the ACK (parity with
+    // request.js's finishResumableRequest). No-op if it was never seeded.
+    await cleanupMCPRequestContextForReq(req);
     // Release the concurrency slot taken above — on a normal finish, a re-pause, or an
     // error. A re-pause re-acquires its own slot via the next resume request.
     await decrementPendingRequest(userId);

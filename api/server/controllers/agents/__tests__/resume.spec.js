@@ -65,6 +65,8 @@ const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockDisposeClient = jest.fn();
+const mockGetMCPRequestContext = jest.fn();
+const mockCleanupMCPRequestContextForReq = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -87,6 +89,11 @@ jest.mock('~/models', () => ({
 
 jest.mock('~/server/cleanup', () => ({
   disposeClient: (...args) => mockDisposeClient(...args),
+}));
+
+jest.mock('~/server/services/MCPRequestContext', () => ({
+  getMCPRequestContext: (...args) => mockGetMCPRequestContext(...args),
+  cleanupMCPRequestContextForReq: (...args) => mockCleanupMCPRequestContextForReq(...args),
 }));
 
 // Import after mocks
@@ -171,6 +178,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
+    mockCleanupMCPRequestContextForReq.mockResolvedValue(undefined);
     mockSaveMessage.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue(null);
     mockGetMessages.mockResolvedValue([]);
@@ -223,6 +231,27 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     endpoint: 'agents',
     decisions: [{ tool_call_id: 'tc1', decision: 'approve' }],
     ...extra,
+  });
+
+  describe('MCP request-context lifecycle', () => {
+    it('pre-seeds the run-scoped MCP context before initializeClient and tears it down after', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled; // the controller's finally has run
+
+      // Seeded with a null `res` + cleanupOnResponse:false so the post-ACK tool load
+      // finds the existing store instead of getting undefined (res is already finished).
+      expect(mockGetMCPRequestContext).toHaveBeenCalledWith(expect.anything(), undefined, {
+        cleanupOnResponse: false,
+      });
+      // ...and seeded BEFORE the client (hence tool loading) is built.
+      expect(mockGetMCPRequestContext.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInitializeClient.mock.invocationCallOrder[0],
+      );
+      // ...then torn down exactly once in the finally.
+      expect(mockCleanupMCPRequestContextForReq).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('request guards (rejected before claiming the action)', () => {
