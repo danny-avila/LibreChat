@@ -17,7 +17,7 @@ import { useLocalize } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
 
-function ModelSelectorContent() {
+function ModelSelectorContent({ enforceSpecsOnly = false }: { enforceSpecsOnly?: boolean }) {
   const localize = useLocalize();
 
   const {
@@ -106,8 +106,9 @@ function ModelSelectorContent() {
               modelSpecs?.filter((spec) => !spec.group) || [],
               selectedValues.modelSpec || '',
             )}
-            {/* Render endpoints (will include grouped specs matching endpoint names) */}
-            {renderEndpoints(mappedEndpoints ?? [])}
+            {/* When modelSpecs.enforce is on, only curated specs are selectable, so the
+                raw endpoint catalog is hidden — the picker shows only the spec groups. */}
+            {!enforceSpecsOnly && renderEndpoints(mappedEndpoints ?? [])}
             {/* Render custom groups (specs with group field not matching any endpoint) */}
             {renderCustomGroups(modelSpecs || [], mappedEndpoints ?? [])}
           </>
@@ -130,10 +131,12 @@ export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
     return null;
   }
 
+  const enforceSpecsOnly = startupConfig?.modelSpecs?.enforce === true;
+
   return (
     <ModelSelectorChatProvider>
       <ModelSelectorProvider startupConfig={startupConfig}>
-        <ModelSelectorContent />
+        <ModelSelectorContent enforceSpecsOnly={enforceSpecsOnly} />
       </ModelSelectorProvider>
     </ModelSelectorChatProvider>
   );
