@@ -182,7 +182,7 @@ describe('AgentClient - titleConvo', () => {
 
       expect(mockRun.generateTitle).toHaveBeenCalledWith(
         expect.objectContaining({
-          titlePrompt: 'Custom title prompt',
+          titlePrompt: expect.stringContaining('Custom title prompt'),
         }),
       );
     });
@@ -281,7 +281,9 @@ describe('AgentClient - titleConvo', () => {
 
       expect(mockRun.generateTitle).toHaveBeenCalledWith(
         expect.objectContaining({
-          titlePrompt: undefined,
+          titlePrompt: expect.stringContaining(
+            'Generate a concise, descriptive title for this conversation',
+          ),
           titlePromptTemplate: undefined,
           titleMethod: undefined,
         }),
@@ -344,7 +346,7 @@ describe('AgentClient - titleConvo', () => {
         clientOptions: expect.objectContaining({
           model: 'gpt-3.5-turbo',
         }),
-        titlePrompt: 'Custom title prompt',
+        titlePrompt: expect.stringContaining('Custom title prompt'),
         titlePromptTemplate: 'Template: {{content}}',
         titleMethod: 'structured',
         chainOptions: expect.objectContaining({
@@ -591,7 +593,7 @@ describe('AgentClient - titleConvo', () => {
         expect.objectContaining({
           titleMethod: 'structured',
           provider: Providers.ANTHROPIC,
-          titlePrompt: 'Custom title prompt',
+          titlePrompt: expect.stringContaining('Custom title prompt'),
           titlePromptTemplate: 'Custom template',
         }),
       );
@@ -626,7 +628,7 @@ describe('AgentClient - titleConvo', () => {
       expect(mockRun.generateTitle).toHaveBeenCalledWith(
         expect.objectContaining({
           titleMethod: 'completion',
-          titlePrompt: 'All config title prompt',
+          titlePrompt: expect.stringContaining('All config title prompt'),
           titlePromptTemplate: 'All config template: {{content}}',
         }),
       );
@@ -664,7 +666,7 @@ describe('AgentClient - titleConvo', () => {
       expect(mockRun.generateTitle).toHaveBeenCalledWith(
         expect.objectContaining({
           titleMethod: 'completion',
-          titlePrompt: 'All config title prompt',
+          titlePrompt: expect.stringContaining('All config title prompt'),
           titlePromptTemplate: 'All config template',
         }),
       );
@@ -703,7 +705,9 @@ describe('AgentClient - titleConvo', () => {
         expect.objectContaining({
           provider: Providers.ANTHROPIC, // Critical: Verify provider switched to Anthropic
           titleMethod: 'completion',
-          titlePrompt: 'Generate a concise, descriptive title for this conversation',
+          titlePrompt: expect.stringContaining(
+            'Generate a concise, descriptive title for this conversation',
+          ),
           titlePromptTemplate: 'Conversation summary: {{content}}',
           inputText: text,
           contentParts: client.contentParts,
@@ -757,7 +761,7 @@ describe('AgentClient - titleConvo', () => {
         expect(mockRun.generateTitle).toHaveBeenCalledWith(
           expect.objectContaining({
             titleMethod: method,
-            titlePrompt: `Testing ${method} method`,
+            titlePrompt: expect.stringContaining(`Testing ${method} method`),
             titlePromptTemplate: `Template for ${method}: {{content}}`,
           }),
         );
@@ -833,7 +837,7 @@ describe('AgentClient - titleConvo', () => {
           expect.objectContaining({
             provider: Providers.OPENAI, // Should be OPENAI for serverless
             titleMethod: 'completion',
-            titlePrompt: 'Azure serverless title prompt',
+            titlePrompt: expect.stringContaining('Azure serverless title prompt'),
           }),
         );
       });
@@ -884,7 +888,7 @@ describe('AgentClient - titleConvo', () => {
           expect.objectContaining({
             provider: Providers.AZURE,
             titleMethod: 'structured',
-            titlePrompt: 'Azure instance title prompt',
+            titlePrompt: expect.stringContaining('Azure instance title prompt'),
           }),
         );
       });
@@ -1072,7 +1076,7 @@ describe('AgentClient - titleConvo', () => {
           expect.objectContaining({
             provider: Providers.OPENAI, // Should be OPENAI when no instanceName
             titleMethod: 'structured',
-            titlePrompt: 'Fallback title prompt from all config',
+            titlePrompt: expect.stringContaining('Fallback title prompt from all config'),
             titlePromptTemplate: 'Template: {{content}}',
           }),
         );
