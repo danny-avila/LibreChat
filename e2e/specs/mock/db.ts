@@ -4,12 +4,21 @@ import { MongoClient } from 'mongodb';
 import type { Db } from 'mongodb';
 
 const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017/LibreChat-e2e';
-/** Written by e2e/setup/start-server.js on boot; authoritative even for memory MongoDB. */
-const RUNTIME_ENV_PATH = path.resolve(__dirname, '../.test-results/runtime-env.json');
+
+/**
+ * e2e/setup/start-server.js writes the active Mongo URI (memory-Mongo port included)
+ * here on boot. It honors `E2E_RUNTIME_ENV_PATH`, so resolve the same override the
+ * server used before falling back to the default location.
+ */
+function getRuntimeEnvPath(): string {
+  return (
+    process.env.E2E_RUNTIME_ENV_PATH ?? path.resolve(__dirname, '../.test-results/runtime-env.json')
+  );
+}
 
 function getMongoUri(): string {
   try {
-    const env = JSON.parse(fs.readFileSync(RUNTIME_ENV_PATH, 'utf8')) as { MONGO_URI?: string };
+    const env = JSON.parse(fs.readFileSync(getRuntimeEnvPath(), 'utf8')) as { MONGO_URI?: string };
     if (env.MONGO_URI) {
       return env.MONGO_URI;
     }
@@ -17,6 +26,14 @@ function getMongoUri(): string {
     /* fall through to env/default */
   }
   return process.env.MONGO_URI ?? DEFAULT_MONGO_URI;
+}
+
+async function resolveUserId(db: Db, userEmail: string): Promise<string> {
+  const user = await db.collection('users').findOne({ email: userEmail });
+  if (!user) {
+    throw new Error(`E2E seed: user "${userEmail}" not found`);
+  }
+  return user._id.toString();
 }
 
 /** Connect to the e2e MongoDB, run `fn`, and always close the client. */
@@ -43,11 +60,7 @@ export interface SeedConvo {
  */
 export async function seedConversations(userEmail: string, convos: SeedConvo[]): Promise<void> {
   await withMongo(async (db) => {
-    const user = await db.collection('users').findOne({ email: userEmail });
-    if (!user) {
-      throw new Error(`E2E seed: user "${userEmail}" not found`);
-    }
-    const userId = user._id.toString();
+    const userId = await resolveUserId(db, userEmail);
     const docs = convos.map((convo) => ({
       conversationId: convo.conversationId,
       title: convo.title,
@@ -65,5 +78,14 @@ export async function seedConversations(userEmail: string, convos: SeedConvo[]):
 export async function deleteConversations(conversationIds: string[]): Promise<void> {
   await withMongo(async (db) => {
     await db.collection('conversations').deleteMany({ conversationId: { $in: conversationIds } });
+  });
+}
+
+/** Clears every conversation for the user so the seeded date groups are not pushed
+ *  below the virtualized viewport by rows left behind by other specs. */
+export async function clearUserConversations(userEmail: string): Promise<void> {
+  await withMongo(async (db) => {
+    const userId = await resolveUserId(db, userEmail);
+    await db.collection('conversations').deleteMany({ user: userId });
   });
 }

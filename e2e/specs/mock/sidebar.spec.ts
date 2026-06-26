@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { getE2EUser } from '../../setup/user';
-import { deleteConversations, seedConversations } from './db';
+import { clearUserConversations, deleteConversations, seedConversations } from './db';
 import type { SeedConvo } from './db';
 
 /** Size of the virtualized chat list grid vs. its measured container. */
@@ -108,13 +108,16 @@ const GROUPS = [
 ] as const;
 
 function buildSeed(): SeedConvo[] {
-  const now = Date.now();
+  // Anchor on local noon so the zero-day group stays inside "today" even when the
+  // spec runs right after midnight; second-level offsets keep ordering within a day.
+  const noon = new Date();
+  noon.setHours(12, 0, 0, 0);
+  const base = noon.getTime();
   return GROUPS.flatMap((group, groupIndex) =>
     [0, 1].map((n) => ({
       conversationId: randomUUID(),
       title: `E2E ${group.label} #${n}`,
-      // Subtract minutes so "today" entries stay strictly in the past and ordered.
-      updatedAt: new Date(now - group.offsetDays * DAY_MS - (groupIndex + n + 1) * 60_000),
+      updatedAt: new Date(base - group.offsetDays * DAY_MS - (groupIndex + n) * 1000),
     })),
   );
 }
@@ -141,6 +144,9 @@ test.describe('sidebar conversation grouping', () => {
     page,
   }) => {
     test.setTimeout(60000);
+    // Isolate from rows other specs leave on the shared user, which could otherwise
+    // push the later date-group headers below the virtualized viewport.
+    await clearUserConversations(userEmail);
     seeded = buildSeed();
     await seedConversations(userEmail, seeded);
 
