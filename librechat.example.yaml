@@ -807,6 +807,10 @@ endpoints:
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   topResults: 5  # Highlights (relevant chunks) kept per source after reranking
+#   maxContentLength: 50000  # Max scraped characters per source, applied before chunking
+#   mainExpandBy: 300  # Padding added on each side of a highlight, in chars
+#   separatorExpandBy: 150  # Extra range searched for a sentence/paragraph boundary when trimming the expanded highlight
 #
 # Tavily as both search and scraper provider example:
 # webSearch:

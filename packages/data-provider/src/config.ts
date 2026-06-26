@@ -1520,6 +1520,10 @@ export const webSearchSchema = z.object({
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
   scraperTimeout: z.number().int().nonnegative().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
+  topResults: z.number().int().min(1).max(20).optional(),
+  maxContentLength: z.number().int().positive().optional(),
+  mainExpandBy: z.number().int().nonnegative().optional(),
+  separatorExpandBy: z.number().int().nonnegative().optional(),
   firecrawlOptions: z
     .object({
       formats: z.array(z.string()).optional(),
