@@ -119,8 +119,8 @@ For maintenance purposes, the Platform team and OIT can access the information s
 
 * Choose an agent using the selector at the top of the screen (where you usually see the AI model)   
 * Select an agent in the Agent Library, shown at the top of the chat panel  
-* Start a new chat conversation by typing “@\\[agent name\\],” and the conversation starts with that agent   
-* Use an agent mid-conversation by typing “@\\[agent name\\]” to activate it. The agent name appears at the top. 
+* Start a new chat conversation by typing “@\\[agent name\\],”, press enter, and the conversation starts with that agent   
+* Use an agent mid-conversation by typing “@\\[agent name\\]” to activate it. The agent name appears at the top 
 
 Once you activate an agent, you can see its name at the top of the screen, regardless of activation method. See the ["How to Build & Use Agents" guide](https://ai-assistant.nj.gov/nj/agent-guide) to learn more.`,
           },
@@ -128,9 +128,13 @@ Once you activate an agent, you can see its name at the top of the screen, regar
             question: 'How can I stop using an agent?',
             answer: `The agent name appears in the selector at the top when active, providing an easy way to stop using an agent (or switch to a different agent). 
 
-At the top of the page in the selector, you will see the agent name (“Email Drafter”). Click on that to see a menu. Within the menu you will see the name of the model (“Claude Sonnet 4.5”) or other agents (“Brainstorming Buddy”). Click on the one you want.
+At the top of the page in the selector, you will see the agent name (e.g. “Email Drafter”). Click on that to see a menu. Within the menu you will see the name of the model (“Claude Sonnet 4.5”) or other agents (“Brainstorming Buddy”). Click on the one you want.
 
 You will see the new name in the selector, which is how you know switching agents (or switching back to the base model) worked. See the ["How to Build & Use Agents" guide](https://ai-assistant.nj.gov/nj/agent-guide) to learn more.`,
+          },
+          {
+            question: `What's the difference between “agents” and “Agentic AI”?`,
+            answer: `The NJ AI Assistant uses “agents”, an AI tool that responds to user requests by performing specific, scoped tasks based on pre-defined prompts. Agents only work when initiated by users and operate within clear boundaries. “Agentic AI” is not used in our tool, and agentic AI is a different type of AI tool with more autonomy in executing tasks.`,
           },
         ],
       },
