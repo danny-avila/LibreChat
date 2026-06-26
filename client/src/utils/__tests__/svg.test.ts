@@ -360,6 +360,18 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#glyph" /></symbol><path id="glyph" fill="currentColor" d="M4 4h16v16H4z" /></defs><use href="#s" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('preserves a glyph instantiated twice with different colors through nested use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="glyph" fill="currentColor" d="M4 4h16v16H4z" /><symbol id="s"><use href="#glyph" color="#000" /><use href="#glyph" color="#fff" /></symbol></defs><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('terminates on a self-referential use cycle and still finds its color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="a"><use href="#b" /></symbol><symbol id="b"><use href="#a" /><path fill="#f00" d="M4 4h16v16H4z" /></symbol></defs><use href="#a" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
   });
 
   describe('paint set on non-rendering containers', () => {
@@ -524,6 +536,18 @@ describe('isMonochromeSvg', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><defs><filter id="shadow"><feDropShadow flood-color="#f00" /></filter></defs><path filter="url(#shadow)" opacity="0" fill="#000" d="M0 0h4v4H0z" /><path fill="#333" d="M6 6h12v12H6z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('resolves a mixed-case filter id referenced by attribute', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="dropShadow"><feDropShadow flood-color="#f00" /></filter></defs><path filter="url(#dropShadow)" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('resolves a mixed-case filter id referenced by a CSS rule', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><style>.fx{filter:url(#dropShadow)}</style><defs><filter id="dropShadow"><feFlood flood-color="#e00" /></filter></defs><path class="fx" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
 
