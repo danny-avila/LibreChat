@@ -342,6 +342,24 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24" color="#e00"><style>svg{fill:currentColor}</style><path d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
+
+    it('preserves a nested-use currentColor glyph fixed by the outer use color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#glyph" /></symbol><path id="glyph" fill="currentColor" d="M4 4h16v16H4z" /></defs><use href="#s" color="#e00" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves a nested-use currentColor glyph fixed by the inner use color', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#glyph" color="#0a0" /></symbol><path id="glyph" fill="currentColor" d="M4 4h16v16H4z" /></defs><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a nested-use currentColor glyph with no fixed color at any use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="s"><use href="#glyph" /></symbol><path id="glyph" fill="currentColor" d="M4 4h16v16H4z" /></defs><use href="#s" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('paint set on non-rendering containers', () => {
