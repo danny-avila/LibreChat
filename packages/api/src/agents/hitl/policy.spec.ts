@@ -1,5 +1,6 @@
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import {
+  resolveToolApprovalPolicy,
   isHITLEnabled,
   mapToolApprovalPolicy,
   buildToolApprovalPayload,
@@ -9,6 +10,31 @@ import {
   pickResumeContext,
   applyResumeContext,
 } from './policy';
+
+describe('resolveToolApprovalPolicy', () => {
+  test('returns the endpoint policy unchanged (single layer wired today)', () => {
+    const endpoint: TToolApprovalPolicy = { enabled: true, mode: 'default', deny: ['rm'] };
+    // Identity, not a copy — the resolver is a passthrough until more layers ship.
+    expect(resolveToolApprovalPolicy({ endpoint })).toBe(endpoint);
+  });
+
+  test('returns undefined when there is no endpoint policy', () => {
+    expect(resolveToolApprovalPolicy({})).toBeUndefined();
+    expect(resolveToolApprovalPolicy({ endpoint: undefined })).toBeUndefined();
+  });
+
+  test('ignores the reserved agent/skills layers for now (behaviour-preserving)', () => {
+    const endpoint: TToolApprovalPolicy = { enabled: true, mode: 'bypass' };
+    const resolved = resolveToolApprovalPolicy({
+      endpoint,
+      agent: { enabled: true, mode: 'default', ask: ['shell'] },
+      skills: [{ deny: ['delete_*'] }],
+    });
+    // Until merge lands, the result must still be exactly the endpoint policy so
+    // enabling the seam can't change runtime behaviour.
+    expect(resolved).toBe(endpoint);
+  });
+});
 
 describe('isHITLEnabled', () => {
   test('default-off when no policy configured', () => {

@@ -36,6 +36,7 @@ import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
@@ -1145,7 +1146,14 @@ export async function createRun({
    * to before this feature shipped.
    */
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
-  const hitl = buildHITLRunWiring(agentsEndpointConfig?.toolApproval);
+  // Resolve the effective policy through the single seam so per-agent / per-skill
+  // sources can layer in later without touching this call site (see
+  // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
+  // is identical to reading `toolApproval` directly.
+  const toolApprovalPolicy = resolveToolApprovalPolicy({
+    endpoint: agentsEndpointConfig?.toolApproval,
+  });
+  const hitl = buildHITLRunWiring(toolApprovalPolicy);
   if (hitl) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };

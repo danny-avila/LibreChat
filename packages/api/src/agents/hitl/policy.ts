@@ -12,6 +12,54 @@ import type { ToolPolicyConfig } from '@librechat/agents';
 const DEFAULT_REVIEW_DECISIONS: Agents.ToolApprovalDecisionType[] = ['approve', 'reject', 'edit'];
 
 /**
+ * Layered sources that combine into the effective tool-approval policy for a turn.
+ *
+ * Only {@link ToolApprovalPolicyLayers.endpoint} is consumed today; `agent` and
+ * `skills` are reserved seams so future per-agent / per-skill plumbing lands in
+ * {@link resolveToolApprovalPolicy} rather than being threaded through the run
+ * call site.
+ */
+export interface ToolApprovalPolicyLayers {
+  /**
+   * App/endpoint policy — `endpoints.agents.toolApproval` from librechat.yaml.
+   * The baseline, and the sole owner of the `enabled` kill switch.
+   */
+  endpoint?: TToolApprovalPolicy;
+  /**
+   * Per-agent override (not yet wired). Layered over `endpoint` to refine
+   * `mode`/`allow`/`deny`/`ask`/`reason` for a specific agent. Must NOT flip
+   * `enabled` — enablement stays endpoint-level by design.
+   */
+  agent?: TToolApprovalPolicy;
+  /**
+   * Skill-contributed policy (not yet wired). May only TIGHTEN — contribute
+   * `ask`/`deny` entries — never grant `bypass` or widen `allow`, so a selected
+   * skill can never silently auto-approve a tool.
+   */
+  skills?: TToolApprovalPolicy[];
+}
+
+/**
+ * Resolve the effective tool-approval policy for a turn from its layered sources.
+ *
+ * This is the single seam where policy sources combine, kept out of the run call
+ * site so adding per-agent or per-skill policy later is a change to ONE function
+ * rather than to `createRun`. Intended precedence once those layers are wired:
+ *   - `endpoint` is the baseline and owns the `enabled` kill switch;
+ *   - `agent` overrides `mode`/`allow`/`deny`/`ask`/`reason`;
+ *   - `skills` may only tighten (add `ask`/`deny`), never loosen.
+ *
+ * Today only `endpoint` is consumed, so the result is identical to reading
+ * `endpoints.agents.toolApproval` directly — `agent`/`skills` are accepted but
+ * not yet merged. Behaviour-preserving until those layers ship.
+ */
+export function resolveToolApprovalPolicy(
+  layers: ToolApprovalPolicyLayers,
+): TToolApprovalPolicy | undefined {
+  return layers.endpoint;
+}
+
+/**
  * Whether the HITL machinery should run for this policy.
  *
  * HITL remains default-off for the rollout; `enabled: true` is the explicit
