@@ -912,6 +912,19 @@ export async function initializeAgent(
     tools = structuredTools.concat(providerTools as GenericTool[]);
   }
 
+  if (
+    overrideProvider === Providers.OPENROUTER &&
+    (agent.tools ?? []).includes(Tools.web_search)
+  ) {
+    const withoutNativeWebSearch = tools.filter(
+      (tool) => getToolName(tool) !== Tools.web_search,
+    );
+    tools = [
+      ...withoutNativeWebSearch,
+      { type: 'openrouter:web_search' } as unknown as GenericTool,
+    ];
+  }
+
   agent.model_parameters = { ...options.llmConfig } as Agent['model_parameters'];
   if (options.configOptions) {
     (agent.model_parameters as Record<string, unknown>).configuration = options.configOptions;

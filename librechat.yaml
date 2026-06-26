@@ -464,6 +464,8 @@ endpoints:
           - openai/o3
           - google/gemini-2.5-pro
           - google/gemini-2.5-flash
+          - "~anthropic/claude-sonnet-latest"
+          - anthropic/claude-haiku-4.5
         fetch: false
       titleConvo: true
       titleModel: "openai/gpt-5.5"
@@ -528,7 +530,6 @@ modelSpecs:
         hideBadgeRow: true
       label: GPT-5.5 Pro
       description: OpenAI's most capable model for complex reasoning and long-form work.
-      default: true
       group: OpenAI
       groupIcon: openAI
       preset:
@@ -656,6 +657,32 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: google/gemini-2.5-flash
+        max_tokens: 8192
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
+
+    - <<: *aiw_tools
+      name: claude-sonnet-latest
+      label: Claude Sonnet
+      description: Anthropic's latest Sonnet — always routes to the newest Sonnet release on OpenRouter.
+      default: true
+      group: Anthropic
+      groupIcon: anthropic
+      preset:
+        endpoint: OpenRouter
+        model: "~anthropic/claude-sonnet-latest"
+        max_tokens: 8192
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
+
+    - <<: *aiw_tools
+      name: claude-haiku-4-5
+      label: Claude Haiku 4.5
+      description: Fast, compact Anthropic model for quick tasks and high-throughput workflows.
+      group: Anthropic
+      preset:
+        endpoint: OpenRouter
+        model: anthropic/claude-haiku-4.5
         max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
