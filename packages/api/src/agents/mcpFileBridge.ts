@@ -209,7 +209,7 @@ export async function resolveFileReferences(
 ): Promise<ResolveFileReferencesResult> {
   const { name, args, req, getFiles, getStrategyFunctions, userId } = params;
 
-  if (!name.includes(Constants.mcp_delimiter) || !getFiles || !getStrategyFunctions || !req) {
+  if (!name.includes(Constants.MCP_DELIMITER) || !getFiles || !getStrategyFunctions || !req) {
     return { args, resolved: [] };
   }
 

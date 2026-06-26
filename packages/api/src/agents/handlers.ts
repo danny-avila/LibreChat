@@ -1228,7 +1228,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
 
                   let invokeArgs = tc.args;
-                  if (tc.name.includes(Constants.mcp_delimiter)) {
+                  if (tc.name.includes(Constants.MCP_DELIMITER)) {
                     try {
                       const bridgeReq = mergedConfigurable?.req as ServerRequest | undefined;
                       const { args: resolvedArgs, resolved } = await resolveFileReferences({

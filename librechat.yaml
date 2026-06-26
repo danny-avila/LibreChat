@@ -534,6 +534,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: openai/gpt-5.5-pro
+        max_tokens: 8192
         greeting: How can I help you today?
         instructions: &aiw_instructions |
           You are the AI Workforce Pro assistant, built by SMB Team to help small and medium-sized businesses work more efficiently.
@@ -617,6 +618,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: openai/gpt-5.5
+        max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -628,6 +630,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: openai/o3
+        max_tokens: 16384
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -640,6 +643,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: google/gemini-2.5-pro
+        max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -651,6 +655,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: google/gemini-2.5-flash
+        max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
 

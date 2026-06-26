@@ -159,12 +159,41 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
+  async function findTokenById(id: string): Promise<IToken | null> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return null;
+      }
+      const Token = mongoose.models.Token;
+      const token = await Token.findById(id).lean();
+      return token as IToken | null;
+    } catch (error) {
+      logger.debug('An error occurred while finding token by id:', error);
+      throw error;
+    }
+  }
+
+  async function deleteTokenById(id: string): Promise<TokenDeleteResult> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return { acknowledged: true, deletedCount: 0 };
+      }
+      const Token = mongoose.models.Token;
+      return await Token.deleteOne({ _id: id });
+    } catch (error) {
+      logger.debug('An error occurred while deleting token by id:', error);
+      throw error;
+    }
+  }
+
   // Return all methods
   return {
     findToken,
+    findTokenById,
     createToken,
     updateToken,
     deleteTokens,
+    deleteTokenById,
     findPendingUserInvites,
   };
 }

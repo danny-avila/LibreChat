@@ -44,8 +44,10 @@ router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);
 
 router.get('/', requirePlatformAdmin(), handlers.listTenants);
 router.get('/tenant-admins', requirePlatformAdmin(), handlers.listTenantAdmins);
+router.get('/tenant-members', requirePlatformAdmin(), handlers.listTenantMembers);
 router.post('/', requirePlatformAdmin(), handlers.createTenant);
 router.post('/:id/invite-admin', requirePlatformAdmin(), handlers.inviteTenantAdmin);
+router.post('/:id/invite-user', requirePlatformAdmin(), handlers.inviteTenantUser);
 router.post('/:id/delete', requirePlatformAdmin(), handlers.deleteTenant);
 router.get('/:id', handlers.getTenant);
 router.patch('/:id', requirePlatformAdmin(), handlers.updateTenant);

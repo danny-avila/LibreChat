@@ -3,6 +3,7 @@ import { logger, runAsSystem, tenantStorage, isValidObjectIdString } from '@libr
 import type {
   AdminTenant,
   AdminTenantAdmin,
+  AdminTenantMember,
   ITenant,
   IToken,
   IUser,
@@ -18,6 +19,7 @@ import {
   collectRegisteredEmails,
   filterInvitesBySearch,
   filterPendingInvitesForRegisteredEmails,
+  getInviteRoleFromMetadata,
   inviteDisplayName,
 } from './pendingInvites';
 import { parsePagination } from './pagination';
@@ -51,12 +53,67 @@ export interface SendInviteEmailFn {
   }): Promise<unknown>;
 }
 
-const TENANT_ADMIN_FIELDS = '_id name email tenantId createdAt';
+const TENANT_MEMBER_FIELDS = '_id name email tenantId role createdAt';
 
 const TENANT_ADMIN_FILTER: FilterQuery<IUser> = {
   role: SystemRoles.ADMIN,
   tenantId: { $exists: true, $nin: [null, ''] },
 };
+
+const TENANT_USER_FILTER: FilterQuery<IUser> = {
+  role: SystemRoles.USER,
+  tenantId: { $exists: true, $nin: [null, ''] },
+};
+
+type TenantMemberRoleFilter = 'admin' | 'user' | 'all';
+
+function parseTenantMemberRoleFilter(value: unknown): TenantMemberRoleFilter | null {
+  if (value === 'admin' || value === 'user' || value === 'all') {
+    return value;
+  }
+  return null;
+}
+
+function buildTenantMemberUserFilter(role: TenantMemberRoleFilter): FilterQuery<IUser> {
+  if (role === 'admin') {
+    return { ...TENANT_ADMIN_FILTER };
+  }
+  if (role === 'user') {
+    return { ...TENANT_USER_FILTER };
+  }
+  return {
+    tenantId: { $exists: true, $nin: [null, ''] },
+    role: { $in: [SystemRoles.ADMIN, SystemRoles.USER] },
+  };
+}
+
+function pendingInviteRoleForFilter(
+  role: TenantMemberRoleFilter,
+): typeof SystemRoles.ADMIN | typeof SystemRoles.USER | undefined {
+  if (role === 'admin') {
+    return SystemRoles.ADMIN;
+  }
+  if (role === 'user') {
+    return SystemRoles.USER;
+  }
+  return undefined;
+}
+
+function toMemberRole(
+  role: typeof SystemRoles.ADMIN | typeof SystemRoles.USER,
+): AdminTenantMember['memberRole'] {
+  return role === SystemRoles.ADMIN ? 'admin' : 'user';
+}
+
+class TenantMembersRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TenantMembersRequestError';
+  }
+}
 
 export interface AdminTenantsDeps {
   findUser: (filter: { email: string }) => Promise<IUser | null>;
@@ -357,124 +414,165 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
     }
   }
 
+  async function fetchTenantMembers(
+    req: ServerRequest,
+    memberRole: TenantMemberRoleFilter,
+  ): Promise<{ members: AdminTenantMember[]; total: number }> {
+    const { search, tenant: tenantMongoId } = req.query as {
+      search?: string;
+      tenant?: string;
+    };
+    if (search && search.length > MAX_SEARCH_LENGTH) {
+      throw new TenantMembersRequestError(
+        400,
+        `search must not exceed ${MAX_SEARCH_LENGTH} characters`,
+      );
+    }
+
+    const filter: FilterQuery<IUser> = { ...buildTenantMemberUserFilter(memberRole) };
+    let tenantSlugFilter: string | undefined;
+
+    if (tenantMongoId) {
+      if (!isValidObjectIdString(tenantMongoId)) {
+        throw new TenantMembersRequestError(400, 'Invalid tenant ID format');
+      }
+      const tenant = await findTenantByObjectId(tenantMongoId);
+      if (!tenant) {
+        throw new TenantMembersRequestError(404, 'Tenant not found');
+      }
+      tenantSlugFilter = tenant.tenantId;
+      filter.tenantId = tenant.tenantId;
+    }
+
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(escaped, 'i');
+      filter.$or = [{ name: pattern }, { email: pattern }];
+    }
+
+    const { limit, offset } = parsePagination(req.query);
+
+    const registeredUserFilter: FilterQuery<IUser> = tenantSlugFilter
+      ? { tenantId: tenantSlugFilter }
+      : {};
+    const inviteRole = pendingInviteRoleForFilter(memberRole);
+    const [registeredUsers, rawInvites] = await runAsSystem(() =>
+      Promise.all([
+        findUsers(registeredUserFilter, 'email'),
+        findPendingUserInvites({
+          ...(tenantSlugFilter && { tenantId: tenantSlugFilter }),
+          ...(inviteRole && { role: inviteRole }),
+        }),
+      ]),
+    );
+
+    const pendingInvites = filterPendingInvitesForRegisteredEmails(
+      filterInvitesBySearch(rawInvites, search),
+      collectRegisteredEmails(registeredUsers),
+    );
+    const { userLimit, userOffset } = adjustPaginationForPending(
+      limit,
+      offset,
+      pendingInvites.length,
+    );
+
+    const [users, totalMembers] = await runAsSystem(() =>
+      Promise.all([
+        findUsers(filter, TENANT_MEMBER_FIELDS, {
+          limit: userLimit,
+          offset: userOffset,
+          sort: { createdAt: -1 },
+        }),
+        countUsers(filter),
+      ]),
+    );
+
+    const tenantSlugs = [
+      ...new Set(
+        [...users.map((u) => u.tenantId), ...pendingInvites.map((i) => i.tenantId)].filter(
+          Boolean,
+        ),
+      ),
+    ] as string[];
+    const tenantNames = await Promise.all(
+      tenantSlugs.map(async (slug) => {
+        const tenant = await findTenantById(slug);
+        return [slug, tenant?.name ?? slug] as const;
+      }),
+    );
+    const tenantNameBySlug = new Map(tenantNames);
+
+    const activeMembers: AdminTenantMember[] = users.map((user) => ({
+      id: user._id?.toString() ?? '',
+      name: user.name ?? '',
+      email: user.email ?? '',
+      tenantId: user.tenantId ?? '',
+      tenantName: tenantNameBySlug.get(user.tenantId ?? '') ?? user.tenantId ?? '',
+      status: 'active',
+      memberRole: toMemberRole(
+        user.role === SystemRoles.ADMIN ? SystemRoles.ADMIN : SystemRoles.USER,
+      ),
+      ...(user.createdAt && { createdAt: user.createdAt.toISOString() }),
+    }));
+
+    const pendingRows: AdminTenantMember[] =
+      offset === 0
+        ? pendingInvites.map((invite) => {
+            const email = invite.email?.trim().toLowerCase() ?? '';
+            const slug = invite.tenantId ?? '';
+            const inviteRoleValue = getInviteRoleFromMetadata(invite.metadata);
+            return {
+              id: `invite:${invite._id?.toString() ?? email}`,
+              name: inviteDisplayName(email),
+              email,
+              tenantId: slug,
+              tenantName: tenantNameBySlug.get(slug) ?? slug,
+              status: 'pending' as const,
+              memberRole: toMemberRole(inviteRoleValue),
+              invitedAt: invite.createdAt?.toISOString(),
+            };
+          })
+        : [];
+
+    return { members: [...pendingRows, ...activeMembers], total: totalMembers + pendingInvites.length };
+  }
+
+  async function listTenantMembersByRole(
+    req: ServerRequest,
+    res: Response,
+    memberRole: TenantMemberRoleFilter,
+  ) {
+    const { members, total } = await fetchTenantMembers(req, memberRole);
+    return res.status(200).json({ members, total });
+  }
+
   async function listTenantAdminsHandler(req: ServerRequest, res: Response) {
     try {
-      const { search, tenant: tenantMongoId } = req.query as {
-        search?: string;
-        tenant?: string;
-      };
-      if (search && search.length > MAX_SEARCH_LENGTH) {
-        return res
-          .status(400)
-          .json({ error: `search must not exceed ${MAX_SEARCH_LENGTH} characters` });
-      }
-
-      const filter: FilterQuery<IUser> = { ...TENANT_ADMIN_FILTER };
-      let tenantSlugFilter: string | undefined;
-
-      if (tenantMongoId) {
-        if (!isValidObjectIdString(tenantMongoId)) {
-          return res.status(400).json({ error: 'Invalid tenant ID format' });
-        }
-        const tenant = await findTenantByObjectId(tenantMongoId);
-        if (!tenant) {
-          return res.status(404).json({ error: 'Tenant not found' });
-        }
-        tenantSlugFilter = tenant.tenantId;
-        filter.tenantId = tenant.tenantId;
-      }
-
-      if (search) {
-        const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const pattern = new RegExp(escaped, 'i');
-        filter.$or = [{ name: pattern }, { email: pattern }];
-      }
-
-      const { limit, offset } = parsePagination(req.query);
-
-      const registeredUserFilter: FilterQuery<IUser> = tenantSlugFilter
-        ? { tenantId: tenantSlugFilter }
-        : {};
-      const [registeredUsers, rawInvites] = await runAsSystem(() =>
-        Promise.all([
-          findUsers(registeredUserFilter, 'email'),
-          findPendingUserInvites({
-            ...(tenantSlugFilter && { tenantId: tenantSlugFilter }),
-            role: SystemRoles.ADMIN,
-          }),
-        ]),
-      );
-
-      const pendingInvites = filterPendingInvitesForRegisteredEmails(
-        filterInvitesBySearch(rawInvites, search),
-        collectRegisteredEmails(registeredUsers),
-      );
-      const { userLimit, userOffset } = adjustPaginationForPending(
-        limit,
-        offset,
-        pendingInvites.length,
-      );
-
-      const [users, totalAdmins] = await runAsSystem(() =>
-        Promise.all([
-          findUsers(filter, TENANT_ADMIN_FIELDS, {
-            limit: userLimit,
-            offset: userOffset,
-            sort: { createdAt: -1 },
-          }),
-          countUsers(filter),
-        ]),
-      );
-
-      const tenantSlugs = [
-        ...new Set(
-          [...users.map((u) => u.tenantId), ...pendingInvites.map((i) => i.tenantId)].filter(
-            Boolean,
-          ),
-        ),
-      ] as string[];
-      const tenantNames = await Promise.all(
-        tenantSlugs.map(async (slug) => {
-          const tenant = await findTenantById(slug);
-          return [slug, tenant?.name ?? slug] as const;
-        }),
-      );
-      const tenantNameBySlug = new Map(tenantNames);
-
-      const activeAdmins: AdminTenantAdmin[] = users.map((user) => ({
-        id: user._id?.toString() ?? '',
-        name: user.name ?? '',
-        email: user.email ?? '',
-        tenantId: user.tenantId ?? '',
-        tenantName: tenantNameBySlug.get(user.tenantId ?? '') ?? user.tenantId ?? '',
-        status: 'active',
-        ...(user.createdAt && { createdAt: user.createdAt.toISOString() }),
-      }));
-
-      const pendingRows: AdminTenantAdmin[] =
-        offset === 0
-          ? pendingInvites.map((invite) => {
-              const email = invite.email?.trim().toLowerCase() ?? '';
-              const slug = invite.tenantId ?? '';
-              return {
-                id: `invite:${invite._id?.toString() ?? email}`,
-                name: inviteDisplayName(email),
-                email,
-                tenantId: slug,
-                tenantName: tenantNameBySlug.get(slug) ?? slug,
-                status: 'pending' as const,
-                invitedAt: invite.createdAt?.toISOString(),
-              };
-            })
-          : [];
-
-      const admins = [...pendingRows, ...activeAdmins];
-      const total = totalAdmins + pendingInvites.length;
-
+      const { members, total } = await fetchTenantMembers(req, 'admin');
+      const admins: AdminTenantAdmin[] = members.map(({ memberRole: _role, ...admin }) => admin);
       return res.status(200).json({ admins, total });
     } catch (err) {
+      if (err instanceof TenantMembersRequestError) {
+        return res.status(err.status).json({ error: err.message });
+      }
       logger.error('[admin/tenants] listTenantAdmins failed', err);
       return res.status(500).json({ error: 'Failed to list tenant admins' });
+    }
+  }
+
+  async function listTenantMembersHandler(req: ServerRequest, res: Response) {
+    try {
+      const role = parseTenantMemberRoleFilter((req.query as { role?: string }).role ?? 'all');
+      if (!role) {
+        return res.status(400).json({ error: 'role must be admin, user, or all' });
+      }
+      return await listTenantMembersByRole(req, res, role);
+    } catch (err) {
+      if (err instanceof TenantMembersRequestError) {
+        return res.status(err.status).json({ error: err.message });
+      }
+      logger.error('[admin/tenants] listTenantMembers failed', err);
+      return res.status(500).json({ error: 'Failed to list tenant members' });
     }
   }
 
@@ -540,6 +638,68 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
     }
   }
 
+  async function inviteTenantUserHandler(req: ServerRequest, res: Response) {
+    try {
+      const { id } = req.params as { id: string };
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid tenant ID format' });
+      }
+
+      const email = (req.body as InviteTenantAdminBody).email?.trim().toLowerCase();
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: 'Valid email is required' });
+      }
+
+      const tenant = await findTenantByObjectId(id);
+      if (!tenant) {
+        return res.status(404).json({ error: 'Tenant not found' });
+      }
+
+      const existingUser = await runAsSystem(async () => findUser({ email }));
+      const userTenantId = existingUser?.tenantId?.trim();
+      if (existingUser && (!userTenantId || userTenantId === tenant.tenantId)) {
+        return res.status(409).json({ error: 'A user with that email already exists' });
+      }
+
+      const token = await createInvite(
+        email,
+        { createToken: createInviteToken, findToken: findInviteToken },
+        { tenantId: tenant.tenantId },
+      );
+      if (typeof token !== 'string') {
+        return res.status(500).json({ error: token.message ?? 'Failed to create invite' });
+      }
+
+      const inviteLink = `${getClientDomain()}/register?token=${token}`;
+      const emailConfigured = isEmailConfigured();
+
+      if (!emailConfigured) {
+        return res.status(200).json({
+          success: true,
+          emailSent: false,
+          inviteLink,
+        });
+      }
+
+      const appName = getAppTitle();
+      await sendInviteEmail({
+        email,
+        subject: `Invite to join ${appName}`,
+        payload: {
+          appName,
+          inviteLink,
+          year: new Date().getFullYear(),
+        },
+        template: 'inviteUser.handlebars',
+      });
+
+      return res.status(200).json({ success: true, emailSent: true });
+    } catch (err) {
+      logger.error('[admin/tenants] inviteTenantUser failed', err);
+      return res.status(500).json({ error: 'Failed to send tenant user invite' });
+    }
+  }
+
   return {
     listTenants: listTenantsHandler,
     listTenantAdmins: listTenantAdminsHandler,
@@ -548,5 +708,7 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
     updateTenant: updateTenantHandler,
     deleteTenant: deleteTenantHandler,
     inviteTenantAdmin: inviteTenantAdminHandler,
+    inviteTenantUser: inviteTenantUserHandler,
+    listTenantMembers: listTenantMembersHandler,
   };
 }
