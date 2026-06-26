@@ -1,10 +1,10 @@
 const express = require('express');
 const request = require('supertest');
 
-const mockSetTwoFactorTempUser = jest.fn((req, res, next) => next());
-const mockTwoFactorTempLimiter = jest.fn((req, res, next) => next());
 const mockCheckBan = jest.fn((req, res, next) => next());
-const mockVerify2FAWithTempToken = jest.fn((req, res) => res.status(204).end());
+const mockResetPasswordSubmissionLimiter = jest.fn((req, res, next) => next());
+const mockValidatePasswordReset = jest.fn((req, res, next) => next());
+const mockResetPasswordController = jest.fn((req, res) => res.status(204).end());
 
 jest.mock('@librechat/api', () => ({
   createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
@@ -14,7 +14,7 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/server/controllers/AuthController', () => ({
   refreshController: jest.fn((req, res) => res.status(204).end()),
   registrationController: jest.fn((req, res) => res.status(204).end()),
-  resetPasswordController: jest.fn((req, res) => res.status(204).end()),
+  resetPasswordController: (...args) => mockResetPasswordController(...args),
   resetPasswordRequestController: jest.fn((req, res) => res.status(204).end()),
   graphTokenController: jest.fn((req, res) => res.status(204).end()),
 }));
@@ -28,7 +28,7 @@ jest.mock('~/server/controllers/TwoFactorController', () => ({
 }));
 
 jest.mock('~/server/controllers/auth/TwoFactorAuthController', () => ({
-  verify2FAWithTempToken: (...args) => mockVerify2FAWithTempToken(...args),
+  verify2FAWithTempToken: jest.fn((req, res) => res.status(204).end()),
 }));
 
 jest.mock('~/server/controllers/auth/LogoutController', () => ({
@@ -53,8 +53,8 @@ jest.mock('~/server/middleware', () => {
   return {
     logHeaders: pass,
     loginLimiter: pass,
-    setTwoFactorTempUser: (...args) => mockSetTwoFactorTempUser(...args),
-    twoFactorTempLimiter: (...args) => mockTwoFactorTempLimiter(...args),
+    setTwoFactorTempUser: pass,
+    twoFactorTempLimiter: pass,
     checkBan: (...args) => mockCheckBan(...args),
     requireLocalAuth: pass,
     requireLdapAuth: pass,
@@ -62,60 +62,60 @@ jest.mock('~/server/middleware', () => {
     checkInviteUser: pass,
     validateRegistration: pass,
     resetPasswordLimiter: pass,
-    resetPasswordSubmissionLimiter: pass,
-    validatePasswordReset: pass,
+    resetPasswordSubmissionLimiter: (...args) => mockResetPasswordSubmissionLimiter(...args),
+    validatePasswordReset: (...args) => mockValidatePasswordReset(...args),
     requireJwtAuth: pass,
   };
 });
 
 const authRouter = require('./auth');
 
-describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
+describe('POST /api/auth/resetPassword rate limiting', () => {
   let app;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSetTwoFactorTempUser.mockImplementation((req, res, next) => next());
-    mockTwoFactorTempLimiter.mockImplementation((req, res, next) => next());
     mockCheckBan.mockImplementation((req, res, next) => next());
-    mockVerify2FAWithTempToken.mockImplementation((req, res) => res.status(204).end());
+    mockResetPasswordSubmissionLimiter.mockImplementation((req, res, next) => next());
+    mockValidatePasswordReset.mockImplementation((req, res, next) => next());
+    mockResetPasswordController.mockImplementation((req, res) => res.status(204).end());
 
     app = express();
     app.use(express.json());
     app.use('/api/auth', authRouter);
   });
 
-  it('sets the temp user before limiting, checking bans, and verifying temp 2FA tokens', async () => {
-    await request(app).post('/api/auth/2fa/verify-temp').send({ token: '123456' }).expect(204);
+  it('limits before ban checks, validation, and password reset work', async () => {
+    await request(app).post('/api/auth/resetPassword').send({ token: 'token' }).expect(204);
 
-    expect(mockSetTwoFactorTempUser).toHaveBeenCalledTimes(1);
-    expect(mockTwoFactorTempLimiter).toHaveBeenCalledTimes(1);
+    expect(mockResetPasswordSubmissionLimiter).toHaveBeenCalledTimes(1);
     expect(mockCheckBan).toHaveBeenCalledTimes(1);
-    expect(mockVerify2FAWithTempToken).toHaveBeenCalledTimes(1);
-    expect(mockSetTwoFactorTempUser.mock.invocationCallOrder[0]).toBeLessThan(
-      mockTwoFactorTempLimiter.mock.invocationCallOrder[0],
-    );
-    expect(mockTwoFactorTempLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockValidatePasswordReset).toHaveBeenCalledTimes(1);
+    expect(mockResetPasswordController).toHaveBeenCalledTimes(1);
+    expect(mockResetPasswordSubmissionLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockCheckBan.mock.invocationCallOrder[0],
     );
     expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
-      mockVerify2FAWithTempToken.mock.invocationCallOrder[0],
+      mockValidatePasswordReset.mock.invocationCallOrder[0],
+    );
+    expect(mockValidatePasswordReset.mock.invocationCallOrder[0]).toBeLessThan(
+      mockResetPasswordController.mock.invocationCallOrder[0],
     );
   });
 
-  it('does not verify the temp 2FA token after the limiter rejects the request', async () => {
-    mockTwoFactorTempLimiter.mockImplementation((req, res) =>
-      res.status(429).json({ message: 'Too many verification attempts' }),
+  it('does not validate or reset passwords after the limiter rejects the request', async () => {
+    mockResetPasswordSubmissionLimiter.mockImplementation((req, res) =>
+      res.status(429).json({ message: 'Too many password reset attempts' }),
     );
 
     const response = await request(app)
-      .post('/api/auth/2fa/verify-temp')
-      .send({ token: '123456' })
+      .post('/api/auth/resetPassword')
+      .send({ token: 'token' })
       .expect(429);
 
-    expect(response.body).toEqual({ message: 'Too many verification attempts' });
-    expect(mockSetTwoFactorTempUser).toHaveBeenCalledTimes(1);
+    expect(response.body).toEqual({ message: 'Too many password reset attempts' });
     expect(mockCheckBan).not.toHaveBeenCalled();
-    expect(mockVerify2FAWithTempToken).not.toHaveBeenCalled();
+    expect(mockValidatePasswordReset).not.toHaveBeenCalled();
+    expect(mockResetPasswordController).not.toHaveBeenCalled();
   });
 });
