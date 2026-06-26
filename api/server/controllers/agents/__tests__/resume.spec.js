@@ -203,7 +203,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockAddTitle = jest.fn().mockResolvedValue(undefined);
     mockInitializeClient = jest.fn(async ({ req }) => {
       // Capture the request state the controller seeds BEFORE reconstruction.
-      capturedInit = { parentMessageId: req.body.parentMessageId, files: req.body.files };
+      capturedInit = {
+        parentMessageId: req.body.parentMessageId,
+        files: req.body.files,
+        conversationCreatedAt: req.conversationCreatedAt,
+        timezone: req.body.timezone,
+      };
       return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
     });
 
@@ -231,6 +236,27 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     endpoint: 'agents',
     decisions: [{ tool_call_id: 'tc1', decision: 'approve' }],
     ...extra,
+  });
+
+  describe('temporal context restore', () => {
+    it('restores req.conversationCreatedAt from the convo before initializeClient', async () => {
+      // Temporal prompt vars must resolve against the paused anchor, not resume wall-clock.
+      mockGetConvo.mockResolvedValue({ createdAt: new Date('2020-01-02T03:04:05.000Z') });
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      expect(capturedInit.conversationCreatedAt).toBe('2020-01-02T03:04:05.000Z');
+    });
+
+    it('leaves conversationCreatedAt unset when the convo lookup yields nothing', async () => {
+      mockGetConvo.mockResolvedValue(null);
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      expect(capturedInit.conversationCreatedAt).toBeUndefined();
+    });
   });
 
   describe('MCP request-context lifecycle', () => {

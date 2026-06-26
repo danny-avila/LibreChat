@@ -7,6 +7,15 @@ import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
 import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 
+/**
+ * The resume route rejects an `edit` whose `editedArguments` isn't a plain object
+ * (`findIncompleteDecisions`), so mirror that here — `JSON.parse` alone also accepts
+ * `null`/arrays/primitives, which would enable Submit for a value that can only 400.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 type DecisionType = Agents.ToolApprovalDecisionType;
 
 const DECISION_ICON: Record<DecisionType, React.ComponentType<{ className?: string }>> = {
@@ -121,12 +130,14 @@ export default function ToolApproval({
     }
     if (active === 'edit') {
       try {
-        const editedArguments = JSON.parse(editText) as Record<string, unknown>;
-        setDecision(actionId, toolCallId, {
-          tool_call_id: toolCallId,
-          decision: 'edit',
-          editedArguments,
-        });
+        const parsed = JSON.parse(editText) as unknown;
+        setDecision(
+          actionId,
+          toolCallId,
+          isPlainObject(parsed)
+            ? { tool_call_id: toolCallId, decision: 'edit', editedArguments: parsed }
+            : null,
+        );
       } catch {
         setDecision(actionId, toolCallId, null);
       }
@@ -138,8 +149,7 @@ export default function ToolApproval({
       return true;
     }
     try {
-      JSON.parse(editText);
-      return true;
+      return isPlainObject(JSON.parse(editText));
     } catch {
       return false;
     }

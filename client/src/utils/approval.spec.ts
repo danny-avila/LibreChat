@@ -3,6 +3,7 @@ import type { Agents, TMessage, TMessageContentParts } from 'librechat-data-prov
 import {
   ASK_USER_QUESTION,
   applyPendingAction,
+  countTaggedApprovalParts,
   getAskUserQuestionPart,
   findPendingActionMessageIndex,
 } from './approval';
@@ -94,6 +95,53 @@ describe('applyPendingAction — tool_approval', () => {
   it('returns the same message when no tool call matches the pending request', () => {
     const message = msg({ content: [toolCallPart('other')] });
     expect(applyPendingAction(message, toolApprovalAction())).toBe(message);
+  });
+});
+
+describe('countTaggedApprovalParts', () => {
+  const twoToolAction = () =>
+    toolApprovalAction({
+      payload: {
+        type: 'tool_approval',
+        action_requests: [
+          { name: 'search', arguments: '{}', tool_call_id: 'tc1' },
+          { name: 'search', arguments: '{}', tool_call_id: 'tc2' },
+        ],
+        review_configs: [],
+      },
+    });
+
+  it('counts tagged parts so a partial multi-tool apply is detectable (1 of 2)', () => {
+    const action = twoToolAction();
+    // Only tc1 has rendered when the action is first applied → 1 < 2, retry should continue.
+    const partial = applyPendingAction(msg({ content: [toolCallPart('tc1')] }), action);
+    expect(countTaggedApprovalParts(partial, 'a1')).toBe(1);
+    // Both siblings present → both tagged → retry can stop.
+    const full = applyPendingAction(
+      msg({ content: [toolCallPart('tc1'), toolCallPart('tc2')] }),
+      action,
+    );
+    expect(countTaggedApprovalParts(full, 'a1')).toBe(2);
+  });
+
+  it('returns 0 when nothing is tagged or content is not an array', () => {
+    expect(countTaggedApprovalParts(msg({ content: [toolCallPart('tc1')] }), 'a1')).toBe(0);
+    expect(countTaggedApprovalParts(msg({ content: [textPart('hi')] }), 'a1')).toBe(0);
+    expect(
+      countTaggedApprovalParts(
+        msg({ content: undefined as unknown as TMessageContentParts[] }),
+        'a1',
+      ),
+    ).toBe(0);
+  });
+
+  it('ignores parts tagged with a different actionId', () => {
+    const tagged = applyPendingAction(
+      msg({ content: [toolCallPart('tc1')] }),
+      toolApprovalAction(),
+    );
+    expect(countTaggedApprovalParts(tagged, 'a1')).toBe(1);
+    expect(countTaggedApprovalParts(tagged, 'other-action')).toBe(0);
   });
 });
 

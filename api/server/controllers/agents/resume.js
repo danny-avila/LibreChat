@@ -477,6 +477,24 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
   }
 
+  // Restore the conversation's createdAt so temporal prompt vars ({{current_datetime}},
+  // {{iso_datetime}}, ...) resolve against the SAME anchor the paused graph used rather
+  // than the resume wall-clock. initializeAgent reads `req.conversationCreatedAt`; the
+  // normal path sets it from the convo timestamp (resolveConversationCreatedAt), so mirror
+  // that here. (The original `timezone` is replayed onto req.body via RESUME_CONTEXT_KEYS.)
+  try {
+    const resumedConvo = await getConvo(userId, conversationId);
+    const createdAt = resumedConvo?.createdAt ? new Date(resumedConvo.createdAt) : null;
+    if (createdAt && !Number.isNaN(createdAt.getTime())) {
+      req.conversationCreatedAt = createdAt.toISOString();
+    }
+  } catch (err) {
+    logger.warn(
+      '[ResumeAgentController] Failed to restore conversation timestamp anchor',
+      err?.message ?? err,
+    );
+  }
+
   let client = null;
   try {
     const result = await initializeClient({

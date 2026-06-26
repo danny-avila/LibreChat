@@ -321,7 +321,7 @@ describe('computeAgentRequestFingerprint', () => {
 });
 
 describe('pickResumeContext / applyResumeContext', () => {
-  it('picks only the graph-determining fields (incl. addedConvo), dropping unrelated keys', () => {
+  it('picks only the graph-determining fields (incl. addedConvo + timezone), dropping unrelated keys', () => {
     const ctx = pickResumeContext({
       endpoint: 'agents',
       agent_id: 'a1',
@@ -329,6 +329,8 @@ describe('pickResumeContext / applyResumeContext', () => {
       promptPrefix: 'be terse',
       ephemeralAgent: { execute_code: true },
       addedConvo: { agent_id: 'secondary' },
+      // Feeds temporal prompt vars; must round-trip so resume compiles the same prompt.
+      timezone: 'America/New_York',
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -340,6 +342,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       promptPrefix: 'be terse',
       ephemeralAgent: { execute_code: true },
       addedConvo: { agent_id: 'secondary' },
+      timezone: 'America/New_York',
     });
   });
 

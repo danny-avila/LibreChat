@@ -225,6 +225,10 @@ export const RESUME_CONTEXT_KEYS = [
   // The agents build reads addedConvo into endpointOption to add parallel/secondary
   // agents; the resume POST can't reconstruct it, so replay it from the paused request.
   'addedConvo',
+  // Feeds temporal prompt vars ({{current_datetime}} etc.) via initializeAgent. The
+  // resume POST omits it, so without replay a different-tz client (or none) compiles a
+  // different system prompt than the paused graph. Replay-only — not in the fingerprint.
+  'timezone',
 ] as const;
 
 export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>>;

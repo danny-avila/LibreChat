@@ -147,6 +147,33 @@ export function applyPendingAction(
   return message;
 }
 
+/**
+ * Counts the tool-call content parts already tagged with this action's approval —
+ * i.e. how many of a tool-approval pending action's `action_requests` have rendered
+ * and been mapped. A multi-tool pause can render its sibling cards across several
+ * frames, so the SSE retry compares this against `action_requests.length` to know
+ * whether EVERY paused call is tagged yet.
+ */
+export function countTaggedApprovalParts(message: TMessage, actionId: string): number {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return 0;
+  }
+  let count = 0;
+  for (const part of content) {
+    if (part?.type !== ContentTypes.TOOL_CALL) {
+      continue;
+    }
+    const toolCall = part[ContentTypes.TOOL_CALL] as
+      | (Agents.ToolCall & { approval?: { actionId?: string } })
+      | undefined;
+    if (toolCall?.approval?.actionId === actionId) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /** Returns the ask-user-question synthetic part when `part` is one, else undefined. */
 export function getAskUserQuestionPart(
   part: TMessageContentParts | undefined,

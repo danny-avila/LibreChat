@@ -33,6 +33,7 @@ import {
   applyPendingAction,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
+  countTaggedApprovalParts,
   countTrailingOutputChars,
   markStreamStartFailedMetadata,
   findPendingActionMessageIndex,
@@ -546,14 +547,27 @@ export default function useResumableSSE(
           return;
         }
         const updated = applyPendingAction(messages[index], pendingAction);
-        if (updated === messages[index]) {
-          retryNextFrame();
-          return;
+        const changed = updated !== messages[index];
+        if (changed) {
+          const nextMessages = [...messages];
+          nextMessages[index] = updated;
+          setMessages(nextMessages);
+          syncStepMessage(updated);
         }
-        const nextMessages = [...messages];
-        nextMessages[index] = updated;
-        setMessages(nextMessages);
-        syncStepMessage(updated);
+        // A `tool_approval` pause can carry several `action_requests` whose tool-call
+        // parts render on different frames; tagging only the first to arrive would leave
+        // late siblings with no approval card, and the resume route then 400s the partial
+        // batch ("every paused tool call must be decided"). Keep retrying (bounded) until
+        // EVERY paused call is tagged. `ask_user_question` applies its single synthetic
+        // part in one shot, so it only needs the original "did anything change" retry.
+        if (pendingAction.payload.type === 'tool_approval') {
+          const expected = pendingAction.payload.action_requests.length;
+          if (countTaggedApprovalParts(updated, pendingAction.actionId) < expected) {
+            retryNextFrame();
+          }
+        } else if (!changed) {
+          retryNextFrame();
+        }
       };
 
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
