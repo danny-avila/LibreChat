@@ -17,8 +17,8 @@ cache: true
 fileStrategy: "s3"
 
 interface:
-  endpointsMenu: true
-  modelSelect: true
+  endpointsMenu: false
+  modelSelect: false
   parameters: true
   presets: false
 
@@ -45,7 +45,7 @@ endpoints:
   # Custom endpoints — 全部经 gptsapi（OpenAI 兼容），单 ${GPTSAPI_KEY}
   custom:
     # Google — Gemini family
-    - name: "Google"
+    - name: "Gemini"
       apiKey: "${GPTSAPI_KEY}"
       baseURL: "https://api.gptsapi.net/v1"
       models:
@@ -57,8 +57,28 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: "gemini-2.5-flash-lite"
-      modelDisplayLabel: "Google"
+      modelDisplayLabel: "Gemini"
       iconURL: "google"
+      dropParams: ["stop"]
+
+    # Anthropic — Claude family (OpenAI-compatible via gptsapi; native Messages API path 404s through the relay)
+    - name: "Claude"
+      apiKey: "${GPTSAPI_KEY}"
+      baseURL: "https://api.gptsapi.net/v1"
+      models:
+        default:
+          - "claude-opus-4-8"
+          - "claude-opus-4-7"
+          - "claude-opus-4-6"
+          - "claude-opus-4-5-20251101"
+          - "claude-sonnet-4-6"
+          - "claude-sonnet-4-6-thinking"
+          - "claude-haiku-4-5-20251001"
+        fetch: false
+      titleConvo: true
+      titleModel: "gemini-2.5-flash-lite"
+      modelDisplayLabel: "Claude"
+      iconURL: "anthropic"
       dropParams: ["stop"]
 
     # xAI — Grok family
@@ -126,3 +146,148 @@ endpoints:
       titleModel: "gemini-2.5-flash-lite"
       modelDisplayLabel: "MiniMax"
       dropParams: ["stop"]
+
+# Curated model cards (use.ai-style). enforce: only these show in the selector.
+modelSpecs:
+  enforce: true
+  prioritize: true
+  list:
+    # ---- Gemini ----
+    - name: "gemini-2.5-flash"
+      label: "Gemini 2.5 Flash"
+      default: true
+      group: "Gemini"
+      iconURL: "google"
+      description: "Fast & efficient"
+      preset: { endpoint: "Gemini", model: "gemini-2.5-flash" }
+    - name: "gemini-3.1-pro-preview"
+      label: "Gemini 3.1 Pro"
+      group: "Gemini"
+      iconURL: "google"
+      preset: { endpoint: "Gemini", model: "gemini-3.1-pro-preview" }
+    - name: "gemini-3-flash-preview"
+      label: "Gemini 3 Flash"
+      group: "Gemini"
+      iconURL: "google"
+      preset: { endpoint: "Gemini", model: "gemini-3-flash-preview" }
+    - name: "gemini-2.5-flash-lite"
+      label: "Gemini 2.5 Flash Lite"
+      group: "Gemini"
+      iconURL: "google"
+      preset: { endpoint: "Gemini", model: "gemini-2.5-flash-lite" }
+    # ---- OpenAI ----
+    - name: "gpt-5.5"
+      label: "GPT-5.5"
+      group: "OpenAI"
+      iconURL: "openAI"
+      preset: { endpoint: "openAI", model: "gpt-5.5" }
+    - name: "gpt-5.4"
+      label: "GPT-5.4"
+      group: "OpenAI"
+      iconURL: "openAI"
+      preset: { endpoint: "openAI", model: "gpt-5.4" }
+    - name: "gpt-5.4-pro"
+      label: "GPT-5.4 Pro"
+      group: "OpenAI"
+      iconURL: "openAI"
+      preset: { endpoint: "openAI", model: "gpt-5.4-pro" }
+    - name: "gpt-5.4-mini"
+      label: "GPT-5.4 mini"
+      group: "OpenAI"
+      iconURL: "openAI"
+      preset: { endpoint: "openAI", model: "gpt-5.4-mini" }
+    - name: "gpt-5.4-nano"
+      label: "GPT-5.4 nano"
+      group: "OpenAI"
+      iconURL: "openAI"
+      preset: { endpoint: "openAI", model: "gpt-5.4-nano" }
+    # ---- Claude ----
+    - name: "claude-opus-4-8"
+      label: "Claude Opus 4.8"
+      group: "Claude"
+      iconURL: "anthropic"
+      preset: { endpoint: "Claude", model: "claude-opus-4-8" }
+    - name: "claude-opus-4-7"
+      label: "Claude Opus 4.7"
+      group: "Claude"
+      iconURL: "anthropic"
+      preset: { endpoint: "Claude", model: "claude-opus-4-7" }
+    - name: "claude-opus-4-6"
+      label: "Claude Opus 4.6"
+      group: "Claude"
+      iconURL: "anthropic"
+      preset: { endpoint: "Claude", model: "claude-opus-4-6" }
+    - name: "claude-opus-4-5"
+      label: "Claude Opus 4.5"
+      group: "Claude"
+      iconURL: "anthropic"
+      preset: { endpoint: "Claude", model: "claude-opus-4-5-20251101" }
+    - name: "claude-sonnet-4-6"
+      label: "Claude Sonnet 4.6"
+      group: "Claude"
+      iconURL: "anthropic"
+      preset: { endpoint: "Claude", model: "claude-sonnet-4-6" }
+    - name: "claude-sonnet-4-6-thinking"
+      label: "Claude Sonnet 4.6 (Thinking)"
+      group: "Claude"
+      iconURL: "anthropic"
+      preset: { endpoint: "Claude", model: "claude-sonnet-4-6-thinking" }
+    - name: "claude-haiku-4-5"
+      label: "Claude Haiku 4.5"
+      group: "Claude"
+      iconURL: "anthropic"
+      preset: { endpoint: "Claude", model: "claude-haiku-4-5-20251001" }
+    # ---- Grok ----
+    - name: "grok-4.3"
+      label: "Grok 4.3"
+      group: "Grok"
+      iconURL: "xai"
+      preset: { endpoint: "xAI", model: "grok-4.3" }
+    - name: "grok-4-1-fast"
+      label: "Grok 4.1 Fast"
+      group: "Grok"
+      iconURL: "xai"
+      preset: { endpoint: "xAI", model: "grok-4-1-fast-non-reasoning" }
+    - name: "grok-4.20-reasoning"
+      label: "Grok 4.20 (Reasoning)"
+      group: "Grok"
+      iconURL: "xai"
+      preset: { endpoint: "xAI", model: "grok-4.20-beta-0309-reasoning" }
+    - name: "grok-4.20-fast"
+      label: "Grok 4.20 (Fast)"
+      group: "Grok"
+      iconURL: "xai"
+      preset: { endpoint: "xAI", model: "grok-4.20-beta-0309-non-reasoning" }
+    - name: "grok-4.20-multi-agent"
+      label: "Grok 4.20 Multi-Agent"
+      group: "Grok"
+      iconURL: "xai"
+      preset: { endpoint: "xAI", model: "grok-4.20-multi-agent-beta-0309" }
+    # ---- DeepSeek ----
+    - name: "deepseek-v4-pro"
+      label: "DeepSeek V4 Pro"
+      group: "DeepSeek"
+      preset: { endpoint: "DeepSeek", model: "deepseek-v4-pro" }
+    - name: "deepseek-v4-flash"
+      label: "DeepSeek V4 Flash"
+      group: "DeepSeek"
+      preset: { endpoint: "DeepSeek", model: "deepseek-v4-flash" }
+    # ---- GLM ----
+    - name: "glm-5.2"
+      label: "GLM-5.2"
+      group: "GLM"
+      preset: { endpoint: "GLM", model: "glm-5.2" }
+    - name: "glm-5-turbo"
+      label: "GLM-5 Turbo"
+      group: "GLM"
+      preset: { endpoint: "GLM", model: "glm-5-turbo" }
+    # ---- Kimi ----
+    - name: "kimi-k2.6"
+      label: "Kimi K2.6"
+      group: "Kimi"
+      preset: { endpoint: "Kimi", model: "kimi-k2.6" }
+    # ---- MiniMax ----
+    - name: "minimax-m3"
+      label: "MiniMax M3"
+      group: "MiniMax"
+      preset: { endpoint: "MiniMax", model: "MiniMax-M3" }

@@ -30,8 +30,8 @@
 | 端点 | 类型 | 协议 | 承载家族 |
 |---|---|---|---|
 | `openAI` | 内置 + `OPENAI_REVERSE_PROXY=gptsapi/v1` | OpenAI Chat Completions | GPT-5.x |
-| `anthropic` | 内置 + `ANTHROPIC_REVERSE_PROXY=gptsapi/v1` | Anthropic Messages | Claude |
-| `Google` | custom(已存在) | OpenAI 兼容 | Gemini(修掉失效项) |
+| `Claude` | **custom**(原计划用内置 anthropic) | OpenAI 兼容 | Claude |
+| `Gemini` | **custom**(原名 Google,**已重命名**) | OpenAI 兼容 | Gemini(修掉失效项) |
 | `xAI` | **新增** custom | OpenAI 兼容 | Grok |
 | `DeepSeek` | **新增** custom | OpenAI 兼容 | DeepSeek |
 | `GLM` | **新增** custom | OpenAI 兼容 | GLM |
@@ -64,17 +64,17 @@
 | OpenAI | GPT-5.4 Pro | `gpt-5.4-pro` | openAI | expensive |
 | OpenAI | GPT-5.4 mini | `gpt-5.4-mini` | openAI | cheap |
 | OpenAI | GPT-5.4 nano | `gpt-5.4-nano` | openAI | cheap |
-| Claude | Claude Opus 4.8 | `claude-opus-4-8` | anthropic | expensive |
-| Claude | Claude Opus 4.7 | `claude-opus-4-7` | anthropic | expensive |
-| Claude | Claude Opus 4.6 | `claude-opus-4-6` | anthropic | expensive |
-| Claude | Claude Opus 4.5 | `claude-opus-4-5-20251101` | anthropic | expensive |
-| Claude | Claude Sonnet 4.6 | `claude-sonnet-4-6` | anthropic | mid |
-| Claude | Claude Sonnet 4.6 (Thinking) | `claude-sonnet-4-6-thinking` | anthropic | mid |
-| Claude | Claude Haiku 4.5 | `claude-haiku-4-5-20251001` | anthropic | cheap |
-| Gemini | Gemini 3.1 Pro | `gemini-3.1-pro-preview` | Google | mid |
-| Gemini | Gemini 3 Flash | `gemini-3-flash-preview` | Google | cheap |
-| Gemini | **Gemini 2.5 Flash** ⭐默认 | `gemini-2.5-flash` | Google | cheap |
-| Gemini | Gemini 2.5 Flash Lite | `gemini-2.5-flash-lite` | Google | cheap |
+| Claude | Claude Opus 4.8 | `claude-opus-4-8` | Claude | expensive |
+| Claude | Claude Opus 4.7 | `claude-opus-4-7` | Claude | expensive |
+| Claude | Claude Opus 4.6 | `claude-opus-4-6` | Claude | expensive |
+| Claude | Claude Opus 4.5 | `claude-opus-4-5-20251101` | Claude | expensive |
+| Claude | Claude Sonnet 4.6 | `claude-sonnet-4-6` | Claude | mid |
+| Claude | Claude Sonnet 4.6 (Thinking) | `claude-sonnet-4-6-thinking` | Claude | mid |
+| Claude | Claude Haiku 4.5 | `claude-haiku-4-5-20251001` | Claude | cheap |
+| Gemini | Gemini 3.1 Pro | `gemini-3.1-pro-preview` | Gemini | mid |
+| Gemini | Gemini 3 Flash | `gemini-3-flash-preview` | Gemini | cheap |
+| Gemini | **Gemini 2.5 Flash** ⭐默认 | `gemini-2.5-flash` | Gemini | cheap |
+| Gemini | Gemini 2.5 Flash Lite | `gemini-2.5-flash-lite` | Gemini | cheap |
 | Grok | Grok 4.3 | `grok-4.3` | xAI | mid |
 | Grok | Grok 4.1 Fast | `grok-4-1-fast-non-reasoning` | xAI | cheap |
 | Grok | Grok 4.20 (Reasoning) | `grok-4.20-beta-0309-reasoning` | xAI | mid |
@@ -116,6 +116,7 @@ modelSpecs:
 ```
 - `name` 全局唯一;`group` 驱动选择器分组(use.ai 式家族分块,前端 `CustomGroup` 渲染)。
 - `default: true` 仅设在 `gemini-2.5-flash`。
+- **`interface.modelSelect: false`(+ `endpointsMenu: false`)是 enforce 干净生效的前提**:该版 ModelSelector 始终 `[...modelSpecs, ...mappedEndpoints]` 拼接,只有 `modelSelect:false` 才清空 endpoints,选择器才只剩策展卡(否则混入裸端点 + My Agents/Assistants)。
 - `iconURL`: 内置 `openAI`/`anthropic`/`google`/`xai` 用内置;`deepseek`/`glm`/`kimi`/`minimax` 若无内置则提供 asset 或回退 endpoint 名(实现期确认 `SpecIcon` 的回退行为)。
 
 ## 6. 配置文件落点
@@ -141,6 +142,12 @@ LibreChat 原生组件已渲染 modelSpecs:`ModelSelector.tsx` / `ModelSpecItem.
 3. 每家族至少抽 1 张卡发消息能正常回复(覆盖 5 个新 custom 端点 + 内置 openAI/anthropic + Google)。
 4. 历史版本卡(如 Claude Opus 4.5、Grok 4.20 beta)可切换且能用。
 5. ⚠️ 重点确认 Claude:内置 `anthropic` 端点走 Anthropic **Messages API**(`/v1/messages`),而本 spec 的实测是经 `/v1/chat/completions`。实现期务必经真实 anthropic 端点验证 Claude 能调通(gptsapi 声称兼容 Messages 原生协议)。
+
+### 实现期验证结果(2026-06-26,实测通过)
+- 选择器:enforce + `modelSelect:false` 下只显 8 家族策展卡,默认 Gemini 2.5 Flash ✓
+- 发消息实测回复正常:Gemini 2.5 Flash(custom)、GPT-5.4(内置 openAI reverse-proxy)、Claude Sonnet 4.6(custom)、Grok 4.3(custom)均回 PONG ✓;其余 4 家(DeepSeek/GLM/Kimi/MiniMax)同 custom 模式 + model id 已实测,视为可用。
+- **修复 2 个 bug**:(a) 内置 anthropic 的 Messages API 经 reverse-proxy(`/v1` + `/v1/messages`)→ `/v1/v1/messages` 404 → 改用 custom `Claude`(OpenAI 兼容)端点;(b) custom 端点名 `Google` 与内置 google 提供商**名字冲突**→ 被当作 Google 原生(报 "Invalid Google Cloud credentials")→ 重命名为 `Gemini`。
+- 良性噪声:控制台 `[ResumableSSE] Failed to get streamId` / TTS audio 预取报错,不影响回复渲染。
 
 ## 10. 工作量预估
 
