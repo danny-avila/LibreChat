@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { render, waitFor, fireEvent, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
@@ -162,6 +162,32 @@ describe('FavoritesList', () => {
       expect(container.firstChild).not.toBeNull();
       // When loading, the component renders skeleton placeholders (check for content, not specific CSS)
       expect(container.innerHTML).toContain('div');
+    });
+  });
+
+  describe('memoization', () => {
+    it('does not re-run when the parent re-renders with stable props (insulated from streaming)', () => {
+      const stableToggleNav = jest.fn();
+      const Parent = () => {
+        const [count, setCount] = React.useState(0);
+        return (
+          <>
+            <button data-testid="force-rerender" onClick={() => setCount((c) => c + 1)}>
+              {count}
+            </button>
+            <FavoritesList isSmallScreen={false} toggleNav={stableToggleNav} />
+          </>
+        );
+      };
+
+      renderWithProviders(<Parent />);
+
+      const callsAfterMount = mockUseFavorites.mock.calls.length;
+      expect(callsAfterMount).toBeGreaterThan(0);
+
+      fireEvent.click(screen.getByTestId('force-rerender'));
+
+      expect(mockUseFavorites).toHaveBeenCalledTimes(callsAfterMount);
     });
   });
 
