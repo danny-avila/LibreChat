@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const mockCheckBan = jest.fn((req, res, next) => next());
-const mockResetPasswordLimiter = jest.fn((req, res, next) => next());
+const mockResetPasswordSubmissionLimiter = jest.fn((req, res, next) => next());
 const mockValidatePasswordReset = jest.fn((req, res, next) => next());
 const mockResetPasswordController = jest.fn((req, res) => res.status(204).end());
 
@@ -61,7 +61,8 @@ jest.mock('~/server/middleware', () => {
     registerLimiter: pass,
     checkInviteUser: pass,
     validateRegistration: pass,
-    resetPasswordLimiter: (...args) => mockResetPasswordLimiter(...args),
+    resetPasswordLimiter: pass,
+    resetPasswordSubmissionLimiter: (...args) => mockResetPasswordSubmissionLimiter(...args),
     validatePasswordReset: (...args) => mockValidatePasswordReset(...args),
     requireJwtAuth: pass,
   };
@@ -75,7 +76,7 @@ describe('POST /api/auth/resetPassword rate limiting', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCheckBan.mockImplementation((req, res, next) => next());
-    mockResetPasswordLimiter.mockImplementation((req, res, next) => next());
+    mockResetPasswordSubmissionLimiter.mockImplementation((req, res, next) => next());
     mockValidatePasswordReset.mockImplementation((req, res, next) => next());
     mockResetPasswordController.mockImplementation((req, res) => res.status(204).end());
 
@@ -87,11 +88,11 @@ describe('POST /api/auth/resetPassword rate limiting', () => {
   it('limits before ban checks, validation, and password reset work', async () => {
     await request(app).post('/api/auth/resetPassword').send({ token: 'token' }).expect(204);
 
-    expect(mockResetPasswordLimiter).toHaveBeenCalledTimes(1);
+    expect(mockResetPasswordSubmissionLimiter).toHaveBeenCalledTimes(1);
     expect(mockCheckBan).toHaveBeenCalledTimes(1);
     expect(mockValidatePasswordReset).toHaveBeenCalledTimes(1);
     expect(mockResetPasswordController).toHaveBeenCalledTimes(1);
-    expect(mockResetPasswordLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockResetPasswordSubmissionLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockCheckBan.mock.invocationCallOrder[0],
     );
     expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
@@ -103,7 +104,7 @@ describe('POST /api/auth/resetPassword rate limiting', () => {
   });
 
   it('does not validate or reset passwords after the limiter rejects the request', async () => {
-    mockResetPasswordLimiter.mockImplementation((req, res) =>
+    mockResetPasswordSubmissionLimiter.mockImplementation((req, res) =>
       res.status(429).json({ message: 'Too many password reset attempts' }),
     );
 

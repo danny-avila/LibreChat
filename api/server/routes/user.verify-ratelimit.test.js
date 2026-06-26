@@ -1,7 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 
-const mockVerifyEmailLimiter = jest.fn((req, res, next) => next());
+const mockVerifyEmailSubmissionLimiter = jest.fn((req, res, next) => next());
 const mockVerifyEmailController = jest.fn((req, res) => res.status(204).end());
 
 jest.mock('~/server/controllers/UserController', () => ({
@@ -20,7 +20,8 @@ jest.mock('~/server/middleware', () => {
     requireJwtAuth: pass,
     canDeleteAccount: pass,
     configMiddleware: pass,
-    verifyEmailLimiter: (...args) => mockVerifyEmailLimiter(...args),
+    verifyEmailLimiter: pass,
+    verifyEmailSubmissionLimiter: (...args) => mockVerifyEmailSubmissionLimiter(...args),
   };
 });
 
@@ -36,7 +37,7 @@ describe('POST /api/user/verify rate limiting', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockVerifyEmailLimiter.mockImplementation((req, res, next) => next());
+    mockVerifyEmailSubmissionLimiter.mockImplementation((req, res, next) => next());
     mockVerifyEmailController.mockImplementation((req, res) => res.status(204).end());
 
     app = express();
@@ -47,15 +48,15 @@ describe('POST /api/user/verify rate limiting', () => {
   it('limits email verification before checking the token', async () => {
     await request(app).post('/api/user/verify').send({ token: 'token' }).expect(204);
 
-    expect(mockVerifyEmailLimiter).toHaveBeenCalledTimes(1);
+    expect(mockVerifyEmailSubmissionLimiter).toHaveBeenCalledTimes(1);
     expect(mockVerifyEmailController).toHaveBeenCalledTimes(1);
-    expect(mockVerifyEmailLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockVerifyEmailSubmissionLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockVerifyEmailController.mock.invocationCallOrder[0],
     );
   });
 
   it('does not check the verification token after the limiter rejects the request', async () => {
-    mockVerifyEmailLimiter.mockImplementation((req, res) =>
+    mockVerifyEmailSubmissionLimiter.mockImplementation((req, res) =>
       res.status(429).json({ message: 'Too many verification attempts' }),
     );
 
