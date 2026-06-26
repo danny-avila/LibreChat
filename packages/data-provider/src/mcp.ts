@@ -30,9 +30,17 @@ const validateOAuthClientCredentials = (
 
 const OAuthOptionsBaseSchema = z.object({
   /** OAuth authorization endpoint (optional - can be auto-discovered) */
-  authorization_url: z.string().url().optional(),
+  authorization_url: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** OAuth token endpoint (optional - can be auto-discovered) */
-  token_url: z.string().url().optional(),
+  token_url: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** OAuth client ID (optional - can use dynamic registration) */
   client_id: z.string().optional(),
   /** OAuth client secret (requires explicit authorization and token endpoints) */
@@ -40,7 +48,11 @@ const OAuthOptionsBaseSchema = z.object({
   /** OAuth scopes to request */
   scope: z.string().optional(),
   /** OAuth redirect URI (defaults to /api/mcp/{serverName}/oauth/callback) */
-  redirect_uri: z.string().url().optional(),
+  redirect_uri: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** Token exchange method */
   token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
   /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
@@ -91,7 +103,11 @@ const OAuthOptionsBaseSchema = z.object({
    */
   forward_audience_on_refresh: z.boolean().optional(),
   /** OAuth revocation endpoint (optional - can be auto-discovered) */
-  revocation_endpoint: z.string().url().optional(),
+  revocation_endpoint: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
   revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
 });
@@ -99,10 +115,14 @@ const OAuthOptionsBaseSchema = z.object({
 const OAuthOptionsSchema = OAuthOptionsBaseSchema.superRefine(validateOAuthClientCredentials);
 
 const BLOCKED_USER_OAUTH_ENDPOINT_PARAMS = ['audience', 'resource'] as const;
+const envVarPattern = /\$\{[^}]+\}/;
 
 const userOAuthEndpointUrlSchema = z
   .string()
-  .url()
+  .refine((val) => !envVarPattern.test(val), {
+    message: 'Environment variable references are not allowed in URLs',
+  })
+  .pipe(z.string().url())
   .refine(
     (value) => {
       try {
@@ -122,10 +142,17 @@ const UserOAuthOptionsSchema = OAuthOptionsBaseSchema.omit({
   .extend({
     authorization_url: userOAuthEndpointUrlSchema.optional(),
     token_url: userOAuthEndpointUrlSchema.optional(),
+    redirect_uri: userOAuthEndpointUrlSchema.optional(),
+    revocation_endpoint: userOAuthEndpointUrlSchema.optional(),
     audience: z.never().optional(),
     forward_audience_on_refresh: z.never().optional(),
   })
   .superRefine(validateOAuthClientCredentials);
+
+const OboOptionsSchema = z.object({
+  /** Scopes to request for the downstream MCP server (e.g., "api://<client-id>/Mcp.Tools.ReadWrite") */
+  scopes: z.string().min(1),
+});
 
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server - only letters, numbers, and spaces allowed */
@@ -192,6 +219,12 @@ const BaseOptionsSchema = z.object({
       z.object({
         title: z.string(),
         description: z.string(),
+        /**
+         * Whether the field holds a secret and should be masked in the UI.
+         * Defaults to masked when omitted; set to `false` for non-secret setup
+         * values (e.g. username, project key, base URL) to render as plain text.
+         */
+        sensitive: z.boolean().optional(),
       }),
     )
     .optional(),
@@ -218,6 +251,7 @@ const ProxyUrlSchema = z
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('stdio').default('stdio'),
+  obo: z.undefined().optional(),
   /**
    * The executable to run to start the server.
    */
@@ -258,6 +292,7 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
 
 export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('websocket').default('websocket'),
+  obo: z.undefined().optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -276,6 +311,14 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
 export const SSEOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('sse').default('sse'),
   headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * On-Behalf-Of (OBO) token exchange configuration.
+   * When configured, LibreChat exchanges the logged-in user's federated access token
+   * for a token scoped to this MCP server via the OAuth 2.0 OBO flow (jwt-bearer grant).
+   * The exchanged token is injected as a Bearer Authorization header automatically.
+   * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
+   */
+  obo: OboOptionsSchema.optional(),
   /** Optional outbound proxy URL for this remote MCP transport */
   proxy: ProxyUrlSchema.optional(),
   url: z
@@ -296,6 +339,14 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
   type: z.union([z.literal('streamable-http'), z.literal('http')]),
   headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * On-Behalf-Of (OBO) token exchange configuration.
+   * When configured, LibreChat exchanges the logged-in user's federated access token
+   * for a token scoped to this MCP server via the OAuth 2.0 OBO flow (jwt-bearer grant).
+   * The exchanged token is injected as a Bearer Authorization header automatically.
+   * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
+   */
+  obo: OboOptionsSchema.optional(),
   /** Optional outbound proxy URL for this remote MCP transport */
   proxy: ProxyUrlSchema.optional(),
   url: z
@@ -345,7 +396,6 @@ const userManagedServerFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     oauth: UserOAuthOptionsSchema.optional(),
   });
 
-const envVarPattern = /\$\{[^}]+\}/;
 const isWsProtocol = (val: string): boolean => /^wss?:/i.test(val);
 const isHttpProtocol = (val: string): boolean => /^https?:/i.test(val);
 
@@ -394,3 +444,28 @@ export const MCPServerUserInputSchema = z.union([
 ]);
 
 export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;
+
+/**
+ * Set of every field name that may appear in a user-submitted MCP server config,
+ * derived from `MCPServerUserInputSchema`'s union members. Used as the comparison
+ * surface for the OBO lockdown check in `updateMCPServerController` so that
+ * server-managed fields on the existing config (`dbId`, `source`, `author`,
+ * `requiresOAuth`, `oauthMetadata`, etc.) don't show up as differences and
+ * cause spurious 403s on legitimate saves.
+ *
+ * Schema-derived rather than hand-maintained: when a new field is added to
+ * `BaseOptionsSchema` or any transport variant, it flows into this set
+ * automatically. The OBO lockdown then locks the new field by default
+ * (since it won't be in the hand-curated `OBO_USER_EDITABLE_FIELDS`
+ * allowlist), preventing a silent privilege regression.
+ */
+export const MCP_USER_INPUT_FIELDS: ReadonlySet<string> = (() => {
+  const fields = new Set<string>();
+  for (const variant of MCPServerUserInputSchema.options) {
+    const shape = (variant as unknown as { shape: Record<string, unknown> }).shape;
+    for (const key of Object.keys(shape)) {
+      fields.add(key);
+    }
+  }
+  return fields;
+})();

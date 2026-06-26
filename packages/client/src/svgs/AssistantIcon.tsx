@@ -1,3 +1,4 @@
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 
 export default function AssistantIcon({
@@ -6,7 +7,7 @@ export default function AssistantIcon({
 }: {
   className?: string;
   size?: string | number;
-}) {
+}): JSX.Element {
   const unit = 24;
   const height = size;
   const width = size;

@@ -7,6 +7,7 @@ import {
   convertJsonSchemaToZod,
   resolveJsonSchemaRefs,
   normalizeJsonSchema,
+  sanitizeGeminiSchema,
 } from '../zod';
 
 describe('convertJsonSchemaToZod', () => {
@@ -2359,5 +2360,551 @@ describe('normalizeJsonSchema', () => {
     // Standard fields preserved
     expect(result.properties.travelMode.enum).toEqual(['DRIVE', 'BICYCLE', 'TRANSIT', 'WALK']);
     expect(result.properties.origin).toEqual({ type: 'string', description: 'Starting address' });
+  });
+});
+
+describe('sanitizeGeminiSchema', () => {
+  it('collapses a multi-member anyOf to its first member', () => {
+    const schema = {
+      anyOf: [
+        { type: 'string', description: 'a string' },
+        { type: 'number', description: 'a number' },
+      ],
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result).toEqual({ type: 'string', description: 'a string' });
+    expect(result).not.toHaveProperty('anyOf');
+  });
+
+  it('collapses oneOf the same way as anyOf', () => {
+    const schema = {
+      oneOf: [{ type: 'integer' }, { type: 'boolean' }],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'integer' });
+  });
+
+  it('preserves sibling keys and lets the chosen member override them', () => {
+    const schema = {
+      title: 'field',
+      description: 'parent description',
+      anyOf: [
+        {
+          type: 'object',
+          description: 'member description',
+          properties: { id: { type: 'string' } },
+        },
+        { type: 'string' },
+      ],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      title: 'field',
+      description: 'member description',
+      type: 'object',
+      properties: { id: { type: 'string' } },
+    });
+  });
+
+  it('marks the field nullable when a null member is dropped from a union', () => {
+    const schema = {
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', nullable: true });
+  });
+
+  it('handles a 3-member union that includes null (google-common would throw on this)', () => {
+    const schema = {
+      anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', nullable: true });
+  });
+
+  it('collapses a nested union introduced by the chosen member', () => {
+    const schema = {
+      anyOf: [{ anyOf: [{ type: 'string' }, { type: 'number' }] }, { type: 'boolean' }],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string' });
+  });
+
+  it('collapses multi-entry type arrays', () => {
+    expect(sanitizeGeminiSchema({ type: ['string', 'number'] } as any)).toEqual({
+      type: 'string',
+    });
+  });
+
+  it('collapses a nullable type array to a single type plus nullable', () => {
+    expect(sanitizeGeminiSchema({ type: ['string', 'null'] } as any)).toEqual({
+      type: 'string',
+      nullable: true,
+    });
+  });
+
+  it('flattens unions nested inside object properties and array items', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        owner: { anyOf: [{ type: 'string' }, { type: 'object', properties: {} }] },
+        labels: {
+          type: 'array',
+          items: { oneOf: [{ type: 'string' }, { type: 'object' }] },
+        },
+        plain: { type: 'string', description: 'untouched' },
+      },
+      required: ['owner'],
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.properties.owner).toEqual({ type: 'string' });
+    expect(result.properties.labels.items).toEqual({ type: 'string' });
+    expect(result.properties.plain).toEqual({ type: 'string', description: 'untouched' });
+    expect(result.required).toEqual(['owner']);
+  });
+
+  it('flattens a discriminated-union MCP tool schema (GitHub issue_write pattern)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        method: {
+          anyOf: [
+            {
+              type: 'object',
+              properties: { action: { const: 'create' }, title: { type: 'string' } },
+              required: ['action', 'title'],
+            },
+            {
+              type: 'object',
+              properties: { action: { const: 'update' }, issue_number: { type: 'number' } },
+              required: ['action', 'issue_number'],
+            },
+          ],
+        },
+      },
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.properties.method).toEqual({
+      type: 'object',
+      properties: { action: { type: 'string', enum: ['create'] }, title: { type: 'string' } },
+      required: ['action', 'title'],
+    });
+    expect(result.properties.method).not.toHaveProperty('anyOf');
+  });
+
+  it('is a no-op for schemas without unions', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name' },
+        age: { type: 'number' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['name'],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema)).toEqual(schema);
+  });
+
+  it('handles null, undefined, and primitive inputs safely', () => {
+    expect(sanitizeGeminiSchema(null as any)).toBeNull();
+    expect(sanitizeGeminiSchema(undefined as any)).toBeUndefined();
+    expect(sanitizeGeminiSchema('string' as any)).toBe('string');
+    expect(sanitizeGeminiSchema(42 as any)).toBe(42);
+  });
+
+  it('leaves no anyOf/oneOf/multi-type keys for google-common to reject', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        a: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+        b: { type: ['boolean', 'null'] },
+        c: { oneOf: [{ type: 'object', properties: { x: { type: 'string' } } }, { type: 'null' }] },
+      },
+    } as any;
+
+    const json = JSON.stringify(sanitizeGeminiSchema(schema));
+    expect(json).not.toContain('"anyOf"');
+    expect(json).not.toContain('"oneOf"');
+    expect(sanitizeGeminiSchema(schema).properties.b).toEqual({
+      type: 'boolean',
+      nullable: true,
+    });
+  });
+
+  it('preserves parent properties and required outside the union when collapsing', () => {
+    const schema = {
+      type: 'object',
+      properties: { repo: { type: 'string' } },
+      required: ['repo'],
+      anyOf: [
+        { properties: { title: { type: 'string' } }, required: ['title'] },
+        { properties: { body: { type: 'string' } }, required: ['body'] },
+      ],
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.type).toBe('object');
+    expect(result.properties).toEqual({
+      repo: { type: 'string' },
+      title: { type: 'string' },
+    });
+    expect([...result.required].sort()).toEqual(['repo', 'title']);
+    expect(result).not.toHaveProperty('anyOf');
+  });
+
+  it('merges nested object properties from parent and chosen branch', () => {
+    const schema = {
+      type: 'object',
+      properties: { owner: { type: 'string' } },
+      oneOf: [
+        { type: 'object', properties: { sha: { type: 'string' } } },
+        { type: 'object', properties: { ref: { type: 'string' } } },
+      ],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema).properties).toEqual({
+      owner: { type: 'string' },
+      sha: { type: 'string' },
+    });
+  });
+
+  it('strips the dropped null from enum when a type array is nullable', () => {
+    const schema = { type: ['string', 'null'], enum: ['open', 'closed', null] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'string',
+      nullable: true,
+      enum: ['open', 'closed'],
+    });
+  });
+
+  it('strips null from enum when nullability comes from a union member', () => {
+    const schema = {
+      anyOf: [{ type: 'string', enum: ['a', 'b', null] }, { type: 'null' }],
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.type).toBe('string');
+    expect(result.nullable).toBe(true);
+    expect(result.enum).toEqual(['a', 'b']);
+  });
+
+  it('keeps enum untouched when the field is not nullable', () => {
+    const schema = { type: ['string', 'number'], enum: ['a', 'b'] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
+  });
+
+  it('drops a boolean enum that Gemini rejects (the reported 400), keeping the type', () => {
+    const schema = { type: 'boolean', enum: [true, false] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'boolean' });
+  });
+
+  it('drops a boolean enum produced by normalizeJsonSchema const→enum', () => {
+    // normalizeJsonSchema turns `const: true` into `enum: [true]`; Gemini rejects it.
+    const schema = normalizeJsonSchema({ type: 'boolean', const: true } as any);
+    expect(sanitizeGeminiSchema(schema as any)).toEqual({ type: 'boolean' });
+  });
+
+  it('resolves the reported failing shape: boolean enum inside array→items→object', () => {
+    // tools[0].function_declarations[N].parameters.properties[k].items.properties[0].enum[0] = true
+    const schema = {
+      type: 'object',
+      properties: {
+        rows: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              active: { type: 'boolean', enum: [true, false] },
+              name: { type: 'string' },
+            },
+          },
+        },
+      },
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.properties.rows.items.properties.active).toEqual({ type: 'boolean' });
+    expect(JSON.stringify(result)).not.toContain('"enum"');
+  });
+
+  it('filters non-string members out of a mixed string enum', () => {
+    const schema = { type: 'string', enum: ['a', 1, true, 'b', null] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
+  });
+
+  it('strips unsupported keywords (additionalProperties, $schema) but keeps Gemini-supported default', () => {
+    const schema = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'object',
+      additionalProperties: { type: 'string' },
+      properties: {
+        name: { type: 'string', default: 'anon' },
+      },
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result).not.toHaveProperty('$schema');
+    expect(result).not.toHaveProperty('additionalProperties');
+    expect(result.properties.name).toEqual({ type: 'string', default: 'anon' });
+  });
+
+  it('folds exclusive bounds into inclusive minimum/maximum', () => {
+    const schema = { type: 'number', exclusiveMinimum: 0, exclusiveMaximum: 100 } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'number', minimum: 0, maximum: 100 });
+  });
+
+  it('does not overwrite an existing minimum with an exclusive bound', () => {
+    const schema = { type: 'number', minimum: 5, exclusiveMinimum: 0 } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'number', minimum: 5 });
+  });
+
+  it('merges allOf intersections into a single object', () => {
+    const schema = {
+      allOf: [
+        { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] },
+        { type: 'object', properties: { b: { type: 'number' } }, required: ['b'] },
+      ],
+    } as any;
+
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.type).toBe('object');
+    expect(result.properties).toEqual({ a: { type: 'string' }, b: { type: 'number' } });
+    expect([...result.required].sort()).toEqual(['a', 'b']);
+    expect(result).not.toHaveProperty('allOf');
+  });
+
+  it('leaves a clean Gemini-ready schema unchanged', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        owner: { type: 'string', description: 'Repo owner' },
+        side: { type: 'string', enum: ['LEFT', 'RIGHT'] },
+        line: { type: 'number' },
+      },
+      required: ['owner'],
+    } as any;
+
+    expect(sanitizeGeminiSchema(schema)).toEqual(schema);
+  });
+
+  it('drops the enum when a mixed type array collapses to a non-string type', () => {
+    const schema = { type: ['integer', 'string'], enum: [1, 'auto'] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'integer' });
+  });
+
+  it('keeps the enum when a mixed type array collapses to string', () => {
+    const schema = { type: ['string', 'integer'], enum: ['auto', 1] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['auto'] });
+  });
+
+  it('makes a typeless surviving enum a string type (Gemini enum requires Type.STRING)', () => {
+    const schema = { enum: ['a', 'b'] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
+  });
+
+  it('drops a number enum on an integer field', () => {
+    const schema = { type: 'integer', enum: [1, 2, 3] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'integer' });
+  });
+
+  it('strips annotation keywords Gemini rejects (examples, readOnly, writeOnly, deprecated, $comment)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        token: {
+          type: 'string',
+          examples: ['abc'],
+          readOnly: true,
+          writeOnly: false,
+          deprecated: true,
+          $comment: 'internal',
+        },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { token: { type: 'string' } },
+    });
+  });
+
+  it('strips numeric/array validators Gemini rejects (multipleOf, uniqueItems)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        count: { type: 'integer', multipleOf: 2 },
+        tags: { type: 'array', items: { type: 'string' }, uniqueItems: true },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        count: { type: 'integer' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+    });
+  });
+
+  it('strips object-composition keywords Gemini rejects (patternProperties, propertyNames, dependentRequired)', () => {
+    const schema = {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      patternProperties: { '^x': { type: 'string' } },
+      propertyNames: { pattern: '^[a-z]+$' },
+      dependentRequired: { a: ['b'] },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { a: { type: 'string' } },
+    });
+  });
+
+  it('strips tuple/array-extension keywords Gemini rejects (prefixItems, additionalItems)', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string' },
+      prefixItems: [{ type: 'string' }, { type: 'number' }],
+      additionalItems: false,
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
+  it('synthesizes `items` from `prefixItems` when a tuple array has none (Gemini requires items)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'string', readOnly: true }, { type: 'number' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
+  it('preserves an existing `items` over a `prefixItems`-derived one', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'boolean' },
+      prefixItems: [{ type: 'string' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'boolean' },
+    });
+  });
+
+  it('synthesizes `items` from `prefixItems` when `items` is boolean false (Draft 2020 tuple)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'number' }],
+      items: false,
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'number' },
+    });
+  });
+
+  it('falls back to an empty `items` schema for a boolean `items` with no prefixItems', () => {
+    expect(sanitizeGeminiSchema({ type: 'array', items: false } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+    expect(sanitizeGeminiSchema({ type: 'array', items: true } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('falls back to an empty `items` schema for an array missing items entirely', () => {
+    expect(sanitizeGeminiSchema({ type: 'array' } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('drops a tuple-array `items: [...]` form and falls back rather than emit an array items', () => {
+    const schema = { type: 'array', items: [{ type: 'string' }, { type: 'number' }] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'array', items: {} });
+  });
+
+  it('preserves an object `default` verbatim without sanitizing its data keys', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        cfg: {
+          type: 'object',
+          default: { id: 'abc', readOnly: true, deprecated: false, nested: { id: 'x' } },
+          properties: { id: { type: 'string' } },
+        },
+      },
+    } as any;
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.properties.cfg.default).toEqual({
+      id: 'abc',
+      readOnly: true,
+      deprecated: false,
+      nested: { id: 'x' },
+    });
+    expect(result.properties.cfg.properties).toEqual({ id: { type: 'string' } });
+  });
+
+  it('preserves an array `default` verbatim', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    });
+  });
+
+  it('strips content keywords and the bare `id` alias Gemini rejects', () => {
+    const schema = {
+      id: 'urn:example',
+      type: 'object',
+      properties: {
+        blob: { type: 'string', contentEncoding: 'base64', contentMediaType: 'image/png' },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { blob: { type: 'string' } },
+    });
+  });
+
+  it('strips deeply nested unsupported keywords through arrays, items, and properties', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        ranges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { score: { type: 'number', exclusiveMinimum: 0, multipleOf: 0.5 } },
+          },
+        },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        ranges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { score: { type: 'number', minimum: 0 } },
+          },
+        },
+      },
+    });
   });
 });

@@ -77,10 +77,9 @@ const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
 
   const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
   if (configuredSkills.length === 0) {
+    // Empty allowlist means the viewer's full accessible catalog.
     delete agent.skills;
-    if (accessibleSkillSet.size > 0) {
-      agent.skills_enabled = true;
-    }
+    agent.skills_enabled = true;
     return agent;
   }
 
@@ -306,10 +305,14 @@ const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPr
   const ownerIdStr = ownerId.toString();
 
   try {
-    const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
-      file_id: 1,
-      user: 1,
-    });
+    const ownerFiles = await db.getFiles(
+      { file_id: { $in: referencedFileIds }, user: ownerIdStr },
+      null,
+      {
+        file_id: 1,
+        user: 1,
+      },
+    );
     const allowedIds = new Set(
       (ownerFiles ?? [])
         .filter((file) => file.user && file.user.toString() === ownerIdStr)

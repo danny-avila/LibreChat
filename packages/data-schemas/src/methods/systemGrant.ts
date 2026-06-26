@@ -46,7 +46,88 @@ function getParentCapabilities(capability: string): string[] {
   return parents;
 }
 
-export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
+export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
+  grantCapability: (
+    {
+      principalType,
+      principalId,
+      capability,
+      tenantId,
+      grantedBy,
+    }: {
+      principalType: PrincipalType;
+      principalId: string | Types.ObjectId;
+      capability: SystemCapability;
+      tenantId?: string;
+      grantedBy?: string | Types.ObjectId;
+    },
+    session?: ClientSession,
+  ) => Promise<{ grant: ISystemGrant | null; created: boolean }>;
+  seedSystemGrants: () => Promise<void>;
+  revokeCapability: (
+    {
+      principalType,
+      principalId,
+      capability,
+      tenantId,
+    }: {
+      principalType: PrincipalType;
+      principalId: string | Types.ObjectId;
+      capability: SystemCapability;
+      tenantId?: string;
+    },
+    session?: ClientSession,
+  ) => Promise<{ deletedCount: number }>;
+  hasCapabilityForPrincipals: ({
+    principals,
+    capability,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
+    capability: SystemCapability;
+    tenantId?: string;
+  }) => Promise<boolean>;
+  getHeldCapabilities: ({
+    principals,
+    capabilities,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
+    capabilities: SystemCapability[];
+    tenantId?: string;
+  }) => Promise<Set<SystemCapability>>;
+  listGrants: (options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+    limit?: number;
+    offset?: number;
+  }) => Promise<ISystemGrant[]>;
+  countGrants: (options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+  }) => Promise<number>;
+  getCapabilitiesForPrincipal: ({
+    principalType,
+    principalId,
+    tenantId,
+  }: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    tenantId?: string;
+  }) => Promise<ISystemGrant[]>;
+  getCapabilitiesForPrincipals: ({
+    principals,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId: string | Types.ObjectId }>;
+    tenantId?: string;
+  }) => Promise<ISystemGrant[]>;
+  deleteGrantsForPrincipal: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    options?: { tenantId?: string; session?: ClientSession },
+  ) => Promise<ISystemGrant[]>;
+} {
   function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
     return tenantId != null
       ? { $and: [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }] }
@@ -184,7 +265,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       grantedBy?: string | Types.ObjectId;
     },
     session?: ClientSession,
-  ): Promise<ISystemGrant | null> {
+  ): Promise<{ grant: ISystemGrant | null; created: boolean }> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
@@ -196,37 +277,50 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       tenantId: tenantId != null ? tenantId : { $exists: false },
     };
 
+    /**
+     * Insert-only: re-asserting an existing grant is a true no-op (no field is
+     * mutated), so `created === false` reliably means "nothing changed" and the
+     * caller can safely skip audit emission. `grantedAt`/`grantedBy` therefore
+     * record the original grant, not the last re-assert.
+     */
     const update = {
-      $set: {
-        grantedAt: new Date(),
-        ...(grantedBy != null && { grantedBy }),
-      },
       $setOnInsert: {
         principalType,
         principalId: normalizedPrincipalId,
         capability,
+        grantedAt: new Date(),
+        ...(grantedBy != null && { grantedBy }),
         ...(tenantId != null && { tenantId }),
       },
     };
 
-    const options = {
-      upsert: true,
-      new: true,
-      ...(session ? { session } : {}),
-    };
-
     try {
-      return await SystemGrant.findOneAndUpdate(filter, update, options);
+      /** `includeResultMetadata` surfaces `lastErrorObject.upserted` so callers
+       * (audit emission) can tell a brand-new grant from an idempotent re-assert
+       * atomically, without a racy pre-read. Passed inline so the metadata
+       * overload is selected. */
+      const result = await SystemGrant.findOneAndUpdate(filter, update, {
+        upsert: true,
+        new: true,
+        includeResultMetadata: true,
+        session,
+      });
+      return { grant: result.value, created: result.lastErrorObject?.upserted != null };
     } catch (err) {
       if ((err as { code?: number }).code === 11000) {
-        return (await SystemGrant.findOne(filter).lean()) as ISystemGrant | null;
+        /** A concurrent insert won the race: the row exists and we did not create
+         * it, so this is not an auditable change. */
+        const grant = (await SystemGrant.findOne(filter).lean()) as ISystemGrant | null;
+        return { grant, created: false };
       }
       throw err;
     }
   }
 
   /**
-   * Revoke a capability from a principal.
+   * Revoke a capability from a principal. Returns the deletion result so
+   * callers (e.g. audit emission) can distinguish a real revoke from a
+   * no-op against a grant that didn't exist.
    */
   async function revokeCapability(
     {
@@ -241,7 +335,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       tenantId?: string;
     },
     session?: ClientSession,
-  ): Promise<void> {
+  ): Promise<{ deletedCount: number }> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
@@ -254,7 +348,8 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     };
 
     const options = session ? { session } : {};
-    await SystemGrant.deleteOne(filter, options);
+    const result = await SystemGrant.deleteOne(filter, options);
+    return { deletedCount: result.deletedCount ?? 0 };
   }
 
   /**
@@ -417,7 +512,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string; session?: ClientSession },
-  ): Promise<void> {
+  ): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
@@ -427,7 +522,11 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
       ...(options?.tenantId != null && { tenantId: options.tenantId }),
     };
     const queryOptions = options?.session ? { session: options.session } : {};
+    /** Read the matching grants before deleting so cascade callers (e.g. role
+     * deletion) can emit a `grant.removed` audit entry for each one. */
+    const removed = await SystemGrant.find(filter, null, queryOptions).lean<ISystemGrant[]>();
     await SystemGrant.deleteMany(filter, queryOptions);
+    return removed;
   }
 
   return {

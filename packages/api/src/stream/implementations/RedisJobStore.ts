@@ -913,6 +913,7 @@ export class RedisJobStore implements IJobStore {
       error: data.error || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,
       responseMessageId: data.responseMessageId || undefined,
+      createdEventEmitted: data.createdEventEmitted === '1',
       sender: data.sender || undefined,
       syncSent: data.syncSent === '1',
       finalEvent: data.finalEvent || undefined,
@@ -920,6 +921,10 @@ export class RedisJobStore implements IJobStore {
       iconURL: data.iconURL || undefined,
       model: data.model || undefined,
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
+      titleEvent: data.titleEvent || undefined,
+      replayEvents: data.replayEvents || undefined,
+      contextUsage: data.contextUsage || undefined,
+      tokenUsage: data.tokenUsage || undefined,
     };
   }
 }

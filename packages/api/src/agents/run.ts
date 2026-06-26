@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
+  EModelEndpoint,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
   extractEnvVariable,
@@ -26,14 +27,20 @@ import type {
   Agent,
   AgentModelParameters,
   AgentSubagentsConfig,
+  ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
+import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { resolveConfigHeaders } from '~/utils/headers';
+import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
 
 /** Expected shape of JSON tool search results */
@@ -212,6 +219,8 @@ const customProviders = new Set([
   KnownEndpoints.ollama,
 ]);
 
+type AgentReasoningKey = 'reasoning_content' | 'reasoning';
+
 function includesOpenRouter(value?: string | null): boolean {
   return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
 }
@@ -220,8 +229,13 @@ export function getReasoningKey(
   provider: Providers,
   llmConfig: t.RunLLMConfig,
   agentEndpoint?: string | null,
-): 'reasoning_content' | 'reasoning' {
-  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  customReasoningKey?: ReasoningResponseKey,
+): AgentReasoningKey {
+  if (customReasoningKey) {
+    return customReasoningKey as AgentReasoningKey;
+  }
+
+  let reasoningKey: AgentReasoningKey = 'reasoning_content';
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
@@ -270,6 +284,29 @@ export function isDeepSeekReasoningProvider(
   return matchesDeepSeekModel(model);
 }
 
+/**
+ * Whether prior assistant tool-call messages should have `reasoning_content`
+ * reconstructed when reformatting persisted history (cross-turn replay): either
+ * DeepSeek thinking-mode (#13366) or a custom OpenAI-compatible endpoint that
+ * opted in via `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+ */
+export function shouldReplayReasoningContent(
+  agent?: {
+    provider?: string | Providers | null;
+    model?: string | null;
+    model_parameters?: { model?: string | null } | null;
+    includeReasoningHistory?: boolean | null;
+  } | null,
+): boolean {
+  if (agent == null) {
+    return false;
+  }
+  if (agent.includeReasoningHistory === true) {
+    return true;
+  }
+  return isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+}
+
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;
@@ -293,6 +330,10 @@ type RunAgent = Omit<Agent, 'tools'> & {
   codeEnvAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
+  /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
+  reasoningKey?: ReasoningResponseKey;
+  /** Whether to reconstruct `reasoning_content` from persisted history across turns. */
+  includeReasoningHistory?: boolean;
   /**
    * Maximum characters allowed in a single tool result before truncation.
    * Overrides the default computed from maxContextTokens.
@@ -444,6 +485,37 @@ function resolveSummarizationProvider(
             body: headerContext.requestBody,
           })
         : undefined;
+    /**
+     * Native Anthropic custom endpoints must build their config with the
+     * Anthropic client (`/v1/messages`), not `getOpenAIConfig` (which would emit
+     * OpenAI-shaped requests). The self-summarize case is handled earlier by
+     * `isSameEndpointAsAgent`; this covers summarizing against a *different*
+     * Anthropic-native custom endpoint.
+     */
+    if (customEndpointConfig.provider === EModelEndpoint.anthropic) {
+      const { llmConfig } = getAnthropicLLMConfig(apiKey, {
+        modelOptions: {},
+        proxy: process.env.PROXY ?? undefined,
+        reverseProxyUrl: baseURL,
+        headers: resolvedHeaders,
+        addParams: customEndpointConfig.addParams,
+        dropParams: customEndpointConfig.dropParams,
+        defaultParams: extractDefaultParams(customEndpointConfig.customParams?.paramDefinitions),
+      });
+      const { apiKey: resolvedApiKey, ...llmConfigOverrides } = llmConfig as Record<
+        string,
+        unknown
+      >;
+      const clientOverrides: SummarizationClientOverrides = { ...llmConfigOverrides };
+      if (typeof resolvedApiKey === 'string') {
+        clientOverrides.apiKey = resolvedApiKey;
+      }
+      /** Strip the default model so the user-supplied `summarization.model` wins. */
+      delete clientOverrides.model;
+      delete clientOverrides.modelName;
+      return { provider: Providers.ANTHROPIC, clientOverrides };
+    }
+
     /**
      * Run the endpoint config through `getOpenAIConfig` so summarization
      * inherits the same `headers`, `defaultQuery`, `addParams`/`dropParams`,
@@ -653,6 +725,36 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
 }
 
 /**
+ * Whether any agent reachable in the run — primary, handoff/parallel, or a
+ * nested subagent — opts into cross-turn `reasoning_content` reconstruction.
+ * Walks `subagentAgentConfigs` like {@link anyAgentHasCodeEnv}, since an
+ * opted-in custom endpoint may appear only as a (possibly pruned) subagent.
+ */
+export function anyAgentReplaysReasoningContent(
+  agents: Array<RunAgent | null | undefined>,
+): boolean {
+  const visited = new Set<string>();
+  const pending = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (shouldReplayReasoningContent(agent)) {
+      return true;
+    }
+    for (const child of agent.subagentAgentConfigs ?? []) {
+      if (!visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Builds SubagentConfig entries for an agent: optional self-spawn plus any
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
@@ -747,6 +849,17 @@ function buildSubagentConfigs(
   return configs;
 }
 
+function buildLangfuseConfig(tenantIdInput?: unknown) {
+  const tenantId = typeof tenantIdInput === 'string' ? tenantIdInput.trim() : '';
+  return {
+    deterministicTraceId: true,
+    ...(tenantId !== '' && {
+      metadata: { 'librechat.tenant.id': tenantId },
+      tags: [`tenant:${tenantId}`],
+    }),
+  };
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -769,6 +882,7 @@ export async function createRun({
   messages,
   requestBody,
   user,
+  tenantId,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -777,6 +891,7 @@ export async function createRun({
   initialSummary,
   calibrationRatio,
   appConfig,
+  subagentUsageSink,
   streaming = true,
   streamUsage = true,
 }: {
@@ -787,6 +902,7 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
+  tenantId?: string;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
   summarizationConfig?: SummarizationConfig;
@@ -799,6 +915,15 @@ export async function createRun({
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
    */
   appConfig?: AppConfig;
+  /**
+   * Receives per-model-call usage from subagent child runs so hosts can bill
+   * them (child graphs execute outside the run's `streamEvents` loop, so
+   * their usage never reaches `customHandlers`). Typed structurally — not as
+   * `Pick<RunConfig, 'subagentUsageSink'>` — because the field ships in
+   * `@librechat/agents` > 3.2.33; older SDK versions ignore it at runtime.
+   * Switch to the `RunConfig` pick once the dependency is bumped.
+   */
+  subagentUsageSink?: (event: SubagentUsageEvent) => void;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -865,18 +990,17 @@ export async function createRun({
       .trim();
 
     /**
-     * Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
-     *  This is done at this step because the request body may contain dynamic values
-     *  that need to be resolved after agent initialization.
+     * Resolve request-based headers across provider-specific header locations
+     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
+     * Google `customHeaders`). Done at this step because the request body may
+     * contain dynamic values (e.g. conversationId) that are only known after
+     * agent initialization.
      */
-    if (llmConfig?.configuration?.defaultHeaders != null) {
-      llmConfig.configuration.defaultHeaders = resolveHeaders({
-        headers: llmConfig.configuration.defaultHeaders as Record<string, string>,
-        user: createSafeUser(user),
-        body: requestBody,
-      });
-    }
+    resolveConfigHeaders({
+      llmConfig,
+      user: createSafeUser(user),
+      body: requestBody,
+    });
 
     /** Resolves issues with new OpenAI usage field */
     if (
@@ -946,7 +1070,7 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
-    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
+    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     return {
       provider,
       reasoningKey,
@@ -1020,7 +1144,14 @@ export async function createRun({
    */
   const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
 
-  return Run.create({
+  /**
+   * Built as a variable (not an inline literal) so the extra
+   * `subagentUsageSink` field passes assignability against SDK versions
+   * whose `RunConfig` predates it (<= 3.2.33, where it is ignored at
+   * runtime) — excess-property checks only apply to fresh literals. Inline
+   * the field at the call site once the dependency is bumped.
+   */
+  const runConfig = {
     runId,
     graphConfig,
     tokenCounter,
@@ -1028,9 +1159,19 @@ export async function createRun({
     initialSessions,
     calibrationRatio,
     indexTokenCountMap,
+    subagentUsageSink,
     eagerEventToolExecution: { enabled: true },
+    // Derive the Langfuse trace id deterministically from runId so message
+    // feedback can be scored against the trace without a lookup (see the
+    // feedback route in api/server/routes/messages.js). No-op unless Langfuse
+    // tracing is enabled. Requires @librechat/agents >= 3.2.21.
+    langfuse: buildLangfuseConfig(tenantId ?? user?.tenantId),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
-  });
+  };
+  const run = await Run.create(runConfig);
+
+  applyTestRunHook(run, { messages, agents });
+  return run;
 }

@@ -1,10 +1,8 @@
-import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
+import crypto from 'crypto';
+import { logger } from '@librechat/data-schemas';
 import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
-import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
-import type { Request, Response } from 'express';
-import type { Types } from 'mongoose';
 import type {
   ISkill,
   ISkillFile,
@@ -12,50 +10,16 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import type { Request, Response } from 'express';
+import type { Types } from 'mongoose';
+import type { ImportLimits } from './limits';
 import { resolveRequestTenantId } from '~/middleware/tenant';
+import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
+import { parseSkillMarkdown } from './parse';
 
-/** Security limits for zip processing. */
-const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB compressed
-const MAX_DECOMPRESSED_BYTES = 500 * 1024 * 1024; // 500 MB total decompressed
-const MAX_ENTRIES = 500;
-const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const SKILL_MD = 'SKILL.md';
 
-export interface ImportLimits {
-  maxZipBytes: number;
-  maxDecompressedBytes: number;
-  maxEntries: number;
-  maxSingleFileBytes: number;
-}
-
-/** Strip surrounding YAML quotes (single or double) from a scalar value. */
-function unquoteYaml(value: string): string {
-  if (
-    value.length >= 2 &&
-    ((value[0] === '"' && value[value.length - 1] === '"') ||
-      (value[0] === "'" && value[value.length - 1] === "'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
-/**
- * Parse a YAML scalar as a strict boolean. Returns `undefined` when the
- * value is neither `true` nor `false`. Callers should pre-strip inline
- * comments with `stripYamlTrailingComment` when needed; this helper only
- * normalizes case / whitespace so the call site stays one-purpose.
- */
-function parseBooleanScalar(value: string): boolean | undefined {
-  const lowered = value.trim().toLowerCase();
-  if (lowered === 'true') {
-    return true;
-  }
-  if (lowered === 'false') {
-    return false;
-  }
-  return undefined;
-}
+export type { ImportLimits } from './limits';
 
 /**
  * YAML frontmatter parser — extracts the first-class fields LibreChat
@@ -64,11 +28,12 @@ function parseBooleanScalar(value: string): boolean | undefined {
  * `packages/data-schemas/src/methods/skill.ts` covers the wire contract;
  * this parser only needs to hand `createSkill` the columns it populates.
  *
- * When a known boolean field (currently just `always-apply`) is present
+ * When a known boolean field (currently `always-apply` plus the accepted
+ * `alwaysApply` alias) is present
  * with a value that isn't recognizable as `true`/`false`, the parser
  * records it on `invalidBooleans[]` so the import handler can surface
  * a 400 instead of silently dropping the flag. Without this signal,
- * authoring mistakes like `always-apply: yes` would be lossy-converted
+ * authoring mistakes like `alwaysApply: yes` would be lossy-converted
  * to "not always-applied" and the user would never learn their
  * frontmatter was malformed.
  *
@@ -80,55 +45,40 @@ export function parseFrontmatter(raw: string): {
   alwaysApply?: boolean;
   /** Keys that carried non-boolean values for fields that must be boolean. */
   invalidBooleans: string[];
+  parseError?: string;
 } {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith('---')) {
-    return { name: '', description: '', invalidBooleans: [] };
+  const parsed = parseSkillMarkdown(raw);
+  const result: {
+    name: string;
+    description: string;
+    alwaysApply?: boolean;
+    invalidBooleans: string[];
+    parseError?: string;
+  } = {
+    name: parsed.name,
+    description: parsed.description,
+    invalidBooleans: parsed.invalidBooleans,
+  };
+  if (parsed.parseError) {
+    result.parseError = parsed.parseError;
   }
-  const after = trimmed.slice(3);
-  const closingIdx = after.indexOf('\n---');
-  if (closingIdx === -1) {
-    return { name: '', description: '', invalidBooleans: [] };
+  if ('alwaysApply' in parsed) {
+    result.alwaysApply = parsed.alwaysApply;
   }
-  const block = after.slice(0, closingIdx);
-  let name = '';
-  let description = '';
-  let alwaysApply: boolean | undefined;
-  const invalidBooleans: string[] = [];
-  for (const line of block.split('\n')) {
-    const colon = line.indexOf(':');
-    if (colon === -1) {
-      continue;
-    }
-    const key = line.slice(0, colon).trim().toLowerCase();
-    const rawValue = line.slice(colon + 1).trim();
-    if (key === 'name') {
-      name = unquoteYaml(rawValue);
-    } else if (key === 'description') {
-      description = unquoteYaml(rawValue);
-    } else if (key === 'always-apply') {
-      // Operate on the raw post-colon text (no outer `unquoteYaml`): a
-      // line like `always-apply: "true" # note` must have its comment
-      // stripped BEFORE unquoting. Running `unquoteYaml` on the whole
-      // line first would miss the quoted branch (the line doesn't end
-      // in a quote once the comment is attached), and unquoting twice
-      // would be fragile if `unquoteYaml` ever gains richer YAML-escape
-      // handling.
-      const stripped = stripYamlTrailingComment(rawValue).trim();
-      if (stripped === '') {
-        // Empty value or comment-only (`always-apply: # TBD`) — treat as
-        // absent so mid-edit placeholder states don't reject the save.
-        continue;
-      }
-      const parsed = parseBooleanScalar(unquoteYaml(stripped));
-      if (parsed === undefined) {
-        invalidBooleans.push(key);
-      } else {
-        alwaysApply = parsed;
-      }
-    }
-  }
-  return { name, description, alwaysApply, invalidBooleans };
+  return result;
+}
+
+function sendFrontmatterParseError(res: Response, parseError: string) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    issues: [
+      {
+        field: 'frontmatter',
+        code: 'INVALID_YAML',
+        message: `Invalid YAML frontmatter: ${parseError}`,
+      },
+    ],
+  });
 }
 
 /** Validates a relative path is safe (no traversal, no absolute paths). */
@@ -214,7 +164,7 @@ interface ServerRequest extends Request {
  * Grants SKILL_OWNER to the uploader.
  */
 export function createImportHandler(deps: ImportSkillDeps) {
-  return async function importSkillHandler(req: ServerRequest, res: Response) {
+  return async function importSkillHandler(req: ServerRequest, res: Response): Promise<Response> {
     const { file } = req;
     if (!file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -250,10 +200,12 @@ export function createImportHandler(deps: ImportSkillDeps) {
 
 function getImportLimits(limits?: Partial<ImportLimits>): ImportLimits {
   return {
-    maxZipBytes: limits?.maxZipBytes ?? MAX_ZIP_BYTES,
-    maxDecompressedBytes: limits?.maxDecompressedBytes ?? MAX_DECOMPRESSED_BYTES,
-    maxEntries: limits?.maxEntries ?? MAX_ENTRIES,
-    maxSingleFileBytes: limits?.maxSingleFileBytes ?? MAX_SINGLE_FILE_BYTES,
+    maxZipBytes: limits?.maxZipBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxZipBytes,
+    maxDecompressedBytes:
+      limits?.maxDecompressedBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxDecompressedBytes,
+    maxEntries: limits?.maxEntries ?? DEFAULT_SKILL_IMPORT_LIMITS.maxEntries,
+    maxSingleFileBytes:
+      limits?.maxSingleFileBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes,
   };
 }
 
@@ -308,7 +260,10 @@ async function handleMarkdown(
 ) {
   const content = file.buffer.toString('utf-8');
 
-  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(content);
+  const { name, description, alwaysApply, invalidBooleans, parseError } = parseFrontmatter(content);
+  if (parseError) {
+    return sendFrontmatterParseError(res, parseError);
+  }
   if (invalidBooleans.length > 0) {
     return res.status(400).json({
       error: 'Validation failed',
@@ -419,7 +374,11 @@ async function handleZip(
     return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
-  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(skillMdContent);
+  const { name, description, alwaysApply, invalidBooleans, parseError } =
+    parseFrontmatter(skillMdContent);
+  if (parseError) {
+    return sendFrontmatterParseError(res, parseError);
+  }
   if (invalidBooleans.length > 0) {
     return res.status(400).json({
       error: 'Validation failed',
@@ -662,6 +621,6 @@ const MIME_MAP: Record<string, string> = {
   '.pdf': 'application/pdf',
 };
 
-function guessMimeType(filename: string): string {
+export function guessMimeType(filename: string): string {
   return MIME_MAP[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 }

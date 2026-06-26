@@ -9,9 +9,9 @@ const {
   logToolError,
   sanitizeTitle,
   payloadParser,
-  resolveHeaders,
   createSafeUser,
   initializeAgent,
+  resolveConfigHeaders,
   countTokens,
   getBalanceConfig,
   omitTitleOptions,
@@ -21,7 +21,15 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
-  isDeepSeekReasoningProvider,
+  sendEvent,
+  computeUsageCostUSD,
+  aggregateEmittedUsage,
+  resolveAgentTokenConfig,
+  buildPersistedContextUsage,
+  computeSummaryUsedTokens,
+  priorRunOutputTokens,
+  createSubagentUsageSink,
+  anyAgentReplaysReasoningContent,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -30,13 +38,20 @@ const {
   createMultiAgentMapper,
   filterMalformedContentParts,
   countFormattedMessageTokens,
+  prependFileContext,
+  prependQuotes,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
+  collectFreshSkillPrimeNames,
   isSkillPrimeMessage,
   collectFileIds,
+  processTextWithTokenLimit,
   buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
+  hasUrlContextTool,
+  appendYouTubeVideoParts,
+  resolveYouTubeInjectionConfig,
 } = require('@librechat/api');
 const {
   Callback,
@@ -48,6 +63,7 @@ const {
 } = require('@librechat/agents');
 const {
   Constants,
+  UsageEvents,
   Permissions,
   VisionModes,
   ContentTypes,
@@ -57,6 +73,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -68,6 +85,8 @@ const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+
+const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -82,6 +101,14 @@ class AgentClient extends BaseClient {
     /** @type {AgentRun} */
     this.run;
 
+    /** Resolves with the agent run once `chatCompletion` initializes it (or
+     *  `null` if initialization fails), letting immediate-mode title generation
+     *  await the run instead of throwing when fired before the run exists.
+     *  @type {Promise<AgentRun | null> | null} */
+    this._runReady = null;
+    /** @type {((run: AgentRun | null) => void) | null} */
+    this._resolveRun = null;
+
     const {
       agentConfigs,
       contentParts,
@@ -90,11 +117,22 @@ class AgentClient extends BaseClient {
       artifactPromises,
       maxContextTokens,
       subagentAggregatorsByToolCallId,
+      contextUsageSink,
+      usageEmitSink,
       ...clientOptions
     } = options;
 
     this.agentConfigs = agentConfigs;
     this.maxContextTokens = maxContextTokens;
+    /** Latest visible context snapshot for this response, captured live by the
+     *  ON_CONTEXT_USAGE handler; persisted on `metadata.contextUsage`.
+     *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null } | undefined} */
+    this.contextUsageSink = contextUsageSink;
+    /** Every emitted `on_token_usage` payload for this response (primary,
+     *  summarization, sequential, and subagent); aggregated into the rollup
+     *  persisted on `metadata.usage`.
+     *  @type {Array<import('librechat-data-provider').TTokenUsageEvent> | undefined} */
+    this.usageEmitSink = usageEmitSink;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
@@ -113,6 +151,11 @@ class AgentClient extends BaseClient {
      *  harvests `contentParts` onto the matching `subagent` tool_call
      *  so the child's full activity survives a page refresh. */
     this.subagentAggregatorsByToolCallId = subagentAggregatorsByToolCallId ?? new Map();
+    /** In-flight `on_token_usage` emits from subagent child runs. The sink
+     *  fires the emitter without awaiting, so chatCompletion's finally flushes
+     *  these before returning — otherwise job cleanup can race the persist.
+     *  @type {Promise<void>[]} */
+    this.pendingSubagentEmits = [];
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -127,6 +170,8 @@ class AgentClient extends BaseClient {
     this.usage;
     /** @type {Record<string, number>} */
     this.indexTokenCountMap = {};
+    /** @type {Array<Record<string, unknown>> | null} */
+    this.memoryPayload = null;
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -201,6 +246,7 @@ class AgentClient extends BaseClient {
         {
           spec: this.options.spec,
           iconURL: this.options.iconURL,
+          chatProjectId: this.options.chatProjectId,
           endpoint: this.options.endpoint,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
@@ -306,38 +352,70 @@ class AgentClient extends BaseClient {
     }
 
     /** @type {Record<number, number>} */
-    const canonicalTokenCountMap = {};
+    const indexTokenCountMap = {};
     /** @type {Record<string, number>} */
     const tokenCountMap = {};
+    const memoryPayload = [];
+    let hasFileContext = false;
     let promptTokenTotal = 0;
+    const encoding = this.getEncoding();
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      const memoryFormattedMessage = formatMessage({
+        message,
+        userName: this.options?.name,
+        assistantName: this.options?.modelLabel,
+      });
 
-      /** For non-latest messages, prepend file context directly to message content */
-      if (message.fileContext && i !== orderedMessages.length - 1) {
-        if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
-        } else {
-          const textPart = formattedMessage.content.find((part) => part.type === 'text');
-          textPart
-            ? (textPart.text = message.fileContext + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
-        }
+      /**
+       * Bind file context to the message it belongs to. Historical attachments
+       * are resent inline, so the current turn's text attachment must be inline
+       * too instead of living only in the dynamic system tail.
+       */
+      if (message.fileContext) {
+        hasFileContext = true;
+        prependFileContext(formattedMessage, message.fileContext);
       }
 
-      const dbTokenCount = orderedMessages[i].tokenCount;
-      const needsTokenCount = !dbTokenCount || message.fileContext;
-
-      if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
-        orderedMessages[i].tokenCount = countFormattedMessageTokens(
-          formattedMessage,
-          this.getEncoding(),
-        );
+      /**
+       * Durably re-merge quoted excerpts into every user turn that carries them
+       * (current and historical) so the model receives the referenced context on
+       * every prompt and the token count matches what was persisted. Applied to
+       * the memory copy too so the canonical per-message count includes them.
+       */
+      if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+        prependQuotes(formattedMessage, message.quotes);
+        prependQuotes(memoryFormattedMessage, message.quotes);
       }
+
+      memoryPayload.push(memoryFormattedMessage);
+
+      const dbTokenCount = Number(orderedMessages[i].tokenCount);
+      const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
+      /**
+       * Force a recount when the message carries quotes: a plain text-only
+       * "Save" edit recomputes `tokenCount` from `text` alone while leaving
+       * `message.quotes` persisted, so the stored count would undercount the
+       * quote block this turn prepends. Recounting from the quote-merged memory
+       * copy keeps context accounting accurate (and self-heals stale counts).
+       */
+      const needsCanonicalTokenCount =
+        !hasDbTokenCount ||
+        (this.isVisionModel && (message.image_urls || message.files)) ||
+        (Array.isArray(message.quotes) && message.quotes.length > 0);
+
+      let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
+      if (needsCanonicalTokenCount) {
+        canonicalTokenCount = countFormattedMessageTokens(memoryFormattedMessage, encoding);
+      }
+
+      const promptMessageTokenCount = message.fileContext
+        ? countFormattedMessageTokens(formattedMessage, encoding)
+        : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -353,13 +431,19 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const tokenCount = Number(orderedMessages[i].tokenCount);
-      const normalizedTokenCount = Number.isFinite(tokenCount) && tokenCount > 0 ? tokenCount : 0;
-      canonicalTokenCountMap[i] = normalizedTokenCount;
-      promptTokenTotal += normalizedTokenCount;
+      const normalizedCanonicalTokenCount =
+        Number.isFinite(canonicalTokenCount) && canonicalTokenCount > 0 ? canonicalTokenCount : 0;
+      const normalizedPromptTokenCount =
+        Number.isFinite(promptMessageTokenCount) && promptMessageTokenCount > 0
+          ? promptMessageTokenCount
+          : 0;
+
+      orderedMessages[i].tokenCount = normalizedCanonicalTokenCount;
+      indexTokenCountMap[i] = normalizedPromptTokenCount;
+      promptTokenTotal += normalizedPromptTokenCount;
 
       if (message.messageId) {
-        tokenCountMap[message.messageId] = normalizedTokenCount;
+        tokenCountMap[message.messageId] = normalizedCanonicalTokenCount;
       }
 
       if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
@@ -368,31 +452,61 @@ class AgentClient extends BaseClient {
           Array.isArray(message.content) && message.content.some((p) => p && p.type === 'summary');
         const suffix = hasSummary ? '[S]' : '';
         const id = (message.messageId ?? message.id ?? '').slice(-8);
-        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
+        const recalced = needsCanonicalTokenCount ? normalizedCanonicalTokenCount : null;
+        const promptRecalced = message.fileContext ? normalizedPromptTokenCount : null;
         logger.debug(
-          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced} tokens=${normalizedTokenCount}`,
+          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsCanonicalTokenCount} recalced=${recalced} promptRecalced=${promptRecalced} tokens=${normalizedPromptTokenCount}`,
         );
       }
 
       return formattedMessage;
     });
 
+    /**
+     * Native YouTube -> video understanding: when Google `url_context` is enabled
+     * (resolved to the native `urlContext` provider tool), inject any YouTube URLs
+     * from the latest user turn as Gemini `fileData` video parts. The URL Context
+     * tool cannot read YouTube, so this routes those links through the video path
+     * while other URLs still flow through `urlContext`. Done after token counting
+     * (video tokens are reported by the provider) and only on the LLM payload, so
+     * the memory copy and persisted message are untouched.
+     */
+    const latestOrdered = orderedMessages[orderedMessages.length - 1];
+    const provider = this.options.agent?.provider;
+    if (
+      latestOrdered?.isCreatedByUser === true &&
+      (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) &&
+      hasUrlContextTool(this.options.agent?.tools)
+    ) {
+      const latestFormatted = formattedMessages[formattedMessages.length - 1];
+      /** Use the resolved run model (model_parameters override) rather than the saved base model. */
+      const resolvedModel =
+        this.options.agent?.model_parameters?.model ?? this.options.agent?.model;
+      const { max, mimeType } = resolveYouTubeInjectionConfig({
+        provider,
+        model: resolvedModel,
+      });
+      latestFormatted.content = appendYouTubeVideoParts({
+        enabled: true,
+        text: latestOrdered.text,
+        content: latestFormatted.content,
+        max,
+        mimeType,
+      });
+    }
+
     payload = formattedMessages;
+    this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
     /**
      * Build shared run context - applies to ALL agents in the run.
-     * This includes file context from the latest message and augmented prompt (RAG).
+     * Request attachment file context is already bound inline to the latest
+     * user message above; only side-channel context belongs here.
      * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
-
-    /** File context from the latest message (attachments) */
-    const latestMessage = orderedMessages[orderedMessages.length - 1];
-    if (latestMessage?.fileContext) {
-      sharedRunContextParts.push(latestMessage.fileContext);
-    }
 
     /** Augmented prompt from RAG/context handlers */
     if (this.contextHandlers) {
@@ -419,8 +533,8 @@ class AgentClient extends BaseClient {
       tokenCountFn: (text) => countTokens(text),
     });
 
-    /** Preserve canonical pre-format token counts for all history entering graph formatting */
-    this.indexTokenCountMap = canonicalTokenCountMap;
+    /** Preserve prompt token counts for graph formatting and pruning. */
+    this.indexTokenCountMap = indexTokenCountMap;
 
     /** Extract contextMeta from the parent response (second-to-last in ordered chain;
      *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
@@ -733,7 +847,44 @@ class AgentClient extends BaseClient {
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);
-      const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
+      const configuredMaxInputTokens = Number.isFinite(memoryConfig?.maxInputTokens)
+        ? Math.floor(memoryConfig.maxInputTokens)
+        : undefined;
+      const maxInputTokens =
+        configuredMaxInputTokens != null && configuredMaxInputTokens > 0
+          ? configuredMaxInputTokens
+          : DEFAULT_MEMORY_MAX_INPUT_TOKENS;
+      const maxInputChars = maxInputTokens * MEMORY_INPUT_CHARS_PER_TOKEN;
+      const isCharTruncated = bufferString.length > maxInputChars;
+      const memoryInput = `# Current Chat:\n\n${
+        isCharTruncated
+          ? `[Earlier chat content omitted due to memory input limit]\n\n${bufferString.slice(
+              -maxInputChars,
+            )}`
+          : bufferString
+      }`;
+      const {
+        text: limitedMemoryInput,
+        tokenCount,
+        wasTruncated,
+      } = await processTextWithTokenLimit({
+        text: memoryInput,
+        tokenLimit: maxInputTokens,
+        tokenCountFn: (text) => countTokens(text),
+        preserve: 'end',
+      });
+      if (isCharTruncated || wasTruncated) {
+        logger.warn('[MemoryAgent] Memory input truncated before processing', {
+          tokenCount,
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          maxInputTokens,
+          wasTruncated,
+          maxInputChars,
+          originalLength: bufferString.length,
+        });
+      }
+      const bufferMessage = new HumanMessage(limitedMemoryInput);
       return await this.processMemory([bufferMessage]);
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
@@ -750,11 +901,100 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
+    const metadata = this.buildResponseMetadata();
+    return metadata ? { completion, metadata } : { completion };
+  }
+
+  /**
+   * Assembles the response message `metadata`: Vertex thought signatures plus
+   * the persisted context breakdown (Part A) and the usage/cost rollup (Part B),
+   * which rebuild the gauge breakdown and branch/total cost across reloads.
+   * Returns undefined when nothing was captured.
+   * @returns {{
+   *   thoughtSignatures?: Record<string, string>,
+   *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
+   *   usage?: import('librechat-data-provider').TResponseUsage,
+   * } | undefined}
+   */
+  buildResponseMetadata() {
+    /** @type {{
+     *   thoughtSignatures?: Record<string, string>,
+     *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
+     *   usage?: import('librechat-data-provider').TResponseUsage,
+     * }} */
+    const metadata = {};
     const signatures = this.collectedThoughtSignatures;
-    if (!signatures || Object.keys(signatures).length === 0) {
-      return { completion };
+    if (signatures && Object.keys(signatures).length > 0) {
+      metadata.thoughtSignatures = signatures;
     }
-    return { completion, metadata: { thoughtSignatures: signatures } };
+    const usageEvents = this.usageEmitSink ?? [];
+    /** Persist the breakdown only when the latest snapshot's OWN run completed —
+     *  i.e. a PRIMARY usage event (usage_type == null) from that run's id arrived
+     *  AFTER the snapshot. Matching by run id keeps `completedOutputTokens` a real
+     *  post-snapshot delta even when parallel/direct runs interleave (A snapshot →
+     *  B snapshot → A usage must NOT persist B's snapshot with A's output); an
+     *  interrupted final call that emits no usage falls back to the per-message
+     *  estimate. It still keeps the post-summary snapshot: the summarization detour
+     *  emits an extra snapshot whose following primary usage shares that run's id,
+     *  which the old snapshot-count guard miscounted and wrongly dropped. Events
+     *  without a run id (older lib / resume) match any snapshot for back-compat. */
+    const latestSnapshot = this.contextUsageSink?.latest;
+    const latestSnapshotUsageIndex = this.contextUsageSink?.latestUsageIndex ?? 0;
+    const latestSnapshotRunId = latestSnapshot?.runId;
+    const hasPrimaryAfterSnapshot = usageEvents
+      .slice(latestSnapshotUsageIndex)
+      .some(
+        (event) =>
+          event.usage_type == null &&
+          (latestSnapshotRunId == null ||
+            event.runId == null ||
+            event.runId === latestSnapshotRunId),
+      );
+    if (latestSnapshot && hasPrimaryAfterSnapshot) {
+      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents);
+    }
+    /** Lightweight summarization marker — persisted whenever this turn compacted
+     *  the context, INDEPENDENT of the snapshot guard above. When the client has
+     *  no usable snapshot on the branch and falls back to the per-message
+     *  estimate, it caps the discarded pre-summary history at this baseline
+     *  instead of re-summing it (the gauge otherwise reads 100% forever). Shared
+     *  with the abort save path via `computeSummaryUsedTokens`. Subtract the
+     *  response's earlier tool-loop outputs (the primaries that preceded the
+     *  latest snapshot, same run): those tokens are inside the snapshot baseline
+     *  AND in the response `tokenCount` the client estimate adds on top, so
+     *  leaving them in the marker double-counts them on a multi-call turn. */
+    const priorOutputTokens = priorRunOutputTokens(
+      usageEvents,
+      latestSnapshotUsageIndex,
+      latestSnapshotRunId,
+    );
+    const summaryUsedTokens = computeSummaryUsedTokens(latestSnapshot, priorOutputTokens);
+    if (summaryUsedTokens != null) {
+      metadata.summaryUsedTokens = summaryUsedTokens;
+    }
+    const usage = aggregateEmittedUsage(usageEvents);
+    if (usage) {
+      metadata.usage = usage;
+    }
+    return Object.keys(metadata).length > 0 ? metadata : undefined;
+  }
+
+  /**
+   * Resolves the endpoint token config for a usage item by its producing agent
+   * (multi-endpoint graphs: connected agents + subagents). A known agent's
+   * config is authoritative — including `undefined`, which prices with built-in
+   * rates (e.g. a non-custom agent in a custom-primary graph). Only an
+   * untagged/unknown agent falls back to the primary config, so single-endpoint
+   * graphs are unchanged.
+   * @param {UsageMetadata} usage
+   * @returns {import('@librechat/api').EndpointTokenConfig | undefined}
+   */
+  resolveAgentEndpointTokenConfig(usage) {
+    return resolveAgentTokenConfig({
+      agentId: usage?.agentId,
+      byAgentId: this.options.endpointTokenConfigByAgentId,
+      fallback: this.options.endpointTokenConfig,
+    });
   }
 
   /**
@@ -789,6 +1029,7 @@ class AgentClient extends BaseClient {
         balance,
         transactions,
         endpointTokenConfig: this.options.endpointTokenConfig,
+        resolveEndpointTokenConfig: (usage) => this.resolveAgentEndpointTokenConfig(usage),
       },
     );
 
@@ -803,6 +1044,84 @@ class AgentClient extends BaseClient {
    */
   getStreamUsage() {
     return this.usage;
+  }
+
+  /**
+   * Builds the subagent usage emitter for {@link createSubagentUsageSink}.
+   * Streams each billed child-run usage to the client as an `on_token_usage`
+   * event tagged `subagent` (folds into session cost/totals, not the live
+   * gauge), with the authoritative cost when `interface.contextCost` is on.
+   * Returns undefined when there's no stream to write to.
+   * @param {AppConfig} [appConfig]
+   * @returns {((usage: UsageMetadata) => void) | undefined}
+   */
+  buildSubagentUsageEmitter(appConfig) {
+    const res = this.options.res;
+    const streamId = this.options.req?._resumableStreamId || null;
+    if (!res && !streamId) {
+      return undefined;
+    }
+    const includeCost = appConfig?.interfaceConfig?.contextCost === true;
+    return (usage) => {
+      const data = {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+        input_token_details: this.subagentCacheDetails(usage),
+        model: usage.model,
+        provider: usage.provider,
+        usage_type: 'subagent',
+        runId: this.responseMessageId,
+        /** Unique per collected entry (post-push length) for resume dedupe */
+        seq: this.collectedUsage.length,
+        /** Price with the SUBAGENT's own endpoint token config (its endpoint may
+         *  differ from the parent's); `usage.agentId` is tagged by the sink. */
+        cost: includeCost
+          ? computeUsageCostUSD(
+              usage,
+              { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+              this.resolveAgentEndpointTokenConfig(usage),
+            )
+          : undefined,
+      };
+      /** Fold into the response's usage rollup (synchronously, regardless of
+       *  emit success) so the persisted total matches the live session, which
+       *  also folds subagent usage into its cost/totals. */
+      if (this.usageEmitSink) {
+        this.usageEmitSink.push(data);
+      }
+      /** The sink fires this without awaiting, so retain the promise and flush
+       *  it in chatCompletion's finally — emitChunk persists (HSET) before
+       *  publishing, and job cleanup must not race that persist or resumed
+       *  clients miss billed subagent usage. */
+      const emit = (async () => {
+        try {
+          if (streamId) {
+            await GenerationJobManager.emitChunk(streamId, {
+              event: UsageEvents.ON_TOKEN_USAGE,
+              data,
+            });
+          } else {
+            sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
+          }
+        } catch (err) {
+          logger.warn('[AgentClient] Failed to emit subagent usage', err);
+        }
+      })();
+      this.pendingSubagentEmits.push(emit);
+      return emit;
+    };
+  }
+
+  /** Normalizes a subagent usage event's cache token details for emission. */
+  subagentCacheDetails(usage) {
+    const cache_creation =
+      usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
+    const cache_read = usage.input_token_details?.cache_read ?? usage.cache_read_input_tokens;
+    if (cache_creation == null && cache_read == null) {
+      return undefined;
+    }
+    return { cache_creation, cache_read };
   }
 
   /**
@@ -877,15 +1196,41 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
-      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
-      const hasDeepSeekAgent = (agent) =>
-        agent != null &&
-        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
-      const needsDeepSeekFormat =
-        hasDeepSeekAgent(this.options.agent) ||
-        (this.agentConfigs != null &&
-          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
-      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
+      /**
+       * Reconstruct `reasoning_content` on prior tool-call turns: DeepSeek
+       * thinking-mode (#13366) or custom endpoints opting in via
+       * `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+       * Walks subagents too — the opted-in endpoint may appear only as a
+       * nested subagent, not the primary or a top-level handoff agent.
+       */
+      const needsReasoningContentFormat = anyAgentReplaysReasoningContent([
+        this.options.agent,
+        ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+      ]);
+      /**
+       * Skills primed fresh this turn — manual ($ popover) and always-apply
+       * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
+       * bodies in, so `formatAgentMessages` must NOT also reconstruct the
+       * same names from a historical `skill` tool_call — otherwise the body
+       * lands twice and a prompt-cache marker can pin to the duplicated
+       * synthetic prefix. Names NOT primed this turn still reconstruct from
+       * history, preserving sticky manual re-priming across turns.
+       */
+      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      const freshSkillPrimeNames = collectFreshSkillPrimeNames({
+        manualSkillPrimes,
+        alwaysApplySkillPrimes,
+      });
+      const formatOptions =
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
+          ? {
+              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
+              ...(freshSkillPrimeNames.size > 0
+                ? { skipSkillBodyNames: freshSkillPrimeNames }
+                : {}),
+            }
+          : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -916,9 +1261,11 @@ class AgentClient extends BaseClient {
        * agent and multi-agent runs; how primes interact with handoff /
        * added-convo agents' per-agent state is an agents-SDK concern,
        * not this layer's to gate.
+       *
+       * `manualSkillPrimes` / `alwaysApplySkillPrimes` are resolved above
+       * (used to build `freshSkillPrimeNames` for dedupe against historical
+       * skill reconstruction).
        */
-      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
       if (
         (manualSkillPrimes && manualSkillPrimes.length > 0) ||
         (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
@@ -961,6 +1308,17 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      const memoryMessages =
+        this.processMemory && this.memoryPayload
+          ? formatAgentMessages(
+              this.memoryPayload,
+              undefined,
+              toolSet,
+              skillPrimeResult?.skills,
+              formatOptions,
+            ).messages
+          : initialMessages;
+
       /**
        * @param {BaseMessage[]} messages
        */
@@ -1001,7 +1359,7 @@ class AgentClient extends BaseClient {
         // }
 
         if (this.processMemory) {
-          memoryPromise = this.runMemory(messages);
+          memoryPromise = this.runMemory(memoryMessages);
         }
 
         /** Seed calibration state from previous run if encoding matches */
@@ -1029,9 +1387,21 @@ class AgentClient extends BaseClient {
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
+          tenantId: this.options.req?.user?.tenantId,
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
+          /** Bills subagent child-run model calls — child graphs execute
+           *  outside the streamEvents loop, so ModelEndHandler never sees
+           *  them. Entries land in collectedUsage tagged
+           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage.
+           *  The sink also streams each as an `on_token_usage` event so the
+           *  gauge's session cost/totals include billed subagent usage (the
+           *  `subagent` tag keeps it out of the live context meter). */
+          subagentUsageSink: createSubagentUsageSink(
+            this.collectedUsage,
+            this.buildSubagentUsageEmitter(appConfig),
+          ),
         });
 
         if (!run) {
@@ -1039,6 +1409,10 @@ class AgentClient extends BaseClient {
         }
 
         this.run = run;
+        if (this._resolveRun) {
+          this._resolveRun(run);
+          this._resolveRun = null;
+        }
 
         const streamId = this.options.req?._resumableStreamId;
         if (streamId && run.Graph) {
@@ -1115,11 +1489,12 @@ class AgentClient extends BaseClient {
         });
       }
     } catch (err) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
-        err,
-      );
-      if (!abortController.signal.aborted) {
+      if (abortController.signal.aborted) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
+          { conversationId: this.conversationId, name: err?.name, code: err?.code },
+        );
+      } else {
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
@@ -1143,6 +1518,14 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+
+      /** Flush subagent usage emits the sink fired without awaiting, so their
+       *  persist/publish completes before we return and the job is cleaned up
+       *  (resumed clients read this persisted usage). */
+      if (this.pendingSubagentEmits.length > 0) {
+        await Promise.allSettled(this.pendingSubagentEmits);
+        this.pendingSubagentEmits = [];
+      }
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
@@ -1170,6 +1553,10 @@ class AgentClient extends BaseClient {
           err,
         );
       }
+      if (this._resolveRun) {
+        this._resolveRun(this.run ?? null);
+        this._resolveRun = null;
+      }
       run = null;
       config = null;
       memoryPromise = null;
@@ -1177,14 +1564,58 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   *
+   * Resolves with the agent run once it is initialized, or `null` if
+   * initialization fails. Lets immediate-mode title generation await the run
+   * instead of throwing when fired before `chatCompletion` assigns `this.run`.
+   * Rejects promptly if the provided signal aborts before the run is ready.
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<AgentRun | null>}
+   */
+  _waitForRun(signal) {
+    if (this.run) {
+      return Promise.resolve(this.run);
+    }
+    if (!this._runReady) {
+      this._runReady = new Promise((resolve) => {
+        this._resolveRun = resolve;
+      });
+    }
+    if (!signal) {
+      return this._runReady;
+    }
+    if (signal.aborted) {
+      return Promise.reject(new Error('Aborted before run initialization'));
+    }
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(new Error('Aborted before run initialization'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      this._runReady.then((run) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(run);
+      });
+    });
+  }
+
+  /**
    * @param {Object} params
    * @param {string} params.text
-   * @param {string} params.conversationId
+   * @param {AbortController} params.abortController
+   * @param {boolean} [params.immediate] When true, the title is generated as soon
+   *   as the request is made — the run is awaited (instead of throwing) and the
+   *   title derives from the user's input only (`contentParts` is empty).
    */
-  async titleConvo({ text, abortController }) {
+  async titleConvo({ text, abortController, immediate = false }) {
     if (!this.run) {
-      throw new Error('Run not initialized');
+      if (!immediate) {
+        throw new Error('Run not initialized');
+      }
+      await this._waitForRun(abortController?.signal);
+      if (!this.run) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #titleConvo] Run unavailable for immediate title generation',
+        );
+        return;
+      }
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, agent } = this.options;
@@ -1290,11 +1721,24 @@ class AgentClient extends BaseClient {
       delete clientOptions.modelKwargs.max_output_tokens;
     }
 
+    /** `omitTitleOptions` drops the Anthropic `clientOptions` carrier (thinking,
+     *  streaming, etc.), which would also drop its `defaultHeaders` — preserve the
+     *  original `clientOptions` object so gateway/reverse-proxy metadata still
+     *  reaches title requests (the proxy may require it for auth/routing). Restore
+     *  the SAME object reference, not a copy: the Vertex `createClient` closure from
+     *  `getLLMConfig` closes over this object, so `resolveConfigHeaders` must mutate
+     *  the very object the client is built from. */
+    const anthropicClientOptions = clientOptions?.clientOptions;
+
     clientOptions = Object.assign(
       Object.fromEntries(
         Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
       ),
     );
+
+    if (anthropicClientOptions?.defaultHeaders != null && clientOptions.clientOptions == null) {
+      clientOptions.clientOptions = anthropicClientOptions;
+    }
 
     if (
       provider === Providers.GOOGLE &&
@@ -1304,27 +1748,26 @@ class AgentClient extends BaseClient {
       clientOptions.json = true;
     }
 
-    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
+    /** Resolve request-based headers across provider-specific header locations:
+     *  OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`
+     *  (preserved above), and Google `customHeaders`.
      */
-    if (clientOptions?.configuration?.defaultHeaders != null) {
-      clientOptions.configuration.defaultHeaders = resolveHeaders({
-        headers: clientOptions.configuration.defaultHeaders,
-        user: createSafeUser(this.options.req?.user),
-        body: {
-          messageId: this.responseMessageId,
-          conversationId: this.conversationId,
-          parentMessageId: this.parentMessageId,
-        },
-      });
-    }
+    resolveConfigHeaders({
+      llmConfig: clientOptions,
+      user: createSafeUser(this.options.req?.user),
+      body: {
+        messageId: this.responseMessageId,
+        conversationId: this.conversationId,
+        parentMessageId: this.parentMessageId,
+      },
+    });
 
     try {
       const titleResult = await this.run.generateTitle({
         provider,
         clientOptions,
         inputText: text,
-        contentParts: this.contentParts,
+        contentParts: immediate ? [] : this.contentParts,
         titleMethod: endpointConfig?.titleMethod,
         titlePrompt: endpointConfig?.titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,

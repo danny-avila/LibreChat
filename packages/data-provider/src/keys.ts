@@ -1,6 +1,7 @@
 export enum QueryKeys {
   messages = 'messages',
   sharedMessages = 'sharedMessages',
+  sharedStartupConfig = 'sharedStartupConfig',
   sharedLinks = 'sharedLinks',
   allConversations = 'allConversations',
   archivedConversations = 'archivedConversations',
@@ -12,6 +13,8 @@ export enum QueryKeys {
   models = 'models',
   balance = 'balance',
   endpoints = 'endpoints',
+  tokenConfig = 'tokenConfig',
+  contextProjection = 'contextProjection',
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',
@@ -42,6 +45,9 @@ export enum QueryKeys {
   promptGroups = 'promptGroups',
   allPromptGroups = 'allPromptGroups',
   promptGroup = 'promptGroup',
+  projects = 'projects',
+  project = 'project',
+  projectConversations = 'projectConversations',
   categories = 'categories',
   randomPrompts = 'randomPrompts',
   agentCategories = 'agentCategories',
@@ -112,10 +118,15 @@ export enum MutationKeys {
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',
+  createProject = 'createProject',
+  updateProject = 'updateProject',
+  deleteProject = 'deleteProject',
+  assignConversationToProject = 'assignConversationToProject',
   /* Skill mutations from the original UI PR — tree/node operations are
    * phase 2 and currently stubbed in the data-service layer. */
   createSkillNode = 'createSkillNode',
   updateSkillNode = 'updateSkillNode',
   deleteSkillNode = 'deleteSkillNode',
   updateSkillNodeContent = 'updateSkillNodeContent',
+  convoPin = 'convoPin',
 }

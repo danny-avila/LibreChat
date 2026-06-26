@@ -18,7 +18,7 @@ interface RadioProps {
   'aria-labelledby'?: string;
 }
 
-const Radio = memo(function Radio({
+const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
   options,
   value,
   onChange,

@@ -6,12 +6,15 @@ const adminConfig = require('./admin/config');
 const adminGrants = require('./admin/grants');
 const adminGroups = require('./admin/groups');
 const adminRoles = require('./admin/roles');
+const adminSkills = require('./admin/skills');
 const adminUsers = require('./admin/users');
+const adminAuditLog = require('./admin/audit');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
 const messages = require('./messages');
 const memories = require('./memories');
 const presets = require('./presets');
+const projects = require('./projects');
 const prompts = require('./prompts');
 const skills = require('./skills');
 const balance = require('./balance');
@@ -33,9 +36,10 @@ const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
 const scim = require('./scim');
-const projects = require('./projects');
+const rum = require('./rum');
 
 module.exports = {
+  rum,
   mcp,
   scim,
   projects,
@@ -45,7 +49,9 @@ module.exports = {
   adminGrants,
   adminGroups,
   adminRoles,
+  adminSkills,
   adminUsers,
+  adminAuditLog,
   keys,
   apiKeys,
   user,
@@ -61,6 +67,7 @@ module.exports = {
   config,
   models,
   prompts,
+  projects,
   skills,
   actions,
   presets,

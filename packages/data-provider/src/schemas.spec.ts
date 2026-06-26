@@ -463,6 +463,14 @@ describe('googleSettings', () => {
       });
       expect(result.maxOutputTokens).toBeUndefined();
     });
+
+    it('preserves chat project membership metadata', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        chatProjectId: 'project-1',
+      });
+      expect(result.chatProjectId).toBe('project-1');
+    });
   });
 });
 

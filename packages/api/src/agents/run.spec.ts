@@ -1,10 +1,12 @@
 import { Providers } from '@librechat/agents';
+import { ReasoningResponseKey } from 'librechat-data-provider';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
-
 import {
   extractDiscoveredToolsFromHistory,
   getReasoningKey,
   isDeepSeekReasoningProvider,
+  shouldReplayReasoningContent,
+  anyAgentReplaysReasoningContent,
 } from './run';
 
 describe('extractDiscoveredToolsFromHistory', () => {
@@ -150,6 +152,56 @@ describe('getReasoningKey', () => {
 
     expect(reasoningKey).toBe('reasoning');
   });
+
+  it('keeps Vercel AI Gateway on ChatOpenAI normalized reasoning_content', () => {
+    const llmConfig = {
+      configuration: {
+        baseURL: 'https://ai-gateway.vercel.sh/v1',
+      },
+    } as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig);
+
+    expect(reasoningKey).toBe('reasoning_content');
+  });
+
+  it('keeps Vercel custom endpoint names on ChatOpenAI normalized reasoning_content', () => {
+    const llmConfig = {} as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig, 'Vercel');
+
+    expect(reasoningKey).toBe('reasoning_content');
+  });
+
+  it('uses explicit reasoning response keys for Vercel when configured', () => {
+    const llmConfig = {
+      configuration: {
+        baseURL: 'https://ai-gateway.vercel.sh/v1',
+      },
+    } as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(
+      Providers.OPENAI,
+      llmConfig,
+      'Vercel',
+      ReasoningResponseKey.reasoning,
+    );
+
+    expect(reasoningKey).toBe('reasoning');
+  });
+
+  it('uses explicit reasoning response keys for otherwise default OpenAI-compatible endpoints', () => {
+    const llmConfig = {} as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(
+      Providers.OPENAI,
+      llmConfig,
+      'Company Gateway',
+      ReasoningResponseKey.reasoning,
+    );
+
+    expect(reasoningKey).toBe('reasoning');
+  });
 });
 
 describe('isDeepSeekReasoningProvider', () => {
@@ -221,5 +273,98 @@ describe('isDeepSeekReasoningProvider', () => {
       isDeepSeekReasoningProvider(Providers.OPENROUTER, 'mistral/deepseek-distilled-foo'),
     ).toBe(false);
     expect(isDeepSeekReasoningProvider(undefined, 'community/deepseek-r1')).toBe(false);
+  });
+});
+
+describe('shouldReplayReasoningContent', () => {
+  it('returns true when a custom endpoint opts in via includeReasoningHistory', () => {
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENAI,
+        model_parameters: { model: 'MiMo-V2.5' },
+        includeReasoningHistory: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for DeepSeek reasoning agents without the flag', () => {
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.DEEPSEEK,
+        model_parameters: { model: 'deepseek-chat' },
+      }),
+    ).toBe(true);
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENROUTER,
+        model_parameters: { model: 'deepseek/deepseek-v4-pro' },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for a non-DeepSeek agent that has not opted in', () => {
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENAI,
+        model_parameters: { model: 'MiMo-V2.5' },
+      }),
+    ).toBe(false);
+    expect(
+      shouldReplayReasoningContent({
+        provider: Providers.OPENAI,
+        model_parameters: { model: 'MiMo-V2.5' },
+        includeReasoningHistory: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false for nullish agents', () => {
+    expect(shouldReplayReasoningContent(null)).toBe(false);
+    expect(shouldReplayReasoningContent(undefined)).toBe(false);
+  });
+});
+
+describe('anyAgentReplaysReasoningContent', () => {
+  const plainAgent = (id: string, extra = {}) =>
+    ({
+      id,
+      provider: Providers.OPENAI,
+      model_parameters: { model: 'MiMo-V2.5' },
+      ...extra,
+    }) as unknown as Parameters<typeof anyAgentReplaysReasoningContent>[0][number];
+
+  it('returns true when the primary agent opts in', () => {
+    expect(
+      anyAgentReplaysReasoningContent([plainAgent('a', { includeReasoningHistory: true })]),
+    ).toBe(true);
+  });
+
+  it('returns true when only a nested subagent opts in', () => {
+    const subagent = plainAgent('child', { includeReasoningHistory: true });
+    const primary = plainAgent('root', {
+      subagentAgentConfigs: [plainAgent('mid', { subagentAgentConfigs: [subagent] })],
+    });
+    expect(anyAgentReplaysReasoningContent([primary])).toBe(true);
+  });
+
+  it('returns false when no reachable agent opts in', () => {
+    const primary = plainAgent('root', {
+      subagentAgentConfigs: [plainAgent('child')],
+    });
+    expect(anyAgentReplaysReasoningContent([primary, null, undefined])).toBe(false);
+  });
+
+  it('is cycle-safe across subagent references', () => {
+    const a = plainAgent('a');
+    const b = plainAgent('b', { includeReasoningHistory: true });
+    (a as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [b];
+    (b as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [a];
+    expect(anyAgentReplaysReasoningContent([a])).toBe(true);
+
+    const x = plainAgent('x');
+    const y = plainAgent('y');
+    (x as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [y];
+    (y as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [x];
+    expect(anyAgentReplaysReasoningContent([x])).toBe(false);
   });
 });

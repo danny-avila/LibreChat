@@ -1,15 +1,22 @@
+import type { ParsedServerConfig } from '~/mcp/types';
 import {
   buildOAuthToolCallName,
   normalizeServerName,
   redactAllServerSecrets,
   redactServerSecrets,
+  requiresUserScopedConnection,
   isInvalidClientMessage,
   isClientRejectionMessage,
   getMissingCustomUserVars,
   hasCustomUserVars,
+  hasRuntimeUrlPlaceholders,
+  hasRuntimeBodyPlaceholders,
+  hasRuntimeContextPlaceholders,
+  getRuntimeBodyPlaceholderFields,
+  getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
+  requiresEphemeralUserConnection,
 } from '~/mcp/utils';
-import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('normalizeServerName', () => {
   it('should not modify server names that already match the pattern', () => {
@@ -229,13 +236,93 @@ describe('redactServerSecrets', () => {
     expect(redacted.customUserVars).toEqual(config.customUserVars);
   });
 
-  it('should pass URLs through unchanged', () => {
+  it('should pass URLs through unchanged when caller has edit authority', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
-      url: 'https://mcp.example.com/sse?param=value',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+    };
+    const redacted = redactServerSecrets(config, { canEdit: true });
+    expect(redacted.url).toBe('https://infra.internal/mcp');
+  });
+
+  it('should strip url and oauth flow URLs for non-user-sourced configs without edit authority', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      oauth: {
+        client_id: 'cid',
+        authorization_url: 'https://infra.internal/oauth/authorize',
+        token_url: 'https://infra.internal/oauth/token',
+        revocation_endpoint: 'https://infra.internal/oauth/revoke',
+        scope: 'read',
+      },
     };
     const redacted = redactServerSecrets(config);
-    expect(redacted.url).toBe('https://mcp.example.com/sse?param=value');
+    expect(redacted.url).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.revocation_endpoint).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+    expect(redacted.oauth?.scope).toBe('read');
+  });
+
+  it('should strip url for a VIEW-shared user-sourced config when caller lacks edit', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://owner-private.example.com/mcp',
+      source: 'user',
+      dbId: 'abc123',
+      oauth: {
+        client_id: 'cid',
+        authorization_url: 'https://owner-private.example.com/oauth/authorize',
+        token_url: 'https://owner-private.example.com/oauth/token',
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.url).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+  });
+
+  it('should retain non-sensitive oauth fields when stripping oauth flow URLs', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      oauth: {
+        client_id: 'cid',
+        client_secret: 'csecret',
+        authorization_url: 'https://infra.internal/oauth/authorize',
+        token_url: 'https://infra.internal/oauth/token',
+        scope: 'read',
+        redirect_uri: 'https://app.example.com/callback',
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.oauth?.client_secret).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
+    expect(redacted.oauth?.scope).toBe('read');
+    expect(redacted.oauth?.redirect_uri).toBe('https://app.example.com/callback');
+  });
+
+  it('should preserve customUserVars metadata for non-user-sourced configs without edit authority', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://infra.internal/mcp',
+      source: 'config',
+      customUserVars: {
+        API_KEY: { title: 'API Key', description: 'Your key', sensitive: true },
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.customUserVars).toEqual({
+      API_KEY: { title: 'API Key', description: 'Your key', sensitive: true },
+    });
   });
 
   it('should only include explicitly allowlisted fields', () => {
@@ -248,6 +335,17 @@ describe('redactServerSecrets', () => {
     const redacted = redactServerSecrets(config);
     expect((redacted as Record<string, unknown>).someNewSensitiveField).toBeUndefined();
     expect(redacted.title).toBe('Test');
+  });
+
+  it('should preserve obo config', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://example.com/mcp',
+      title: 'OBO Server',
+      obo: { scopes: 'api://client-id/.default' },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.obo).toEqual({ scopes: 'api://client-id/.default' });
   });
 });
 
@@ -276,6 +374,55 @@ describe('redactAllServerSecrets', () => {
     expect(redacted['server-b'].oauth?.client_secret).toBeUndefined();
     expect(redacted['server-b'].oauth?.client_id).toBe('cid-b');
     expect((redacted['server-c'] as Record<string, unknown>).command).toBeUndefined();
+  });
+
+  it('should pass canEdit through per-server via canEditByServer map', () => {
+    const configs: Record<string, ParsedServerConfig> = {
+      'config-server': {
+        type: 'sse',
+        url: 'https://infra.internal/mcp',
+        source: 'config',
+        oauth: {
+          client_id: 'cid',
+          authorization_url: 'https://infra.internal/oauth/authorize',
+        },
+      },
+      'user-server-owner': {
+        type: 'sse',
+        url: 'https://owner.example.com/mcp',
+        source: 'user',
+        dbId: 'owner-id',
+      },
+      'user-server-shared': {
+        type: 'sse',
+        url: 'https://shared.example.com/mcp',
+        source: 'user',
+        dbId: 'shared-id',
+      },
+    };
+    const canEditByServer = new Map<string, boolean>([
+      ['config-server', false],
+      ['user-server-owner', true],
+      ['user-server-shared', false],
+    ]);
+    const redacted = redactAllServerSecrets(configs, { canEditByServer });
+    expect(redacted['config-server'].url).toBeUndefined();
+    expect(redacted['config-server'].oauth?.authorization_url).toBeUndefined();
+    expect(redacted['user-server-owner'].url).toBe('https://owner.example.com/mcp');
+    expect(redacted['user-server-shared'].url).toBeUndefined();
+  });
+
+  it('should expose URL for non-user-sourced configs when canEditByServer is true', () => {
+    const configs: Record<string, ParsedServerConfig> = {
+      'config-server': {
+        type: 'sse',
+        url: 'https://infra.internal/mcp',
+        source: 'config',
+      },
+    };
+    const canEditByServer = new Map<string, boolean>([['config-server', true]]);
+    const redacted = redactAllServerSecrets(configs, { canEditByServer });
+    expect(redacted['config-server'].url).toBe('https://infra.internal/mcp');
   });
 });
 
@@ -340,6 +487,264 @@ describe('isUserSourced', () => {
 
   it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
     expect(isUserSourced({})).toBe(false);
+  });
+});
+
+describe('requiresUserScopedConnection', () => {
+  it('returns true for OAuth servers', () => {
+    expect(requiresUserScopedConnection({ requiresOAuth: true })).toBe(true);
+  });
+
+  it('returns true for OBO servers', () => {
+    expect(
+      requiresUserScopedConnection({
+        obo: { scopes: 'api://client-id/.default' },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for servers with customUserVars', () => {
+    expect(
+      requiresUserScopedConnection({
+        customUserVars: {
+          API_KEY: { title: 'API Key', description: 'Your key' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for trusted config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'yaml',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for user-sourced config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false for app-shareable servers', () => {
+    expect(
+      requiresUserScopedConnection({
+        requiresOAuth: false,
+        customUserVars: {},
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeContextPlaceholders', () => {
+  it('detects trusted runtime placeholders across connection fields', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'config',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+          'X-Graph-Access-Token': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('detects trusted runtime placeholders in oauth_headers', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          'X-User': '{{LIBRECHAT_USER_ID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores custom user variable placeholders', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores runtime placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeUrlPlaceholders', () => {
+  it('detects trusted runtime placeholders in the server URL', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores runtime URL placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeBodyPlaceholders', () => {
+  it('detects trusted runtime BODY placeholders across connection fields', () => {
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+      }),
+    ).toBe(true);
+
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'config',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('getMissingRuntimeBodyPlaceholderFields', () => {
+  const config = {
+    source: 'yaml',
+    url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+    headers: {
+      'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+      'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+    },
+  } as const;
+
+  it('returns the request body fields required by trusted runtime placeholders', () => {
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([
+      'messageId',
+      'parentMessageId',
+      'conversationId',
+    ]);
+  });
+
+  it('returns missing or blank request body fields', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields(config, {
+        conversationId: 'conv-123',
+        messageId: ' ',
+      }),
+    ).toEqual(['messageId', 'parentMessageId']);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('requiresEphemeralUserConnection', () => {
+  it('returns true when BODY placeholders affect oauth_headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true when BODY placeholders affect connection fields', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not treat Graph placeholders as request-scoped by themselves', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'config',
+        env: {
+          GRAPH_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('does not treat OpenID token placeholders as request-scoped by themselves', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        args: ['--id-token={{LIBRECHAT_OPENID_ID_TOKEN}}'],
+      }),
+    ).toBe(false);
+
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('returns true when BODY placeholders affect remote transport headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }),
+    ).toBe(true);
   });
 });
 

@@ -78,7 +78,14 @@ async function hydrateMembers(
   });
 }
 
-export function createScimGroupsHandlers(deps: ScimGroupsDeps) {
+export function createScimGroupsHandlers(deps: ScimGroupsDeps): {
+  listGroups: (req: Request, res: Response) => Promise<Response>;
+  getGroup: (req: Request, res: Response) => Promise<Response>;
+  createGroup: (req: Request, res: Response) => Promise<Response>;
+  replaceGroup: (req: Request, res: Response) => Promise<Response>;
+  patchGroup: (req: Request, res: Response) => Promise<Response>;
+  deleteGroup: (req: Request, res: Response) => Promise<Response>;
+} {
   const {
     findUsers,
     countGroups,

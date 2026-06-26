@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
 import type { IGroup } from '~/types';
 
-const groupSchema = new Schema<IGroup>(
+const groupSchema: Schema<IGroup> = new Schema<IGroup>(
   {
     name: {
       type: String,

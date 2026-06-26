@@ -1,10 +1,16 @@
+import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
+import {
+  hasCustomUserVars,
+  hasRuntimeContextPlaceholders,
+  hasRuntimeUrlPlaceholders,
+  isUserSourced,
+} from '~/mcp/utils';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { hasCustomUserVars, isUserSourced } from '~/mcp/utils';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
@@ -63,12 +69,15 @@ export class MCPServerInspector {
   }
 
   private async inspectServer(): Promise<void> {
+    this.warnOnUnrestrictedRuntimeUrl();
     await this.detectOAuth();
 
     if (
       this.config.startup !== false &&
       !this.config.requiresOAuth &&
-      !hasCustomUserVars(this.config)
+      !hasCustomUserVars(this.config) &&
+      !hasRuntimeContextPlaceholders(this.config) &&
+      !this.config.obo
     ) {
       let tempConnection = false;
       if (!this.connection) {
@@ -93,8 +102,25 @@ export class MCPServerInspector {
     }
   }
 
+  /**
+   * Runtime placeholders in the URL make the resolved connection target partially
+   * user/request-controlled. The resolved URL is validated against the domain
+   * allowlist at request time, but without one only private-range SSRF protection
+   * limits where it can point.
+   */
+  private warnOnUnrestrictedRuntimeUrl(): void {
+    if (!hasRuntimeUrlPlaceholders(this.config)) return;
+    if (Array.isArray(this.allowedDomains) && this.allowedDomains.length > 0) return;
+
+    logger.warn(
+      `[MCP][${this.serverName}] Server URL contains runtime placeholders but no domain allowlist is configured; ` +
+        'the resolved URL is partially user/request-controlled. Set mcpSettings.allowedDomains to restrict targets.',
+    );
+  }
+
   private async detectOAuth(): Promise<void> {
     if (this.config.requiresOAuth != null) return;
+    if (hasRuntimeUrlPlaceholders(this.config)) return;
     if (this.config.url == null || this.config.startup === false) {
       this.config.requiresOAuth = false;
       return;
@@ -124,8 +150,8 @@ export class MCPServerInspector {
   private async fetchServerCapabilities(): Promise<void> {
     const capabilities = this.connection!.client.getServerCapabilities();
     this.config.capabilities = JSON.stringify(capabilities);
-    const tools = await this.connection!.client.listTools();
-    this.config.tools = tools.tools.map((tool) => tool.name).join(', ');
+    const tools = await this.connection!.fetchTools();
+    this.config.tools = tools.map((tool) => tool.name).join(', ');
   }
 
   private async fetchToolFunctions(): Promise<void> {
@@ -145,7 +171,7 @@ export class MCPServerInspector {
     serverName: string,
     connection: MCPConnection,
   ): Promise<t.LCAvailableTools> {
-    const { tools }: t.MCPToolListResponse = await connection.client.listTools();
+    const tools = await connection.fetchTools();
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {

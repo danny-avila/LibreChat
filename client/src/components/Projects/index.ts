@@ -1,4 +1,2 @@
-export { default as ProjectsList } from './ProjectsList';
-export { default as ProjectItem } from './ProjectItem';
-export { default as ProjectDialog } from './ProjectDialog';
-export { default as ProjectAssignDialog } from './ProjectAssignDialog';
+export { default as ProjectsView } from './ProjectsView';
+export { default as ProjectWorkspace } from './ProjectWorkspace';

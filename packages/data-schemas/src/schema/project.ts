@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
 import type { IProject } from '~/types';
 
-const projectSchema = new Schema<IProject>(
+const projectSchema: Schema<IProject> = new Schema<IProject>(
   {
     name: {
       type: String,

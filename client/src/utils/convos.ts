@@ -78,6 +78,7 @@ const dateGroupsSet = new Set([
 
 export const groupConversationsByDate = (
   conversations: Array<TConversation | null>,
+  dateField: 'updatedAt' | 'createdAt' = 'updatedAt',
 ): GroupedConversations => {
   if (!Array.isArray(conversations)) {
     return [];
@@ -87,14 +88,19 @@ export const groupConversationsByDate = (
   const now = new Date(Date.now());
 
   conversations.forEach((conversation) => {
-    if (!conversation || seenConversationIds.has(conversation.conversationId)) {
+    if (
+      !conversation ||
+      seenConversationIds.has(conversation.conversationId) ||
+      conversation.pinned
+    ) {
       return;
     }
     seenConversationIds.add(conversation.conversationId);
 
     let date: Date;
-    if (conversation.updatedAt) {
-      date = parseISO(conversation.updatedAt);
+    const dateValue = conversation[dateField] ?? conversation.updatedAt ?? conversation.createdAt;
+    if (dateValue) {
+      date = parseISO(dateValue);
     } else {
       date = now;
     }
@@ -131,7 +137,8 @@ export const groupConversationsByDate = (
   sortedGroups.forEach((conversations) => {
     conversations.sort(
       (a: TConversation, b: TConversation) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        new Date(b[dateField] ?? b.updatedAt ?? 0).getTime() -
+        new Date(a[dateField] ?? a.updatedAt ?? 0).getTime(),
     );
   });
   return Array.from(sortedGroups, ([key, value]) => [key, value]);
@@ -141,6 +148,40 @@ export type ConversationCursorData = {
   conversations: TConversation[];
   nextCursor?: string | null;
 };
+
+function getConversationQueryProjectId(queryKey: readonly unknown[]): string | undefined {
+  const params = queryKey[1];
+  if (!params || typeof params !== 'object') {
+    return undefined;
+  }
+  return (params as { projectId?: string }).projectId;
+}
+
+function conversationMatchesProjectQuery(
+  queryKey: readonly unknown[],
+  conversation: Pick<TConversation, 'chatProjectId'>,
+): boolean {
+  const projectId = getConversationQueryProjectId(queryKey);
+  if (!projectId) {
+    return true;
+  }
+  if (projectId === 'unassigned') {
+    return !conversation.chatProjectId;
+  }
+  return conversation.chatProjectId === projectId;
+}
+
+/**
+ * Reads the project id from the current URL's `?projectId` param — the source of
+ * truth for a new chat's project scope (the conversation atom can lag behind it).
+ */
+export function getRouteChatProjectId(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const projectId = new URLSearchParams(window.location.search).get('projectId');
+  return projectId != null && /^[a-f\d]{24}$/i.test(projectId) ? projectId : null;
+}
 
 // === InfiniteData helpers for cursor-based convo queries ===
 
@@ -208,6 +249,9 @@ export function addConversationToAllConversationsQueries(
     .findAll([QueryKeys.allConversations], { exact: false });
 
   for (const query of queries) {
+    if (!conversationMatchesProjectQuery(query.queryKey, newConversation)) {
+      continue;
+    }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (old) => {
       if (
         !old ||
@@ -322,6 +366,9 @@ export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConver
     .findAll([QueryKeys.allConversations], { exact: false });
 
   for (const query of queries) {
+    if (!conversationMatchesProjectQuery(query.queryKey, newConvo)) {
+      continue;
+    }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
       if (!oldData) {
         return oldData;
@@ -381,6 +428,9 @@ export function upsertConvoInAllQueries(
 
       const now = new Date().toISOString();
       if (pageIdx === -1) {
+        if (!conversationMatchesProjectQuery(query.queryKey, nextConvo)) {
+          return oldData;
+        }
         const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
         return {
           ...oldData,
@@ -403,6 +453,10 @@ export function upsertConvoInAllQueries(
         ...nextConvo,
         updatedAt: nextConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
       };
+
+      if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
+        return removeConvoFromInfinitePages(oldData, updated.conversationId ?? '');
+      }
 
       if (!moveToTop || (pageIdx === 0 && convoIdx === 0)) {
         return {
@@ -479,6 +533,10 @@ export function updateConvoInAllQueries(
       const updated = moveToTop
         ? { ...updater(found), updatedAt: new Date().toISOString() }
         : updater(found);
+
+      if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
+        return removeConvoFromInfinitePages(oldData, conversationId);
+      }
 
       // If not moving to top, or already at top of page 0, update in place
       if (!moveToTop || (pageIdx === 0 && convoIdx === 0)) {

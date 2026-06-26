@@ -148,6 +148,97 @@ describe('MCPServerInspector', () => {
       expect(result.toolFunctions).toBeUndefined();
     });
 
+    it('should skip capabilities fetch when trusted config needs runtime user context', async () => {
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(result).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+        requiresOAuth: false,
+        oauthMetadata: undefined,
+        initDuration: expect.any(Number),
+      });
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip OAuth detection when trusted URL needs runtime user context', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(result).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+        initDuration: expect.any(Number),
+      });
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip capabilities fetch when obo is configured', async () => {
+      // OBO servers mint per-user delegated tokens at tool-call time; an
+      // unauthenticated probe at inspection has no valid bearer to attach,
+      // so the upstream rejects the MCP `initialize` handshake and the
+      // create/update fails with MCP_INSPECTION_FAILED. Treat `obo` as
+      // user-scoped auth alongside requiresOAuth and customUserVars.
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result.obo).toEqual({ scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' });
+      expect(result.requiresOAuth).toBe(false);
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('should NOT create a temp connection when obo is configured and no connection is provided', async () => {
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.capabilities).toBeUndefined();
+      expect(result.toolFunctions).toBeUndefined();
+    });
+
     it('should keep custom serverInstructions string and not fetch from server', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
@@ -285,7 +376,7 @@ describe('MCPServerInspector', () => {
       });
 
       // Mock server with no tools
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
 
@@ -371,29 +462,27 @@ describe('MCPServerInspector', () => {
 
   describe('getToolFunctions()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({
-        tools: [
-          {
-            name: 'file_read',
-            description: 'Read a file',
-            inputSchema: {
-              type: 'object',
-              properties: { path: { type: 'string' } },
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([
+        {
+          name: 'file_read',
+          description: 'Read a file',
+          inputSchema: {
+            type: 'object',
+            properties: { path: { type: 'string' } },
+          },
+        },
+        {
+          name: 'file_write',
+          description: 'Write a file',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              content: { type: 'string' },
             },
           },
-          {
-            name: 'file_write',
-            description: 'Write a file',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path: { type: 'string' },
-                content: { type: 'string' },
-              },
-            },
-          },
-        ],
-      });
+        },
+      ]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
@@ -427,7 +516,7 @@ describe('MCPServerInspector', () => {
     });
 
     it('should handle empty tools list', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 

@@ -1,12 +1,21 @@
-import { memo } from 'react';
 import { startTransition } from 'react';
+import { memo, MemoExoticComponent } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import type { DataTableSearchProps } from './DataTable.types';
 import { useLocalize } from '~/hooks';
 import { Input } from '../Input';
 import { cn } from '~/utils';
 
-export const DataTableSearch = memo(
-  ({ value, onChange, placeholder, className, disabled = false }: DataTableSearchProps) => {
+export const DataTableSearch: MemoExoticComponent<
+  ({ value, onChange, placeholder, className, disabled }: DataTableSearchProps) => JSX.Element
+> = memo(
+  ({
+    value,
+    onChange,
+    placeholder,
+    className,
+    disabled = false,
+  }: DataTableSearchProps): JSX.Element => {
     const localize = useLocalize();
 
     return (

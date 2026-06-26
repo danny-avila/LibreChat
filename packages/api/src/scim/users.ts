@@ -41,7 +41,14 @@ function resolveEmail(body: ScimUser): string | undefined {
   return body.userName ?? body.emails?.find((e) => e.primary)?.value ?? body.emails?.[0]?.value;
 }
 
-export function createScimUsersHandlers(deps: ScimUsersDeps) {
+export function createScimUsersHandlers(deps: ScimUsersDeps): {
+  listUsers: (req: Request, res: Response) => Promise<Response>;
+  getUser: (req: Request, res: Response) => Promise<Response>;
+  createUser: (req: Request, res: Response) => Promise<Response>;
+  replaceUser: (req: Request, res: Response) => Promise<Response>;
+  patchUser: (req: Request, res: Response) => Promise<Response>;
+  deleteUser: (req: Request, res: Response) => Promise<Response>;
+} {
   const { findUsers, countUsers, getUserById, createUser, updateUser, deleteUserById } = deps;
 
   async function listUsers(req: Request, res: Response) {

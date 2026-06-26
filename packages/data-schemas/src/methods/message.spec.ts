@@ -3,9 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
-import { createMessageMethods } from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { createMessageMethods } from './message';
 import { createModels } from '../models';
+import logger from '~/config/winston';
+
+const waitForTimestampTick = () => new Promise((resolve) => setTimeout(resolve, 2));
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -18,6 +21,7 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let getMessageTextStats: ReturnType<typeof createMessageMethods>['getMessageTextStats'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
@@ -36,6 +40,7 @@ beforeAll(async () => {
   const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
+  getMessageTextStats = methods.getMessageTextStats;
   updateMessage = methods.updateMessage;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
@@ -65,6 +70,8 @@ describe('Message Operations', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     // Clear database
     await Message.deleteMany({});
 
@@ -106,6 +113,18 @@ describe('Message Operations', () => {
       mockMessageData.conversationId = 'invalid-id';
       const result = await saveMessage(mockCtx, mockMessageData);
       expect(result).toBeUndefined();
+    });
+
+    it('should not log message params for invalid conversation IDs', async () => {
+      mockMessageData.conversationId = 'invalid-id';
+      mockMessageData.text = 'Sensitive prompt text';
+
+      await saveMessage(mockCtx, mockMessageData, { context: 'message-save-test' });
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Invalid conversation ID: invalid-id (context: message-save-test)',
+      );
+      expect(logger.info).not.toHaveBeenCalled();
     });
   });
 
@@ -167,6 +186,8 @@ describe('Message Operations', () => {
         user: 'user123',
       });
 
+      await waitForTimestampTick();
+
       await saveMessage(mockCtx, {
         messageId: 'msg3',
         conversationId,
@@ -220,6 +241,62 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
+    });
+
+    it('should limit retrieved messages when requested', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg1',
+        conversationId,
+        text: 'First message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg2',
+        conversationId,
+        text: 'Second message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg3',
+        conversationId,
+        text: 'Third message',
+        user: 'user123',
+      });
+
+      const messages = await getMessages({ conversationId }, undefined, { limit: 2 });
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0].text).toBe('First message');
+      expect(messages[1].text).toBe('Second message');
+    });
+
+    it('should retrieve message text stats without returning message bodies', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg1',
+        conversationId,
+        text: 'hello',
+        quotes: ['a\nb', ''],
+        user: 'user123',
+      });
+
+      const stats = await getMessageTextStats({ conversationId, user: 'user123' }, { limit: 1 });
+
+      expect(stats).toEqual([
+        {
+          messageId: 'msg1',
+          textBytes: 5,
+          quoteCount: 2,
+          quoteBytes: 3,
+          quoteLineCount: 3,
+          nonStringQuoteCount: 0,
+        },
+      ]);
     });
   });
 

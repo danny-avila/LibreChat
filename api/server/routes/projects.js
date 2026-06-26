@@ -1,31 +1,25 @@
 const express = require('express');
-const { createProjectsHandlers } = require('@librechat/api');
-const { requireJwtAuth } = require('~/server/middleware');
+const { createProjectHandlers } = require('@librechat/api');
+const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const db = require('~/models');
 
 const router = express.Router();
-
-const handlers = createProjectsHandlers({
-  createProject: db.createProject,
-  getProjectById: db.getProjectById,
-  getProjectsByUser: db.getProjectsByUser,
-  updateProject: db.updateProject,
-  deleteProject: db.deleteProject,
-  unsetConversationProject: db.unsetConversationProject,
-  saveConvo: db.saveConvo,
-  getConvo: db.getConvo,
-  getConvosByCursor: db.getConvosByCursor,
+const handlers = createProjectHandlers({
+  listChatProjects: db.listChatProjects,
+  createChatProject: db.createChatProject,
+  getChatProject: db.getChatProject,
+  updateChatProject: db.updateChatProject,
+  deleteChatProject: db.deleteChatProject,
+  assignConversationToProject: db.assignConversationToProject,
 });
 
 router.use(requireJwtAuth);
 
 router.get('/', handlers.listProjects);
 router.post('/', handlers.createProject);
-router.get('/:id', handlers.getProject);
-router.patch('/:id', handlers.updateProject);
-router.delete('/:id', handlers.deleteProject);
-router.get('/:id/conversations', handlers.listProjectConversations);
-router.post('/:id/conversations/:conversationId', handlers.assignConversation);
-router.delete('/conversations/:conversationId', handlers.unassignConversation);
+router.put('/conversations/:conversationId', handlers.assignConversationToProject);
+router.get('/:projectId', handlers.getProject);
+router.patch('/:projectId', handlers.updateProject);
+router.delete('/:projectId', handlers.deleteProject);
 
 module.exports = router;

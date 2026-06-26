@@ -103,4 +103,66 @@ describe('useRum', () => {
 
     expect(mockInit).not.toHaveBeenCalled();
   });
+
+  it('initializes proxy RUM with the LibreChat bearer token for same-origin ingest', async () => {
+    const fetchMock = jest.fn(
+      (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        Promise.resolve({ ok: true, status: 200 } as Response),
+    );
+    window.fetch = Object.assign(fetchMock, { preconnect: () => undefined });
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: '/api/rum',
+          serviceName: 'librechat-web',
+          authMode: 'proxy',
+        },
+      },
+    });
+
+    renderHook(() => useRum());
+
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenCalledWith({
+        advancedNetworkCapture: false,
+        apiKey: 'librechat-rum-proxy',
+        consoleCapture: false,
+        disableReplay: true,
+        service: 'librechat-web',
+        tracePropagationTargets: undefined,
+        url: '/api/rum',
+      });
+    });
+
+    await window.fetch('/api/rum/v1/traces', { method: 'POST' });
+
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers;
+    expect(headers).toBeInstanceOf(Headers);
+    expect((headers as Headers).get('authorization')).toBe('Bearer jwt-token');
+  });
+
+  it('does not initialize proxy RUM without an authenticated token', async () => {
+    mockUseAuthContext.mockReturnValue({
+      isAuthenticated: false,
+      token: undefined,
+      user: undefined,
+    });
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: '/api/rum',
+          serviceName: 'librechat-web',
+          authMode: 'proxy',
+        },
+      },
+    });
+
+    renderHook(() => useRum());
+
+    expect(mockInit).not.toHaveBeenCalled();
+  });
 });

@@ -1,5 +1,7 @@
+import yaml from 'js-yaml';
+import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
-import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
+import { GraphEvents, Constants } from '@librechat/agents';
 import type {
   LCTool,
   EventHandler,
@@ -9,12 +11,18 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
-import { Types } from 'mongoose';
-import type { CodeEnvRef } from 'librechat-data-provider';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
+import {
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+  HOST_FILE_AUTHORING_ARTIFACT_KEY,
+  isCodeSessionToolName,
+} from './tools';
 import { logAxiosError, runOutsideTracing } from '~/utils';
+import { parseFrontmatter } from '../skills/import';
 import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -74,6 +82,8 @@ export interface ToolExecuteOptions {
      *  prior cache entry. */
     version: number;
     fileCount: number;
+    /** True for deployment-directory skills that are loaded in memory. */
+    deployment?: boolean;
     /**
      * Set when the skill author opted out of model invocation. The handler
      * rejects the call and returns an instructive error so the model knows
@@ -82,6 +92,81 @@ export interface ToolExecuteOptions {
      */
     disableModelInvocation?: boolean;
   } | null>;
+  /**
+   * Loads a skill by name when the current user is the author. This is a
+   * narrow recovery path for freshly-authored skills whose runtime catalog
+   * snapshot has not caught up yet; normal skill resolution still goes
+   * through `accessibleSkillIds`.
+   */
+  getAuthorSkillByName?: (params: { req: ServerRequest; name: string }) => Promise<{
+    body: string;
+    name: string;
+    _id: Types.ObjectId;
+    version: number;
+    fileCount: number;
+    disableModelInvocation?: boolean;
+  } | null>;
+  /** Creates a skill from a tool-authored SKILL.md body. */
+  createSkill?: (data: {
+    name: string;
+    description: string;
+    body: string;
+    frontmatter?: Record<string, unknown>;
+    author: Types.ObjectId;
+    authorName: string;
+    alwaysApply?: boolean;
+    tenantId?: string;
+  }) => Promise<{
+    skill: {
+      _id: Types.ObjectId;
+      name: string;
+      body: string;
+      version: number;
+    };
+  }>;
+  /** Updates a skill body and derived metadata from a tool-authored SKILL.md body. */
+  updateSkill?: (params: {
+    id: string;
+    expectedVersion: number;
+    update: {
+      body?: string;
+      description?: string;
+      frontmatter?: Record<string, unknown>;
+      alwaysApply?: boolean;
+    };
+  }) => Promise<
+    | {
+        status: 'updated';
+        skill: { _id: Types.ObjectId; name: string; body: string; version: number };
+      }
+    | { status: 'conflict'; current: { _id: Types.ObjectId; name: string; version: number } }
+    | { status: 'not_found' }
+  >;
+  /** Checks role-level skill creation permission for the current user. */
+  canCreateSkill?: (params: { req: ServerRequest }) => Promise<boolean>;
+  /** Checks resource-level edit permission for an existing skill. */
+  canEditSkill?: (params: {
+    req: ServerRequest;
+    skillId: Types.ObjectId | string;
+  }) => Promise<boolean>;
+  /** Grants SKILL_OWNER to the current user after a tool-created skill is inserted. */
+  grantSkillOwner?: (params: {
+    req: ServerRequest;
+    skillId: Types.ObjectId | string;
+  }) => Promise<void>;
+  /** Deletes a freshly-created skill if owner-permission setup fails. */
+  deleteSkill?: (id: string) => Promise<{ deleted: boolean }>;
+  /** Saves or replaces a bundled skill file in configured storage and metadata. */
+  saveSkillFileContent?: (params: {
+    req: ServerRequest;
+    skillId: Types.ObjectId | string;
+    relativePath: string;
+    content: string;
+    mimeType: string;
+  }) => Promise<{
+    bytes: number;
+    relativePath: string;
+  }>;
   /** Lists files bundled with a skill (for code env priming) */
   listSkillFiles?: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
   /** Storage strategy resolver for skill file streaming */
@@ -146,16 +231,37 @@ export interface ToolExecuteOptions {
   readSandboxFile?: (params: {
     file_path: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string }>;
+    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
+  /**
+   * Writes a UTF-8 text file into the code-execution sandbox via the
+   * sandbox `/exec` endpoint. Mirrors `readSandboxFile` session forwarding
+   * so host-side file-authoring tools can operate in the same sandbox
+   * session as `bash_tool` / `read_file`.
+   */
+  writeSandboxFile?: (params: {
+    file_path: string;
+    content: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    req?: ServerRequest;
+  }) => Promise<{
+    stdout?: string;
+    stderr?: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; storage_session_id?: string; session_id?: string }>;
+  } | null>;
 }
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
+const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
+const SKILL_FILE_PREFIX = 'skills/';
+const SKILL_MD = 'SKILL.md';
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
@@ -350,6 +456,599 @@ function addLineNumbers(content: string): string {
   return lines.map((l, i) => `${String(i + 1).padStart(w, ' ')} | ${l}`).join('\n');
 }
 
+type AuthoringSkill = NonNullable<
+  Awaited<ReturnType<NonNullable<ToolExecuteOptions['getSkillByName']>>>
+>;
+
+type AuthoringResult = Promise<ToolExecuteResult>;
+
+type ParsedSkillAuthoringPath = {
+  skillName: string;
+  relativePath: string;
+  displayPath: string;
+};
+
+type TextEdit = {
+  old_text: string;
+  new_text: string;
+};
+
+type MatchStatus =
+  | { status: 'matched'; index: number; length: number; strategy: string }
+  | { status: 'none' }
+  | { status: 'ambiguous'; strategy: string; count: number };
+
+type LoadedSkillText =
+  | { status: 'loaded'; content: string; bytes: number }
+  | { status: 'missing' }
+  | { status: 'error'; message: string };
+
+type ExistingSkillFile =
+  | { status: 'present'; oldContent?: string }
+  | { status: 'missing' }
+  | { status: 'error'; message: string };
+
+type LoadedSandboxText = LoadedSkillText;
+
+type SandboxSessionContext = {
+  session_id?: string;
+  files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+};
+
+const MIME_MAP: Readonly<Record<string, string>> = Object.freeze({
+  '.md': 'text/markdown',
+  '.txt': 'text/plain',
+  '.json': 'application/json',
+  '.js': 'application/javascript',
+  '.mjs': 'application/javascript',
+  '.cjs': 'application/javascript',
+  '.ts': 'application/typescript',
+  '.tsx': 'application/typescript',
+  '.jsx': 'application/javascript',
+  '.py': 'text/x-python',
+  '.sh': 'application/x-sh',
+  '.yaml': 'application/yaml',
+  '.yml': 'application/yaml',
+  '.css': 'text/css',
+  '.html': 'text/html',
+  '.xml': 'application/xml',
+  '.csv': 'text/csv',
+  '.toml': 'text/toml',
+  '.ini': 'text/ini',
+  '.svg': 'image/svg+xml',
+});
+
+function errorResult(tc: ToolCallRequest, errorMessage: string): ToolExecuteResult {
+  return {
+    toolCallId: tc.id,
+    status: 'error',
+    content: '',
+    errorMessage,
+  };
+}
+
+function successResult(
+  tc: ToolCallRequest,
+  content: string,
+  artifact?: unknown,
+): ToolExecuteResult {
+  const result: ToolExecuteResult = {
+    toolCallId: tc.id,
+    status: 'success',
+    content,
+  };
+  if (artifact !== undefined) {
+    result.artifact = artifact;
+  }
+  return result;
+}
+
+function guessMimeType(filename: string): string {
+  return MIME_MAP[lowercaseExtension(filename)] ?? 'application/octet-stream';
+}
+
+function isValidSkillName(value: string): boolean {
+  return /^[a-z0-9][a-z0-9-]*$/.test(value);
+}
+
+function isValidSkillFileRelativePath(value: string): boolean {
+  if (!value || value.length > 500) {
+    return false;
+  }
+  if (value.startsWith('/') || value.startsWith('\\')) {
+    return false;
+  }
+  if (!/^[a-zA-Z0-9._\-/]+$/.test(value)) {
+    return false;
+  }
+  const segments = value.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    return false;
+  }
+  return value !== SKILL_MD && segments[0] !== SKILL_MD;
+}
+
+function parseSkillAuthoringPath(filePath: string): ParsedSkillAuthoringPath | string {
+  if (!filePath.startsWith(SKILL_FILE_PREFIX)) {
+    return `Only skill file paths are supported. Use "skills/{skillName}/SKILL.md" or "skills/{skillName}/{path}".`;
+  }
+
+  const rest = filePath.slice(SKILL_FILE_PREFIX.length);
+  const slashIdx = rest.indexOf('/');
+  const skillName = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
+  const relativePath = slashIdx === -1 ? SKILL_MD : rest.slice(slashIdx + 1) || SKILL_MD;
+
+  if (!isValidSkillName(skillName)) {
+    return `Invalid skill name "${skillName}". Skill names must be kebab-case.`;
+  }
+  if (relativePath !== SKILL_MD && !isValidSkillFileRelativePath(relativePath)) {
+    return (
+      `Invalid skill file path "${relativePath}". ` +
+      'Paths must be relative and cannot contain empty, "." or ".." segments.'
+    );
+  }
+
+  return {
+    skillName,
+    relativePath,
+    displayPath: `${SKILL_FILE_PREFIX}${skillName}/${relativePath}`,
+  };
+}
+
+function deriveSkillDescription(body: string, skillName: string): string {
+  const fallback = `Use this skill for ${skillName.replace(/-/g, ' ')}.`;
+  const headingCandidates: string[] = [];
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const withoutMarkdown = trimmed
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^[*>-]\s+/, '')
+      .trim();
+    if (!withoutMarkdown) {
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      headingCandidates.push(withoutMarkdown);
+      continue;
+    }
+    return truncateMiddle(withoutMarkdown.replace(/\s+/g, ' '), 180);
+  }
+  const heading = headingCandidates[0];
+  return heading ? truncateMiddle(heading.replace(/\s+/g, ' '), 180) : fallback;
+}
+
+function splitSkillFrontmatter(content: string):
+  | {
+      block: string;
+      body: string;
+    }
+  | { error: string }
+  | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('---')) {
+    return null;
+  }
+  const afterOpening = trimmed.slice(3);
+  const closingIdx = afterOpening.indexOf('\n---');
+  if (closingIdx === -1) {
+    return { error: `Invalid ${SKILL_MD} frontmatter: missing closing "---".` };
+  }
+  const afterClosing = afterOpening.slice(closingIdx + '\n---'.length);
+  return {
+    block: afterOpening.slice(0, closingIdx),
+    body: afterClosing.startsWith('\n') ? afterClosing.slice(1) : afterClosing,
+  };
+}
+
+function buildSkillMdContent(frontmatter: Record<string, unknown>, body: string): string {
+  const dumped = yaml.dump(frontmatter, { lineWidth: -1 }).trimEnd();
+  const normalizedBody = body.trimStart();
+  return `---\n${dumped}\n---\n${normalizedBody}`;
+}
+
+function skillNameMismatchError(frontmatterName: string, skillName: string): string {
+  return `${SKILL_MD} frontmatter name "${frontmatterName}" must match path skill name "${skillName}". edit_file cannot rename skills; keep the name unchanged or create a new skills/{newName}/SKILL.md.`;
+}
+
+function normalizeSkillMdContent(
+  content: string,
+  skillName: string,
+): { status: 'success'; content: string } | { status: 'error'; error: string } {
+  const split = splitSkillFrontmatter(content);
+  if (split && 'error' in split) {
+    return { status: 'error', error: split.error };
+  }
+
+  let normalizedContent = content;
+  if (!split) {
+    normalizedContent = buildSkillMdContent(
+      {
+        name: skillName,
+        description: deriveSkillDescription(content, skillName),
+      },
+      content,
+    );
+  } else {
+    const structured = parseStructuredSkillFrontmatter(content);
+    if (structured.error) {
+      return { status: 'error', error: structured.error };
+    }
+    const frontmatter = { ...(structured.frontmatter ?? {}) };
+    const parsed = parseFrontmatter(content);
+    const frontmatterName =
+      typeof frontmatter.name === 'string' ? frontmatter.name : parsed.name || undefined;
+    if (frontmatterName && frontmatterName !== skillName) {
+      return {
+        status: 'error',
+        error: skillNameMismatchError(frontmatterName, skillName),
+      };
+    }
+    frontmatter.name = skillName;
+    const frontmatterDescription =
+      typeof frontmatter.description === 'string'
+        ? frontmatter.description
+        : parsed.description || undefined;
+    frontmatter.description =
+      frontmatterDescription || deriveSkillDescription(split.body, skillName);
+    normalizedContent = buildSkillMdContent(frontmatter, split.body);
+  }
+
+  const parsed = parseFrontmatter(normalizedContent);
+  if (!parsed.name || !parsed.description) {
+    return {
+      status: 'error',
+      error: `${SKILL_MD} must include YAML frontmatter with "name" and "description".`,
+    };
+  }
+  if (parsed.name !== skillName) {
+    return {
+      status: 'error',
+      error: skillNameMismatchError(parsed.name, skillName),
+    };
+  }
+  if (parsed.invalidBooleans.length > 0) {
+    return {
+      status: 'error',
+      error: parsed.invalidBooleans
+        .map((key) => `"${key}" in ${SKILL_MD} frontmatter must be a boolean`)
+        .join('; '),
+    };
+  }
+  return { status: 'success', content: normalizedContent };
+}
+
+function extractSkillFrontmatterBlock(content: string): string | null {
+  const split = splitSkillFrontmatter(content);
+  if (!split || 'error' in split) {
+    return null;
+  }
+  return split.block;
+}
+
+function parseStructuredSkillFrontmatter(
+  content: string,
+):
+  | { frontmatter?: Record<string, unknown>; error?: undefined }
+  | { frontmatter?: undefined; error: string } {
+  const block = extractSkillFrontmatterBlock(content);
+  if (block == null) {
+    return {};
+  }
+  try {
+    const parsed = yaml.load(block);
+    if (parsed == null) {
+      return { frontmatter: {} };
+    }
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { error: `${SKILL_MD} frontmatter must be a YAML mapping.` };
+    }
+    return { frontmatter: parsed as Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { error: `Invalid ${SKILL_MD} frontmatter: ${message}` };
+  }
+}
+
+function parseSkillMdUpdate(content: string): {
+  description: string;
+  frontmatter?: Record<string, unknown>;
+  alwaysApply?: boolean;
+} {
+  const parsed = parseFrontmatter(content);
+  const structured = parseStructuredSkillFrontmatter(content);
+  const structuredDescription =
+    typeof structured.frontmatter?.description === 'string'
+      ? structured.frontmatter.description
+      : undefined;
+  return {
+    description: structuredDescription ?? parsed.description,
+    ...(structured.frontmatter !== undefined ? { frontmatter: structured.frontmatter } : {}),
+    ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
+  };
+}
+
+function getAuthorInfo(req: ServerRequest): {
+  author: Types.ObjectId;
+  authorName: string;
+  tenantId?: string;
+} | null {
+  const user = req.user as
+    | {
+        id?: string;
+        _id?: Types.ObjectId | string;
+        name?: string;
+        username?: string;
+        tenantId?: string;
+      }
+    | undefined;
+  if (!user?.id) {
+    return null;
+  }
+  return {
+    author: (user._id ?? user.id) as Types.ObjectId,
+    authorName: user.name ?? user.username ?? 'Unknown',
+    ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+  };
+}
+
+function normalizeEditArgs(args: {
+  old_text?: unknown;
+  new_text?: unknown;
+  edits?: unknown;
+}): TextEdit[] | string {
+  if (Array.isArray(args.edits) && args.edits.length > 0) {
+    const edits: TextEdit[] = [];
+    for (const edit of args.edits) {
+      if (!edit || typeof edit !== 'object') {
+        return 'Each edit must be an object with old_text and new_text.';
+      }
+      const entry = edit as { old_text?: unknown; new_text?: unknown };
+      if (typeof entry.old_text !== 'string' || typeof entry.new_text !== 'string') {
+        return 'Each edit requires string old_text and new_text.';
+      }
+      if (entry.old_text.length === 0) {
+        return 'old_text cannot be empty.';
+      }
+      edits.push({ old_text: entry.old_text, new_text: entry.new_text });
+    }
+    return edits;
+  }
+
+  if (typeof args.old_text !== 'string' || typeof args.new_text !== 'string') {
+    return 'Provide old_text and new_text, or a non-empty edits array.';
+  }
+  if (args.old_text.length === 0) {
+    return 'old_text cannot be empty.';
+  }
+  return [{ old_text: args.old_text, new_text: args.new_text }];
+}
+
+function countExactOccurrences(content: string, needle: string): number[] {
+  const indexes: number[] = [];
+  let start = 0;
+  while (start <= content.length) {
+    const index = content.indexOf(needle, start);
+    if (index === -1) {
+      break;
+    }
+    indexes.push(index);
+    start = index + Math.max(1, needle.length);
+  }
+  return indexes;
+}
+
+function findExactMatch(content: string, needle: string): MatchStatus {
+  const matches = countExactOccurrences(content, needle);
+  if (matches.length === 1) {
+    return { status: 'matched', index: matches[0], length: needle.length, strategy: 'exact' };
+  }
+  if (matches.length > 1) {
+    return { status: 'ambiguous', strategy: 'exact', count: matches.length };
+  }
+  return { status: 'none' };
+}
+
+function lineStarts(content: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '\n') {
+      starts.push(i + 1);
+    }
+  }
+  return starts;
+}
+
+function commonIndent(lines: string[]): number {
+  const indents = lines
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const match = /^(\s*)/.exec(line);
+      return match ? match[1].length : 0;
+    });
+  return indents.length > 0 ? Math.min(...indents) : 0;
+}
+
+function stripCommonIndent(text: string): string {
+  const lines = text.split('\n');
+  const indent = commonIndent(lines);
+  if (indent === 0) {
+    return text;
+  }
+  return lines.map((line) => line.slice(Math.min(indent, line.length))).join('\n');
+}
+
+function findLineWindowMatch(
+  content: string,
+  needle: string,
+  strategy: 'line-trimmed' | 'indentation-flexible',
+): MatchStatus {
+  const contentLines = content.split('\n');
+  const needleLines = needle.split('\n');
+  if (needleLines.length > contentLines.length) {
+    return { status: 'none' };
+  }
+
+  const starts = lineStarts(content);
+  const normalizedNeedle =
+    strategy === 'line-trimmed'
+      ? needleLines.map((line) => line.trimEnd()).join('\n')
+      : stripCommonIndent(needle);
+  const matches: Array<{ index: number; length: number }> = [];
+
+  for (let i = 0; i <= contentLines.length - needleLines.length; i++) {
+    const windowLines = contentLines.slice(i, i + needleLines.length);
+    const candidate =
+      strategy === 'line-trimmed'
+        ? windowLines.map((line) => line.trimEnd()).join('\n')
+        : stripCommonIndent(windowLines.join('\n'));
+    if (candidate !== normalizedNeedle) {
+      continue;
+    }
+    const index = starts[i];
+    const endLine = i + needleLines.length;
+    const end = endLine < starts.length ? starts[endLine] - 1 : content.length;
+    matches.push({ index, length: end - index });
+  }
+
+  if (matches.length === 1) {
+    return { status: 'matched', ...matches[0], strategy };
+  }
+  if (matches.length > 1) {
+    return { status: 'ambiguous', strategy, count: matches.length };
+  }
+  return { status: 'none' };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findWhitespaceNormalizedMatch(content: string, needle: string): MatchStatus {
+  const tokens = needle.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) {
+    return { status: 'none' };
+  }
+  const pattern = tokens.map(escapeRegExp).join('\\s+');
+  const regex = new RegExp(pattern, 'g');
+  const matches: Array<{ index: number; length: number }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) != null) {
+    matches.push({ index: match.index, length: match[0].length });
+    if (match[0].length === 0) {
+      regex.lastIndex += 1;
+    }
+  }
+  if (matches.length === 1) {
+    return { status: 'matched', ...matches[0], strategy: 'whitespace-normalized' };
+  }
+  if (matches.length > 1) {
+    return { status: 'ambiguous', strategy: 'whitespace-normalized', count: matches.length };
+  }
+  return { status: 'none' };
+}
+
+function findReplacementMatch(content: string, needle: string): MatchStatus {
+  const exact = findExactMatch(content, needle);
+  if (exact.status !== 'none') {
+    return exact;
+  }
+  const lineTrimmed = findLineWindowMatch(content, needle, 'line-trimmed');
+  if (lineTrimmed.status !== 'none') {
+    return lineTrimmed;
+  }
+  const whitespaceNormalized = findWhitespaceNormalizedMatch(content, needle);
+  if (whitespaceNormalized.status !== 'none') {
+    return whitespaceNormalized;
+  }
+  return findLineWindowMatch(content, needle, 'indentation-flexible');
+}
+
+function applyTextEdits(
+  content: string,
+  edits: TextEdit[],
+): { content: string; strategies: string[] } {
+  let working = content;
+  const strategies: string[] = [];
+
+  for (const edit of edits) {
+    const match = findReplacementMatch(working, edit.old_text);
+    if (match.status === 'none') {
+      throw new Error('old_text did not match the file content.');
+    }
+    if (match.status === 'ambiguous') {
+      throw new Error(
+        `old_text matched ${match.count} locations with ${match.strategy}; make it unique before retrying.`,
+      );
+    }
+    working =
+      working.slice(0, match.index) + edit.new_text + working.slice(match.index + match.length);
+    strategies.push(match.strategy);
+  }
+
+  return { content: working, strategies };
+}
+
+function formatRange(start: number, count: number): string {
+  return count === 1 ? String(start) : `${start},${count}`;
+}
+
+function createUnifiedDiff(filePath: string, oldContent: string, newContent: string): string {
+  if (oldContent === newContent) {
+    return '';
+  }
+
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  let prefix = 0;
+  while (
+    prefix < oldLines.length &&
+    prefix < newLines.length &&
+    oldLines[prefix] === newLines[prefix]
+  ) {
+    prefix += 1;
+  }
+
+  let oldSuffix = oldLines.length - 1;
+  let newSuffix = newLines.length - 1;
+  while (
+    oldSuffix >= prefix &&
+    newSuffix >= prefix &&
+    oldLines[oldSuffix] === newLines[newSuffix]
+  ) {
+    oldSuffix -= 1;
+    newSuffix -= 1;
+  }
+
+  const contextStart = Math.max(0, prefix - 3);
+  const oldContextEnd = Math.min(oldLines.length - 1, oldSuffix + 3);
+  const newContextEnd = Math.min(newLines.length - 1, newSuffix + 3);
+  const oldCount = oldContextEnd >= contextStart ? oldContextEnd - contextStart + 1 : 0;
+  const newCount = newContextEnd >= contextStart ? newContextEnd - contextStart + 1 : 0;
+  const lines = [
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
+    `@@ -${formatRange(contextStart + 1, oldCount)} +${formatRange(contextStart + 1, newCount)} @@`,
+  ];
+
+  for (let i = contextStart; i < prefix; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+  for (let i = prefix; i <= oldSuffix; i++) {
+    lines.push(`-${oldLines[i]}`);
+  }
+  for (let i = prefix; i <= newSuffix; i++) {
+    lines.push(`+${newLines[i]}`);
+  }
+  for (let i = oldSuffix + 1; i <= oldContextEnd; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * Extensions whose contents `read_file` must never serialize as text. `cat`
  * on a PNG inside the sandbox returns the raw bytes as stdout, JSON-encoded
@@ -542,9 +1241,7 @@ async function handleSandboxFileFallback(
     };
   }
 
-  const ctx = tc.codeSessionContext as
-    | { session_id?: string; files?: Array<{ id: string; name: string; session_id?: string }> }
-    | undefined;
+  const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
   try {
     const result = await readSandboxFile({
       file_path: filePath,
@@ -604,6 +1301,1208 @@ async function handleSandboxFileFallback(
   }
 }
 
+function sandboxSessionContext(
+  tc: ToolCallRequest,
+  override?: SandboxSessionContext,
+): SandboxSessionContext | undefined {
+  return override ?? (tc.codeSessionContext as SandboxSessionContext | undefined);
+}
+
+function cloneSandboxSessionContext(
+  context: SandboxSessionContext | undefined,
+): SandboxSessionContext {
+  return {
+    ...(context?.session_id ? { session_id: context.session_id } : {}),
+    ...(context?.files ? { files: context.files.map((file) => ({ ...file })) } : {}),
+  };
+}
+
+function mergeSandboxSessionArtifact(
+  context: SandboxSessionContext,
+  artifact: ToolExecuteResult['artifact'],
+): void {
+  if (!artifact || typeof artifact !== 'object') {
+    return;
+  }
+  const value = artifact as {
+    session_id?: unknown;
+    files?: unknown;
+  };
+  if (typeof value.session_id === 'string' && value.session_id.length > 0) {
+    context.session_id = value.session_id;
+  }
+  if (!Array.isArray(value.files)) {
+    return;
+  }
+
+  const files: SandboxSessionContext['files'] = [];
+  for (const file of value.files) {
+    if (!file || typeof file !== 'object') {
+      continue;
+    }
+    const ref = file as {
+      id?: unknown;
+      name?: unknown;
+      session_id?: unknown;
+      storage_session_id?: unknown;
+    };
+    if (typeof ref.id !== 'string' || typeof ref.name !== 'string') {
+      continue;
+    }
+    files.push({
+      id: ref.id,
+      name: ref.name,
+      ...(typeof ref.session_id === 'string' ? { session_id: ref.session_id } : {}),
+      ...(typeof ref.storage_session_id === 'string'
+        ? { storage_session_id: ref.storage_session_id }
+        : {}),
+    });
+  }
+  if (files.length > 0) {
+    context.files = files;
+  }
+}
+
+function isSandboxMissingFileError(error: unknown): boolean {
+  const message = getThrownValueMessage(error).toLowerCase();
+  return (
+    message.includes('no such file or directory') ||
+    message.includes('cannot access') ||
+    message.includes('not found')
+  );
+}
+
+function invalidSandboxAuthoringPath(filePath: string): string | null {
+  if (filePath.length === 0) {
+    return 'path is required';
+  }
+  if (filePath.includes('\0')) {
+    return 'path cannot contain NUL bytes';
+  }
+  if (filePath.endsWith('/')) {
+    return `File path "${filePath}" points to a directory. Provide a file path.`;
+  }
+  return null;
+}
+
+async function loadSandboxTextForAuthoring({
+  filePath,
+  tc,
+  options,
+  req,
+  sandboxContext,
+}: {
+  filePath: string;
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  sandboxContext?: SandboxSessionContext;
+}): Promise<LoadedSandboxText> {
+  const ext = lowercaseExtension(filePath);
+  if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
+    return { status: 'error', message: buildBinaryFileError(filePath, ext) };
+  }
+  if (!options.readSandboxFile) {
+    return {
+      status: 'error',
+      message: `Sandbox file reading is not configured. Use \`bash_tool\` to inspect "${filePath}".`,
+    };
+  }
+
+  const ctx = sandboxSessionContext(tc, sandboxContext);
+  try {
+    const result = await options.readSandboxFile({
+      file_path: filePath,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+      ...(req ? { req } : {}),
+    });
+    if (!result || result.content == null) {
+      return {
+        status: 'error',
+        message: `Failed to read "${filePath}" from the code-execution sandbox.`,
+      };
+    }
+    if (looksBinary(result.content)) {
+      return {
+        status: 'error',
+        message: `"${filePath}" appears to be binary and cannot be edited as text.`,
+      };
+    }
+    if (Buffer.byteLength(result.content, 'utf8') > MAX_AUTHORING_BYTES) {
+      return {
+        status: 'error',
+        message: `File "${filePath}" is too large to edit directly (${Buffer.byteLength(
+          result.content,
+          'utf8',
+        )} bytes, limit: ${MAX_AUTHORING_BYTES}).`,
+      };
+    }
+    return {
+      status: 'loaded',
+      content: result.content,
+      bytes: Buffer.byteLength(result.content, 'utf8'),
+    };
+  } catch (error) {
+    if (isSandboxMissingFileError(error)) {
+      return { status: 'missing' };
+    }
+    const message = getThrownValueMessage(error);
+    logger.warn(`[file_authoring] Sandbox read failed for "${filePath}": ${message}`);
+    return {
+      status: 'error',
+      message: `Error reading "${filePath}" from the code-execution sandbox: ${message}.`,
+    };
+  }
+}
+
+async function writeSandboxTextForAuthoring({
+  tc,
+  options,
+  req,
+  filePath,
+  content,
+  oldContent,
+  created,
+  sandboxContext,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  content: string;
+  oldContent?: string;
+  created: boolean;
+  sandboxContext?: SandboxSessionContext;
+}): AuthoringResult {
+  if (!options.writeSandboxFile) {
+    return errorResult(
+      tc,
+      `Sandbox file writing is not configured. Use \`bash_tool\` to write "${filePath}".`,
+    );
+  }
+  const ctx = sandboxSessionContext(tc, sandboxContext);
+  let writeResult: Awaited<ReturnType<NonNullable<ToolExecuteOptions['writeSandboxFile']>>>;
+  try {
+    writeResult = await options.writeSandboxFile({
+      file_path: filePath,
+      content,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+      ...(req ? { req } : {}),
+    });
+  } catch (error) {
+    const message = getThrownValueMessage(error);
+    logger.warn(`[file_authoring] Sandbox write failed for "${filePath}": ${message}`);
+    return errorResult(
+      tc,
+      `Error writing "${filePath}" to the code-execution sandbox: ${message}.`,
+    );
+  }
+  if (!writeResult) {
+    return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
+  }
+
+  const diff =
+    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
+  const action = created ? 'Created' : 'Updated';
+  const summary = `${action} ${filePath} (${content.length} chars).`;
+  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+    path: filePath,
+    [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
+    bytes_written: Buffer.byteLength(content, 'utf8'),
+    created,
+    ...(diff ? { diff } : {}),
+    ...(writeResult.session_id ? { session_id: writeResult.session_id } : {}),
+    ...(writeResult.files ? { files: writeResult.files } : {}),
+  });
+}
+
+async function resolveSkillForAuthoring(
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+): Promise<AuthoringSkill | null> {
+  const { getSkillByName } = options;
+  if (!getSkillByName) {
+    return null;
+  }
+
+  const skillPrimedIdsByName =
+    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = skillPrimedIdsByName[skillName];
+  if (primedIdString) {
+    return await getSkillByName(skillName, [new Types.ObjectId(primedIdString)], {});
+  }
+
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  if (accessibleIds.length === 0) {
+    return null;
+  }
+
+  return await getSkillByName(skillName, accessibleIds, { preferModelInvocable: true });
+}
+
+async function resolveAuthorSkillForCurrentUser({
+  skillName,
+  mergedConfigurable,
+  sourceConfigurable,
+  options,
+  req,
+}: {
+  skillName: string;
+  mergedConfigurable: Record<string, unknown>;
+  sourceConfigurable?: Record<string, unknown>;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+}): Promise<AuthoringSkill | null> {
+  if (!req || !options.getAuthorSkillByName) {
+    return null;
+  }
+  if (!isSkillKnownToCurrentRun(skillName, mergedConfigurable)) {
+    return null;
+  }
+  const skill = await options.getAuthorSkillByName({ req, name: skillName });
+  if (!skill) {
+    return null;
+  }
+  rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], skill, { prime: false });
+  return skill;
+}
+
+function isDuplicateSkillNameError(error: unknown): boolean {
+  const maybeError = error as { code?: string | number; message?: string } | undefined;
+  return (
+    maybeError?.code === 11000 ||
+    /skill with name .* already exists/i.test(maybeError?.message ?? '')
+  );
+}
+
+function isSkillAuthoringAvailable(mergedConfigurable: Record<string, unknown>): boolean {
+  return mergedConfigurable.skillAuthoringAvailable === true;
+}
+
+function getFileAuthoringToolNames(
+  mergedConfigurable: Record<string, unknown>,
+): Set<string> | undefined {
+  const names = mergedConfigurable.fileAuthoringToolNames;
+  return names instanceof Set ? (names as Set<string>) : undefined;
+}
+
+function isHostFileAuthoringToolCall(
+  toolName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  return getFileAuthoringToolNames(mergedConfigurable)?.has(toolName) === true;
+}
+
+function isCodeSessionAwareToolCall(
+  toolName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  return isCodeSessionToolName(toolName, getFileAuthoringToolNames(mergedConfigurable));
+}
+
+function isSkillPrimedForAuthoring(
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  const skillPrimedIdsByName =
+    (mergedConfigurable.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  return typeof skillPrimedIdsByName[skillName] === 'string';
+}
+
+function isSkillKnownToCurrentRun(
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  if (isSkillPrimedForAuthoring(skillName, mergedConfigurable)) {
+    return true;
+  }
+  const activeSkillNames = mergedConfigurable.activeSkillNames;
+  return activeSkillNames instanceof Set && activeSkillNames.has(skillName);
+}
+
+function hiddenSkillAuthoringDenied(
+  tc: ToolCallRequest,
+  skill: AuthoringSkill | null,
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+): ToolExecuteResult | null {
+  if (
+    skill?.disableModelInvocation !== true ||
+    isSkillPrimedForAuthoring(skillName, mergedConfigurable)
+  ) {
+    return null;
+  }
+  return errorResult(tc, `Skill "${skillName}" cannot be authored by the model`);
+}
+
+function mergeAccessibleSkillIds(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Types.ObjectId[] | undefined {
+  const values = [
+    ...(Array.isArray(loaded?.accessibleSkillIds)
+      ? (loaded.accessibleSkillIds as Types.ObjectId[])
+      : []),
+    ...(Array.isArray(base?.accessibleSkillIds)
+      ? (base.accessibleSkillIds as Types.ObjectId[])
+      : []),
+  ];
+  if (values.length === 0) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const merged: Types.ObjectId[] = [];
+  for (const value of values) {
+    const key = value.toString();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(value);
+  }
+  return merged;
+}
+
+function mergeSkillPrimedIdsByName(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Record<string, string> | undefined {
+  const loadedPrimed = loaded?.skillPrimedIdsByName as Record<string, string> | undefined;
+  const basePrimed = base?.skillPrimedIdsByName as Record<string, string> | undefined;
+  const merged = { ...(loadedPrimed ?? {}), ...(basePrimed ?? {}) };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeActiveSkillNames(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Set<string> | undefined {
+  const names = new Set<string>();
+  const loadedNames = loaded?.activeSkillNames;
+  if (loadedNames instanceof Set) {
+    for (const name of loadedNames) {
+      names.add(name);
+    }
+  }
+  const baseNames = base?.activeSkillNames;
+  if (baseNames instanceof Set) {
+    for (const name of baseNames) {
+      names.add(name);
+    }
+  }
+  return names.size > 0 ? names : undefined;
+}
+
+function mergeToolConfigurables(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const merged = { ...base, ...loaded };
+  const accessibleSkillIds = mergeAccessibleSkillIds(base, loaded);
+  if (accessibleSkillIds) {
+    merged.accessibleSkillIds = accessibleSkillIds;
+  }
+  const skillPrimedIdsByName = mergeSkillPrimedIdsByName(base, loaded);
+  if (skillPrimedIdsByName) {
+    merged.skillPrimedIdsByName = skillPrimedIdsByName;
+  }
+  const activeSkillNames = mergeActiveSkillNames(base, loaded);
+  if (activeSkillNames) {
+    merged.activeSkillNames = activeSkillNames;
+  }
+  return merged;
+}
+
+function rememberAuthoredSkill(
+  configurables: Array<Record<string, unknown> | undefined>,
+  skill: { _id: Types.ObjectId; name: string },
+  options: { prime?: boolean } = {},
+): void {
+  const prime = options.prime !== false;
+  const idString = skill._id.toString();
+  for (const configurable of configurables) {
+    if (!configurable) {
+      continue;
+    }
+
+    const accessibleIds = Array.isArray(configurable.accessibleSkillIds)
+      ? (configurable.accessibleSkillIds as Types.ObjectId[])
+      : [];
+    if (!Array.isArray(configurable.accessibleSkillIds)) {
+      configurable.accessibleSkillIds = accessibleIds;
+    }
+    if (!accessibleIds.some((id) => id.toString() === idString)) {
+      accessibleIds.push(skill._id);
+    }
+
+    if (prime) {
+      const primedIds =
+        (configurable.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+      primedIds[skill.name] = idString;
+      configurable.skillPrimedIdsByName = primedIds;
+    }
+
+    const activeSkillNames = configurable.activeSkillNames as Set<string> | undefined;
+    if (activeSkillNames) {
+      activeSkillNames.add(skill.name);
+    } else {
+      configurable.activeSkillNames = new Set([skill.name]);
+    }
+  }
+}
+
+async function ensureCanEditSkill(
+  tc: ToolCallRequest,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  skillId: Types.ObjectId | string,
+): Promise<ToolExecuteResult | null> {
+  if (!req) {
+    return errorResult(tc, 'Skill file editing is not configured for this request.');
+  }
+  if (!options.canEditSkill) {
+    return errorResult(tc, 'Skill file editing is not configured.');
+  }
+  const allowed = await options.canEditSkill({ req, skillId });
+  return allowed ? null : errorResult(tc, 'Insufficient permissions to edit this skill.');
+}
+
+async function ensureCanCreateSkill(
+  tc: ToolCallRequest,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+): Promise<ToolExecuteResult | null> {
+  if (!req) {
+    return errorResult(tc, 'Skill creation is not configured for this request.');
+  }
+  if (!options.canCreateSkill) {
+    return errorResult(tc, 'Skill creation is not configured.');
+  }
+  const allowed = await options.canCreateSkill({ req });
+  return allowed ? null : errorResult(tc, 'Insufficient permissions to create skills.');
+}
+
+async function loadSkillFileTextForAuthoring({
+  skill,
+  relativePath,
+  options,
+  req,
+}: {
+  skill: AuthoringSkill;
+  relativePath: string;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+}): Promise<LoadedSkillText> {
+  if (relativePath === SKILL_MD) {
+    return {
+      status: 'loaded',
+      content: skill.body ?? '',
+      bytes: Buffer.byteLength(skill.body ?? '', 'utf8'),
+    };
+  }
+
+  const { getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } = options;
+  if (!getSkillFileByPath) {
+    return { status: 'error', message: 'Skill file reading is not configured.' };
+  }
+
+  const file = await getSkillFileByPath(skill._id, relativePath);
+  if (!file) {
+    return { status: 'missing' };
+  }
+  if (file.isBinary === true) {
+    return { status: 'error', message: `File "${relativePath}" is binary and cannot be edited.` };
+  }
+  if (file.content != null && file.content !== '') {
+    return {
+      status: 'loaded',
+      content: file.content,
+      bytes: Buffer.byteLength(file.content, 'utf8'),
+    };
+  }
+  if (file.bytes > MAX_CACHE_BYTES) {
+    return {
+      status: 'error',
+      message: `File "${relativePath}" is too large to edit directly (${file.bytes} bytes, limit: ${MAX_CACHE_BYTES}).`,
+    };
+  }
+  if (!getStrategyFunctions || !req) {
+    return { status: 'error', message: 'Storage access is not configured.' };
+  }
+
+  const strategy = getStrategyFunctions(file.source);
+  if (!strategy.getDownloadStream) {
+    return { status: 'error', message: 'Download is not supported for this storage backend.' };
+  }
+
+  const stream = await strategy.getDownloadStream(req, file.filepath);
+  const chunks: Uint8Array[] = [];
+  let streamedBytes = 0;
+  for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+    streamedBytes += chunk.byteLength;
+    if (streamedBytes > MAX_CACHE_BYTES) {
+      if (
+        'destroy' in stream &&
+        typeof (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy === 'function'
+      ) {
+        (stream as NodeJS.ReadableStream & { destroy: () => void }).destroy();
+      }
+      return {
+        status: 'error',
+        message: `File "${relativePath}" exceeded edit limit (${MAX_CACHE_BYTES} bytes).`,
+      };
+    }
+    chunks.push(chunk);
+  }
+
+  const buffer = Buffer.concat(chunks);
+  const checkLen = Math.min(buffer.length, 8192);
+  for (let i = 0; i < checkLen; i++) {
+    if (buffer[i] === 0) {
+      if (updateSkillFileContent) {
+        updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(
+          (err: unknown) => {
+            logAxiosError({
+              message: '[loadSkillFileTextForAuthoring] cache write failed',
+              error: err,
+            });
+          },
+        );
+      }
+      return { status: 'error', message: `File "${relativePath}" is binary and cannot be edited.` };
+    }
+  }
+
+  const text = buffer.toString('utf-8');
+  if (updateSkillFileContent) {
+    updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
+      (err: unknown) => {
+        logAxiosError({
+          message: '[loadSkillFileTextForAuthoring] cache write failed',
+          error: err,
+        });
+      },
+    );
+  }
+  return { status: 'loaded', content: text, bytes: buffer.length };
+}
+
+async function inspectBundledSkillFileForCreate({
+  skill,
+  relativePath,
+  options,
+  req,
+}: {
+  skill: AuthoringSkill;
+  relativePath: string;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+}): Promise<ExistingSkillFile> {
+  const { getSkillFileByPath } = options;
+  if (!getSkillFileByPath) {
+    return { status: 'error', message: 'Skill file reading is not configured.' };
+  }
+
+  const file = await getSkillFileByPath(skill._id, relativePath);
+  if (!file) {
+    return { status: 'missing' };
+  }
+  if (file.isBinary === true || file.bytes > MAX_CACHE_BYTES) {
+    return { status: 'present' };
+  }
+  if (file.content != null && file.content !== '') {
+    return { status: 'present', oldContent: file.content };
+  }
+  if (!options.getStrategyFunctions || !req) {
+    return { status: 'present' };
+  }
+
+  const loaded = await loadSkillFileTextForAuthoring({
+    skill,
+    relativePath,
+    options,
+    req,
+  });
+  if (loaded.status === 'missing') {
+    return { status: 'missing' };
+  }
+  if (loaded.status === 'error') {
+    return { status: 'present' };
+  }
+  return { status: 'present', oldContent: loaded.content };
+}
+
+async function ensureBundledSkillVersionCurrent({
+  tc,
+  options,
+  skill,
+  displayPath,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  skill: AuthoringSkill;
+  displayPath: string;
+}): Promise<ToolExecuteResult | null> {
+  if (!options.getSkillByName) {
+    return null;
+  }
+
+  const current = await options.getSkillByName(skill.name, [skill._id], {});
+  if (!current) {
+    return errorResult(tc, `Skill "${skill.name}" not found or not accessible.`);
+  }
+  if (current.version !== skill.version) {
+    return errorResult(
+      tc,
+      `Skill "${skill.name}" changed while editing. Re-read ${displayPath} and retry.`,
+    );
+  }
+  return null;
+}
+
+async function writeSkillMd({
+  tc,
+  options,
+  req,
+  mergedConfigurable,
+  sourceConfigurable,
+  skill,
+  skillName,
+  content,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  mergedConfigurable: Record<string, unknown>;
+  sourceConfigurable?: Record<string, unknown>;
+  skill: AuthoringSkill | null;
+  skillName: string;
+  content: string;
+}): AuthoringResult {
+  const normalized = normalizeSkillMdContent(content, skillName);
+  if (normalized.status === 'error') {
+    return errorResult(tc, normalized.error);
+  }
+  content = normalized.content;
+  const structured = parseStructuredSkillFrontmatter(content);
+  if (structured.error) {
+    return errorResult(tc, structured.error);
+  }
+
+  if (!skill) {
+    const createDenied = await ensureCanCreateSkill(tc, options, req);
+    if (createDenied) {
+      return createDenied;
+    }
+    if (!req || !options.createSkill || !options.grantSkillOwner) {
+      return errorResult(tc, 'Skill creation is not configured.');
+    }
+    const author = getAuthorInfo(req);
+    if (!author) {
+      return errorResult(tc, 'Authentication required to create a skill.');
+    }
+    const parsed = parseSkillMdUpdate(content);
+    let result: Awaited<ReturnType<NonNullable<ToolExecuteOptions['createSkill']>>>;
+    try {
+      result = await options.createSkill({
+        name: skillName,
+        description: parsed.description,
+        body: content,
+        ...(parsed.frontmatter !== undefined ? { frontmatter: parsed.frontmatter } : {}),
+        author: author.author,
+        authorName: author.authorName,
+        ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
+        ...(author.tenantId ? { tenantId: author.tenantId } : {}),
+      });
+    } catch (error) {
+      if (isDuplicateSkillNameError(error)) {
+        return errorResult(
+          tc,
+          `Skill "${skillName}" already exists for this author. It cannot be created again or overwritten blindly. Read or enable the existing skill, then use edit_file for targeted changes, or choose a new skill name.`,
+        );
+      }
+      throw error;
+    }
+    try {
+      await options.grantSkillOwner({ req, skillId: result.skill._id });
+    } catch (error) {
+      if (options.deleteSkill) {
+        await options.deleteSkill(result.skill._id.toString()).catch((rollbackError: unknown) => {
+          logger.error('[create_file] Failed to roll back skill after permission error', {
+            rollbackError,
+          });
+        });
+      }
+      throw error;
+    }
+    rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], result.skill);
+    return successResult(
+      tc,
+      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`,
+      {
+        path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
+        bytes_written: Buffer.byteLength(content, 'utf8'),
+        created: true,
+      },
+    );
+  }
+
+  const editDenied = await ensureCanEditSkill(tc, options, req, skill._id);
+  if (editDenied) {
+    return editDenied;
+  }
+  if (!options.updateSkill) {
+    return errorResult(tc, 'Skill updating is not configured.');
+  }
+  const parsedUpdate = parseSkillMdUpdate(content);
+  const result = await options.updateSkill({
+    id: skill._id.toString(),
+    expectedVersion: skill.version,
+    update: {
+      body: content,
+      description: parsedUpdate.description,
+      ...(parsedUpdate.frontmatter !== undefined ? { frontmatter: parsedUpdate.frontmatter } : {}),
+      ...(parsedUpdate.alwaysApply !== undefined ? { alwaysApply: parsedUpdate.alwaysApply } : {}),
+    },
+  });
+  if (result.status === 'conflict') {
+    return errorResult(
+      tc,
+      `Skill "${skillName}" changed while editing. Re-read ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} and retry.`,
+    );
+  }
+  if (result.status === 'not_found') {
+    return errorResult(tc, `Skill "${skillName}" not found or not accessible.`);
+  }
+
+  const diff = createUnifiedDiff(
+    `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
+    skill.body,
+    content,
+  );
+  const summary = `Updated ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`;
+  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+    path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
+    bytes_written: Buffer.byteLength(content, 'utf8'),
+    created: false,
+    ...(diff ? { diff } : {}),
+  });
+}
+
+async function writeBundledSkillFile({
+  tc,
+  options,
+  req,
+  skill,
+  relativePath,
+  displayPath,
+  content,
+  oldContent,
+  created,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  skill: AuthoringSkill;
+  relativePath: string;
+  displayPath: string;
+  content: string;
+  oldContent?: string;
+  created: boolean;
+}): AuthoringResult {
+  const editDenied = await ensureCanEditSkill(tc, options, req, skill._id);
+  if (editDenied) {
+    return editDenied;
+  }
+  if (!req || !options.saveSkillFileContent) {
+    return errorResult(tc, 'Skill file writing is not configured.');
+  }
+  const staleDenied = await ensureBundledSkillVersionCurrent({
+    tc,
+    options,
+    skill,
+    displayPath,
+  });
+  if (staleDenied) {
+    return staleDenied;
+  }
+
+  await options.saveSkillFileContent({
+    req,
+    skillId: skill._id,
+    relativePath,
+    content,
+    mimeType: guessMimeType(relativePath),
+  });
+  const diff =
+    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
+  const action = created ? 'Created' : 'Updated';
+  const summary = `${action} ${displayPath} (${content.length} chars).`;
+  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+    path: displayPath,
+    bytes_written: Buffer.byteLength(content, 'utf8'),
+    created,
+    ...(diff ? { diff } : {}),
+  });
+}
+
+async function handleSandboxCreateFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  content,
+  overwrite,
+  sandboxContext,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  content: string;
+  overwrite: boolean;
+  sandboxContext?: SandboxSessionContext;
+}): AuthoringResult {
+  const pathError = invalidSandboxAuthoringPath(filePath);
+  if (pathError) {
+    return errorResult(tc, pathError);
+  }
+
+  const current = await loadSandboxTextForAuthoring({
+    filePath,
+    tc,
+    options,
+    req,
+    sandboxContext,
+  });
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+  if (current.status === 'loaded' && !overwrite) {
+    return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+  }
+
+  return await writeSandboxTextForAuthoring({
+    tc,
+    options,
+    req,
+    filePath,
+    content,
+    oldContent: current.status === 'loaded' ? current.content : undefined,
+    created: current.status === 'missing',
+    sandboxContext,
+  });
+}
+
+async function handleSandboxEditFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  edits,
+  sandboxContext,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  edits: TextEdit[];
+  sandboxContext?: SandboxSessionContext;
+}): AuthoringResult {
+  const pathError = invalidSandboxAuthoringPath(filePath);
+  if (pathError) {
+    return errorResult(tc, pathError);
+  }
+
+  const current = await loadSandboxTextForAuthoring({
+    filePath,
+    tc,
+    options,
+    req,
+    sandboxContext,
+  });
+  if (current.status === 'missing') {
+    return errorResult(tc, `File not found: "${filePath}"`);
+  }
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+
+  let edited: { content: string; strategies: string[] };
+  try {
+    edited = applyTextEdits(current.content, edits);
+  } catch (error) {
+    return errorResult(tc, error instanceof Error ? error.message : 'Failed to edit file');
+  }
+  if (Buffer.byteLength(edited.content, 'utf8') > MAX_AUTHORING_BYTES) {
+    return errorResult(tc, `edited content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
+  }
+
+  const result = await writeSandboxTextForAuthoring({
+    tc,
+    options,
+    req,
+    filePath,
+    content: edited.content,
+    oldContent: current.content,
+    created: false,
+    sandboxContext,
+  });
+  if (result.status === 'success') {
+    result.artifact = {
+      ...(typeof result.artifact === 'object' && result.artifact ? result.artifact : {}),
+      edits: edits.length,
+      strategies: edited.strategies,
+    };
+    result.content = `${String(result.content)}\n\nStrategies: ${edited.strategies.join(', ')}`;
+  }
+  return result;
+}
+
+async function handleCreateFileCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+  sourceConfigurable?: Record<string, unknown>,
+  sandboxContext?: SandboxSessionContext,
+): AuthoringResult {
+  const args = tc.args as { path?: unknown; content?: unknown; overwrite?: unknown };
+  if (typeof args.path !== 'string' || args.path.length === 0) {
+    return errorResult(tc, 'path is required');
+  }
+  if (typeof args.content !== 'string') {
+    return errorResult(tc, 'content is required');
+  }
+  if (Buffer.byteLength(args.content, 'utf8') > MAX_AUTHORING_BYTES) {
+    return errorResult(tc, `content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
+  }
+
+  const overwrite = args.overwrite === true;
+  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+    if (mergedConfigurable?.codeEnvAvailable !== true) {
+      return errorResult(
+        tc,
+        `Path "${args.path}" is not a skill file, and this agent does not have code execution enabled.`,
+      );
+    }
+    return await handleSandboxCreateFileCall({
+      tc,
+      options,
+      req,
+      filePath: args.path,
+      content: args.content,
+      overwrite,
+      sandboxContext,
+    });
+  }
+
+  const parsed = parseSkillAuthoringPath(args.path);
+  if (typeof parsed === 'string') {
+    return errorResult(tc, parsed);
+  }
+  if (!isSkillAuthoringAvailable(mergedConfigurable)) {
+    return errorResult(tc, 'Skill file authoring is not available for this agent.');
+  }
+
+  let skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  if (!skill) {
+    skill = await resolveAuthorSkillForCurrentUser({
+      skillName: parsed.skillName,
+      mergedConfigurable,
+      sourceConfigurable,
+      options,
+      req,
+    });
+  }
+  const hiddenDenied = hiddenSkillAuthoringDenied(tc, skill, parsed.skillName, mergedConfigurable);
+  if (hiddenDenied) {
+    return hiddenDenied;
+  }
+  if (parsed.relativePath === SKILL_MD) {
+    if (skill && !overwrite) {
+      return errorResult(
+        tc,
+        `Skill "${parsed.skillName}" already exists. Use edit_file for targeted changes, or pass overwrite: true only if replacing the entire ${parsed.displayPath} is intended.`,
+      );
+    }
+    return await writeSkillMd({
+      tc,
+      options,
+      req,
+      mergedConfigurable,
+      sourceConfigurable,
+      skill,
+      skillName: parsed.skillName,
+      content: args.content,
+    });
+  }
+
+  if (!skill) {
+    return errorResult(tc, `Skill "${parsed.skillName}" not found or not accessible.`);
+  }
+
+  const current = await inspectBundledSkillFileForCreate({
+    skill,
+    relativePath: parsed.relativePath,
+    options,
+    req,
+  });
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+  if (current.status === 'present' && !overwrite) {
+    return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+  }
+  return await writeBundledSkillFile({
+    tc,
+    options,
+    req,
+    skill,
+    relativePath: parsed.relativePath,
+    displayPath: parsed.displayPath,
+    content: args.content,
+    oldContent: current.status === 'present' ? current.oldContent : undefined,
+    created: current.status === 'missing',
+  });
+}
+
+async function handleEditFileCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+  sandboxContext?: SandboxSessionContext,
+): AuthoringResult {
+  const args = tc.args as {
+    path?: unknown;
+    old_text?: unknown;
+    new_text?: unknown;
+    edits?: unknown;
+  };
+  if (typeof args.path !== 'string' || args.path.length === 0) {
+    return errorResult(tc, 'path is required');
+  }
+
+  const edits = normalizeEditArgs(args);
+  if (typeof edits === 'string') {
+    return errorResult(tc, edits);
+  }
+
+  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+    if (mergedConfigurable?.codeEnvAvailable !== true) {
+      return errorResult(
+        tc,
+        `Path "${args.path}" is not a skill file, and this agent does not have code execution enabled.`,
+      );
+    }
+    return await handleSandboxEditFileCall({
+      tc,
+      options,
+      req,
+      filePath: args.path,
+      edits,
+      sandboxContext,
+    });
+  }
+
+  const parsed = parseSkillAuthoringPath(args.path);
+  if (typeof parsed === 'string') {
+    return errorResult(tc, parsed);
+  }
+  if (!isSkillAuthoringAvailable(mergedConfigurable)) {
+    return errorResult(tc, 'Skill file authoring is not available for this agent.');
+  }
+
+  let skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  if (!skill) {
+    skill = await resolveAuthorSkillForCurrentUser({
+      skillName: parsed.skillName,
+      mergedConfigurable,
+      options,
+      req,
+    });
+  }
+  if (!skill) {
+    return errorResult(tc, `Skill "${parsed.skillName}" not found or not accessible.`);
+  }
+  const hiddenDenied = hiddenSkillAuthoringDenied(tc, skill, parsed.skillName, mergedConfigurable);
+  if (hiddenDenied) {
+    return hiddenDenied;
+  }
+
+  const current = await loadSkillFileTextForAuthoring({
+    skill,
+    relativePath: parsed.relativePath,
+    options,
+    req,
+  });
+  if (current.status === 'missing') {
+    return errorResult(
+      tc,
+      `File not found: "${parsed.relativePath}" in skill "${parsed.skillName}"`,
+    );
+  }
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+
+  let edited: { content: string; strategies: string[] };
+  try {
+    edited = applyTextEdits(current.content, edits);
+  } catch (error) {
+    return errorResult(tc, error instanceof Error ? error.message : 'Failed to edit file');
+  }
+  if (Buffer.byteLength(edited.content, 'utf8') > MAX_AUTHORING_BYTES) {
+    return errorResult(tc, `edited content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
+  }
+
+  if (parsed.relativePath === SKILL_MD) {
+    const result = await writeSkillMd({
+      tc,
+      options,
+      req,
+      mergedConfigurable,
+      skill,
+      skillName: parsed.skillName,
+      content: edited.content,
+    });
+    if (result.status === 'success') {
+      result.artifact = {
+        ...(typeof result.artifact === 'object' && result.artifact ? result.artifact : {}),
+        edits: edits.length,
+        strategies: edited.strategies,
+      };
+      result.content = `${String(result.content)}\n\nStrategies: ${edited.strategies.join(', ')}`;
+    }
+    return result;
+  }
+
+  const result = await writeBundledSkillFile({
+    tc,
+    options,
+    req,
+    skill,
+    relativePath: parsed.relativePath,
+    displayPath: parsed.displayPath,
+    content: edited.content,
+    oldContent: current.content,
+    created: false,
+  });
+  if (result.status === 'success') {
+    result.artifact = {
+      ...(typeof result.artifact === 'object' && result.artifact ? result.artifact : {}),
+      edits: edits.length,
+      strategies: edited.strategies,
+    };
+    result.content = `${String(result.content)}\n\nStrategies: ${edited.strategies.join(', ')}`;
+  }
+  return result;
+}
+
 async function handleReadFileCall(
   tc: ToolCallRequest,
   mergedConfigurable: Record<string, unknown>,
@@ -612,75 +2511,126 @@ async function handleReadFileCall(
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
-  const args = tc.args as { file_path?: string };
-  if (!args.file_path) {
+  const args = tc.args as { path?: string };
+  if (!args.path) {
     return {
       toolCallId: tc.id,
       status: 'error',
       content: '',
-      errorMessage: 'file_path is required',
+      errorMessage: 'path is required',
     };
   }
 
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
-  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  /**
-   * `accessibleSkillIds` is the resolver's authoritative output (admin
-   * capability AND ACL access AND ephemeral badge / persisted
-   * `skills_enabled`). Empty ⇒ skills are not effectively in scope, so we
-   * skip skill resolution entirely and route to the sandbox fallback when
-   * the agent has code-execution available.
-   */
-  const skillsEffectivelyEnabled = accessibleIds.length > 0;
+  let accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
 
   /**
    * Short-circuit absolute code-env paths: the path can never be a skill
    * reference (skill paths are relative `{skillName}/...`), and consulting
    * `getSkillByName` would just burn a DB round-trip on a guaranteed miss.
    */
-  if (args.file_path.startsWith('/mnt/data/')) {
+  if (args.path.startsWith('/mnt/data/')) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+      return handleSandboxFileFallback(tc, args.path, options, req);
     }
     return {
       toolCallId: tc.id,
       status: 'error',
       content: '',
-      errorMessage: `Path "${args.file_path}" is a code-execution sandbox path, but this agent does not have code execution enabled.`,
+      errorMessage: `Path "${args.path}" is a code-execution sandbox path, but this agent does not have code execution enabled.`,
     };
   }
 
-  const slashIdx = args.file_path.indexOf('/');
-  if (slashIdx < 1) {
-    if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+  let skillName: string;
+  let relativePath: string;
+  const explicitSkillNamespace = args.path.startsWith(SKILL_FILE_PREFIX);
+  if (explicitSkillNamespace) {
+    const parsed = parseSkillAuthoringPath(args.path);
+    if (typeof parsed === 'string') {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: parsed,
+      };
     }
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: `Invalid file path "${args.file_path}". Use format: {skillName}/{path}`,
-    };
+    skillName = parsed.skillName;
+    relativePath = parsed.relativePath;
+  } else {
+    const slashIdx = args.path.indexOf('/');
+    if (slashIdx < 1) {
+      if (codeEnvAvailable) {
+        return handleSandboxFileFallback(tc, args.path, options, req);
+      }
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Invalid file path "${args.path}". Use format: {skillName}/{path}`,
+      };
+    }
+
+    skillName = args.path.slice(0, slashIdx);
+    relativePath = args.path.slice(slashIdx + 1);
+    if (!relativePath) {
+      /**
+       * `read_file("output/")`: a malformed-but-unambiguously-not-a-skill
+       * path. Stay consistent with the other malformed-path branches and
+       * route to the sandbox when code execution is available, instead of
+       * dead-ending with a skill-centric error message.
+       */
+      if (codeEnvAvailable) {
+        return handleSandboxFileFallback(tc, args.path, options, req);
+      }
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: 'Missing file path after skill name',
+      };
+    }
   }
 
-  const skillName = args.file_path.slice(0, slashIdx);
-  const relativePath = args.file_path.slice(slashIdx + 1);
-  if (!relativePath) {
-    /**
-     * `read_file("output/")`: a malformed-but-unambiguously-not-a-skill
-     * path. Stay consistent with the other malformed-path branches and
-     * route to the sandbox when code execution is available, instead of
-     * dead-ending with a skill-centric error message.
-     */
-    if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+  let skillPrimedIdsByName =
+    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  let primedIdString = skillPrimedIdsByName[skillName];
+  let isPrimedThisTurn = primedIdString != null;
+  const refreshSkillReadScope = () => {
+    accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+    skillPrimedIdsByName =
+      (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+    primedIdString = skillPrimedIdsByName[skillName];
+    isPrimedThisTurn = primedIdString != null;
+  };
+  let recoveredAuthorSkill: AuthoringSkill | null | undefined;
+  const recoverAuthorSkill = async () => {
+    if (recoveredAuthorSkill !== undefined) {
+      return recoveredAuthorSkill;
     }
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: 'Missing file path after skill name',
-    };
+    recoveredAuthorSkill = await resolveAuthorSkillForCurrentUser({
+      skillName,
+      mergedConfigurable,
+      options,
+      req,
+    });
+    refreshSkillReadScope();
+    return recoveredAuthorSkill;
+  };
+  /**
+   * `accessibleSkillIds` is the resolver's normal output (admin
+   * capability AND ACL access AND ephemeral badge / persisted
+   * `skills_enabled`). A skill authored earlier in this run is also
+   * resolvable through `skillPrimedIdsByName`, even when the run started
+   * with an empty accessible set for a first-time creator.
+   */
+  let skillsEffectivelyEnabled = accessibleIds.length > 0 || isPrimedThisTurn;
+  if (
+    !skillsEffectivelyEnabled &&
+    explicitSkillNamespace &&
+    isSkillAuthoringAvailable(mergedConfigurable)
+  ) {
+    await recoverAuthorSkill();
+    skillsEffectivelyEnabled = accessibleIds.length > 0 || isPrimedThisTurn;
   }
 
   /**
@@ -691,8 +2641,8 @@ async function handleReadFileCall(
    * the lookup truly has nowhere to go.
    */
   if (!skillsEffectivelyEnabled) {
-    if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+    if (codeEnvAvailable && !explicitSkillNamespace) {
+      return handleSandboxFileFallback(tc, args.path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -718,11 +2668,6 @@ async function handleReadFileCall(
    * shortcut would misroute `read_file("primed-skill/references/foo.md")`
    * to the sandbox even though the primed skill is in scope.
    */
-  const skillPrimedIdsByName =
-    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
-  const primedIdString = skillPrimedIdsByName[skillName];
-  const isPrimedThisTurn = primedIdString != null;
-
   /**
    * Skills are in scope, but the first segment isn't a name we know.
    * Use the catalog-derived `activeSkillNames` Set (no DB read) to detect
@@ -733,15 +2678,18 @@ async function handleReadFileCall(
    */
   const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
   if (activeSkillNames && !activeSkillNames.has(skillName) && !isPrimedThisTurn) {
-    if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+    const recovered = await recoverAuthorSkill();
+    if (!recovered) {
+      if (codeEnvAvailable && !explicitSkillNamespace) {
+        return handleSandboxFileFallback(tc, args.path, options, req);
+      }
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Skill "${skillName}" not found or not accessible`,
+      };
     }
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: `Skill "${skillName}" not found or not accessible`,
-    };
   }
 
   if (!getSkillByName) {
@@ -763,19 +2711,20 @@ async function handleReadFileCall(
      (rather than relying on mongoose's string auto-cast in `$in` queries)
      keeps the value correct for any future consumer that compares with
      `.equals()` or `===`. */
-  const lookupAccessibleIds = isPrimedThisTurn
-    ? [new Types.ObjectId(primedIdString)]
-    : accessibleIds;
+  const lookupAccessibleIds = primedIdString ? [new Types.ObjectId(primedIdString)] : accessibleIds;
   const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
-    isPrimedThisTurn ? {} : { preferModelInvocable: true };
-  const skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
+    primedIdString ? {} : { preferModelInvocable: true };
+  let skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
   if (!skill) {
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: `Skill "${skillName}" not found or not accessible`,
-    };
+    skill = await recoverAuthorSkill();
+    if (!skill) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Skill "${skillName}" not found or not accessible`,
+      };
+    }
   }
 
   /**
@@ -814,7 +2763,7 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File: ${args.file_path}\n\n${addLineNumbers(skill.body)}`,
+      content: `File: ${args.path}\n\n${addLineNumbers(skill.body)}`,
     };
   }
 
@@ -845,7 +2794,7 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.path}`,
       };
     }
   }
@@ -855,7 +2804,7 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File: ${args.file_path} (${file.bytes} bytes)\n\n${addLineNumbers(file.content)}`,
+      content: `File: ${args.path} (${file.bytes} bytes)\n\n${addLineNumbers(file.content)}`,
     };
   }
 
@@ -865,14 +2814,14 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File "${args.file_path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
+      content: `File "${args.path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at /mnt/data/${args.path}.`,
     };
   }
   if (isImage && file.bytes > MAX_BINARY_BYTES) {
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: /mnt/data/${args.file_path}`,
+      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: /mnt/data/${args.path}`,
     };
   }
 
@@ -916,7 +2865,7 @@ async function handleReadFileCall(
         return {
           toolCallId: tc.id,
           status: 'success',
-          content: `File "${args.file_path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
+          content: `File "${args.path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at /mnt/data/${args.path}.`,
         };
       }
       chunks.push(chunk);
@@ -954,7 +2903,7 @@ async function handleReadFileCall(
         return {
           toolCallId: tc.id,
           status: 'success',
-          content: `Image: ${args.file_path} (${buffer.length} bytes, ${file.mimeType})`,
+          content: `Image: ${args.path} (${buffer.length} bytes, ${file.mimeType})`,
           artifact: {
             content: [
               { type: 'image_url', image_url: { url: `data:${file.mimeType};base64,${base64}` } },
@@ -970,7 +2919,7 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: /mnt/data/${args.path}`,
       };
     }
 
@@ -992,14 +2941,14 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.file_path}`,
+        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.path}`,
       };
     }
 
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File: ${args.file_path} (${buffer.length} bytes)\n\n${addLineNumbers(text)}`,
+      content: `File: ${args.path} (${buffer.length} bytes)\n\n${addLineNumbers(text)}`,
     };
   } catch (error) {
     return {
@@ -1170,6 +3119,27 @@ async function handleSkillToolCall(
   };
 }
 
+function getFileAuthoringQueueKey(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+): string | undefined {
+  if (!isHostFileAuthoringToolCall(tc.name, mergedConfigurable)) {
+    return undefined;
+  }
+  const args = tc.args as { path?: unknown };
+  if (typeof args.path !== 'string' || args.path.length === 0) {
+    return undefined;
+  }
+  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+    return `sandbox:${args.path}`;
+  }
+  const parsed = parseSkillAuthoringPath(args.path);
+  if (typeof parsed === 'string') {
+    return `skill:${args.path}`;
+  }
+  return `skill:${parsed.skillName}`;
+}
+
 /**
  * Creates the ON_TOOL_EXECUTE handler for event-driven tool execution.
  * This handler receives batched tool calls, loads the required tools,
@@ -1181,6 +3151,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      /** Optional per-call channel (agents SDK > 3.2.33); cast keeps older
+       * installed SDK typings compiling until the release lands. */
+      const onResult = (
+        data as ToolExecuteBatchRequest & {
+          onResult?: (result: ToolExecuteResult) => void;
+        }
+      ).onResult;
+      /** Reports a settled result so the agent graph can emit that call's
+       * completion immediately instead of waiting for the whole batch;
+       * `resolve` below remains the authoritative batch outcome. */
+      const reportResult = (result: ToolExecuteResult): ToolExecuteResult => {
+        try {
+          onResult?.(result);
+        } catch (callbackError) {
+          logger.warn('[ON_TOOL_EXECUTE] onResult callback error:', callbackError);
+        }
+        return result;
+      };
 
       try {
         await runOutsideTracing(async () => {
@@ -1191,210 +3179,322 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               agentId,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
-            const mergedConfigurable = { ...configurable, ...toolConfigurable };
+            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
+            const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
+            const mergedConfigurable = mergeToolConfigurables(
+              sourceConfigurable,
+              loadedConfigurable,
+            );
+            const authoringQueues = new Map<string, Promise<void>>();
+            const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
-                if (tc.name === Constants.SKILL_TOOL || tc.name === Constants.READ_FILE) {
-                  const req = mergedConfigurable?.req as ServerRequest | undefined;
-                  const handlerResult =
-                    tc.name === Constants.SKILL_TOOL
-                      ? await handleSkillToolCall(tc, mergedConfigurable, options, req)
-                      : await handleReadFileCall(tc, mergedConfigurable, options, req);
+                const execute = async (
+                  sandboxContext?: SandboxSessionContext,
+                ): Promise<ToolExecuteResult> => {
+                  const isFileAuthoringCall = isHostFileAuthoringToolCall(
+                    tc.name,
+                    mergedConfigurable,
+                  );
+                  const isSandboxFileAuthoringCall =
+                    isFileAuthoringCall &&
+                    typeof (tc.args as { path?: unknown }).path === 'string' &&
+                    !(tc.args as { path: string }).path.startsWith(SKILL_FILE_PREFIX);
+                  if (
+                    tc.name === Constants.SKILL_TOOL ||
+                    tc.name === Constants.READ_FILE ||
+                    isFileAuthoringCall
+                  ) {
+                    const req = mergedConfigurable?.req as ServerRequest | undefined;
+                    let handlerResult: ToolExecuteResult;
+                    try {
+                      if (tc.name === Constants.SKILL_TOOL) {
+                        handlerResult = await handleSkillToolCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                        );
+                      } else if (tc.name === Constants.READ_FILE) {
+                        handlerResult = await handleReadFileCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                        );
+                      } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
+                        handlerResult = await handleCreateFileCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                          sourceConfigurable,
+                          sandboxContext,
+                        );
+                      } else if (tc.name === EDIT_FILE_TOOL_NAME && isFileAuthoringCall) {
+                        handlerResult = await handleEditFileCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                          sandboxContext,
+                        );
+                      } else {
+                        handlerResult = errorResult(tc, `Tool ${tc.name} not found`);
+                      }
+                    } catch (toolError) {
+                      const { message, logContext } = getSafeToolError(toolError);
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                        ...logContext,
+                        toolCallArgsShape: getValueShape(tc.args),
+                      });
+                      return {
+                        toolCallId: tc.id,
+                        status: 'error' as const,
+                        content: '',
+                        errorMessage: message,
+                      };
+                    }
 
-                  if (toolEndCallback && handlerResult.artifact) {
-                    await toolEndCallback(
-                      {
-                        output: {
-                          name: tc.name,
-                          tool_call_id: tc.id,
-                          content: handlerResult.content,
-                          artifact: handlerResult.artifact,
+                    if (
+                      isSandboxFileAuthoringCall &&
+                      handlerResult.status === 'success' &&
+                      sandboxContext
+                    ) {
+                      mergeSandboxSessionArtifact(sandboxContext, handlerResult.artifact);
+                    }
+
+                    if (toolEndCallback && handlerResult.artifact) {
+                      await toolEndCallback(
+                        {
+                          output: {
+                            name: tc.name,
+                            tool_call_id: tc.id,
+                            content: handlerResult.content,
+                            artifact: handlerResult.artifact,
+                          },
                         },
-                      },
-                      {
-                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
-                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                          | string
-                          | undefined,
-                        ...metadata,
-                      },
-                    );
+                        {
+                          run_id: (metadata as Record<string, unknown>)?.run_id as
+                            | string
+                            | undefined,
+                          thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                            | string
+                            | undefined,
+                          ...metadata,
+                        },
+                      );
+                    }
+
+                    return handlerResult;
                   }
 
-                  return handlerResult;
-                }
+                  const tool = toolMap.get(tc.name);
 
-                const tool = toolMap.get(tc.name);
+                  if (!tool) {
+                    logger.warn(
+                      `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
+                    );
+                    return {
+                      toolCallId: tc.id,
+                      status: 'error' as const,
+                      content: '',
+                      errorMessage: `Tool ${tc.name} not found`,
+                    };
+                  }
 
-                if (!tool) {
-                  logger.warn(
-                    `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
-                  );
-                  return {
-                    toolCallId: tc.id,
-                    status: 'error' as const,
-                    content: '',
-                    errorMessage: `Tool ${tc.name} not found`,
-                  };
-                }
+                  try {
+                    const toolCallConfig: Record<string, unknown> = {
+                      id: tc.id,
+                      stepId: tc.stepId,
+                      turn: tc.turn,
+                    };
 
-                try {
-                  const toolCallConfig: Record<string, unknown> = {
-                    id: tc.id,
-                    stepId: tc.stepId,
-                    turn: tc.turn,
-                  };
-
-                  if (tc.codeSessionContext && CODE_EXECUTION_TOOLS.has(tc.name)) {
-                    toolCallConfig.session_id = tc.codeSessionContext.session_id;
-                    if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-                      toolCallConfig._injected_files = tc.codeSessionContext.files;
-                      /* Last LC-controlled point before the wire. Mirrors
-                       * codeapi's validator context so the two log sides
-                       * correlate on a single grep. */
-                      const refs = tc.codeSessionContext.files as Array<{
-                        id?: unknown;
-                        resource_id?: unknown;
-                        storage_session_id?: unknown;
-                        kind?: unknown;
-                        version?: unknown;
-                        name?: unknown;
-                      }>;
-                      const summary = refs.map((f) => ({
-                        kind: f.kind,
-                        hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
-                        hasStorageSessionId:
-                          typeof f.storage_session_id === 'string' && !!f.storage_session_id,
-                        hasVersion: typeof f.version === 'number',
-                      }));
-                      let missingResourceId = 0;
-                      let missingStorageSessionId = 0;
-                      let missingVersion = 0;
-                      const kindCounts: Record<string, number> = {};
-                      for (const s of summary) {
-                        if (!s.hasResourceId) missingResourceId++;
-                        if (!s.hasStorageSessionId) missingStorageSessionId++;
-                        if (!s.hasVersion) missingVersion++;
-                        const k = typeof s.kind === 'string' ? s.kind : 'unknown';
-                        kindCounts[k] = (kindCounts[k] ?? 0) + 1;
-                      }
-                      logger.debug(
-                        `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
-                          `missingResourceId=${missingResourceId} ` +
-                          `missingStorageSessionId=${missingStorageSessionId} ` +
-                          `missingVersion=${missingVersion} ` +
-                          `kinds=${JSON.stringify(kindCounts)}`,
-                      );
-                      if (missingResourceId > 0) {
+                    if (
+                      tc.codeSessionContext &&
+                      isCodeSessionAwareToolCall(tc.name, mergedConfigurable)
+                    ) {
+                      toolCallConfig.session_id = tc.codeSessionContext.session_id;
+                      if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
+                        toolCallConfig._injected_files = tc.codeSessionContext.files;
+                        /* Last LC-controlled point before the wire. Mirrors
+                         * codeapi's validator context so the two log sides
+                         * correlate on a single grep. */
+                        const refs = tc.codeSessionContext.files as Array<{
+                          id?: unknown;
+                          resource_id?: unknown;
+                          storage_session_id?: unknown;
+                          kind?: unknown;
+                          version?: unknown;
+                          name?: unknown;
+                        }>;
+                        const summary = refs.map((f) => ({
+                          kind: f.kind,
+                          hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
+                          hasStorageSessionId:
+                            typeof f.storage_session_id === 'string' && !!f.storage_session_id,
+                          hasVersion: typeof f.version === 'number',
+                        }));
+                        let missingResourceId = 0;
+                        let missingStorageSessionId = 0;
+                        let missingVersion = 0;
+                        const kindCounts: Record<string, number> = {};
+                        for (const s of summary) {
+                          if (!s.hasResourceId) missingResourceId++;
+                          if (!s.hasStorageSessionId) missingStorageSessionId++;
+                          if (!s.hasVersion) missingVersion++;
+                          const k = typeof s.kind === 'string' ? s.kind : 'unknown';
+                          kindCounts[k] = (kindCounts[k] ?? 0) + 1;
+                        }
+                        logger.debug(
+                          `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
+                            `missingResourceId=${missingResourceId} ` +
+                            `missingStorageSessionId=${missingStorageSessionId} ` +
+                            `missingVersion=${missingVersion} ` +
+                            `kinds=${JSON.stringify(kindCounts)}`,
+                        );
+                        if (missingResourceId > 0) {
+                          logger.warn(
+                            `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
+                              `for tool=${tc.name} — codeapi will reject with 400`,
+                            { summary },
+                          );
+                        }
+                      } else {
+                        /* Empty `_injected_files` on a code-execution tool
+                         * call. Almost always means the seeding chain
+                         * (primeCodeFiles → initialSessions →
+                         * CodeSessionContext) dropped the file upstream.
+                         * `session_id` is still emitted for continuity, but
+                         * concrete file refs must arrive through
+                         * `_injected_files`; agents no longer falls back to
+                         * `/files/<sid>`. Pair with `[primeCodeFiles]`
+                         * traces below to locate the layer that lost the ref. */
                         logger.warn(
-                          `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
-                            `for tool=${tc.name} — codeapi will reject with 400`,
-                          { summary },
+                          `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
+                          {
+                            tool: tc.name,
+                            session_id: tc.codeSessionContext.session_id,
+                            codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
+                            codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
+                          },
                         );
                       }
-                    } else {
-                      /* Empty `_injected_files` on a code-execution tool
-                       * call. Almost always means the seeding chain
-                       * (primeCodeFiles → initialSessions →
-                       * CodeSessionContext) dropped the file upstream.
-                       * `session_id` is still emitted for continuity, but
-                       * concrete file refs must arrive through
-                       * `_injected_files`; agents no longer falls back to
-                       * `/files/<sid>`. Pair with `[primeCodeFiles]`
-                       * traces below to locate the layer that lost the ref. */
-                      logger.warn(
-                        `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
+                    }
+
+                    if (
+                      tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||
+                      tc.name === Constants.PROGRAMMATIC_TOOL_CALLING
+                    ) {
+                      const toolRegistry = mergedConfigurable?.toolRegistry as
+                        | LCToolRegistry
+                        | undefined;
+                      const ptcToolMap = mergedConfigurable?.ptcToolMap as
+                        | Map<string, StructuredToolInterface>
+                        | undefined;
+                      if (toolRegistry) {
+                        const fileAuthoringToolNames =
+                          getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
+                        const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                          (t) =>
+                            t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                            t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
+                            t.name !== Constants.TOOL_SEARCH &&
+                            !fileAuthoringToolNames.has(t.name),
+                        );
+                        toolCallConfig.toolDefs = toolDefs;
+                        toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                      }
+                    }
+
+                    const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
+                      toolCall: toolCallConfig,
+                      configurable: mergedConfigurable,
+                      metadata,
+                    } as Record<string, unknown>);
+
+                    // Code-execution tools emit per-call boilerplate
+                    // ("Note: ..." paragraphs and `| <annotation>` per-file
+                    // suffixes) that wastes tokens when re-injected into
+                    // every subsequent model turn. Strip it here, *after*
+                    // the tool resolved but *before* downstream consumers
+                    // (model context, SSE forwarding, persistence) see it.
+                    // Non-code-execution tools pass through unchanged.
+                    const cleanedContent =
+                      isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                      typeof result.content === 'string'
+                        ? cleanCodeToolOutput(result.content)
+                        : result.content;
+
+                    if (toolEndCallback) {
+                      await toolEndCallback(
                         {
-                          tool: tc.name,
-                          session_id: tc.codeSessionContext.session_id,
-                          codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
-                          codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
+                          output: {
+                            name: tc.name,
+                            tool_call_id: tc.id,
+                            content: cleanedContent,
+                            artifact: result.artifact,
+                          },
+                        },
+                        {
+                          run_id: (metadata as Record<string, unknown>)?.run_id as
+                            | string
+                            | undefined,
+                          thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                            | string
+                            | undefined,
+                          ...metadata,
                         },
                       );
                     }
+
+                    return {
+                      toolCallId: tc.id,
+                      content: cleanedContent,
+                      artifact: result.artifact,
+                      status: 'success' as const,
+                    };
+                  } catch (toolError) {
+                    const { message, logContext } = getSafeToolError(toolError);
+                    logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      ...logContext,
+                      toolCallArgsShape: getValueShape(tc.args),
+                      toolInputSchemaKind: getToolInputSchemaKind(tool),
+                    });
+                    return {
+                      toolCallId: tc.id,
+                      status: 'error' as const,
+                      content: '',
+                      errorMessage: message,
+                    };
                   }
+                };
 
-                  if (
-                    tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||
-                    tc.name === Constants.PROGRAMMATIC_TOOL_CALLING
-                  ) {
-                    const toolRegistry = mergedConfigurable?.toolRegistry as
-                      | LCToolRegistry
-                      | undefined;
-                    const ptcToolMap = mergedConfigurable?.ptcToolMap as
-                      | Map<string, StructuredToolInterface>
-                      | undefined;
-                    if (toolRegistry) {
-                      const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                        (t) =>
-                          t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                          t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-                          t.name !== Constants.TOOL_SEARCH,
-                      );
-                      toolCallConfig.toolDefs = toolDefs;
-                      toolCallConfig.toolMap = ptcToolMap ?? toolMap;
-                    }
-                  }
-
-                  const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
-                    toolCall: toolCallConfig,
-                    configurable: mergedConfigurable,
-                    metadata,
-                  } as Record<string, unknown>);
-
-                  // Code-execution tools emit per-call boilerplate
-                  // ("Note: ..." paragraphs and `| <annotation>` per-file
-                  // suffixes) that wastes tokens when re-injected into
-                  // every subsequent model turn. Strip it here, *after*
-                  // the tool resolved but *before* downstream consumers
-                  // (model context, SSE forwarding, persistence) see it.
-                  // Non-code-execution tools pass through unchanged.
-                  const cleanedContent =
-                    CODE_EXECUTION_TOOLS.has(tc.name) && typeof result.content === 'string'
-                      ? cleanCodeToolOutput(result.content)
-                      : result.content;
-
-                  if (toolEndCallback) {
-                    await toolEndCallback(
-                      {
-                        output: {
-                          name: tc.name,
-                          tool_call_id: tc.id,
-                          content: cleanedContent,
-                          artifact: result.artifact,
-                        },
-                      },
-                      {
-                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
-                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                          | string
-                          | undefined,
-                        ...metadata,
-                      },
-                    );
-                  }
-
-                  return {
-                    toolCallId: tc.id,
-                    content: cleanedContent,
-                    artifact: result.artifact,
-                    status: 'success' as const,
-                  };
-                } catch (toolError) {
-                  const { message, logContext } = getSafeToolError(toolError);
-                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
-                    ...logContext,
-                    toolCallArgsShape: getValueShape(tc.args),
-                    toolInputSchemaKind: getToolInputSchemaKind(tool),
-                  });
-                  return {
-                    toolCallId: tc.id,
-                    status: 'error' as const,
-                    content: '',
-                    errorMessage: message,
-                  };
+                const queueKey = getFileAuthoringQueueKey(tc, mergedConfigurable);
+                if (!queueKey) {
+                  return reportResult(await execute());
                 }
+                let sandboxContext: SandboxSessionContext | undefined;
+                if (queueKey.startsWith('sandbox:')) {
+                  sandboxContext =
+                    sandboxAuthoringContexts.get(queueKey) ??
+                    cloneSandboxSessionContext(sandboxSessionContext(tc));
+                  sandboxAuthoringContexts.set(queueKey, sandboxContext);
+                }
+                const previous = authoringQueues.get(queueKey) ?? Promise.resolve();
+                const resultPromise = previous.then(
+                  () => execute(sandboxContext),
+                  () => execute(sandboxContext),
+                );
+                authoringQueues.set(
+                  queueKey,
+                  resultPromise.then(
+                    () => undefined,
+                    () => undefined,
+                  ),
+                );
+                return reportResult(await resultPromise);
               }),
             );
 

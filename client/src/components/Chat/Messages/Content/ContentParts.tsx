@@ -1,4 +1,4 @@
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useRef, useMemo, useCallback } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -6,11 +6,12 @@ import type {
   TAttachment,
   Agents,
 } from 'librechat-data-provider';
+import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
-import { EditTextPart, EmptyText } from './Parts';
 import PendingSkillCall from './Parts/PendingSkillCall';
+import { EditTextPart, EmptyText } from './Parts';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
@@ -18,6 +19,18 @@ import Part from './Part';
 
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+
+const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
+  const firstPart = parts[0];
+  if (!firstPart) {
+    return 'empty';
+  }
+  const toolCallId = getToolCallId(firstPart.part);
+  if (toolCallId) {
+    return `tool:${toolCallId}`;
+  }
+  return `fallback:${fallbackScope}:${firstPart.idx}`;
+};
 
 type PartWithContextProps = {
   part: TMessageContentParts;
@@ -32,6 +45,7 @@ type PartWithContextProps = {
   isLast: boolean;
   partAttachments: TAttachment[] | undefined;
   hideAttachments?: boolean;
+  onToolExpand?: () => void;
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -47,6 +61,7 @@ const PartWithContext = memo(function PartWithContext({
   isLast,
   partAttachments,
   hideAttachments,
+  onToolExpand,
 }: PartWithContextProps) {
   const contextValue = useMemo(
     () => ({
@@ -72,6 +87,7 @@ const PartWithContext = memo(function PartWithContext({
         isLast={isLastPart}
         showCursor={isLastPart && isLast}
         hideAttachments={hideAttachments}
+        onToolExpand={onToolExpand}
       />
     </MessageContext.Provider>
   );
@@ -89,6 +105,8 @@ type ContentPartsProps = {
    * the full message object) so `React.memo` stays shallow-happy.
    */
   manualSkills?: string[];
+  /** ISO timestamp of the parent message, surfaced in parallel column headers. */
+  createdAt?: string | null;
   conversationId?: string | null;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
@@ -126,9 +144,31 @@ const ContentParts = memo(function ContentParts({
   conversationId,
   isCreatedByUser,
   isLatestMessage,
+  createdAt,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+  const toolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
+  const fallbackScopeRef = useRef({ messageId, scope: 0 });
+  if (fallbackScopeRef.current.messageId !== messageId) {
+    if (!effectiveIsSubmitting) {
+      fallbackScopeRef.current.scope += 1;
+      toolGroupExpansionRef.current.clear();
+    }
+    fallbackScopeRef.current.messageId = messageId;
+  }
+  const fallbackScope = fallbackScopeRef.current.scope;
+
+  const handleGroupExpansionChange = useCallback(
+    (groupId: string, state: ToolCallGroupExpansionState) => {
+      if (!state.userOverride) {
+        toolGroupExpansionRef.current.delete(groupId);
+        return;
+      }
+      toolGroupExpansionRef.current.set(groupId, state);
+    },
+    [],
+  );
 
   /**
    * Interim skill cards — rendered in a separate slot ABOVE the Parts
@@ -219,7 +259,7 @@ const ContentParts = memo(function ContentParts({
   );
 
   const renderGroupedPart = useCallback(
-    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+    (part: TMessageContentParts, idx: number, isLastPart: boolean, onToolExpand?: () => void) => {
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -235,6 +275,7 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={effectiveIsSubmitting}
           partAttachments={attachmentMap[getToolCallId(part)]}
           hideAttachments
+          onToolExpand={onToolExpand}
         />
       );
     },
@@ -269,12 +310,13 @@ const ContentParts = memo(function ContentParts({
         if (group.type === 'single') {
           return group;
         }
+        const groupId = getToolGroupId(group.parts, fallbackScope);
         const groupAttachments = group.parts.flatMap(
           ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
         );
-        return { ...group, groupAttachments };
+        return { ...group, groupId, groupAttachments };
       }),
-    [sequentialParts, attachmentMap],
+    [sequentialParts, attachmentMap, fallbackScope],
   );
 
   // Early return: no content to render AND no pending skill cards
@@ -336,6 +378,7 @@ const ContentParts = memo(function ContentParts({
         <ParallelContentRenderer
           content={content}
           messageId={messageId}
+          createdAt={createdAt}
           conversationId={conversationId}
           attachments={attachments}
           searchResults={searchResults}
@@ -361,15 +404,18 @@ const ContentParts = memo(function ContentParts({
           const { part, idx } = group.part;
           return renderPart(part, idx, idx === lastContentIdx);
         }
+        const { groupId } = group;
         return (
           <ToolCallGroup
-            key={`tool-group-${group.parts[0].idx}`}
+            key={`tool-group-${groupId}`}
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             isLast={group.parts.some((p) => p.idx === lastContentIdx)}
             renderPart={renderGroupedPart}
             lastContentIdx={lastContentIdx}
             groupAttachments={group.groupAttachments}
+            initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
+            onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
           />
         );
       })}
