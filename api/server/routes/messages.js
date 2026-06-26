@@ -10,7 +10,7 @@ const {
   mergeQuotedTextForCount,
 } = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
-const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const { requireJwtAuth, validateMessageReq, configMiddleware } = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
@@ -398,49 +398,56 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
-router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (req, res) => {
-  try {
-    const { conversationId, messageId } = req.params;
-    const { feedback } = req.body;
+router.put(
+  '/:conversationId/:messageId/feedback',
+  validateMessageReq,
+  configMiddleware,
+  async (req, res) => {
+    try {
+      const { conversationId, messageId } = req.params;
+      const { feedback } = req.body;
 
-    const updatedMessage = await db.updateMessage(
-      req?.user?.id,
-      {
-        messageId,
-        feedback: feedback || null,
-      },
-      { context: 'updateFeedback' },
-    );
-
-    // Best-effort: Assistants messages do not have deterministic AgentRun traces.
-    if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
-      sendFeedbackScore({
-        traceId: traceIdForMessage(messageId),
-        feedback: updatedMessage.feedback,
-        metadata: {
-          messageId: updatedMessage.messageId ?? messageId,
-          parentMessageId: updatedMessage.parentMessageId,
-          conversationId: updatedMessage.conversationId ?? conversationId,
-          sessionId: updatedMessage.conversationId ?? conversationId,
-          userId: req?.user?.id,
-          endpoint: updatedMessage.endpoint,
-          sender: updatedMessage.sender,
-          isCreatedByUser: updatedMessage.isCreatedByUser,
-          tokenCount: updatedMessage.tokenCount,
+      const updatedMessage = await db.updateMessage(
+        req?.user?.id,
+        {
+          messageId,
+          feedback: feedback || null,
         },
-      }).catch((err) => logger.error('[langfuse] feedback score failed:', err));
-    }
+        { context: 'updateFeedback' },
+      );
 
-    res.json({
-      messageId,
-      conversationId,
-      feedback: updatedMessage.feedback,
-    });
-  } catch (error) {
-    logger.error('Error updating message feedback:', error);
-    res.status(500).json({ error: 'Failed to update feedback' });
-  }
-});
+      // Best-effort: Assistants messages do not have deterministic AgentRun traces.
+      if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
+        sendFeedbackScore({
+          traceId: traceIdForMessage(messageId),
+          feedback: updatedMessage.feedback,
+          appConfig: req.config,
+          metadata: {
+            messageId: updatedMessage.messageId ?? messageId,
+            parentMessageId: updatedMessage.parentMessageId,
+            conversationId: updatedMessage.conversationId ?? conversationId,
+            sessionId: updatedMessage.conversationId ?? conversationId,
+            userId: req?.user?.id,
+            tenantId: req?.user?.tenantId,
+            endpoint: updatedMessage.endpoint,
+            sender: updatedMessage.sender,
+            isCreatedByUser: updatedMessage.isCreatedByUser,
+            tokenCount: updatedMessage.tokenCount,
+          },
+        }).catch((err) => logger.error('[langfuse] feedback score failed:', err));
+      }
+
+      res.json({
+        messageId,
+        conversationId,
+        feedback: updatedMessage.feedback,
+      });
+    } catch (error) {
+      logger.error('Error updating message feedback:', error);
+      res.status(500).json({ error: 'Failed to update feedback' });
+    }
+  },
+);
 
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {

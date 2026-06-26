@@ -1,7 +1,8 @@
 import {
+  AgentCapabilities,
   EModelEndpoint,
   getConfigDefaults,
-  AgentCapabilities,
+  langfuseConfigSchema,
   skillSyncConfigSchema,
   summarizationConfigSchema,
 } from 'librechat-data-provider';
@@ -73,6 +74,21 @@ export function loadSkillSyncConfig(config: DeepPartial<TCustomConfig>): AppConf
   return parsed.data;
 }
 
+export function loadLangfuseConfig(config: DeepPartial<TCustomConfig>): AppConfig['langfuse'] {
+  const raw = config.langfuse;
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+
+  const parsed = langfuseConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn('[AppService] Invalid Langfuse config', parsed.error.flatten());
+    return undefined;
+  }
+
+  return parsed.data;
+}
+
 export type Paths = {
   root: string;
   uploads: string;
@@ -134,6 +150,7 @@ export const AppService = async (params?: {
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
   const messageFilter = config.messageFilter;
+  const langfuse = loadLangfuseConfig(config);
 
   const defaultConfig = {
     ocr,
@@ -151,6 +168,7 @@ export const AppService = async (params?: {
     transactions,
     filteredTools,
     includedTools,
+    langfuse,
     messageFilter,
     summarization,
     availableTools,
