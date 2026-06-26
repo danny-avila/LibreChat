@@ -534,6 +534,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: openai/gpt-5.5-pro
+        useResponsesApi: true
         max_tokens: 8192
         greeting: How can I help you today?
         instructions: &aiw_instructions |
