@@ -19,11 +19,23 @@ LibreChat 自带完整的「记忆」(personalization/memories)子系统,但在 
 - **自动**(核心):把记忆的**注入(读)+ 抽取(写)**接进 `BaseClient`(标准聊天链路),薄调用 `packages/api` 现成函数。
 - **端点**:`memory.agent` 配便宜抽取模型(经 gptsapi)。
 
+- **临时聊天(Temporary Chat)不参与记忆**:注入+抽取都跳过(对齐 ChatGPT/Claude)。
+
 **不做(YAGNI)**:
 - 不接 gating(记忆对所有登录用户开放)。
 - 不做"运行时改抽取模型"的 admin UI(YAML 配置即可)。
 - 不动 `AgentClient` 既有记忆逻辑(agents 端点继续照常)。
 - 不限制 `validKeys`(抽取通用用户事实);沿用现成 CRUD 面板,不裁剪成 ChatGPT 式只读。
+- **不做隐式"chat history 档案"层**(ChatGPT 那层不可审计、被诟病会带入不想要的上下文);只做显式可审计的 saved-memories。
+- **不做 dreaming 式后台消重/解矛盾**(列为后续;MVP 靠 `setMemory` 按 key upsert 做基础更新/去重)。
+
+## 2.5 设计依据(参考 ChatGPT / Claude memory)
+
+调研 ChatGPT(saved memories + reference chat history,"dreaming"后台消化)与 Claude 2026(chat memory 摘要 + /memory 文件、临时/项目隔离、Auto-Dream 消重)后的取舍:
+- **自动捕获 + 注入 + 用户可审阅管理** = 两家共识 → 正是本设计 BaseClient hook + 现成 CRUD 面板。
+- 选**显式 saved-memories**(可审计/可控),弃隐式档案层(争议、不可审计)。
+- **临时聊天绕过**、**敏感信息不记**(靠抽取指令)、**按 key upsert 去重** = 借鉴要点,已纳入 §4/§5。
+- dreaming 式消重/解矛盾/剪枯 = 价值但复杂,列后续。
 
 ## 3. 现状(已建 vs 缺口)
 
@@ -45,12 +57,13 @@ LibreChat 自带完整的「记忆」(personalization/memories)子系统,但在 
 
 ### 4.1 注入(读)
 - 位置:`sendMessage`(~line 409)中,`buildMessages` 产出 payload 后、`sendCompletion`(~571)前。
-- 逻辑:门控通过(memory 配置启用 + 非 disabled + 用户 `MEMORIES.USE` + 未 opt-out)→ `db.getFormattedMemories({ userId })` 取 `withoutKeys` → 经 `addInstructions`(~315)把记忆作为系统指令注入 payload。
+- 逻辑:门控通过(memory 配置启用 + 非 disabled + 用户 `MEMORIES.USE` + 未 opt-out + **非临时聊天**)→ `db.getFormattedMemories({ userId })` 取 `withoutKeys` → 经 `addInstructions`(~315)把记忆作为系统指令注入 payload。
 - `this.user` 是 string → `new mongoose.Types.ObjectId(this.user)`。
 
 ### 4.2 抽取(写)
 - 位置:`sendCompletion` 返回后(拿到 assistant 回复)。
-- 逻辑:fire-and-forget(带 ~3s 超时,仿 `AgentClient.runMemory`)→ 取最近 `messageWindowSize`(默认5)条消息 → 复用 `createMemoryProcessor`/`processMemory`(`@librechat/api`)处理 → `setMemory` 落库。仅当 `memory.agent.enabled === true`。
+- 逻辑:fire-and-forget(带 ~3s 超时,仿 `AgentClient.runMemory`)→ 取最近 `messageWindowSize`(默认5)条消息 → 复用 `createMemoryProcessor`/`processMemory`(`@librechat/api`)处理 → `setMemory`(按 key upsert,自然去重/更新)落库。仅当 `memory.agent.enabled === true` **且非临时聊天**。
+- 抽取指令(`memory.agent.instructions`)引导抓**偏好(格式/语气/长度)+ 工作上下文(技术栈/项目)+ 稳定个人事实**,**显式排除敏感信息**(密码/密钥/健康/财务)。
 - 抽取失败/超时不阻塞回复(记忆是 best-effort 增强)。
 
 ### 4.3 复用与边界
@@ -69,6 +82,12 @@ memory:
     enabled: true
     provider: "openAI"               # 经 .env OPENAI_REVERSE_PROXY 走 gptsapi
     model: "gemini-2.5-flash-lite"   # 便宜抽取模型
+    instructions: >
+      Extract durable facts about the user worth remembering across chats:
+      stated preferences (response format, tone, length), working context
+      (languages, frameworks, projects, role), and stable personal facts.
+      Do NOT store secrets, passwords, API keys, health, or financial details.
+      Update/replace existing keys rather than duplicating.
 ```
 - ⚠️ **实现期验证**:memory agent 以 `provider:"openAI"` + `model:"gemini-2.5-flash-lite"` 是否真经 openAI 端点的 reverse-proxy 调到 gptsapi 的该模型。若不通,备选:(a) `memory.agent.id` 指向一个用 gptsapi 的 saved agent;(b) 在 `model_parameters` 里 `configuration.baseURL` override 到 gptsapi。
 - 配置写入 graupel.yaml.example(committed)+ librechat.yaml(本地)。
@@ -90,6 +109,8 @@ memory:
 3. 开新会话问「我叫什么/我的偏好」→ 模型能答出(注入生效)。
 4. 面板手动增/删/改一条记忆 → 生效;opt-out 开关关掉后不再注入/抽取。
 5. 抽取用的是配置的便宜模型(查后端日志确认走 gemini-2.5-flash-lite,不是贵模型)。
+6. **临时聊天**里提个人信息 → 不抽取、不注入(绕过生效)。
+7. 抽取指令生效:提敏感信息(如假密码)不应被记成记忆条目。
 
 ## 9. 测试策略(Jest)
 
