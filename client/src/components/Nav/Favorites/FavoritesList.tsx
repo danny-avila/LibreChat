@@ -5,9 +5,8 @@ import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { QueryKeys, EModelEndpoint, dataService } from 'librechat-data-provider';
 import type { Agent, TEndpointsConfig, TModelSpec } from 'librechat-data-provider';
-import type { AgentQueryResult } from '~/common';
 import {
   useGetConversation,
   useFavorites,
@@ -20,6 +19,15 @@ import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
+
+/** A 404/403 from getAgentById means the agent is gone or inaccessible; other errors are transient. */
+const isMissingAgentError = (error: unknown): boolean => {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const status = (error as { response?: { status?: number } }).response?.status;
+    return status === 404 || status === 403;
+  }
+  return false;
+};
 
 /** Height intentionally matches FavoriteItem (px-3 py-2 + h-5 icon) to keep the CellMeasurerCache valid across the isAgentsLoading transition. */
 const FavoriteItemSkeleton = () => (
@@ -213,32 +221,24 @@ export default function FavoritesList({
     [safeFavorites],
   );
 
+  const agentsEndpointEnabled = !!endpointsConfig?.[EModelEndpoint.agents];
+
   const agentIdsToFetch = useMemo(() => {
+    if (!agentsEndpointEnabled) {
+      return [];
+    }
     if (agentsMap === undefined) {
       return allAgentIds;
     }
     return allAgentIds.filter((id) => !agentsMap[id]);
-  }, [allAgentIds, agentsMap]);
+  }, [allAgentIds, agentsMap, agentsEndpointEnabled]);
 
   const agentQueries = useQueries({
     queries: agentIdsToFetch.map((agentId) => ({
       queryKey: [QueryKeys.agent, agentId],
-      queryFn: async (): Promise<AgentQueryResult> => {
-        try {
-          const agent = await dataService.getAgentById({ agent_id: agentId });
-          return { found: true, agent };
-        } catch (error) {
-          if (error && typeof error === 'object' && 'response' in error) {
-            const axiosError = error as { response?: { status?: number } };
-            const status = axiosError.response?.status;
-            if (status === 404 || status === 403) {
-              return { found: false };
-            }
-          }
-          throw error;
-        }
-      },
+      queryFn: (): Promise<Agent> => dataService.getAgentById({ agent_id: agentId }),
       staleTime: 1000 * 60 * 5,
+      retry: false,
     })),
   });
 
@@ -246,7 +246,7 @@ export default function FavoritesList({
     const ids: string[] = [];
     for (let i = 0; i < agentIdsToFetch.length; i++) {
       const query = agentQueries[i];
-      if (query.data && !query.data.found) {
+      if (query.isError && isMissingAgentError(query.error)) {
         ids.push(agentIdsToFetch[i]);
       }
     }
@@ -302,14 +302,18 @@ export default function FavoritesList({
       }
     }
     agentQueries.forEach((query) => {
-      if (query.data?.found) {
-        combined[query.data.agent.id] = query.data.agent;
+      if (query.data) {
+        combined[query.data.id] = query.data;
       }
     });
     return combined;
   }, [agentsMap, agentQueries]);
 
-  const isAgentsLoading = agentIdsToFetch.length > 0 && agentQueries.some((q) => q.isLoading);
+  const isAgentsLoading =
+    agentIdsToFetch.length > 0 &&
+    agentQueries.some(
+      (q) => q.isLoading || (agentsMap === undefined && q.isError && !isMissingAgentError(q.error)),
+    );
 
   const draggedFavoritesRef = useRef(safeFavorites);
 
