@@ -69,7 +69,7 @@ jobs:
           export GUARDRAIL_ID="${{ secrets.GUARDRAIL_ID }}"
           export GUARDRAIL_VERSION="${{ secrets.GUARDRAIL_VERSION }}"
 
-          export INTERFACE_AGENTS=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
+          export INTERFACE_AGENTS=true
 
           export SEARCH=$([[ "${{ inputs.environment }}" == "prod" ]] && echo false || echo true)
           export MEILI_NO_ANALYTICS=true
