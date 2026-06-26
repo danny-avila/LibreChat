@@ -31,7 +31,10 @@ const isMissingAgentError = (error: unknown): boolean => {
 
 /** Height intentionally matches FavoriteItem (px-3 py-2 + h-5 icon) to keep the CellMeasurerCache valid across the isAgentsLoading transition. */
 const FavoriteItemSkeleton = () => (
-  <div className="flex w-full items-center rounded-lg px-3 py-2">
+  <div
+    className="flex w-full items-center rounded-lg px-3 py-2"
+    data-testid="favorite-item-skeleton"
+  >
     <Skeleton className="mr-2 h-5 w-5 rounded-full" />
     <Skeleton className="h-4 w-24" />
   </div>
@@ -141,7 +144,8 @@ export default function FavoritesList({
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
   const agentsMap = useAgentsMapContext();
-  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {} as TEndpointsConfig, isLoading: isEndpointsLoading } =
+    useGetEndpointsQuery();
   const { data: startupConfig } = useGetStartupConfig();
 
   const modelSpecs = useMemo(
@@ -238,7 +242,8 @@ export default function FavoritesList({
       queryKey: [QueryKeys.agent, agentId],
       queryFn: (): Promise<Agent> => dataService.getAgentById({ agent_id: agentId }),
       staleTime: 1000 * 60 * 5,
-      retry: false,
+      retry: (failureCount: number, error: unknown) =>
+        !isMissingAgentError(error) && failureCount < 3,
     })),
   });
 
@@ -310,10 +315,12 @@ export default function FavoritesList({
   }, [agentsMap, agentQueries]);
 
   const isAgentsLoading =
-    agentIdsToFetch.length > 0 &&
-    agentQueries.some(
-      (q) => q.isLoading || (agentsMap === undefined && q.isError && !isMissingAgentError(q.error)),
-    );
+    allAgentIds.length > 0 &&
+    (isEndpointsLoading ||
+      agentQueries.some(
+        (q) =>
+          q.isLoading || (agentsMap === undefined && q.isError && !isMissingAgentError(q.error)),
+      ));
 
   const draggedFavoritesRef = useRef(safeFavorites);
 

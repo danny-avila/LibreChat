@@ -76,9 +76,11 @@ const mockUseGetStartupConfig = jest.fn((): { data?: { modelSpecs: { list: unkno
   data: { modelSpecs: { list: [] as unknown[] } },
 }));
 
-const mockUseGetEndpointsQuery = jest.fn((): { data: Record<string, unknown> } => ({
-  data: { [EModelEndpoint.agents]: { order: 0 } },
-}));
+const mockUseGetEndpointsQuery = jest.fn(
+  (): { data?: Record<string, unknown>; isLoading?: boolean } => ({
+    data: { [EModelEndpoint.agents]: { order: 0 } },
+  }),
+);
 
 jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => mockUseGetEndpointsQuery(),
@@ -253,6 +255,20 @@ describe('FavoritesList', () => {
 
       await new Promise((r) => setTimeout(r, 50));
       expect(dataService.getAgentById as jest.Mock).not.toHaveBeenCalled();
+      expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('keeps skeletons (not an empty row) while the endpoints config is still loading', async () => {
+      mockUseGetEndpointsQuery.mockImplementation(() => ({ data: undefined, isLoading: true }));
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockFavorites.push({ agentId: 'pinned-agent' });
+
+      const { queryAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      await new Promise((r) => setTimeout(r, 50));
+      // Endpoint gate is undecided, so no direct fetch yet, but the row stays as a skeleton.
+      expect(dataService.getAgentById as jest.Mock).not.toHaveBeenCalled();
+      expect(queryAllByTestId('favorite-item-skeleton').length).toBeGreaterThan(0);
       expect(queryAllByTestId('favorite-item')).toHaveLength(0);
     });
 
