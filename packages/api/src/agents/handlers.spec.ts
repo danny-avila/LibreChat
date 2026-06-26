@@ -2455,6 +2455,106 @@ describe('createToolExecuteHandler', () => {
       expect(result.content).toContain('Recovered Body');
     });
 
+    it('points the bash fallback at the skills/ mount for a binary skill file (#13961)', async () => {
+      /**
+       * Bundled skill files are primed into the sandbox under the
+       * `skills/{skillName}/...` namespace (see `primeSkillFiles`), so the
+       * binary/large bash hint must reference `/mnt/data/skills/...` — the
+       * real on-disk path — not a prefix-less `/mnt/data/{skillName}/...`
+       * that points nowhere.
+       */
+      const getSkillByName = jest.fn(async () => ({
+        _id: '507f1f77bcf86cd799439099' as unknown as never,
+        name: 'brand-skill',
+        body: '# Brand skill',
+        fileCount: 1,
+        version: 1,
+      }));
+      const getSkillFileByPath = jest.fn(async () => ({
+        content: '',
+        isBinary: true,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        bytes: 4096,
+        filepath: '/storage/brand-skill/references/guide.docx',
+        source: 'local',
+        relativePath: 'references/guide.docx',
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: {
+            codeEnvAvailable: true,
+            accessibleSkillIds: skillsInScope(),
+            activeSkillNames: new Set(['brand-skill']),
+          },
+        })),
+        getSkillByName,
+        getSkillFileByPath,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_binary_skill_read',
+          name: Constants.READ_FILE,
+          args: { path: 'skills/brand-skill/references/guide.docx' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain(
+        'Use bash to process: /mnt/data/skills/brand-skill/references/guide.docx',
+      );
+    });
+
+    it('canonicalizes the bash hint to skills/ even when addressed without the prefix (#13961)', async () => {
+      /**
+       * The implicit `{skillName}/...` addressing form resolves the same
+       * skill file, so its bash hint must also point at the canonical
+       * `/mnt/data/skills/...` mount rather than echoing the prefix-less
+       * `args.path`.
+       */
+      const getSkillByName = jest.fn(async () => ({
+        _id: '507f1f77bcf86cd799439099' as unknown as never,
+        name: 'brand-skill',
+        body: '# Brand skill',
+        fileCount: 1,
+        version: 1,
+      }));
+      const getSkillFileByPath = jest.fn(async () => ({
+        content: '',
+        isBinary: true,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        bytes: 4096,
+        filepath: '/storage/brand-skill/references/guide.docx',
+        source: 'local',
+        relativePath: 'references/guide.docx',
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: {
+            codeEnvAvailable: true,
+            accessibleSkillIds: skillsInScope(),
+            activeSkillNames: new Set(['brand-skill']),
+          },
+        })),
+        getSkillByName,
+        getSkillFileByPath,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_binary_skill_read_implicit',
+          name: Constants.READ_FILE,
+          args: { path: 'brand-skill/references/guide.docx' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('/mnt/data/skills/brand-skill/references/guide.docx');
+      expect(result.content).not.toContain('/mnt/data/brand-skill/references/guide.docx');
+    });
+
     it('routes through sandbox when skills are not effectively enabled (empty accessibleSkillIds)', async () => {
       /**
        * `accessibleSkillIds: []` is what `resolveAgentScopedSkillIds`
