@@ -6,7 +6,7 @@ import {
   useSubmitAskAnswerMutation,
   type ResumeAgentFields,
 } from '~/data-provider';
-import { useChatContext } from '~/Providers/ChatContext';
+import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
 
 /** Per-action submission lifecycle, surfaced to the cards so they can disable
@@ -218,12 +218,15 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
  * middleware reconstructs the same agent) and fires the resume mutation, threading
  * the result back into the action's status.
  *
- * Reads `ChatContext` / the agent store / React Query, so it must only be called
- * from components that render inside a live chat view (the cards) — never from
- * {@link ApprovalProvider}, which mounts in provider-less contexts too.
+ * Reads `ChatContext` / the agent store / React Query. The cards render it from
+ * live chat views but ALSO from contexts without a `ChatContext.Provider` (e.g. a
+ * subagent tool paused inside a portaled dialog, or a search/citation render that
+ * passes chat context as a prop), so it reads the context non-throwingly: with no
+ * conversation, `buildResumeFields` returns null and the controls are inert rather
+ * than crashing.
  */
 export function useResumeSubmit() {
-  const { conversation } = useChatContext();
+  const conversation = useContext(ChatContext)?.conversation;
   const getEphemeralAgent = useGetEphemeralAgent();
   const approvalMutation = useSubmitToolApprovalMutation();
   const askMutation = useSubmitAskAnswerMutation();
