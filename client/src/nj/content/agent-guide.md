@@ -4,7 +4,7 @@ This guide shares how to build and use agents in the NJ AI Assistant, last updat
 
 ## What is an agent & how is it useful?
 
-**Agents are a tool for repetitive tasks or skills you regularly use in your work. See an [overview of agents in this video](https://youtu.be/JD53f1yPvg4) or read the guide below.**
+**Agents are a tool for repetitive tasks or skills you regularly use in your work. See an [overview of agents in this video](https://youtu.be/XmghIAbRx14) or read the guide below.**
 
 Agents remember the instructions you provide, so you can use them over and over. You create a single set of instructions (a detailed prompt) and files (for context and reference) that the agent remembers and references when working. For repeatable tasks, define instructions for a particular task, such as "write this particular report" or "draft an email." For specialized tasks, define instructions for a skill, such as "editorial style guide checker" or "policy alignment reviewer."
 
