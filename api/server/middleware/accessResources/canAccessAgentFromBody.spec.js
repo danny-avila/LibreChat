@@ -104,13 +104,13 @@ describe('canAccessAgentFromBody middleware', () => {
   });
 
   describe('primary agent checks', () => {
-    test('returns 400 when agent_id is missing on agents endpoint', async () => {
+    test('proceeds with ephemeral fallback when agent_id is missing on agents endpoint', async () => {
       req.body.agent_id = undefined;
       const middleware = canAccessAgentFromBody({ requiredPermission: 1 });
       await middleware(req, res, next);
 
-      expect(next).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
     });
 
     test('proceeds for ephemeral primary agent without addedConvo', async () => {
