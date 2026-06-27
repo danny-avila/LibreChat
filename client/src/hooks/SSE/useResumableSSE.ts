@@ -43,6 +43,7 @@ import {
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
+import { useProgressTracking } from './useProgressTracking';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -487,6 +488,7 @@ export default function useResumableSSE(
     resetLive,
     seedLive,
   } = useUsageHandler();
+  const { handleProgressEvent, cleanupProgress } = useProgressTracking();
 
   /**
    * Subscribe to stream via SSE library (supports custom headers)
@@ -833,6 +835,8 @@ export default function useResumableSSE(
         }
       });
 
+      sse.addEventListener('progress', handleProgressEvent);
+
       /**
        * Error event handler - handles BOTH:
        * 1. HTTP-level errors (responseCode present) - 404, 401, network failures
@@ -1101,6 +1105,7 @@ export default function useResumableSSE(
       backfillUsage,
       resetLive,
       seedLive,
+      handleProgressEvent,
     ],
   );
 
@@ -1300,6 +1305,8 @@ export default function useResumableSSE(
       // Reset UI state on cleanup - useResumeOnLoad will restore if needed
       setIsSubmitting(false);
       setShowStopButton(false);
+      // Clear progress map and pending cleanup timers on unmount
+      cleanupProgress();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
