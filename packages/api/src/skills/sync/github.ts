@@ -24,6 +24,7 @@ import type {
 import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown } from '../parse';
+import { syncNonGitHubProviders } from './genericSync';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const SYSTEM_AUTHOR_ID = new Types.ObjectId('000000000000000000000000');
@@ -171,12 +172,12 @@ export type GitHubSkillSyncDeps = {
   }) => Promise<UpdateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   findSkillBySourceIdentity: (params: {
-    source: 'github' | 'notion';
+    source: 'github' | 'gitlab' | 'bitbucket' | 'azuredevops' | 'notion';
     upstreamId: string;
     tenantId?: string;
   }) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   listSkillsBySource: (params: {
-    source: 'github' | 'notion';
+    source: 'github' | 'gitlab' | 'bitbucket' | 'azuredevops' | 'notion';
     sourceId: string;
   }) => Promise<Array<ISkill & { _id: Types.ObjectId }>>;
   listSkillFiles: (
@@ -1790,8 +1791,16 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
 
   async function runOnce(): Promise<GitHubSkillSyncRunResult> {
     const github = getGithubConfig(await deps.getConfig());
-    if (!github.enabled || github.sources.length === 0) {
-      return { status: 'skipped', message: 'GitHub skill sync is disabled', sources: [] };
+    const githubEnabled = github.enabled && github.sources.length > 0;
+    if (!githubEnabled) {
+      // Even if GitHub is disabled, process other providers
+      const assertNotCancelled = () => {};
+      const genericSources = await syncNonGitHubProviders({ deps, fetchFn, assertNotCancelled });
+      if (genericSources.length === 0) {
+        return { status: 'skipped', message: 'Skill sync is disabled', sources: [] };
+      }
+      const failed = genericSources.some((s) => s.status === 'failed');
+      return { status: failed ? 'failed' : 'completed', sources: genericSources };
     }
     const allowServerCredentials = deps.allowServerCredentials !== false;
     if (!allowServerCredentials) {
@@ -1856,6 +1865,13 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
           await syncSourceInTenantContext({ deps, source, fetchFn, assertNotCancelled }),
         );
       }
+
+      // Sync non-GitHub providers
+      if (!lockLost) {
+        const genericSources = await syncNonGitHubProviders({ deps, fetchFn, assertNotCancelled });
+        sources.push(...genericSources);
+      }
+
       const failed = sources.some((source) => source.status === 'failed');
       return {
         status: failed || lockLost ? 'failed' : 'completed',
