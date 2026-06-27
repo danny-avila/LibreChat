@@ -495,6 +495,20 @@ describe('allowedAddressesSchema', () => {
 });
 
 describe('webSearchSchema', () => {
+  it('accepts zeroentropy as rerankerType', () => {
+    const result = webSearchSchema.parse({
+      rerankerType: 'zeroentropy',
+      zeroEntropyApiKey: '${ZEROENTROPY_API_KEY}',
+      zeroEntropyApiUrl: '${ZEROENTROPY_API_URL}',
+      zeroEntropyModel: 'zerank-2',
+    });
+
+    expect(result.rerankerType).toBe('zeroentropy');
+    expect(result.zeroEntropyApiKey).toBe('${ZEROENTROPY_API_KEY}');
+    expect(result.zeroEntropyApiUrl).toBe('${ZEROENTROPY_API_URL}');
+    expect(result.zeroEntropyModel).toBe('zerank-2');
+  });
+
   it('accepts Tavily string modes for answer and raw content options', () => {
     const result = webSearchSchema.parse({
       tavilySearchOptions: {
