@@ -4,6 +4,7 @@ import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@l
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
+import MessageTimestamp from './MessageTimestamp';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
@@ -190,7 +191,7 @@ const HoverButtons = ({
   const handleCopy = () => copyToClipboard(setIsCopied);
 
   return (
-    <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
+    <div className="group visible flex w-full justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
       {/* Text to Speech */}
       {TextToSpeech && (
         <MessageAudio
@@ -280,6 +281,9 @@ const HoverButtons = ({
           className="active"
         />
       )}
+
+      {/* Message Timestamp */}
+      <MessageTimestamp createdAt={message.createdAt} />
     </div>
   );
 };
