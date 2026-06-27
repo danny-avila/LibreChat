@@ -1,6 +1,6 @@
 import type { Document, Types } from 'mongoose';
 
-export type SkillSyncProvider = 'github';
+export type SkillSyncProvider = 'github' | 'gitlab' | 'bitbucket' | 'azuredevops';
 export type SkillSyncRunStatus = 'idle' | 'running' | 'succeeded' | 'failed' | 'skipped';
 
 export interface ISkillSyncCredential {
