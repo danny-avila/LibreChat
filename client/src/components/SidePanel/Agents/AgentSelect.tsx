@@ -14,11 +14,15 @@ const keys = new Set(Object.keys(defaultAgentFormValues));
 
 function AgentSelect({
   agentQuery,
+  hasDraft = false,
   selectedAgentId = null,
+  onAgentChange,
   setCurrentAgentId,
   createMutation,
 }: {
+  hasDraft?: boolean;
   selectedAgentId: string | null;
+  onAgentChange?: (selectedAgentId?: string | null) => void;
   agentQuery: QueryObserverResult<Agent>;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
@@ -157,6 +161,10 @@ function AgentSelect({
 
   const onSelect = useCallback(
     (selectedId: string) => {
+      if (selectedId !== selectedAgentId) {
+        onAgentChange?.(selectedId || null);
+      }
+
       const agentExists = !!(selectedId
         ? (agents ?? []).find((agent) => agent.id === selectedId)
         : undefined);
@@ -176,17 +184,35 @@ function AgentSelect({
 
       resetAgentForm(agent);
     },
-    [agents, createMutation, setCurrentAgentId, agentQuery.data, resetAgentForm, reset],
+    [
+      agents,
+      selectedAgentId,
+      onAgentChange,
+      createMutation,
+      setCurrentAgentId,
+      agentQuery.data,
+      resetAgentForm,
+      reset,
+    ],
   );
 
   useEffect(() => {
+    if (hasDraft) {
+      return;
+    }
+
     if (agentQuery.data && agentQuery.isSuccess) {
       resetAgentForm(agentQuery.data);
     }
-  }, [agentQuery.data, agentQuery.isSuccess, resetAgentForm]);
+  }, [agentQuery.data, agentQuery.isSuccess, hasDraft, resetAgentForm]);
 
   useEffect(() => {
     let timerId: NodeJS.Timeout | null = null;
+
+    if (hasDraft) {
+      lastSelectedAgent.current = selectedAgentId;
+      return;
+    }
 
     if (selectedAgentId === lastSelectedAgent.current) {
       return;
@@ -204,7 +230,7 @@ function AgentSelect({
         clearTimeout(timerId);
       }
     };
-  }, [selectedAgentId, agents, onSelect]);
+  }, [selectedAgentId, agents, hasDraft, onSelect]);
 
   const createAgent = localize('com_ui_create_new_agent');
 
@@ -250,6 +276,8 @@ const MemoizedAgentSelect = memo(
   AgentSelect,
   (prevProps, nextProps) =>
     prevProps.selectedAgentId === nextProps.selectedAgentId &&
+    prevProps.hasDraft === nextProps.hasDraft &&
+    prevProps.onAgentChange === nextProps.onAgentChange &&
     prevProps.agentQuery.data === nextProps.agentQuery.data &&
     prevProps.agentQuery.isSuccess === nextProps.agentQuery.isSuccess &&
     prevProps.createMutation.data?.id === nextProps.createMutation.data?.id &&
