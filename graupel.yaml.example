@@ -14,6 +14,21 @@ interface:
   parameters: true
   presets: false
 
+memory:
+  disabled: false
+  personalize: true
+  messageWindowSize: 5
+  agent:
+    enabled: true
+    provider: "openAI"               # routed to gptsapi via OPENAI_REVERSE_PROXY
+    model: "gemini-2.5-flash-lite"
+    instructions: >
+      Extract durable facts about the user worth remembering across chats:
+      stated preferences (response format, tone, length), working context
+      (languages, frameworks, projects, role), and stable personal facts.
+      Do NOT store secrets, passwords, API keys, health, or financial details.
+      Update/replace existing keys rather than duplicating.
+
 registration:
   socialLogins:
     - google
