@@ -1,5 +1,7 @@
 # Memory Fix Implementation Plan
 
+> ⚠️ **已部分作废(2026-06-27,经运行时实证)。** 本计划 Task 1/Task 2 的 `BaseClient` 注入/抽取移植基于错误前提(以为标准端点不跑记忆)。实测:当前 fork 是 agents-only,所有聊天都走 `AgentClient`,它**本就自带**记忆注入+抽取,仅需 `memory:` 配置即生效。故 **Task 1/2 的 BaseClient 代码已回退**;实际落地 = Task 1 的 `memory:` 配置块 + Task 3 前端去 admin 门。详见 [设计 spec 顶部「修订(2026-06-27)」](../specs/2026-06-26-graupel-memory-fix-design.md)。下方原计划保留供追溯。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make LibreChat memory work for Graupel's standard (non-agent) chat path — auto-extract user facts + inject them into context across the curated models, visible/manageable by normal users.

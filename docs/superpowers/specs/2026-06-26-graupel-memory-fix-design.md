@@ -6,6 +6,25 @@
 
 ---
 
+## 修订(2026-06-27):架构前提更正(运行时实证)
+
+> ⚠️ 本设计原 §3 缺口#2 / §4「BaseClient 记忆 hook」的核心前提**有误**,已实证更正。原文保留在下方供追溯,**实际落地以本节为准**。
+
+**原前提(错误)**:记忆注入+抽取只在 `AgentClient` 跑、Graupel 的标准端点完全不跑,故需把记忆逻辑移植进 `BaseClient`。
+
+**实际架构**:当前 fork 是 **agents-only** —— `buildEndpointOption.js` 的 `buildFunction` 只有 `agents`、`services/Endpoints/` 只有 `agents`、无 `routes/ask`·`routes/edit`、请求路径无任何 `OpenAIClient/AnthropicClient/GoogleClient` 实例;非 agent 端点经 `initialize.js` 包进 agents 路径。**每次聊天(含策展模型)都走 `AgentClient`**,它 `extends BaseClient` 且**已自带** `useMemory()`(注入,client.js:405/513)+ `runMemory()`(抽取,client.js:700/988),门控与抽取配置(`memory.agent` provider+model)和本设计完全一致。
+
+**结论**:LibreChat 自带记忆**对策展模型本就完整生效**;之前 inert 的唯一原因是缺 `memory:` 配置(`memoryConfig` 为 undefined → `useMemory` 在 client.js:533 提前返回)。把记忆逻辑搬进 `BaseClient` 是**多余且有害的**(会双重注入 + 抽取 buffer 被已有记忆污染)。
+
+**实际改动(MVP 落地,本分支)**:
+1. **`memory:` 配置块**(graupel.yaml.example + 本地 librechat.yaml)—— 打开自带记忆,抽取模型走 gptsapi 的 `gemini-2.5-flash-lite`。
+2. **前端去 admin 门**(`client/src/hooks/Nav/useSideNavLinks.ts`)—— 普通用户可见可管理现成 CRUD 面板。
+3. **不动** `BaseClient` / `AgentClient`(§4 的 BaseClient hook 方案已废弃)。
+
+**运行时验证(2026-06-27,BaseClient 无任何记忆代码下)**:用策展 Gemini 2.5 Flash 聊一句含个人信息 → 回复显示「Updated saved memory」,`memoryentries` 自动 0→3 条(`user_name`/`programming_language`/`code_preference`,按 key 去重);开新会话提问 → 模型纯从注入记忆答出。抽取确认走 `gemini-2.5-flash-lite`(经 OPENAI_REVERSE_PROXY → gptsapi,冒烟 HTTP 200)。
+
+---
+
 ## 1. 概述与目标
 
 LibreChat 自带完整的「记忆」(personalization/memories)子系统,但在 Graupel 当前形态下**不生效**:记忆的注入+抽取只在 Agents 端点跑,而 Graupel 聊天走标准端点(modelSpecs on openAI/custom);且记忆侧栏被硬编码为 admin-only。本设计把记忆**接进标准聊天链路**、**对普通用户可见可管理**、**抽取模型可配**,做出 ChatGPT 式「自动记住你」体验。
