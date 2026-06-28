@@ -156,7 +156,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (isAdmin && hasAccessToMemories && hasAccessToReadMemories) {
+    if (hasAccessToMemories && hasAccessToReadMemories) {
       links.push({
         title: 'com_ui_memories',
         label: '',
