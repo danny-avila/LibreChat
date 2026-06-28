@@ -15,7 +15,7 @@ const {
   setOpenIDMarkerCookies,
 } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
-const { storeRefreshTokenBridge } = require('./RefreshTokenBridge');
+const { OPENID_REFRESH_BRIDGE_GRACE_MS, storeRefreshTokenBridge } = require('./RefreshTokenBridge');
 const {
   acquireOpenIDRefreshFlight,
   completeOpenIDRefreshFlight,
@@ -405,6 +405,35 @@ async function syncRefreshTokenCookie({
   }
 }
 
+async function storeSessionSaveFailureBridge({ oldRefreshToken, newRefreshToken, bridgeIdentity }) {
+  if (!oldRefreshToken || !newRefreshToken || !bridgeIdentity?.userId) {
+    return;
+  }
+
+  try {
+    await storeRefreshTokenBridge({
+      oldRefreshToken,
+      newRefreshToken,
+      userId: bridgeIdentity.userId,
+      tenantId: bridgeIdentity.tenantId,
+      openidIssuer: bridgeIdentity.openidIssuer,
+      ttl: OPENID_REFRESH_BRIDGE_GRACE_MS,
+    });
+    logger.warn(
+      '[OpenIDSessionRefresh] Stored short refresh-token bridge after session save failure',
+      {
+        userId: bridgeIdentity.userId,
+        ttl: OPENID_REFRESH_BRIDGE_GRACE_MS,
+      },
+    );
+  } catch (bridgeError) {
+    logger.warn(
+      '[OpenIDSessionRefresh] Failed to store refresh-token bridge after session save failure',
+      bridgeError,
+    );
+  }
+}
+
 async function performIdpRefreshGrant(req, res, user, tokenPreference, identityContext) {
   const sessionTokens = req?.session?.openidTokens;
   const refreshToken = sessionTokens?.refreshToken;
@@ -481,8 +510,9 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference, identityC
    * already sent (SSE streaming), store a recovery bridge instead. Do this before the
    * session save so a transient session-store failure cannot lose an IdP-rotated token.
    */
+  let bridgeIdentity = null;
   if (needsRefreshTokenSync) {
-    const bridgeIdentity = createRefreshTokenBridgeIdentity({
+    bridgeIdentity = createRefreshTokenBridgeIdentity({
       user,
       requestUser: req?.user,
       userId: identityContext?.appUserId,
@@ -500,7 +530,18 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference, identityC
     });
   }
 
-  await persistSession(req);
+  try {
+    await persistSession(req);
+  } catch (error) {
+    if (needsRefreshTokenSync && willWriteRefreshTokenCookie) {
+      await storeSessionSaveFailureBridge({
+        oldRefreshToken: browserRefreshToken,
+        newRefreshToken: nextRefreshToken,
+        bridgeIdentity,
+      });
+    }
+    throw error;
+  }
 
   logger.info('[OpenIDSessionRefresh] Inline refresh succeeded');
   /**

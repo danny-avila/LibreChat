@@ -29,14 +29,13 @@ const {
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const {
+  OPENID_REFRESH_BRIDGE_GRACE_MS,
   getRefreshTokenBridge,
   storeRefreshTokenBridge,
 } = require('~/server/services/RefreshTokenBridge');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
-/** Short stale-cookie recovery window after bridged refresh succeeds. */
-const OPENID_REFRESH_BRIDGE_GRACE_MS = math(process.env.OPENID_REFRESH_BRIDGE_GRACE_MS, 60 * 1000);
 /**
  * Max age (ms) LibreChat reuses a cached OpenID session token before forcing an IdP refresh.
  * Env-overridable (accepts an arithmetic expression, e.g. `60 * 60 * 24 * 1000`, like
@@ -88,6 +87,27 @@ const getValidOpenIDReuseUserId = (parsedCookies) => {
   } catch {
     return null;
   }
+};
+
+const selectOpenIDRefreshToken = (openidTokens, parsedCookies) => {
+  const sessionRefreshToken = openidTokens?.refreshToken;
+  const browserRefreshToken = parsedCookies.refreshToken;
+  const lastSyncedBrowserRefreshToken = openidTokens?.browserRefreshToken;
+  const hasKnownBrowserRefreshTokenMarker =
+    typeof lastSyncedBrowserRefreshToken === 'string' && lastSyncedBrowserRefreshToken.length > 0;
+  const driftReference = hasKnownBrowserRefreshTokenMarker
+    ? lastSyncedBrowserRefreshToken
+    : sessionRefreshToken;
+
+  if (browserRefreshToken && driftReference && browserRefreshToken !== driftReference) {
+    logger.info('[refreshController] OpenID refresh token cookie differs from session state');
+    return { refreshToken: browserRefreshToken, cookieDiffersFromSession: true };
+  }
+
+  return {
+    refreshToken: sessionRefreshToken || browserRefreshToken,
+    cookieDiffersFromSession: false,
+  };
 };
 
 const isRecentOpenIDSessionRefresh = (openidTokens) => {
@@ -251,8 +271,11 @@ const refreshController = async (req, res) => {
   const token_provider = parsedCookies.token_provider;
 
   if (token_provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-    /** For OpenID users, read refresh token from session to avoid large cookie issues */
-    const refreshToken = req.session?.openidTokens?.refreshToken || parsedCookies.refreshToken;
+    /** Prefer session refresh tokens unless the browser cookie proves the session is stale. */
+    const { refreshToken, cookieDiffersFromSession } = selectOpenIDRefreshToken(
+      req.session?.openidTokens,
+      parsedCookies,
+    );
 
     if (!refreshToken) {
       return res.status(200).send('Refresh token not provided');
@@ -264,7 +287,9 @@ const refreshController = async (req, res) => {
        * Stale, missing, or near-expiry tokens fall through to refreshTokenGrant so
        * upstream revocations and cookie/session extension are checked regularly.
        */
-      const reusableSessionToken = getReusableOpenIDSessionToken(req.session?.openidTokens);
+      const reusableSessionToken = cookieDiffersFromSession
+        ? null
+        : getReusableOpenIDSessionToken(req.session?.openidTokens);
       const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
       if (reuseUserId) {
         const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);

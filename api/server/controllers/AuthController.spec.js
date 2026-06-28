@@ -22,6 +22,7 @@ jest.mock('~/models', () => ({
   findUser: jest.fn(),
 }));
 jest.mock('~/server/services/RefreshTokenBridge', () => ({
+  OPENID_REFRESH_BRIDGE_GRACE_MS: 60 * 1000,
   getRefreshTokenBridge: jest.fn(),
   storeRefreshTokenBridge: jest.fn(),
 }));
@@ -330,6 +331,119 @@ describe('refreshController – OpenID path', () => {
       openidIssuer: baseClaims.iss,
     });
   };
+
+  it('prefers the browser refresh-token cookie when it differs from the session marker', async () => {
+    req.headers.cookie = 'token_provider=openid; refreshToken=rt-cookie-current';
+    req.session = {
+      openidTokens: {
+        refreshToken: 'rt-session-stale',
+        browserRefreshToken: 'rt-browser-stale',
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-cookie-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-cookie-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
+
+  it('refreshes with the browser cookie instead of reusing stale session tokens on drift', async () => {
+    const reusableIdToken = makeSessionToken();
+    req.headers.cookie = [
+      'token_provider=openid',
+      'refreshToken=rt-cookie-current',
+      `openid_user_id=${makeSignedUserId()}`,
+    ].join('; ');
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: reusableIdToken,
+        refreshToken: 'rt-session-stale',
+        browserRefreshToken: 'rt-browser-stale',
+        lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-cookie-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-cookie-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
+
+  it('prefers the browser refresh-token cookie when pre-marker session state differs', async () => {
+    req.headers.cookie = 'token_provider=openid; refreshToken=rt-cookie-current';
+    req.session = {
+      openidTokens: {
+        refreshToken: 'rt-session-stale',
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-cookie-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-cookie-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
+
+  it('keeps the session refresh token when the browser cookie matches the session marker', async () => {
+    req.headers.cookie = 'token_provider=openid; refreshToken=rt-browser-stale';
+    req.session = {
+      openidTokens: {
+        refreshToken: 'rt-session-current',
+        browserRefreshToken: 'rt-browser-stale',
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-session-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-session-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
 
   it('should call getOpenIdEmail with token claims and use result for findOpenIDUser', async () => {
     await refreshController(req, res);

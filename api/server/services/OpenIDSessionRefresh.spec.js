@@ -110,6 +110,7 @@ jest.mock('@librechat/api', () => ({
   }),
 }));
 jest.mock('./RefreshTokenBridge', () => ({
+  OPENID_REFRESH_BRIDGE_GRACE_MS: 60 * 1000,
   storeRefreshTokenBridge: jest.fn(),
 }));
 jest.mock('./OpenIDRefreshFlight', () => ({
@@ -646,7 +647,7 @@ describe('OpenIDSessionRefresh', () => {
       });
     });
 
-    it('syncs the rotated cookie before surfacing a session save failure', async () => {
+    it('syncs the rotated cookie and stores a short bridge before surfacing a session save failure', async () => {
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
         access_token: makeJwt(refreshedExp),
@@ -664,7 +665,14 @@ describe('OpenIDSessionRefresh', () => {
 
       expect(setRefreshTokenCookie).toHaveBeenCalledWith(res, 'rt-rotated', expect.any(Date));
       expect(setOpenIDMarkerCookies).toHaveBeenCalledTimes(1);
-      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-rotated',
+        userId: 'local-id-1',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+        ttl: 60 * 1000,
+      });
       expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
       expect(req.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
     });

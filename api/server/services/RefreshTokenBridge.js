@@ -8,6 +8,9 @@ const {
 const { math, createRefreshTokenBridgeIdentity } = require('@librechat/api');
 const db = require('~/models');
 
+/** Short stale-cookie recovery window after bridged refresh succeeds. */
+const OPENID_REFRESH_BRIDGE_GRACE_MS = math(process.env.OPENID_REFRESH_BRIDGE_GRACE_MS, 60 * 1000);
+
 /**
  * Server-side recovery bridge for refresh tokens rotated during SSE streaming.
  *
@@ -139,6 +142,7 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
 }
 
 module.exports = {
+  OPENID_REFRESH_BRIDGE_GRACE_MS,
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
   __internals: {
