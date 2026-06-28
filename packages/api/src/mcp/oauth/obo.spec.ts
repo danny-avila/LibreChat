@@ -174,7 +174,7 @@ describe('resolveOboToken', () => {
     expect(result.token_type).toBe('Bearer');
     expect(result.obtained_at).toBeGreaterThanOrEqual(beforeCall);
     expect(result.obtained_at).toBeLessThanOrEqual(afterCall);
-    expect(result.expires_at).toBe(result.obtained_at + 3600 * 1000);
+    expect(result.expires_at).toBe(result.obtained_at + 3570 * 1000);
   });
 
   it('defaults expires_in to 3600 when not provided by resolver', async () => {
@@ -189,7 +189,7 @@ describe('resolveOboToken', () => {
       liveProvider,
     );
 
-    expect(result.expires_at).toBe(result.obtained_at + 3600 * 1000);
+    expect(result.expires_at).toBe(result.obtained_at + 3570 * 1000);
   });
 
   it('throws when resolver returns no access_token', async () => {
@@ -199,6 +199,25 @@ describe('resolveOboToken', () => {
     ).rejects.toMatchObject({
       reason: 'empty_exchange_response',
       retryable: false,
+    });
+  });
+
+  it('preserves empty_exchange_response when the resolver rejects a malformed exchange', async () => {
+    const malformedError = Object.assign(
+      new Error('The identity provider returned no access token for the OBO exchange'),
+      {
+        oboFailureReason: 'empty_exchange_response',
+        retryable: false,
+      },
+    );
+    const emptyResolver: OboTokenResolver = jest.fn().mockRejectedValue(malformedError);
+
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, emptyResolver, liveProvider),
+    ).rejects.toMatchObject({
+      reason: 'empty_exchange_response',
+      retryable: false,
+      userMessage: 'The identity provider returned no access token for the OBO exchange.',
     });
   });
 
@@ -280,7 +299,41 @@ describe('resolveOboToken', () => {
       liveProvider,
     );
 
-    expect(result.expires_at).toBe(result.obtained_at + 300 * 1000);
+    expect(result.expires_at).toBe(result.obtained_at + 270 * 1000);
+  });
+
+  it('respects absolute expires_at from cached resolver responses', async () => {
+    const absoluteExpiresAt = Date.now() + 120 * 1000;
+    const cachedResolver: OboTokenResolver = jest.fn().mockResolvedValue({
+      access_token: 'cached-token',
+      expires_in: 3600,
+      expires_at: absoluteExpiresAt,
+    });
+
+    const result = await resolveOboToken(
+      mockUser as IUser,
+      oboConfig,
+      cachedResolver,
+      liveProvider,
+    );
+
+    expect(result.expires_at).toBe(absoluteExpiresAt - 30 * 1000);
+  });
+
+  it('keeps a positive expires_at lifetime for very short-lived OBO tokens', async () => {
+    const shortLivedResolver: OboTokenResolver = jest.fn().mockResolvedValue({
+      access_token: 'very-short-lived-token',
+      expires_in: 10,
+    });
+
+    const result = await resolveOboToken(
+      mockUser as IUser,
+      oboConfig,
+      shortLivedResolver,
+      liveProvider,
+    );
+
+    expect(result.expires_at).toBe(result.obtained_at + 1000);
   });
 });
 

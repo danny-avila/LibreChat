@@ -2,7 +2,14 @@ const crypto = require('node:crypto');
 const client = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { createOpenIDOboIdentityTuple, serializeAuthIdentityTuple } = require('@librechat/api');
+const {
+  createOpenIDOboIdentityTuple,
+  getOboTokenExpiresAtMs,
+  getSkewedOboTokenCacheTtlMs,
+  hasUsableOboTokenExpiry,
+  normalizeOboExpiresInSeconds,
+  serializeAuthIdentityTuple,
+} = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -61,6 +68,13 @@ function tagOboExchangeError(error, retryable) {
   return error;
 }
 
+function createEmptyOboExchangeResponseError() {
+  const error = new Error('The identity provider returned no access token for the OBO exchange');
+  error.retryable = false;
+  error.oboFailureReason = 'empty_exchange_response';
+  return error;
+}
+
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
@@ -108,14 +122,25 @@ async function performOboExchange({ user, accessToken, scopes, config, tokensCac
     }
   }
 
+  if (!grantResponse?.access_token) {
+    throw createEmptyOboExchangeResponseError();
+  }
+
+  const expiresIn = normalizeOboExpiresInSeconds(grantResponse.expires_in);
+  const now = Date.now();
+  const expiresAt = getOboTokenExpiresAtMs({
+    expiresIn,
+    now,
+  });
   const tokenResponse = {
     access_token: grantResponse.access_token,
     token_type: 'Bearer',
-    expires_in: grantResponse.expires_in || 3600,
+    expires_in: expiresIn,
+    expires_at: expiresAt,
     scope: scopes,
   };
 
-  await tokensCache.set(cacheKey, tokenResponse, (grantResponse.expires_in || 3600) * 1000);
+  await tokensCache.set(cacheKey, tokenResponse, getSkewedOboTokenCacheTtlMs(expiresAt, now));
 
   logger.debug(
     `[OboTokenService] Successfully obtained and cached OBO token for user: ${user.openidId}`,
@@ -168,8 +193,13 @@ async function exchangeOboToken(user, accessToken, scopes, fromCache = true, ide
   if (fromCache) {
     const cachedToken = await tokensCache.get(cacheKey);
     if (cachedToken) {
-      logger.debug(`[OboTokenService] Using cached token for user: ${user.openidId}`);
-      return cachedToken;
+      if (hasUsableOboTokenExpiry(cachedToken.expires_at)) {
+        logger.debug(`[OboTokenService] Using cached token for user: ${user.openidId}`);
+        return cachedToken;
+      }
+      logger.debug(
+        `[OboTokenService] Ignoring cached OBO token without usable expiry for user: ${user.openidId}`,
+      );
     }
 
     const inFlight = inFlightExchanges.get(cacheKey);

@@ -84,6 +84,7 @@ describe('OboTokenService', () => {
         access_token: 'cached-obo-token',
         token_type: 'Bearer',
         expires_in: 1800,
+        expires_at: Date.now() + 1800 * 1000,
         scope: 'api://mcp-server/Scope.Read',
       };
       mockTokensCache.get.mockResolvedValue(cachedToken);
@@ -100,6 +101,27 @@ describe('OboTokenService', () => {
         expectedCacheKey(mockUser, 'access-token', 'api://mcp-server/Scope.Read'),
       );
       expect(client.genericGrantRequest).not.toHaveBeenCalled();
+    });
+
+    it('should ignore legacy cached tokens without absolute expiry', async () => {
+      const cachedToken = {
+        access_token: 'cached-obo-token',
+        token_type: 'Bearer',
+        expires_in: 1800,
+        scope: 'api://mcp-server/Scope.Read',
+      };
+      mockTokensCache.get.mockResolvedValue(cachedToken);
+
+      const result = await exchangeOboToken(
+        mockUser,
+        'access-token',
+        'api://mcp-server/Scope.Read',
+        true,
+      );
+
+      expect(result.access_token).toBe('exchanged-obo-token');
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(1);
+      expect(mockTokensCache.set).toHaveBeenCalledTimes(1);
     });
 
     it('should skip cache when fromCache is false', async () => {
@@ -155,11 +177,12 @@ describe('OboTokenService', () => {
         access_token: 'exchanged-obo-token',
         token_type: 'Bearer',
         expires_in: 3600,
+        expires_at: expect.any(Number),
         scope: 'api://mcp-server/Tools.ReadWrite',
       });
     });
 
-    it('should cache the exchanged token with correct TTL', async () => {
+    it('should cache the exchanged token with a skewed TTL', async () => {
       client.genericGrantRequest.mockResolvedValue({
         access_token: 'new-obo-token',
         expires_in: 1800,
@@ -173,9 +196,10 @@ describe('OboTokenService', () => {
           access_token: 'new-obo-token',
           token_type: 'Bearer',
           expires_in: 1800,
+          expires_at: expect.any(Number),
           scope: 'api://scope',
         },
-        1800 * 1000,
+        1770 * 1000,
       );
     });
 
@@ -190,7 +214,35 @@ describe('OboTokenService', () => {
       expect(mockTokensCache.set).toHaveBeenCalledWith(
         expectedCacheKey(mockUser, 'access-token', 'api://scope'),
         expect.objectContaining({ expires_in: 3600 }),
-        3600 * 1000,
+        3570 * 1000,
+      );
+    });
+
+    it('should not cache an exchange response without access_token', async () => {
+      client.genericGrantRequest.mockResolvedValue({
+        expires_in: 3600,
+      });
+
+      await expect(exchangeOboToken(mockUser, 'access-token', 'api://scope')).rejects.toThrow(
+        'The identity provider returned no access token for the OBO exchange',
+      );
+
+      expect(mockTokensCache.set).not.toHaveBeenCalled();
+    });
+
+    it('should keep a positive TTL for very short-lived tokens', async () => {
+      client.genericGrantRequest.mockResolvedValue({
+        access_token: 'short-lived-token',
+        expires_in: 10,
+      });
+
+      const result = await exchangeOboToken(mockUser, 'access-token', 'api://scope');
+
+      expect(result.expires_in).toBe(10);
+      expect(mockTokensCache.set).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token', 'api://scope'),
+        expect.objectContaining({ access_token: 'short-lived-token', expires_in: 10 }),
+        1000,
       );
     });
 
@@ -224,6 +276,7 @@ describe('OboTokenService', () => {
           access_token: 'retried-obo-token',
           token_type: 'Bearer',
           expires_in: 1800,
+          expires_at: expect.any(Number),
           scope: 'api://scope',
         });
       } finally {

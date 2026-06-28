@@ -4,6 +4,7 @@ import type { IUser, OIDCTokens } from '@librechat/data-schemas';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { OpenIDTokenInfo } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
+import { getOboTokenExpiresAtMs, getSkewedOboTokenExpiresAtMs } from './expiry';
 import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
 
 export interface OboConfig {
@@ -20,7 +21,7 @@ export type OboTokenResolver = (
   scopes: string,
   fromCache?: boolean,
   identityContext?: AuthIdentityContext,
-) => Promise<{ access_token: string; expires_in?: number }>;
+) => Promise<{ access_token: string; expires_in?: number; expires_at?: number }>;
 
 /**
  * Provides the LIVE upstream OpenID tokens at OBO call time, refreshing the
@@ -78,6 +79,19 @@ function getErrorRetryableFlag(error: unknown): boolean | undefined {
 
   const retryable = (error as { retryable?: unknown }).retryable;
   return typeof retryable === 'boolean' ? retryable : undefined;
+}
+
+function getOboFailureReason(error: unknown): OboTokenResolutionReason | undefined {
+  if (!error || typeof error !== 'object' || !('oboFailureReason' in error)) {
+    return undefined;
+  }
+
+  const reason = (error as { oboFailureReason?: unknown }).oboFailureReason;
+  if (reason === 'empty_exchange_response') {
+    return reason;
+  }
+
+  return undefined;
 }
 
 export class OboTokenResolutionError extends Error {
@@ -233,17 +247,32 @@ export async function resolveOboToken(
     }
 
     const now = Date.now();
-    const expiresIn = response.expires_in ?? 3600;
+    const expiresAt = getOboTokenExpiresAtMs({
+      expiresAt: response.expires_at,
+      expiresIn: response.expires_in,
+      now,
+    });
 
     return {
       access_token: response.access_token,
       token_type: 'Bearer',
       obtained_at: now,
-      expires_at: now + expiresIn * 1000,
+      expires_at: getSkewedOboTokenExpiresAtMs(expiresAt, now),
     };
   } catch (error) {
     if (error instanceof OboTokenResolutionError) {
       throw error;
+    }
+
+    const failureReason = getOboFailureReason(error);
+    if (failureReason === 'empty_exchange_response') {
+      logger.warn('[OBO] Token exchange did not return an access token');
+      throw new OboTokenResolutionError(
+        failureReason,
+        'The identity provider returned no access token for the OBO exchange.',
+        false,
+        error,
+      );
     }
 
     logger.error('[OBO] Failed to exchange token:', error);
