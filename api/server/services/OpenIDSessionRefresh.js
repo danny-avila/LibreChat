@@ -7,6 +7,7 @@ const {
   math,
   createAuthIdentityContext,
   createOpenIDRefreshIdentityTuple,
+  createRefreshTokenBridgeIdentity,
   serializeAuthIdentityTuple,
   buildOpenIDRefreshParams,
   setRefreshTokenCookie,
@@ -358,7 +359,7 @@ async function syncRefreshTokenCookie({
   }
 }
 
-async function performIdpRefreshGrant(req, res, user, tokenPreference) {
+async function performIdpRefreshGrant(req, res, user, tokenPreference, identityContext) {
   const sessionTokens = req?.session?.openidTokens;
   const refreshToken = sessionTokens?.refreshToken;
   if (!refreshToken) {
@@ -385,8 +386,8 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference) {
   const nextIdToken = tokenset.id_token || sessionTokens.idToken;
   const nextRefreshToken = tokenset.refresh_token || refreshToken;
   const browserRefreshToken = sessionTokens.browserRefreshToken || refreshToken;
-  const willWriteRefreshTokenCookie =
-    nextRefreshToken !== refreshToken && canWriteRefreshTokenCookie(res);
+  const needsRefreshTokenSync = nextRefreshToken !== browserRefreshToken;
+  const willWriteRefreshTokenCookie = needsRefreshTokenSync && canWriteRefreshTokenCookie(res);
 
   /**
    * Capture the freshly-issued access-token's expiry (unix seconds) so the
@@ -428,22 +429,32 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference) {
   }
 
   req.session.openidTokens = updatedSessionTokens;
-  await persistSession(req);
 
   /**
-   * Keep the browser refresh-token cookie in sync when the IdP rotated it.
-   * If headers are already sent (SSE streaming), store a recovery bridge instead.
+   * Keep the browser refresh-token cookie in sync with the session token. If headers are
+   * already sent (SSE streaming), store a recovery bridge instead. Do this before the
+   * session save so a transient session-store failure cannot lose an IdP-rotated token.
    */
-  if (nextRefreshToken !== refreshToken) {
+  if (needsRefreshTokenSync) {
+    const bridgeIdentity = createRefreshTokenBridgeIdentity({
+      user,
+      requestUser: req?.user,
+      userId: identityContext?.appUserId,
+      tenantId: identityContext?.tenantId,
+      openidIssuer: identityContext?.openidIssuer,
+    });
+
     await syncRefreshTokenCookie({
       res,
       newRefreshToken: nextRefreshToken,
       oldRefreshToken: browserRefreshToken,
-      userId: user?.id || user?._id?.toString?.() || req.user?.id || req.user?._id?.toString?.(),
-      tenantId: user?.tenantId ?? req.user?.tenantId,
-      openidIssuer: user?.openidIssuer ?? req.user?.openidIssuer,
+      userId: bridgeIdentity?.userId,
+      tenantId: bridgeIdentity?.tenantId,
+      openidIssuer: bridgeIdentity?.openidIssuer,
     });
   }
+
+  await persistSession(req);
 
   logger.info('[OpenIDSessionRefresh] Inline refresh succeeded');
   /**
@@ -465,7 +476,7 @@ async function performIdpRefresh(req, res, user, tokenPreference, identityContex
   const refreshToken = req?.session?.openidTokens?.refreshToken;
   const key = createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext });
   if (!key) {
-    return performIdpRefreshGrant(req, res, user, tokenPreference);
+    return performIdpRefreshGrant(req, res, user, tokenPreference, identityContext);
   }
 
   let flight;
@@ -476,7 +487,7 @@ async function performIdpRefresh(req, res, user, tokenPreference, identityContex
       '[OpenIDSessionRefresh] Failed to acquire shared refresh flight; refreshing directly',
       error,
     );
-    return performIdpRefreshGrant(req, res, user, tokenPreference);
+    return performIdpRefreshGrant(req, res, user, tokenPreference, identityContext);
   }
 
   if (!flight.acquired) {
@@ -492,11 +503,17 @@ async function performIdpRefresh(req, res, user, tokenPreference, identityContex
     logger.warn('[OpenIDSessionRefresh] Shared refresh flight unavailable; refreshing directly', {
       key: hashKeyForLogs(key),
     });
-    return performIdpRefreshGrant(req, res, user, tokenPreference);
+    return performIdpRefreshGrant(req, res, user, tokenPreference, identityContext);
   }
 
   try {
-    const resolvedTokens = await performIdpRefreshGrant(req, res, user, tokenPreference);
+    const resolvedTokens = await performIdpRefreshGrant(
+      req,
+      res,
+      user,
+      tokenPreference,
+      identityContext,
+    );
     try {
       await completeOpenIDRefreshFlight({
         key,

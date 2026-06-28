@@ -43,6 +43,31 @@ jest.mock('@librechat/api', () => ({
   serializeAuthIdentityTuple: jest.fn(
     (tuple) => `${tuple.tenantId}\x1f${tuple.openidIssuer}\x1f${tuple.subject}`,
   ),
+  createRefreshTokenBridgeIdentity: jest.fn(
+    ({ user, requestUser, userId, tenantId, openidIssuer }) => {
+      const normalize = (value) => {
+        if (value == null) {
+          return undefined;
+        }
+        const normalized = typeof value === 'string' ? value.trim() : value.toString().trim();
+        return normalized || undefined;
+      };
+      const resolvedUserId =
+        normalize(userId) ??
+        normalize(user?._id) ??
+        normalize(user?.id) ??
+        normalize(requestUser?._id) ??
+        normalize(requestUser?.id);
+      if (!resolvedUserId) {
+        return null;
+      }
+      return {
+        userId: resolvedUserId,
+        tenantId: tenantId ?? user?.tenantId ?? requestUser?.tenantId,
+        openidIssuer: openidIssuer ?? user?.openidIssuer ?? requestUser?.openidIssuer,
+      };
+    },
+  ),
   buildOpenIDRefreshParams: jest.fn(() => ({ scope: 'openid profile' })),
   setRefreshTokenCookie: jest.fn((res, refreshToken, expires) => {
     res.cookie('refreshToken', refreshToken, { expires });
@@ -463,6 +488,107 @@ describe('OpenIDSessionRefresh', () => {
 
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
       expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
+    });
+
+    it('repairs a stale browser cookie when a stable refresh omits refresh_token', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-session-current', 'rt-browser-stale'));
+      const res = buildRes({ headersSent: false });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(
+        res,
+        'rt-session-current',
+        expect.any(Date),
+      );
+      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(req.session.openidTokens.refreshToken).toBe('rt-session-current');
+      expect(req.session.openidTokens.browserRefreshToken).toBe('rt-session-current');
+    });
+
+    it('stores a bridge for stale browser cookies when a stable refresh cannot write cookies', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-session-current', 'rt-browser-stale'));
+      const res = buildRes({ headersSent: true });
+
+      await refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token');
+
+      expect(setRefreshTokenCookie).not.toHaveBeenCalled();
+      expect(setOpenIDMarkerCookies).not.toHaveBeenCalled();
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-browser-stale',
+        newRefreshToken: 'rt-session-current',
+        userId: 'local-id-1',
+        tenantId: undefined,
+        openidIssuer: undefined,
+      });
+      expect(req.session.openidTokens.browserRefreshToken).toBe('rt-browser-stale');
+    });
+
+    it('resolves bridge identity through the shared helper when identity context is absent', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: true });
+
+      await refreshOpenIDSession(
+        req,
+        res,
+        makeOpenIdUser({
+          id: 'public-id',
+          _id: { toString: () => 'mongo-id' },
+          tenantId: 'tenant-1',
+          openidIssuer: 'https://issuer.example.com',
+        }),
+        'access_token',
+      );
+
+      expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+        oldRefreshToken: 'rt-old',
+        newRefreshToken: 'rt-rotated',
+        userId: 'mongo-id',
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
+      });
+    });
+
+    it('syncs the rotated cookie before surfacing a session save failure', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-rotated',
+        expires_in: 3600,
+      });
+      const req = buildReq(buildExpiredSession('rt-old'));
+      const res = buildRes({ headersSent: false });
+      req.session.save.mockImplementationOnce((cb) => cb(new Error('session store down')));
+
+      await expect(
+        refreshOpenIDSession(req, res, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('session store down');
+
+      expect(setRefreshTokenCookie).toHaveBeenCalledWith(res, 'rt-rotated', expect.any(Date));
+      expect(setOpenIDMarkerCookies).toHaveBeenCalledTimes(1);
+      expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+      expect(req.session.openidTokens.refreshToken).toBe('rt-rotated');
+      expect(req.session.openidTokens.browserRefreshToken).toBe('rt-rotated');
     });
 
     it('stores a recovery bridge when response headers are already sent (streaming path)', async () => {
