@@ -23,7 +23,7 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/server/services/RefreshTokenBridge', () => ({
   getRefreshTokenBridge: jest.fn(),
-  deleteRefreshTokenBridge: jest.fn(),
+  storeRefreshTokenBridge: jest.fn(),
 }));
 jest.mock('@librechat/api', () => ({
   math: jest.fn((value, fallback) => fallback),
@@ -57,7 +57,7 @@ const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const { getUserById, findSession, updateUser } = require('~/models');
 const {
   getRefreshTokenBridge,
-  deleteRefreshTokenBridge,
+  storeRefreshTokenBridge,
 } = require('~/server/services/RefreshTokenBridge');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
@@ -246,7 +246,7 @@ describe('refreshController – OpenID path', () => {
     setCloudFrontAuthCookies.mockReturnValue(true);
     findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
     getRefreshTokenBridge.mockResolvedValue(null);
-    deleteRefreshTokenBridge.mockReturnValue(true);
+    storeRefreshTokenBridge.mockResolvedValue(undefined);
     getUserById.mockResolvedValue({
       _id: 'user-db-id',
       email: baseClaims.email,
@@ -336,6 +336,7 @@ describe('refreshController – OpenID path', () => {
 
     expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     expect(getUserById).toHaveBeenCalledWith(
       'user-db-id',
       '-password -__v -totpSecret -backupCodes -federatedTokens',
@@ -725,7 +726,7 @@ describe('refreshController – OpenID path', () => {
     expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
   });
 
-  it('recovers stale refresh-token cookies with a bridge after session loss', async () => {
+  it('recovers stale refresh-token cookies and keeps a short grace bridge', async () => {
     setOpenIDReuseCookies();
     req.session = {};
     const bridgeUser = {
@@ -770,15 +771,28 @@ describe('refreshController – OpenID path', () => {
       existingRefreshToken: 'bridged-refresh',
       tenantId: undefined,
     });
-    expect(deleteRefreshTokenBridge).toHaveBeenCalledWith({
+    expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
       oldRefreshToken: 'stored-refresh',
+      newRefreshToken: 'new-refresh',
       userId: 'user-db-id',
       tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+      ttl: 60000,
     });
+    const lookupIdentity = getRefreshTokenBridge.mock.calls[0][0];
+    const graceIdentity = storeRefreshTokenBridge.mock.calls[0][0];
+    expect(graceIdentity).toEqual(
+      expect.objectContaining({
+        oldRefreshToken: lookupIdentity.oldRefreshToken,
+        userId: lookupIdentity.userId,
+        tenantId: lookupIdentity.tenantId,
+        openidIssuer: lookupIdentity.openidIssuer,
+      }),
+    );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  it('does not delete the bridge when bridged refresh retry fails', async () => {
+  it('does not re-store the bridge when bridged refresh retry fails', async () => {
     setOpenIDReuseCookies();
     req.session = {};
     getUserById.mockResolvedValue({
@@ -794,11 +808,11 @@ describe('refreshController – OpenID path', () => {
     await refreshController(req, res);
 
     expect(getRefreshTokenBridge).toHaveBeenCalled();
-    expect(deleteRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it('returns success when bridge cleanup fails after bridged refresh succeeds', async () => {
+  it('returns success when bridge grace-period storage fails after bridged refresh succeeds', async () => {
     setOpenIDReuseCookies();
     req.session = {};
     getUserById.mockResolvedValue({
@@ -809,7 +823,7 @@ describe('refreshController – OpenID path', () => {
       openidIssuer: 'https://issuer.example.com',
     });
     getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
-    deleteRefreshTokenBridge.mockRejectedValueOnce(new Error('delete failed'));
+    storeRefreshTokenBridge.mockRejectedValueOnce(new Error('grace failed'));
     openIdClient.refreshTokenGrant
       .mockRejectedValueOnce(new Error('invalid_grant'))
       .mockResolvedValueOnce(mockTokenset);
@@ -821,13 +835,16 @@ describe('refreshController – OpenID path', () => {
       existingRefreshToken: 'bridged-refresh',
       tenantId: undefined,
     });
-    expect(deleteRefreshTokenBridge).toHaveBeenCalledWith({
+    expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
       oldRefreshToken: 'stored-refresh',
+      newRefreshToken: 'new-refresh',
       userId: 'user-db-id',
       tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+      ttl: 60000,
     });
     expect(logger.warn).toHaveBeenCalledWith(
-      '[refreshController] Bridge cleanup failed after successful recovery',
+      '[refreshController] Bridge grace-period storage failed after successful recovery',
       expect.any(Error),
     );
     expect(res.status).toHaveBeenCalledWith(200);
@@ -842,7 +859,7 @@ describe('refreshController – OpenID path', () => {
     await refreshController(req, res);
 
     expect(getRefreshTokenBridge).not.toHaveBeenCalled();
-    expect(deleteRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
 

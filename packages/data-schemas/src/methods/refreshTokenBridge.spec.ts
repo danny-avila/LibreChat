@@ -75,6 +75,7 @@ describe('RefreshTokenBridge Methods', () => {
 
     expect(found?.encryptedNewRefreshToken).toBe('encrypted-new');
     expect(found?.expiresAt.getTime()).toBe(nextExpiresAt.getTime());
+    expect(await mongoose.models.RefreshTokenBridge.countDocuments()).toBe(1);
   });
 
   it('does not return expired bridges before Mongo TTL cleanup runs', async () => {
@@ -89,31 +90,6 @@ describe('RefreshTokenBridge Methods', () => {
       methods.findRefreshTokenBridge({
         oldRefreshTokenHash: 'old-hash',
         userId: 'user-1',
-      }),
-    ).resolves.toBeNull();
-  });
-
-  it('deletes a bridge by old token hash, user, and tenant', async () => {
-    await methods.upsertRefreshTokenBridge({
-      oldRefreshTokenHash: 'old-hash',
-      encryptedNewRefreshToken: 'encrypted-new',
-      userId: 'user-1',
-      tenantId: 'tenant-1',
-      expiresAt: new Date(Date.now() + 60000),
-    });
-
-    const result = await methods.deleteRefreshTokenBridge({
-      oldRefreshTokenHash: 'old-hash',
-      userId: 'user-1',
-      tenantId: 'tenant-1',
-    });
-
-    expect(result.deletedCount).toBe(1);
-    await expect(
-      methods.findRefreshTokenBridge({
-        oldRefreshTokenHash: 'old-hash',
-        userId: 'user-1',
-        tenantId: 'tenant-1',
       }),
     ).resolves.toBeNull();
   });

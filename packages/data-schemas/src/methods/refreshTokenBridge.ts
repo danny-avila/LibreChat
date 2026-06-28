@@ -23,7 +23,6 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
     bridgeData: RefreshTokenBridgeCreateData,
   ) => Promise<IRefreshTokenBridge | null>;
   findRefreshTokenBridge: (query: RefreshTokenBridgeQuery) => Promise<IRefreshTokenBridge | null>;
-  deleteRefreshTokenBridge: (query: RefreshTokenBridgeQuery) => Promise<{ deletedCount?: number }>;
 } {
   async function upsertRefreshTokenBridge(
     bridgeData: RefreshTokenBridgeCreateData,
@@ -77,23 +76,9 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
     }
   }
 
-  async function deleteRefreshTokenBridge(
-    query: RefreshTokenBridgeQuery,
-  ): Promise<{ deletedCount?: number }> {
-    try {
-      const RefreshTokenBridge = mongoose.models.RefreshTokenBridge as Model<IRefreshTokenBridge>;
-      const result = await RefreshTokenBridge.deleteOne(bridgeFilter(query));
-      return { deletedCount: result.deletedCount };
-    } catch (error) {
-      logger.debug('[deleteRefreshTokenBridge] Error deleting bridge:', error);
-      throw error;
-    }
-  }
-
   return {
     upsertRefreshTokenBridge,
     findRefreshTokenBridge,
-    deleteRefreshTokenBridge,
   };
 }
 

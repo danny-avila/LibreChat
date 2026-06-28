@@ -93,8 +93,8 @@ async function storeRefreshTokenBridge({
 /**
  * Looks up and retrieves a stored bridge, verifying it matches the user context
  * and hasn't expired. Returns the decrypted rotated token on success, null
- * otherwise. Does NOT consume the bridge; callers delete it only after a
- * successful bridged refresh.
+ * otherwise. Does NOT consume the bridge; the recovery path relies on TTL expiry
+ * and may re-store a short grace bridge after a successful bridged refresh.
  *
  * @param {object} args
  * @param {string} args.oldRefreshToken — the token to look up (hashed for key)
@@ -138,32 +138,9 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
   return decryptV2(bridge.encryptedNewRefreshToken);
 }
 
-/**
- * Deletes a bridge after the bridged refresh has succeeded.
- *
- * @param {object} args
- * @param {string} args.oldRefreshToken
- * @returns {Promise<boolean>}
- */
-async function deleteRefreshTokenBridge({ oldRefreshToken, userId, tenantId }) {
-  const identity = resolveBridgeIdentity({ userId, tenantId });
-
-  if (!oldRefreshToken || !identity) {
-    return false;
-  }
-  const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
-  const result = await db.deleteRefreshTokenBridge({
-    oldRefreshTokenHash,
-    userId: identity.userId,
-    tenantId: identity.tenantId,
-  });
-  return (result.deletedCount ?? 0) > 0;
-}
-
 module.exports = {
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
-  deleteRefreshTokenBridge,
   __internals: {
     hashRefreshToken,
     getBridgeTtlMs,

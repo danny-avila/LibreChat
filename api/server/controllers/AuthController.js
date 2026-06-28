@@ -28,11 +28,13 @@ const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const {
   getRefreshTokenBridge,
-  deleteRefreshTokenBridge,
+  storeRefreshTokenBridge,
 } = require('~/server/services/RefreshTokenBridge');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
+/** Short stale-cookie recovery window after bridged refresh succeeds. */
+const OPENID_REFRESH_BRIDGE_GRACE_MS = math(process.env.OPENID_REFRESH_BRIDGE_GRACE_MS, 60 * 1000);
 /**
  * Max age (ms) LibreChat reuses a cached OpenID session token before forcing an IdP refresh.
  * Env-overridable (accepts an arithmetic expression, e.g. `60 * 60 * 24 * 1000`, like
@@ -335,15 +337,24 @@ const refreshController = async (req, res) => {
                       tenantId: retryUser.tenantId,
                     });
                     try {
-                      await deleteRefreshTokenBridge({
+                      /**
+                       * Keep the stale-cookie bridge briefly so parallel /refresh requests that
+                       * already sent the old cookie can recover too. Re-storing also shrinks the
+                       * remaining replay window from REFRESH_TOKEN_EXPIRY (potentially days) to
+                       * this short grace TTL while Mongo/expiresAt cleanup removes it.
+                       */
+                      await storeRefreshTokenBridge({
                         oldRefreshToken: refreshToken,
+                        newRefreshToken: retryTokenset.refresh_token || bridgedRefreshToken,
                         userId,
                         tenantId: bridgeUser.tenantId,
+                        openidIssuer: bridgeUser.openidIssuer,
+                        ttl: OPENID_REFRESH_BRIDGE_GRACE_MS,
                       });
-                    } catch (cleanupError) {
+                    } catch (graceError) {
                       logger.warn(
-                        '[refreshController] Bridge cleanup failed after successful recovery',
-                        cleanupError,
+                        '[refreshController] Bridge grace-period storage failed after successful recovery',
+                        graceError,
                       );
                     }
                     return res

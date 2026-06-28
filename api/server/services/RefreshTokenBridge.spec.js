@@ -18,7 +18,6 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/models', () => ({
   upsertRefreshTokenBridge: jest.fn(),
   findRefreshTokenBridge: jest.fn(),
-  deleteRefreshTokenBridge: jest.fn(),
 }));
 
 const { encryptV2, decryptV2 } = require('@librechat/data-schemas');
@@ -27,7 +26,6 @@ const db = require('~/models');
 const {
   storeRefreshTokenBridge,
   getRefreshTokenBridge,
-  deleteRefreshTokenBridge,
   __internals,
 } = require('./RefreshTokenBridge');
 
@@ -36,7 +34,6 @@ describe('RefreshTokenBridge', () => {
     jest.clearAllMocks();
     db.upsertRefreshTokenBridge.mockResolvedValue({});
     db.findRefreshTokenBridge.mockResolvedValue(null);
-    db.deleteRefreshTokenBridge.mockResolvedValue({ deletedCount: 0 });
   });
 
   describe('storeRefreshTokenBridge', () => {
@@ -167,36 +164,6 @@ describe('RefreshTokenBridge', () => {
 
       expect(result).toBeNull();
       expect(decryptV2).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('deleteRefreshTokenBridge', () => {
-    it('deletes an existing bridge explicitly', async () => {
-      db.deleteRefreshTokenBridge.mockResolvedValue({ deletedCount: 1 });
-
-      const result = await deleteRefreshTokenBridge({
-        oldRefreshToken: 'rt-old',
-        userId: 'user-123',
-        tenantId: 'tenant-1',
-      });
-
-      expect(result).toBe(true);
-      expect(db.deleteRefreshTokenBridge).toHaveBeenCalledWith({
-        oldRefreshTokenHash: __internals.hashRefreshToken('rt-old'),
-        userId: 'user-123',
-        tenantId: 'tenant-1',
-      });
-    });
-
-    it('returns false when the bridge does not exist', async () => {
-      await expect(
-        deleteRefreshTokenBridge({ oldRefreshToken: 'missing', userId: 'user-123' }),
-      ).resolves.toBe(false);
-    });
-
-    it('returns false when userId is omitted', async () => {
-      await expect(deleteRefreshTokenBridge({ oldRefreshToken: 'missing' })).resolves.toBe(false);
-      expect(db.deleteRefreshTokenBridge).not.toHaveBeenCalled();
     });
   });
 });
