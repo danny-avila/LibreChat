@@ -104,8 +104,13 @@ export function setOpenIDMarkerCookies(
     throw new Error('JWT_REFRESH_SECRET is required for OpenID marker cookies');
   }
 
+  const refreshExpirySeconds = Math.floor(refreshExpiryMs / 1000);
+  if (!Number.isFinite(refreshExpirySeconds) || refreshExpirySeconds <= 0) {
+    throw new Error('refreshExpiryMs must be a positive duration for OpenID marker cookies');
+  }
+
   const signedUserId = jwt.sign({ id: userId }, secret, {
-    expiresIn: refreshExpiryMs / 1000,
+    expiresIn: refreshExpirySeconds,
   });
   res.cookie(OPENID_USER_ID_COOKIE, signedUserId, cookieOptions);
 }

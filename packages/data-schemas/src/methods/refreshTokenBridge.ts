@@ -1,4 +1,4 @@
-import type { Model } from 'mongoose';
+import type { FilterQuery, Model, UpdateQuery } from 'mongoose';
 import type {
   IRefreshTokenBridge,
   RefreshTokenBridgeCreateData,
@@ -10,7 +10,7 @@ function bridgeFilter({
   oldRefreshTokenHash,
   userId,
   tenantId,
-}: RefreshTokenBridgeQuery): Record<string, unknown> {
+}: RefreshTokenBridgeQuery): FilterQuery<IRefreshTokenBridge> {
   return {
     oldRefreshTokenHash,
     userId,
@@ -30,14 +30,11 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
     try {
       const RefreshTokenBridge = mongoose.models.RefreshTokenBridge as Model<IRefreshTokenBridge>;
       const filter = bridgeFilter(bridgeData);
-      const update: {
-        $set: Record<string, unknown>;
-        $setOnInsert: Record<string, unknown>;
-        $unset?: Record<string, string>;
-      } = {
+      const update: UpdateQuery<IRefreshTokenBridge> = {
         $set: {
           encryptedNewRefreshToken: bridgeData.encryptedNewRefreshToken,
           expiresAt: bridgeData.expiresAt,
+          ...(bridgeData.openidIssuer != null && { openidIssuer: bridgeData.openidIssuer }),
         },
         $setOnInsert: {
           oldRefreshTokenHash: bridgeData.oldRefreshTokenHash,
@@ -45,12 +42,8 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
           ...(bridgeData.tenantId != null && { tenantId: bridgeData.tenantId }),
           createdAt: new Date(),
         },
+        ...(bridgeData.openidIssuer == null && { $unset: { openidIssuer: '' } }),
       };
-      if (bridgeData.openidIssuer != null) {
-        update.$set.openidIssuer = bridgeData.openidIssuer;
-      } else {
-        update.$unset = { openidIssuer: '' };
-      }
       return await RefreshTokenBridge.findOneAndUpdate(filter, update, {
         upsert: true,
         new: true,

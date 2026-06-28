@@ -241,4 +241,40 @@ describe('setOpenIDMarkerCookies', () => {
       expect.objectContaining({ expires }),
     );
   });
+
+  it('uses integer seconds for fractional refresh expiry durations', () => {
+    const res = { cookie: jest.fn() } as unknown as import('express').Response;
+    const expires = new Date(Date.now() + 604800999);
+
+    setOpenIDMarkerCookies(res, {
+      userId: 'user-123',
+      expires,
+      refreshExpiryMs: 604800999,
+    });
+
+    const signedUserId = (res.cookie as jest.Mock).mock.calls.find(
+      ([name]) => name === OPENID_USER_ID_COOKIE,
+    )?.[1];
+    const payload = jwt.verify(signedUserId, 'marker-secret') as jwt.JwtPayload;
+    if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number') {
+      throw new Error('Expected signed marker JWT to include numeric exp and iat');
+    }
+    expect(payload.exp - payload.iat).toBe(604800);
+  });
+
+  it.each([0, -1000, 999, Number.NaN, Number.POSITIVE_INFINITY])(
+    'throws when the refresh expiry duration is invalid: %p',
+    (refreshExpiryMs) => {
+      const res = { cookie: jest.fn() } as unknown as import('express').Response;
+      const expires = new Date(Date.now() + 999);
+
+      expect(() =>
+        setOpenIDMarkerCookies(res, {
+          userId: 'user-123',
+          expires,
+          refreshExpiryMs,
+        }),
+      ).toThrow('refreshExpiryMs must be a positive duration for OpenID marker cookies');
+    },
+  );
 });
