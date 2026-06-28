@@ -377,6 +377,24 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
   };
 }
 
+function resolveToolCallUserId({ effectiveUser, capturedUser, invocationUserId, serverConfig }) {
+  if (serverConfig?.obo == null) {
+    return effectiveUser?.id || invocationUserId || capturedUser?.id;
+  }
+
+  const effectiveUserId = effectiveUser?.id;
+  const capturedUserId = capturedUser?.id;
+  if (!effectiveUserId || !capturedUserId) {
+    throw new Error('OBO tool calls require matching captured and effective user ids');
+  }
+
+  if (effectiveUserId !== capturedUserId) {
+    throw new Error('OBO tool call user mismatch');
+  }
+
+  return effectiveUserId;
+}
+
 /**
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
@@ -793,7 +811,12 @@ function createToolInstance({
   const _call = async (toolArguments, config) => {
     const effectiveUser = config?.configurable?.user ?? capturedUser;
     const permissionUser = effectiveUser;
-    const userId = effectiveUser?.id || config?.configurable?.user_id || capturedUser?.id;
+    const userId = resolveToolCallUserId({
+      effectiveUser,
+      capturedUser,
+      invocationUserId: config?.configurable?.user_id,
+      serverConfig: capturedServerConfig,
+    });
     /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
     /** @type {AbortSignal} */
