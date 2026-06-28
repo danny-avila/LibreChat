@@ -30,6 +30,31 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(),
   findOpenIDUser: jest.fn(),
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
+  createAuthIdentityContext: jest.fn(({ user }) => ({
+    appUserId: user?._id?.toString?.() ?? user?.id,
+    openidSubject: user?.openidId,
+    tenantId: user?.tenantId,
+    openidIssuer: user?.openidIssuer,
+  })),
+  isOpenIDSessionIdentityMatch: jest.fn((sessionIdentity, expectedIdentity) => {
+    const normalize = (value) => {
+      if (value == null) {
+        return undefined;
+      }
+      const normalized = typeof value === 'string' ? value.trim() : value.toString().trim();
+      return normalized || undefined;
+    };
+    const normalizeIssuer = (value) => normalize(value)?.replace(/\/+$/, '');
+    return (
+      Boolean(normalize(sessionIdentity?.appUserId)) &&
+      Boolean(normalize(sessionIdentity?.openidSubject)) &&
+      normalize(sessionIdentity?.appUserId) === normalize(expectedIdentity?.appUserId) &&
+      normalize(sessionIdentity?.openidSubject) === normalize(expectedIdentity?.openidSubject) &&
+      normalize(sessionIdentity?.tenantId) === normalize(expectedIdentity?.tenantId) &&
+      normalizeIssuer(sessionIdentity?.openidIssuer) ===
+        normalizeIssuer(expectedIdentity?.openidIssuer)
+    );
+  }),
   buildOpenIDRefreshParams: jest.fn(() => {
     const params = {};
     if (process.env.OPENID_SCOPE) {
@@ -201,6 +226,8 @@ describe('refreshController – OpenID path', () => {
     _id: 'user-db-id',
     email: baseClaims.email,
     openidId: baseClaims.sub,
+    tenantId: 'tenant-1',
+    openidIssuer: baseClaims.iss,
     password: '$2b$10$hashedpassword',
     __v: 0,
     totpSecret: 'encrypted-totp-secret',
@@ -251,6 +278,8 @@ describe('refreshController – OpenID path', () => {
       _id: 'user-db-id',
       email: baseClaims.email,
       openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: baseClaims.iss,
     });
     updateUser.mockResolvedValue({});
 
@@ -296,7 +325,9 @@ describe('refreshController – OpenID path', () => {
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
       existingRefreshToken: 'stored-refresh',
-      tenantId: undefined,
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
     });
   };
 
@@ -324,6 +355,10 @@ describe('refreshController – OpenID path', () => {
         idToken: reusableIdToken,
         refreshToken: 'stored-refresh',
         lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
       },
     };
     const user = {
@@ -370,6 +405,37 @@ describe('refreshController – OpenID path', () => {
     expect(debugOutput).not.toContain('session-access-token');
   });
 
+  it('falls through to full OpenID refresh when reusable session token identity mismatches', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+        appUserId: 'other-user-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-db-id',
+      '-password -__v -totpSecret -backupCodes -federatedTokens',
+    );
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] OpenID session token identity mismatch; forcing refresh',
+      expect.objectContaining({
+        userId: 'user-db-id',
+      }),
+    );
+  });
+
   it('falls through to full OpenID refresh when session tokens are expired', async () => {
     const expiredToken = makeSessionToken({ exp: Math.floor(Date.now() / 1000) - 60 });
     setOpenIDReuseCookies();
@@ -379,6 +445,10 @@ describe('refreshController – OpenID path', () => {
         idToken: expiredToken,
         refreshToken: 'stored-refresh',
         lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
       },
     };
 
@@ -523,6 +593,10 @@ describe('refreshController – OpenID path', () => {
         idToken: reusableIdToken,
         refreshToken: 'stored-refresh',
         lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
       },
     };
     const userDocument = {
@@ -775,7 +849,9 @@ describe('refreshController – OpenID path', () => {
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
       existingRefreshToken: 'bridged-refresh',
-      tenantId: undefined,
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
     });
     expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
       oldRefreshToken: 'stored-refresh',
@@ -873,7 +949,9 @@ describe('refreshController – OpenID path', () => {
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
       existingRefreshToken: 'bridged-refresh',
-      tenantId: undefined,
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
     });
     expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
       oldRefreshToken: 'stored-refresh',

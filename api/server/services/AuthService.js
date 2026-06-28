@@ -20,6 +20,7 @@ const {
   shouldUseSecureCookie,
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
+  createOpenIDSessionIdentity,
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const {
@@ -699,7 +700,9 @@ const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, te
     if (
       'userId' in optionsOrUserId ||
       'existingRefreshToken' in optionsOrUserId ||
-      'tenantId' in optionsOrUserId
+      'tenantId' in optionsOrUserId ||
+      'openidSubject' in optionsOrUserId ||
+      'openidIssuer' in optionsOrUserId
     ) {
       return optionsOrUserId;
     }
@@ -707,6 +710,44 @@ const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, te
   }
 
   return { userId: optionsOrUserId, existingRefreshToken, tenantId };
+};
+
+const getOpenIDTokenClaims = (tokenset) => {
+  if (typeof tokenset?.claims === 'function') {
+    try {
+      const claims = tokenset.claims();
+      return claims && typeof claims === 'object' ? claims : {};
+    } catch (error) {
+      logger.debug('[setOpenIDAuthTokens] Unable to read tokenset claims', error?.message);
+    }
+  }
+
+  if (typeof tokenset?.id_token !== 'string') {
+    return {};
+  }
+
+  const decoded = jwt.decode(tokenset.id_token);
+  return decoded && typeof decoded === 'object' ? decoded : {};
+};
+
+const getStringClaim = (claims, claim) => {
+  const value = claims?.[claim];
+  return typeof value === 'string' && value ? value : undefined;
+};
+
+const applyOpenIDSessionIdentity = (sessionOpenidTokens, identity) => {
+  if (identity.appUserId) {
+    sessionOpenidTokens.appUserId = identity.appUserId;
+  }
+  if (identity.openidSubject) {
+    sessionOpenidTokens.openidSubject = identity.openidSubject;
+  }
+  if (identity.tenantId) {
+    sessionOpenidTokens.tenantId = identity.tenantId;
+  }
+  if (identity.openidIssuer) {
+    sessionOpenidTokens.openidIssuer = identity.openidIssuer;
+  }
 };
 
 /**
@@ -723,6 +764,8 @@ const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, te
  * @param {string} [options.userId] - Optional MongoDB user ID for image path validation
  * @param {string} [options.existingRefreshToken] - Optional existing refresh token to preserve
  * @param {string} [options.tenantId] - Optional tenant identifier for CloudFront cookie scoping
+ * @param {string} [options.openidSubject] - Optional OpenID subject bound to the session tokens
+ * @param {string} [options.openidIssuer] - Optional OpenID issuer bound to the session tokens
  * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
 const setOpenIDAuthTokens = (
@@ -734,11 +777,8 @@ const setOpenIDAuthTokens = (
   tenantIdArg,
 ) => {
   try {
-    const { userId, existingRefreshToken, tenantId } = resolveOpenIDAuthTokenOptions(
-      optionsOrUserId,
-      existingRefreshTokenArg,
-      tenantIdArg,
-    );
+    const { userId, existingRefreshToken, tenantId, openidSubject, openidIssuer } =
+      resolveOpenIDAuthTokenOptions(optionsOrUserId, existingRefreshTokenArg, tenantIdArg);
 
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -774,6 +814,14 @@ const setOpenIDAuthTokens = (
       getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
       tokenset.access_token;
     const logoutIdToken = tokenset.id_token || sessionIdToken;
+    const claims = getOpenIDTokenClaims(tokenset);
+    const sessionIdentity = createOpenIDSessionIdentity({
+      user: req?.user,
+      userId,
+      openidSubject: openidSubject ?? getStringClaim(claims, 'sub'),
+      tenantId,
+      openidIssuer: openidIssuer ?? getStringClaim(claims, 'iss'),
+    });
 
     /**
      * Always set refresh token cookie so it survives express session expiry.
@@ -796,6 +844,7 @@ const setOpenIDAuthTokens = (
         expiresAt: expirationDate.getTime(),
         lastRefreshedAt: Date.now(),
       };
+      applyOpenIDSessionIdentity(sessionOpenidTokens, sessionIdentity);
       /**
        * Capture the access-token's own expiry (unix seconds) when the IdP
        * advertises one. Lets downstream consumers — notably the OBO inline-

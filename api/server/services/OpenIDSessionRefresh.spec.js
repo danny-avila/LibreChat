@@ -23,6 +23,36 @@ jest.mock('@librechat/api', () => ({
     tenantId: user?.tenantId ?? requestUser?.tenantId,
     openidIssuer: user?.openidIssuer ?? requestUser?.openidIssuer,
   })),
+  isOpenIDSessionIdentityMatch: jest.fn((sessionIdentity, expectedIdentity) => {
+    const normalize = (value) => {
+      if (value == null) {
+        return undefined;
+      }
+      const normalized = typeof value === 'string' ? value.trim() : value.toString().trim();
+      return normalized || undefined;
+    };
+    const normalizeIssuer = (value) => normalize(value)?.replace(/\/+$/, '');
+    const session = {
+      appUserId: normalize(sessionIdentity?.appUserId),
+      openidSubject: normalize(sessionIdentity?.openidSubject),
+      tenantId: normalize(sessionIdentity?.tenantId),
+      openidIssuer: normalizeIssuer(sessionIdentity?.openidIssuer),
+    };
+    const expected = {
+      appUserId: normalize(expectedIdentity?.appUserId),
+      openidSubject: normalize(expectedIdentity?.openidSubject),
+      tenantId: normalize(expectedIdentity?.tenantId),
+      openidIssuer: normalizeIssuer(expectedIdentity?.openidIssuer),
+    };
+    return (
+      Boolean(session.appUserId) &&
+      Boolean(session.openidSubject) &&
+      session.appUserId === expected.appUserId &&
+      session.openidSubject === expected.openidSubject &&
+      session.tenantId === expected.tenantId &&
+      session.openidIssuer === expected.openidIssuer
+    );
+  }),
   createOpenIDRefreshIdentityTuple: jest.fn(({ user, requestUser }) => {
     const subject =
       user?.openidId ??
@@ -117,13 +147,25 @@ const SECRET = 'test-secret';
 
 const makeJwt = (exp) => jwt.sign({ sub: 'user-123', exp }, SECRET);
 
-const buildReq = (sessionTokens, sessionId = 'session-A') => ({
+const DEFAULT_SESSION_IDENTITY = {
+  appUserId: 'local-id-1',
+  openidSubject: 'oidc-sub-123',
+  tenantId: 'tenant-1',
+  openidIssuer: 'https://issuer.example.com',
+};
+
+const withSessionIdentity = (sessionTokens) =>
+  sessionTokens == null ? sessionTokens : { ...DEFAULT_SESSION_IDENTITY, ...sessionTokens };
+
+const buildReq = (sessionTokens, sessionId = 'session-A', { bindIdentity = true } = {}) => ({
   sessionID: sessionId,
   session: Object.assign(
     {
       save: jest.fn((cb) => cb(null)),
     },
-    sessionTokens === undefined ? {} : { openidTokens: sessionTokens },
+    sessionTokens === undefined
+      ? {}
+      : { openidTokens: bindIdentity ? withSessionIdentity(sessionTokens) : sessionTokens },
   ),
 });
 
@@ -136,6 +178,8 @@ const buildRes = ({ headersSent = false } = {}) => ({
 const makeOpenIdUser = (overrides = {}) => ({
   id: 'local-id-1',
   openidId: 'oidc-sub-123',
+  tenantId: 'tenant-1',
+  openidIssuer: 'https://issuer.example.com',
   provider: 'openid',
   ...overrides,
 });
@@ -245,6 +289,37 @@ describe('OpenIDSessionRefresh', () => {
         refresh_token: 'rt-1',
         expires_at: farFutureExp,
       });
+    });
+
+    it('rejects session tokens that are missing identity metadata', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const sessionTokens = {
+        accessToken: makeJwt(farFutureExp),
+        idToken: makeJwt(farFutureExp),
+        refreshToken: 'rt-unbound',
+      };
+      const req = buildReq(sessionTokens, 'session-unbound', { bindIdentity: false });
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('OpenID session token identity mismatch');
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+    });
+
+    it('rejects session tokens bound to a different OpenID identity', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const sessionTokens = {
+        accessToken: makeJwt(farFutureExp),
+        idToken: makeJwt(farFutureExp),
+        refreshToken: 'rt-other-user',
+        appUserId: 'other-user',
+      };
+      const req = buildReq(sessionTokens);
+
+      await expect(
+        refreshOpenIDSession(req, undefined, makeOpenIdUser(), 'access_token'),
+      ).rejects.toThrow('OpenID session token identity mismatch');
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     });
 
     /**
@@ -530,8 +605,8 @@ describe('OpenIDSessionRefresh', () => {
         oldRefreshToken: 'rt-browser-stale',
         newRefreshToken: 'rt-session-current',
         userId: 'local-id-1',
-        tenantId: undefined,
-        openidIssuer: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
       });
       expect(req.session.openidTokens.browserRefreshToken).toBe('rt-browser-stale');
     });
@@ -544,7 +619,10 @@ describe('OpenIDSessionRefresh', () => {
         refresh_token: 'rt-rotated',
         expires_in: 3600,
       });
-      const req = buildReq(buildExpiredSession('rt-old'));
+      const req = buildReq({
+        ...buildExpiredSession('rt-old'),
+        appUserId: 'mongo-id',
+      });
       const res = buildRes({ headersSent: true });
 
       await refreshOpenIDSession(
@@ -639,8 +717,8 @@ describe('OpenIDSessionRefresh', () => {
         oldRefreshToken: 'rt-browser-cookie',
         newRefreshToken: 'rt-second-rotation',
         userId: 'local-id-1',
-        tenantId: undefined,
-        openidIssuer: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
       });
       expect(req.session.openidTokens.refreshToken).toBe('rt-second-rotation');
       expect(req.session.openidTokens.browserRefreshToken).toBe('rt-browser-cookie');
@@ -665,8 +743,8 @@ describe('OpenIDSessionRefresh', () => {
         oldRefreshToken: 'rt-old',
         newRefreshToken: 'rt-rotated',
         userId: 'local-id-1',
-        tenantId: undefined,
-        openidIssuer: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
       });
     });
 
@@ -688,8 +766,8 @@ describe('OpenIDSessionRefresh', () => {
         oldRefreshToken: 'rt-old',
         newRefreshToken: 'rt-rotated',
         userId: 'local-id-1',
-        tenantId: undefined,
-        openidIssuer: undefined,
+        tenantId: 'tenant-1',
+        openidIssuer: 'https://issuer.example.com',
       });
     });
 

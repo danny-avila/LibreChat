@@ -34,6 +34,13 @@ export type RefreshTokenBridgeIdentity = {
   openidIssuer?: string;
 };
 
+export type OpenIDSessionIdentitySource = {
+  appUserId?: string | null;
+  openidSubject?: string | null;
+  tenantId?: string | null;
+  openidIssuer?: string | null;
+};
+
 const NO_TENANT = 'no-tenant';
 const NO_ISSUER = 'no-issuer';
 const IDENTITY_PART_SEPARATOR = '\x1f';
@@ -134,6 +141,68 @@ export function createAuthIdentityContext({
     tenantId: resolveTenantId({ tenantId, user, requestUser }),
     openidIssuer: resolveAuthOpenIDIssuer({ openidIssuer, user, requestUser }),
   };
+}
+
+export function createOpenIDSessionIdentity({
+  user,
+  requestUser,
+  userId,
+  openidSubject,
+  tenantId,
+  openidIssuer,
+}: {
+  user?: AuthIdentitySource | null;
+  requestUser?: AuthIdentitySource | null;
+  userId?: string | null;
+  openidSubject?: string | null;
+  tenantId?: string | null;
+  openidIssuer?: string | null;
+}): AuthIdentityContext {
+  return createAuthIdentityContext({
+    user: {
+      id: userId,
+      openidId: openidSubject,
+      tenantId,
+      openidIssuer,
+    },
+    requestUser: user ?? requestUser,
+    tenantId,
+    openidIssuer,
+  });
+}
+
+function normalizeOpenIDSessionIdentity(
+  identity: OpenIDSessionIdentitySource | null | undefined,
+): AuthIdentityContext | null {
+  const appUserId = normalizeIdentityValue(identity?.appUserId);
+  const openidSubject = normalizeIdentityValue(identity?.openidSubject);
+  if (!appUserId || !openidSubject) {
+    return null;
+  }
+
+  return {
+    appUserId,
+    openidSubject,
+    tenantId: normalizeIdentityValue(identity?.tenantId),
+    openidIssuer: normalizeOpenIdIssuer(identity?.openidIssuer ?? undefined),
+  };
+}
+
+export function isOpenIDSessionIdentityMatch(
+  sessionIdentity: OpenIDSessionIdentitySource | null | undefined,
+  expectedIdentity: OpenIDSessionIdentitySource | null | undefined,
+): boolean {
+  const session = normalizeOpenIDSessionIdentity(sessionIdentity);
+  const expected = normalizeOpenIDSessionIdentity(expectedIdentity);
+
+  return (
+    session != null &&
+    expected != null &&
+    session.appUserId === expected.appUserId &&
+    session.openidSubject === expected.openidSubject &&
+    session.tenantId === expected.tenantId &&
+    session.openidIssuer === expected.openidIssuer
+  );
 }
 
 export function createRefreshTokenBridgeIdentity({

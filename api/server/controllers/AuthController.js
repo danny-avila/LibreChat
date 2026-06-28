@@ -7,6 +7,8 @@ const {
   isEnabled,
   findOpenIDUser,
   getOpenIdIssuer,
+  createAuthIdentityContext,
+  isOpenIDSessionIdentityMatch,
   buildOpenIDRefreshParams,
 } = require('@librechat/api');
 const {
@@ -144,14 +146,42 @@ const refreshOpenIDUser = async ({ refreshToken, strategyName }) => {
   return { tokenset, claims, openidIssuer, user, error, migration };
 };
 
-const sendOpenIDAuthResponse = ({ tokenset, user, existingRefreshToken, req, res }) => {
+const getAuthIdentitySource = (user) =>
+  typeof user?.toObject === 'function' ? user.toObject() : user;
+
+const sendOpenIDAuthResponse = ({
+  tokenset,
+  user,
+  existingRefreshToken,
+  openidSubject,
+  openidIssuer,
+  req,
+  res,
+}) => {
   const token = setOpenIDAuthTokens(tokenset, req, res, {
     userId: user._id.toString(),
     existingRefreshToken,
     tenantId: user.tenantId,
+    openidSubject: openidSubject ?? user.openidId,
+    openidIssuer: openidIssuer ?? user.openidIssuer,
   });
 
   return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
+};
+
+const isReusableOpenIDSessionIdentity = (openidTokens, user) => {
+  const identitySource = getAuthIdentitySource(user);
+  const expectedIdentity = createAuthIdentityContext({ user: identitySource });
+  const matches = isOpenIDSessionIdentityMatch(openidTokens, expectedIdentity);
+  if (!matches) {
+    logger.warn('[refreshController] OpenID session token identity mismatch; forcing refresh', {
+      userId: expectedIdentity.appUserId,
+      has_session_user_id: Boolean(openidTokens?.appUserId),
+      has_session_subject: Boolean(openidTokens?.openidSubject),
+      has_session_issuer: Boolean(openidTokens?.openidIssuer),
+    });
+  }
+  return matches;
 };
 
 const getReusableOpenIDSessionToken = (openidTokens) => {
@@ -238,7 +268,7 @@ const refreshController = async (req, res) => {
       const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
       if (reuseUserId) {
         const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
-        if (user) {
+        if (user && isReusableOpenIDSessionIdentity(req.session?.openidTokens, user)) {
           const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
           logger.debug('[refreshController] OpenID session token reused', {
             token_type: reusableSessionToken.type,
@@ -283,6 +313,8 @@ const refreshController = async (req, res) => {
         tokenset,
         user,
         existingRefreshToken: refreshToken,
+        openidSubject: claims?.sub,
+        openidIssuer,
         req,
         res,
       });
@@ -328,6 +360,8 @@ const refreshController = async (req, res) => {
                 try {
                   const {
                     tokenset: retryTokenset,
+                    claims: retryClaims,
+                    openidIssuer: retryOpenidIssuer,
                     user: retryUser,
                     error: retryError,
                   } = await refreshOpenIDUser({
@@ -372,6 +406,8 @@ const refreshController = async (req, res) => {
                       tokenset: retryTokenset,
                       user: retryUser,
                       existingRefreshToken: bridgedRefreshToken,
+                      openidSubject: retryClaims?.sub,
+                      openidIssuer: retryOpenidIssuer,
                       req,
                       res,
                     });

@@ -42,6 +42,27 @@ jest.mock('@librechat/api', () => {
       }
     }),
     resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+    createOpenIDSessionIdentity: jest.fn(
+      ({ user, userId, openidSubject, tenantId, openidIssuer }) => {
+        const normalize = (value) => {
+          if (value == null) {
+            return undefined;
+          }
+          const normalized = typeof value === 'string' ? value.trim() : value.toString().trim();
+          return normalized || undefined;
+        };
+        const normalizeIssuer = (value) =>
+          normalize(value)
+            ?.replace(/\/\.well-known\/openid-configuration$/, '')
+            .replace(/\/+$/, '');
+        return {
+          appUserId: normalize(userId) ?? normalize(user?._id) ?? normalize(user?.id),
+          openidSubject: normalize(openidSubject) ?? normalize(user?.openidId),
+          tenantId: normalize(tenantId) ?? normalize(user?.tenantId),
+          openidIssuer: normalizeIssuer(openidIssuer) ?? normalizeIssuer(user?.openidIssuer),
+        };
+      },
+    ),
     setCloudFrontCookies: jest.fn(() => true),
     getCloudFrontConfig: jest.fn(() => ({
       domain: 'https://cdn.example.com',
@@ -282,6 +303,32 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.refreshToken).toBe('the-refresh-token');
       expect(req.session.openidTokens.browserRefreshToken).toBe('the-refresh-token');
       expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
+    });
+
+    it('should bind session tokens to the OpenID user identity', () => {
+      const tokenset = {
+        id_token: 'the-id-token',
+        access_token: 'the-access-token',
+        refresh_token: 'the-refresh-token',
+      };
+      const req = mockRequest();
+      const res = mockResponse();
+
+      setOpenIDAuthTokens(tokenset, req, res, {
+        userId: 'user-123',
+        openidSubject: 'oidc-sub-123',
+        tenantId: 'tenantA',
+        openidIssuer: 'https://issuer.example.com/.well-known/openid-configuration',
+      });
+
+      expect(req.session.openidTokens).toEqual(
+        expect.objectContaining({
+          appUserId: 'user-123',
+          openidSubject: 'oidc-sub-123',
+          tenantId: 'tenantA',
+          openidIssuer: 'https://issuer.example.com',
+        }),
+      );
     });
 
     /**

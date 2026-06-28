@@ -6,6 +6,7 @@ const {
   isEnabled,
   math,
   createAuthIdentityContext,
+  isOpenIDSessionIdentityMatch,
   createOpenIDRefreshIdentityTuple,
   createRefreshTokenBridgeIdentity,
   serializeAuthIdentityTuple,
@@ -43,6 +44,10 @@ const {
  *                                               the browser cookie.
  * @property {number} [expiresAt]              — SESSION cookie expiry (ms).
  * @property {number} [lastRefreshedAt]        — wall-clock ms of the last server-side rotation.
+ * @property {string} [appUserId]              — LibreChat user id bound to these session tokens.
+ * @property {string} [openidSubject]          — OpenID `sub` bound to these session tokens.
+ * @property {string} [tenantId]               — tenant bound to these session tokens.
+ * @property {string} [openidIssuer]           — normalized issuer bound to these session tokens.
  * @property {number} [accessTokenExpiresAt]   — access token expiry (unix seconds), captured
  *                                               from the IdP `tokenset.expires_in` so opaque
  *                                               access tokens can still be reused without
@@ -136,6 +141,47 @@ function getSingleFlightKey(req, user, identityContext) {
  */
 function hashKeyForLogs(key) {
   return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
+}
+
+function resolveExpectedOpenIDSessionIdentity(req, user, identityContext) {
+  if (!identityContext) {
+    return createAuthIdentityContext({
+      user,
+      requestUser: req?.user,
+    });
+  }
+
+  return createAuthIdentityContext({
+    user: {
+      id: identityContext.appUserId,
+      openidId: identityContext.openidSubject,
+      tenantId: identityContext.tenantId,
+      openidIssuer: identityContext.openidIssuer,
+    },
+    requestUser: user ?? req?.user,
+    tenantId: identityContext.tenantId,
+    openidIssuer: identityContext.openidIssuer,
+  });
+}
+
+function assertOpenIDSessionIdentityMatch(req, user, identityContext) {
+  const sessionTokens = req?.session?.openidTokens;
+  if (!sessionTokens) {
+    return;
+  }
+
+  const expectedIdentity = resolveExpectedOpenIDSessionIdentity(req, user, identityContext);
+  if (isOpenIDSessionIdentityMatch(sessionTokens, expectedIdentity)) {
+    return;
+  }
+
+  logger.warn('[OpenIDSessionRefresh] OpenID session token identity mismatch; refusing reuse', {
+    userId: expectedIdentity.appUserId,
+    has_session_user_id: Boolean(sessionTokens.appUserId),
+    has_session_subject: Boolean(sessionTokens.openidSubject),
+    has_session_issuer: Boolean(sessionTokens.openidIssuer),
+  });
+  throw new Error('OpenID session token identity mismatch');
 }
 
 function decodeJwtExp(token) {
@@ -625,6 +671,7 @@ async function refreshOrReuseSession(req, res, user, tokenPreference, identityCo
  *   returned `expires_at`. OBO callers pass 'access_token'.
  */
 async function refreshOpenIDSession(req, res, user, tokenPreference, identityContext) {
+  assertOpenIDSessionIdentityMatch(req, user, identityContext);
   const key = getSingleFlightKey(req, user, identityContext);
   if (!key) {
     return refreshOrReuseSession(req, res, user, tokenPreference, identityContext);
@@ -685,6 +732,7 @@ function isOIDCRefreshApplicable(user) {
  * Closure contract (matches `UpstreamTokenProvider` in obo.ts):
  *   - resolves to non-null OIDCTokens when fresh tokens are available.
  *   - resolves to null when refresh is not applicable / no session.
+ *   - rejects when session identity metadata does not match the current user.
  *   - rejects when refresh was attempted and rejected by the IdP. The MCP
  *     layer wraps the rejection as `session_refresh_failed`.
  *
