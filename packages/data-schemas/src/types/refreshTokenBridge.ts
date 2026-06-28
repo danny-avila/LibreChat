@@ -23,5 +23,4 @@ export interface RefreshTokenBridgeQuery {
   oldRefreshTokenHash: string;
   userId: string;
   tenantId?: string;
-  openidIssuer?: string;
 }

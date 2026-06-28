@@ -24,11 +24,14 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
   ) => Promise<IRefreshTokenBridge | null>;
   findRefreshTokenBridge: (query: RefreshTokenBridgeQuery) => Promise<IRefreshTokenBridge | null>;
 } {
+  const getRefreshTokenBridgeModel = () =>
+    mongoose.models.RefreshTokenBridge as Model<IRefreshTokenBridge>;
+
   async function upsertRefreshTokenBridge(
     bridgeData: RefreshTokenBridgeCreateData,
   ): Promise<IRefreshTokenBridge | null> {
     try {
-      const RefreshTokenBridge = mongoose.models.RefreshTokenBridge as Model<IRefreshTokenBridge>;
+      const RefreshTokenBridge = getRefreshTokenBridgeModel();
       const filter = bridgeFilter(bridgeData);
       const update: UpdateQuery<IRefreshTokenBridge> = {
         $set: {
@@ -58,7 +61,7 @@ export function createRefreshTokenBridgeMethods(mongoose: typeof import('mongoos
     query: RefreshTokenBridgeQuery,
   ): Promise<IRefreshTokenBridge | null> {
     try {
-      const RefreshTokenBridge = mongoose.models.RefreshTokenBridge as Model<IRefreshTokenBridge>;
+      const RefreshTokenBridge = getRefreshTokenBridgeModel();
       return await RefreshTokenBridge.findOne({
         ...bridgeFilter(query),
         expiresAt: { $gt: new Date() },

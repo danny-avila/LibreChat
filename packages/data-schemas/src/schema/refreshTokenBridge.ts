@@ -38,11 +38,5 @@ refreshTokenBridgeSchema.index(
   { oldRefreshTokenHash: 1, userId: 1, tenantId: 1 },
   { unique: true },
 );
-refreshTokenBridgeSchema.index({
-  oldRefreshTokenHash: 1,
-  userId: 1,
-  tenantId: 1,
-  openidIssuer: 1,
-});
 
 export default refreshTokenBridgeSchema;

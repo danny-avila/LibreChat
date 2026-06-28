@@ -354,98 +354,93 @@ const refreshController = async (req, res) => {
        */
       if (isInvalidGrantError(error) && refreshToken) {
         // Bridge lookup uses the signed user-id cookie because /refresh is unauthenticated.
-        const openidUserId = parsedCookies.openid_user_id;
-        if (openidUserId) {
+        const userId = getValidOpenIDReuseUserId(parsedCookies);
+        if (userId) {
           try {
-            const payload = jwt.verify(openidUserId, process.env.JWT_REFRESH_SECRET);
-            const userId = typeof payload === 'object' && payload?.id ? payload.id : null;
+            const bridgeUser = await getUserById(userId, AUTH_REFRESH_USER_PROJECTION);
+            if (!bridgeUser) {
+              return res.status(403).send('Invalid OpenID refresh token');
+            }
 
-            if (userId) {
-              const bridgeUser = await getUserById(userId, AUTH_REFRESH_USER_PROJECTION);
-              if (!bridgeUser) {
-                return res.status(403).send('Invalid OpenID refresh token');
-              }
+            const bridgedRefreshToken = await getRefreshTokenBridge({
+              oldRefreshToken: refreshToken,
+              userId,
+              tenantId: bridgeUser.tenantId,
+              openidIssuer: bridgeUser.openidIssuer,
+            });
 
-              const bridgedRefreshToken = await getRefreshTokenBridge({
-                oldRefreshToken: refreshToken,
-                userId,
-                tenantId: bridgeUser.tenantId,
-                openidIssuer: bridgeUser.openidIssuer,
-              });
+            if (bridgedRefreshToken) {
+              logger.info(
+                '[refreshController] Recovered via refresh-token bridge after invalid_grant',
+                {
+                  userId,
+                },
+              );
 
-              if (bridgedRefreshToken) {
-                logger.info(
-                  '[refreshController] Recovered via refresh-token bridge after invalid_grant',
-                  {
-                    userId,
-                  },
-                );
+              // Retry with the recovered (rotated) refresh token
+              try {
+                const {
+                  tokenset: retryTokenset,
+                  claims: retryClaims,
+                  openidIssuer: retryOpenidIssuer,
+                  user: retryUser,
+                  error: retryError,
+                } = await refreshOpenIDUser({
+                  refreshToken: bridgedRefreshToken,
+                  strategyName: 'refreshController (bridge recovery)',
+                });
 
-                // Retry with the recovered (rotated) refresh token
-                try {
-                  const {
-                    tokenset: retryTokenset,
-                    claims: retryClaims,
-                    openidIssuer: retryOpenidIssuer,
-                    user: retryUser,
-                    error: retryError,
-                  } = await refreshOpenIDUser({
-                    refreshToken: bridgedRefreshToken,
-                    strategyName: 'refreshController (bridge recovery)',
-                  });
-
-                  if (retryUser && !retryError) {
-                    if (retryUser._id.toString() !== userId) {
-                      logger.warn(
-                        '[refreshController] Bridge recovery resolved a different user; refusing token issuance',
-                        {
-                          cookieUserId: userId,
-                          resolvedUserId: retryUser._id.toString(),
-                        },
-                      );
-                      return res.status(403).send('Invalid OpenID refresh token');
-                    }
-
-                    try {
-                      /**
-                       * Keep the stale-cookie bridge briefly so parallel /refresh requests that
-                       * already sent the old cookie can recover too. Re-storing also shrinks the
-                       * remaining replay window from REFRESH_TOKEN_EXPIRY (potentially days) to
-                       * this short grace TTL while Mongo/expiresAt cleanup removes it.
-                       */
-                      await storeRefreshTokenBridge({
-                        oldRefreshToken: refreshToken,
-                        newRefreshToken: retryTokenset.refresh_token || bridgedRefreshToken,
-                        userId,
-                        tenantId: bridgeUser.tenantId,
-                        openidIssuer: bridgeUser.openidIssuer,
-                        ttl: OPENID_REFRESH_BRIDGE_GRACE_MS,
-                      });
-                    } catch (graceError) {
-                      logger.warn(
-                        '[refreshController] Bridge grace-period storage failed after successful recovery',
-                        graceError,
-                      );
-                    }
-                    return sendOpenIDAuthResponse({
-                      tokenset: retryTokenset,
-                      user: retryUser,
-                      existingRefreshToken: bridgedRefreshToken,
-                      openidSubject: retryClaims?.sub,
-                      openidIssuer: retryOpenidIssuer,
-                      req,
-                      res,
-                    });
+                if (retryUser && !retryError) {
+                  if (retryUser._id.toString() !== userId) {
+                    logger.warn(
+                      '[refreshController] Bridge recovery resolved a different user; refusing token issuance',
+                      {
+                        cookieUserId: userId,
+                        resolvedUserId: retryUser._id.toString(),
+                      },
+                    );
+                    return res.status(403).send('Invalid OpenID refresh token');
                   }
-                } catch (retryError) {
-                  logger.error('[refreshController] Bridge recovery retry failed', retryError);
-                  // Fall through to generic error response
+
+                  try {
+                    /**
+                     * Keep the stale-cookie bridge briefly so parallel /refresh requests that
+                     * already sent the old cookie can recover too. Re-storing also shrinks the
+                     * remaining replay window from REFRESH_TOKEN_EXPIRY (potentially days) to
+                     * this short grace TTL while Mongo/expiresAt cleanup removes it.
+                     */
+                    await storeRefreshTokenBridge({
+                      oldRefreshToken: refreshToken,
+                      newRefreshToken: retryTokenset.refresh_token || bridgedRefreshToken,
+                      userId,
+                      tenantId: bridgeUser.tenantId,
+                      openidIssuer: bridgeUser.openidIssuer,
+                      ttl: OPENID_REFRESH_BRIDGE_GRACE_MS,
+                    });
+                  } catch (graceError) {
+                    logger.warn(
+                      '[refreshController] Bridge grace-period storage failed after successful recovery',
+                      graceError,
+                    );
+                  }
+                  return sendOpenIDAuthResponse({
+                    tokenset: retryTokenset,
+                    user: retryUser,
+                    existingRefreshToken: bridgedRefreshToken,
+                    openidSubject: retryClaims?.sub,
+                    openidIssuer: retryOpenidIssuer,
+                    req,
+                    res,
+                  });
                 }
+              } catch (retryError) {
+                logger.error('[refreshController] Bridge recovery retry failed', retryError);
+                // Fall through to generic error response
               }
             }
-          } catch (verifyError) {
-            logger.debug('[refreshController] Could not verify openid_user_id for bridge lookup', {
-              error: verifyError.message,
+          } catch (bridgeError) {
+            logger.debug('[refreshController] Refresh-token bridge lookup failed', {
+              error: bridgeError.message,
             });
           }
         }

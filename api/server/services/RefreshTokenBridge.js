@@ -103,7 +103,7 @@ async function storeRefreshTokenBridge({
  * @param {string} args.oldRefreshToken — the token to look up (hashed for key)
  * @param {string} args.userId — current user._id (must match the bridged context)
  * @param {string} [args.tenantId] — current user.tenantId (optional but verified if present)
- * @param {string} [args.openidIssuer] — current user.openidIssuer (optional but verified if present)
+ * @param {string} [args.openidIssuer] — current user.openidIssuer (must match stored issuer after normalization)
  * @returns {Promise<string | null>} the rotated refresh token if found and valid, null otherwise
  */
 async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openidIssuer }) {
@@ -124,7 +124,13 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
     return null;
   }
 
-  if (bridge.openidIssuer && bridge.openidIssuer !== identity.openidIssuer) {
+  const bridgeIdentity = resolveBridgeIdentity({
+    userId: bridge.userId,
+    tenantId: bridge.tenantId,
+    openidIssuer: bridge.openidIssuer,
+  });
+
+  if (!bridgeIdentity || bridgeIdentity.openidIssuer !== identity.openidIssuer) {
     logger.warn('[RefreshTokenBridge] Bridge lookup failed: issuer mismatch', {
       tokenHash: oldRefreshTokenHash,
     });

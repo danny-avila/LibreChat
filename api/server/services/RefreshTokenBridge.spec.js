@@ -165,5 +165,57 @@ describe('RefreshTokenBridge', () => {
       expect(result).toBeNull();
       expect(decryptV2).not.toHaveBeenCalled();
     });
+
+    it('returns null when only the expected issuer is present', async () => {
+      db.findRefreshTokenBridge.mockResolvedValue({
+        encryptedNewRefreshToken: 'encrypted:rt-new',
+        userId: 'user-123',
+        createdAt: new Date(),
+      });
+
+      const result = await getRefreshTokenBridge({
+        oldRefreshToken: 'rt-old',
+        userId: 'user-123',
+        openidIssuer: 'https://issuer.example.com',
+      });
+
+      expect(result).toBeNull();
+      expect(decryptV2).not.toHaveBeenCalled();
+    });
+
+    it('returns null when only the stored issuer is present', async () => {
+      db.findRefreshTokenBridge.mockResolvedValue({
+        encryptedNewRefreshToken: 'encrypted:rt-new',
+        userId: 'user-123',
+        openidIssuer: 'https://issuer.example.com',
+        createdAt: new Date(),
+      });
+
+      const result = await getRefreshTokenBridge({
+        oldRefreshToken: 'rt-old',
+        userId: 'user-123',
+      });
+
+      expect(result).toBeNull();
+      expect(decryptV2).not.toHaveBeenCalled();
+    });
+
+    it('normalizes the stored issuer before validation', async () => {
+      db.findRefreshTokenBridge.mockResolvedValue({
+        encryptedNewRefreshToken: 'encrypted:rt-new',
+        userId: 'user-123',
+        openidIssuer: 'https://issuer.example.com/.well-known/openid-configuration',
+        createdAt: new Date(),
+      });
+
+      const result = await getRefreshTokenBridge({
+        oldRefreshToken: 'rt-old',
+        userId: 'user-123',
+        openidIssuer: 'https://issuer.example.com/',
+      });
+
+      expect(decryptV2).toHaveBeenCalledWith('encrypted:rt-new');
+      expect(result).toBe('rt-new');
+    });
   });
 });

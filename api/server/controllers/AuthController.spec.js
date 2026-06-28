@@ -914,6 +914,17 @@ describe('refreshController – OpenID path', () => {
     expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
   });
 
+  it('does not use the bridge when signed user-id cookie payload is invalid', async () => {
+    setOpenIDReuseCookies(jwt.sign({ id: 123 }, process.env.JWT_REFRESH_SECRET));
+    openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
   it('recovers stale refresh-token cookies and keeps a short grace bridge', async () => {
     setOpenIDReuseCookies();
     req.session = {};

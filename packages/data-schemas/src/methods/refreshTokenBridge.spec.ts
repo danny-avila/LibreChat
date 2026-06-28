@@ -32,6 +32,18 @@ beforeEach(async () => {
 });
 
 describe('RefreshTokenBridge Methods', () => {
+  it('keeps the lookup indexes aligned with the data-layer query shape', () => {
+    const indexKeys = mongoose.models.RefreshTokenBridge.schema.indexes().map(([key]) => key);
+
+    expect(indexKeys).toContainEqual({ oldRefreshTokenHash: 1, userId: 1, tenantId: 1 });
+    expect(indexKeys).not.toContainEqual({
+      oldRefreshTokenHash: 1,
+      userId: 1,
+      tenantId: 1,
+      openidIssuer: 1,
+    });
+  });
+
   it('upserts and finds a bridge by old token hash, user, and tenant', async () => {
     await methods.upsertRefreshTokenBridge({
       oldRefreshTokenHash: 'old-hash',
