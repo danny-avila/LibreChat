@@ -155,7 +155,8 @@ function DynamicTags({
                   if (e.key === 'Backspace' && !tagText) {
                     onTagRemove(currentTags.length - 1);
                   }
-                  if (e.key === 'Enter') {
+                  // Ignore the Enter that commits an IME composition (see useTextarea.ts).
+                  if (e.key === 'Enter' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
                     onTagAdd();
                   }
                 }}
