@@ -112,6 +112,48 @@ const isInvalidGrantError = (error) => {
   );
 };
 
+const refreshOpenIDUser = async ({ refreshToken, strategyName }) => {
+  const openIdConfig = getOpenIdConfig();
+  const refreshParams = buildOpenIDRefreshParams();
+  logger.debug('[refreshController] OpenID refresh params', {
+    has_scope: Boolean(process.env.OPENID_SCOPE),
+    has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
+  });
+  const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken, refreshParams);
+  logger.debug('[refreshController] OpenID refresh succeeded', {
+    has_access_token: Boolean(tokenset.access_token),
+    has_id_token: Boolean(tokenset.id_token),
+    has_refresh_token: Boolean(tokenset.refresh_token),
+    expires_in: tokenset.expires_in,
+  });
+  const claims = tokenset.claims();
+  const openidIssuer = getOpenIdIssuer(claims, openIdConfig);
+  const { user, error, migration } = await findOpenIDUser({
+    findUser,
+    email: getOpenIdEmail(claims),
+    openidId: claims.sub,
+    openidIssuer,
+    idOnTheSource: claims.oid,
+    strategyName,
+  });
+
+  logger.debug(
+    `[refreshController] findOpenIDUser result: user=${user?.email ?? 'null'}, error=${error ?? 'null'}, migration=${migration}, userOpenidId=${user?.openidId ?? 'null'}, claimsSub=${claims.sub}`,
+  );
+
+  return { tokenset, claims, openidIssuer, user, error, migration };
+};
+
+const sendOpenIDAuthResponse = ({ tokenset, user, existingRefreshToken, req, res }) => {
+  const token = setOpenIDAuthTokens(tokenset, req, res, {
+    userId: user._id.toString(),
+    existingRefreshToken,
+    tenantId: user.tenantId,
+  });
+
+  return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
+};
+
 const getReusableOpenIDSessionToken = (openidTokens) => {
   if (!isRecentOpenIDSessionRefresh(openidTokens)) {
     return null;
@@ -211,37 +253,10 @@ const refreshController = async (req, res) => {
         }
       }
 
-      const openIdConfig = getOpenIdConfig();
-      const refreshParams = buildOpenIDRefreshParams();
-      logger.debug('[refreshController] OpenID refresh params', {
-        has_scope: Boolean(process.env.OPENID_SCOPE),
-        has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
-      });
-      const tokenset = await openIdClient.refreshTokenGrant(
-        openIdConfig,
+      const { tokenset, claims, openidIssuer, user, error, migration } = await refreshOpenIDUser({
         refreshToken,
-        refreshParams,
-      );
-      logger.debug('[refreshController] OpenID refresh succeeded', {
-        has_access_token: Boolean(tokenset.access_token),
-        has_id_token: Boolean(tokenset.id_token),
-        has_refresh_token: Boolean(tokenset.refresh_token),
-        expires_in: tokenset.expires_in,
-      });
-      const claims = tokenset.claims();
-      const openidIssuer = getOpenIdIssuer(claims, openIdConfig);
-      const { user, error, migration } = await findOpenIDUser({
-        findUser,
-        email: getOpenIdEmail(claims),
-        openidId: claims.sub,
-        openidIssuer,
-        idOnTheSource: claims.oid,
         strategyName: 'refreshController',
       });
-
-      logger.debug(
-        `[refreshController] findOpenIDUser result: user=${user?.email ?? 'null'}, error=${error ?? 'null'}, migration=${migration}, userOpenidId=${user?.openidId ?? 'null'}, claimsSub=${claims.sub}`,
-      );
 
       if (error || !user) {
         logger.warn(
@@ -264,13 +279,13 @@ const refreshController = async (req, res) => {
         );
       }
 
-      const token = setOpenIDAuthTokens(tokenset, req, res, {
-        userId: user._id.toString(),
+      return sendOpenIDAuthResponse({
+        tokenset,
+        user,
         existingRefreshToken: refreshToken,
-        tenantId: user.tenantId,
+        req,
+        res,
       });
-
-      return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
 
@@ -311,31 +326,27 @@ const refreshController = async (req, res) => {
 
                 // Retry with the recovered (rotated) refresh token
                 try {
-                  const openIdConfig = getOpenIdConfig();
-                  const refreshParams = buildOpenIDRefreshParams();
-                  const retryTokenset = await openIdClient.refreshTokenGrant(
-                    openIdConfig,
-                    bridgedRefreshToken,
-                    refreshParams,
-                  );
-
-                  const retryClaims = retryTokenset.claims();
-                  const retryIssuer = getOpenIdIssuer(retryClaims, openIdConfig);
-                  const { user: retryUser, error: retryError } = await findOpenIDUser({
-                    findUser,
-                    email: getOpenIdEmail(retryClaims),
-                    openidId: retryClaims.sub,
-                    openidIssuer: retryIssuer,
-                    idOnTheSource: retryClaims.oid,
+                  const {
+                    tokenset: retryTokenset,
+                    user: retryUser,
+                    error: retryError,
+                  } = await refreshOpenIDUser({
+                    refreshToken: bridgedRefreshToken,
                     strategyName: 'refreshController (bridge recovery)',
                   });
 
                   if (retryUser && !retryError) {
-                    const token = setOpenIDAuthTokens(retryTokenset, req, res, {
-                      userId: retryUser._id.toString(),
-                      existingRefreshToken: bridgedRefreshToken,
-                      tenantId: retryUser.tenantId,
-                    });
+                    if (retryUser._id.toString() !== userId) {
+                      logger.warn(
+                        '[refreshController] Bridge recovery resolved a different user; refusing token issuance',
+                        {
+                          cookieUserId: userId,
+                          resolvedUserId: retryUser._id.toString(),
+                        },
+                      );
+                      return res.status(403).send('Invalid OpenID refresh token');
+                    }
+
                     try {
                       /**
                        * Keep the stale-cookie bridge briefly so parallel /refresh requests that
@@ -357,9 +368,13 @@ const refreshController = async (req, res) => {
                         graceError,
                       );
                     }
-                    return res
-                      .status(200)
-                      .send({ token, user: sanitizeUserForAuthResponse(retryUser) });
+                    return sendOpenIDAuthResponse({
+                      tokenset: retryTokenset,
+                      user: retryUser,
+                      existingRefreshToken: bridgedRefreshToken,
+                      req,
+                      res,
+                    });
                   }
                 } catch (retryError) {
                   logger.error('[refreshController] Bridge recovery retry failed', retryError);

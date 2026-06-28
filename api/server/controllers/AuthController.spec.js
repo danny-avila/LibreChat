@@ -766,6 +766,12 @@ describe('refreshController – OpenID path', () => {
       'bridged-refresh',
       {},
     );
+    expect(findOpenIDUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyName: 'refreshController (bridge recovery)',
+      }),
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledTimes(1);
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
       existingRefreshToken: 'bridged-refresh',
@@ -790,6 +796,40 @@ describe('refreshController – OpenID path', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('rejects bridge recovery when retry resolves a different user than the signed cookie', async () => {
+    setOpenIDReuseCookies(makeSignedUserId('cookie-user-id'));
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'cookie-user-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    findOpenIDUser.mockResolvedValueOnce({
+      user: { ...defaultUser, _id: 'different-user-id' },
+      error: null,
+      migration: false,
+    });
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(2);
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] Bridge recovery resolved a different user; refusing token issuance',
+      {
+        cookieUserId: 'cookie-user-id',
+        resolvedUserId: 'different-user-id',
+      },
+    );
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
   });
 
   it('does not re-store the bridge when bridged refresh retry fails', async () => {
