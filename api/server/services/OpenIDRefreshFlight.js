@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
+const { createOpenIDRefreshIdentityTuple, serializeAuthIdentityTuple } = require('@librechat/api');
 const db = require('~/models');
 
 const DEFAULT_FLIGHT_TTL_MS = 2 * 60 * 1000;
@@ -13,27 +14,25 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function getUserSub(req, user) {
-  return (
-    user?.openidId ||
-    user?.id ||
-    user?._id?.toString?.() ||
-    req?.user?.openidId ||
-    req?.user?.id ||
-    req?.user?._id?.toString?.()
-  );
-}
-
-function createOpenIDRefreshFlightKey({ req, user, refreshToken }) {
-  const sub = getUserSub(req, user);
-  if (!sub || !refreshToken) {
+function createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext }) {
+  const identitySource = identityContext
+    ? {
+        id: identityContext.appUserId,
+        openidId: identityContext.openidSubject,
+        tenantId: identityContext.tenantId,
+        openidIssuer: identityContext.openidIssuer,
+      }
+    : user;
+  const tuple = createOpenIDRefreshIdentityTuple({
+    user: identitySource,
+    requestUser: req?.user,
+  });
+  if (!tuple || !refreshToken) {
     return null;
   }
 
   const parts = [
-    user?.tenantId ?? req?.user?.tenantId ?? 'no-tenant',
-    user?.openidIssuer ?? req?.user?.openidIssuer ?? 'no-issuer',
-    sub,
+    serializeAuthIdentityTuple(tuple),
     req?.sessionID ?? 'no-session',
     sha256(refreshToken),
   ];

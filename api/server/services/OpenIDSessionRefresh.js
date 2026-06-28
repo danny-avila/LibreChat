@@ -5,6 +5,9 @@ const { logger, DEFAULT_REFRESH_TOKEN_EXPIRY } = require('@librechat/data-schema
 const {
   isEnabled,
   math,
+  createAuthIdentityContext,
+  createOpenIDRefreshIdentityTuple,
+  serializeAuthIdentityTuple,
   buildOpenIDRefreshParams,
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
@@ -52,10 +55,11 @@ const {
  */
 const UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 const INTERNAL_BROWSER_REFRESH_TOKEN_FIELD = '__browserRefreshToken';
+const IDENTITY_PART_SEPARATOR = '\x1f';
 
 /**
- * In-flight upstream refreshes keyed by `getSingleFlightKey(req, user)` —
- * a composite of `tenantId:openidIssuer:openidId:sessionId:refreshTokenHash`.
+ * In-flight upstream refreshes keyed by `getSingleFlightKey(req, user, identityContext)` —
+ * a composite of `tenantId:openidIssuer:subject:sessionId:refreshTokenHash`.
  * See that helper for the rationale on why each component is needed; in short,
  * per-session keying prevents refresh-token rotation from breaking sibling
  * sessions, tenant+issuer keying prevents cross-tenant token crossover when
@@ -93,17 +97,28 @@ const inFlightRefreshes = new Map();
  * Returns null when there's no usable identity at all; callers fall through
  * to a non-coalesced refresh, which is safe but missing the optimization.
  */
-function getSingleFlightKey(req, user) {
-  const sub = user?.openidId || user?.id || user?._id?.toString?.();
+function getSingleFlightKey(req, user, identityContext) {
+  const identitySource = identityContext
+    ? {
+        id: identityContext.appUserId,
+        openidId: identityContext.openidSubject,
+        tenantId: identityContext.tenantId,
+        openidIssuer: identityContext.openidIssuer,
+      }
+    : user;
+  const tuple = createOpenIDRefreshIdentityTuple({
+    user: identitySource,
+    requestUser: req?.user,
+  });
   const refreshToken = req?.session?.openidTokens?.refreshToken;
-  if (!sub || !refreshToken) {
+  if (!tuple || !refreshToken) {
     return null;
   }
   const sessionId = req?.sessionID || 'no-session';
-  const tenantId = user?.tenantId || 'no-tenant';
-  const issuer = user?.openidIssuer || 'no-issuer';
   const refreshTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-  return `${tenantId}:${issuer}:${sub}:${sessionId}:${refreshTokenHash}`;
+  return [serializeAuthIdentityTuple(tuple), sessionId, refreshTokenHash].join(
+    IDENTITY_PART_SEPARATOR,
+  );
 }
 
 /**
@@ -446,9 +461,9 @@ async function performIdpRefreshGrant(req, res, user, tokenPreference) {
   );
 }
 
-async function performIdpRefresh(req, res, user, tokenPreference) {
+async function performIdpRefresh(req, res, user, tokenPreference, identityContext) {
   const refreshToken = req?.session?.openidTokens?.refreshToken;
-  const key = createOpenIDRefreshFlightKey({ req, user, refreshToken });
+  const key = createOpenIDRefreshFlightKey({ req, user, refreshToken, identityContext });
   if (!key) {
     return performIdpRefreshGrant(req, res, user, tokenPreference);
   }
@@ -564,7 +579,7 @@ async function hydrateSessionFromResolvedTokens(req, resolvedTokens) {
   await persistSession(req);
 }
 
-async function refreshOrReuseSession(req, res, user, tokenPreference) {
+async function refreshOrReuseSession(req, res, user, tokenPreference, identityContext) {
   const sessionTokens = req?.session?.openidTokens;
   if (!sessionTokens) {
     logger.debug('[OpenIDSessionRefresh] No session tokens to refresh from');
@@ -576,7 +591,7 @@ async function refreshOrReuseSession(req, res, user, tokenPreference) {
     return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
   }
 
-  return performIdpRefresh(req, res, user, tokenPreference);
+  return performIdpRefresh(req, res, user, tokenPreference, identityContext);
 }
 
 /**
@@ -592,10 +607,10 @@ async function refreshOrReuseSession(req, res, user, tokenPreference) {
  *   which token's `exp` gates the live-vs-refresh decision and populates the
  *   returned `expires_at`. OBO callers pass 'access_token'.
  */
-async function refreshOpenIDSession(req, res, user, tokenPreference) {
-  const key = getSingleFlightKey(req, user);
+async function refreshOpenIDSession(req, res, user, tokenPreference, identityContext) {
+  const key = getSingleFlightKey(req, user, identityContext);
   if (!key) {
-    return refreshOrReuseSession(req, res, user, tokenPreference);
+    return refreshOrReuseSession(req, res, user, tokenPreference, identityContext);
   }
 
   const inFlight = inFlightRefreshes.get(key);
@@ -611,11 +626,13 @@ async function refreshOpenIDSession(req, res, user, tokenPreference) {
     return resolvedTokens;
   }
 
-  const promise = refreshOrReuseSession(req, res, user, tokenPreference).finally(() => {
-    if (inFlightRefreshes.get(key) === promise) {
-      inFlightRefreshes.delete(key);
-    }
-  });
+  const promise = refreshOrReuseSession(req, res, user, tokenPreference, identityContext).finally(
+    () => {
+      if (inFlightRefreshes.get(key) === promise) {
+        inFlightRefreshes.delete(key);
+      }
+    },
+  );
   inFlightRefreshes.set(key, promise);
   /** Swallow rejection on the cleanup chain; the original is delivered to the awaiter. */
   promise.catch(() => {});
@@ -660,10 +677,11 @@ function isOIDCRefreshApplicable(user) {
  *   refresh token can be mirrored to the `refreshToken` cookie when the
  *   response is still writable (no-op on the streaming tool-call path).
  * @param {import('@librechat/data-schemas').IUser} [args.user]
+ * @param {import('@librechat/api').AuthIdentityContext} [args.identityContext]
  * @param {'access_token' | 'id_token'} args.tokenPreference
  * @returns {() => Promise<import('@librechat/data-schemas').OIDCTokens | null>}
  */
-function createOpenIDSessionTokenProvider({ req, res, user, tokenPreference }) {
+function createOpenIDSessionTokenProvider({ req, res, user, tokenPreference, identityContext }) {
   if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
     throw new Error(
       `[OpenIDSessionRefresh] createOpenIDSessionTokenProvider requires tokenPreference 'access_token' or 'id_token', got: ${tokenPreference}`,
@@ -679,7 +697,13 @@ function createOpenIDSessionTokenProvider({ req, res, user, tokenPreference }) {
       );
       return null;
     }
-    return refreshOpenIDSession(req, res, user, tokenPreference);
+    const resolvedIdentityContext =
+      identityContext ??
+      createAuthIdentityContext({
+        user,
+        requestUser: req?.user,
+      });
+    return refreshOpenIDSession(req, res, user, tokenPreference, resolvedIdentityContext);
   };
 }
 
@@ -690,6 +714,7 @@ module.exports = {
   __internals: {
     UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS,
     inFlightRefreshes,
+    getSingleFlightKey,
     isLiveSessionTokenStillValid,
     getAccessTokenExp,
   },

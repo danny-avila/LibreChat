@@ -12,7 +12,7 @@ jest.mock('@librechat/data-schemas', () => ({
 const client = require('openid-client');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const getLogStores = require('~/cache/getLogStores');
-const { exchangeOboToken } = require('./OboTokenService');
+const { exchangeOboToken, __internals } = require('./OboTokenService');
 
 describe('OboTokenService', () => {
   let mockTokensCache;
@@ -20,9 +20,14 @@ describe('OboTokenService', () => {
 
   const mockUser = {
     openidId: 'oidc-sub-123',
+    tenantId: 'tenant-a',
+    openidIssuer: 'https://issuer-a.example.com',
     email: 'test@example.com',
     name: 'Test User',
   };
+
+  const expectedCacheKey = (user, accessToken, scopes, identityContext) =>
+    __internals.buildOboCacheKey({ user, accessToken, scopes, identityContext });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -91,7 +96,9 @@ describe('OboTokenService', () => {
       );
 
       expect(result).toBe(cachedToken);
-      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://mcp-server/Scope.Read');
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token', 'api://mcp-server/Scope.Read'),
+      );
       expect(client.genericGrantRequest).not.toHaveBeenCalled();
     });
 
@@ -116,7 +123,9 @@ describe('OboTokenService', () => {
 
       await exchangeOboToken(mockUser, 'access-token', 'api://scope');
 
-      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://scope');
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token', 'api://scope'),
+      );
     });
   });
 
@@ -159,7 +168,7 @@ describe('OboTokenService', () => {
       await exchangeOboToken(mockUser, 'access-token', 'api://scope');
 
       expect(mockTokensCache.set).toHaveBeenCalledWith(
-        'oidc-sub-123:api://scope',
+        expectedCacheKey(mockUser, 'access-token', 'api://scope'),
         {
           access_token: 'new-obo-token',
           token_type: 'Bearer',
@@ -179,7 +188,7 @@ describe('OboTokenService', () => {
 
       expect(result.expires_in).toBe(3600);
       expect(mockTokensCache.set).toHaveBeenCalledWith(
-        'oidc-sub-123:api://scope',
+        expectedCacheKey(mockUser, 'access-token', 'api://scope'),
         expect.objectContaining({ expires_in: 3600 }),
         3600 * 1000,
       );
@@ -237,12 +246,23 @@ describe('OboTokenService', () => {
   });
 
   describe('cache key isolation', () => {
+    it('does not include the raw upstream assertion in cache keys', async () => {
+      await exchangeOboToken(mockUser, 'sensitive-access-token', 'api://scope');
+
+      expect(mockTokensCache.get.mock.calls[0][0]).not.toContain('sensitive-access-token');
+      expect(mockTokensCache.set.mock.calls[0][0]).not.toContain('sensitive-access-token');
+    });
+
     it('should use different cache keys for different scopes', async () => {
       await exchangeOboToken(mockUser, 'access-token', 'api://server-a/Scope.A');
       await exchangeOboToken(mockUser, 'access-token', 'api://server-b/Scope.B');
 
-      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://server-a/Scope.A');
-      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://server-b/Scope.B');
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token', 'api://server-a/Scope.A'),
+      );
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token', 'api://server-b/Scope.B'),
+      );
     });
 
     it('should use different cache keys for different users', async () => {
@@ -251,8 +271,88 @@ describe('OboTokenService', () => {
       await exchangeOboToken(mockUser, 'access-token', 'api://scope');
       await exchangeOboToken(otherUser, 'access-token', 'api://scope');
 
-      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://scope');
-      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-456:api://scope');
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token', 'api://scope'),
+      );
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(otherUser, 'access-token', 'api://scope'),
+      );
+    });
+
+    it('should use different cache keys for different tenants with the same OpenID subject', async () => {
+      const identityA = {
+        openidSubject: 'shared-sub',
+        tenantId: 'tenant-a',
+        openidIssuer: 'https://issuer.example.com',
+      };
+      const identityB = {
+        openidSubject: 'shared-sub',
+        tenantId: 'tenant-b',
+        openidIssuer: 'https://issuer.example.com',
+      };
+      const safeUser = { openidId: 'shared-sub', email: 'test@example.com' };
+
+      await exchangeOboToken(safeUser, 'access-token', 'api://scope', true, identityA);
+      await exchangeOboToken(safeUser, 'access-token', 'api://scope', true, identityB);
+
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(safeUser, 'access-token', 'api://scope', identityA),
+      );
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(safeUser, 'access-token', 'api://scope', identityB),
+      );
+    });
+
+    it('should use identity context when the forwarded user lacks OpenID fields', async () => {
+      const identityContext = {
+        openidSubject: 'context-sub',
+        tenantId: 'tenant-a',
+        openidIssuer: 'https://issuer.example.com',
+      };
+      const safeUser = { id: 'safe-user-id', email: 'test@example.com' };
+
+      await exchangeOboToken(safeUser, 'access-token', 'api://scope', true, identityContext);
+
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(safeUser, 'access-token', 'api://scope', identityContext),
+      );
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('should use different cache keys for different issuers with the same OpenID subject', async () => {
+      const identityA = {
+        openidSubject: 'shared-sub',
+        tenantId: 'tenant-a',
+        openidIssuer: 'https://issuer-a.example.com',
+      };
+      const identityB = {
+        openidSubject: 'shared-sub',
+        tenantId: 'tenant-a',
+        openidIssuer: 'https://issuer-b.example.com',
+      };
+      const safeUser = { openidId: 'shared-sub', email: 'test@example.com' };
+
+      await exchangeOboToken(safeUser, 'access-token', 'api://scope', true, identityA);
+      await exchangeOboToken(safeUser, 'access-token', 'api://scope', true, identityB);
+
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(safeUser, 'access-token', 'api://scope', identityA),
+      );
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(safeUser, 'access-token', 'api://scope', identityB),
+      );
+    });
+
+    it('should use different cache keys when the upstream assertion rotates', async () => {
+      await exchangeOboToken(mockUser, 'access-token-old', 'api://scope');
+      await exchangeOboToken(mockUser, 'access-token-new', 'api://scope');
+
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token-old', 'api://scope'),
+      );
+      expect(mockTokensCache.get).toHaveBeenCalledWith(
+        expectedCacheKey(mockUser, 'access-token-new', 'api://scope'),
+      );
     });
   });
 
@@ -287,6 +387,15 @@ describe('OboTokenService', () => {
       await Promise.all([
         exchangeOboToken(mockUser, 'access-token', 'api://scope-a'),
         exchangeOboToken(mockUser, 'access-token', 'api://scope-b'),
+      ]);
+
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not coalesce exchanges for rotated upstream assertions', async () => {
+      await Promise.all([
+        exchangeOboToken(mockUser, 'access-token-old', 'api://scope'),
+        exchangeOboToken(mockUser, 'access-token-new', 'api://scope'),
       ]);
 
       expect(client.genericGrantRequest).toHaveBeenCalledTimes(2);

@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser, OIDCTokens } from '@librechat/data-schemas';
+import type { AuthIdentityContext } from '~/utils/identity';
 import type { OpenIDTokenInfo } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
 import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
@@ -18,6 +19,7 @@ export type OboTokenResolver = (
   accessToken: string,
   scopes: string,
   fromCache?: boolean,
+  identityContext?: AuthIdentityContext,
 ) => Promise<{ access_token: string; expires_in?: number }>;
 
 /**
@@ -178,6 +180,7 @@ export async function resolveOboToken(
   oboConfig: OboConfig,
   oboTokenResolver: OboTokenResolver,
   upstreamTokenProvider: UpstreamTokenProvider,
+  identityContext?: AuthIdentityContext,
 ): Promise<MCPOAuthTokens> {
   let liveTokens: OIDCTokens | null;
   try {
@@ -213,7 +216,13 @@ export async function resolveOboToken(
   }
 
   try {
-    const response = await oboTokenResolver(user, tokenInfo.accessToken, oboConfig.scopes, true);
+    const response = await oboTokenResolver(
+      user,
+      tokenInfo.accessToken,
+      oboConfig.scopes,
+      true,
+      identityContext,
+    );
 
     if (!response?.access_token) {
       logger.warn('[OBO] Token exchange did not return an access token');

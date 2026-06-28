@@ -9,6 +9,7 @@ import type {
   OAuthProtectedResourceMetadata,
 } from '~/mcp/oauth';
 import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type { AuthIdentityContext } from '~/utils/identity';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import {
@@ -69,6 +70,7 @@ export class MCPConnectionFactory {
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected readonly upstreamTokenProvider?: UpstreamTokenProvider;
+  protected readonly oboIdentityContext?: AuthIdentityContext;
   private connectionReady = false;
   /**
    * Snapshot of the tenant context at factory construction time. Captured eagerly
@@ -325,6 +327,7 @@ export class MCPConnectionFactory {
       this.oboTokenResolver = options.oboTokenResolver;
       this.oboTrustChecker = options.oboTrustChecker;
       this.upstreamTokenProvider = options.upstreamTokenProvider;
+      this.oboIdentityContext = options.oboIdentityContext;
     } else {
       this.useOAuth = false;
     }
@@ -361,7 +364,13 @@ export class MCPConnectionFactory {
     }
 
     logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
-    return resolveOboToken(this.user, oboConfig, this.oboTokenResolver, this.upstreamTokenProvider);
+    return resolveOboToken(
+      this.user,
+      oboConfig,
+      this.oboTokenResolver,
+      this.upstreamTokenProvider,
+      this.oboIdentityContext,
+    );
   }
 
   /** Returns true if this server uses OBO instead of standard OAuth */

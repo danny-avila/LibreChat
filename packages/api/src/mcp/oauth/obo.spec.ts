@@ -89,6 +89,7 @@ describe('resolveOboToken', () => {
       'federated-access-token',
       'api://mcp-server-id/Mcp.Tools.ReadWrite',
       true,
+      undefined,
     );
     expect(result.access_token).toBe('exchanged-mcp-token');
   });
@@ -166,6 +167,7 @@ describe('resolveOboToken', () => {
       'live-access-token',
       'api://mcp-server-id/Mcp.Tools.ReadWrite',
       true,
+      undefined,
     );
 
     expect(result.access_token).toBe('exchanged-mcp-token');
@@ -237,6 +239,31 @@ describe('resolveOboToken', () => {
       'live-access-token',
       'api://other-app/Custom.Scope',
       true,
+      undefined,
+    );
+  });
+
+  it('forwards identity context to the OBO resolver', async () => {
+    const identityContext = {
+      openidSubject: 'oidc-sub-456',
+      tenantId: 'tenant-a',
+      openidIssuer: 'https://issuer.example.com',
+    };
+
+    await resolveOboToken(
+      mockUser as IUser,
+      oboConfig,
+      mockResolver,
+      liveProvider,
+      identityContext,
+    );
+
+    expect(mockResolver).toHaveBeenCalledWith(
+      mockUser,
+      'live-access-token',
+      'api://mcp-server-id/Mcp.Tools.ReadWrite',
+      true,
+      identityContext,
     );
   });
 

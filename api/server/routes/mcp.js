@@ -10,6 +10,7 @@ const {
 const {
   getBasePath,
   createSafeUser,
+  createAuthIdentityContext,
   MCPOAuthHandler,
   MCPTokenStorage,
   setOAuthSession,
@@ -706,6 +707,10 @@ router.post(
           findPluginAuthsByKeys: db.findPluginAuthsByKeys,
         });
       }
+      const oboIdentityContext = createAuthIdentityContext({
+        user: req.user,
+        tenantId: getTenantId(),
+      });
 
       const result = await reinitMCPServer({
         user,
@@ -717,8 +722,10 @@ router.post(
           req,
           res,
           user: req.user,
+          identityContext: oboIdentityContext,
           tokenPreference: 'access_token',
         }),
+        oboIdentityContext,
       });
 
       if (!result) {

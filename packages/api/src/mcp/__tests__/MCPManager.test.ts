@@ -1090,6 +1090,7 @@ describe('MCPManager', () => {
         serverConfig.obo,
         mockOboTokenResolver,
         mockUpstreamTokenProvider,
+        undefined,
       );
       expect(appConnections.get).not.toHaveBeenCalled();
       expect(getUserConnectionSpy).toHaveBeenCalled();

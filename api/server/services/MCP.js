@@ -381,6 +381,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary so this layer never receives the raw Express request.
+ * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {AbortSignal} params.signal
@@ -404,6 +405,7 @@ async function reconnectServer({
   requestBody,
   requestScopedConnections,
   upstreamTokenProvider,
+  oboIdentityContext,
   streamId = null,
 }) {
   logger.debug(
@@ -483,6 +485,7 @@ async function reconnectServer({
       requestBody,
       requestScopedConnections,
       upstreamTokenProvider,
+      oboIdentityContext,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -516,6 +519,7 @@ async function reconnectServer({
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary.
+ * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTools({
@@ -532,6 +536,7 @@ async function createMCPTools({
   requestBody,
   requestScopedConnections,
   upstreamTokenProvider,
+  oboIdentityContext,
   streamId = null,
 }) {
   const serverConfig =
@@ -572,6 +577,7 @@ async function createMCPTools({
     requestBody,
     requestScopedConnections,
     upstreamTokenProvider,
+    oboIdentityContext,
     streamId,
   });
   if (result === null) {
@@ -598,6 +604,7 @@ async function createMCPTools({
       requestBody,
       requestScopedConnections,
       upstreamTokenProvider,
+      oboIdentityContext,
       config: serverConfig,
     });
     if (toolInstance) {
@@ -626,6 +633,7 @@ async function createMCPTools({
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO, built at the request boundary.
+ * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
@@ -644,6 +652,7 @@ async function createMCPTool({
   config,
   configServers,
   upstreamTokenProvider,
+  oboIdentityContext,
   onAvailableTools,
   streamId = null,
 }) {
@@ -703,6 +712,7 @@ async function createMCPTool({
       requestBody,
       requestScopedConnections,
       upstreamTokenProvider,
+      oboIdentityContext,
       streamId,
     });
     if (result?.availableTools) {
@@ -735,6 +745,7 @@ async function createMCPTool({
     serverConfig,
     toolDefinition,
     upstreamTokenProvider,
+    oboIdentityContext,
     streamId,
   });
 }
@@ -751,6 +762,7 @@ function createToolInstance({
   toolDefinition,
   provider: capturedProvider,
   upstreamTokenProvider: capturedUpstreamTokenProvider = null,
+  oboIdentityContext: capturedOboIdentityContext = null,
   streamId = null,
 }) {
   /** @type {LCTool} */
@@ -866,6 +878,7 @@ function createToolInstance({
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
         upstreamTokenProvider: capturedUpstreamTokenProvider,
+        oboIdentityContext: capturedOboIdentityContext,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

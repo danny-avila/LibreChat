@@ -1,9 +1,10 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
 const {
   checkAccess,
   toolkitParent,
   createSafeUser,
+  createAuthIdentityContext,
   mcpToolPattern,
   loadWebSearchAuth,
   getCodeApiAuthHeaders,
@@ -462,10 +463,15 @@ const loadTools = async ({
    * the live `req.session.openidTokens` at tool-call time and mirrors rotations
    * to the `refreshToken` cookie when the response is still writable.
    */
+  const oboIdentityContext = createAuthIdentityContext({
+    user: options.req?.user,
+    tenantId: getTenantId(),
+  });
   const upstreamTokenProvider = createOpenIDSessionTokenProvider({
     req: options.req,
     res: options.res,
     user: options.req?.user,
+    identityContext: oboIdentityContext,
     tokenPreference: 'access_token',
   });
 
@@ -489,6 +495,7 @@ const loadTools = async ({
           requestScopedConnections,
           res: options.res,
           upstreamTokenProvider,
+          oboIdentityContext,
           streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
           serverName: config.serverName,

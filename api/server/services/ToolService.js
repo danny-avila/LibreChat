@@ -1,4 +1,4 @@
-const { logger, redactMessage } = require('@librechat/data-schemas');
+const { logger, redactMessage, getTenantId } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
@@ -11,6 +11,7 @@ const {
   sendEvent,
   getToolkitKey,
   getUserMCPAuthMap,
+  createAuthIdentityContext,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -615,10 +616,15 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
    * Express request. `res` is forwarded so a rotated refresh token can be
    * mirrored to the `refreshToken` cookie when the response is still writable.
    */
+  const oboIdentityContext = createAuthIdentityContext({
+    user: req.user,
+    tenantId: getTenantId(),
+  });
   const upstreamTokenProvider = createOpenIDSessionTokenProvider({
     req,
     res,
     user: req.user,
+    identityContext: oboIdentityContext,
     tokenPreference: 'access_token',
   });
   const rememberMCPAvailableTools = (serverName, availableTools) => {
@@ -798,6 +804,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       requestBody: req.body,
       requestScopedConnections,
       upstreamTokenProvider,
+      oboIdentityContext,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -923,6 +930,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
           upstreamTokenProvider,
+          oboIdentityContext,
         });
 
         if (result?.availableTools) {

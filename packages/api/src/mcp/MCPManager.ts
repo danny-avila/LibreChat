@@ -5,6 +5,7 @@ import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -230,6 +231,7 @@ export class MCPManager extends UserConnectionManager {
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,
+      oboIdentityContext: args.oboIdentityContext,
     });
 
     return finalizeDiscoveryResult(result);
@@ -361,6 +363,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTokenResolver,
     oboTrustChecker,
     upstreamTokenProvider,
+    oboIdentityContext,
   }: {
     user?: IUser;
     serverName: string;
@@ -381,6 +384,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
     upstreamTokenProvider?: UpstreamTokenProvider;
+    oboIdentityContext?: AuthIdentityContext;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -402,6 +406,7 @@ Please follow these instructions when using tools from the respective MCP server
         oboTokenResolver,
         oboTrustChecker,
         upstreamTokenProvider,
+        oboIdentityContext,
         graphTokenResolver,
         signal: options?.signal,
         customUserVars,
@@ -483,6 +488,7 @@ Please follow these instructions when using tools from the respective MCP server
             oboConfig,
             oboTokenResolver,
             upstreamTokenProvider,
+            oboIdentityContext,
           );
         } catch (error) {
           if (error instanceof OboTokenResolutionError) {

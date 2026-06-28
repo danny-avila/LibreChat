@@ -1927,7 +1927,12 @@ describe('MCP Routes', () => {
       await request(app).post('/api/mcp/obo-server/reinitialize');
 
       expect(reinitSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ upstreamTokenProvider: expect.any(Function) }),
+        expect.objectContaining({
+          upstreamTokenProvider: expect.any(Function),
+          oboIdentityContext: expect.objectContaining({
+            appUserId: 'test-user-id',
+          }),
+        }),
       );
       const [params] = reinitSpy.mock.calls[reinitSpy.mock.calls.length - 1];
       expect(params).not.toHaveProperty('req');

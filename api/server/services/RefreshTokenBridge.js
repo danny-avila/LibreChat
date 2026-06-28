@@ -5,7 +5,7 @@ const {
   decryptV2,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
-const { math } = require('@librechat/api');
+const { math, createRefreshTokenBridgeIdentity } = require('@librechat/api');
 const db = require('~/models');
 
 /**
@@ -21,6 +21,14 @@ const db = require('~/models');
  * Bridge TTL: matches the refresh-token cookie lifetime and is enforced by Mongo TTL.
  */
 const getBridgeTtlMs = () => math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
+
+function resolveBridgeIdentity({ userId, tenantId, openidIssuer }) {
+  return createRefreshTokenBridgeIdentity({
+    userId,
+    tenantId,
+    openidIssuer,
+  });
+}
 
 /**
  * Hashes a refresh token for use as a bridge key. Does NOT encrypt; hash is for
@@ -55,7 +63,9 @@ async function storeRefreshTokenBridge({
   openidIssuer,
   ttl,
 }) {
-  if (!oldRefreshToken || !newRefreshToken || !userId) {
+  const identity = resolveBridgeIdentity({ userId, tenantId, openidIssuer });
+
+  if (!oldRefreshToken || !newRefreshToken || !identity) {
     logger.warn('[RefreshTokenBridge] Attempted to store bridge with missing required fields');
     return;
   }
@@ -67,15 +77,15 @@ async function storeRefreshTokenBridge({
   await db.upsertRefreshTokenBridge({
     oldRefreshTokenHash,
     encryptedNewRefreshToken: encryptedNewToken,
-    userId,
-    tenantId,
-    openidIssuer,
+    userId: identity.userId,
+    tenantId: identity.tenantId,
+    openidIssuer: identity.openidIssuer,
     expiresAt: new Date(Date.now() + bridgeTtl),
   });
 
   logger.debug('[RefreshTokenBridge] Stored recovery bridge', {
     tokenHash: oldRefreshTokenHash,
-    userId,
+    userId: identity.userId,
     ttl: bridgeTtl,
   });
 }
@@ -94,22 +104,24 @@ async function storeRefreshTokenBridge({
  * @returns {Promise<string | null>} the rotated refresh token if found and valid, null otherwise
  */
 async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openidIssuer }) {
-  if (!oldRefreshToken || !userId) {
+  const identity = resolveBridgeIdentity({ userId, tenantId, openidIssuer });
+
+  if (!oldRefreshToken || !identity) {
     return null;
   }
 
   const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
   const bridge = await db.findRefreshTokenBridge({
     oldRefreshTokenHash,
-    userId,
-    tenantId,
+    userId: identity.userId,
+    tenantId: identity.tenantId,
   });
 
   if (!bridge) {
     return null;
   }
 
-  if (bridge.openidIssuer && bridge.openidIssuer !== openidIssuer) {
+  if (bridge.openidIssuer && bridge.openidIssuer !== identity.openidIssuer) {
     logger.warn('[RefreshTokenBridge] Bridge lookup failed: issuer mismatch', {
       tokenHash: oldRefreshTokenHash,
     });
@@ -119,7 +131,7 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
   const age = Date.now() - new Date(bridge.createdAt).getTime();
   logger.info('[RefreshTokenBridge] Successfully resolved recovery bridge', {
     tokenHash: oldRefreshTokenHash,
-    userId,
+    userId: identity.userId,
     age,
   });
 
@@ -134,14 +146,17 @@ async function getRefreshTokenBridge({ oldRefreshToken, userId, tenantId, openid
  * @returns {Promise<boolean>}
  */
 async function deleteRefreshTokenBridge({ oldRefreshToken, userId, tenantId }) {
-  if (!oldRefreshToken) {
-    return false;
-  }
-  if (!userId) {
+  const identity = resolveBridgeIdentity({ userId, tenantId });
+
+  if (!oldRefreshToken || !identity) {
     return false;
   }
   const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
-  const result = await db.deleteRefreshTokenBridge({ oldRefreshTokenHash, userId, tenantId });
+  const result = await db.deleteRefreshTokenBridge({
+    oldRefreshTokenHash,
+    userId: identity.userId,
+    tenantId: identity.tenantId,
+  });
   return (result.deletedCount ?? 0) > 0;
 }
 
@@ -152,5 +167,6 @@ module.exports = {
   __internals: {
     hashRefreshToken,
     getBridgeTtlMs,
+    resolveBridgeIdentity,
   },
 };

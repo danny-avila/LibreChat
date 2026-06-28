@@ -16,6 +16,33 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(),
   math: jest.fn((_value, fallback) => fallback),
+  createAuthIdentityContext: jest.fn(({ user, requestUser }) => ({
+    appUserId:
+      user?._id?.toString?.() ?? user?.id ?? requestUser?._id?.toString?.() ?? requestUser?.id,
+    openidSubject: user?.openidId ?? requestUser?.openidId,
+    tenantId: user?.tenantId ?? requestUser?.tenantId,
+    openidIssuer: user?.openidIssuer ?? requestUser?.openidIssuer,
+  })),
+  createOpenIDRefreshIdentityTuple: jest.fn(({ user, requestUser }) => {
+    const subject =
+      user?.openidId ??
+      user?.id ??
+      user?._id?.toString?.() ??
+      requestUser?.openidId ??
+      requestUser?.id ??
+      requestUser?._id?.toString?.();
+    if (!subject) {
+      return null;
+    }
+    return {
+      subject,
+      tenantId: user?.tenantId ?? requestUser?.tenantId ?? 'no-tenant',
+      openidIssuer: user?.openidIssuer ?? requestUser?.openidIssuer ?? 'no-issuer',
+    };
+  }),
+  serializeAuthIdentityTuple: jest.fn(
+    (tuple) => `${tuple.tenantId}\x1f${tuple.openidIssuer}\x1f${tuple.subject}`,
+  ),
   buildOpenIDRefreshParams: jest.fn(() => ({ scope: 'openid profile' })),
   setRefreshTokenCookie: jest.fn((res, refreshToken, expires) => {
     res.cookie('refreshToken', refreshToken, { expires });
@@ -561,6 +588,31 @@ describe('OpenIDSessionRefresh', () => {
   });
 
   describe('single-flight coalescing', () => {
+    it('scopes the local refresh key by explicit identity context', () => {
+      const req = buildReq({ refreshToken: 'rt-shared' }, 'session-shared');
+      const user = makeOpenIdUser({ tenantId: undefined, openidIssuer: undefined });
+
+      const keyA = __internals.getSingleFlightKey(req, user, {
+        openidSubject: 'oidc-sub-123',
+        tenantId: 'tenant-a',
+        openidIssuer: 'https://issuer-a.example.com',
+      });
+      const keyB = __internals.getSingleFlightKey(req, user, {
+        openidSubject: 'oidc-sub-123',
+        tenantId: 'tenant-b',
+        openidIssuer: 'https://issuer-a.example.com',
+      });
+      const keyC = __internals.getSingleFlightKey(req, user, {
+        openidSubject: 'oidc-sub-123',
+        tenantId: 'tenant-a',
+        openidIssuer: 'https://issuer-b.example.com',
+      });
+
+      expect(keyA).not.toBe(keyB);
+      expect(keyA).not.toBe(keyC);
+      expect(keyA).not.toContain('rt-shared');
+    });
+
     it('shares one refreshTokenGrant call across concurrent waiters in the SAME session', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const sessionTokens = {

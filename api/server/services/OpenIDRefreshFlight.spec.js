@@ -49,6 +49,37 @@ describe('OpenIDRefreshFlight', () => {
     expect(keyA).not.toContain('rt-old');
   });
 
+  it('uses explicit identity context when safe user lacks tenant and issuer', () => {
+    const req = {
+      sessionID: 'session-1',
+      user: { id: 'safe-user' },
+    };
+    const user = { id: 'safe-user' };
+
+    const keyA = createOpenIDRefreshFlightKey({
+      req,
+      user,
+      refreshToken: 'rt-old',
+      identityContext: {
+        openidSubject: 'oidc-sub-1',
+        tenantId: 'tenant-a',
+        openidIssuer: 'https://issuer-a.example.com',
+      },
+    });
+    const keyB = createOpenIDRefreshFlightKey({
+      req,
+      user,
+      refreshToken: 'rt-old',
+      identityContext: {
+        openidSubject: 'oidc-sub-1',
+        tenantId: 'tenant-b',
+        openidIssuer: 'https://issuer-a.example.com',
+      },
+    });
+
+    expect(keyA).not.toBe(keyB);
+  });
+
   it('returns null key when identity or refresh token is unavailable', () => {
     expect(createOpenIDRefreshFlightKey({ req: {}, user: {}, refreshToken: 'rt' })).toBeNull();
     expect(

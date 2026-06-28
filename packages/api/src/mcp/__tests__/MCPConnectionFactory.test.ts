@@ -3578,6 +3578,7 @@ describe('MCPConnectionFactory', () => {
         oboServerConfig.obo,
         oboTokenResolver,
         upstreamTokenProvider,
+        undefined,
       );
     });
 

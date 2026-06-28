@@ -11,6 +11,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   math: jest.fn((_value, fallback) => fallback),
 }));
 
@@ -66,13 +67,14 @@ describe('RefreshTokenBridge', () => {
       await storeRefreshTokenBridge({
         oldRefreshToken: 'rt-old',
         newRefreshToken: 'rt-new',
-        userId: 'user-123',
-        tenantId: 'tenant-1',
-        openidIssuer: 'https://issuer.example.com',
+        userId: ' user-123 ',
+        tenantId: ' tenant-1 ',
+        openidIssuer: 'https://issuer.example.com/.well-known/openid-configuration',
       });
 
       expect(db.upsertRefreshTokenBridge).toHaveBeenCalledWith(
         expect.objectContaining({
+          userId: 'user-123',
           tenantId: 'tenant-1',
           openidIssuer: 'https://issuer.example.com',
         }),
@@ -126,9 +128,9 @@ describe('RefreshTokenBridge', () => {
 
       const result = await getRefreshTokenBridge({
         oldRefreshToken: 'rt-old',
-        userId: 'user-123',
-        tenantId: 'tenant-1',
-        openidIssuer: 'https://issuer.example.com',
+        userId: ' user-123 ',
+        tenantId: ' tenant-1 ',
+        openidIssuer: 'https://issuer.example.com/.well-known/openid-configuration',
       });
 
       expect(db.findRefreshTokenBridge).toHaveBeenCalledWith({

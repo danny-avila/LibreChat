@@ -1,6 +1,8 @@
+const crypto = require('node:crypto');
 const client = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
+const { createOpenIDOboIdentityTuple, serializeAuthIdentityTuple } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -9,7 +11,7 @@ const RETRYABLE_ERROR_CODES = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', '
 const OBO_RETRY_DELAY_MS = 300;
 
 /**
- * In-flight OBO exchanges keyed by `${openidId}:${scopes}`.
+ * In-flight OBO exchanges keyed by identity tuple, scopes, and upstream assertion hash.
  *
  * Without coalescing, parallel tool calls that arrive on a cache miss each issue
  * their own jwt-bearer request to the IdP. Under fan-out, Entra intermittently
@@ -57,6 +59,19 @@ function tagOboExchangeError(error, retryable) {
     error.oboFailureReason = 'exchange_failed';
   }
   return error;
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function buildOboCacheKey({ user, accessToken, scopes, identityContext }) {
+  const tuple = createOpenIDOboIdentityTuple({ user, identityContext });
+  if (!tuple) {
+    return null;
+  }
+
+  return [serializeAuthIdentityTuple(tuple), scopes, sha256(accessToken)].join('\x1f');
 }
 
 async function delay(ms) {
@@ -112,7 +127,7 @@ async function performOboExchange({ user, accessToken, scopes, config, tokensCac
  * Exchange a user's access token for a downstream-scoped token via the
  * OAuth 2.0 On-Behalf-Of (jwt-bearer) grant.
  *
- * Concurrent callers for the same `${openidId}:${scopes}` key share a single
+ * Concurrent callers for the same identity/scopes/assertion key share a single
  * upstream exchange (see `inFlightExchanges`) so a fan-out of tool calls right
  * after a cache miss does not produce N parallel requests to the IdP.
  *
@@ -121,13 +136,11 @@ async function performOboExchange({ user, accessToken, scopes, config, tokensCac
  * @param {string} scopes - Scopes to request for the downstream service
  * @param {boolean} [fromCache=true] - When true, read from cache and join any
  *   in-flight exchange. When false, bypass both and force a fresh exchange.
+ * @param {import('@librechat/api').AuthIdentityContext} [identityContext] - Real request identity
+ *   context used to scope OBO cache keys without exposing tenant/issuer placeholders.
  * @returns {Promise<Object>} Token response with access_token and expires_in
  */
-async function exchangeOboToken(user, accessToken, scopes, fromCache = true) {
-  if (!user.openidId) {
-    throw new Error('User must be authenticated via OpenID to perform OBO token exchange');
-  }
-
+async function exchangeOboToken(user, accessToken, scopes, fromCache = true, identityContext) {
   if (!accessToken) {
     throw new Error('Access token is required for OBO exchange');
   }
@@ -141,7 +154,15 @@ async function exchangeOboToken(user, accessToken, scopes, fromCache = true) {
     throw new Error('OpenID configuration not available');
   }
 
-  const cacheKey = `${user.openidId}:${scopes}`;
+  const cacheKey = buildOboCacheKey({
+    user,
+    accessToken,
+    scopes,
+    identityContext,
+  });
+  if (!cacheKey) {
+    throw new Error('User must be authenticated via OpenID to perform OBO token exchange');
+  }
   const tokensCache = getLogStores(CacheKeys.OPENID_EXCHANGED_TOKENS);
 
   if (fromCache) {
@@ -191,4 +212,7 @@ async function exchangeOboToken(user, accessToken, scopes, fromCache = true) {
 
 module.exports = {
   exchangeOboToken,
+  __internals: {
+    buildOboCacheKey,
+  },
 };
