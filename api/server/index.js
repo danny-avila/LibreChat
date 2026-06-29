@@ -23,6 +23,7 @@ const {
   createStreamServices,
   initializeFileStorage,
   initializeDeploymentSkills,
+  loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
@@ -124,6 +125,11 @@ const startServer = async () => {
   await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
+  // Register any programmatic tool-approval policy hooks declared in
+  // `endpoints.agents.toolApproval.hooks` (no-op when none / HITL disabled).
+  await loadToolApprovalHooks(appConfig?.endpoints?.agents?.toolApproval?.hooks, {
+    basePath: path.resolve(__dirname, '../..'),
+  });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
