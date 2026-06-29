@@ -38,6 +38,7 @@ const {
   buildSummarizationHandlers,
   markSummarizationUsage,
   createToolEndCallback,
+  emitCitationAnnotations,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
@@ -651,6 +652,7 @@ const OpenAIChatCompletionController = async (req, res) => {
             target.usage.promptTokens += taggedUsage.input_tokens ?? 0;
             target.usage.completionTokens += taggedUsage.output_tokens ?? 0;
           }
+          emitCitationAnnotations(res, null, data, responseId);
         },
       },
       on_run_step_completed: createHandler(),
