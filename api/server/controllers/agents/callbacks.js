@@ -1310,5 +1310,6 @@ module.exports = {
   markSummarizationUsage,
   buildSummarizationHandlers,
   emitCitationAnnotations,
+  collectCitationReferences,
   createResponsesToolEndCallback,
 };
