@@ -6,6 +6,9 @@ interface MessagesViewContextValue {
   conversation: ReturnType<typeof useChatContext>['conversation'];
   conversationId: string | null | undefined;
 
+  /** True when the view cannot mutate server state (shared/search); MCP App bridges render display-only. */
+  readOnly: boolean;
+
   /** Submission and control states */
   isSubmitting: ReturnType<typeof useChatContext>['isSubmitting'];
   abortScroll: ReturnType<typeof useChatContext>['abortScroll'];
@@ -92,6 +95,7 @@ export function MessagesViewProvider({ children }: { children: React.ReactNode }
   /** Combine all values into final context value */
   const contextValue = useMemo<MessagesViewContextValue>(
     () => ({
+      readOnly: false,
       ...conversationValues,
       ...submissionStates,
       ...messageOperations,
@@ -111,6 +115,15 @@ export function useMessagesViewContext() {
     throw new Error('useMessagesViewContext must be used within MessagesViewProvider');
   }
   return context;
+}
+
+/**
+ * True when MCP App bridges should be display-only: the shared view, the /search route, or any
+ * mount outside an interactive MessagesViewProvider. Defaults to read-only when no provider is
+ * present so a new render context never accidentally enables live, auth-bearing app actions.
+ */
+export function useIsMessagesViewReadOnly(): boolean {
+  return useContext(MessagesViewContext)?.readOnly ?? true;
 }
 
 /** Hook for components that only need conversation data */

@@ -1705,6 +1705,7 @@ export const configSchema = z.object({
     .object({
       allowedDomains: z.array(z.string()).optional(),
       allowedAddresses: allowedAddressesSchema,
+      apps: z.boolean().optional(),
     })
     .optional(),
   interface: interfaceSchema,

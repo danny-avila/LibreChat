@@ -37,6 +37,7 @@ const {
   listMCPResourceTemplates,
   appToolCall,
   serveMCPSandbox,
+  requireMCPAppsEnabled,
 } = require('~/server/controllers/mcpApps');
 const mcpAppToolCallLimiter = require('~/server/middleware/limiters/mcpAppToolCallLimiter');
 const {
@@ -992,13 +993,25 @@ router.delete(
  * Read a UI resource from an MCP server
  * @route POST /api/mcp/resources/read
  */
-router.post('/resources/read', requireJwtAuth, checkMCPUsePermissions, readMCPResource);
+router.post(
+  '/resources/read',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  requireMCPAppsEnabled,
+  readMCPResource,
+);
 
 /**
  * List resources available on an MCP server
  * @route POST /api/mcp/resources/list
  */
-router.post('/resources/list', requireJwtAuth, checkMCPUsePermissions, listMCPResources);
+router.post(
+  '/resources/list',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  requireMCPAppsEnabled,
+  listMCPResources,
+);
 
 /**
  * List resource templates available on an MCP server
@@ -1008,6 +1021,7 @@ router.post(
   '/resources/templates/list',
   requireJwtAuth,
   checkMCPUsePermissions,
+  requireMCPAppsEnabled,
   listMCPResourceTemplates,
 );
 
@@ -1019,6 +1033,7 @@ router.post(
   '/app-tool-call',
   requireJwtAuth,
   checkMCPUsePermissions,
+  requireMCPAppsEnabled,
   mcpAppToolCallLimiter,
   appToolCall,
 );

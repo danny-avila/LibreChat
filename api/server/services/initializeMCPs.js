@@ -31,6 +31,7 @@ async function initializeMCPs() {
       appConfig?.mcpSettings?.allowedDomains,
       appConfig?.mcpSettings?.allowedAddresses,
       resolveMCPAllowlists,
+      appConfig?.mcpSettings?.apps,
     );
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);

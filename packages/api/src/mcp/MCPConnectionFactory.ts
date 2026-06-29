@@ -54,6 +54,7 @@ export class MCPConnectionFactory {
   protected readonly useSSRFProtection: boolean;
   protected readonly allowedDomains?: string[] | null;
   protected readonly allowedAddresses?: string[] | null;
+  protected readonly enableApps?: boolean;
   protected readonly ephemeralConnection: boolean;
 
   // OAuth-related properties (only set when useOAuth is true)
@@ -176,6 +177,7 @@ export class MCPConnectionFactory {
       oauthTokens,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      enableApps: this.enableApps,
       ephemeralConnection: this.ephemeralConnection,
     });
 
@@ -250,6 +252,7 @@ export class MCPConnectionFactory {
       oauthTokens: null,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      enableApps: this.enableApps,
       ephemeralConnection: this.ephemeralConnection,
     });
 
@@ -302,6 +305,7 @@ export class MCPConnectionFactory {
     this.useSSRFProtection = basic.useSSRFProtection === true;
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
+    this.enableApps = basic.enableApps;
     this.ephemeralConnection = basic.ephemeralConnection === true;
     this.connectionTimeout = options?.connectionTimeout;
     this.tenantContext = tenantStorage?.getStore?.();
@@ -400,6 +404,7 @@ export class MCPConnectionFactory {
       oauthTokens,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      enableApps: this.enableApps,
       ephemeralConnection: this.ephemeralConnection,
     });
 

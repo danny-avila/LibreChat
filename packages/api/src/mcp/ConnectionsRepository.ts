@@ -88,6 +88,7 @@ export class ConnectionsRepository {
         useSSRFProtection,
         allowedDomains,
         allowedAddresses,
+        enableApps: registry.getAppsEnabled(),
       },
       this.oauthOpts,
     );

@@ -52,6 +52,7 @@ const mockRegistryInstance = {
   shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
   getAllowedDomains: mockGetAllowedDomains,
   getAllowedAddresses: mockGetAllowedAddresses,
+  getAppsEnabled: jest.fn().mockReturnValue(true),
   // Mirrors the real per-request resolver by reading the base-allowlist mocks above, so
   // existing tests that override getAllowedDomains/shouldEnableSSRFProtection still apply.
   resolveAllowlists: jest.fn(async () => ({
@@ -1354,6 +1355,104 @@ describe('MCPManager', () => {
         expect.anything(),
       );
       expect(result).toEqual({ resources: [{ uri: 'file://a' }] });
+    });
+  });
+
+  describe('readResource - app resource authorization', () => {
+    const mockUser: Partial<IUser> = { id: 'user-123' };
+
+    const buildConnection = (request: jest.Mock) =>
+      ({
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        fetchTools: jest.fn().mockResolvedValue([]),
+        timeout: 30000,
+        client: { request },
+      }) as unknown as MCPConnection;
+
+    const advertisingRequest = (readResult: unknown) =>
+      jest.fn().mockImplementation((req: { method: string }) => {
+        if (req.method === 'resources/list') {
+          return Promise.resolve({ resources: [{ uri: 'file://allowed.txt' }] });
+        }
+        if (req.method === 'resources/templates/list') {
+          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'db://items/{id}' }] });
+        }
+        return Promise.resolve(readResult);
+      });
+
+    beforeEach(() => {
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        source: 'yaml',
+        type: 'sse',
+        url: 'https://example.com/mcp',
+      });
+    });
+
+    it('proxies a ui:// resource without consulting the advertised list', async () => {
+      const request = jest.fn().mockResolvedValue({ contents: [{ uri: 'ui://app/main' }] });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await manager.readResource({
+        userId: 'user-123',
+        serverName: 'srv',
+        uri: 'ui://app/main',
+        user: mockUser as IUser,
+      });
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).toEqual(['resources/read']);
+    });
+
+    it('proxies a non-ui:// resource the server advertises', async () => {
+      const request = advertisingRequest({ contents: [{ uri: 'file://allowed.txt' }] });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await manager.readResource({
+        userId: 'user-123',
+        serverName: 'srv',
+        uri: 'file://allowed.txt',
+        user: mockUser as IUser,
+      });
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).toContain('resources/read');
+    });
+
+    it('allows a resource matching an advertised URI template', async () => {
+      const request = advertisingRequest({ contents: [] });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await manager.readResource({
+        userId: 'user-123',
+        serverName: 'srv',
+        uri: 'db://items/42',
+        user: mockUser as IUser,
+      });
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).toContain('resources/read');
+    });
+
+    it('rejects a non-ui:// resource the server does not advertise', async () => {
+      const request = advertisingRequest({ contents: [] });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await expect(
+        manager.readResource({
+          userId: 'user-123',
+          serverName: 'srv',
+          uri: 'file:///etc/passwd',
+          user: mockUser as IUser,
+        }),
+      ).rejects.toThrow(/not advertised/);
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).not.toContain('resources/read');
     });
   });
 

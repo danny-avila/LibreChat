@@ -2,16 +2,16 @@ import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import {
-  getToolUiResourceUri,
-  isToolVisibilityModelOnly,
-} from '@modelcontextprotocol/ext-apps/app-bridge';
-import {
   CallToolResultSchema,
   ReadResourceResultSchema,
   ListResourcesResultSchema,
   ListResourceTemplatesResultSchema,
   ErrorCode,
   McpError,
+} from '@modelcontextprotocol/sdk/types.js';
+import type {
+  ListResourcesResult,
+  ListResourceTemplatesResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
@@ -32,6 +32,7 @@ import {
   requiresUserScopedConnection,
 } from './utils';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
+import { getToolUiResourceUri, isToolVisibilityModelOnly } from './apps';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
@@ -77,6 +78,19 @@ export class MCPManager extends UserConnectionManager {
    * live tools/list_changed notifications (toolListVersion) that createdAt alone would miss.
    */
   private readonly toolCacheConnStamp = new Map<string, string>();
+  /**
+   * Per-connection snapshot of the resource URIs and URI templates a server advertises, used to
+   * authorize app-driven `resources/read` so an embedded app can only proxy resources the server
+   * publicly exposes — not arbitrary `file://`/`secret://` URIs it happens to be reachable for.
+   */
+  private readonly advertisedResourceCache = new Map<
+    string,
+    { uris: Set<string>; templates: RegExp[] }
+  >();
+
+  private readonly advertisedResourceConnStamp = new Map<string, string>();
+  /** Bounds the resources/list + templates/list pagination loops when snapshotting advertised resources. */
+  private static readonly RESOURCE_LIST_MAX_PAGES = 20;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -205,6 +219,7 @@ export class MCPManager extends UserConnectionManager {
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
+      enableApps: registry.getAppsEnabled(),
     };
 
     const finalizeDiscoveryResult = async (
@@ -363,6 +378,8 @@ Please follow these instructions when using tools from the respective MCP server
       this.modelOnlyToolCache.delete(cacheKey);
       this.knownToolNamesCache.delete(cacheKey);
       this.toolCacheConnStamp.delete(cacheKey);
+      this.advertisedResourceCache.delete(cacheKey);
+      this.advertisedResourceConnStamp.delete(cacheKey);
       return;
     }
     if (serverName) {
@@ -372,6 +389,8 @@ Please follow these instructions when using tools from the respective MCP server
           this.modelOnlyToolCache.delete(key);
           this.knownToolNamesCache.delete(key);
           this.toolCacheConnStamp.delete(key);
+          this.advertisedResourceCache.delete(key);
+          this.advertisedResourceConnStamp.delete(key);
         }
       }
     } else {
@@ -379,6 +398,8 @@ Please follow these instructions when using tools from the respective MCP server
       this.modelOnlyToolCache.clear();
       this.knownToolNamesCache.clear();
       this.toolCacheConnStamp.clear();
+      this.advertisedResourceCache.clear();
+      this.advertisedResourceConnStamp.clear();
     }
   }
 
@@ -635,6 +656,7 @@ Please follow these instructions when using tools from the respective MCP server
             useSSRFProtection,
             allowedDomains,
             allowedAddresses,
+            enableApps: registry.getAppsEnabled(),
           },
           {
             useOAuth: true,
@@ -862,6 +884,8 @@ Please follow these instructions when using tools from the respective MCP server
       );
     }
 
+    await this.assertResourceReadable(connection, `${serverName}:${userId}`, uri, logPrefix);
+
     const result = await connection.client.request(
       {
         method: 'resources/read',
@@ -872,6 +896,131 @@ Please follow these instructions when using tools from the respective MCP server
     );
 
     return result;
+  }
+
+  /**
+   * Authorizes an app-driven `resources/read`. App UI resources (`ui://`) are always allowed;
+   * any other URI must be one the server actually advertises (an exact `resources/list` entry or
+   * a `resources/templates/list` match), so a sandboxed app cannot exfiltrate unrelated resources
+   * the host connection can otherwise reach. Fails closed when the advertised set is unavailable.
+   */
+  private async assertResourceReadable(
+    connection: MCPConnection,
+    cacheKey: string,
+    uri: string,
+    logPrefix: string,
+  ): Promise<void> {
+    if (uri.startsWith('ui://')) {
+      return;
+    }
+    let advertised: { uris: Set<string>; templates: RegExp[] };
+    try {
+      advertised = await this.getAdvertisedResources(connection, cacheKey);
+    } catch (error) {
+      logger.warn(
+        `${logPrefix} Could not list advertised resources to authorize read of "${uri}"; denying.`,
+        error,
+      );
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Resource "${uri}" is not permitted.`,
+      );
+    }
+    if (advertised.uris.has(uri) || advertised.templates.some((pattern) => pattern.test(uri))) {
+      return;
+    }
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      `${logPrefix} Resource "${uri}" is not advertised by the server and cannot be read by an app.`,
+    );
+  }
+
+  /** Snapshots (and caches per connection) the resource URIs and URI templates a server advertises. */
+  private async getAdvertisedResources(
+    connection: MCPConnection,
+    cacheKey: string,
+  ): Promise<{ uris: Set<string>; templates: RegExp[] }> {
+    const cached = this.advertisedResourceCache.get(cacheKey);
+    if (cached && this.advertisedResourceConnStamp.get(cacheKey) === this.connStamp(connection)) {
+      return cached;
+    }
+
+    const uris = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
+      const result: ListResourcesResult = await connection.client.request(
+        { method: 'resources/list', params: cursor != null ? { cursor } : {} },
+        ListResourcesResultSchema,
+        { timeout: connection.timeout },
+      );
+      for (const resource of result.resources) {
+        uris.add(resource.uri);
+      }
+      if (result.nextCursor == null) {
+        break;
+      }
+      cursor = result.nextCursor;
+    }
+
+    const templates: RegExp[] = [];
+    try {
+      cursor = undefined;
+      for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
+        const result: ListResourceTemplatesResult = await connection.client.request(
+          { method: 'resources/templates/list', params: cursor != null ? { cursor } : {} },
+          ListResourceTemplatesResultSchema,
+          { timeout: connection.timeout },
+        );
+        for (const template of result.resourceTemplates) {
+          const pattern = MCPManager.uriTemplateToRegExp(template.uriTemplate);
+          if (pattern) {
+            templates.push(pattern);
+          }
+        }
+        if (result.nextCursor == null) {
+          break;
+        }
+        cursor = result.nextCursor;
+      }
+    } catch (error) {
+      logger.debug(
+        `[MCP][${cacheKey}] resources/templates/list unavailable; skipping templates.`,
+        error,
+      );
+    }
+
+    const entry = { uris, templates };
+    this.advertisedResourceCache.set(cacheKey, entry);
+    this.advertisedResourceConnStamp.set(cacheKey, this.connStamp(connection));
+    return entry;
+  }
+
+  /**
+   * Converts an RFC 6570 resource URI template into an anchored matcher. Simple expansions match a
+   * single path segment; reserved/operator expansions (`{+x}`, `{#x}`, `{/x}`, ...) may span `/`.
+   */
+  private static uriTemplateToRegExp(template: string): RegExp | null {
+    try {
+      let pattern = '';
+      for (let i = 0; i < template.length; ) {
+        const char = template[i];
+        if (char !== '{') {
+          pattern += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          i += 1;
+          continue;
+        }
+        const end = template.indexOf('}', i);
+        if (end === -1) {
+          pattern += template.slice(i).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          break;
+        }
+        pattern += '+#./;?&'.includes(template[i + 1] ?? '') ? '.+' : '[^/]+';
+        i = end + 1;
+      }
+      return new RegExp(`^${pattern}$`);
+    } catch {
+      return null;
+    }
   }
 
   /**

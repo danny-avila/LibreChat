@@ -93,6 +93,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          getAppsEnabled: jest.fn().mockReturnValue(true),
           resolveAllowlists: jest.fn().mockResolvedValue({
             allowedDomains: null,
             allowedAddresses: null,
@@ -170,6 +171,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          getAppsEnabled: jest.fn().mockReturnValue(true),
           resolveAllowlists: jest.fn().mockResolvedValue({
             allowedDomains: null,
             allowedAddresses: null,
@@ -256,6 +258,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          getAppsEnabled: jest.fn().mockReturnValue(true),
           resolveAllowlists: jest.fn().mockResolvedValue({
             allowedDomains: null,
             allowedAddresses: null,
@@ -361,6 +364,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          getAppsEnabled: jest.fn().mockReturnValue(true),
           resolveAllowlists: jest.fn().mockResolvedValue({
             allowedDomains: null,
             allowedAddresses: null,

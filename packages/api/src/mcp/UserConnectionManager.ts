@@ -472,6 +472,7 @@ export abstract class UserConnectionManager {
         useSSRFProtection,
         allowedDomains,
         allowedAddresses,
+        enableApps: registry.getAppsEnabled(),
         ephemeralConnection,
       };
 

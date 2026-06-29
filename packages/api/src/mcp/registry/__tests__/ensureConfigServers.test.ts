@@ -106,6 +106,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       undefined,
       undefined,
       undefined,
+      true,
     );
   });
 
@@ -199,6 +200,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       undefined,
       undefined,
       undefined,
+      true,
     );
   });
 

@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getUserMCPAuthMap } = require('@librechat/api');
 const { getMCPManager, getFlowStateManager } = require('~/config');
+const { getAppConfig } = require('~/server/services/Config');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const {
   findPluginAuthsByKeys,
@@ -249,10 +250,35 @@ const serveMCPSandbox = async (_req, res) => {
   }
 };
 
+/**
+ * Blocks MCP App endpoints when an admin has disabled apps via `mcpSettings.apps: false`.
+ * Defense-in-depth alongside the connection-level capability gate: even if a server still
+ * advertises UI tools, the host refuses to proxy resource reads and app tool calls while off.
+ */
+const requireMCPAppsEnabled = async (req, res, next) => {
+  try {
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
+      }));
+    if (appConfig?.mcpSettings?.apps === false) {
+      return res.status(403).json({ error: 'MCP Apps are disabled' });
+    }
+    return next();
+  } catch (error) {
+    logger.error('[requireMCPAppsEnabled] Error:', error);
+    return res.status(500).json({ error: 'Failed to resolve MCP Apps configuration' });
+  }
+};
+
 module.exports = {
   readMCPResource,
   listMCPResources,
   listMCPResourceTemplates,
   appToolCall,
   serveMCPSandbox,
+  requireMCPAppsEnabled,
 };

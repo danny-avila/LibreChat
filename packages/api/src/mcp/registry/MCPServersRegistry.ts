@@ -124,6 +124,7 @@ export class MCPServersRegistry {
   /** YAML-derived base allowlists; used at boot and as the fallback when no resolver is set. */
   private readonly allowedDomains?: string[] | null;
   private readonly allowedAddresses?: string[] | null;
+  private readonly appsEnabled?: boolean;
   /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
   private readonly allowlistResolver?: MCPAllowlistResolver;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
@@ -148,6 +149,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
+    appsEnabled?: boolean,
   ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
@@ -155,6 +157,7 @@ export class MCPServersRegistry {
     this.allowedDomains = allowedDomains;
     this.allowedAddresses = allowedAddresses;
     this.allowlistResolver = allowlistResolver;
+    this.appsEnabled = appsEnabled;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -175,6 +178,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
+    appsEnabled?: boolean,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -192,6 +196,7 @@ export class MCPServersRegistry {
       allowedDomains,
       allowedAddresses,
       allowlistResolver,
+      appsEnabled,
     );
     return MCPServersRegistry.instance;
   }
@@ -212,6 +217,11 @@ export class MCPServersRegistry {
   /** YAML base allowlist (boot/fallback). For request-time decisions use {@link resolveAllowlists}. */
   public getAllowedAddresses(): string[] | null | undefined {
     return this.allowedAddresses;
+  }
+
+  /** YAML base apps-enabled flag (boot/fallback). MCP Apps are enabled unless explicitly disabled. */
+  public getAppsEnabled(): boolean {
+    return this.appsEnabled !== false;
   }
 
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
@@ -418,6 +428,7 @@ export class MCPServersRegistry {
         undefined,
         allowedDomains,
         allowedAddresses,
+        this.getAppsEnabled(),
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -476,6 +487,7 @@ export class MCPServersRegistry {
         undefined,
         allowedDomains,
         allowedAddresses,
+        this.getAppsEnabled(),
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
@@ -524,6 +536,7 @@ export class MCPServersRegistry {
         undefined,
         allowedDomains,
         allowedAddresses,
+        this.getAppsEnabled(),
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -672,6 +685,7 @@ export class MCPServersRegistry {
           undefined,
           allowedDomains,
           allowedAddresses,
+          this.getAppsEnabled(),
         ),
         CONFIG_SERVER_INIT_TIMEOUT_MS,
         `${prefix} Server initialization timed out`,

@@ -3,6 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
 import { requiresEphemeralUserConnection } from './utils';
+import { isToolVisibilityAppOnly } from './apps';
 
 export interface MCPToolInput {
   name: string;
@@ -90,15 +91,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       }
 
       for (const tool of tools) {
-        const uiMeta = (tool._meta as Record<string, unknown>)?.ui as
-          | Record<string, unknown>
-          | undefined;
-        const visibility = uiMeta?.visibility as string[] | undefined;
-        if (
-          Array.isArray(visibility) &&
-          visibility.includes('app') &&
-          !visibility.includes('model')
-        ) {
+        if (isToolVisibilityAppOnly(tool)) {
           continue;
         }
         const name = `${tool.name}${mcpDelimiter}${serverName}`;

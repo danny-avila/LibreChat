@@ -21,6 +21,9 @@ export function ShareMessagesProvider({ messages, children }: ShareMessagesProvi
     () => ({
       conversation: null,
       conversationId: undefined,
+      // Share view is read-only: MCP App bridges must render display-only and never proxy
+      // auth-bearing tool calls or resource reads against the viewer's MCP servers.
+      readOnly: true,
       // These are required by the context but not used in share view
       ask: () => {},
       regenerate: () => {},
