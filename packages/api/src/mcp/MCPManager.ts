@@ -454,7 +454,7 @@ Please follow these instructions when using tools from the respective MCP server
       const resolvedHeaders: Record<string, string> =
         'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
 
-      /** Refresh OBO token on each tool call to ensure it's current */
+      /** Resolve the current OBO token for this tool call; the resolver may serve cached tokens. */
       const oboConfig = rawConfig.obo;
       if (oboConfig && oboTokenResolver && user) {
         if (!upstreamTokenProvider) {

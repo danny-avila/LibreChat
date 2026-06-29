@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser, OIDCTokens } from '@librechat/data-schemas';
+import type { TRole } from 'librechat-data-provider';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { OpenIDTokenInfo } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
@@ -302,9 +303,11 @@ export async function resolveOboToken(
  *   - role missing the CONFIGURE_OBO bit
  */
 export type GetUserRoleByAuthorId = (authorId: string) => Promise<string | null | undefined>;
-export type GetRolePermissions = (
-  roleName: string,
-) => Promise<Record<string, Record<string, boolean | undefined>> | null | undefined>;
+type RolePermissions = Partial<{
+  [K in keyof TRole['permissions']]: Partial<TRole['permissions'][K]>;
+}>;
+
+export type GetRolePermissions = (roleName: string) => Promise<RolePermissions | null | undefined>;
 
 export async function isOboConfigStillTrusted({
   authorId,
@@ -328,7 +331,7 @@ export async function isOboConfigStillTrusted({
   if (!roleName) {
     return false;
   }
-  let permissions: Record<string, Record<string, boolean | undefined>> | null | undefined;
+  let permissions: RolePermissions | null | undefined;
   try {
     permissions = await getRolePermissions(roleName);
   } catch (err) {
