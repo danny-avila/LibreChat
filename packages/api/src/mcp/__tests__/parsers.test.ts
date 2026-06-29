@@ -301,12 +301,16 @@ describe('formatToolContent', () => {
       expect(artifacts).toBeUndefined();
     });
 
-    it('attaches the tool result to embedded ui:// resources for the app bridge', () => {
+    it('attaches the tool result to embedded mcp-app resources for the app bridge', () => {
       const result: t.MCPToolCallResponse = {
         content: [
           {
             type: 'resource',
-            resource: { uri: 'ui://app', mimeType: 'text/html', text: '<p>hi</p>' },
+            resource: {
+              uri: 'ui://app',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>hi</p>',
+            },
           },
         ],
         structuredContent: { count: 3 },
@@ -326,6 +330,31 @@ describe('formatToolContent', () => {
         structuredContent: { count: 3 },
       });
       expect(uiResourceArtifact?.content).toEqual(result.content);
+    });
+
+    it('renders a plain text/html ui:// resource statically without app-bridge metadata', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://static', mimeType: 'text/html', text: '<p>hi</p>' },
+          },
+        ],
+        structuredContent: { count: 3 },
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+      });
+
+      const uiResourceArtifact = artifacts?.ui_resources?.data?.[0];
+      expect(content).toContain('UI Resource Marker:');
+      expect(uiResourceArtifact).toMatchObject({ uri: 'ui://static' });
+      expect(uiResourceArtifact?.serverName).toBeUndefined();
+      expect(uiResourceArtifact?.toolName).toBeUndefined();
+      expect(uiResourceArtifact?.structuredContent).toBeUndefined();
+      expect(uiResourceArtifact?.resultMeta).toBeUndefined();
     });
 
     it('suppresses embedded ui:// resources when apps are disabled for the scope', () => {

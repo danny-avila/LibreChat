@@ -78,7 +78,7 @@ export class ConnectionsRepository {
       }
     }
     const registry = MCPServersRegistry.getInstance();
-    const { allowedDomains, allowedAddresses, useSSRFProtection, appsEnabled } =
+    const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: this.ownerId });
     const connection = await MCPConnectionFactory.create(
       {
@@ -88,7 +88,7 @@ export class ConnectionsRepository {
         useSSRFProtection,
         allowedDomains,
         allowedAddresses,
-        enableApps: appsEnabled,
+        enableApps: registry.getAppsEnabled(),
       },
       this.oauthOpts,
     );

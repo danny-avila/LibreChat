@@ -264,18 +264,27 @@ export function formatToolContent(
         const itemUi = (item.resource._meta as { ui?: Record<string, unknown> } | undefined)?.ui as
           | { csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
           | undefined;
+        // Only the text/html;profile=mcp-app profile runs the App Bridge on the client
+        // (isMcpAppResource); a plain text/html ui:// resource renders as a static srcDoc, so the
+        // tool result/context fields would be dead, misleading metadata on it. Classify the same
+        // way on both sides and attach the bridge payload only for the app profile.
+        const isAppBacked = (item.resource.mimeType ?? '').includes('profile=mcp-app');
         const uiResource: UIResource = {
           ...item.resource,
           resourceId,
-          serverName: metadata?.serverName,
-          toolName: metadata?.toolName,
-          structuredContent: result?.structuredContent,
-          content: result?.content,
-          isError: result?.isError,
-          resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
           csp: itemUi?.csp ?? metadata?.csp,
           permissions: itemUi?.permissions ?? metadata?.permissions,
-          toolArgs: metadata?.toolArgs,
+          ...(isAppBacked
+            ? {
+                serverName: metadata?.serverName,
+                toolName: metadata?.toolName,
+                structuredContent: result?.structuredContent,
+                content: result?.content,
+                isError: result?.isError,
+                resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
+                toolArgs: metadata?.toolArgs,
+              }
+            : {}),
         };
         uiResources.push(uiResource);
         resourceText.push(`UI Resource ID: ${resourceId}`);

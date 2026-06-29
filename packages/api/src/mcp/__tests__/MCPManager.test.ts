@@ -1279,7 +1279,7 @@ describe('MCPManager', () => {
       });
     });
 
-    it('routes config-override app requests through a request-scoped connection honoring the override', async () => {
+    it('forwards configServers, flowManager, and tokenMethods to getConnection', async () => {
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
         source: 'yaml',
         type: 'sse',
@@ -1295,8 +1295,8 @@ describe('MCPManager', () => {
       } as unknown as MCPConnection;
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const getUserConnectionSpy = jest
-        .spyOn(manager, 'getUserConnection')
+      const getConnectionSpy = jest
+        .spyOn(manager, 'getConnection')
         .mockResolvedValue(mockConnection);
 
       const flowManager = {} as never;
@@ -1319,8 +1319,8 @@ describe('MCPManager', () => {
         'user-123',
         configServers,
       );
-      expect(getUserConnectionSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ serverName: 'cfg-server', flowManager, tokenMethods }),
+      expect(getConnectionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ flowManager, tokenMethods }),
       );
     });
 

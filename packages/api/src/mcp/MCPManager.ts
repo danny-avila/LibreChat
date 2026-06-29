@@ -195,7 +195,7 @@ export class MCPManager extends UserConnectionManager {
     }
 
     const registry = MCPServersRegistry.getInstance();
-    const { allowedDomains, allowedAddresses, useSSRFProtection, appsEnabled } =
+    const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
       config: serverConfig,
@@ -217,7 +217,7 @@ export class MCPManager extends UserConnectionManager {
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
-      enableApps: appsEnabled,
+      enableApps: registry.getAppsEnabled(),
     };
 
     const finalizeDiscoveryResult = async (
@@ -656,7 +656,7 @@ Please follow these instructions when using tools from the respective MCP server
         resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
       }
       if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
-        const { allowedDomains, allowedAddresses, useSSRFProtection, appsEnabled } =
+        const { allowedDomains, allowedAddresses, useSSRFProtection } =
           await registry.resolveAllowlists({ userId, role: user?.role });
         cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
           {
@@ -667,7 +667,7 @@ Please follow these instructions when using tools from the respective MCP server
             useSSRFProtection,
             allowedDomains,
             allowedAddresses,
-            enableApps: appsEnabled,
+            enableApps: registry.getAppsEnabled(),
           },
           {
             useOAuth: true,
@@ -837,28 +837,14 @@ Please follow these instructions when using tools from the respective MCP server
       }
     }
 
-    // A config-tier override for this name resolves above via configServers, but the shared
-    // app-connection pool resolves configs without it and would return the base server's
-    // connection. Route overrides through a request-scoped connection so iframe reads/calls reach
-    // the overridden server rather than the cached base one.
-    const hasConfigOverride = !!user && configServers?.[serverName] != null;
-    const connection = hasConfigOverride
-      ? await this.getUserConnection({
-          serverName,
-          user,
-          serverConfig: rawConfig ?? undefined,
-          customUserVars,
-          flowManager,
-          tokenMethods,
-        })
-      : await this.getConnection({
-          serverName,
-          user,
-          serverConfig: rawConfig ?? undefined,
-          customUserVars,
-          flowManager,
-          tokenMethods,
-        });
+    const connection = await this.getConnection({
+      serverName,
+      user,
+      serverConfig: rawConfig ?? undefined,
+      customUserVars,
+      flowManager,
+      tokenMethods,
+    });
 
     // Refresh headers when the config can be fully resolved: env-var-only configs always, and
     // customUserVar configs only when the route supplied those vars. Without them, re-processing

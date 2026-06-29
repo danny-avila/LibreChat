@@ -453,7 +453,7 @@ export abstract class UserConnectionManager {
         graphTokenResolver,
       });
       const registry = MCPServersRegistry.getInstance();
-      const { allowedDomains, allowedAddresses, useSSRFProtection, appsEnabled } =
+      const { allowedDomains, allowedAddresses, useSSRFProtection } =
         await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
       await this.assertResolvedRuntimeConfigAllowed({
         config: runtimeConfig,
@@ -472,7 +472,7 @@ export abstract class UserConnectionManager {
         useSSRFProtection,
         allowedDomains,
         allowedAddresses,
-        enableApps: appsEnabled,
+        enableApps: registry.getAppsEnabled(),
         ephemeralConnection,
       };
 
