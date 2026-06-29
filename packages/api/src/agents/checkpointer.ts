@@ -1,7 +1,10 @@
 import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
+import { INTERRUPT } from '@langchain/langgraph-checkpoint';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { RunnableConfig } from '@langchain/core/runnables';
+import type { Checkpoint, CheckpointMetadata, PendingWrite } from '@langchain/langgraph-checkpoint';
 
 /**
  * Durable checkpointing for human-in-the-loop (HITL) resume.
@@ -21,6 +24,84 @@ import type { TCheckpointerConfig } from 'librechat-data-provider';
  * resolved ({@link DEFAULT_CHECKPOINT_TTL_SECONDS}), and {@link deleteAgentCheckpoint}
  * prunes a thread's checkpoints eagerly on every terminal transition.
  */
+
+/**
+ * Defensive cap on the number of in-flight interrupt checkpoint ids tracked between an
+ * interrupt `putWrites` and its matching `put`. Under normal flow each id is consumed by
+ * the immediately-following `put`, so the set holds at most a handful; the cap only guards
+ * against a process that dies in that microsecond window leaking ids forever.
+ */
+const MAX_TRACKED_INTERRUPTS = 1024;
+
+/**
+ * A `MongoDBSaver` that persists ONLY the checkpoints created at an interrupt (a HITL pause),
+ * discarding the one LangGraph writes on a CLEAN exit.
+ *
+ * **Why.** With `durability: 'exit'` (set by the SDK whenever a checkpointer is active) the
+ * graph persists exactly one checkpoint at the exit boundary on EVERY run — paused or not.
+ * A non-paused turn therefore writes a dead checkpoint whose only fate is to be pruned by
+ * {@link deleteAgentCheckpoint}. HITL only ever resumes an *interrupt* checkpoint, so the
+ * clean-exit one is pure write+delete churn on the common path. This saver skips it.
+ *
+ * **How it tells them apart** (verified empirically against `@langchain/langgraph`): when a
+ * run interrupts, the runner calls `putWrites` with the `INTERRUPT` (`"__interrupt__"`)
+ * channel for the checkpoint it is about to create, and that write's `config.checkpoint_id`
+ * equals the `checkpoint.id` of the `put` that immediately follows. A clean exit calls `put`
+ * with no preceding interrupt `putWrites`. So we record the checkpoint id of any interrupt
+ * `putWrites` and persist a `put` only when its `checkpoint.id` was so marked. Keying on the
+ * globally-unique checkpoint id (NOT thread_id) keeps this correct even when two runs race
+ * on the same conversation (`thread_id`) — the job-replacement scenario.
+ *
+ * **Correctness.** Interrupt checkpoints and their pending writes are persisted exactly as
+ * before, so resume is unchanged. Clean checkpoints were only ever written-then-pruned, so
+ * not writing them is observationally equivalent; the eager prune stays as the backstop for
+ * any lingering interrupt checkpoint. `getTuple`/`list`/`deleteThread`/`setup` are inherited.
+ */
+export class InterruptOnlyMongoSaver extends MongoDBSaver {
+  /** checkpoint ids an interrupt `putWrites` flagged; each consumed by its matching `put`. */
+  private readonly interruptedCheckpointIds = new Set<string>();
+
+  override async putWrites(
+    config: RunnableConfig,
+    writes: PendingWrite[],
+    taskId: string,
+  ): Promise<void> {
+    const checkpointId = config.configurable?.checkpoint_id as string | undefined;
+    if (checkpointId && writes.some((write) => write[0] === INTERRUPT)) {
+      if (this.interruptedCheckpointIds.size >= MAX_TRACKED_INTERRUPTS) {
+        // Evict the oldest unconsumed id (a leak from a crash between putWrites and put).
+        const oldest = this.interruptedCheckpointIds.values().next().value;
+        if (oldest !== undefined) {
+          this.interruptedCheckpointIds.delete(oldest);
+        }
+      }
+      this.interruptedCheckpointIds.add(checkpointId);
+    }
+    // Always persist the writes: an interrupt's pending writes are required for resume, and
+    // under `durability: 'exit'` a clean run never calls putWrites at all.
+    return super.putWrites(config, writes, taskId);
+  }
+
+  override async put(
+    config: RunnableConfig,
+    checkpoint: Checkpoint,
+    metadata: CheckpointMetadata,
+  ): Promise<RunnableConfig> {
+    if (this.interruptedCheckpointIds.delete(checkpoint.id)) {
+      // Produced by an interrupt (pause) — persist it so the run can be resumed.
+      return super.put(config, checkpoint, metadata);
+    }
+    // Clean exit: discard. Return the config LangGraph expects (pointing at the checkpoint
+    // it believes was saved) so the run finishes normally; nothing durable is written.
+    return {
+      ...config,
+      configurable: {
+        ...config.configurable,
+        checkpoint_id: checkpoint.id,
+      },
+    };
+  }
+}
 
 /** Default approval window and checkpoint TTL: 24h. */
 export const DEFAULT_CHECKPOINT_TTL_SECONDS = 86400;
@@ -104,7 +185,7 @@ async function buildMongoSaver(
   resolved: ResolvedCheckpointerConfig,
 ): Promise<MongoDBSaver | undefined> {
   try {
-    const saver = new MongoDBSaver({
+    const saver = new InterruptOnlyMongoSaver({
       // mongoose vends the live MongoClient; reuse it instead of opening a second
       // connection. The driver type is structurally identical but resolves to a
       // different `mongodb` copy than checkpoint-mongodb's, hence the cast.
