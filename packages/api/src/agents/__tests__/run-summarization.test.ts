@@ -1853,3 +1853,92 @@ describe('toolOutputReferences gating', () => {
     expect(callArgs).not.toHaveProperty('toolOutputReferences');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite: deferred-tool replay on HITL resume (Codex G3)
+//
+// The resume path rebuilds the graph with `messages: []` (state comes from the
+// durable checkpoint), so the in-turn `tool_search` results that mark a deferred
+// tool discovered aren't on the critical path. createRun's `discoveredToolNames`
+// input replays those names — captured at pause — so the paused deferred tool is
+// promoted back into `toolDefinitions` (and `defer_loading` flipped) and is present
+// in the rebuilt schema-only toolMap. Without it, the approved tool would be missing
+// and resume would fail with "unknown tool".
+// ---------------------------------------------------------------------------
+describe('createRun deferred-tool replay (HITL resume)', () => {
+  /** Agent whose discoverable `deep_tool` lives ONLY in the registry (deferred). */
+  const makeDeferredAgent = (registryExtra: Array<[string, Record<string, unknown>]> = []) => {
+    const toolRegistry = new Map<string, Record<string, unknown>>([
+      ['deep_tool', { name: 'deep_tool', defer_loading: true }],
+      ...registryExtra,
+    ]);
+    return makeAgent({
+      hasDeferredTools: true,
+      // tool_search is in definitions; the discoverable deep_tool is NOT (deferred).
+      toolDefinitions: [{ name: 'tool_search' }],
+      toolRegistry,
+    });
+  };
+
+  const captureAgents = async (agent: ReturnType<typeof makeAgent>, extra: Record<string, unknown>) => {
+    const signal = new AbortController().signal;
+    await createRun({
+      agents: [agent] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+      ...extra,
+    });
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0];
+    return callArgs.graphConfig.agents as Array<Record<string, unknown>>;
+  };
+
+  const defNames = (agents: Array<Record<string, unknown>>): string[] =>
+    (agents[0].toolDefinitions as Array<{ name: string }>).map((d) => d.name);
+
+  it('promotes a replayed discovered tool into toolDefinitions when messages is empty (resume)', async () => {
+    const agents = await captureAgents(makeDeferredAgent(), {
+      messages: [],
+      discoveredToolNames: ['deep_tool'],
+    });
+    expect(defNames(agents)).toContain('deep_tool');
+  });
+
+  it('does NOT include the deferred tool without replayed names (the bug being fixed)', async () => {
+    const agents = await captureAgents(makeDeferredAgent(), { messages: [] });
+    expect(defNames(agents)).not.toContain('deep_tool');
+  });
+
+  it('flips defer_loading=false on the replayed tool so the model binds it', async () => {
+    const agents = await captureAgents(makeDeferredAgent(), {
+      messages: [],
+      discoveredToolNames: ['deep_tool'],
+    });
+    const registry = agents[0].toolRegistry as Map<string, { defer_loading?: boolean }>;
+    expect(registry.get('deep_tool')?.defer_loading).toBe(false);
+  });
+
+  it('unions replayed names with names extracted from message history', async () => {
+    const toolSearchResult = {
+      _getType: () => 'tool',
+      name: 'tool_search',
+      content: JSON.stringify({ tools: [{ name: 'from_history' }] }),
+    };
+    const agents = await captureAgents(
+      makeDeferredAgent([['from_history', { name: 'from_history', defer_loading: true }]]),
+      { messages: [toolSearchResult], discoveredToolNames: ['deep_tool'] },
+    );
+    const names = defNames(agents);
+    expect(names).toContain('deep_tool'); // replayed
+    expect(names).toContain('from_history'); // extracted from messages
+  });
+
+  it('ignores replayed names when the agent has no deferred tools (inert)', async () => {
+    const agents = await captureAgents(
+      makeAgent({ hasDeferredTools: false, toolDefinitions: [], toolRegistry: new Map() }),
+      { messages: [], discoveredToolNames: ['deep_tool'] },
+    );
+    expect(defNames(agents)).not.toContain('deep_tool');
+  });
+});

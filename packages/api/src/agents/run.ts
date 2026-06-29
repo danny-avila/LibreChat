@@ -873,6 +873,7 @@ export async function createRun({
   signal,
   agents,
   messages,
+  discoveredToolNames,
   requestBody,
   user,
   tenantId,
@@ -898,6 +899,16 @@ export async function createRun({
   tenantId?: string;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
+  /**
+   * Pre-discovered deferred-tool names to force-load directly, bypassing message
+   * extraction. The HITL resume path rebuilds the graph with `messages: []` (state
+   * comes from the durable checkpoint), so the in-turn `tool_search` results that
+   * would normally mark a deferred tool discovered aren't present — without this the
+   * paused tool would be absent from the rebuilt schema-only toolMap and resume would
+   * fail with "unknown tool". Captured at pause via `extractDiscoveredToolsFromHistory`
+   * and replayed here. Merged with (not replacing) any names extracted from `messages`.
+   */
+  discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
@@ -931,10 +942,22 @@ export async function createRun({
    */
   const hasAnyDeferredTools = agents.some((agent) => agent.hasDeferredTools === true);
 
-  const discoveredTools =
-    hasAnyDeferredTools && messages?.length
-      ? extractDiscoveredToolsFromHistory(messages)
-      : new Set<string>();
+  const discoveredTools = new Set<string>();
+  if (hasAnyDeferredTools) {
+    // Normal path: extract from this run's message history (tool_search results).
+    if (messages?.length) {
+      for (const name of extractDiscoveredToolsFromHistory(messages)) {
+        discoveredTools.add(name);
+      }
+    }
+    // Resume path: replay names captured at pause, since `messages` is empty (the
+    // paused run's tool_search results live only in the checkpoint, not here).
+    if (discoveredToolNames?.length) {
+      for (const name of discoveredToolNames) {
+        discoveredTools.add(name);
+      }
+    }
+  }
 
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     const isSubagent = opts.isSubagent === true;

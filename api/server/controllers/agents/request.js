@@ -95,7 +95,7 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
 }
 
 function getPreliminaryUserMessage(
-  { messageId, parentMessageId, text, quotes, manualSkills, alwaysAppliedSkills },
+  { messageId, parentMessageId, text, quotes, files, manualSkills, alwaysAppliedSkills },
   conversationId,
 ) {
   if (typeof messageId !== 'string' || messageId.length === 0) {
@@ -116,6 +116,11 @@ function getPreliminaryUserMessage(
     conversationId,
     text,
     ...(referencedQuotes != null && { quotes: referencedQuotes }),
+    // Persist the turn's uploaded files on this AWAITED preliminary write so they land on
+    // job.metadata.userMessage BEFORE the run can reach its first interrupt. onStart's
+    // later writes are fire-and-forget, so a fast approval could otherwise read the job
+    // and resume an approved code/read-file tool without the paused turn's uploads.
+    ...(Array.isArray(files) && files.length > 0 && { files }),
     // Carry skill selections so a HITL-resumed turn's reconstructed `requestMessage`
     // keeps its skill pills — the client's final handler replaces the user bubble from
     // this object, and they'd otherwise vanish until a full reload refetches the row.

@@ -43,6 +43,14 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /**
+   * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
+   * so a resume can replay them into `createRun` — the rebuilt graph uses `messages: []`
+   * (state comes from the checkpoint), so without these the paused deferred tool would be
+   * absent from the schema-only toolMap and resume would fail with "unknown tool".
+   */
+  discoveredTools?: string[];
+
   /** Whether the user-message created event has been emitted */
   createdEventEmitted?: boolean;
 

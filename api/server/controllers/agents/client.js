@@ -35,6 +35,7 @@ const {
   resolveRecursionLimit,
   buildPendingAction,
   computeAgentRequestFingerprint,
+  extractDiscoveredToolsFromHistory,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
@@ -1259,6 +1260,30 @@ class AgentClient extends BaseClient {
       return;
     }
 
+    // Capture deferred tools discovered (via tool_search) earlier in THIS turn so resume
+    // can replay them into createRun. The resumed graph is rebuilt with `messages: []`
+    // (state comes from the checkpoint), so the in-turn tool_search results that mark a
+    // deferred tool discovered aren't present there — without this the paused deferred
+    // tool would be missing from the rebuilt schema-only toolMap and resume would fail
+    // with "unknown tool". Inert for non-deferred turns (the set comes back empty).
+    try {
+      const runMessages =
+        typeof run.getRunMessages === 'function' ? run.getRunMessages() : undefined;
+      if (Array.isArray(runMessages) && runMessages.length > 0) {
+        const discovered = extractDiscoveredToolsFromHistory(runMessages);
+        if (discovered.size > 0) {
+          await GenerationJobManager.updateMetadata(streamId, {
+            discoveredTools: Array.from(discovered),
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        `[AgentClient] Failed to capture discovered tools for resume on ${streamId}`,
+        err?.message ?? err,
+      );
+    }
+
     this.pendingApproval = pendingAction;
     // Release the concurrency slot this request held the MOMENT the turn is durably
     // paused — before the approval card is emitted — so the user's `/resume` can
@@ -1772,6 +1797,7 @@ class AgentClient extends BaseClient {
     abortController = null,
     commandOptions,
     userMCPAuthMap,
+    discoveredToolNames,
   }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -1853,6 +1879,11 @@ class AgentClient extends BaseClient {
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
+        // Replay deferred tools discovered before the pause. With `messages: []` the
+        // discovery scan finds nothing, so a deferred tool the paused call targets
+        // would be absent from the rebuilt toolMap; these names (captured at pause)
+        // force it back in. Undefined/empty for non-deferred turns — a harmless no-op.
+        discoveredToolNames,
         initialSessions,
         runId: this.responseMessageId,
         signal: abortController.signal,

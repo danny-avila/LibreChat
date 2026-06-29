@@ -316,6 +316,20 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   }
   conversation.title = conversation.title || 'New Chat';
 
+  // Re-check ownership immediately before the terminal writes. The start-of-function
+  // guard can go stale across the awaits above: saveMessage and (first-turn) title
+  // generation can take long enough for a new request to replace this job on the same
+  // conversationId (streamId == conversationId). Without this second read, emitDone /
+  // completeJob / prune below would emit `done` to and tear down the REPLACEMENT job —
+  // the same hazard the catch-path guard prevents on the failure path.
+  const liveJobBeforeFinalize = await GenerationJobManager.getJobStore().getJob(streamId);
+  if (!liveJobBeforeFinalize || liveJobBeforeFinalize.createdAt !== job.createdAt) {
+    logger.warn(
+      `[ResumeAgentController] Skipping resumed terminal writes — job ${streamId} was replaced mid-finalize`,
+    );
+    return;
+  }
+
   const finalEvent = {
     final: true,
     conversation,
@@ -559,6 +573,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       abortController: job.abortController,
       // Carry the user's MCP auth so approved MCP tools run with their credentials.
       userMCPAuthMap: result.userMCPAuthMap,
+      // Replay deferred tools discovered before the pause (captured at pause). The rebuilt
+      // graph passes `messages: []`, so without these an approved deferred tool would be
+      // absent from the schema-only toolMap and resume would fail with "unknown tool".
+      discoveredToolNames: job.metadata?.discoveredTools,
     });
 
     // The model may pause AGAIN (another tool, or a follow-up question). The pending

@@ -424,3 +424,102 @@ describe('HITL Terminal-Side-Effect Guards', () => {
     });
   });
 });
+
+/**
+ * Round-18 follow-ups to the guards above (Codex review 4594099963).
+ */
+describe('HITL Resume Fidelity Guards (round 18)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('G1 — resume re-checks ownership AGAIN right before terminal writes', () => {
+    // The start-of-finalize guard can go stale across saveMessage + title generation,
+    // so resume.js re-reads the live job immediately before emitDone/completeJob/prune.
+    // Same predicate as the catch-path (F24), applied at the success path's second point.
+    const stillLiveBeforeFinalize = async ({ streamId, jobCreatedAt }) => {
+      const liveJob = await mockGenerationJobManager.getJob(streamId);
+      return !!liveJob && liveJob.createdAt === jobCreatedAt;
+    };
+
+    it('runs terminal writes when still the live job at the second check', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000 });
+      expect(await stillLiveBeforeFinalize({ streamId: 'c1', jobCreatedAt: 1000 })).toBe(true);
+    });
+
+    it('skips terminal writes when replaced DURING finalize (after the first check passed)', async () => {
+      // First check passed earlier with createdAt 1000; a new request replaced it to 2000
+      // while saveMessage + title generation awaited. The second check must catch it.
+      mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 2000 });
+      expect(await stillLiveBeforeFinalize({ streamId: 'c1', jobCreatedAt: 1000 })).toBe(false);
+    });
+  });
+
+  describe('G2 — uploaded files are seeded into the AWAITED preliminary user message', () => {
+    // Mirrors getPreliminaryUserMessage: files from the request are persisted on the
+    // preliminary (awaited, pre-run) metadata so they land before any interrupt emits.
+    const buildPreliminaryUserMessage = ({ messageId, files }) => {
+      if (typeof messageId !== 'string' || messageId.length === 0) {
+        return null;
+      }
+      return {
+        messageId,
+        ...(Array.isArray(files) && files.length > 0 && { files }),
+      };
+    };
+
+    it('includes files when the request carries them', () => {
+      const msg = buildPreliminaryUserMessage({ messageId: 'm1', files: [{ file_id: 'a' }] });
+      expect(msg.files).toEqual([{ file_id: 'a' }]);
+    });
+
+    it('omits files when none were uploaded (no empty array)', () => {
+      const msg = buildPreliminaryUserMessage({ messageId: 'm1', files: [] });
+      expect(msg).not.toHaveProperty('files');
+    });
+  });
+
+  describe('G3 — resume replays pre-pause discovered deferred tools', () => {
+    // Mirrors createRun's merge: discovered set is union(message-extracted, replayed),
+    // gated entirely on the agent actually having deferred tools.
+    const resolveDiscovered = ({ hasAnyDeferredTools, messageExtracted, replayed }) => {
+      const set = new Set();
+      if (hasAnyDeferredTools) {
+        for (const n of messageExtracted ?? []) {
+          set.add(n);
+        }
+        for (const n of replayed ?? []) {
+          set.add(n);
+        }
+      }
+      return set;
+    };
+
+    it('replays captured names on resume (messages empty) so the paused tool is present', () => {
+      const set = resolveDiscovered({
+        hasAnyDeferredTools: true,
+        messageExtracted: [],
+        replayed: ['deep_tool'],
+      });
+      expect(set.has('deep_tool')).toBe(true);
+    });
+
+    it('unions replayed names with message-extracted names', () => {
+      const set = resolveDiscovered({
+        hasAnyDeferredTools: true,
+        messageExtracted: ['from_history'],
+        replayed: ['deep_tool'],
+      });
+      expect([...set].sort()).toEqual(['deep_tool', 'from_history']);
+    });
+
+    it('is inert when the agent has no deferred tools', () => {
+      const set = resolveDiscovered({
+        hasAnyDeferredTools: false,
+        messageExtracted: ['x'],
+        replayed: ['deep_tool'],
+      });
+      expect(set.size).toBe(0);
+    });
+  });
+});
