@@ -1,0 +1,35 @@
+{{- if and .Values.langfuseFanout.enabled .Values.langfuseFanout.metrics.podMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "librechat.langfuseFanout.fullname" . }}
+  labels:
+    {{- include "librechat.langfuseFanout.labels" . | nindent 4 }}
+    {{- with .Values.langfuseFanout.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.langfuseFanout.metrics.podMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace | quote }}
+  selector:
+    matchLabels:
+      {{- include "librechat.langfuseFanout.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - path: {{ .Values.langfuseFanout.metrics.podMonitor.path | quote }}
+      port: {{ .Values.langfuseFanout.metrics.podMonitor.port | quote }}
+      scheme: {{ .Values.langfuseFanout.metrics.podMonitor.scheme | quote }}
+      {{- with .Values.langfuseFanout.metrics.podMonitor.interval }}
+      interval: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.langfuseFanout.metrics.podMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . | quote }}
+      {{- end }}
+      bearerTokenSecret:
+        name: {{ required "langfuseFanout.metrics.secret.name is required when langfuseFanout.metrics.podMonitor.enabled=true" .Values.langfuseFanout.metrics.secret.name | quote }}
+        key: {{ required "langfuseFanout.metrics.secret.key is required when langfuseFanout.metrics.podMonitor.enabled=true" .Values.langfuseFanout.metrics.secret.key | quote }}
+{{- end }}

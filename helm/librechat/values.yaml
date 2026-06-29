@@ -313,6 +313,17 @@ langfuseFanout:
       # When omitted, /metrics returns 401.
       name: ""
       key: METRICS_SECRET
+    podMonitor:
+      # Create a Prometheus Operator PodMonitor for the fanout gateway.
+      # Requires metrics.secret.name/key so Prometheus can send the bearer token.
+      enabled: false
+      path: /metrics
+      port: otlp-http
+      scheme: http
+      interval: 30s
+      scrapeTimeout: 10s
+      labels: {}
+      annotations: {}
   redis:
     # Redis stores short-lived Langfuse media upload plans so multiple gateway
     # replicas can handle create/upload requests. If empty and redis.enabled is

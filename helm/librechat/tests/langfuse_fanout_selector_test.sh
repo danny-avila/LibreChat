@@ -13,7 +13,8 @@ RENDER_CHART_DIR="$(mktemp -d -t librechat-fanout-chart.XXXXXX)"
 RENDERED_FILE="$(mktemp -t librechat-fanout-render.XXXXXX)"
 INVALID_RENDER_ERROR="$(mktemp -t librechat-fanout-invalid-key.XXXXXX)"
 COLLISION_RENDER_ERROR="$(mktemp -t librechat-fanout-colliding-key.XXXXXX)"
-trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}" "${INVALID_RENDER_ERROR}" "${COLLISION_RENDER_ERROR}"' EXIT
+MISSING_METRICS_SECRET_ERROR="$(mktemp -t librechat-fanout-missing-metrics-secret.XXXXXX)"
+trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}" "${INVALID_RENDER_ERROR}" "${COLLISION_RENDER_ERROR}" "${MISSING_METRICS_SECRET_ERROR}"' EXIT
 
 if ! command -v helm >/dev/null 2>&1; then
   echo "FAIL: helm not on PATH" >&2
@@ -29,14 +30,19 @@ cp "${CHART_DIR}/templates/langfuse-fanout-service.yaml" \
   "${RENDER_CHART_DIR}/templates/langfuse-fanout-service.yaml"
 cp "${CHART_DIR}/templates/langfuse-fanout-deployment.yaml" \
   "${RENDER_CHART_DIR}/templates/langfuse-fanout-deployment.yaml"
+cp "${CHART_DIR}/templates/langfuse-fanout-podmonitor.yaml" \
+  "${RENDER_CHART_DIR}/templates/langfuse-fanout-podmonitor.yaml"
 
 helm template librechat "${RENDER_CHART_DIR}" \
   --set langfuseFanout.enabled=true \
   --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
   --set langfuseFanout.redis.uri=redis://langfuse-fanout-redis:6379 \
+  --set langfuseFanout.metrics.secret.name=librechat-metrics \
+  --set langfuseFanout.metrics.podMonitor.enabled=true \
   --show-only templates/service.yaml \
   --show-only templates/langfuse-fanout-service.yaml \
   --show-only templates/langfuse-fanout-deployment.yaml \
+  --show-only templates/langfuse-fanout-podmonitor.yaml \
   > "${RENDERED_FILE}"
 
 if helm template librechat "${RENDER_CHART_DIR}" \
@@ -71,6 +77,23 @@ fi
 if ! grep -q 'both render LANGFUSE_FANOUT_TENANT_FOO_BAR_BASE_URL' "${COLLISION_RENDER_ERROR}"; then
   echo "FAIL: colliding destination key render did not explain the env var collision" >&2
   cat "${COLLISION_RENDER_ERROR}" >&2
+  exit 1
+fi
+
+if helm template librechat "${RENDER_CHART_DIR}" \
+  --set langfuseFanout.enabled=true \
+  --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
+  --set langfuseFanout.redis.uri=redis://langfuse-fanout-redis:6379 \
+  --set langfuseFanout.metrics.podMonitor.enabled=true \
+  --show-only templates/langfuse-fanout-podmonitor.yaml \
+  > /dev/null 2> "${MISSING_METRICS_SECRET_ERROR}"; then
+  echo "FAIL: Helm accepted Langfuse fanout PodMonitor without a metrics bearer token secret" >&2
+  exit 1
+fi
+
+if ! grep -q 'langfuseFanout.metrics.secret.name is required' "${MISSING_METRICS_SECRET_ERROR}"; then
+  echo "FAIL: missing metrics secret render did not explain the PodMonitor secret requirement" >&2
+  cat "${MISSING_METRICS_SECRET_ERROR}" >&2
   exit 1
 fi
 
@@ -112,6 +135,7 @@ function envValue(env, name) {
 const mainService = find('Service', 'librechat-librechat');
 const fanoutService = find('Service', 'librechat-librechat-langfuse-fanout');
 const fanoutDeployment = find('Deployment', 'librechat-librechat-langfuse-fanout');
+const fanoutPodMonitor = find('PodMonitor', 'librechat-librechat-langfuse-fanout');
 const fanoutContainer = fanoutDeployment.spec?.template?.spec?.containers?.find(
   (container) => container.name === 'langfuse-fanout',
 );
@@ -124,6 +148,8 @@ const fanoutSelector = fanoutService.spec?.selector ?? {};
 const fanoutMatchLabels = fanoutDeployment.spec?.selector?.matchLabels ?? {};
 const fanoutPodLabels = fanoutDeployment.spec?.template?.metadata?.labels ?? {};
 const fanoutMetadataLabels = fanoutDeployment.metadata?.labels ?? {};
+const fanoutPodMonitorSelector = fanoutPodMonitor.spec?.selector?.matchLabels ?? {};
+const fanoutPodMonitorEndpoint = fanoutPodMonitor.spec?.podMetricsEndpoints?.[0] ?? {};
 
 if (isSubset(mainSelector, fanoutPodLabels)) {
   fail('main Service selector matches fanout pod labels');
@@ -139,6 +165,21 @@ if (mainSelector['app.kubernetes.io/name'] === fanoutSelector['app.kubernetes.io
 }
 if (fanoutMetadataLabels['app.kubernetes.io/name'] !== fanoutSelector['app.kubernetes.io/name']) {
   fail('fanout Deployment metadata labels do not use fanout app name');
+}
+if (!isSubset(fanoutPodMonitorSelector, fanoutPodLabels)) {
+  fail('fanout PodMonitor selector does not match fanout pod labels');
+}
+if (fanoutPodMonitorEndpoint.path !== '/metrics') {
+  fail('fanout PodMonitor does not scrape /metrics');
+}
+if (fanoutPodMonitorEndpoint.port !== 'otlp-http') {
+  fail('fanout PodMonitor does not scrape the otlp-http port');
+}
+if (fanoutPodMonitorEndpoint.bearerTokenSecret?.name !== 'librechat-metrics') {
+  fail('fanout PodMonitor did not render configured metrics bearer token secret name');
+}
+if (fanoutPodMonitorEndpoint.bearerTokenSecret?.key !== 'METRICS_SECRET') {
+  fail('fanout PodMonitor did not render configured metrics bearer token secret key');
 }
 if (envValue(fanoutContainer.env, 'LANGFUSE_FANOUT_REDIS_URI') !== 'redis://langfuse-fanout-redis:6379') {
   fail('fanout Deployment did not render configured Redis URI');

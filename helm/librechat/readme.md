@@ -88,10 +88,11 @@ only the gateway sidecar should send traces to it.
 
 The gateway exposes Prometheus metrics at `/metrics`. Configure
 `langfuseFanout.metrics.secret.name` and `.key` to pass a bearer token secret to
-the gateway; if omitted, `/metrics` returns 401. Use
-`langfuseFanout.service.annotations` for scrape annotations when your cluster
-uses annotation-based discovery. The gateway container also has configurable
-`/healthz` liveness and readiness probes under `langfuseFanout`.
+the gateway; if omitted, `/metrics` returns 401. Set
+`langfuseFanout.metrics.podMonitor.enabled=true` to create a Prometheus Operator
+`PodMonitor` that scrapes the gateway pods with the same bearer token secret.
+The gateway container also has configurable `/healthz` liveness and readiness
+probes under `langfuseFanout`.
 
 See [`otel/langfuse-fanout/README.md`](../../otel/langfuse-fanout/README.md)
 for the central Langfuse secret and values example.
