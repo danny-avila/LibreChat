@@ -4,21 +4,24 @@ A fork of LibreChat's open-source AI platform, with customizations for the state
 
 ## New Team Member Onboarding
 
-If you are new team member joining the NJ AI Assistant (AIA) project, start with this document: [[NJ AI Assistant] Onboarding](https://docs.google.com/document/d/1QIkGi_mpq35wE7yarwtQ9jd286PJqANsgRULIwgMJK0/edit?tab=t.0#heading=h.j23ek77dt9h5).
+If you are new team member joining the NJ AI Assistant (AIA) project, start with this
+document: [[NJ AI Assistant] Onboarding](https://docs.google.com/document/d/1QIkGi_mpq35wE7yarwtQ9jd286PJqANsgRULIwgMJK0/edit?tab=t.0#heading=h.j23ek77dt9h5).
 
 ## Local Development
 
 There are developer instructions in `.github/CONTRIBUTING.md`, however we've found better methods for local dev.
 
-### Initial Setup
+### Container Setup
 
 You _should_ only need to do the following once:
 
 1. Install [Docker CLI](https://github.com/docker/cli), [Colima](https://github.com/abiosoft/colima), and
-   [Docker Compose](https://github.com/docker/compose).
-   - _**Note:** Docker Desktop NOT allowed at NJ._
+   [Docker Compose](https://github.com/docker/compose). _Docker Desktop is NOT allowed at NJ._
 
-   The following terminal commands will install all three (make sure [Homebrew](https://brew.sh/) is installed)
+   <details>
+   <summary>Setup commands</summary>
+
+   Make sure [Homebrew](https://brew.sh/) is installed first.
 
    ```bash
    # Install dependencies
@@ -39,44 +42,42 @@ You _should_ only need to do the following once:
    # Start Colima
    $ brew services start colima
    ```
+   </details>
 
 2. Install `nvm` ([instructions](https://github.com/nvm-sh/nvm?tab=readme-ov-file#installing-and-updating)).
-3. Setup Node v20
-   - `$ nvm install 20` (first time only)
-   - `$ nvm use 20`
-4. Install TypeScript globally
-   - `$ npm i -g typescript`
-5. Use docker to run services (e.g. Mongo)
-   - `$ docker compose -f nj-dev-docker-compose.yml up -d`
-6. Create a `.env` file in the root directory & fill it with our `.env` from Bitwarden.
+3. Setup Node: `nvm use`
+4. Install TypeScript globally: `npm i -g typescript`
+
+Once you've finished initial setup, you can start (or restart) containers using this command:
+
+```
+docker compose -f nj-dev-docker-compose.yml up -d
+````
 
 ### Building & Running NJ AIA (AIA)
 
-Repeatable steps for getting AIA going:
+Before running AIA, first create a `.env` file in the root directory & fill it with our `.env` from Bitwarden.
 
-1. Build everything
-   - `$ npm run reinstall`
-   - _Note: after running this once, you can instead run `$ npm run frontend` to build w/o reinstalling node_modules to
-     save time, if you know packages haven't changed._
-2. Start the backend (w/ live rebuilds)
-   - `$ npm run backend:dev`
-3. Start the frontend (w/ live rebuilds)
-   - `$ npm run frontend:dev`
+Afterwards, you can repeat these steps to get AIA running:
+
+1. Build everything: `npm run reinstall`
+    - _Note: after running this once, you can instead run `npm run frontend` to build w/o reinstalling node_modules to
+      save time, if you know packages haven't changed._
+2. Start the backend (w/ live rebuilds): `npm run backend:dev`
+3. Start the frontend (w/ live rebuilds): `npm run frontend:dev`
 4. Visit AIA @ http://localhost:3090
 
 NOTE: `reinstall`/`frontend` builds all the code in `/packages/`, but does not do live rebuilds. If you want live coding
 for
 `/packages`, you'll need to run `build:watch` in their respective directories as so:
-`$ npm run build:watch --prefix packages/[directory]`
+`npm run build:watch --prefix packages/[directory]`
 
 ### Running E2E tests
 
-Our tests live in: ./nj/e2e/\* and they can be run on their own with the following command:
+Our E2E tests live in `./nj/e2e/\*` and can be run on their own with the following command:
 
-1. Build everything
-   - `$ npm run reinstall`
-2. Run the tests
-   - `npm run e2e:nj`
+1. Build everything: `npm run reinstall`
+2. Run the tests: `npm run e2e:nj`
 
 ## How to Work in This Repo
 
@@ -230,7 +231,8 @@ We just close any Dependabot updates as a result, and rely on upstream merges fo
 
 Prod release happens in two steps:
 
-1. Create a [release](https://github.com/newjersey/nj-ai-assistant/releases) in Github, and wait for it to build and push
+1. Create a [release](https://github.com/newjersey/nj-ai-assistant/releases) in Github, and wait for it to build and
+   push
 2. [OPTIONAL] If environment variables have changed, run the [render-env workflow](./.github/workflows/render-env.yml)
 3. Run the [infra deploy workflow](./.github/workflows/nj-infra-deploy.yml) on the prod environment.
 
@@ -278,8 +280,8 @@ setting a non-existent tag. The infra deploy workflow will still need to be ran 
 
 - From the Github Actions tab, select the Deploy AI Assistant Infrastructure workflow
 - Select Run Workflow
-  - Branch: `newjersey`
-  - Environment: `prod`
+    - Branch: `newjersey`
+    - Environment: `prod`
 - Wait for the cdk-diff job to complete
 - REVIEW THE OUTPUT. When you approve the cdk-deploy job, you are responsible for the changes that roll out.
 - Approve and wait for the fireworks. You can watch the deployment from the Cloudformation console if so desired.
