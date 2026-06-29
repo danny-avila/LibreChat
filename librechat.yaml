@@ -867,6 +867,7 @@ memory:
   tokenLimit: 4000
   personalize: true
   agent:
+    enabled: true
     provider: "OpenRouter"
     model: "google/gemini-2.5-flash"
     instructions: "You are a memory management assistant. Read the user's stored memories and inject relevant context into conversations when applicable."
