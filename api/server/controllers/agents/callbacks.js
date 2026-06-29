@@ -1,6 +1,25 @@
+const fs = require('fs');
+const path = require('path');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+
+/**
+ * Writes a full debug payload to a file under the mounted logs dir, bypassing the
+ * winston logger (which truncates messages to DEBUG_MESSAGE_LENGTH, read before .env
+ * loads). Opt-in via the relevant DEBUG_* env var. Best-effort; never throws.
+ * @param {string} tag - Basename for the log file (no extension).
+ * @param {unknown} payload - Serialized as pretty JSON.
+ */
+function dumpDebugToFile(tag, payload) {
+  try {
+    const dir = process.env.DEBUG_DUMP_DIR || '/app/logs';
+    const line = `${new Date().toISOString()} ${JSON.stringify(payload, null, 2)}\n\n`;
+    fs.appendFileSync(path.join(dir, `${tag}.log`), line);
+  } catch (error) {
+    logger.error(`[dumpDebugToFile] failed to write ${tag}:`, error);
+  }
+}
 const {
   GraphEvents,
   GraphNodeKeys,
@@ -1250,17 +1269,11 @@ function collectCitationReferences(output) {
   }, []);
 
   if (process.env.DEBUG_OPENROUTER_CITATIONS && references.length === 0) {
-    logger.info(
-      '[OpenRouter citations] no refs. ' +
-        JSON.stringify({
-          additionalKwargsKeys: Object.keys(output.additional_kwargs ?? {}),
-          responseMetadataKeys: Object.keys(output.response_metadata ?? {}),
-          contentType: Array.isArray(output.content) ? 'array' : typeof output.content,
-          additionalKwargsSample: JSON.stringify(output.additional_kwargs)?.slice(0, 1500),
-          responseMetadataSample: JSON.stringify(output.response_metadata)?.slice(0, 1500),
-          contentSample: JSON.stringify(output.content)?.slice(0, 1500),
-        }),
-    );
+    dumpDebugToFile('openrouter-citations', {
+      additionalKwargs: output.additional_kwargs,
+      response_metadata: output.response_metadata,
+      content: output.content,
+    });
   }
 
   return references;
