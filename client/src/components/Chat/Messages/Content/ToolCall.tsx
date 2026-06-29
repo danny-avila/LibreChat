@@ -14,6 +14,7 @@ import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useAppBridge } from '~/hooks/MCP';
+import { useIsMessagesViewReadOnly } from '~/Providers';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -30,6 +31,7 @@ const MCPAppView = React.memo(function MCPAppView({
   args: string | Record<string, unknown>;
 }) {
   const localize = useLocalize();
+  const readOnly = useIsMessagesViewReadOnly();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
@@ -75,6 +77,16 @@ const MCPAppView = React.memo(function MCPAppView({
   }
 
   const isAppBacked = isMcpAppResource(app);
+  // Read-only views (shared/search) don't fetch app HTML from the viewer's MCP server, so a
+  // server-fetched (resourceUri-only) app cannot render; show a placeholder instead of a failing
+  // iframe. Inline apps (with persisted HTML) still render.
+  if (isAppBacked && !app.text && readOnly) {
+    return (
+      <div className="my-2 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+        {localize('com_ui_mcp_app_shared_unavailable')}
+      </div>
+    );
+  }
   if (!isAppBacked && app.text) {
     return (
       <div className="my-2">

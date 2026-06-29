@@ -153,6 +153,14 @@ export function useAppBridge(
           return;
         }
         sandboxReadyHandled = true;
+        // Read-only views (shared/search) must not resolve app HTML from the viewer's MCP server,
+        // so only inline (persisted) HTML renders here; resourceUri-only apps stay display-only.
+        if (!resource.text && readOnlyRef.current) {
+          logger.debug(
+            '[MCP App] Read-only view: skipping server HTML fetch for resourceUri-only app',
+          );
+          return;
+        }
         try {
           // Inline mcp-app resources already carry their HTML, so use it directly instead of a
           // resources/read round trip; resourceUri-only apps are fetched from the server.

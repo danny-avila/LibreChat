@@ -412,6 +412,15 @@ Please follow these instructions when using tools from the respective MCP server
     return `${connection.createdAt}:${connection.toolListVersion}`;
   }
 
+  /**
+   * Freshness stamp for the advertised-resource cache: keyed on the connection instance (createdAt)
+   * and the resources/list_changed counter, so removed/added server resources re-authorize without
+   * waiting for a reconnect.
+   */
+  private resourceConnStamp(connection: MCPConnection): string {
+    return `${connection.createdAt}:${connection.resourceListVersion}`;
+  }
+
   private isToolCacheFresh(cacheKey: string, connection: MCPConnection): boolean {
     return (
       this.knownToolNamesCache.has(cacheKey) &&
@@ -444,12 +453,18 @@ Please follow these instructions when using tools from the respective MCP server
       if (isToolVisibilityModelOnly(tool)) {
         modelOnly.add(tool.name);
       }
-      const uri = getToolUiResourceUri(tool);
-      if (uri) {
-        const meta = tool._meta as
-          | { ui?: { csp?: UIResource['csp']; permissions?: UIResource['permissions'] } }
-          | undefined;
-        serverMap.set(tool.name, { uri, csp: meta?.ui?.csp, permissions: meta?.ui?.permissions });
+      // A malformed `_meta.ui.resourceUri` on one tool must not abort discovery for the whole
+      // server, so isolate the parse: a bad declaration only disables that tool's UI metadata.
+      try {
+        const uri = getToolUiResourceUri(tool);
+        if (uri) {
+          const meta = tool._meta as
+            | { ui?: { csp?: UIResource['csp']; permissions?: UIResource['permissions'] } }
+            | undefined;
+          serverMap.set(tool.name, { uri, csp: meta?.ui?.csp, permissions: meta?.ui?.permissions });
+        }
+      } catch (error) {
+        logger.warn(`[MCP] Ignoring invalid UI resource metadata on tool "${tool.name}":`, error);
       }
     }
     return { serverMap, modelOnly, knownNames };
@@ -926,7 +941,15 @@ Please follow these instructions when using tools from the respective MCP server
         `${logPrefix} Resource "${uri}" is not permitted.`,
       );
     }
-    if (advertised.uris.has(uri) || advertised.templates.some((pattern) => pattern.test(uri))) {
+    // Exact advertised URIs are trusted as-is. A template match must additionally not resolve to a
+    // path-traversal URI, so a parameterized template can never authorize an unrelated resource.
+    if (advertised.uris.has(uri)) {
+      return;
+    }
+    if (
+      !uri.split('/').includes('..') &&
+      advertised.templates.some((pattern) => pattern.test(uri))
+    ) {
       return;
     }
     throw new McpError(
@@ -941,7 +964,10 @@ Please follow these instructions when using tools from the respective MCP server
     cacheKey: string,
   ): Promise<{ uris: Set<string>; templates: RegExp[] }> {
     const cached = this.advertisedResourceCache.get(cacheKey);
-    if (cached && this.advertisedResourceConnStamp.get(cacheKey) === this.connStamp(connection)) {
+    if (
+      cached &&
+      this.advertisedResourceConnStamp.get(cacheKey) === this.resourceConnStamp(connection)
+    ) {
       return cached;
     }
 
@@ -991,7 +1017,7 @@ Please follow these instructions when using tools from the respective MCP server
 
     const entry = { uris, templates };
     this.advertisedResourceCache.set(cacheKey, entry);
-    this.advertisedResourceConnStamp.set(cacheKey, this.connStamp(connection));
+    this.advertisedResourceConnStamp.set(cacheKey, this.resourceConnStamp(connection));
     return entry;
   }
 
@@ -1014,7 +1040,34 @@ Please follow these instructions when using tools from the respective MCP server
           pattern += template.slice(i).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           break;
         }
-        pattern += '+#./;?&'.includes(template[i + 1] ?? '') ? '.+' : '[^/]+';
+        // Each RFC 6570 operator expands to a bounded shape. Never emit an unrestricted `.+`:
+        // because this regex is the allow-list for app-driven resources/read, a query/fragment
+        // template must not authorize unrelated path-traversal URIs.
+        switch (template[i + 1] ?? '') {
+          case '+': // reserved expansion: may legitimately include "/"
+            pattern += '[^?#]+';
+            break;
+          case '#': // fragment
+            pattern += '#[^\\s]*';
+            break;
+          case '/': // path segments
+            pattern += '(?:/[^/?#]+)+';
+            break;
+          case '.': // label(s)
+            pattern += '(?:\\.[^/?#]+)+';
+            break;
+          case ';': // path-style params
+            pattern += '(?:;[^/?#]+)+';
+            break;
+          case '?': // query (must start with a literal "?")
+            pattern += '\\?[^#]*';
+            break;
+          case '&': // query continuation
+            pattern += '&[^#]*';
+            break;
+          default: // simple expansion: a single value, no reserved chars
+            pattern += '[^/?#]+';
+        }
         i = end + 1;
       }
       return new RegExp(`^${pattern}$`);

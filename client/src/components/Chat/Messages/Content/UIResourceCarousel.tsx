@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { UIResource } from 'librechat-data-provider';
 import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
+import { useIsMessagesViewReadOnly } from '~/Providers';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 
@@ -19,6 +20,7 @@ function MCPAppCard({
 }) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const localize = useLocalize();
+  const readOnly = useIsMessagesViewReadOnly();
   const [loaded, setLoaded] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const [tornDown, setTornDown] = useState(false);
@@ -56,6 +58,14 @@ function MCPAppCard({
 
   if (tornDown) {
     return null;
+  }
+
+  if (isMcpAppResource(resource) && !resource.text && readOnly) {
+    return (
+      <div className="flex h-full w-full items-center justify-center rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-center text-sm text-text-secondary">
+        {localize('com_ui_mcp_app_shared_unavailable')}
+      </div>
+    );
   }
 
   if (isMcpAppResource(resource)) {

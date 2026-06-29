@@ -75,6 +75,11 @@ const readMCPResource = async (req, res) => {
     });
     return res.json(result);
   } catch (error) {
+    // A denied read (non-advertised / non-ui:// resource) is an expected client error, not a
+    // backend failure, so return 400 and skip the error-level log, mirroring appToolCall.
+    if (error && typeof error === 'object' && error.code === MCP_INVALID_REQUEST) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('[readMCPResource] Error:', error);
     return res.status(500).json({ error: 'Failed to read resource' });
   }

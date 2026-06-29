@@ -1,7 +1,7 @@
 import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
-import { useOptionalMessagesConversation } from '~/Providers';
+import { useOptionalMessagesConversation, useIsMessagesViewReadOnly } from '~/Providers';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
@@ -20,6 +20,7 @@ const SPINNER_TIMEOUT_MS = 10_000;
 export function MCPUIResource(props: MCPUIResourceProps) {
   const { resourceId } = props.node.properties;
   const localize = useLocalize();
+  const readOnly = useIsMessagesViewReadOnly();
   const { conversationId } = useOptionalMessagesConversation() ?? {};
   const conversationResourceMap = useConversationUIResources(conversationId ?? undefined);
   const uiResource = conversationResourceMap.get(resourceId ?? '');
@@ -76,6 +77,13 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   }
 
   try {
+    if (isMcpAppResource(uiResource) && !uiResource.text && readOnly) {
+      return (
+        <span className="mx-1 inline-flex w-full items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 align-middle text-sm text-text-secondary">
+          {localize('com_ui_mcp_app_shared_unavailable')}
+        </span>
+      );
+    }
     if (isMcpAppResource(uiResource)) {
       return (
         <span
