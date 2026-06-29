@@ -2,9 +2,14 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { UIResource } from 'librechat-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
+import { useIsMessagesViewReadOnly } from '~/Providers';
 
 jest.mock('~/hooks/MCP', () => ({
   useAppBridge: jest.fn(),
+}));
+
+jest.mock('~/Providers', () => ({
+  useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
 
 jest.mock('~/utils/mcpApps', () => ({
@@ -36,6 +41,7 @@ describe('UIResourceCarousel', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (useIsMessagesViewReadOnly as jest.Mock).mockReturnValue(false);
     Object.defineProperty(HTMLElement.prototype, 'scrollLeft', { configurable: true, value: 0 });
     Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
       configurable: true,
@@ -61,6 +67,15 @@ describe('UIResourceCarousel', () => {
     iframes.forEach((iframe) => {
       expect(iframe).toHaveAttribute('data-sandbox-url', 'http://localhost/sandbox');
     });
+  });
+
+  it('renders a placeholder instead of bridge iframes in read-only (shared) views', () => {
+    (useIsMessagesViewReadOnly as jest.Mock).mockReturnValue(true);
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
+    expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(0);
+    expect(screen.getAllByText(/aren't viewable in shared conversations/i).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('falls back to iframe for inline resources without toolName', () => {

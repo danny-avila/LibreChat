@@ -18,6 +18,7 @@ jest.mock('~/Providers', () => ({
   useMessageContext: jest.fn(),
   useOptionalMessagesConversation: jest.fn(),
   useOptionalMessagesOperations: jest.fn(),
+  useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
 jest.mock('~/data-provider');
 jest.mock('~/hooks');

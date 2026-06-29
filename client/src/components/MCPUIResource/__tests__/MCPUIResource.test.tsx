@@ -9,6 +9,7 @@ import { useLocalize } from '~/hooks';
 
 jest.mock('~/Providers', () => ({
   useOptionalMessagesConversation: jest.fn(),
+  useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
 jest.mock('~/hooks/Messages/useConversationUIResources');
 jest.mock('~/hooks', () => ({
