@@ -284,6 +284,7 @@ function getDefaultHandlers({
    * already streamed it.
    */
   const reasoningState = { streamed: false };
+  const streamTiming = { count: 0 };
   const reasoningSink = {
     emit: (data, messageId) => {
       if (reasoningState.streamed) {
@@ -388,6 +389,12 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        if (process.env.DEBUG_LLM_CONFIG) {
+          streamTiming.count += 1;
+          const text = data?.delta?.content;
+          const len = typeof text === 'string' ? text.length : JSON.stringify(text ?? '').length;
+          dumpDebugToFile('stream-timing', { n: streamTiming.count, at: Date.now(), len });
+        }
         aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });

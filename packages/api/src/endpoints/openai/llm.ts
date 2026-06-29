@@ -581,6 +581,9 @@ export function getOpenAILLMConfig({
       const payload = {
         model: llmConfig.model,
         useOpenRouter,
+        streaming: (llmConfig as Record<string, unknown>).streaming,
+        disableStreaming: (llmConfig as Record<string, unknown>).disableStreaming,
+        useResponsesApi: (llmConfig as Record<string, unknown>).useResponsesApi,
         reasoning_effort_input: reasoning_effort,
         llmConfig_reasoning: (llmConfig as Record<string, unknown>).reasoning,
         llmConfig_reasoning_effort: (llmConfig as Record<string, unknown>).reasoning_effort,
