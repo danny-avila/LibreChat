@@ -1250,14 +1250,17 @@ function collectCitationReferences(output) {
   }, []);
 
   if (process.env.DEBUG_OPENROUTER_CITATIONS && references.length === 0) {
-    logger.info('[OpenRouter citations] no references extracted from model-end message', {
-      additionalKwargsKeys: Object.keys(output.additional_kwargs ?? {}),
-      responseMetadataKeys: Object.keys(output.response_metadata ?? {}),
-      contentType: Array.isArray(output.content) ? 'array' : typeof output.content,
-      contentSample: JSON.stringify(output.content)?.slice(0, 2000),
-      additionalKwargsSample: JSON.stringify(output.additional_kwargs)?.slice(0, 2000),
-      responseMetadataSample: JSON.stringify(output.response_metadata)?.slice(0, 2000),
-    });
+    logger.info(
+      '[OpenRouter citations] no refs. ' +
+        JSON.stringify({
+          additionalKwargsKeys: Object.keys(output.additional_kwargs ?? {}),
+          responseMetadataKeys: Object.keys(output.response_metadata ?? {}),
+          contentType: Array.isArray(output.content) ? 'array' : typeof output.content,
+          additionalKwargsSample: JSON.stringify(output.additional_kwargs)?.slice(0, 1500),
+          responseMetadataSample: JSON.stringify(output.response_metadata)?.slice(0, 1500),
+          contentSample: JSON.stringify(output.content)?.slice(0, 1500),
+        }),
+    );
   }
 
   return references;

@@ -574,17 +574,20 @@ export function getOpenAILLMConfig({
   }
 
   if (process.env.DEBUG_LLM_CONFIG) {
-    logger.info('[DEBUG_LLM_CONFIG] outbound LLM config', {
-      model: llmConfig.model,
-      useOpenRouter,
-      reasoning_effort_input: reasoning_effort,
-      llmConfig_reasoning: (llmConfig as Record<string, unknown>).reasoning,
-      llmConfig_reasoning_effort: (llmConfig as Record<string, unknown>).reasoning_effort,
-      llmConfig_include_reasoning: (llmConfig as Record<string, unknown>).include_reasoning,
-      modelKwargs_reasoning: modelKwargs.reasoning,
-      modelKwargs_plugins: modelKwargs.plugins,
-      tools: tools.map((t) => (t as Record<string, unknown>).type ?? 'fn'),
-    });
+    logger.info(
+      '[DEBUG_LLM_CONFIG] ' +
+        JSON.stringify({
+          model: llmConfig.model,
+          useOpenRouter,
+          reasoning_effort_input: reasoning_effort,
+          llmConfig_reasoning: (llmConfig as Record<string, unknown>).reasoning,
+          llmConfig_reasoning_effort: (llmConfig as Record<string, unknown>).reasoning_effort,
+          llmConfig_include_reasoning: (llmConfig as Record<string, unknown>).include_reasoning,
+          modelKwargs_reasoning: modelKwargs.reasoning,
+          modelKwargs_plugins: modelKwargs.plugins,
+          tools: tools.map((t) => (t as Record<string, unknown>).type ?? 'fn'),
+        }),
+    );
   }
 
   if (!azure) {
