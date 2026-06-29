@@ -2,7 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  Tools,
+  StepTypes,
+  FileContext,
+  ErrorTypes,
+  ContentTypes,
+} = require('librechat-data-provider');
 
 /**
  * Writes a full debug payload to a file under the mounted logs dir, bypassing the
@@ -52,13 +58,19 @@ class ModelEndHandler {
    *   providers don't emit `additional_kwargs.signatures`, so capture is also
    *   a no-op for them even when the map is provided.
    */
-  constructor(collectedUsage, collectedThoughtSignatures = null, citationSink = null) {
+  constructor(
+    collectedUsage,
+    collectedThoughtSignatures = null,
+    citationSink = null,
+    reasoningSink = null,
+  ) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
     this.citationSink = citationSink;
+    this.reasoningSink = reasoningSink;
   }
 
   finalize(errorMessage) {
@@ -101,6 +113,10 @@ class ModelEndHandler {
 
       if (this.citationSink) {
         this.citationSink.emit(data, metadata?.run_id);
+      }
+
+      if (this.reasoningSink) {
+        this.reasoningSink.emit(data, metadata?.run_id);
       }
 
       const usage = data?.output?.usage_metadata;
@@ -259,11 +275,44 @@ function getDefaultHandlers({
     emit: (data, messageId) =>
       emitCitationAnnotations(res, streamId, data, messageId, artifactPromises),
   };
+  /**
+   * Tracks whether reasoning streamed as ON_REASONING_DELTA events this turn. Some
+   * providers (notably Anthropic via OpenRouter) don't stream reasoning — it only
+   * lands on the final message's `additional_kwargs.reasoning_content`. In that case
+   * the reasoningSink injects it at model-end so the "thinking" content part (and its
+   * UI bubble) still appears. The flag prevents double-rendering for providers that
+   * already streamed it.
+   */
+  const reasoningState = { streamed: false };
+  const reasoningSink = {
+    emit: (data, messageId) => {
+      if (reasoningState.streamed) {
+        return;
+      }
+      const ak = data?.output?.additional_kwargs;
+      const text =
+        typeof ak?.reasoning_content === 'string'
+          ? ak.reasoning_content
+          : typeof ak?.reasoning === 'string'
+            ? ak.reasoning
+            : '';
+      if (!text.trim()) {
+        return;
+      }
+      const reasoningData = {
+        runId: messageId,
+        delta: { content: [{ type: ContentTypes.THINK, [ContentTypes.THINK]: text }] },
+      };
+      aggregateContent({ event: GraphEvents.ON_REASONING_DELTA, data: reasoningData });
+      emitEvent(res, streamId, { event: GraphEvents.ON_REASONING_DELTA, data: reasoningData });
+    },
+  };
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(
       collectedUsage,
       collectedThoughtSignatures,
       citationSink,
+      reasoningSink,
     ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
@@ -355,9 +404,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
-        if (process.env.DEBUG_LLM_CONFIG) {
-          dumpDebugToFile('reasoning-delta', { delta: data?.delta });
-        }
+        reasoningState.streamed = true;
         aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
