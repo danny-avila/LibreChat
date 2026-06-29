@@ -31,6 +31,7 @@
 
       let innerFrame = null;
       let innerFrameBlobUrl = null;
+      let innerFrameNavigated = false;
       let readyInterval = null;
       const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
 
@@ -84,13 +85,13 @@
             createInnerFrame(msg.params);
             return;
           }
-          if (innerFrame && innerFrame.contentWindow) {
+          if (innerFrame && innerFrame.contentWindow && !innerFrameNavigated) {
             innerFrame.contentWindow.postMessage(msg, '*');
           }
           return;
         }
 
-        if (innerFrame && event.source === innerFrame.contentWindow) {
+        if (innerFrame && !innerFrameNavigated && event.source === innerFrame.contentWindow) {
           if (msg.method && msg.method.startsWith(SANDBOX_PREFIX)) {
             return;
           }
@@ -110,6 +111,25 @@
         }
 
         innerFrame = document.createElement('iframe');
+
+        // The first load is the blob document we created. A `allow-scripts` app can navigate its own
+        // frame; any further load means it left our document, so stop proxying and tear it down
+        // rather than forward host responses (proxied MCP data) to the navigated page.
+        innerFrameNavigated = false;
+        let frameLoads = 0;
+        innerFrame.addEventListener('load', () => {
+          frameLoads += 1;
+          if (frameLoads <= 1) {
+            return;
+          }
+          innerFrameNavigated = true;
+          if (innerFrameBlobUrl) {
+            URL.revokeObjectURL(innerFrameBlobUrl);
+            innerFrameBlobUrl = null;
+          }
+          innerFrame.remove();
+          innerFrame = null;
+        });
 
         // Strip allow-same-origin from the inner frame regardless of what the host requested.
         // Full cross-origin isolation requires the sandbox proxy to be served from a different
