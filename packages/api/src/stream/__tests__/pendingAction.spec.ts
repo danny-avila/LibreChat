@@ -326,7 +326,9 @@ describe('GenerationJobManager HITL resume metadata (round 19)', () => {
       (e) => 'event' in e && e.event === 'on_pending_action',
     );
     expect(pending).toBeDefined();
-    expect((pending as { data: { actionId: string } }).data.actionId).toBe(action.actionId);
+    expect((pending as unknown as { data: { actionId: string } }).data.actionId).toBe(
+      action.actionId,
+    );
     result.subscription?.unsubscribe();
   });
 

@@ -545,6 +545,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockInitializeClient).not.toHaveBeenCalled();
     });
+
+    it('releases the slot when the claim itself throws (store error, not a leak)', async () => {
+      // The increment happens before the claim, which runs before the run's own
+      // try/finally — a store error here must still release the slot or a retry of the
+      // still-paused approval gets spuriously 429'd until the counter TTL expires.
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockGenerationJobManager.approvals.resolve.mockRejectedValue(new Error('redis down'));
+      const res = await post(approveBody());
+      expect(res.status).toBe(500);
+      expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
   });
 
   describe('happy path: approve -> reconstruct -> resume -> finalize', () => {

@@ -80,6 +80,30 @@ const CHUNK_APPEND_LUA =
   'if cur < target then redis.call("EXPIRE", KEYS[1], target) end ' +
   'return 1';
 
+/**
+ * Persist the run-step timeline with the same paused-window TTL as the chunk stream.
+ * `saveRunSteps` SETs (overwrites) the whole array, so unlike the chunk append there's no
+ * prior key TTL worth preserving — but the write must still extend to the APPROVAL window
+ * when the job is paused (`status == "requires_action"`). Otherwise a run-step save that
+ * lands at/after a fast pause resets the key to the short running TTL, and a reload of a
+ * still-live approval after that window loses the tool/run-step timeline even though the
+ * approval remains resumable. Reads the paused window from the job key (which
+ * `transitionStatus` set); a normally-running job keeps the short running TTL.
+ *
+ *   KEYS: [runSteps, job]
+ *   ARGV: [runStepsJson, runningTtl]
+ */
+const RUNSTEPS_SAVE_LUA =
+  'redis.call("SET", KEYS[1], ARGV[1]) ' +
+  'local run = tonumber(ARGV[2]) ' +
+  'local target = run ' +
+  'if redis.call("HGET", KEYS[2], "status") == "requires_action" then ' +
+  'local jt = redis.call("TTL", KEYS[2]) ' +
+  'if jt > target then target = jt end ' +
+  'end ' +
+  'redis.call("EXPIRE", KEYS[1], target) ' +
+  'return 1';
+
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
 const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
 
@@ -263,6 +287,11 @@ export class RedisJobStore implements IJobStore {
       // metadata carries it, so a prior temporary turn's isTemporary=1 would otherwise
       // survive and a later non-temporary resume would save its response as temporary.
       'isTemporary',
+      // Same reasoning again: handleRunInterrupt only writes discoveredTools when THIS
+      // turn discovered ≥1 deferred tool, so a replacement turn that later pauses without
+      // its own discovery would otherwise inherit the prior run's tool names and force-load
+      // deferred tools it never discovered on resume.
+      'discoveredTools',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
@@ -1035,11 +1064,20 @@ export class RedisJobStore implements IJobStore {
   }
 
   /**
-   * Save run steps for resume state.
+   * Save run steps for resume state. Uses the paused-window TTL script so a run-step save
+   * landing at/after a HITL pause extends to the approval window instead of resetting the
+   * key to the short running TTL (which would drop the tool timeline on a reload of a
+   * still-live approval — mirrors the chunk-stream no-shrink behavior).
    */
   async saveRunSteps(streamId: string, runSteps: Agents.RunStep[]): Promise<void> {
-    const key = KEYS.runSteps(streamId);
-    await this.redis.set(key, JSON.stringify(runSteps), 'EX', this.ttl.running);
+    await this.redis.eval(
+      RUNSTEPS_SAVE_LUA,
+      2,
+      KEYS.runSteps(streamId),
+      KEYS.job(streamId),
+      JSON.stringify(runSteps),
+      String(this.ttl.running),
+    );
   }
 
   // ===== Consumer Group Methods =====

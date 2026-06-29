@@ -464,7 +464,19 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
   // re-execute tools and double-bill.
-  const claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
+  //
+  // The claim runs AFTER the slot increment above but BEFORE the run's own try/finally
+  // that releases it, so a store/Redis error here (unlike the clean `!claimed` branch)
+  // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
+  // the user when they retry the still-paused approval. Release the slot on that path too.
+  let claimed;
+  try {
+    claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
+  } catch (err) {
+    await decrementPendingRequest(userId);
+    logger.error('[ResumeAgentController] Failed to claim resume', err);
+    return res.status(500).json({ error: 'Failed to resume' });
+  }
   if (!claimed) {
     await decrementPendingRequest(userId);
     return res.status(409).json({ error: 'This action was already resolved or has expired' });

@@ -324,6 +324,43 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('saveRunSteps preserves a paused job’s extended TTL (does not reset to running)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `paused-runsteps-ttl-${Date.now()}`;
+      const runStepsKey = `stream:{${streamId}}:runsteps`;
+
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.saveRunSteps!(streamId, [{ id: 'step-1', type: 'tool_call' }] as never);
+
+      // Pause: transitionStatus extends the run-steps key TTL to the long approval window.
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(60);
+
+      // A run-step save landing AFTER the pause must NOT reset the key to the running TTL,
+      // or a reload of the still-live approval after that window loses the tool timeline.
+      await store.saveRunSteps!(streamId, [
+        { id: 'step-1', type: 'tool_call' },
+        { id: 'step-2', type: 'tool_call' },
+      ] as never);
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(60);
+      // The save still landed, so resume can read the full timeline.
+      const steps = await store.getRunSteps(streamId);
+      expect(steps.length).toBe(2);
+
+      await store.destroy();
+    });
+
     test('appendChunk gives the approval TTL when the chunk key did not exist at pause time', async () => {
       if (!ioredisClient) {
         return;
@@ -402,21 +439,28 @@ describe('RedisJobStore Integration Tests', () => {
       await store.initialize();
 
       const streamId = `stale-agent-${Date.now()}`;
-      // Turn 1: a saved agent in a temporary chat.
+      // Turn 1: a saved agent in a temporary chat that discovered a deferred tool.
       await store.createJob(streamId, 'user-1', streamId);
-      await store.updateJob(streamId, { agent_id: 'saved-agent-1', isTemporary: true });
+      await store.updateJob(streamId, {
+        agent_id: 'saved-agent-1',
+        isTemporary: true,
+        discoveredTools: ['deep_tool'],
+      });
       const turn1 = await store.getJob(streamId);
       expect(turn1?.agent_id).toBe('saved-agent-1');
       expect(turn1?.isTemporary).toBe(true);
+      expect(turn1?.discoveredTools).toEqual(['deep_tool']);
 
       // Turn 2 on the SAME conversation switches to an ephemeral / non-temporary turn.
       // The hash is keyed by conversationId, so without clearing, the old agent_id and
       // isTemporary would survive — the resume guard would reject the valid pause as a
-      // different agent, and the resumed response would be saved as temporary.
+      // different agent, and the resumed response would be saved as temporary. The stale
+      // discoveredTools would also force-load deferred tools this turn never discovered.
       await store.createJob(streamId, 'user-1', streamId);
       const turn2 = await store.getJob(streamId);
       expect(turn2?.agent_id).toBeUndefined();
       expect(turn2?.isTemporary).toBeUndefined();
+      expect(turn2?.discoveredTools).toBeUndefined();
 
       await store.destroy();
     });
