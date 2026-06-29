@@ -1,7 +1,13 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
-const { getUserMCPAuthMap } = require('@librechat/api');
+const {
+  getUserMCPAuthMap,
+  readAppResource,
+  listAppResources,
+  listAppResourceTemplates,
+  callAppTool,
+} = require('@librechat/api');
 const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getAppConfig } = require('~/server/services/Config');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -48,31 +54,13 @@ const readMCPResource = async (req, res) => {
     }
 
     const { serverName, uri } = req.body;
-    if (!serverName || !uri) {
-      return res.status(400).json({ error: 'serverName and uri are required' });
-    }
-    // The serverResources capability lets an app read any resource the connected MCP server
-    // exposes (ui:// templates plus supporting data such as file:// or custom schemes), so the
-    // proxy only requires a non-empty string and leaves resource authorization to the server.
-    if (typeof uri !== 'string' || uri.length === 0) {
-      return res.status(400).json({ error: 'uri must be a non-empty string' });
-    }
-
-    const mcpManager = getMCPManager();
-    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
-      req,
-      serverName,
-    );
-    const result = await mcpManager.readResource({
+    const ctx = {
       userId,
       serverName,
-      uri,
       user: req.user,
-      configServers,
-      customUserVars,
-      flowManager,
-      tokenMethods,
-    });
+      ...(await resolveAppContext(req, serverName)),
+    };
+    const result = await readAppResource(getMCPManager(), ctx, uri);
     return res.json(result);
   } catch (error) {
     // A denied read (non-advertised / non-ui:// resource) is an expected client error, not a
@@ -94,30 +82,18 @@ const listMCPResources = async (req, res) => {
     }
 
     const { serverName, cursor } = req.body;
-    if (!serverName) {
-      return res.status(400).json({ error: 'serverName is required' });
-    }
-    if (cursor !== undefined && typeof cursor !== 'string') {
-      return res.status(400).json({ error: 'cursor must be a string' });
-    }
-
-    const mcpManager = getMCPManager();
-    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
-      req,
-      serverName,
-    );
-    const result = await mcpManager.listResources({
+    const ctx = {
       userId,
       serverName,
       user: req.user,
-      cursor,
-      configServers,
-      customUserVars,
-      flowManager,
-      tokenMethods,
-    });
+      ...(await resolveAppContext(req, serverName)),
+    };
+    const result = await listAppResources(getMCPManager(), ctx, cursor);
     return res.json(result);
   } catch (error) {
+    if (error && typeof error === 'object' && error.code === MCP_INVALID_REQUEST) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('[listMCPResources] Error:', error);
     return res.status(500).json({ error: 'Failed to list resources' });
   }
@@ -132,30 +108,18 @@ const listMCPResourceTemplates = async (req, res) => {
     }
 
     const { serverName, cursor } = req.body;
-    if (!serverName) {
-      return res.status(400).json({ error: 'serverName is required' });
-    }
-    if (cursor !== undefined && typeof cursor !== 'string') {
-      return res.status(400).json({ error: 'cursor must be a string' });
-    }
-
-    const mcpManager = getMCPManager();
-    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
-      req,
-      serverName,
-    );
-    const result = await mcpManager.listResourceTemplates({
+    const ctx = {
       userId,
       serverName,
       user: req.user,
-      cursor,
-      configServers,
-      customUserVars,
-      flowManager,
-      tokenMethods,
-    });
+      ...(await resolveAppContext(req, serverName)),
+    };
+    const result = await listAppResourceTemplates(getMCPManager(), ctx, cursor);
     return res.json(result);
   } catch (error) {
+    if (error && typeof error === 'object' && error.code === MCP_INVALID_REQUEST) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('[listMCPResourceTemplates] Error:', error);
     return res.status(500).json({ error: 'Failed to list resource templates' });
   }
@@ -170,33 +134,13 @@ const appToolCall = async (req, res) => {
     }
 
     const { serverName, toolName, arguments: toolArgs } = req.body;
-    if (!serverName || !toolName) {
-      return res.status(400).json({ error: 'serverName and toolName are required' });
-    }
-    if (
-      toolArgs !== undefined &&
-      toolArgs !== null &&
-      (typeof toolArgs !== 'object' || Array.isArray(toolArgs))
-    ) {
-      return res.status(400).json({ error: 'arguments must be an object' });
-    }
-
-    const mcpManager = getMCPManager();
-    const { configServers, customUserVars, flowManager, tokenMethods } = await resolveAppContext(
-      req,
-      serverName,
-    );
-    const result = await mcpManager.appToolCall({
+    const ctx = {
       userId,
       serverName,
-      toolName,
-      toolArguments: toolArgs || {},
       user: req.user,
-      configServers,
-      customUserVars,
-      flowManager,
-      tokenMethods,
-    });
+      ...(await resolveAppContext(req, serverName)),
+    };
+    const result = await callAppTool(getMCPManager(), ctx, toolName, toolArgs);
     return res.json(result);
   } catch (error) {
     logger.error('[appToolCall] Error:', error);

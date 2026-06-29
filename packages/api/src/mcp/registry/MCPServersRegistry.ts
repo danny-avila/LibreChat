@@ -94,9 +94,12 @@ export interface MCPAllowlistContext {
  * dependency. Reads the ALS tenant context internally; pass the acting user to also pick up
  * user/role-scoped overrides.
  */
-export type MCPAllowlistResolver = (
-  ctx?: MCPAllowlistContext,
-) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+export type MCPAllowlistResolver = (ctx?: MCPAllowlistContext) => Promise<{
+  allowedDomains?: string[] | null;
+  allowedAddresses?: string[] | null;
+  /** Per-request `mcpSettings.apps`. Omit to inherit the YAML base; `false` disables apps. */
+  appsEnabled?: boolean;
+}>;
 
 /** Effective allowlists resolved for a request. */
 interface ResolvedMCPAllowlists {
@@ -244,14 +247,22 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null;
     allowedAddresses?: string[] | null;
     useSSRFProtection: boolean;
+    appsEnabled: boolean;
   }> {
     let allowedDomains = this.allowedDomains;
     let allowedAddresses = this.allowedAddresses;
+    // MCP Apps, like the allowlists, are tenant/principal-scoped: resolve the per-request value so a
+    // tenant/role/user override of `mcpSettings.apps` is honored. Inherit the YAML base when the
+    // resolver omits it; fall back to the base entirely if the resolver is absent or fails.
+    let appsEnabled = this.getAppsEnabled();
     if (this.allowlistResolver) {
       try {
         const resolved = await this.allowlistResolver(ctx);
         allowedDomains = resolved.allowedDomains;
         allowedAddresses = resolved.allowedAddresses;
+        if (resolved.appsEnabled !== undefined) {
+          appsEnabled = resolved.appsEnabled !== false;
+        }
       } catch (error) {
         logger.warn(
           '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
@@ -263,6 +274,7 @@ export class MCPServersRegistry {
       allowedDomains,
       allowedAddresses,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+      appsEnabled,
     };
   }
 

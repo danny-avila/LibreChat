@@ -59,6 +59,7 @@ const mockRegistryInstance = {
     allowedDomains: mockGetAllowedDomains(),
     allowedAddresses: mockGetAllowedAddresses(),
     useSSRFProtection: mockShouldEnableSSRFProtection(),
+    appsEnabled: true,
   })),
 };
 

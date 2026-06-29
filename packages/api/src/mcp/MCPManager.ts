@@ -660,7 +660,7 @@ Please follow these instructions when using tools from the respective MCP server
         resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
       }
       if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
-        const { allowedDomains, allowedAddresses, useSSRFProtection } =
+        const { allowedDomains, allowedAddresses, useSSRFProtection, appsEnabled } =
           await registry.resolveAllowlists({ userId, role: user?.role });
         cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
           {
@@ -671,7 +671,7 @@ Please follow these instructions when using tools from the respective MCP server
             useSSRFProtection,
             allowedDomains,
             allowedAddresses,
-            enableApps: registry.getAppsEnabled(),
+            enableApps: appsEnabled,
           },
           {
             useOAuth: true,
@@ -731,9 +731,18 @@ Please follow these instructions when using tools from the respective MCP server
             requiresEphemeralUserConnection(rawConfig),
           );
           if (resourceMeta) {
-            logger.debug(
-              `[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`,
-            );
+            // App-backed tool: honor the per-request `mcpSettings.apps` setting so a tenant that
+            // disabled apps gets no UI resource attached (it would otherwise render as a broken
+            // iframe once the gated app endpoints reject the follow-up calls). Resolved lazily here
+            // so ordinary, non-app tools skip the per-request lookup.
+            const { appsEnabled } = await registry.resolveAllowlists({ userId, role: user?.role });
+            if (!appsEnabled) {
+              resourceMeta = undefined;
+            } else {
+              logger.debug(
+                `[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`,
+              );
+            }
           }
         } catch {
           // Non-critical -- tools render without the app UI
@@ -1042,8 +1051,20 @@ Please follow these instructions when using tools from the respective MCP server
         }
         // Each RFC 6570 operator expands to a bounded shape. Never emit an unrestricted `.+`:
         // because this regex is the allow-list for app-driven resources/read, a query/fragment
-        // template must not authorize unrelated path-traversal URIs.
-        switch (template[i + 1] ?? '') {
+        // template must not authorize unrelated reads or path traversal.
+        const expr = template.slice(i + 1, end);
+        const op = expr[0] ?? '';
+        // Variable names declared in this expansion (operator + `:prefix`/`*explode` modifiers
+        // stripped), used to constrain query expansions to their declared keys rather than an
+        // open query string.
+        const keys = expr
+          .replace(/^[+#./;?&]/, '')
+          .split(',')
+          .map((name) => name.split(/[:*]/)[0].trim())
+          .filter(Boolean)
+          .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+          .join('|');
+        switch (op) {
           case '+': // reserved expansion: may legitimately include "/"
             pattern += '[^?#]+';
             break;
@@ -1059,11 +1080,11 @@ Please follow these instructions when using tools from the respective MCP server
           case ';': // path-style params
             pattern += '(?:;[^/?#]+)+';
             break;
-          case '?': // query (must start with a literal "?")
-            pattern += '\\?[^#]*';
+          case '?': // query: only the declared parameter names, in any order
+            pattern += keys ? `\\?(?:${keys})=[^#&]*(?:&(?:${keys})=[^#&]*)*` : '\\?[^#]*';
             break;
-          case '&': // query continuation
-            pattern += '&[^#]*';
+          case '&': // query continuation: only the declared parameter names
+            pattern += keys ? `(?:&(?:${keys})=[^#&]*)+` : '&[^#]*';
             break;
           default: // simple expansion: a single value, no reserved chars
             pattern += '[^/?#]+';

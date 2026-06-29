@@ -98,6 +98,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
             allowedDomains: null,
             allowedAddresses: null,
             useSSRFProtection: false,
+            appsEnabled: true,
           }),
         });
 
@@ -176,6 +177,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
             allowedDomains: null,
             allowedAddresses: null,
             useSSRFProtection: false,
+            appsEnabled: true,
           }),
         });
 
@@ -263,6 +265,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
             allowedDomains: null,
             allowedAddresses: null,
             useSSRFProtection: false,
+            appsEnabled: true,
           }),
         });
 
@@ -369,6 +372,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
             allowedDomains: null,
             allowedAddresses: null,
             useSSRFProtection: false,
+            appsEnabled: true,
           }),
         });
 
