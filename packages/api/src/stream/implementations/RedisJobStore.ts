@@ -39,6 +39,71 @@ const JOB_CAS_LUA =
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'return 1';
 
+/**
+ * XADD a chunk + set the chunk-stream TTL to the right window WITHOUT ever shrinking it.
+ *
+ * During a live stream the running TTL is refreshed on every chunk. But a job paused
+ * for HITL review must keep its chunk stream alive for the whole approval window, not
+ * the ~20m running TTL — otherwise the pre-pause aggregated content (tool call + earlier
+ * text) is evicted before the user resolves and `getResumeState()` loses it.
+ *
+ * `transitionStatus` extends the chunk-key TTL to the approval window at pause time, but
+ * that alone is not enough:
+ *   1. The pause's `EXPIRE chunks` is a no-op if the chunk key does not exist yet — and
+ *      `appendChunk` is fire-and-forget, so the first chunk's XADD can land AFTER the
+ *      pause, or an ask-user pause can occur before any chunk was ever persisted.
+ *   2. The `on_pending_action` chunk (and any chunk that races in after the pause) would
+ *      otherwise reset an already-extended TTL back to the short running TTL.
+ * So this script derives the target window itself: the running TTL normally, but when the
+ * job hash is paused (`status == "requires_action"`) it takes the larger of the running
+ * TTL and the job key's own remaining TTL (which `transitionStatus` set to the approval
+ * window). It only ever EXTENDS — `cur < target` — so a normally-running stream keeps the
+ * round-10 extend-only behavior and is never inflated to the approval window.
+ *
+ * Reading the paused window from the job key (rather than always max-ing against it) is
+ * what keeps a normal running run on the short TTL: TTL(jobKey) is only the long approval
+ * window while paused; for a running job the job key carries the running TTL, so target
+ * stays `run`.
+ *
+ *   KEYS: [chunks, job]
+ *   ARGV: [eventJson, runningTtl]
+ */
+const CHUNK_APPEND_LUA =
+  'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
+  'local run = tonumber(ARGV[2]) ' +
+  'local target = run ' +
+  'if redis.call("HGET", KEYS[2], "status") == "requires_action" then ' +
+  'local jt = redis.call("TTL", KEYS[2]) ' +
+  'if jt > target then target = jt end ' +
+  'end ' +
+  'local cur = redis.call("TTL", KEYS[1]) ' +
+  'if cur < target then redis.call("EXPIRE", KEYS[1], target) end ' +
+  'return 1';
+
+/**
+ * Persist the run-step timeline with the same paused-window TTL as the chunk stream.
+ * `saveRunSteps` SETs (overwrites) the whole array, so unlike the chunk append there's no
+ * prior key TTL worth preserving — but the write must still extend to the APPROVAL window
+ * when the job is paused (`status == "requires_action"`). Otherwise a run-step save that
+ * lands at/after a fast pause resets the key to the short running TTL, and a reload of a
+ * still-live approval after that window loses the tool/run-step timeline even though the
+ * approval remains resumable. Reads the paused window from the job key (which
+ * `transitionStatus` set); a normally-running job keeps the short running TTL.
+ *
+ *   KEYS: [runSteps, job]
+ *   ARGV: [runStepsJson, runningTtl]
+ */
+const RUNSTEPS_SAVE_LUA =
+  'redis.call("SET", KEYS[1], ARGV[1]) ' +
+  'local run = tonumber(ARGV[2]) ' +
+  'local target = run ' +
+  'if redis.call("HGET", KEYS[2], "status") == "requires_action" then ' +
+  'local jt = redis.call("TTL", KEYS[2]) ' +
+  'if jt > target then target = jt end ' +
+  'end ' +
+  'redis.call("EXPIRE", KEYS[1], target) ' +
+  'return 1';
+
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
 const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
 
@@ -206,14 +271,27 @@ export class RedisJobStore implements IJobStore {
     const key = KEYS.job(streamId);
     const userJobsKey = KEYS.userJobs(userId, tenantId);
 
-    // A reused streamId overlays onto any existing hash, so paused-run fields
-    // from a prior generation could survive. Drop the HITL fields so the fresh
-    // running job never exposes stale approval metadata and cleanup keys off the
-    // new createdAt rather than a leftover lastActiveAt.
+    // A reused streamId overlays onto any existing hash, so per-turn fields from a
+    // prior generation could survive. Drop the HITL fields so the fresh running job
+    // never exposes stale approval metadata and cleanup keys off the new createdAt
+    // rather than a leftover lastActiveAt. `agent_id` is included because
+    // updateMetadata only writes it when truthy — without clearing it here, a
+    // conversation that switches from a saved agent to an ephemeral/no-agent turn
+    // would keep the old agent_id and the resume guard would reject the valid pause.
     const staleHitlFields: Array<keyof SerializableJobData> = [
       'pendingAction',
       'pendingActionId',
       'lastActiveAt',
+      'agent_id',
+      // Same reasoning as agent_id: updateMetadata only writes isTemporary when the new
+      // metadata carries it, so a prior temporary turn's isTemporary=1 would otherwise
+      // survive and a later non-temporary resume would save its response as temporary.
+      'isTemporary',
+      // Same reasoning again: handleRunInterrupt only writes discoveredTools when THIS
+      // turn discovered ≥1 deferred tool, so a replacement turn that later pauses without
+      // its own discovery would otherwise inherit the prior run's tool names and force-load
+      // deferred tools it never discovered on resume.
+      'discoveredTools',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
@@ -630,6 +708,12 @@ export class RedisJobStore implements IJobStore {
                 error: 'Approval expired before a decision was made',
                 completedAt: Date.now(),
               },
+              // Scope the CAS to the action we observed as stale: if the user resolved it
+              // and the run re-paused on a fresh action between the read and here, the
+              // pendingActionId no longer matches and this no-ops instead of aborting the
+              // valid new pause. (Undefined for a missing/malformed pendingAction — nothing
+              // to protect — so it falls back to the status-only check.)
+              expectActionId: job.pendingAction?.actionId,
             });
             return 1;
           }
@@ -937,14 +1021,24 @@ export class RedisJobStore implements IJobStore {
    */
   async appendChunk(streamId: string, event: unknown): Promise<void> {
     const key = KEYS.chunks(streamId);
-    // Pipeline XADD + EXPIRE in a single round-trip.
-    // EXPIRE is O(1) and idempotent — refreshing TTL on every chunk is better than
-    // only setting it once, since the original approach could let the TTL expire
-    // during long-running streams.
-    const pipeline = this.redis.pipeline();
-    pipeline.xadd(key, '*', 'event', JSON.stringify(event));
-    pipeline.expire(key, this.ttl.running);
-    await pipeline.exec();
+    const jobKey = KEYS.job(streamId);
+    // XADD + derive-and-extend-only EXPIRE in a single atomic eval. Refreshing the TTL on
+    // every chunk (vs only once) keeps the key alive through long streams, but it must
+    // NEVER shrink an already-longer TTL — a paused (requires_action) job needs this key
+    // to live for the whole approval window, and the on_pending_action append (or any
+    // chunk that lands after the pause) would otherwise reset it to the short running TTL.
+    // The script reads the paused window from the job key, so it bumps to the approval TTL
+    // even when the pause's own EXPIRE no-op'd because this key didn't exist yet, while a
+    // normally-running run still settles on the short running TTL. Both keys share the
+    // {streamId} hash tag, so the 2-key eval stays on one slot under Redis Cluster.
+    await this.redis.eval(
+      CHUNK_APPEND_LUA,
+      2,
+      key,
+      jobKey,
+      JSON.stringify(event),
+      String(this.ttl.running),
+    );
   }
 
   /**
@@ -970,11 +1064,20 @@ export class RedisJobStore implements IJobStore {
   }
 
   /**
-   * Save run steps for resume state.
+   * Save run steps for resume state. Uses the paused-window TTL script so a run-step save
+   * landing at/after a HITL pause extends to the approval window instead of resetting the
+   * key to the short running TTL (which would drop the tool timeline on a reload of a
+   * still-live approval — mirrors the chunk-stream no-shrink behavior).
    */
   async saveRunSteps(streamId: string, runSteps: Agents.RunStep[]): Promise<void> {
-    const key = KEYS.runSteps(streamId);
-    await this.redis.set(key, JSON.stringify(runSteps), 'EX', this.ttl.running);
+    await this.redis.eval(
+      RUNSTEPS_SAVE_LUA,
+      2,
+      KEYS.runSteps(streamId),
+      KEYS.job(streamId),
+      JSON.stringify(runSteps),
+      String(this.ttl.running),
+    );
   }
 
   // ===== Consumer Group Methods =====
@@ -1215,6 +1318,10 @@ export class RedisJobStore implements IJobStore {
       iconURL: data.iconURL || undefined,
       model: data.model || undefined,
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
+      agent_id: data.agent_id || undefined,
+      isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
+      // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
+      discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,

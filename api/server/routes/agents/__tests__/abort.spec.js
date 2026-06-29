@@ -293,6 +293,40 @@ describe('Agent Abort Endpoint', () => {
         );
       });
 
+      it('saves the aborted partial as temporary from job metadata, not the request body', async () => {
+        const jobStreamId = 'test-stream-123';
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+
+        // The job was a temporary chat; the stop button posts only conversationId.
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: {
+            userMessage: { messageId: 'user-msg-123' },
+            responseMessageId: 'response-msg-456',
+            conversationId: jobStreamId,
+            isTemporary: true,
+          },
+          content: [{ type: 'text', text: 'Partial...' }],
+          text: 'Partial...',
+        });
+
+        mockSaveMessage.mockResolvedValue();
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId }); // no isTemporary in body
+
+        expect(response.status).toBe(200);
+        expect(mockSaveMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ isTemporary: true }),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
       it('should handle saveMessage errors gracefully', async () => {
         const jobStreamId = 'test-stream-123';
 

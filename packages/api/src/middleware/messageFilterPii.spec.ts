@@ -89,6 +89,47 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  const SK = 'sk-proj-FAKE1234567890ABCDEF';
+
+  it('rejects a resume ask-user answer containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware({}, { answer: `the key is ${SK}` });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a tool-approval decision responseText containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'respond', responseText: `use ${SK}` }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a reject-reason containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'reject', reason: `leaked ${SK}` }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects edited tool arguments containing a blocked token (stringified)', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'edit', editedArguments: { token: SK } }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('passes a clean resume answer through', () => {
+    const { capturedRes, nextCalls } = runMiddleware({}, { answer: 'name it report.pdf' });
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
   it('honors a starterPatterns subset (sk passes when only bearer is enabled)', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       { starterPatterns: ['bearer_header'] },
