@@ -1279,7 +1279,7 @@ describe('MCPManager', () => {
       });
     });
 
-    it('forwards configServers, flowManager, and tokenMethods to getConnection', async () => {
+    it('routes config-override app requests through a request-scoped connection honoring the override', async () => {
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
         source: 'yaml',
         type: 'sse',
@@ -1295,8 +1295,8 @@ describe('MCPManager', () => {
       } as unknown as MCPConnection;
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const getConnectionSpy = jest
-        .spyOn(manager, 'getConnection')
+      const getUserConnectionSpy = jest
+        .spyOn(manager, 'getUserConnection')
         .mockResolvedValue(mockConnection);
 
       const flowManager = {} as never;
@@ -1319,8 +1319,8 @@ describe('MCPManager', () => {
         'user-123',
         configServers,
       );
-      expect(getConnectionSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ flowManager, tokenMethods }),
+      expect(getUserConnectionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'cfg-server', flowManager, tokenMethods }),
       );
     });
 
@@ -1510,6 +1510,56 @@ describe('MCPManager', () => {
 
       const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
       expect(methods).not.toContain('resources/read');
+    });
+
+    it('rejects a query value that smuggles an undeclared parameter past a simple-variable template', async () => {
+      const request = jest.fn().mockImplementation((req: { method: string }) => {
+        if (req.method === 'resources/list') {
+          return Promise.resolve({ resources: [] });
+        }
+        if (req.method === 'resources/templates/list') {
+          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'search://items?q={q}' }] });
+        }
+        return Promise.resolve({ contents: [] });
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await expect(
+        manager.readResource({
+          userId: 'user-123',
+          serverName: 'srv',
+          uri: 'search://items?q=foo&admin=true',
+          user: mockUser as IUser,
+        }),
+      ).rejects.toThrow(/not advertised/);
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).not.toContain('resources/read');
+    });
+
+    it('allows a single query value that matches a simple-variable template', async () => {
+      const request = jest.fn().mockImplementation((req: { method: string }) => {
+        if (req.method === 'resources/list') {
+          return Promise.resolve({ resources: [] });
+        }
+        if (req.method === 'resources/templates/list') {
+          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'search://items?q={q}' }] });
+        }
+        return Promise.resolve({ contents: [] });
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await manager.readResource({
+        userId: 'user-123',
+        serverName: 'srv',
+        uri: 'search://items?q=foo',
+        user: mockUser as IUser,
+      });
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).toContain('resources/read');
     });
   });
 

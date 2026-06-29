@@ -195,7 +195,7 @@ export class MCPManager extends UserConnectionManager {
     }
 
     const registry = MCPServersRegistry.getInstance();
-    const { allowedDomains, allowedAddresses, useSSRFProtection } =
+    const { allowedDomains, allowedAddresses, useSSRFProtection, appsEnabled } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
       config: serverConfig,
@@ -217,7 +217,7 @@ export class MCPManager extends UserConnectionManager {
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
-      enableApps: registry.getAppsEnabled(),
+      enableApps: appsEnabled,
     };
 
     const finalizeDiscoveryResult = async (
@@ -837,14 +837,28 @@ Please follow these instructions when using tools from the respective MCP server
       }
     }
 
-    const connection = await this.getConnection({
-      serverName,
-      user,
-      serverConfig: rawConfig ?? undefined,
-      customUserVars,
-      flowManager,
-      tokenMethods,
-    });
+    // A config-tier override for this name resolves above via configServers, but the shared
+    // app-connection pool resolves configs without it and would return the base server's
+    // connection. Route overrides through a request-scoped connection so iframe reads/calls reach
+    // the overridden server rather than the cached base one.
+    const hasConfigOverride = !!user && configServers?.[serverName] != null;
+    const connection = hasConfigOverride
+      ? await this.getUserConnection({
+          serverName,
+          user,
+          serverConfig: rawConfig ?? undefined,
+          customUserVars,
+          flowManager,
+          tokenMethods,
+        })
+      : await this.getConnection({
+          serverName,
+          user,
+          serverConfig: rawConfig ?? undefined,
+          customUserVars,
+          flowManager,
+          tokenMethods,
+        });
 
     // Refresh headers when the config can be fully resolved: env-var-only configs always, and
     // customUserVar configs only when the route supplied those vars. Without them, re-processing
@@ -1124,8 +1138,10 @@ Please follow these instructions when using tools from the respective MCP server
           case '&': // query continuation: only the declared parameter names
             pattern += keys ? `(?:&(?:${keys})=[^#&]*)+` : '&[^#]*';
             break;
-          default: // simple expansion: a single value, no reserved chars
-            pattern += '[^/?#]+';
+          default: // simple expansion: a single value. RFC 6570 percent-encodes reserved chars,
+            // so a real value never contains a raw `&` or `=`; excluding them stops a query value
+            // like `q={q}` from matching `q=foo&admin=true` and authorizing an undeclared param.
+            pattern += '[^/?#&=]+';
         }
         i = end + 1;
       }
