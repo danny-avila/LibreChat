@@ -77,9 +77,7 @@ const MCPAppView = React.memo(function MCPAppView({
   }
 
   const isAppBacked = isMcpAppResource(app);
-  // Read-only views (shared/search) don't fetch app HTML from the viewer's MCP server, so a
-  // server-fetched (resourceUri-only) app cannot render; show a placeholder instead of a failing
-  // iframe. Inline apps (with persisted HTML) still render.
+  // Read-only views don't fetch app HTML, so a resourceUri-only app shows a placeholder.
   if (isAppBacked && !app.text && readOnly) {
     return (
       <div className="my-2 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">

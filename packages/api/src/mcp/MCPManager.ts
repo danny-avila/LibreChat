@@ -79,9 +79,8 @@ export class MCPManager extends UserConnectionManager {
    */
   private readonly toolCacheConnStamp = new Map<string, string>();
   /**
-   * Per-connection snapshot of the resource URIs and URI templates a server advertises, used to
-   * authorize app-driven `resources/read` so an embedded app can only proxy resources the server
-   * publicly exposes — not arbitrary `file://`/`secret://` URIs it happens to be reachable for.
+   * Snapshot of the resources a server advertises, used to authorize app-driven `resources/read`
+   * so an embedded app can only proxy publicly exposed resources, not arbitrary reachable URIs.
    */
   private readonly advertisedResourceCache = new Map<
     string,
@@ -89,7 +88,6 @@ export class MCPManager extends UserConnectionManager {
   >();
 
   private readonly advertisedResourceConnStamp = new Map<string, string>();
-  /** Bounds the resources/list + templates/list pagination loops when snapshotting advertised resources. */
   private static readonly RESOURCE_LIST_MAX_PAGES = 20;
 
   /** Creates and initializes the singleton MCPManager instance */
@@ -404,18 +402,16 @@ Please follow these instructions when using tools from the respective MCP server
   }
 
   /**
-   * App-level connections can be transparently recreated when a server config changes
-   * (ConnectionsRepository.get), so cached tool metadata is only valid while it was built
-   * from the current connection instance.
+   * App-level connections can be recreated when a server config changes, so cached tool metadata
+   * is only valid while it was built from the current connection instance.
    */
   private connStamp(connection: MCPConnection): string {
     return `${connection.createdAt}:${connection.toolListVersion}`;
   }
 
   /**
-   * Freshness stamp for the advertised-resource cache: keyed on the connection instance (createdAt)
-   * and the resources/list_changed counter, so removed/added server resources re-authorize without
-   * waiting for a reconnect.
+   * Freshness stamp keyed on the connection instance and the resources/list_changed counter, so
+   * removed or added server resources re-authorize without waiting for a reconnect.
    */
   private resourceConnStamp(connection: MCPConnection): string {
     return `${connection.createdAt}:${connection.resourceListVersion}`;
@@ -453,8 +449,8 @@ Please follow these instructions when using tools from the respective MCP server
       if (isToolVisibilityModelOnly(tool)) {
         modelOnly.add(tool.name);
       }
-      // A malformed `_meta.ui.resourceUri` on one tool must not abort discovery for the whole
-      // server, so isolate the parse: a bad declaration only disables that tool's UI metadata.
+      // A malformed `_meta.ui.resourceUri` on one tool only disables that tool's UI metadata,
+      // never aborting discovery for the whole server.
       try {
         const uri = getToolUiResourceUri(tool);
         if (uri) {
@@ -731,10 +727,9 @@ Please follow these instructions when using tools from the respective MCP server
             requiresEphemeralUserConnection(rawConfig),
           );
           if (resourceMeta) {
-            // App-backed tool: honor the per-request `mcpSettings.apps` setting so a tenant that
-            // disabled apps gets no UI resource attached (it would otherwise render as a broken
-            // iframe once the gated app endpoints reject the follow-up calls). Resolved lazily here
-            // so ordinary, non-app tools skip the per-request lookup.
+            // Honor the per-request apps setting so a tenant that disabled apps gets no UI resource
+            // (it would otherwise render as a broken iframe once the gated app endpoints reject the
+            // follow-up calls). Resolved lazily so non-app tools skip the per-request lookup.
             const { appsEnabled } = await registry.resolveAllowlists({ userId, role: user?.role });
             if (!appsEnabled) {
               resourceMeta = undefined;
@@ -745,7 +740,7 @@ Please follow these instructions when using tools from the respective MCP server
             }
           }
         } catch {
-          // Non-critical -- tools render without the app UI
+          /* empty */
         }
       }
 
@@ -785,10 +780,6 @@ Please follow these instructions when using tools from the respective MCP server
     }
   }
 
-  /**
-   * Reads a UI resource from an MCP server.
-   * Used by MCP Apps iframes to fetch additional resources via the host.
-   */
   /**
    * Resolves the same registry-backed config the original tool call used and hands it to
    * getConnection so config-source servers resolve, then refreshes headers for non-DB-sourced
@@ -950,14 +941,15 @@ Please follow these instructions when using tools from the respective MCP server
         `${logPrefix} Resource "${uri}" is not permitted.`,
       );
     }
-    // Exact advertised URIs are trusted as-is. A template match must additionally not resolve to a
-    // path-traversal URI, so a parameterized template can never authorize an unrelated resource.
     if (advertised.uris.has(uri)) {
       return;
     }
+    // Match templates in canonical (fully percent-decoded) space, never raw bytes, so an encoded
+    // traversal like `%2e%2e%2f` cannot slip past a template guard.
+    const canonicalUri = MCPManager.canonicalizeUri(uri);
     if (
-      !uri.split('/').includes('..') &&
-      advertised.templates.some((pattern) => pattern.test(uri))
+      canonicalUri != null &&
+      advertised.templates.some((pattern) => pattern.test(canonicalUri))
     ) {
       return;
     }
@@ -1007,7 +999,16 @@ Please follow these instructions when using tools from the respective MCP server
           { timeout: connection.timeout },
         );
         for (const template of result.resourceTemplates) {
-          const pattern = MCPManager.uriTemplateToRegExp(template.uriTemplate);
+          // Compile templates in the same decoded space the requested URI is canonicalized into,
+          // so matching is encoding-agnostic; fall back to the raw template if it is not valid
+          // percent-encoding.
+          let templateStr = template.uriTemplate;
+          try {
+            templateStr = decodeURIComponent(templateStr);
+          } catch {
+            /* keep raw template */
+          }
+          const pattern = MCPManager.uriTemplateToRegExp(templateStr);
           if (pattern) {
             templates.push(pattern);
           }
@@ -1028,6 +1029,31 @@ Please follow these instructions when using tools from the respective MCP server
     this.advertisedResourceCache.set(cacheKey, entry);
     this.advertisedResourceConnStamp.set(cacheKey, this.resourceConnStamp(connection));
     return entry;
+  }
+
+  /**
+   * Fully percent-decodes a URI to the canonical form a server resolves. Returns null when it
+   * cannot be decoded or contains a relative (`.`/`..`) segment, so neither encoded traversal nor
+   * relative segments can satisfy a template guard.
+   */
+  private static canonicalizeUri(uri: string): string | null {
+    let current = uri;
+    for (let depth = 0; depth < 5; depth++) {
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(current);
+      } catch {
+        return null;
+      }
+      if (decoded === current) {
+        break;
+      }
+      current = decoded;
+    }
+    if (current.split(/[/\\]/).some((segment) => segment === '.' || segment === '..')) {
+      return null;
+    }
+    return current;
   }
 
   /**

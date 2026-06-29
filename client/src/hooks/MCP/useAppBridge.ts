@@ -35,9 +35,8 @@ export function useAppBridge(
 ) {
   const user = useRecoilValue(store.user);
   const { ask } = useOptionalMessagesOperations();
-  // Shared transcripts and /search render read-only: the embedded app must not proxy tool calls or
-  // resource reads against the viewer's MCP servers with the viewer's auth. Such views render the
-  // app display-only (initial tool input/result still shown), with no host-bound action handlers.
+  // Read-only views (shared transcripts, /search) must not let the embedded app proxy tool calls
+  // or resource reads against the viewer's MCP servers with the viewer's auth.
   const readOnly = useIsMessagesViewReadOnly();
   const queryClient = useQueryClient();
   const bridgeRef = useRef<AppBridge | null>(null);
@@ -79,8 +78,8 @@ export function useAppBridge(
 
       const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
       const { locale, timeZone } = Intl.DateTimeFormat().resolvedOptions();
-      // Display-only views advertise no host-bound action capabilities, so a well-behaved app
-      // disables those affordances instead of issuing calls the host will ignore.
+      // Display-only views advertise no host-bound action capabilities so a well-behaved app
+      // disables those affordances rather than issuing calls the host ignores.
       const interactive = !readOnlyRef.current;
 
       bridge = new AppBridge(
@@ -118,7 +117,7 @@ export function useAppBridge(
       };
 
       // Host-bound actions (tool calls, resource reads/lists, model messages) run with the viewer's
-      // auth, so they are only wired in interactive views — never for shared transcripts or /search.
+      // auth, so they are only wired in interactive views, never in shared transcripts or /search.
       if (interactive) {
         bridge.oncalltool = async (params) =>
           callMCPAppTool(
@@ -153,8 +152,8 @@ export function useAppBridge(
           return;
         }
         sandboxReadyHandled = true;
-        // Read-only views (shared/search) must not resolve app HTML from the viewer's MCP server,
-        // so only inline (persisted) HTML renders here; resourceUri-only apps stay display-only.
+        // Read-only views must not resolve app HTML from the viewer's MCP server, so only inline
+        // (persisted) HTML renders here.
         if (!resource.text && readOnlyRef.current) {
           logger.debug(
             '[MCP App] Read-only view: skipping server HTML fetch for resourceUri-only app',

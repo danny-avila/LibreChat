@@ -1,8 +1,6 @@
 /**
- * MCP Apps tool-metadata helpers, mirrored from the spec's reference
- * implementation in `@modelcontextprotocol/ext-apps`. They are reimplemented
- * here so `@librechat/api` (emitted as CommonJS) never statically imports the
- * ESM-only ext-apps package; the client bundle keeps importing ext-apps directly.
+ * Reimplemented here so `@librechat/api` (emitted as CommonJS) never statically
+ * imports the ESM-only `@modelcontextprotocol/ext-apps` package.
  */
 
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
@@ -22,17 +20,10 @@ interface McpUiToolMeta {
   visibility?: McpUiToolVisibility[];
 }
 
-/** Deprecated flat metadata key for a tool's UI resource URI. */
 export const RESOURCE_URI_META_KEY = 'ui/resourceUri';
 
-/** MIME type identifying HTML content as an MCP App UI resource. */
 export const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
 
-/**
- * Extract a tool's UI resource URI. Prefers the nested `_meta.ui.resourceUri`
- * format and falls back to the deprecated flat `_meta["ui/resourceUri"]`.
- * Throws if a URI is present but does not use the `ui://` scheme.
- */
 export function getToolUiResourceUri(tool: ToolWithMeta): string | undefined {
   const uiMeta = tool._meta?.ui as McpUiToolMeta | undefined;
   let uri: unknown = uiMeta?.resourceUri;
@@ -49,23 +40,17 @@ export function getToolUiResourceUri(tool: ToolWithMeta): string | undefined {
   return undefined;
 }
 
-/** True when a tool is exposed to the model only (never callable from an app). */
 export function isToolVisibilityModelOnly(tool: ToolWithMeta): boolean {
   const visibility = (tool._meta?.ui as McpUiToolMeta | undefined)?.visibility;
   return Array.isArray(visibility) && visibility.length === 1 && visibility[0] === 'model';
 }
 
-/** True when a tool is exposed to the app only (hidden from the model). */
 export function isToolVisibilityAppOnly(tool: ToolWithMeta): boolean {
   const visibility = (tool._meta?.ui as McpUiToolMeta | undefined)?.visibility;
   return Array.isArray(visibility) && visibility.length === 1 && visibility[0] === 'app';
 }
 
-/**
- * Structural manager interface backing the MCP App proxy services. Declared here
- * rather than importing MCPManager so this module stays free of a circular import
- * (MCPManager imports the helpers above). The argument shapes mirror MCPManager.
- */
+/** Declared here rather than importing MCPManager to avoid a circular import. */
 export interface MCPAppsProxyManager {
   readResource(args: {
     userId: string;
@@ -110,7 +95,6 @@ export interface MCPAppsProxyManager {
   }): Promise<unknown>;
 }
 
-/** Request-scoped context shared by every MCP App proxy service. */
 export interface MCPAppRequestContext {
   userId: string;
   serverName: string;
@@ -121,7 +105,6 @@ export interface MCPAppRequestContext {
   tokenMethods?: TokenMethods;
 }
 
-/** Reads an MCP App resource after validating the server name and uri. */
 export async function readAppResource(
   manager: MCPAppsProxyManager,
   ctx: MCPAppRequestContext,
@@ -145,7 +128,6 @@ export async function readAppResource(
   });
 }
 
-/** Lists MCP App resources after validating the server name and optional cursor. */
 export async function listAppResources(
   manager: MCPAppsProxyManager,
   ctx: MCPAppRequestContext,
@@ -169,7 +151,6 @@ export async function listAppResources(
   });
 }
 
-/** Lists MCP App resource templates after validating the server name and optional cursor. */
 export async function listAppResourceTemplates(
   manager: MCPAppsProxyManager,
   ctx: MCPAppRequestContext,
@@ -193,7 +174,6 @@ export async function listAppResourceTemplates(
   });
 }
 
-/** Proxies an MCP App tool call after validating the server name, tool name, and arguments. */
 export async function callAppTool(
   manager: MCPAppsProxyManager,
   ctx: MCPAppRequestContext,

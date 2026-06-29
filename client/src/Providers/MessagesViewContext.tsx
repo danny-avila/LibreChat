@@ -6,7 +6,6 @@ interface MessagesViewContextValue {
   conversation: ReturnType<typeof useChatContext>['conversation'];
   conversationId: string | null | undefined;
 
-  /** True when the view cannot mutate server state (shared/search); MCP App bridges render display-only. */
   readOnly: boolean;
 
   /** Submission and control states */
@@ -117,11 +116,7 @@ export function useMessagesViewContext() {
   return context;
 }
 
-/**
- * True when MCP App bridges should be display-only: the shared view, the /search route, or any
- * mount outside an interactive MessagesViewProvider. Defaults to read-only when no provider is
- * present so a new render context never accidentally enables live, auth-bearing app actions.
- */
+/** Defaults to read-only when no provider is present, so live auth-bearing app actions stay off. */
 export function useIsMessagesViewReadOnly(): boolean {
   return useContext(MessagesViewContext)?.readOnly ?? true;
 }

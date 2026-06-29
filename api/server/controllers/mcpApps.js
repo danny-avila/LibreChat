@@ -24,15 +24,13 @@ const { getLogStores } = require('~/cache');
 const MCP_INVALID_REQUEST = -32600;
 
 /**
- * Resolves the request-scoped config, the user's custom variables, and the OAuth flow/token
- * context for a server so app follow-up requests can connect to config-sourced servers and
- * re-resolve credentialed or OAuth connections even when the original tool-call connection is gone.
+ * Resolves the request-scoped config and auth context so app follow-up requests can reconnect to
+ * config-sourced servers even when the original tool-call connection is gone.
  */
 const resolveAppContext = async (req, serverName) => {
   const userId = req.user?.id;
-  // Fail closed on config resolution: an app request targets one server by name, so a transient
-  // failure must reject rather than fall back to the base config for that name and proxy to the
-  // wrong server. Auth map resolution may still degrade, since a missing var fails closed downstream.
+  // Fail closed on config resolution: a transient failure must reject rather than fall back to the
+  // base config and proxy to the wrong server. (Auth map resolution fails closed downstream.)
   const [configServers, userMCPAuthMap] = await Promise.all([
     resolveConfigServers(req, { throwOnError: true }),
     Promise.resolve()
@@ -63,8 +61,7 @@ const readMCPResource = async (req, res) => {
     const result = await readAppResource(getMCPManager(), ctx, uri);
     return res.json(result);
   } catch (error) {
-    // A denied read (non-advertised / non-ui:// resource) is an expected client error, not a
-    // backend failure, so return 400 and skip the error-level log, mirroring appToolCall.
+    // A denied read is an expected client error, so return 400 and skip the error-level log.
     if (error && typeof error === 'object' && error.code === MCP_INVALID_REQUEST) {
       return res.status(400).json({ error: error.message });
     }

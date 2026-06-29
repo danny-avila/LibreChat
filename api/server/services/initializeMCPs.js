@@ -15,6 +15,7 @@ async function resolveMCPAllowlists(ctx) {
   return {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
+    appsEnabled: appConfig?.mcpSettings?.apps,
   };
 }
 

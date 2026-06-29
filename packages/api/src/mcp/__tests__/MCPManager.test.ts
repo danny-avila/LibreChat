@@ -1455,6 +1455,32 @@ describe('MCPManager', () => {
       const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
       expect(methods).not.toContain('resources/read');
     });
+
+    it('rejects a percent-encoded path traversal even when a broad template would match', async () => {
+      const request = jest.fn().mockImplementation((req: { method: string }) => {
+        if (req.method === 'resources/list') {
+          return Promise.resolve({ resources: [] });
+        }
+        if (req.method === 'resources/templates/list') {
+          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'file://docs{+path}' }] });
+        }
+        return Promise.resolve({ contents: [] });
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await expect(
+        manager.readResource({
+          userId: 'user-123',
+          serverName: 'srv',
+          uri: 'file://docs/%2e%2e%2fsecret',
+          user: mockUser as IUser,
+        }),
+      ).rejects.toThrow(/not advertised/);
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).not.toContain('resources/read');
+    });
   });
 
   describe('getConnection', () => {

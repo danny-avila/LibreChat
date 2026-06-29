@@ -1147,9 +1147,8 @@ export class MCPConnection extends EventEmitter {
   public toolListVersion = 0;
 
   /**
-   * Bumped on every resources/list_changed notification. Consumers that cache the set of resources
-   * a server advertises fold this into their freshness check so cached authorization data is
-   * refreshed when the server adds or removes resources on a live connection.
+   * Bumped on every resources/list_changed notification so consumers caching a server's advertised
+   * resources refresh their authorization data when resources are added or removed.
    */
   public resourceListVersion = 0;
 
@@ -1267,9 +1266,8 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
-    // Advertise MCP Apps support so servers using the ext-apps graceful-degradation path
-    // (getUiCapability) expose app-enhanced tools. The capability rides on the `extensions`
-    // field keyed by ext-apps EXTENSION_ID. Suppressed when MCP Apps are disabled by config.
+    // Advertise the UI capability so servers expose app-enhanced tools; suppressed when MCP Apps
+    // are disabled by config.
     const appsEnabled = params.enableApps !== false;
     const capabilities: ClientCapabilities = appsEnabled
       ? { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [RESOURCE_MIME_TYPE] } } }
