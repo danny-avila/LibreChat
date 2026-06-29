@@ -78,6 +78,54 @@ describe('extractYouTubeUrls', () => {
     expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
   });
 
+  it('extracts both URLs from a comma-separated pair in one token', () => {
+    const text = 'https://youtu.be/aaaaaaaaaaa,https://youtu.be/bbbbbbbbbbb';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')]);
+  });
+
+  it('extracts adjacent markdown-style links', () => {
+    const text = '[a](https://youtu.be/aaaaaaaaaaa)[b](https://youtu.be/bbbbbbbbbbb)';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')]);
+  });
+
+  it('extracts adjacent links separated by semicolons or pipes', () => {
+    expect(extractYouTubeUrls('https://youtu.be/aaaaaaaaaaa;https://youtu.be/bbbbbbbbbbb')).toEqual(
+      [WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')],
+    );
+    expect(extractYouTubeUrls('https://youtu.be/aaaaaaaaaaa|https://youtu.be/bbbbbbbbbbb')).toEqual(
+      [WATCH('aaaaaaaaaaa'), WATCH('bbbbbbbbbbb')],
+    );
+  });
+
+  it('finds a nested youtu.be link inside an unrecognized YouTube URL', () => {
+    const text = 'https://www.youtube.com/redirect?q=https://youtu.be/dQw4w9WgXcQ';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('finds a nested youtu.be link inside a watch URL with no own v=', () => {
+    const text = 'https://www.youtube.com/watch?url=https://youtu.be/dQw4w9WgXcQ';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('skips a malformed v= and uses a later valid one', () => {
+    const text = 'https://www.youtube.com/watch?v=tooShort&list=x&v=dQw4w9WgXcQ';
+    expect(extractYouTubeUrls(text)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('ignores unrecognized YouTube routes with no nested video', () => {
+    expect(extractYouTubeUrls('https://www.youtube.com/results?search_query=cats')).toEqual([]);
+    expect(extractYouTubeUrls('https://www.youtube.com/@SomeChannel')).toEqual([]);
+  });
+
+  it('matches capitalized watch/embed paths (case-insensitive)', () => {
+    expect(extractYouTubeUrls('https://www.youtube.com/WATCH?v=dQw4w9WgXcQ')).toEqual([
+      WATCH('dQw4w9WgXcQ'),
+    ]);
+    expect(extractYouTubeUrls('https://www.youtube.com/EMBED/dQw4w9WgXcQ')).toEqual([
+      WATCH('dQw4w9WgXcQ'),
+    ]);
+  });
+
   it('ignores non-YouTube URLs', () => {
     expect(extractYouTubeUrls('https://example.com/watch?v=dQw4w9WgXcQ')).toEqual([]);
   });
@@ -324,6 +372,23 @@ describe('appendYouTubeVideoParts', () => {
     expect(mediaParts).toHaveLength(1);
     expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('aaaaaaaaaaa'));
   });
+
+  it('strips a watch URL fully when it has a URL-valued param after the id (no orphan)', () => {
+    const text =
+      'summarize https://www.youtube.com/watch?v=dQw4w9WgXcQ&next=https://example.com please';
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text, max: 5 });
+
+    const parts = result as MessageContentComplex[];
+    const textPart = parts.find((p) => (p as Record<string, unknown>).type === 'text') as {
+      text: string;
+    };
+    expect(textPart.text).toBe('summarize please');
+    expect(textPart.text).not.toContain('example.com');
+
+    const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
 });
 
 describe('resolveYouTubeInjectionConfig', () => {
@@ -361,5 +426,101 @@ describe('resolveYouTubeInjectionConfig', () => {
       max: 1,
     });
     expect(resolveYouTubeInjectionConfig({ provider: Providers.GOOGLE })).toEqual({ max: 1 });
+  });
+});
+
+describe('ReDoS safety', () => {
+  it('returns quickly for a long malformed watch token with no v= parameter', () => {
+    /** One ~600KB non-whitespace token; before the fix this exhibited quadratic backtracking. */
+    const malicious = 'https://www.youtube.com/watch?'.repeat(20000);
+    const start = Date.now();
+    const result = extractYouTubeUrls(malicious, 5);
+    const elapsed = Date.now() - start;
+
+    expect(result).toEqual([]);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it('returns quickly for a malformed path of millions of slashes', () => {
+    const malicious = `https://www.youtube.com/${'/'.repeat(3_000_000)}`;
+    const start = Date.now();
+    const result = extractYouTubeUrls(malicious, 5);
+
+    expect(result).toEqual([]);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('returns quickly for many medium malformed watch tokens', () => {
+    const token = 'https://www.youtube.com/watch?'.repeat(50); // ~1.5KB malformed token
+    const malicious = `${token} `.repeat(2000); // ~3MB of whitespace-separated malformed tokens
+    const start = Date.now();
+    const result = extractYouTubeUrls(malicious, 5);
+
+    expect(result).toEqual([]);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('still extracts a valid URL that appears before a huge token', () => {
+    const text = `https://youtu.be/dQw4w9WgXcQ ${'x'.repeat(60000)}`;
+    expect(extractYouTubeUrls(text, 5)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('injects + strips quickly when a valid URL is followed by a huge malformed token', () => {
+    const text = `https://youtu.be/dQw4w9WgXcQ ${'https://www.youtube.com/watch?'.repeat(20000)}`;
+    const start = Date.now();
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text, max: 5 });
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(1000);
+    const mediaParts = (result as MessageContentComplex[]).filter(
+      (p) => (p as Record<string, unknown>).type === 'media',
+    );
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
+
+  it('strips quickly when a valid URL precedes ~3MB of medium malformed tokens', () => {
+    /** Exercises the strip path: extraction finds the valid URL, then strip must stay bounded. */
+    const tail = `${'https://www.youtube.com/watch?'.repeat(50)} `.repeat(2000);
+    const text = `https://youtu.be/dQw4w9WgXcQ ${tail}`;
+    const start = Date.now();
+    const result = appendYouTubeVideoParts({ enabled: true, text, content: text, max: 5 });
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(1000);
+    const mediaParts = (result as MessageContentComplex[]).filter(
+      (p) => (p as Record<string, unknown>).type === 'media',
+    );
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
+});
+
+describe('long-text handling (no content discarded)', () => {
+  it('extracts a URL that appears far into a long prompt', () => {
+    const text = `${'word '.repeat(40000)}see https://youtu.be/dQw4w9WgXcQ`; // ~200KB before the URL
+    expect(extractYouTubeUrls(text, 5)).toEqual([WATCH('dQw4w9WgXcQ')]);
+  });
+
+  it('strips the injected URL even when large context is prepended to the content', () => {
+    /** Mirrors AgentClient prepending file/quote context to `content` while extraction uses `text`. */
+    const prompt = 'summarize https://youtu.be/dQw4w9WgXcQ';
+    const prependedContext = 'attached context line.\n'.repeat(8000); // ~180KB preamble
+    const result = appendYouTubeVideoParts({
+      enabled: true,
+      text: prompt,
+      content: prependedContext + prompt,
+      max: 5,
+    });
+
+    const parts = result as MessageContentComplex[];
+    const textPart = parts.find((p) => (p as Record<string, unknown>).type === 'text') as {
+      text: string;
+    };
+    expect(textPart.text).not.toContain('youtu.be/dQw4w9WgXcQ');
+    expect(textPart.text).toContain('attached context line.');
+    const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
+    expect(mediaParts).toHaveLength(1);
+    expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
   });
 });
