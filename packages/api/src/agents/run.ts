@@ -216,6 +216,14 @@ function includesOpenRouter(value?: string | null): boolean {
   return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
 }
 
+function isAnthropicModel(model?: string | null): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+  const normalized = model.toLowerCase();
+  return normalized.includes('anthropic') || normalized.includes('claude');
+}
+
 export function getReasoningKey(
   provider: Providers,
   llmConfig: t.RunLLMConfig,
@@ -228,7 +236,13 @@ export function getReasoningKey(
     includesOpenRouter(llmConfig.configuration?.baseURL) ||
     includesOpenRouter(agentEndpoint)
   ) {
-    reasoningKey = 'reasoning';
+    /**
+     * OpenRouter exposes most providers' reasoning under `reasoning`, but Anthropic
+     * models stream it under `reasoning_content` (same as the native Anthropic path).
+     * Reading the wrong key drops Claude's thinking entirely (no reasoning parts → no
+     * "thought" bubbles), so keep the default key for Anthropic models on OpenRouter.
+     */
+    reasoningKey = isAnthropicModel(llmConfig.model) ? 'reasoning_content' : 'reasoning';
   } else if (
     (llmConfig as OpenAIClientOptions).useResponsesApi === true &&
     (provider === Providers.OPENAI || provider === Providers.AZURE)
