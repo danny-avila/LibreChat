@@ -1,7 +1,7 @@
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
-import { HoverCard, HoverCardTrigger, HoverCardPortal, HoverCardContent } from '@librechat/client';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import { useGetMessagesByConvoId } from '~/data-provider';
@@ -17,7 +17,7 @@ type MessageEntry = {
 
 const MESSAGES_END_ID = 'messages-end';
 
-function extractPreviewFromContent(content?: TMessageContentParts[]): string {
+export function extractPreviewFromContent(content?: TMessageContentParts[]): string {
   if (!content) {
     return '';
   }
@@ -36,7 +36,7 @@ function extractPreviewFromContent(content?: TMessageContentParts[]): string {
   return '';
 }
 
-function buildEntry(id: string, msg: TMessage): MessageEntry {
+export function buildEntry(id: string, msg: TMessage): MessageEntry {
   const raw = msg.text?.trim() ? msg.text : extractPreviewFromContent(msg.content);
   const trimmed = raw.trim();
   return {
@@ -48,7 +48,7 @@ function buildEntry(id: string, msg: TMessage): MessageEntry {
 
 const USER_TURN_SELECTOR = '.user-turn';
 
-function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
+export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
   const isUser = node.querySelector(USER_TURN_SELECTOR) != null;
   const trimmed = (node.textContent ?? '').trim();
   return {
@@ -105,8 +105,34 @@ function computeTargetScroll(
   return Math.max(0, Math.min(target, max));
 }
 
+type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
+
+const RIB_END: RibDims = { baseW: 4, baseH: 4, peakW: 6, peakH: 6 };
+const RIB_USER: RibDims = { baseW: 16, baseH: 3, peakW: 44, peakH: 6 };
+const RIB_ASSISTANT: RibDims = { baseW: 26, baseH: 3, peakW: 52, peakH: 6 };
+
+/** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
+const MAG_INFLUENCE = 50;
+/** Delay before the shared preview first opens; subsequent moves reposition instantly. */
+const TOOLTIP_OPEN_DELAY = 60;
+
+export function ribDimsFor(entry: MessageEntry): RibDims {
+  if (entry.isEnd) {
+    return RIB_END;
+  }
+  return entry.isUser ? RIB_USER : RIB_ASSISTANT;
+}
+
+/** Cosine bell: 1 at the pointer, easing to 0 at the influence radius. */
+export function magnifyFalloff(distance: number, influence: number): number {
+  if (distance >= influence) {
+    return 0;
+  }
+  return 0.5 * (1 + Math.cos((Math.PI * distance) / influence));
+}
+
 const indicatorButtonClasses = cn(
-  'flex h-[5px] items-center justify-center rounded-sm',
+  'flex h-1.5 w-full items-center justify-end rounded-sm',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
 );
 
@@ -115,54 +141,37 @@ const MessageIndicator = memo(function MessageIndicator({
   isActive,
   isCurrent,
   label,
-  hoverText,
   onSelect,
 }: {
   entry: MessageEntry;
   isActive: boolean;
   isCurrent: boolean;
   label: string;
-  hoverText: string;
   onSelect: (id: string) => void;
 }) {
+  let baseSize = 'h-[3px] w-[26px]';
+  if (entry.isEnd) {
+    baseSize = 'h-1 w-1';
+  } else if (entry.isUser) {
+    baseSize = 'h-[3px] w-4';
+  }
   return (
-    <HoverCard openDelay={150}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          onClick={() => onSelect(entry.id)}
-          className={cn(indicatorButtonClasses, entry.isEnd || !entry.isUser ? 'w-6' : 'w-4')}
-          aria-label={label}
-          aria-current={isCurrent ? 'true' : undefined}
-          data-msg-id={entry.id}
-        >
-          {entry.isEnd ? (
-            <span
-              className={cn(
-                'block rounded-full transition-all duration-200',
-                isActive
-                  ? 'h-1.5 w-1.5 bg-gray-800 dark:bg-gray-100'
-                  : 'h-1 w-1 bg-gray-400 dark:bg-gray-500',
-              )}
-            />
-          ) : (
-            <span
-              className={cn(
-                'block w-full rounded-full transition-all duration-200',
-                isActive
-                  ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
-                  : 'h-[3px] bg-gray-400 dark:bg-gray-500',
-              )}
-            />
-          )}
-        </button>
-      </HoverCardTrigger>
-      <HoverCardPortal>
-        <HoverCardContent side="left" sideOffset={12} className="z-[999] max-w-[280px] px-3 py-2">
-          <p className="line-clamp-3 text-xs text-text-secondary">{hoverText}</p>
-        </HoverCardContent>
-      </HoverCardPortal>
-    </HoverCard>
+    <button
+      type="button"
+      onClick={() => onSelect(entry.id)}
+      className={indicatorButtonClasses}
+      aria-label={label}
+      aria-current={isCurrent ? 'true' : undefined}
+      data-msg-id={entry.id}
+    >
+      <span
+        className={cn(
+          'block rounded-full',
+          baseSize,
+          isActive ? 'bg-gray-800 dark:bg-gray-100' : 'bg-gray-400 dark:bg-gray-500',
+        )}
+      />
+    </button>
   );
 });
 
@@ -215,6 +224,31 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const navRef = useRef<HTMLElement>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const suppressClickRef = useRef(false);
+  const isDraggingRef = useRef(false);
+
+  const ribLayoutRef = useRef<
+    Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }>
+  >([]);
+  const pointerYRef = useRef<number | null>(null);
+  const magRafRef = useRef<number | null>(null);
+  const reducedMotionRef = useRef(false);
+  const focusedIdRef = useRef<string | null>(null);
+  const tipShownRef = useRef(false);
+  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tipElRef = useRef<HTMLDivElement | null>(null);
+  const tipPosRef = useRef({ top: 0, right: 0 });
+
+  const [tip, setTip] = useState<{ id: string; text: string; top: number; right: number } | null>(
+    null,
+  );
+
+  const entryById = useMemo(() => {
+    const map = new Map<string, MessageEntry>();
+    for (let i = 0; i < entries.length; i++) {
+      map.set(entries[i].id, entries[i]);
+    }
+    return map;
+  }, [entries]);
 
   const getCurrentVisibleId = useCallback((): string | null => {
     let nextId: string | null = null;
@@ -398,6 +432,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         document.removeEventListener('pointercancel', onUp);
         window.removeEventListener('blur', onBlur);
         dragCleanupRef.current = null;
+        isDraggingRef.current = false;
         if (wasDragging) {
           suppressClickRef.current = true;
           window.setTimeout(() => {
@@ -419,6 +454,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
             return;
           }
           state.dragging = true;
+          isDraggingRef.current = true;
         }
         scrubTo(ev.clientY);
       }
@@ -444,6 +480,198 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   );
 
   useEffect(() => () => dragCleanupRef.current?.(), []);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    reducedMotionRef.current = mq.matches;
+    const onChange = () => {
+      reducedMotionRef.current = mq.matches;
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const measureRibs = useCallback(() => {
+    const col = columnRef.current;
+    if (!col) {
+      return;
+    }
+    const layout: Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }> = [];
+    const kids = col.children;
+    for (let i = 0; i < kids.length; i++) {
+      const button = kids[i] as HTMLElement;
+      const id = button.getAttribute('data-msg-id');
+      const line = button.firstElementChild as HTMLElement | null;
+      const entry = id ? entryById.get(id) : undefined;
+      if (!id || !line || !entry) {
+        continue;
+      }
+      layout.push({
+        id,
+        line,
+        center: button.offsetTop + button.offsetHeight / 2,
+        dims: ribDimsFor(entry),
+      });
+    }
+    ribLayoutRef.current = layout;
+  }, [entryById]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(measureRibs);
+    const col = columnRef.current;
+    const resize = col ? new ResizeObserver(measureRibs) : null;
+    if (col && resize) {
+      resize.observe(col);
+    }
+    return () => {
+      cancelAnimationFrame(raf);
+      resize?.disconnect();
+    };
+  }, [entries, measureRibs]);
+
+  const positionTip = useCallback((top: number, right: number) => {
+    tipPosRef.current = { top, right };
+    const el = tipElRef.current;
+    if (el) {
+      el.style.top = `${top}px`;
+      el.style.right = `${right}px`;
+    }
+  }, []);
+
+  const revealTip = useCallback(
+    (id: string | null) => {
+      const entry = id ? entryById.get(id) : undefined;
+      if (!entry) {
+        setTip(null);
+        return;
+      }
+      const text = entry.isEnd ? localize('com_ui_scroll_to_bottom') : entry.preview;
+      setTip({ id: entry.id, text, top: tipPosRef.current.top, right: tipPosRef.current.right });
+    },
+    [entryById, localize],
+  );
+
+  const clearTooltip = useCallback(() => {
+    if (tipTimerRef.current) {
+      clearTimeout(tipTimerRef.current);
+      tipTimerRef.current = null;
+    }
+    focusedIdRef.current = null;
+    if (tipShownRef.current) {
+      tipShownRef.current = false;
+      setTip(null);
+    }
+  }, []);
+
+  const focusTooltip = useCallback(
+    (id: string, top: number, right: number) => {
+      positionTip(top, right);
+      if (focusedIdRef.current === id) {
+        return;
+      }
+      focusedIdRef.current = id;
+      if (tipShownRef.current) {
+        revealTip(id);
+        return;
+      }
+      if (tipTimerRef.current) {
+        return;
+      }
+      tipTimerRef.current = setTimeout(() => {
+        tipTimerRef.current = null;
+        tipShownRef.current = true;
+        revealTip(focusedIdRef.current);
+      }, TOOLTIP_OPEN_DELAY);
+    },
+    [positionTip, revealTip],
+  );
+
+  const applyMagnify = useCallback(() => {
+    magRafRef.current = null;
+    const col = columnRef.current;
+    const layout = ribLayoutRef.current;
+    const py = pointerYRef.current;
+    if (!col || py == null || layout.length === 0) {
+      return;
+    }
+    const reduce = reducedMotionRef.current;
+    const colRect = col.getBoundingClientRect();
+    const scrollTop = col.scrollTop;
+    let nearestId: string | null = null;
+    let nearestD = Number.POSITIVE_INFINITY;
+    let nearestCenter = 0;
+    for (let i = 0; i < layout.length; i++) {
+      const rib = layout[i];
+      const d = Math.abs(py - rib.center);
+      if (d < nearestD) {
+        nearestD = d;
+        nearestId = rib.id;
+        nearestCenter = rib.center;
+      }
+      if (reduce) {
+        continue;
+      }
+      const t = magnifyFalloff(d, MAG_INFLUENCE);
+      const dims = rib.dims;
+      rib.line.style.transition = 'none';
+      rib.line.style.width = `${(dims.baseW + (dims.peakW - dims.baseW) * t).toFixed(2)}px`;
+      rib.line.style.height = `${(dims.baseH + (dims.peakH - dims.baseH) * t).toFixed(2)}px`;
+    }
+    if (nearestId != null && nearestD <= MAG_INFLUENCE && !isDraggingRef.current) {
+      const top = colRect.top - scrollTop + nearestCenter;
+      const right = window.innerWidth - colRect.left + 8;
+      focusTooltip(nearestId, top, right);
+    } else {
+      clearTooltip();
+    }
+  }, [focusTooltip, clearTooltip]);
+
+  const resetMagnify = useCallback(() => {
+    const layout = ribLayoutRef.current;
+    for (let i = 0; i < layout.length; i++) {
+      const line = layout[i].line;
+      line.style.transition = 'width 140ms ease-out, height 140ms ease-out';
+      line.style.width = '';
+      line.style.height = '';
+    }
+  }, []);
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const col = columnRef.current;
+      if (!col) {
+        return;
+      }
+      const rect = col.getBoundingClientRect();
+      pointerYRef.current = e.clientY - rect.top + col.scrollTop;
+      if (magRafRef.current == null) {
+        magRafRef.current = requestAnimationFrame(applyMagnify);
+      }
+    },
+    [applyMagnify],
+  );
+
+  const handlePointerLeave = useCallback(() => {
+    pointerYRef.current = null;
+    if (magRafRef.current != null) {
+      cancelAnimationFrame(magRafRef.current);
+      magRafRef.current = null;
+    }
+    resetMagnify();
+    clearTooltip();
+  }, [resetMagnify, clearTooltip]);
+
+  useEffect(
+    () => () => {
+      if (magRafRef.current != null) {
+        cancelAnimationFrame(magRafRef.current);
+      }
+      if (tipTimerRef.current) {
+        clearTimeout(tipTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     refreshEntries();
@@ -838,7 +1066,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       aria-keyshortcuts="Shift+Alt+M"
       className={cn(
         'group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))]',
-        '-translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 md:flex',
+        '-translate-y-1/2 flex-col items-end gap-1.5 rounded-2xl px-1.5 py-2 md:flex',
         'opacity-30 transition-opacity duration-300',
         'hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/5',
         'focus-within:bg-black/5 focus-within:opacity-100 dark:focus-within:bg-white/5',
@@ -857,7 +1085,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       <div
         ref={columnRef}
         onPointerDown={handlePointerDown}
-        className="flex min-h-0 cursor-grab touch-none select-none flex-col items-center gap-1.5 overflow-y-auto active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        className="flex min-h-0 w-14 cursor-grab touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {entries.map((entry) => {
@@ -877,7 +1107,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
               isCurrent={currentId === entry.id}
               onSelect={handleSelect}
               label={label}
-              hoverText={entry.isEnd ? label : entry.preview}
             />
           );
         })}
@@ -892,6 +1121,24 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       >
         <ChevronDown className="h-4 w-4" />
       </button>
+      {tip &&
+        createPortal(
+          <div
+            ref={tipElRef}
+            role="tooltip"
+            style={{
+              position: 'fixed',
+              top: tip.top,
+              right: tip.right,
+              transform: 'translateY(-50%)',
+              zIndex: 999,
+            }}
+            className="pointer-events-none max-w-[280px] rounded-md border border-border-medium bg-surface-secondary px-3 py-2 text-text-secondary shadow-lg"
+          >
+            <p className="line-clamp-3 text-xs">{tip.text}</p>
+          </div>,
+          document.body,
+        )}
     </nav>
   );
 }
