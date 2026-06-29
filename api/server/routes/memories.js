@@ -5,6 +5,7 @@ const {
   mergeMemoryValues,
   resolveMemoryLLMConfig,
 } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
@@ -131,6 +132,12 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     const tokenLimit = memoryConfig?.tokenLimit;
 
     const existing = memories.find((m) => m.key === trimmedKey);
+
+    logger.warn(
+      `[MemoryMerge][diag] POST /memories key="${trimmedKey}" userMemories=${memories.length} existingKeys=[${memories
+        .map((m) => m.key)
+        .join(', ')}] existingMatch=${!!existing}`,
+    );
 
     let finalValue = trimmedValue;
     if (existing) {

@@ -148,9 +148,14 @@ export async function mergeMemoryValues({
 
     const content = await run.processStream(inputs, config);
     if (typeof content === 'string' && content.trim()) {
-      logger.info(`[MemoryMerge] Merged memory for key "${key}"`);
+      logger.warn(
+        `[MemoryMerge][diag] key="${key}" merged OK\n  existing: ${existingValue}\n  new: ${newValue}\n  merged: ${content.trim()}`,
+      );
       return content.trim();
     }
+    logger.warn(
+      `[MemoryMerge][diag] key="${key}" produced empty/non-string content (typeof=${typeof content}); using new value`,
+    );
   } catch (error) {
     logger.warn(`[MemoryMerge] Failed to merge memory for key "${key}", using new value`, error);
   }
