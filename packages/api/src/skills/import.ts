@@ -5,6 +5,7 @@ import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provi
 import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
+import type { ServerRequest } from '~/types';
 import type {
   ISkill,
   ISkillFile,
@@ -205,18 +206,6 @@ export interface ImportSkillDeps extends CreateSkillFromMarkdownDeps {
   ) => Promise<void>;
 }
 
-interface ServerRequest extends Request {
-  tenantId?: string;
-  user: {
-    id: string;
-    _id: Types.ObjectId;
-    name?: string;
-    username?: string;
-    tenantId?: string;
-  };
-  file?: Express.Multer.File;
-}
-
 /**
  * `POST /api/skills/import`
  *
@@ -278,6 +267,9 @@ function resolveImportLimits(
 /** Resolve author metadata from the request user. */
 function getAuthorInfo(req: ServerRequest) {
   const user = req.user;
+  if (!user) {
+    throw new Error('Authenticated user required');
+  }
   const authorId = (user._id ?? user.id) as unknown as Types.ObjectId;
   const authorName = user.name ?? user.username ?? 'Unknown';
   const tenantId = resolveRequestTenantId(req);
@@ -341,6 +333,10 @@ export async function createSkillFromMarkdown(
 ): Promise<CreateSkillFromMarkdownResult> {
   const { content, originalname, nameOverride, descriptionOverride } = input;
 
+  if (!req.user) {
+    return { ok: false, status: 401, body: { error: 'Unauthorized' } };
+  }
+
   const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(content);
   if (invalidBooleans.length > 0) {
     return {
@@ -395,7 +391,7 @@ export async function createSkillFromMarkdown(
   });
 
   const skill = result.skill as ISkill & { _id: Types.ObjectId };
-  const grant = await grantOwnership(deps, req.user.id, skill._id);
+  const grant = await grantOwnership(deps, req.user!.id, skill._id);
   if (!grant.ok) {
     return { ok: false, status: 500, body: { error: grant.error } };
   }
@@ -426,6 +422,9 @@ async function handleZip(
   deps: ImportSkillDeps,
   file: Express.Multer.File,
 ) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const userId = req.user.id;
   const limits = getImportLimits(resolveImportLimits(deps.limits, req));
 
@@ -618,7 +617,7 @@ async function handleZip(
       const mimeType = guessMimeType(filename);
 
       // Save to file storage (strategy-aware)
-      const { filepath, source, storageKey, storageRegion } = await deps.saveBuffer(req, {
+      const { filepath, source, storageKey, storageRegion } = await deps.saveBuffer(req as Request, {
         userId,
         buffer: fileBuffer,
         fileName: storageFileName,
@@ -648,7 +647,7 @@ async function handleZip(
       } catch (dbError) {
         if (deps.deleteFile) {
           await deps
-            .deleteFile(req, {
+            .deleteFile(req as Request, {
               filepath,
               storageKey,
               storageRegion,

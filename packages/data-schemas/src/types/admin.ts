@@ -140,6 +140,11 @@ export type AdminTenantAdmin = {
   invitedAt?: string;
 };
 
+/** Tenant-scoped member (admin or user) returned by the platform admin members API. */
+export type AdminTenantMember = AdminTenantAdmin & {
+  memberRole: 'admin' | 'user';
+};
+
 /** Platform-level super admin returned by the platform admin API. */
 export type AdminPlatformAdmin = {
   id: string;

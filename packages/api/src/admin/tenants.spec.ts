@@ -168,6 +168,7 @@ describe('createAdminTenantsHandlers', () => {
         name: 'Alice',
         email: 'alice@example.com',
         tenantId: 'tenant-a',
+        role: 'ADMIN',
         createdAt: new Date('2026-01-01'),
       },
     ]);
@@ -197,6 +198,81 @@ describe('createAdminTenantsHandlers', () => {
           expect.objectContaining({
             name: 'Alice',
             email: 'alice@example.com',
+            tenantName: 'Tenant A',
+          }),
+        ],
+      }),
+    );
+    expect(res.json.mock.calls[0][0].admins[0]).not.toHaveProperty('memberRole');
+  });
+
+  it('listTenantMembers includes memberRole from user.role', async () => {
+    findUsers.mockResolvedValue([
+      {
+        _id: 'user-1',
+        name: 'Alice',
+        email: 'alice@example.com',
+        tenantId: 'tenant-a',
+        role: 'ADMIN',
+        createdAt: new Date('2026-01-01'),
+      },
+    ]);
+    countUsers.mockResolvedValue(1);
+    findTenantById.mockResolvedValue({
+      _id: mongoId,
+      tenantId: 'tenant-a',
+      name: 'Tenant A',
+      status: 'active',
+    });
+
+    const req = { query: { role: 'admin' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await handlers.listTenantMembers(req as never, res as never);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        members: [expect.objectContaining({ memberRole: 'admin' })],
+      }),
+    );
+  });
+
+  it('listTenantMembers returns tenant users when role is user', async () => {
+    findUsers.mockResolvedValue([
+      {
+        _id: 'user-2',
+        name: 'Bob',
+        email: 'bob@example.com',
+        tenantId: 'tenant-a',
+        role: 'USER',
+        createdAt: new Date('2026-01-02'),
+      },
+    ]);
+    countUsers.mockResolvedValue(1);
+    findTenantById.mockResolvedValue({
+      _id: mongoId,
+      tenantId: 'tenant-a',
+      name: 'Tenant A',
+      status: 'active',
+    });
+
+    const req = { query: { role: 'user' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await handlers.listTenantMembers(req as never, res as never);
+
+    expect(findUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'USER', tenantId: { $exists: true, $nin: [null, ''] } }),
+      expect.any(String),
+      expect.any(Object),
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        total: 1,
+        members: [
+          expect.objectContaining({
+            name: 'Bob',
+            memberRole: 'user',
             tenantName: 'Tenant A',
           }),
         ],
@@ -250,6 +326,56 @@ describe('createAdminTenantsHandlers', () => {
     await handlers.inviteTenantAdmin(req as never, res as never);
 
     expect(findUser).toHaveBeenCalledWith({ email: 'admin@example.com' });
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(mockedCreateInvite).not.toHaveBeenCalled();
+  });
+
+  it('inviteTenantUser sends invite with tenant user role default', async () => {
+    findTenantByObjectId.mockResolvedValue({
+      _id: mongoId,
+      tenantId: 'tenant-a',
+      name: 'Tenant A',
+      status: 'active',
+    });
+    findUser.mockResolvedValue(null);
+    mockedCreateInvite.mockResolvedValue('invite-token');
+    sendInviteEmail.mockResolvedValue(undefined);
+
+    const req = {
+      params: { id: mongoId },
+      body: { email: 'user@example.com' },
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await handlers.inviteTenantUser(req as never, res as never);
+
+    expect(mockedCreateInvite).toHaveBeenCalledWith(
+      'user@example.com',
+      { createToken: createInviteToken, findToken: findInviteToken },
+      { tenantId: 'tenant-a' },
+    );
+    expect(sendInviteEmail).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('inviteTenantUser rejects existing users in the target tenant', async () => {
+    findTenantByObjectId.mockResolvedValue({
+      _id: mongoId,
+      tenantId: 'tenant-a',
+      name: 'Tenant A',
+      status: 'active',
+    });
+    findUser.mockResolvedValue({ _id: 'existing', tenantId: 'tenant-a' });
+
+    const req = {
+      params: { id: mongoId },
+      body: { email: 'user@example.com' },
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await handlers.inviteTenantUser(req as never, res as never);
+
+    expect(findUser).toHaveBeenCalledWith({ email: 'user@example.com' });
     expect(res.status).toHaveBeenCalledWith(409);
     expect(mockedCreateInvite).not.toHaveBeenCalled();
   });

@@ -110,6 +110,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -158,6 +160,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -184,6 +188,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -230,6 +236,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -324,6 +332,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: deleteTokensSpy,
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -443,6 +453,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -510,6 +522,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -582,6 +596,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -776,6 +792,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -812,6 +830,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };
@@ -907,6 +927,8 @@ describe('MCPConnectionFactory', () => {
           createToken: jest.fn(),
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
+          findTokenById: jest.fn(),
+          deleteTokenById: jest.fn(),
           findPendingUserInvites: jest.fn(),
         },
       };

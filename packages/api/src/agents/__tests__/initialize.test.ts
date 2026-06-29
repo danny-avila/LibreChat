@@ -38,6 +38,7 @@ import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
 import { DEFAULT_MAX_CONTEXT_TOKENS } from '../initialize';
+import { SUGGESTIONS_PROMPT } from '../suggestions';
 
 // Mock logger — `format` must be a callable factory so @librechat/data-schemas
 // dist module-load completes cleanly; see api/test/__mocks__/logger.js.
@@ -449,7 +450,9 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
 
     expect(result.instructions).toBeUndefined();
-    expect(result.additional_instructions).toBe('Conversation opened at 2023-12-31T23:59:58.000Z');
+    expect(result.additional_instructions).toBe(
+      `Conversation opened at 2023-12-31T23:59:58.000Z\n\n${SUGGESTIONS_PROMPT}`,
+    );
   });
 
   it('keeps non-temporal special vars in stable instructions', async () => {
@@ -472,7 +475,7 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
 
     expect(result.instructions).toBe('You are helping Test User.');
-    expect(result.additional_instructions).toBeUndefined();
+    expect(result.additional_instructions).toBe(SUGGESTIONS_PROMPT);
   });
 
   it('appends generated artifact guidance without replacing existing dynamic instructions', async () => {
@@ -498,7 +501,9 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
       db,
     );
 
-    expect(result.additional_instructions).toBe('Existing dynamic\n\nArtifact guidance');
+    expect(result.additional_instructions).toBe(
+      `Existing dynamic\n\nArtifact guidance\n\n${SUGGESTIONS_PROMPT}`,
+    );
   });
 });
 

@@ -39,6 +39,28 @@ export function inviteDisplayName(email: string): string {
   return local || email;
 }
 
+const INVITE_LIST_ID_PREFIX = 'invite:';
+
+export function toInviteListId(tokenId: string): string {
+  return `${INVITE_LIST_ID_PREFIX}${tokenId}`;
+}
+
+export function parseInviteListId(id: string): string | null {
+  if (!id.startsWith(INVITE_LIST_ID_PREFIX)) {
+    return null;
+  }
+  const tokenId = id.slice(INVITE_LIST_ID_PREFIX.length).trim();
+  return tokenId.length > 0 ? tokenId : null;
+}
+
+export function isPendingUserInviteToken(token: IToken): boolean {
+  if (!token.email?.trim()) {
+    return false;
+  }
+  const type = token.type;
+  return type === 'invite' || type == null;
+}
+
 export function filterPendingInvitesForRegisteredEmails(
   invites: IToken[],
   registeredEmails: ReadonlySet<string>,

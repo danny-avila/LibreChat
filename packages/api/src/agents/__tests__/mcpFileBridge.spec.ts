@@ -9,20 +9,21 @@ import {
   MAX_BINARY_BYTES,
 } from '../mcpFileBridge';
 
-const MCP_TOOL = `Google_Drive${Constants.mcp_delimiter}create_file`;
+const MCP_TOOL = `Google_Drive${Constants.MCP_DELIMITER}create_file`;
 
 function makeFile(overrides: Partial<IMongoFile> & { file_id: string }): IMongoFile {
+  const { file_id, ...rest } = overrides;
   return {
     user: 'user-1',
-    file_id: overrides.file_id,
-    filename: overrides.filename ?? `${overrides.file_id}.pdf`,
-    filepath: overrides.filepath ?? `/storage/${overrides.file_id}`,
-    source: overrides.source ?? 'local',
-    type: overrides.type ?? 'application/pdf',
-    bytes: overrides.bytes ?? 4,
+    file_id,
+    filename: rest.filename ?? `${file_id}.pdf`,
+    filepath: rest.filepath ?? `/storage/${file_id}`,
+    source: rest.source ?? 'local',
+    type: rest.type ?? 'application/pdf',
+    bytes: rest.bytes ?? 4,
     object: 'file',
     usage: 0,
-    ...overrides,
+    ...rest,
   } as unknown as IMongoFile;
 }
 
@@ -156,7 +157,10 @@ describe('resolveFileReferences', () => {
   });
 
   it('scopes the lookup to the requesting user', async () => {
-    const file = makeFile({ file_id: 'ffffffff-6666', user: 'other-user' });
+    const file = makeFile({
+      file_id: 'ffffffff-6666',
+      user: 'other-user' as unknown as IMongoFile['user'],
+    });
     const deps = makeDeps([file]);
     const args = { base64Content: '@librechat-file:ffffffff-6666' };
 

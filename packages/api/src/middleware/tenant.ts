@@ -139,11 +139,6 @@ export function tenantContextMiddleware(
     }
   }
 
-  logger.info('[tenantContextMiddleware] Tenant context applied', {
-    tenantId,
-    userId: context.userId,
-    requestId: context.requestId,
-  });
   runWithTenantContext(context, next);
 }
 

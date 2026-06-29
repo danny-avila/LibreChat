@@ -19,6 +19,8 @@ import {
   filterPendingInvitesForRegisteredEmails,
   getInviteRoleFromMetadata,
   inviteDisplayName,
+  isPendingUserInviteToken,
+  isPlatformAdminInvite,
 } from './pendingInvites';
 import { getCallerTenantId, getTenantScopedUserFilter } from './tenant';
 import { parsePagination } from './pagination';
@@ -90,6 +92,8 @@ export interface AdminUsersDeps {
     tenantId?: string;
     role?: 'ADMIN' | 'USER';
   }) => Promise<IToken[]>;
+  findTokenById: (id: string) => Promise<IToken | null>;
+  deleteTokenById: (id: string) => Promise<{ deletedCount?: number }>;
   updateUser: (userId: string, data: Partial<IUser>) => Promise<IUser | null>;
 }
 
@@ -108,6 +112,8 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     deleteConfig,
     deleteAclEntries,
     findPendingUserInvites,
+    findTokenById,
+    deleteTokenById,
     updateUser,
   } = deps;
 
@@ -403,11 +409,46 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     }
   }
 
+  async function removeUserInvitationHandler(req: ServerRequest, res: Response) {
+    try {
+      const { tokenId } = req.params as { tokenId: string };
+      if (!isValidObjectIdString(tokenId)) {
+        return res.status(400).json({ error: 'Invalid invitation ID format' });
+      }
+
+      const invite = await runAsSystem(() => findTokenById(tokenId));
+      if (!invite || !isPendingUserInviteToken(invite) || isPlatformAdminInvite(invite)) {
+        return res.status(404).json({ error: 'Invitation not found' });
+      }
+
+      const inviteTenantId = invite.tenantId?.trim();
+      if (!inviteTenantId) {
+        return res.status(404).json({ error: 'Invitation not found' });
+      }
+
+      const callerTenantId = getCallerTenantId(req);
+      if (callerTenantId && callerTenantId !== inviteTenantId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const result = await runAsSystem(() => deleteTokenById(tokenId));
+      if (!result.deletedCount) {
+        return res.status(404).json({ error: 'Invitation not found' });
+      }
+
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      logger.error('[adminUsers] removeUserInvitation error:', error);
+      return res.status(500).json({ error: 'Failed to remove invitation' });
+    }
+  }
+
   return {
     listUsers: listUsersHandler,
     searchUsers: searchUsersHandler,
     deleteUser: deleteUserHandler,
     inviteUser: inviteUserHandler,
     promoteTenantAdmin: promoteTenantAdminHandler,
+    removeUserInvitation: removeUserInvitationHandler,
   };
 }

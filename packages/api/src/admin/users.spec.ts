@@ -72,6 +72,8 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     findPendingUserInvites: jest.fn().mockResolvedValue([]),
+    findTokenById: jest.fn().mockResolvedValue(null),
+    deleteTokenById: jest.fn().mockResolvedValue({ deletedCount: 0 }),
     updateUser: jest.fn().mockResolvedValue(null),
     ...overrides,
   };
