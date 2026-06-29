@@ -32,6 +32,7 @@ import {
   requiresUserScopedConnection,
 } from './utils';
 import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
+import { formatToolContent, resultHasRenderableUiResource } from './parsers';
 import { getToolUiResourceUri, isToolVisibilityModelOnly } from './apps';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
@@ -40,7 +41,6 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
-import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
 
@@ -726,21 +726,25 @@ Please follow these instructions when using tools from the respective MCP server
             userId,
             requiresEphemeralUserConnection(rawConfig),
           );
-          if (resourceMeta) {
-            // Honor the per-request apps setting so a tenant that disabled apps gets no UI resource
-            // (it would otherwise render as a broken iframe once the gated app endpoints reject the
-            // follow-up calls). Resolved lazily so non-app tools skip the per-request lookup.
-            const { appsEnabled } = await registry.resolveAllowlists({ userId, role: user?.role });
-            if (!appsEnabled) {
-              resourceMeta = undefined;
-            } else {
-              logger.debug(
-                `[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`,
-              );
-            }
-          }
         } catch {
           /* empty */
+        }
+      }
+
+      // The apps toggle must gate both the tool-declared app and any ui:// resource embedded in the
+      // result (either renders an iframe that breaks once the gated app endpoints reject follow-up
+      // calls). Resolved lazily, only when a UI resource is in play, so plain tool calls skip the
+      // per-request lookup.
+      let enableApps = true;
+      if (resourceMeta || resultHasRenderableUiResource(result as t.MCPToolCallResponse)) {
+        ({ appsEnabled: enableApps } = await registry.resolveAllowlists({
+          userId,
+          role: user?.role,
+        }));
+        if (!enableApps) {
+          resourceMeta = undefined;
+        } else if (resourceMeta) {
+          logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceMeta.uri}`);
         }
       }
 
@@ -755,8 +759,9 @@ Please follow these instructions when using tools from the respective MCP server
               csp: resourceMeta?.csp,
               permissions: resourceMeta?.permissions,
               toolArgs: toolArguments,
+              enableApps,
             }
-          : undefined,
+          : { enableApps },
       );
     } catch (error) {
       // Log with context and re-throw or handle as needed
@@ -1033,11 +1038,14 @@ Please follow these instructions when using tools from the respective MCP server
 
   /**
    * Fully percent-decodes a URI to the canonical form a server resolves. Returns null when it
-   * cannot be decoded or contains a relative (`.`/`..`) segment, so neither encoded traversal nor
-   * relative segments can satisfy a template guard.
+   * cannot be decoded, does not stabilize within the decode cap, or contains a relative (`.`/`..`)
+   * segment, so neither deeply encoded traversal nor relative segments can satisfy a template
+   * guard. Failing closed on the cap matters because a server that decodes until stable would
+   * otherwise receive a traversal this guard never saw in decoded form.
    */
   private static canonicalizeUri(uri: string): string | null {
     let current = uri;
+    let stabilized = false;
     for (let depth = 0; depth < 5; depth++) {
       let decoded: string;
       try {
@@ -1046,9 +1054,13 @@ Please follow these instructions when using tools from the respective MCP server
         return null;
       }
       if (decoded === current) {
+        stabilized = true;
         break;
       }
       current = decoded;
+    }
+    if (!stabilized) {
+      return null;
     }
     if (current.split(/[/\\]/).some((segment) => segment === '.' || segment === '..')) {
       return null;

@@ -328,6 +328,27 @@ describe('formatToolContent', () => {
       expect(uiResourceArtifact?.content).toEqual(result.content);
     });
 
+    it('suppresses embedded ui:// resources when apps are disabled for the scope', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: 'text/html', text: '<p>hi</p>' },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        enableApps: false,
+      });
+
+      expect(artifacts?.ui_resources).toBeUndefined();
+      expect(content).toContain('Resource URI: ui://app');
+      expect(content).not.toContain('UI Resource Marker:');
+    });
+
     it('gives embedded ui:// resources distinct ids per tool result payload', () => {
       const resourceIdFor = (sc: Record<string, unknown>) =>
         formatToolContent(

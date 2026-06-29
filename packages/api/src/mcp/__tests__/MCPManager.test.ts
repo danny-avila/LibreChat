@@ -1481,6 +1481,36 @@ describe('MCPManager', () => {
       const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
       expect(methods).not.toContain('resources/read');
     });
+
+    it('rejects traversal encoded more deeply than the decode cap rather than treating it as canonical', async () => {
+      let traversal = '%2e%2e%2f';
+      for (let i = 0; i < 6; i++) {
+        traversal = traversal.replace(/%/g, '%25');
+      }
+      const request = jest.fn().mockImplementation((req: { method: string }) => {
+        if (req.method === 'resources/list') {
+          return Promise.resolve({ resources: [] });
+        }
+        if (req.method === 'resources/templates/list') {
+          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'file://docs{+path}' }] });
+        }
+        return Promise.resolve({ contents: [] });
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await expect(
+        manager.readResource({
+          userId: 'user-123',
+          serverName: 'srv',
+          uri: `file://docs/${traversal}secret`,
+          user: mockUser as IUser,
+        }),
+      ).rejects.toThrow(/not advertised/);
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).not.toContain('resources/read');
+    });
   });
 
   describe('getConnection', () => {
