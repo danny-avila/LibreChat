@@ -58,6 +58,60 @@ describe('checkBalance', () => {
     );
   });
 
+  describe('auto-refill details in violation', () => {
+    it('should include refill info when auto-refill is enabled and balance is insufficient', async () => {
+      const lastRefill = new Date('2026-01-01T00:00:00.000Z');
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue({
+          tokenCredits: 10,
+          autoRefillEnabled: true,
+          refillAmount: 5000,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          lastRefill,
+        }),
+        getMultiplier: jest.fn().mockReturnValue(1),
+        createAutoRefillTransaction: jest.fn().mockResolvedValue(undefined),
+      });
+
+      await expect(
+        checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
+      ).rejects.toThrow();
+
+      expect(deps.logViolation).toHaveBeenCalledWith(
+        req,
+        res,
+        ViolationTypes.TOKEN_BALANCE,
+        expect.objectContaining({
+          balance: 10,
+          tokenCost: 100,
+          refill: {
+            amount: 5000,
+            intervalValue: 30,
+            intervalUnit: 'days',
+            lastRefill: lastRefill.toISOString(),
+            refillEligibilityDate: new Date('2026-01-31T00:00:00.000Z').toISOString(),
+          },
+        }),
+        0,
+      );
+    });
+
+    it('should not include refill info when auto-refill is disabled', async () => {
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue({ tokenCredits: 10 }),
+        getMultiplier: jest.fn().mockReturnValue(1),
+      });
+
+      await expect(
+        checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
+      ).rejects.toThrow();
+
+      const errorArg = (deps.logViolation as jest.Mock).mock.calls[0][3];
+      expect(errorArg).not.toHaveProperty('refill');
+    });
+  });
+
   describe('lazy balance initialization', () => {
     it('should create balance record when no record exists and startBalance is configured', async () => {
       const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 5000 });
