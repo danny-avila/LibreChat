@@ -182,13 +182,20 @@ export async function resolveMemoryLLMConfig({
   }
 
   try {
-    const { getOptions, overrideProvider } = getProviderConfig({
+    const { getOptions } = getProviderConfig({
       provider: agent.provider,
       appConfig: req.config,
     });
+    /**
+     * Pass the original (case-preserving) provider as the endpoint so custom
+     * endpoint configs (e.g. "OpenRouter") resolve — getProviderConfig
+     * normalizes the provider to lowercase, but custom endpoint lookup is
+     * case-sensitive and keyed by the configured name. Built-in initializers
+     * ignore this argument.
+     */
     const options = await getOptions({
       req,
-      endpoint: overrideProvider,
+      endpoint: agent.provider,
       model_parameters: { ...(agent.model_parameters ?? {}), model: agent.model },
       db,
     });
