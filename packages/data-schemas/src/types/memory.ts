@@ -42,8 +42,14 @@ export interface MemoryResult {
   ok: boolean;
 }
 
+export interface MemoryEntry {
+  value: string;
+  tokenCount: number;
+}
+
 export interface FormattedMemoriesResult {
   withKeys: string;
   withoutKeys: string;
   totalTokens?: number;
+  memoriesByKey: Map<string, MemoryEntry>;
 }
