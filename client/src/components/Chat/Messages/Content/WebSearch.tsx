@@ -34,6 +34,11 @@ function collectSources(results: Record<string, SearchResultData>): ValidSource[
         sourceMap.set(s.link, s);
       }
     });
+    result.references?.forEach((r) => {
+      if (r.link && !sourceMap.has(r.link)) {
+        sourceMap.set(r.link, { link: r.link, title: r.title } as unknown as ValidSource);
+      }
+    });
   }
   return Array.from(sourceMap.values());
 }

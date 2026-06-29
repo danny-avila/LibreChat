@@ -420,6 +420,66 @@ function getDefaultHandlers({
 }
 
 /**
+ * Parses raw tool result content from OpenRouter's `openrouter:web_search` hosted tool
+ * into an array of ResultReference objects for use in TAttachment.
+ *
+ * OpenRouter may return search results as a JSON array/object or as text.
+ * Handles several known shapes and falls back gracefully.
+ *
+ * @param {string | unknown} content - Raw tool result content
+ * @returns {Array<{link: string, type: string, title?: string}>} Parsed references
+ */
+function parseOpenRouterWebSearchContent(content) {
+  if (!content) {
+    return [];
+  }
+
+  let parsed;
+  if (typeof content === 'string') {
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return [];
+    }
+  } else {
+    parsed = content;
+  }
+
+  /** @param {unknown} item */
+  const toReference = (item) => {
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+    const obj = /** @type {Record<string, unknown>} */ (item);
+    const url = typeof obj.url === 'string' ? obj.url : typeof obj.link === 'string' ? obj.link : null;
+    if (!url) {
+      return null;
+    }
+    return {
+      link: url,
+      type: 'link',
+      title: typeof obj.title === 'string' ? obj.title : url,
+    };
+  };
+
+  const items = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.results)
+      ? parsed.results
+      : Array.isArray(parsed?.organic)
+        ? parsed.organic
+        : [];
+
+  return items.reduce((acc, item) => {
+    const ref = toReference(item);
+    if (ref) {
+      acc.push(ref);
+    }
+    return acc;
+  }, []);
+}
+
+/**
  * Helper to write attachment events either to res or to job emitter.
  * Note: Attachments are not order-sensitive like deltas, so fire-and-forget is acceptable.
  * @param {ServerResponse} res - The server response object
@@ -762,6 +822,30 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
   return async (data, metadata) => {
     const output = data?.output;
     if (!output) {
+      return;
+    }
+
+    if (!output.artifact && output.name === 'openrouter:web_search') {
+      artifactPromises.push(
+        (async () => {
+          const references = parseOpenRouterWebSearchContent(output.content);
+          if (!references.length) {
+            return null;
+          }
+          const attachment = {
+            type: Tools.web_search,
+            toolCallId: output.tool_call_id,
+            [Tools.web_search]: { turn: 0, references },
+          };
+          if (res.headersSent && !res.writableEnded) {
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing OpenRouter web search content:', error);
+          return null;
+        }),
+      );
       return;
     }
 
