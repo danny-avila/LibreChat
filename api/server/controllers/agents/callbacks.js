@@ -33,12 +33,13 @@ class ModelEndHandler {
    *   providers don't emit `additional_kwargs.signatures`, so capture is also
    *   a no-op for them even when the map is provided.
    */
-  constructor(collectedUsage, collectedThoughtSignatures = null) {
+  constructor(collectedUsage, collectedThoughtSignatures = null, citationSink = null) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
+    this.citationSink = citationSink;
   }
 
   finalize(errorMessage) {
@@ -77,6 +78,10 @@ class ModelEndHandler {
           messageId: metadata.run_id,
           conversationId: metadata.thread_id,
         });
+      }
+
+      if (this.citationSink) {
+        this.citationSink.emit(data, metadata?.run_id);
       }
 
       const usage = data?.output?.usage_metadata;
@@ -218,6 +223,7 @@ function getDefaultHandlers({
   res,
   aggregateContent,
   toolEndCallback,
+  artifactPromises = null,
   collectedUsage,
   collectedThoughtSignatures = null,
   streamId = null,
@@ -230,8 +236,16 @@ function getDefaultHandlers({
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
+  const citationSink = {
+    emit: (data, messageId) =>
+      emitCitationAnnotations(res, streamId, data, messageId, artifactPromises),
+  };
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage, collectedThoughtSignatures),
+    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(
+      collectedUsage,
+      collectedThoughtSignatures,
+      citationSink,
+    ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**
@@ -1170,33 +1184,102 @@ function buildSummarizationHandlers({ isStreaming, res }) {
 }
 
 /**
- * Extracts url_citation annotations from an on_chat_model_end AIMessage and writes a
- * web_search attachment event if any are found. Called from both the regular chat path
- * (openai.js) and the Responses API path (responses.js / service.ts).
- *
- * @param {import('express').Response} res
- * @param {string | null} streamId
- * @param {unknown} data - The on_chat_model_end event data
- * @param {string} [messageId] - The message ID to associate the attachment with
+ * Normalizes a single annotation-like object into a ResultReference, or
+ * null if it doesn't carry a usable URL. Handles the two known
+ * `url_citation` shapes returned through OpenRouter:
+ *   - flat:   `{ type: 'url_citation', url, title }`
+ *   - nested: `{ type: 'url_citation', url_citation: { url, title } }`
+ * @param {Record<string, any>} a
+ * @returns {{ link: string, type: string, title: string } | null}
  */
-function emitCitationAnnotations(res, streamId, data, messageId) {
-  const rawAnnotations = /** @type {any} */ (data)?.output?.additional_kwargs?.annotations;
-  if (!Array.isArray(rawAnnotations) || rawAnnotations.length === 0) {
-    return;
+function annotationToReference(a) {
+  if (!a || typeof a !== 'object') {
+    return null;
+  }
+  if (a.type && a.type !== 'url_citation') {
+    return null;
+  }
+  const citation = a.url_citation ?? a;
+  const url = citation.url ?? a.url;
+  if (typeof url !== 'string' || !url) {
+    return null;
+  }
+  return { link: url, type: 'link', title: citation.title || a.title || url };
+}
+
+/**
+ * Collects citation references from a model-end AIMessage. OpenRouter web
+ * search annotations may surface in several places depending on the model
+ * and the LangChain adapter, so check all of them:
+ *   - `additional_kwargs.annotations`
+ *   - `response_metadata.annotations`
+ *   - per-block `annotations` when `content` is an array of content blocks
+ * @param {any} output - The AIMessage (`data.output`) from a CHAT_MODEL_END event
+ * @returns {Array<{ link: string, type: string, title: string }>}
+ */
+function collectCitationReferences(output) {
+  if (!output || typeof output !== 'object') {
+    return [];
   }
 
-  const references = rawAnnotations.reduce((acc, a) => {
-    if (a.type !== 'url_citation') {
-      return acc;
+  const buckets = [];
+  const fromKwargs = output.additional_kwargs?.annotations;
+  if (Array.isArray(fromKwargs)) {
+    buckets.push(...fromKwargs);
+  }
+  const fromMetadata = output.response_metadata?.annotations;
+  if (Array.isArray(fromMetadata)) {
+    buckets.push(...fromMetadata);
+  }
+  if (Array.isArray(output.content)) {
+    for (const block of output.content) {
+      if (block && Array.isArray(block.annotations)) {
+        buckets.push(...block.annotations);
+      }
     }
-    const url = a.url || a.url_citation?.url;
-    if (!url) {
-      return acc;
+  }
+
+  const seen = new Set();
+  const references = buckets.reduce((acc, a) => {
+    const ref = annotationToReference(a);
+    if (ref && !seen.has(ref.link)) {
+      seen.add(ref.link);
+      acc.push(ref);
     }
-    acc.push({ link: url, type: 'link', title: a.title || a.url_citation?.title || url });
     return acc;
   }, []);
 
+  if (process.env.DEBUG_OPENROUTER_CITATIONS && references.length === 0) {
+    logger.info('[OpenRouter citations] no references extracted from model-end message', {
+      additionalKwargsKeys: Object.keys(output.additional_kwargs ?? {}),
+      responseMetadataKeys: Object.keys(output.response_metadata ?? {}),
+      contentType: Array.isArray(output.content) ? 'array' : typeof output.content,
+      contentSample: JSON.stringify(output.content)?.slice(0, 2000),
+      additionalKwargsSample: JSON.stringify(output.additional_kwargs)?.slice(0, 2000),
+      responseMetadataSample: JSON.stringify(output.response_metadata)?.slice(0, 2000),
+    });
+  }
+
+  return references;
+}
+
+/**
+ * Extracts citation annotations from a CHAT_MODEL_END AIMessage and writes a
+ * web_search attachment event if any are found. Covers OpenRouter hosted web
+ * search, whose results never reach the TOOL_END pipeline (the search runs
+ * server-side) and instead arrive as annotations on the final message.
+ *
+ * @param {import('express').Response} res
+ * @param {string | null} streamId
+ * @param {unknown} data - The CHAT_MODEL_END event data (`{ output: AIMessage }`)
+ * @param {string} [messageId] - The message ID to associate the attachment with
+ * @param {Array<Promise<unknown>> | null} [artifactPromises] - When provided, the
+ *   attachment is also pushed here so it persists to the saved message (matching the
+ *   TOOL_END pipeline), not just streamed live.
+ */
+function emitCitationAnnotations(res, streamId, data, messageId, artifactPromises = null) {
+  const output = /** @type {any} */ (data)?.output;
+  const references = collectCitationReferences(output);
   if (!references.length) {
     return;
   }
@@ -1210,6 +1293,10 @@ function emitCitationAnnotations(res, streamId, data, messageId) {
 
   if (streamId || res.headersSent) {
     writeAttachment(res, streamId, attachment);
+  }
+
+  if (Array.isArray(artifactPromises)) {
+    artifactPromises.push(Promise.resolve(attachment));
   }
 }
 
