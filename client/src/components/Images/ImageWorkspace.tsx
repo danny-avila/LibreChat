@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { Image as ImageIcon } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Spinner, Button, TextareaAutosize } from '@librechat/client';
+import {
+  Select,
+  Button,
+  Spinner,
+  SelectItem,
+  SelectValue,
+  SelectContent,
+  SelectTrigger,
+  TextareaAutosize,
+} from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
 import {
   useImageModels,
@@ -118,77 +128,104 @@ export default function ImageWorkspace() {
 
   const models = config?.models ?? [];
   const aspectRatios = config?.aspectRatios ?? ['1:1'];
+  const selectedModel = models.find((m) => m.id === (model || defaultModel));
 
   return (
-    <div className="flex h-full flex-col items-center px-4 py-8">
-      <div className="w-full max-w-2xl space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-semibold text-text-primary">{localize('com_ui_images')}</h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            {localize('com_ui_image_workspace_subtitle')}
-          </p>
+    <div className="flex h-full flex-col items-center overflow-y-auto px-4 pb-12">
+      {/* Model selector — centered at top */}
+      {models.length > 0 && (
+        <div className="flex w-full justify-center pt-3">
+          <Select value={model || defaultModel} onValueChange={handleModelChange}>
+            <SelectTrigger
+              className="h-9 w-auto gap-1 border-0 bg-transparent text-base font-medium text-text-primary shadow-none hover:bg-surface-hover"
+              aria-label={localize('com_ui_image_model')}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {models.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+      )}
 
-        {/* Prompt textarea */}
-        <div className="space-y-2">
-          <TextareaAutosize
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={localize('com_ui_image_prompt_placeholder')}
-            aria-label={localize('com_ui_image_prompt_placeholder')}
-            className="min-h-[100px] w-full resize-none rounded-lg border border-gray-200 bg-transparent p-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none dark:border-gray-600"
-            minRows={3}
-            maxRows={8}
-          />
+      {/* Hero + composer */}
+      <div className="flex w-full max-w-2xl flex-col gap-8 pt-16 md:pt-24">
+        <h1 className="sr-only">{localize('com_ui_images')}</h1>
+        <p className="text-center text-2xl font-semibold text-text-primary">
+          {localize('com_ui_image_workspace_subtitle')}
+        </p>
+
+        {/* Composer card */}
+        <div className="rounded-2xl border border-border-light bg-surface-primary p-3 shadow-sm">
+          <div className="flex items-start gap-2">
+            <ImageIcon
+              className="mt-2.5 h-5 w-5 flex-shrink-0 text-text-tertiary"
+              aria-hidden="true"
+            />
+            <TextareaAutosize
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={localize('com_ui_image_prompt_placeholder')}
+              aria-label={localize('com_ui_image_prompt_placeholder')}
+              className="min-h-[40px] w-full resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
+              minRows={1}
+              maxRows={8}
+            />
+          </div>
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            {models.length > 0 ? (
+              <ImageControls
+                selectedModel={selectedModel}
+                aspectRatio={aspectRatio}
+                aspectRatios={aspectRatios}
+                param={param}
+                imageUrls={imageUrls}
+                onAspectRatioChange={setAspectRatio}
+                onParamChange={setParam}
+                onImageUrlsChange={setImageUrls}
+                onUploadStart={() => setIsUploading(true)}
+                onUploadEnd={() => setIsUploading(false)}
+                isUploading={isUploading}
+              />
+            ) : (
+              <span />
+            )}
+
+            <Button
+              type="button"
+              onClick={handleGenerate}
+              disabled={isGenerating || !prompt.trim() || isUploading}
+              className="flex-shrink-0 rounded-full"
+              aria-label={localize('com_ui_generate')}
+            >
+              {isGenerating ? (
+                <span className="flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  {localize('com_ui_image_generating')}
+                </span>
+              ) : (
+                localize('com_ui_generate')
+              )}
+            </Button>
+          </div>
         </div>
-
-        {/* Controls */}
-        {models.length > 0 && (
-          <ImageControls
-            models={models}
-            model={model || defaultModel}
-            aspectRatio={aspectRatio}
-            aspectRatios={aspectRatios}
-            param={param}
-            imageUrls={imageUrls}
-            onModelChange={handleModelChange}
-            onAspectRatioChange={setAspectRatio}
-            onParamChange={setParam}
-            onImageUrlsChange={setImageUrls}
-            onUploadStart={() => setIsUploading(true)}
-            onUploadEnd={() => setIsUploading(false)}
-            isUploading={isUploading}
-          />
-        )}
-
-        {/* Generate button */}
-        <Button
-          type="button"
-          onClick={handleGenerate}
-          disabled={isGenerating || !prompt.trim() || isUploading}
-          className="w-full"
-          aria-label={localize('com_ui_generate')}
-        >
-          {isGenerating ? (
-            <span className="flex items-center gap-2">
-              <Spinner className="h-4 w-4" />
-              {localize('com_ui_image_generating')}
-            </span>
-          ) : (
-            localize('com_ui_generate')
-          )}
-        </Button>
 
         {/* Error message */}
         {errorMsg && (
-          <p role="alert" className="text-sm text-red-500">
+          <p role="alert" className="text-center text-sm text-red-500">
             {errorMsg}
           </p>
         )}
       </div>
 
-      <div className="mt-10 w-full max-w-2xl">
+      {/* Gallery */}
+      <div className="mt-12 w-full max-w-2xl">
         <ImageGallery />
       </div>
     </div>

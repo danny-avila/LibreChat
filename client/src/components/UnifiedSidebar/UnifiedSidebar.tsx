@@ -13,12 +13,13 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 const COLLAPSED_WIDTH = 52;
-const EXPANDED_MIN = 360;
+const EXPANDED_MIN = 260;
 const TRANSITION_MS = 300;
 const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
+const WIDTH_STORAGE_KEY = 'side:width:v2';
 
 function getInitialWidth(): number {
-  const saved = localStorage.getItem('side:width');
+  const saved = localStorage.getItem(WIDTH_STORAGE_KEY);
   return saved ? Math.max(Number(saved), EXPANDED_MIN) : EXPANDED_MIN;
 }
 
@@ -86,7 +87,7 @@ function UnifiedSidebar() {
       setIsResizing(false);
       resizeHandlers.current = null;
       setSidebarWidth((w) => {
-        localStorage.setItem('side:width', String(Math.round(w)));
+        localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(w)));
         return w;
       });
       document.removeEventListener('mousemove', move);
@@ -104,7 +105,7 @@ function UnifiedSidebar() {
         direction === 'shrink'
           ? Math.max(w - 20, EXPANDED_MIN)
           : Math.min(w + 20, window.innerWidth * 0.4);
-      localStorage.setItem('side:width', String(Math.round(next)));
+      localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(next)));
       return next;
     });
   }, []);

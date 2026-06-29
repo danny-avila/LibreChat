@@ -35,7 +35,13 @@ jest.mock('@librechat/client', () => {
   return {
     ...actual,
     Select: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-    SelectTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    SelectTrigger: ({
+      children,
+      'aria-label': ariaLabel,
+    }: {
+      children: React.ReactNode;
+      'aria-label'?: string;
+    }) => <div aria-label={ariaLabel}>{children}</div>,
     SelectValue: () => null,
     SelectContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
     SelectItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -67,13 +73,11 @@ const editModel: TImageModel = {
 };
 
 const baseProps = {
-  models: [editModel],
-  model: 'flux-edit',
+  selectedModel: editModel,
   aspectRatio: '1:1',
   aspectRatios: ['1:1'],
   param: '1k',
   imageUrls: [] as string[],
-  onModelChange: jest.fn(),
   onAspectRatioChange: jest.fn(),
   onParamChange: jest.fn(),
   onImageUrlsChange: mockOnImageUrlsChange,
@@ -130,9 +134,9 @@ describe('ImageControls reference upload', () => {
     });
   });
 
-  it('renders a capitalized param label', () => {
+  it('uses a capitalized param label for the control', () => {
     render(<ImageControls {...baseProps} />);
-    // paramKey 'resolution' -> 'Resolution'
-    expect(screen.getByText('Resolution')).toBeInTheDocument();
+    // paramKey 'resolution' -> 'Resolution' (exposed as the control's aria-label)
+    expect(screen.getByLabelText('Resolution')).toBeInTheDocument();
   });
 });
