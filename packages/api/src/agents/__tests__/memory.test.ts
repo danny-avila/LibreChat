@@ -156,6 +156,104 @@ describe('createMemoryTool', () => {
     });
   });
 
+  // Key deduplication / merge tests
+  describe('key deduplication', () => {
+    let mockRun: { processStream: jest.Mock };
+
+    beforeEach(() => {
+      mockRun = { processStream: jest.fn().mockResolvedValue('Merged memory value.') };
+      const { Run } = jest.requireMock('@librechat/agents');
+      (Run.create as jest.Mock).mockResolvedValue(mockRun);
+    });
+
+    it('should merge with existing memory when key already exists', async () => {
+      const existingMemoriesByKey = new Map([
+        ['test', { value: 'Old memory value.', tokenCount: 3 }],
+      ]);
+
+      const tool = createMemoryTool({
+        userId: 'test-user',
+        setMemory: mockSetMemory,
+        existingMemoriesByKey,
+      });
+
+      const result = await tool.func({ key: 'test', value: 'New information.' });
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe('Memory set for key "test" (20 tokens)');
+
+      const artifacts = result[1] as Record<Tools.memory, MemoryArtifact>;
+      expect(artifacts[Tools.memory].value).toBe('Merged memory value.');
+      expect(artifacts[Tools.memory].type).toBe('update');
+
+      expect(mockSetMemory).toHaveBeenCalledWith({
+        userId: 'test-user',
+        key: 'test',
+        value: 'Merged memory value.',
+        tokenCount: 20,
+      });
+    });
+
+    it('should fall back to new value when merge fails', async () => {
+      mockRun.processStream.mockRejectedValue(new Error('LLM error'));
+
+      const existingMemoriesByKey = new Map([
+        ['test', { value: 'Old value.', tokenCount: 2 }],
+      ]);
+
+      const tool = createMemoryTool({
+        userId: 'test-user',
+        setMemory: mockSetMemory,
+        existingMemoriesByKey,
+      });
+
+      const result = await tool.func({ key: 'test', value: 'New value.' });
+      expect(result[0]).toContain('Memory set for key "test"');
+
+      expect(mockSetMemory).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'test', value: 'New value.' }),
+      );
+    });
+
+    it('should subtract existing key tokens from total when merging', async () => {
+      const existingMemoriesByKey = new Map([
+        ['test', { value: 'Old value.', tokenCount: 80 }],
+      ]);
+
+      const tool = createMemoryTool({
+        userId: 'test-user',
+        setMemory: mockSetMemory,
+        tokenLimit: 100,
+        totalTokens: 90, // 80 of those are from the key being replaced
+        existingMemoriesByKey,
+      });
+
+      // effectiveTotalTokens = 90 - 80 = 10; merged result 20 tokens → fits
+      const result = await tool.func({ key: 'test', value: 'New value.' });
+      expect(result[0]).toContain('Memory set for key "test"');
+      expect(mockSetMemory).toHaveBeenCalled();
+    });
+
+    it('should not call merge when key does not exist', async () => {
+      const existingMemoriesByKey = new Map([
+        ['other', { value: 'Other value.', tokenCount: 5 }],
+      ]);
+
+      const tool = createMemoryTool({
+        userId: 'test-user',
+        setMemory: mockSetMemory,
+        existingMemoriesByKey,
+      });
+
+      await tool.func({ key: 'test', value: 'New memory.' });
+
+      const { Run } = jest.requireMock('@librechat/agents');
+      expect(Run.create).not.toHaveBeenCalled();
+      expect(mockSetMemory).toHaveBeenCalledWith(
+        expect.objectContaining({ value: 'New memory.' }),
+      );
+    });
+  });
+
   // Basic functionality tests
   describe('basic functionality', () => {
     it('should validate keys when validKeys is provided', async () => {

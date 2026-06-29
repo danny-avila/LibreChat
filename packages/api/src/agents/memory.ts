@@ -5,6 +5,7 @@ import { logger } from '@librechat/data-schemas';
 import { tool } from '@librechat/agents/langchain/tools';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import type { MemoryEntry } from '@librechat/data-schemas';
 import type {
   OpenAIClientOptions,
   StreamEventData,
@@ -83,6 +84,71 @@ ${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens per memory value.` :
 
 When in doubt, and the user hasn't asked to remember or forget anything, END THE TURN IMMEDIATELY.`;
 
+const defaultMergeLLMConfig: LLMConfig = {
+  provider: Providers.OPENAI,
+  model: 'gpt-4.1-mini',
+  temperature: 0.2,
+  streaming: false,
+  disableStreaming: true,
+};
+
+async function mergeMemoryValues({
+  existingValue,
+  newValue,
+  key,
+  mergeRunId,
+  llmConfig,
+}: {
+  existingValue: string;
+  newValue: string;
+  key: string;
+  mergeRunId: string;
+  llmConfig: LLMConfig;
+}): Promise<string> {
+  try {
+    const run = await Run.create({
+      runId: mergeRunId,
+      graphConfig: {
+        type: 'standard',
+        llmConfig,
+        tools: [],
+        instructions:
+          'You are a memory integration assistant. Your only task is to merge two pieces of information about the same person into a single, coherent, complete statement. Preserve all distinct facts from both. Return ONLY the merged text — no explanation, no preamble.',
+        toolEnd: false,
+      },
+      returnContent: true,
+    });
+
+    const inputs = {
+      messages: [
+        new HumanMessage(
+          `Existing memory for key "${key}": "${existingValue}"\n\nNew information to integrate: "${newValue}"\n\nReturn the merged memory as a single complete sentence or statement.`,
+        ),
+      ],
+    };
+
+    const config = {
+      runName: 'MemoryMerge',
+      configurable: {
+        user_id: 'system',
+        thread_id: `merge-${key}`,
+      },
+      streamMode: 'values',
+      recursionLimit: 2,
+      version: 'v2',
+    } as const;
+
+    const content = await run.processStream(inputs, config);
+    if (typeof content === 'string' && content.trim()) {
+      logger.debug(`[MemoryMerge] Merged memory for key "${key}"`);
+      return content.trim();
+    }
+  } catch (error) {
+    logger.warn(`[MemoryMerge] Failed to merge memory for key "${key}", using new value`, error);
+  }
+  return newValue;
+}
+
 /**
  * Creates a memory tool instance with user context
  */
@@ -92,16 +158,19 @@ export const createMemoryTool = ({
   validKeys,
   tokenLimit,
   totalTokens = 0,
+  existingMemoriesByKey,
+  llmConfig,
+  mergeRunId,
 }: {
   userId: string | ObjectId;
   setMemory: MemoryMethods['setMemory'];
   validKeys?: string[];
   tokenLimit?: number;
   totalTokens?: number;
+  existingMemoriesByKey?: Map<string, MemoryEntry>;
+  llmConfig?: Partial<LLMConfig>;
+  mergeRunId?: string;
 }): DynamicStructuredTool => {
-  const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
-  const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
-
   return tool(
     async ({ key, value }) => {
       try {
@@ -114,7 +183,32 @@ export const createMemoryTool = ({
           return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
         }
 
-        const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
+        const existing = existingMemoriesByKey?.get(key);
+
+        let finalValue = value;
+        if (existing) {
+          const mergeLLMConfig = {
+            ...defaultMergeLLMConfig,
+            ...(llmConfig ?? {}),
+            streaming: false,
+            disableStreaming: true,
+          } as LLMConfig;
+          finalValue = await mergeMemoryValues({
+            existingValue: existing.value,
+            newValue: value,
+            key,
+            mergeRunId: mergeRunId ? `${mergeRunId}-merge-${key}` : `merge-${key}`,
+            llmConfig: mergeLLMConfig,
+          });
+        }
+
+        const effectiveTotalTokens = existing
+          ? totalTokens - existing.tokenCount
+          : totalTokens;
+        const remainingTokens = tokenLimit ? tokenLimit - effectiveTotalTokens : Infinity;
+        const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
+
+        const tokenCount = Tokenizer.getTokenCount(finalValue, 'o200k_base');
 
         if (isOverflowing) {
           const errorArtifact: Record<Tools.memory, MemoryArtifact> = {
@@ -124,17 +218,17 @@ export const createMemoryTool = ({
               value: JSON.stringify({
                 errorType: 'already_exceeded',
                 tokenCount: Math.abs(remainingTokens),
-                totalTokens: totalTokens,
+                totalTokens: effectiveTotalTokens,
                 tokenLimit: tokenLimit!,
               }),
-              tokenCount: totalTokens,
+              tokenCount: effectiveTotalTokens,
             },
           };
           return [`Memory storage exceeded. Cannot save new memories.`, errorArtifact];
         }
 
         if (tokenLimit) {
-          const newTotalTokens = totalTokens + tokenCount;
+          const newTotalTokens = effectiveTotalTokens + tokenCount;
           const newRemainingTokens = tokenLimit - newTotalTokens;
 
           if (newRemainingTokens < 0) {
@@ -148,7 +242,7 @@ export const createMemoryTool = ({
                   totalTokens: newTotalTokens,
                   tokenLimit,
                 }),
-                tokenCount: totalTokens,
+                tokenCount: effectiveTotalTokens,
               },
             };
             return [`Memory storage would exceed limit. Cannot save this memory.`, errorArtifact];
@@ -158,13 +252,13 @@ export const createMemoryTool = ({
         const artifact: Record<Tools.memory, MemoryArtifact> = {
           [Tools.memory]: {
             key,
-            value,
+            value: finalValue,
             tokenCount,
             type: 'update',
           },
         };
 
-        const result = await setMemory({ userId, key, value, tokenCount });
+        const result = await setMemory({ userId, key, value: finalValue, tokenCount });
         if (result.ok) {
           logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
           return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
@@ -296,6 +390,7 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  existingMemoriesByKey,
   streamId = null,
   user,
 }: {
@@ -311,6 +406,7 @@ export async function processMemory({
   instructions: string;
   tokenLimit?: number;
   totalTokens?: number;
+  existingMemoriesByKey?: Map<string, MemoryEntry>;
   llmConfig?: Partial<LLMConfig>;
   streamId?: string | null;
   user?: IUser;
@@ -322,6 +418,9 @@ export async function processMemory({
       setMemory,
       validKeys,
       totalTokens,
+      existingMemoriesByKey,
+      llmConfig,
+      mergeRunId: messageId,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
@@ -526,9 +625,8 @@ export async function createMemoryProcessor({
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
-  const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
-    userId,
-  });
+  const { withKeys, withoutKeys, totalTokens, memoriesByKey } =
+    await memoryMethods.getFormattedMemories({ userId });
 
   return [
     withoutKeys,
@@ -546,6 +644,7 @@ export async function createMemoryProcessor({
           conversationId,
           memory: withKeys,
           totalTokens: totalTokens || 0,
+          existingMemoriesByKey: memoriesByKey,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
