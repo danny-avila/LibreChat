@@ -103,14 +103,20 @@ export async function mergeMemoryValues({
   newValue: string;
   key: string;
   mergeRunId: string;
-  llmConfig: LLMConfig;
+  llmConfig?: Partial<LLMConfig>;
 }): Promise<string> {
   try {
+    const finalLLMConfig = {
+      ...defaultMergeLLMConfig,
+      ...(llmConfig ?? {}),
+      streaming: false,
+      disableStreaming: true,
+    } as LLMConfig;
     const run = await Run.create({
       runId: mergeRunId,
       graphConfig: {
         type: 'standard',
-        llmConfig,
+        llmConfig: finalLLMConfig,
         tools: [],
         instructions:
           'You are a memory integration assistant. Your only task is to merge two pieces of information about the same person into a single, coherent, complete statement. Preserve all distinct facts from both. Return ONLY the merged text — no explanation, no preamble.',
@@ -187,18 +193,12 @@ export const createMemoryTool = ({
 
         let finalValue = value;
         if (existing) {
-          const mergeLLMConfig = {
-            ...defaultMergeLLMConfig,
-            ...(llmConfig ?? {}),
-            streaming: false,
-            disableStreaming: true,
-          } as LLMConfig;
           finalValue = await mergeMemoryValues({
             existingValue: existing.value,
             newValue: value,
             key,
             mergeRunId: mergeRunId ? `${mergeRunId}-merge-${key}` : `merge-${key}`,
-            llmConfig: mergeLLMConfig,
+            llmConfig,
           });
         }
 
