@@ -537,6 +537,7 @@ modelSpecs:
         model: openai/gpt-5.5-pro
         useResponsesApi: true
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: &aiw_instructions |
           You are the AI Workforce Pro assistant, built by SMB Team to help small and medium-sized businesses work more efficiently.
@@ -621,6 +622,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: openai/gpt-5.5
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -633,6 +635,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: openai/o3
         max_tokens: 16384
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -646,6 +649,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: google/gemini-2.5-pro
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -658,6 +662,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: google/gemini-2.5-flash
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -672,6 +677,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: "~anthropic/claude-sonnet-latest"
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -684,6 +690,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: anthropic/claude-haiku-4.5
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
