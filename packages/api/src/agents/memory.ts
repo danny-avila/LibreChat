@@ -92,7 +92,7 @@ const defaultMergeLLMConfig: LLMConfig = {
   disableStreaming: true,
 };
 
-async function mergeMemoryValues({
+export async function mergeMemoryValues({
   existingValue,
   newValue,
   key,
