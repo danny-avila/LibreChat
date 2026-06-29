@@ -8,7 +8,39 @@ import type {
   UsageMetadata,
   IJobStore,
   JobStatus,
+  JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
+import { isPendingActionStale } from '~/stream/interfaces/IJobStore';
+
+/**
+ * Atomic compare-and-set on the job hash — the single-winner decision for a
+ * status transition. Touches ONLY the job key, which lives on one hash slot, so
+ * it is atomic on both single-node and Redis Cluster (cross-slot membership
+ * sets are reconciled by the caller AFTER this decides the winner).
+ *
+ * Guards on the current `status` and, when ARGV[2] is non-empty, on the flat
+ * `pendingActionId` field — so a stale decision targeting a different action
+ * loses. On success: removes `clear` fields, writes `status`+patch pairs,
+ * refreshes the job-hash TTL. Returns 1 if it fired, 0 otherwise.
+ *
+ *   KEYS: [job]
+ *   ARGV: [from, expectActionId | "", ttl, hdelCount, ...hdelFields, ...hsetPairs]
+ */
+const JOB_CAS_LUA =
+  'if redis.call("HGET", KEYS[1], "status") ~= ARGV[1] then return 0 end ' +
+  'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "pendingActionId") ~= ARGV[2] then return 0 end ' +
+  'local ttl = tonumber(ARGV[3]) ' +
+  'local hdelCount = tonumber(ARGV[4]) ' +
+  'local idx = 5 ' +
+  'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
+  'local hset = {} ' +
+  'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
+  'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'return 1';
+
+/** Decision kinds the SDK can emit, used to sanity-check persisted records. */
+const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
 
 /**
  * Key prefixes for Redis storage.
@@ -29,6 +61,8 @@ const KEYS = {
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
+  /** Jobs paused for human review (global set - single slot) */
+  requiresActionJobs: 'stream:requires_action',
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
@@ -49,6 +83,14 @@ const DEFAULT_TTL = {
   runStepsAfterComplete: 0,
   /** Safety-net TTL for per-user job tracking sets (24 hours). Refreshed on each createJob. */
   userJobsSet: 86400,
+  /**
+   * Backstop TTL for a job paused for human review (24 hours). A paused job is
+   * NOT a hung generation, so it must not inherit the 20-minute running TTL —
+   * an approval with no explicit `expiresAt` is "live" per the API contract and
+   * would otherwise be evicted mid-window. A pendingAction with a longer
+   * `expiresAt` extends beyond this (see pauseTtlSeconds).
+   */
+  requiresAction: 86400,
 };
 
 /**
@@ -83,6 +125,8 @@ export interface RedisJobStoreOptions {
   runStepsAfterCompleteTtl?: number;
   /** TTL for per-user job tracking sets in seconds (default: 86400 = 24 hours). 0 = no TTL. */
   userJobsSetTtl?: number;
+  /** Backstop TTL for a paused (requires_action) job in seconds (default: 86400 = 24 hours). */
+  requiresActionTtl?: number;
 }
 
 export class RedisJobStore implements IJobStore {
@@ -118,6 +162,7 @@ export class RedisJobStore implements IJobStore {
       chunksAfterComplete: options?.chunksAfterCompleteTtl ?? DEFAULT_TTL.chunksAfterComplete,
       runStepsAfterComplete: options?.runStepsAfterCompleteTtl ?? DEFAULT_TTL.runStepsAfterComplete,
       userJobsSet: options?.userJobsSetTtl ?? DEFAULT_TTL.userJobsSet,
+      requiresAction: options?.requiresActionTtl ?? DEFAULT_TTL.requiresAction,
     };
     // Detect cluster mode using ioredis's isCluster property
     this.isCluster = (redis as Cluster).isCluster === true;
@@ -161,12 +206,24 @@ export class RedisJobStore implements IJobStore {
     const key = KEYS.job(streamId);
     const userJobsKey = KEYS.userJobs(userId, tenantId);
 
+    // A reused streamId overlays onto any existing hash, so paused-run fields
+    // from a prior generation could survive. Drop the HITL fields so the fresh
+    // running job never exposes stale approval metadata and cleanup keys off the
+    // new createdAt rather than a leftover lastActiveAt.
+    const staleHitlFields: Array<keyof SerializableJobData> = [
+      'pendingAction',
+      'pendingActionId',
+      'lastActiveAt',
+    ];
+
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
     if (this.isCluster) {
       await this.redis.hset(key, this.serializeJob(job));
+      await this.redis.hdel(key, ...staleHitlFields);
       await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
+      await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
       if (this.ttl.userJobsSet > 0) {
         await this.redis.expire(userJobsKey, this.ttl.userJobsSet);
@@ -174,8 +231,10 @@ export class RedisJobStore implements IJobStore {
     } else {
       const pipeline = this.redis.pipeline();
       pipeline.hset(key, this.serializeJob(job));
+      pipeline.hdel(key, ...staleHitlFields);
       pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
+      pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);
       if (this.ttl.userJobsSet > 0) {
         pipeline.expire(userJobsKey, this.ttl.userJobsSet);
@@ -198,71 +257,195 @@ export class RedisJobStore implements IJobStore {
   async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
     const key = KEYS.job(streamId);
 
+    // Plain field writer. The membership-aware status transitions
+    // (running ⇄ requires_action — sets, TTLs, the actionId guard) go solely
+    // through transitionStatus, the single race-safe path. updateJob still
+    // handles terminal status writes (complete/error/aborted) + their cleanup.
     const serialized = this.serializeJob(updates as SerializableJobData);
     if (Object.keys(serialized).length === 0) {
       return;
     }
 
     const fields = Object.entries(serialized).flat();
+    const updated = await this.updateExistingJobHash(key, fields);
+    if (!updated) {
+      return;
+    }
+
+    if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
+      await this.applyTerminalContentCleanup(streamId);
+    }
+  }
+
+  /**
+   * Terminal cleanup shared by `updateJob` (complete/error/aborted) and the
+   * terminal path of `transitionStatus` (approval expiry → aborted): drop the
+   * job from both membership sets and the user-active set, shorten the job-hash
+   * TTL to the completed window, and del/shorten the chunk + run-step keys per
+   * the configured after-complete TTLs. Without sharing this, an expired
+   * approval left Redis stream contents around for the full running TTL.
+   */
+  private async applyTerminalContentCleanup(streamId: string): Promise<void> {
+    const key = KEYS.job(streamId);
+    // Proactively remove from user's job set (requires reading userId from the job hash)
+    const job = await this.getJob(streamId);
+    const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
+
+    if (this.isCluster) {
+      await this.redis.expire(key, this.ttl.completed);
+      await this.redis.srem(KEYS.runningJobs, streamId);
+      await this.redis.srem(KEYS.requiresActionJobs, streamId);
+
+      if (this.ttl.chunksAfterComplete === 0) {
+        await this.redis.del(KEYS.chunks(streamId));
+      } else {
+        await this.redis.expire(KEYS.chunks(streamId), this.ttl.chunksAfterComplete);
+      }
+
+      if (this.ttl.runStepsAfterComplete === 0) {
+        await this.redis.del(KEYS.runSteps(streamId));
+      } else {
+        await this.redis.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
+      }
+
+      if (userJobsKey) {
+        await this.redis.srem(userJobsKey, streamId);
+      }
+    } else {
+      const pipeline = this.redis.pipeline();
+      pipeline.expire(key, this.ttl.completed);
+      pipeline.srem(KEYS.runningJobs, streamId);
+      pipeline.srem(KEYS.requiresActionJobs, streamId);
+
+      if (this.ttl.chunksAfterComplete === 0) {
+        pipeline.del(KEYS.chunks(streamId));
+      } else {
+        pipeline.expire(KEYS.chunks(streamId), this.ttl.chunksAfterComplete);
+      }
+
+      if (this.ttl.runStepsAfterComplete === 0) {
+        pipeline.del(KEYS.runSteps(streamId));
+      } else {
+        pipeline.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
+      }
+
+      if (userJobsKey) {
+        pipeline.srem(userJobsKey, streamId);
+      }
+
+      await pipeline.exec();
+    }
+  }
+
+  /**
+   * Live-key TTL (seconds) for a paused job. A paused job isn't a hung
+   * generation, so it uses the longer requires_action backstop rather than the
+   * running TTL — otherwise a no-expiry approval (the buildPendingAction
+   * default), which the API treats as "live", would be evicted after the 20m
+   * running window. A pendingAction with an `expiresAt` farther out than the
+   * backstop extends to cover it, plus a grace margin so a decision arriving
+   * right at the deadline can still resume.
+   */
+  private pauseTtlSeconds(pendingAction?: Agents.PendingAction): number {
+    const exp = pendingAction?.expiresAt;
+    if (exp == null) {
+      return this.ttl.requiresAction;
+    }
+    const secondsUntilExpiry = Math.ceil((exp - Date.now()) / 1000) + 60;
+    return Math.max(this.ttl.requiresAction, secondsUntilExpiry);
+  }
+
+  /** The membership set a status belongs to; terminal statuses have none. */
+  private statusSetKey(status: JobStatus): string | null {
+    if (status === 'running') {
+      return KEYS.runningJobs;
+    }
+    if (status === 'requires_action') {
+      return KEYS.requiresActionJobs;
+    }
+    return null;
+  }
+
+  async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
+    const { from, to, patch, clear, expectActionId } = args;
+    const key = KEYS.job(streamId);
+
+    // status + patch become HSET pairs; serializeJob skips undefined, so
+    // cleared fields go through HDEL (`clear`) instead.
+    const fields = Object.entries(
+      this.serializeJob({ status: to, ...(patch ?? {}) } as SerializableJobData),
+    ).flat();
+    const clearFields = (clear ?? []).map(String);
+
+    const remSet = this.statusSetKey(from);
+    const addSet = this.statusSetKey(to);
+    const terminal = addSet === null;
+    let ttl = terminal ? this.ttl.completed : this.ttl.running;
+    if (to === 'requires_action') {
+      // A paused job must outlive its approval window, even when that window is
+      // longer than the running TTL — otherwise Redis evicts it before a
+      // decision can resume it.
+      ttl = this.pauseTtlSeconds(patch?.pendingAction);
+    }
+
+    // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
+    //    Works identically on cluster and single-node, so two concurrent
+    //    resolves can never both win (and drive the run twice).
+    const won = await this.redis.eval(
+      JOB_CAS_LUA,
+      1,
+      key,
+      from,
+      expectActionId ?? '',
+      String(ttl),
+      String(clearFields.length),
+      ...clearFields,
+      ...fields,
+    );
+    if (won !== 1) {
+      return false;
+    }
+
+    // 2) Reconcile derived state. Only the winner reaches here; membership is
+    //    self-healed by periodic cleanup, so this non-atomic cross-slot step is
+    //    safe. A terminal target (e.g. approval expiry → aborted) gets the same
+    //    content cleanup as updateJob's terminal path.
+    if (terminal) {
+      await this.applyTerminalContentCleanup(streamId);
+      return true;
+    }
+    if (this.isCluster) {
+      if (remSet) {
+        await this.redis.srem(remSet, streamId);
+      }
+      if (addSet) {
+        await this.redis.sadd(addSet, streamId);
+      }
+      await this.redis.expire(KEYS.chunks(streamId), ttl);
+      await this.redis.expire(KEYS.runSteps(streamId), ttl);
+    } else {
+      const pipeline = this.redis.pipeline();
+      if (remSet) {
+        pipeline.srem(remSet, streamId);
+      }
+      if (addSet) {
+        pipeline.sadd(addSet, streamId);
+      }
+      pipeline.expire(KEYS.chunks(streamId), ttl);
+      pipeline.expire(KEYS.runSteps(streamId), ttl);
+      await pipeline.exec();
+    }
+    return true;
+  }
+
+  private async updateExistingJobHash(key: string, fields: string[]): Promise<boolean> {
     const updated = await this.redis.eval(
       'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
       1,
       key,
       ...fields,
     );
-
-    if (updated === 0) {
-      return;
-    }
-
-    if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
-      // Proactively remove from user's job set (requires reading userId from the job hash)
-      const job = await this.getJob(streamId);
-      const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
-
-      if (this.isCluster) {
-        await this.redis.expire(key, this.ttl.completed);
-        await this.redis.srem(KEYS.runningJobs, streamId);
-
-        if (this.ttl.chunksAfterComplete === 0) {
-          await this.redis.del(KEYS.chunks(streamId));
-        } else {
-          await this.redis.expire(KEYS.chunks(streamId), this.ttl.chunksAfterComplete);
-        }
-
-        if (this.ttl.runStepsAfterComplete === 0) {
-          await this.redis.del(KEYS.runSteps(streamId));
-        } else {
-          await this.redis.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
-        }
-
-        if (userJobsKey) {
-          await this.redis.srem(userJobsKey, streamId);
-        }
-      } else {
-        const pipeline = this.redis.pipeline();
-        pipeline.expire(key, this.ttl.completed);
-        pipeline.srem(KEYS.runningJobs, streamId);
-
-        if (this.ttl.chunksAfterComplete === 0) {
-          pipeline.del(KEYS.chunks(streamId));
-        } else {
-          pipeline.expire(KEYS.chunks(streamId), this.ttl.chunksAfterComplete);
-        }
-
-        if (this.ttl.runStepsAfterComplete === 0) {
-          pipeline.del(KEYS.runSteps(streamId));
-        } else {
-          pipeline.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
-        }
-
-        if (userJobsKey) {
-          pipeline.srem(userJobsKey, streamId);
-        }
-
-        await pipeline.exec();
-      }
-    }
+    return updated === 1;
   }
 
   async deleteJob(streamId: string): Promise<void> {
@@ -284,6 +467,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.runSteps(streamId));
       await pipeline.exec();
       await this.redis.srem(KEYS.runningJobs, streamId);
+      await this.redis.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
         await this.redis.srem(userJobsKey, streamId);
       }
@@ -293,6 +477,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
       pipeline.srem(KEYS.runningJobs, streamId);
+      pipeline.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
         pipeline.srem(userJobsKey, streamId);
       }
@@ -345,6 +530,15 @@ export class RedisJobStore implements IJobStore {
           // Job no longer exists (TTL expired) - remove from set
           if (!job) {
             await this.redis.srem(KEYS.runningJobs, streamId);
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
+            this.localGraphCache.delete(streamId);
+            this.localCollectedUsageCache.delete(streamId);
+            return 1;
+          }
+
+          if (job.status === 'requires_action') {
+            await this.redis.srem(KEYS.runningJobs, streamId);
+            await this.redis.sadd(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
@@ -355,6 +549,7 @@ export class RedisJobStore implements IJobStore {
           // its own completedTtl so clients can still poll for final status.
           if (job.status !== 'running') {
             await this.redis.srem(KEYS.runningJobs, streamId);
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
             if (job.userId) {
               await this.redis.srem(KEYS.userJobs(job.userId, job.tenantId), streamId);
             }
@@ -363,8 +558,11 @@ export class RedisJobStore implements IJobStore {
             return 1;
           }
 
-          // Stale running job (failsafe - running for > configured TTL)
-          if (now - job.createdAt > this.ttl.running * 1000) {
+          // Stale running job (failsafe - running for > configured TTL).
+          // Keys off `lastActiveAt` when present so a just-resumed approval
+          // isn't reaped on the basis of its original creation time.
+          const liveSince = job.lastActiveAt ?? job.createdAt;
+          if (now - liveSince > this.ttl.running * 1000) {
             logger.warn(`[RedisJobStore] Cleaning up stale job: ${streamId}`);
             const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
             await this.deleteJobInternal(streamId, userJobsKey);
@@ -383,6 +581,8 @@ export class RedisJobStore implements IJobStore {
       }
     }
 
+    cleaned += await this.cleanupRequiresActionIndex();
+
     if (cleaned > 0) {
       logger.debug(`[RedisJobStore] Cleaned up ${cleaned} jobs`);
     }
@@ -390,11 +590,72 @@ export class RedisJobStore implements IJobStore {
     return cleaned;
   }
 
+  private async cleanupRequiresActionIndex(): Promise<number> {
+    const streamIds = await this.redis.smembers(KEYS.requiresActionJobs);
+    let cleaned = 0;
+
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < streamIds.length; i += BATCH_SIZE) {
+      const batch = streamIds.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (streamId) => {
+          const job = await this.getJob(streamId);
+
+          if (!job) {
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
+            this.localGraphCache.delete(streamId);
+            this.localCollectedUsageCache.delete(streamId);
+            return 1;
+          }
+
+          if (job.status !== 'requires_action') {
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
+            if (job.status === 'running') {
+              await this.redis.sadd(KEYS.runningJobs, streamId);
+            }
+            return 1;
+          }
+
+          // Stale approval (expired, or missing/malformed pendingAction):
+          // finalize it (aborted) so it stops occupying the slot and its stream
+          // contents are reclaimed, mirroring ApprovalLifecycle.expire().
+          // transitionStatus runs the terminal content cleanup (sets, chunks,
+          // run-steps, userJobs, completed TTL).
+          if (isPendingActionStale(job)) {
+            await this.transitionStatus(streamId, {
+              from: 'requires_action',
+              to: 'aborted',
+              clear: ['pendingAction', 'pendingActionId'],
+              patch: {
+                error: 'Approval expired before a decision was made',
+                completedAt: Date.now(),
+              },
+            });
+            return 1;
+          }
+
+          return 0;
+        }),
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          cleaned += result.value;
+        } else {
+          logger.warn(`[RedisJobStore] requires_action cleanup failed for a job:`, result.reason);
+        }
+      }
+    }
+
+    return cleaned;
+  }
+
   async getJobCount(): Promise<number> {
-    // This is approximate - counts jobs in running set + scans for job keys
-    // For exact count, would need to scan all job:* keys
-    const runningCount = await this.redis.scard(KEYS.runningJobs);
-    return runningCount;
+    const [runningCount, requiresActionCount] = await Promise.all([
+      this.redis.scard(KEYS.runningJobs),
+      this.countJobsInStatusSet(KEYS.requiresActionJobs, 'requires_action'),
+    ]);
+    return runningCount + requiresActionCount;
   }
 
   async getJobCountByStatus(status: JobStatus): Promise<number> {
@@ -402,9 +663,35 @@ export class RedisJobStore implements IJobStore {
       return this.redis.scard(KEYS.runningJobs);
     }
 
-    // For other statuses, we'd need to scan - return 0 for now
-    // In production, consider maintaining separate sets per status if needed
+    if (status === 'requires_action') {
+      return this.countJobsInStatusSet(KEYS.requiresActionJobs, status);
+    }
+
     return 0;
+  }
+
+  private async countJobsInStatusSet(setKey: string, status: JobStatus): Promise<number> {
+    const streamIds = await this.redis.smembers(setKey);
+    if (streamIds.length === 0) {
+      return 0;
+    }
+
+    let count = 0;
+    const staleIds: string[] = [];
+    for (const streamId of streamIds) {
+      const job = await this.getJob(streamId);
+      if (job?.status === status) {
+        count++;
+      } else {
+        staleIds.push(streamId);
+      }
+    }
+
+    if (staleIds.length > 0) {
+      await this.redis.srem(setKey, ...staleIds);
+    }
+
+    return count;
   }
 
   /**
@@ -428,8 +715,15 @@ export class RedisJobStore implements IJobStore {
 
     for (const streamId of trackedIds) {
       const job = await this.getJob(streamId);
-      // Only include if job exists AND is still running
-      if (job && job.status === 'running') {
+      // Include running jobs and jobs paused for human review (e.g. tool approval).
+      // A pending-approval job still occupies the user's conversation slot — but
+      // only while its prompt is live: a past-`expiresAt` approval no longer
+      // counts as active (cleanup/expiry will finalize it), so the client stops
+      // polling and can complete.
+      if (job && (job.status === 'running' || job.status === 'requires_action')) {
+        if (job.status === 'requires_action' && isPendingActionStale(job)) {
+          continue;
+        }
         activeIds.push(streamId);
       } else {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - mark for removal
@@ -925,6 +1219,36 @@ export class RedisJobStore implements IJobStore {
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,
       tokenUsage: data.tokenUsage || undefined,
+      pendingAction: this.parsePendingAction(data.pendingAction),
+      pendingActionId: data.pendingActionId || undefined,
+      lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
     };
+  }
+
+  /**
+   * Parse a persisted `pendingAction`, defending the cold-resume path against
+   * malformed or stale records: a corrupt JSON blob or a payload whose shape
+   * predates the current SDK contract is dropped (logged) rather than crashing
+   * the resume or feeding a bad record to an approval route. Returns undefined
+   * when absent/invalid.
+   */
+  private parsePendingAction(raw: string | undefined): Agents.PendingAction | undefined {
+    if (!raw) {
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Agents.PendingAction;
+      const typeOk =
+        typeof parsed?.actionId === 'string' &&
+        KNOWN_INTERRUPT_TYPES.has(parsed?.payload?.type as string);
+      if (!typeOk) {
+        logger.warn('[RedisJobStore] Dropping malformed pendingAction record');
+        return undefined;
+      }
+      return parsed;
+    } catch {
+      logger.warn('[RedisJobStore] Dropping unparseable pendingAction record');
+      return undefined;
+    }
   }
 }

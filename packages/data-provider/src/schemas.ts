@@ -328,6 +328,7 @@ export const defaultAgentFormValues = {
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
   [Tools.web_search]: false,
+  [Tools.memory]: false,
   category: 'general',
   support_contact: {
     name: '',

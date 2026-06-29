@@ -31,6 +31,8 @@ import {
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
+import { isPendingActionStale } from './interfaces/IJobStore';
+import { ApprovalLifecycle } from './ApprovalLifecycle';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
@@ -176,6 +178,8 @@ interface RuntimeJobState {
 class GenerationJobManagerClass {
   /** Job metadata + content state storage - swappable for Redis, etc. */
   private jobStore: IJobStore;
+  /** Guarded human-review lifecycle (pause / resolve / expire) over the store. */
+  private _approvals: ApprovalLifecycle;
   /** Event pub/sub transport - swappable for Redis Pub/Sub, etc. */
   private eventTransport: IEventTransport;
 
@@ -202,6 +206,7 @@ class GenerationJobManagerClass {
   constructor(options?: GenerationJobManagerOptions) {
     this.jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
+    this._approvals = new ApprovalLifecycle(this.jobStore);
     this.eventTransport = options?.eventTransport ?? new InMemoryEventTransport();
     this._cleanupOnComplete = options?.cleanupOnComplete ?? true;
   }
@@ -260,6 +265,7 @@ class GenerationJobManagerClass {
     setGenerationJobsInFlight(previousStore, 0);
 
     this.jobStore = services.jobStore;
+    this._approvals = new ApprovalLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
@@ -486,6 +492,9 @@ class GenerationJobManagerClass {
         iconURL: jobData.iconURL,
         model: jobData.model,
         promptTokens: jobData.promptTokens,
+        // Surface the pending review so status/resume routes built on the
+        // facade can render the prompt for a `requires_action` job.
+        pendingAction: jobData.pendingAction,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,
@@ -1430,6 +1439,21 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * The guarded human-review lifecycle for paused runs:
+   * `approvals.pause()` / `peek()` / `resolve()` / `expire()`.
+   *
+   * This is the seam approval routes, the status endpoint, and the run wiring
+   * cross — it owns the legal `requires_action` transitions and is race-safe
+   * against concurrent resumes (a double-resolve would otherwise drive the run
+   * twice). The job's chunks, run steps, and user-active-set membership are
+   * preserved across a pause so the resume path can rebuild context; the store
+   * refreshes the job-hash TTL to give the user the full window to respond.
+   */
+  get approvals(): ApprovalLifecycle {
+    return this._approvals;
+  }
+
+  /**
    * Get resume state for reconnecting clients.
    */
   async getResumeState(streamId: string): Promise<t.ResumeState | null> {
@@ -1499,6 +1523,12 @@ class GenerationJobManagerClass {
       replayEvents,
       collectedUsage,
       contextUsage,
+      // Carry the live pending approval in the resume contract so a reloading /
+      // cross-replica client can rebuild the prompt from resumeState.
+      pendingAction:
+        jobData.status === 'requires_action' && !isPendingActionStale(jobData)
+          ? jobData.pendingAction
+          : undefined,
     };
   }
 
@@ -1678,13 +1708,14 @@ class GenerationJobManagerClass {
    * Get job count by status.
    */
   async getJobCountByStatus(): Promise<Record<t.GenerationJobStatus, number>> {
-    const [running, complete, error, aborted] = await Promise.all([
+    const [running, complete, error, aborted, requires_action] = await Promise.all([
       this.jobStore.getJobCountByStatus('running'),
       this.jobStore.getJobCountByStatus('complete'),
       this.jobStore.getJobCountByStatus('error'),
       this.jobStore.getJobCountByStatus('aborted'),
+      this.jobStore.getJobCountByStatus('requires_action'),
     ]);
-    return { running, complete, error, aborted };
+    return { running, complete, error, aborted, requires_action };
   }
 
   /**

@@ -67,3 +67,22 @@ export function mergeQuotedText(text: string, quotes: string[]): string {
   const body = text ?? '';
   return body.length > 0 ? `${block}\n\n${body}` : block;
 }
+
+/**
+ * Resolves the prompt text to tokenize for a (possibly quoted) user turn,
+ * mirroring the send path: a user message's persisted `quotes` are prepended
+ * into the prompt on every turn, so an edit that only changes `text` must count
+ * the merged text+quotes to keep the stored `tokenCount` authoritative. Returns
+ * `text` unchanged for non-user messages or when there are no usable quotes.
+ */
+export function mergeQuotedTextForCount(
+  text: string,
+  rawQuotes: unknown,
+  isCreatedByUser: boolean,
+): string {
+  if (!isCreatedByUser) {
+    return text;
+  }
+  const quotes = getReferencedQuotes(rawQuotes);
+  return quotes ? mergeQuotedText(text, quotes) : text;
+}

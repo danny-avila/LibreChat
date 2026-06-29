@@ -10,8 +10,6 @@ import type {
 } from 'librechat-data-provider';
 import type { OptionWithIcon, ExtendedFile } from './types';
 
-export type AgentQueryResult = { found: true; agent: Agent } | { found: false };
-
 export type TAgentOption = OptionWithIcon &
   Agent & {
     knowledge_files?: Array<[string, ExtendedFile]>;
@@ -24,6 +22,7 @@ export type TAgentCapabilities = {
   [AgentCapabilities.web_search]: boolean;
   [AgentCapabilities.file_search]: boolean;
   [AgentCapabilities.execute_code]: boolean;
+  [AgentCapabilities.memory]?: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
 };

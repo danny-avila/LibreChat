@@ -1,7 +1,7 @@
+import { StandardGraph } from '@librechat/agents';
 import { StepTypes } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
-import { StandardGraph } from '@librechat/agents';
 
 /** Suppress winston Console transport output (survives jest.resetModules) */
 jest.spyOn(console, 'log').mockImplementation();
@@ -21,6 +21,19 @@ describe('RedisJobStore Integration Tests', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let ioredisClient: Redis | Cluster | null = null;
   const testPrefix = 'Stream-Integration-Test';
+
+  function buildPendingAction(streamId: string): Agents.PendingAction {
+    return {
+      actionId: `action-${streamId}`,
+      streamId,
+      conversationId: streamId,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Approve?' },
+      },
+      createdAt: Date.now(),
+    };
+  }
 
   beforeAll(async () => {
     originalEnv = { ...process.env };
@@ -152,6 +165,187 @@ describe('RedisJobStore Integration Tests', () => {
 
       const job = await store.getJob(streamId);
       expect(job).toBeNull();
+
+      await store.destroy();
+    });
+  });
+
+  describe('Requires Action Status Tracking', () => {
+    test('should count requires_action jobs and remove them from the running set', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `requires-action-user-${Date.now()}`;
+      const streamId = `requires-action-${Date.now()}`;
+      const beforeRunning = await store.getJobCountByStatus('running');
+      const beforePaused = await store.getJobCountByStatus('requires_action');
+      await store.createJob(streamId, userId, streamId);
+
+      expect(await store.getJobCountByStatus('running')).toBe(beforeRunning + 1);
+      expect(await store.getJobCountByStatus('requires_action')).toBe(beforePaused);
+
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      const runningMembers = await ioredisClient.smembers('stream:running');
+      const pausedMembers = await ioredisClient.smembers('stream:requires_action');
+      expect(runningMembers).not.toContain(streamId);
+      expect(pausedMembers).toContain(streamId);
+      expect(await store.getJobCountByStatus('running')).toBe(beforeRunning);
+      expect(await store.getJobCountByStatus('requires_action')).toBe(beforePaused + 1);
+      expect(await store.getActiveJobIdsByUser(userId)).toContain(streamId);
+
+      await store.destroy();
+    });
+
+    test('should return resumed requires_action jobs to the running index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `requires-action-resume-${Date.now()}`;
+      const beforeRunning = await store.getJobCountByStatus('running');
+      const beforePaused = await store.getJobCountByStatus('requires_action');
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      await store.transitionStatus(streamId, {
+        from: 'requires_action',
+        to: 'running',
+        clear: ['pendingAction'],
+      });
+
+      const job = await store.getJob(streamId);
+      expect(job?.status).toBe('running');
+      expect(job?.pendingAction).toBeUndefined();
+      expect(await store.getJobCountByStatus('running')).toBe(beforeRunning + 1);
+      expect(await store.getJobCountByStatus('requires_action')).toBe(beforePaused);
+
+      await store.destroy();
+    });
+
+    test('should refresh resume state TTLs when pausing and resuming a job', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 120 });
+      await store.initialize();
+
+      const streamId = `requires-action-ttl-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+      const runStepsKey = `stream:{${streamId}}:runsteps`;
+
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.appendChunk(streamId, { event: 'on_message_delta', data: { text: 'hello' } });
+      const runSteps: Partial<Agents.RunStep>[] = [
+        { id: 'step-1', runId: 'run-1', type: StepTypes.MESSAGE_CREATION, index: 0 },
+      ];
+      await store.saveRunSteps(streamId, runSteps as Agents.RunStep[]);
+
+      await ioredisClient.expire(chunkKey, 30);
+      await ioredisClient.expire(runStepsKey, 30);
+
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(30);
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(30);
+
+      await ioredisClient.expire(chunkKey, 30);
+      await ioredisClient.expire(runStepsKey, 30);
+
+      await store.transitionStatus(streamId, {
+        from: 'requires_action',
+        to: 'running',
+        clear: ['pendingAction'],
+      });
+
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(30);
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(30);
+
+      await store.destroy();
+    });
+
+    test('should not drop paused jobs from user tracking when cleanup sees a stale running index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `requires-action-cleanup-user-${Date.now()}`;
+      const streamId = `requires-action-cleanup-${Date.now()}`;
+      await store.createJob(streamId, userId, streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      await ioredisClient.sadd('stream:running', streamId);
+
+      const cleaned = await store.cleanup();
+      const runningMembers = await ioredisClient.smembers('stream:running');
+      const pausedMembers = await ioredisClient.smembers('stream:requires_action');
+
+      expect(cleaned).toBeGreaterThanOrEqual(1);
+      expect(runningMembers).not.toContain(streamId);
+      expect(pausedMembers).toContain(streamId);
+      expect(await store.getActiveJobIdsByUser(userId)).toContain(streamId);
+
+      await store.destroy();
+    });
+
+    test('should prune expired requires_action IDs during cleanup', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `requires-action-expired-${Date.now()}`;
+      const jobKey = `stream:{${streamId}}:job`;
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      expect(await ioredisClient.smembers('stream:requires_action')).toContain(streamId);
+
+      await ioredisClient.del(jobKey);
+
+      const cleaned = await store.cleanup();
+      const pausedMembers = await ioredisClient.smembers('stream:requires_action');
+
+      expect(cleaned).toBeGreaterThanOrEqual(1);
+      expect(pausedMembers).not.toContain(streamId);
 
       await store.destroy();
     });

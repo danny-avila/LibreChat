@@ -203,6 +203,16 @@ function makeAppConfig(customEndpoints: TestCustomEndpoint[]): AppConfig {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  delete process.env.LANGFUSE_PUBLIC_KEY;
+  delete process.env.LANGFUSE_SECRET_KEY;
+  delete process.env.LANGFUSE_BASE_URL;
+  delete process.env.LANGFUSE_BASEURL;
+  delete process.env.LANGFUSE_HOST;
+  delete process.env.LANGFUSE_FANOUT_ENABLED;
+  delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_TENANT_BASE_URL;
+  delete process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS;
+  delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
 });
 
 // ---------------------------------------------------------------------------
@@ -1111,10 +1121,12 @@ async function callAndCaptureRunConfig({
   overrides,
   user,
   tenantId,
+  appConfig,
 }: {
   overrides?: Record<string, unknown>;
   user?: Record<string, unknown>;
   tenantId?: string;
+  appConfig?: AppConfig;
 } = {}): Promise<Record<string, unknown>> {
   const agents = [makeAgent(overrides)];
   const signal = new AbortController().signal;
@@ -1126,6 +1138,7 @@ async function callAndCaptureRunConfig({
     streamUsage: true,
     user: user as never,
     tenantId,
+    appConfig,
   });
 
   const createMock = Run.create as jest.Mock;
@@ -1166,6 +1179,543 @@ describe('Langfuse run config', () => {
       deterministicTraceId: true,
       metadata: { 'librechat.tenant.id': 'tenant-2' },
       tags: ['tenant:tenant-2'],
+    });
+  });
+
+  it('adds tenant Langfuse credentials from tenant-scoped app config', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+          fanout: {
+            enabled: true,
+            collectorUrl: 'http://langfuse-fanout-collector:4318',
+          },
+        },
+      } as unknown as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
+      baseUrl: 'http://langfuse-fanout-collector:4318/tenant/eu',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      librechatTraceAttributes: {
+        'librechat.langfuse.tenant_export.enabled': 'true',
+        'librechat.langfuse.destination': 'eu',
+      },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses central env Langfuse config when deployment fanout is not enabled', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+      baseUrl: 'https://central.langfuse.example',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses deployment fanout collector URL without auth when only tenant keys are configured', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'https://cloud.langfuse.com';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('routes tenant fanout traces to the configured destination for the tenant base URL', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://us.cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toMatchObject({
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
+      baseUrl: 'http://collector-from-env:4318/tenant/us',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      librechatTraceAttributes: {
+        'librechat.langfuse.tenant_export.enabled': 'true',
+        'librechat.langfuse.destination': 'us',
+      },
+    });
+  });
+
+  it('normalizes trailing slashes when building the tenant-scoped fanout URL', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318/';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect((callArgs.langfuse as { baseUrl?: string } | undefined)?.baseUrl).toBe(
+      'http://collector-from-env:4318/tenant/eu',
+    );
+  });
+
+  it.each(['1', 'yes', 'on'])(
+    'routes tenant fanout traces when global fanout is %s',
+    async (value) => {
+      process.env.LANGFUSE_FANOUT_ENABLED = value;
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+      const callArgs = await callAndCaptureRunConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            publicKey: 'pk-tenant-1',
+            secretKey: 'sk-tenant-1',
+            baseUrl: 'https://us.cloud.langfuse.com',
+          },
+        } as AppConfig,
+      });
+
+      expect(callArgs.langfuse).toMatchObject({
+        publicKey: 'pk-tenant-1',
+        secretKey: 'sk-tenant-1',
+        baseUrl: 'http://collector-from-env:4318/tenant/us',
+        librechatTraceAttributes: {
+          'librechat.langfuse.tenant_export.enabled': 'true',
+          'librechat.langfuse.destination': 'us',
+        },
+      });
+    },
+  );
+
+  it.each(['false', '0', 'no', 'off'])(
+    'uses central env Langfuse config when global fanout is %s',
+    async (value) => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+      process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+      process.env.LANGFUSE_FANOUT_ENABLED = value;
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+      const callArgs = await callAndCaptureRunConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            publicKey: 'pk-tenant-1',
+            secretKey: 'sk-tenant-1',
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        } as AppConfig,
+      });
+
+      expect(callArgs.langfuse).toEqual({
+        deterministicTraceId: true,
+        publicKey: 'pk-central',
+        secretKey: 'sk-central',
+        baseUrl: 'https://central.langfuse.example',
+        metadata: { 'librechat.tenant.id': 'tenant-1' },
+        tags: ['tenant:tenant-1'],
+      });
+    },
+  );
+
+  it('does not append a tenant route to baseUrl when fanout is disabled', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'false';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toMatchObject({
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+      baseUrl: 'https://central.langfuse.example',
+    });
+    expect(callArgs.langfuse).not.toMatchObject({
+      baseUrl: 'http://collector-from-env:4318/tenant/eu',
+      librechatTraceAttributes: expect.any(Object),
+    });
+  });
+
+  it('uses central env Langfuse config when fanout has no collector URL', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+      baseUrl: 'https://central.langfuse.example',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses deployment fanout collector URL without auth when the tenant base URL is not a configured destination', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=https://cloud.langfuse.com';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://unconfigured-langfuse.example.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses deployment fanout collector URL without auth when tenant Langfuse config has no keys', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {},
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses deployment fanout collector URL without auth when app config is missing under fanout env', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses deployment fanout collector URL without auth when tenant fanout export is disabled', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('does not disable tenant fanout export for a blank emergency toggle', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = '  ';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318/tenant/eu',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
+      tags: ['tenant:tenant-1'],
+      librechatTraceAttributes: {
+        'librechat.langfuse.tenant_export.enabled': 'true',
+        'librechat.langfuse.destination': 'eu',
+      },
+    });
+  });
+
+  it.each(['true', '1', 'yes', 'on'])(
+    'uses deployment fanout collector URL without auth when the emergency toggle is %s',
+    async (value) => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+      process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = value;
+
+      const callArgs = await callAndCaptureRunConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            publicKey: 'pk-tenant-1',
+            secretKey: 'sk-tenant-1',
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        } as AppConfig,
+      });
+
+      expect(callArgs.langfuse).toEqual({
+        deterministicTraceId: true,
+        baseUrl: 'http://collector-from-env:4318',
+        metadata: { 'librechat.tenant.id': 'tenant-1' },
+        tags: ['tenant:tenant-1'],
+      });
+    },
+  );
+
+  it.each(['false', '0', 'no', 'off'])(
+    'routes tenant fanout traces when the emergency toggle is %s',
+    async (value) => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+      process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = value;
+
+      const callArgs = await callAndCaptureRunConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            publicKey: 'pk-tenant-1',
+            secretKey: 'sk-tenant-1',
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        } as AppConfig,
+      });
+
+      expect(callArgs.langfuse).toEqual({
+        deterministicTraceId: true,
+        baseUrl: 'http://collector-from-env:4318/tenant/eu',
+        metadata: { 'librechat.tenant.id': 'tenant-1' },
+        publicKey: 'pk-tenant-1',
+        secretKey: 'sk-tenant-1',
+        tags: ['tenant:tenant-1'],
+        librechatTraceAttributes: {
+          'librechat.langfuse.tenant_export.enabled': 'true',
+          'librechat.langfuse.destination': 'eu',
+        },
+      });
+    },
+  );
+
+  it('uses central env Langfuse config when tenant fanout.enabled=false overrides deployment fanout env', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+          fanout: {
+            enabled: false,
+          },
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+      baseUrl: 'https://central.langfuse.example',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses central env Langfuse config when tenant fanout.enabled is the string false', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+          fanout: {
+            enabled: 'false',
+          },
+        },
+      } as unknown as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+      baseUrl: 'https://central.langfuse.example',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('honors tenant Langfuse enabled=false as a tracing opt-out', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          enabled: false,
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      enabled: false,
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('honors tenant Langfuse enabled as the string false', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          enabled: 'false',
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+        },
+      } as unknown as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      enabled: false,
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
     });
   });
 });

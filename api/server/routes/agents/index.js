@@ -4,6 +4,7 @@ const {
   GenerationJobManager,
   hasPersistableAbortContent,
   buildAbortedResponseMetadata,
+  isPendingActionStale,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -202,7 +203,13 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   // Get resume state which contains aggregatedContent
   // Avoid calling both getStreamInfo and getResumeState (both fetch content)
   const resumeState = await GenerationJobManager.getResumeState(conversationId);
-  const isActive = job.status === 'running';
+  // A job paused for human review is still active (consistent with /chat/active),
+  // so the client resumes/subscribes rather than treating it as finished — but
+  // only while it has a live, resolvable prompt: a missing/malformed or
+  // past-expiry pendingAction reads as inactive (cleanup/expiry will finalize it).
+  const pendingAction = job.metadata.pendingAction;
+  const pendingLive = job.status === 'requires_action' && !isPendingActionStale({ pendingAction });
+  const isActive = job.status === 'running' || pendingLive;
 
   res.json({
     active: isActive,
@@ -211,6 +218,10 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     aggregatedContent: resumeState?.aggregatedContent ?? [],
     createdAt: job.createdAt,
     resumeState,
+    // Surface the live pending approval so a client rebuilding from /chat/status
+    // (reload / cross-replica) has the action id + payload to render and submit
+    // the prompt, not just the knowledge that the stream is paused.
+    pendingAction: job.status === 'requires_action' && pendingLive ? pendingAction : undefined,
   });
 });
 
@@ -231,7 +242,10 @@ router.post('/chat/abort', async (req, res) => {
   // streamId === conversationId, so try any of the provided IDs
   // Skip "new" as it's a placeholder for new conversations, not an actual ID
   let jobStreamId =
-    streamId || (conversationId !== 'new' ? conversationId : null) || abortKey?.split(':')[0];
+    streamId ||
+    (conversationId !== 'new' ? conversationId : null) ||
+    abortKey?.split(':')[0] ||
+    null;
   let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
 
   // Fallback: if job not found and we have a userId, look up active jobs for user
@@ -242,11 +256,15 @@ router.post('/chat/abort', async (req, res) => {
       userId,
       req.user.tenantId,
     );
-    if (activeJobIds.length > 0) {
-      // Abort the most recent active job for this user
-      jobStreamId = activeJobIds[0];
-      job = await GenerationJobManager.getJob(jobStreamId);
+    for (const activeJobId of activeJobIds) {
+      const activeJob = await GenerationJobManager.getJob(activeJobId);
+      if (activeJob?.status !== 'running') {
+        continue;
+      }
+      jobStreamId = activeJobId;
+      job = activeJob;
       logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
+      break;
     }
   }
 

@@ -134,6 +134,33 @@ export const useGetExpandedAgentByIdQuery = (
 };
 
 /**
+ * Hook for lazily retrieving an agent's version history (EDIT permission).
+ * Only fetched when the user opens version history, so editors with large
+ * histories don't pay the cost on every open.
+ */
+export const useGetAgentVersionsQuery = (
+  agent_id: string | null | undefined,
+  config?: UseQueryOptions<t.Agent[]>,
+): QueryObserverResult<t.Agent[]> => {
+  const isValidAgentId = !!agent_id && !isEphemeralAgent(agent_id);
+
+  return useQuery<t.Agent[]>(
+    [QueryKeys.agent, agent_id, 'versions'],
+    () =>
+      dataService.getAgentVersions({
+        agent_id: agent_id as string,
+      }),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+      ...config,
+      enabled: isValidAgentId && (config?.enabled ?? true),
+    },
+  );
+};
+
+/**
  * MARKETPLACE
  */
 /**

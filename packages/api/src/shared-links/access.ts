@@ -62,7 +62,16 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
         shareId,
         ...activeExpirationFilter<RawSharedLink>(),
       }).lean()) as RawSharedLink | null;
-    const rawShare = getTenantId() ? await findShare() : await runAsSystem(findShare);
+    // Resolve by the (globally unique, secret) shareId under the viewer's tenant
+    // first, then fall back to a system-wide lookup so a share owned by another
+    // tenant — e.g. a public link opened by an authenticated user from a
+    // different tenant — still resolves. Access remains gated by the ACL check
+    // below, which runs under the share's own tenant, so this only broadens the
+    // lookup, never the authorization.
+    let rawShare = getTenantId() ? await findShare() : await runAsSystem(findShare);
+    if (!rawShare && getTenantId()) {
+      rawShare = await runAsSystem(findShare);
+    }
 
     if (!rawShare) {
       res.status(404).json({ message: 'Shared link not found' });

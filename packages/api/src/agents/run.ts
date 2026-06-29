@@ -39,6 +39,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
@@ -849,17 +850,6 @@ function buildSubagentConfigs(
   return configs;
 }
 
-function buildLangfuseConfig(tenantIdInput?: unknown) {
-  const tenantId = typeof tenantIdInput === 'string' ? tenantIdInput.trim() : '';
-  return {
-    deterministicTraceId: true,
-    ...(tenantId !== '' && {
-      metadata: { 'librechat.tenant.id': tenantId },
-      tags: [`tenant:${tenantId}`],
-    }),
-  };
-}
-
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -1165,7 +1155,7 @@ export async function createRun({
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
-    langfuse: buildLangfuseConfig(tenantId ?? user?.tenantId),
+    langfuse: buildLangfuseConfig({ appConfig, tenantId: tenantId ?? user?.tenantId }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),

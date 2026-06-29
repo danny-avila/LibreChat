@@ -2,6 +2,7 @@ import React from 'react';
 import { useRecoilValue } from 'recoil';
 import { TooltipAnchor } from '@librechat/client';
 import { MessageCircleDashed } from 'lucide-react';
+import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilCallback } from 'recoil';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
@@ -23,7 +24,11 @@ export function TemporaryChat() {
     [isTemporary],
   );
 
+  const conversationId = conversation?.conversationId;
+  const hasStarted = conversationId != null && conversationId !== Constants.NEW_CONVO;
+
   if (
+    hasStarted ||
     (Array.isArray(conversation?.messages) && conversation.messages.length >= 1) ||
     isSubmitting
   ) {
