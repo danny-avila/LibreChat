@@ -407,19 +407,27 @@ describe('HITL Terminal-Side-Effect Guards', () => {
 
     it('prefers job-metadata files over the DB row (no DB-save race)', () => {
       expect(
-        resolveFiles({ bodyFiles: [], metaFiles: [{ file_id: 'meta' }], dbFiles: [{ file_id: 'db' }] }),
+        resolveFiles({
+          bodyFiles: [],
+          metaFiles: [{ file_id: 'meta' }],
+          dbFiles: [{ file_id: 'db' }],
+        }),
       ).toEqual([{ file_id: 'meta' }]);
     });
 
     it('falls back to the DB row when the job has no persisted files (older job)', () => {
-      expect(resolveFiles({ bodyFiles: [], metaFiles: undefined, dbFiles: [{ file_id: 'db' }] })).toEqual([
-        { file_id: 'db' },
-      ]);
+      expect(
+        resolveFiles({ bodyFiles: [], metaFiles: undefined, dbFiles: [{ file_id: 'db' }] }),
+      ).toEqual([{ file_id: 'db' }]);
     });
 
     it('keeps files already present on the resume body', () => {
       expect(
-        resolveFiles({ bodyFiles: [{ file_id: 'body' }], metaFiles: [{ file_id: 'meta' }], dbFiles: [] }),
+        resolveFiles({
+          bodyFiles: [{ file_id: 'body' }],
+          metaFiles: [{ file_id: 'meta' }],
+          dbFiles: [],
+        }),
       ).toEqual([{ file_id: 'body' }]);
     });
   });
@@ -520,6 +528,45 @@ describe('HITL Resume Fidelity Guards (round 18)', () => {
         replayed: ['deep_tool'],
       });
       expect(set.size).toBe(0);
+    });
+  });
+
+  describe("H3 — resume replays the paused turn's model parameters (ephemeral agents)", () => {
+    // Mirrors restoreResumeContext: spread persisted model_parameters back onto the body,
+    // excluding `model` (replayed via the fingerprinted RESUME_CONTEXT_KEYS path).
+    const replayModelParameters = (body, resumeContext) => {
+      const params = resumeContext?.model_parameters;
+      if (params && typeof params === 'object') {
+        const { model: _model, ...rest } = params;
+        Object.assign(body, rest);
+      }
+      return body;
+    };
+
+    it('restores non-default params (temperature, max tokens) onto the resume body', () => {
+      const body = { conversationId: 'c1', endpoint: 'agents' };
+      replayModelParameters(body, {
+        model_parameters: { model: 'gpt-4o', temperature: 0.2, max_tokens: 1024 },
+      });
+      expect(body).toMatchObject({ temperature: 0.2, max_tokens: 1024 });
+    });
+
+    it('does NOT overwrite model (kept consistent with the resume fingerprint)', () => {
+      const body = { model: 'pinned-model' };
+      replayModelParameters(body, { model_parameters: { model: 'other-model', temperature: 0.9 } });
+      expect(body.model).toBe('pinned-model');
+    });
+
+    it('overwrites a client-supplied param with the captured authoritative value', () => {
+      const body = { temperature: 1.0 }; // crafted/stale client value
+      replayModelParameters(body, { model_parameters: { temperature: 0.2 } });
+      expect(body.temperature).toBe(0.2);
+    });
+
+    it('is a no-op when nothing was captured', () => {
+      const body = { conversationId: 'c1' };
+      replayModelParameters(body, {});
+      expect(body).toEqual({ conversationId: 'c1' });
     });
   });
 });

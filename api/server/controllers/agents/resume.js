@@ -493,32 +493,42 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // code/file sessions by walking the conversation from `parentMessageId`, but
   // execute-code files are excluded from that lookup, so files uploaded on the paused
   // turn would be dropped — an approved code/read-file tool would resume without them.
-  // The resume body doesn't carry them, so source them from the persisted user message.
-  if (!Array.isArray(req.body.files) || req.body.files.length === 0) {
-    // Prefer the files persisted on the JOB at onStart — they don't depend on the user DB
-    // row being saved, which the approval prompt can race (the row save may still be in
-    // flight when a fast /resume reads it). Fall back to the DB row for older jobs.
-    const metaFiles = job.metadata.userMessage?.files;
-    if (Array.isArray(metaFiles) && metaFiles.length > 0) {
-      req.body.files = metaFiles;
-    } else {
-      const pausedUserMessageId = job.metadata.userMessage?.messageId;
-      if (pausedUserMessageId) {
-        try {
-          const [row] = await getMessages(
-            { conversationId, messageId: pausedUserMessageId },
-            'files',
-          );
-          if (Array.isArray(row?.files) && row.files.length > 0) {
-            req.body.files = row.files;
-          }
-        } catch (err) {
-          logger.warn(
-            '[ResumeAgentController] Failed to restore paused user message files',
-            err?.message ?? err,
-          );
+  //
+  // SECURITY: ALWAYS source files from the paused job, never from the `/resume` body.
+  // `files` is not pinned by the resume fingerprint or replayed via resumeContext, so
+  // honoring a client-supplied `files` array would let a crafted/buggy client resume an
+  // approved code/read-file tool against a DIFFERENT file set than the one the user
+  // approved. A resume reconstructs the SAME paused turn, so there is no legitimate
+  // reason for the client to supply its own files. Prefer the files persisted on the JOB
+  // at onStart (race-free), fall back to the DB row for older jobs, and CLEAR otherwise
+  // so a client-supplied set can never leak through.
+  const metaFiles = job.metadata.userMessage?.files;
+  if (Array.isArray(metaFiles) && metaFiles.length > 0) {
+    req.body.files = metaFiles;
+  } else {
+    let restoredFiles = false;
+    const pausedUserMessageId = job.metadata.userMessage?.messageId;
+    if (pausedUserMessageId) {
+      try {
+        const [row] = await getMessages(
+          { conversationId, messageId: pausedUserMessageId },
+          'files',
+        );
+        if (Array.isArray(row?.files) && row.files.length > 0) {
+          req.body.files = row.files;
+          restoredFiles = true;
         }
+      } catch (err) {
+        logger.warn(
+          '[ResumeAgentController] Failed to restore paused user message files',
+          err?.message ?? err,
+        );
       }
+    }
+    if (!restoredFiles) {
+      // No paused files (or the lookup failed): drop any client-supplied files so a
+      // crafted resume body can't inject a file set the paused turn never had.
+      req.body.files = [];
     }
   }
 

@@ -595,6 +595,52 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(capturedInit.files).toEqual([{ file_id: 'f1' }]);
     });
 
+    it('ignores client-supplied resume files, sourcing from the paused job (security)', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      // The paused turn's authoritative files (DB row); a crafted client tries to swap them.
+      mockGetMessages.mockResolvedValue([{ files: [{ file_id: 'paused' }] }]);
+
+      await post(approveBody({ files: [{ file_id: 'attacker-supplied' }] }));
+      await settled;
+      await flush();
+
+      // The crafted client files must NOT reach initializeAgent — only the paused set.
+      expect(capturedInit.files).toEqual([{ file_id: 'paused' }]);
+    });
+
+    it('clears client-supplied resume files when the paused turn had none (security)', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockGetMessages.mockResolvedValue([{ files: [] }]); // the paused turn had no files
+
+      await post(approveBody({ files: [{ file_id: 'attacker-supplied' }] }));
+      await settled;
+      await flush();
+
+      expect(capturedInit.files).toEqual([]);
+    });
+
+    it('prefers job-metadata files over both the client body and the DB row', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            userMessage: {
+              messageId: USER_MSG_ID,
+              parentMessageId: THREAD_PARENT_ID,
+              text: 'x',
+              files: [{ file_id: 'meta' }],
+            },
+          },
+        }),
+      );
+      mockGetMessages.mockResolvedValue([{ files: [{ file_id: 'db' }] }]);
+
+      await post(approveBody({ files: [{ file_id: 'attacker-supplied' }] }));
+      await settled;
+      await flush();
+
+      expect(capturedInit.files).toEqual([{ file_id: 'meta' }]);
+    });
+
     it('carries the restored files onto the final requestMessage (user bubble keeps attachments)', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       // job.metadata.userMessage is persisted without files; the final SSE must still

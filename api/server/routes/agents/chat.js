@@ -49,7 +49,21 @@ const restoreResumeContext = async (req, res, next) => {
     const streamId = req.body?.conversationId;
     if (streamId) {
       const job = await GenerationJobManager.getJob(streamId);
-      applyResumeContext(req.body, job?.metadata?.pendingAction?.resumeContext);
+      const resumeContext = job?.metadata?.pendingAction?.resumeContext;
+      applyResumeContext(req.body, resumeContext);
+      // Replay the paused turn's resolved model parameters. Ephemeral agents derive these
+      // (temperature, max tokens, custom endpoint params) from the request body, which the
+      // resume payload omits — without this the continuation runs with defaults. They're
+      // scattered top-level fields (folded into model_parameters by buildOptions' rest
+      // spread), not part of the RESUME_CONTEXT_KEYS allowlist, so merge them back here.
+      // Authoritative: overwrites any client-supplied values with the captured set.
+      // `model` is excluded — it's replayed via RESUME_CONTEXT_KEYS to the exact value the
+      // resume fingerprint was pinned on, so overwriting it here could trip that check.
+      const resumedModelParameters = resumeContext?.model_parameters;
+      if (resumedModelParameters && typeof resumedModelParameters === 'object') {
+        const { model: _replayedModel, ...replayParams } = resumedModelParameters;
+        Object.assign(req.body, replayParams);
+      }
     }
   } catch (err) {
     logger.warn('[agents/chat] Failed to restore resume context', err?.message ?? err);

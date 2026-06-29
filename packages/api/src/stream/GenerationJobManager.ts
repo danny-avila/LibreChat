@@ -2,6 +2,7 @@ import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   Constants,
   UsageEvents,
+  ApprovalEvents,
   parseTextParts,
   reconcileContextUsage,
   promptTokensFromUsage,
@@ -500,6 +501,9 @@ class GenerationJobManagerClass {
         agent_id: jobData.agent_id,
         // Surface whether the turn was temporary so a resume keeps it non-persisted.
         isTemporary: jobData.isTemporary,
+        // Surface deferred tools discovered before the pause so the resume route can
+        // replay them into createRun (the rebuilt graph passes `messages: []`).
+        discoveredTools: jobData.discoveredTools,
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
@@ -1060,6 +1064,31 @@ class GenerationJobManagerClass {
       skipBufferReplay: true,
     });
 
+    // Close the snapshot→subscribe race: getResumeState() snapshots BEFORE we attach the
+    // subscription, so a pause that becomes durable in that window is in neither
+    // resumeState.pendingAction nor (Redis mode) pendingEvents — and trackReplayEvent does
+    // not persist approval events — leaving the client attached to a paused job with no
+    // approval UI. Re-read the live job AFTER subscribing; if it is now requires_action and
+    // the snapshot didn't already carry the action, surface it as a pending event so the
+    // approval prompt renders. Idempotent: a pause landing AFTER attach is delivered live
+    // too, and the client's handler just sets the current action, so a duplicate is benign.
+    if (!resumeState?.pendingAction) {
+      const liveJob = await this.jobStore.getJob(streamId);
+      if (
+        liveJob?.status === 'requires_action' &&
+        liveJob.pendingAction != null &&
+        !isPendingActionStale(liveJob)
+      ) {
+        pendingEvents = [
+          ...pendingEvents,
+          {
+            event: ApprovalEvents.ON_PENDING_ACTION,
+            data: liveJob.pendingAction as unknown as Record<string, unknown>,
+          },
+        ];
+      }
+    }
+
     return { subscription, resumeState, pendingEvents };
   }
 
@@ -1432,6 +1461,9 @@ class GenerationJobManagerClass {
     }
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;
+    }
+    if (metadata.discoveredTools) {
+      updates.discoveredTools = metadata.discoveredTools;
     }
     await this.jobStore.updateJob(streamId, updates);
   }

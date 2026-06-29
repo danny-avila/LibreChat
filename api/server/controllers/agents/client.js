@@ -1217,6 +1217,16 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    // Persist the resolved model parameters (temperature, max tokens, custom endpoint
+    // params, …) so an ephemeral-agent resume continues with the SAME settings the run
+    // paused on. The resume payload omits them and they aren't part of the fingerprint, so
+    // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
+    // these from the DB record server-side, so this is belt-and-suspenders for them.)
+    const resumeContext = pickResumeContext(this.options.req?.body);
+    const resolvedModelParameters = this.options.agent?.model_parameters;
+    if (resolvedModelParameters && typeof resolvedModelParameters === 'object') {
+      resumeContext.model_parameters = resolvedModelParameters;
+    }
     const pendingAction = buildPendingAction(interrupt.payload, {
       streamId,
       conversationId: this.conversationId,
@@ -1236,7 +1246,7 @@ class AgentClient extends BaseClient {
       // Persist those same fields verbatim so the resume route can REPLAY them — a
       // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
       // so the server restores it and rebuilds the same graph (and the fingerprint matches).
-      resumeContext: pickResumeContext(this.options.req?.body),
+      resumeContext,
     });
 
     // Job-replacement guard: streamId == conversationId is reused per conversation, so a
