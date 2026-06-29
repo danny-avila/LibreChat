@@ -660,6 +660,46 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockDisposeClient).toHaveBeenCalledTimes(1);
     });
 
+    it('skips finalization (no save/emitDone/complete) when the job was replaced mid-resume', async () => {
+      // The paused job has createdAt 1000; a concurrent request reused this conversationId,
+      // so the live job now has a different createdAt — finalizing would clobber the newer
+      // turn's job. The finally still runs (slot release), so `settled` resolves.
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob({ createdAt: 1000 }));
+      mockJobStore.getJob.mockResolvedValue({
+        tokenUsage: null,
+        contextUsage: null,
+        createdAt: 2000,
+      });
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitDone).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+    });
+
+    it('does not release the slot in the finally when the client already released it on pause', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      // Simulate handleRunInterrupt having released the concurrency slot on a re-pause.
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ pendingRequestReleased: true }),
+        userMCPAuthMap: {},
+      });
+      let disposed;
+      const disposedP = new Promise((resolve) => {
+        disposed = resolve;
+      });
+      mockDisposeClient.mockImplementation(() => disposed());
+
+      await post(approveBody());
+      await disposedP;
+      await flush();
+
+      // The finally must NOT double-release — handleRunInterrupt already did.
+      expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
+    });
+
     it('persists tool artifacts produced by the resumed continuation as attachments', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       const artifact = { type: 'image', file_id: 'img-1' };

@@ -197,6 +197,19 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   // Read the raw job data BEFORE completeJob deletes it — its tracked token/context
   // usage backs the response message's cost rollup (parity with normal completion).
   const jobData = await GenerationJobManager.getJobStore().getJob(streamId);
+
+  // Job-replacement guard (mirrors the normal request path): jobs are keyed by streamId
+  // (== conversationId), so a new/concurrent request reusing this conversation overwrites
+  // the record with a fresh createdAt. If that happened while we were resuming, finalizing
+  // now would emit `done` to / complete / delete the NEWER turn's job. Skip all terminal
+  // side effects when the job we paused is no longer the live one; the caller's `finally`
+  // still disposes the client + releases the slot.
+  if (!jobData || jobData.createdAt !== job.createdAt) {
+    logger.warn(
+      `[ResumeAgentController] Skipping resumed finalization — job ${streamId} was replaced`,
+    );
+    return;
+  }
   // Prefer the resumed run's live content: it's complete (seeded with the pre-pause
   // content) and avoids a Redis re-read that can race appendChunk writes still in
   // flight. Fall back to the aggregated store content only when the live array is empty.
@@ -583,9 +596,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // Tear down the MCP request-context store seeded before the ACK (parity with
     // request.js's finishResumableRequest). No-op if it was never seeded.
     await cleanupMCPRequestContextForReq(req);
-    // Release the concurrency slot taken above — on a normal finish, a re-pause, or an
-    // error. A re-pause re-acquires its own slot via the next resume request.
-    await decrementPendingRequest(userId);
+    // Release the concurrency slot taken above — UNLESS handleRunInterrupt already
+    // released it on a re-pause (so a fast /resume isn't 429'd). On a normal finish or
+    // error it didn't, so release here. A re-pause re-acquires its own slot next resume.
+    if (!client?.pendingRequestReleased) {
+      await decrementPendingRequest(userId);
+    }
     if (client) {
       disposeClient(client);
     }

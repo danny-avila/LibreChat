@@ -324,6 +324,74 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('appendChunk gives the approval TTL when the chunk key did not exist at pause time', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `paused-no-chunk-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+
+      // The job pauses BEFORE any chunk was persisted (ask-user pause with no prior
+      // delta, or the first appendChunk still in flight because emitChunk is
+      // fire-and-forget). The pause's `EXPIRE chunks` is a no-op because the key
+      // does not exist yet, so the chunk stream carries no extended TTL.
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(await ioredisClient.exists(chunkKey)).toBe(0);
+
+      // The first chunk lands AFTER the pause. The bug Codex re-raised: appendChunk
+      // would create the stream with only the short running TTL (60s), so the
+      // aggregated tool-call content is evicted before the 24h approval window ends.
+      // The fix reads the paused window from the job key and bumps the chunk TTL to it.
+      await store.appendChunk(streamId, {
+        event: 'on_pending_action',
+        data: buildPendingAction(streamId),
+      });
+
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(60);
+      expect(await ioredisClient.xlen(chunkKey)).toBeGreaterThanOrEqual(1);
+
+      await store.destroy();
+    });
+
+    test('appendChunk keeps a normally-running job on the short running TTL (no inflation)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `running-no-inflate-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+
+      // A normal running job: the job key carries the running TTL (set by createJob),
+      // NOT the long approval window. appendChunk must settle the chunk TTL on the
+      // short running TTL — never max it against the job key — so a live stream is
+      // not inflated to the 24h approval window.
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.appendChunk(streamId, {
+        event: 'on_message_delta',
+        data: { text: 'hello' },
+      });
+
+      const ttl = await ioredisClient.ttl(chunkKey);
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(60);
+
+      await store.destroy();
+    });
+
     test('createJob clears stale per-turn identity (agent_id, isTemporary) from a reused hash', async () => {
       if (!ioredisClient) {
         return;

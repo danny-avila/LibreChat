@@ -60,6 +60,7 @@ const {
   hasUrlContextTool,
   appendYouTubeVideoParts,
   resolveYouTubeInjectionConfig,
+  decrementPendingRequest,
 } = require('@librechat/api');
 const {
   Callback,
@@ -1246,6 +1247,20 @@ class AgentClient extends BaseClient {
     }
 
     this.pendingApproval = pendingAction;
+    // Release the concurrency slot this request held the MOMENT the turn is durably
+    // paused — before the approval card is emitted — so the user's `/resume` can
+    // re-acquire one immediately. Otherwise a fast Approve races the HTTP-driver
+    // teardown (request.js pause branch / resume.js finally) that would otherwise
+    // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
+    // the flag; if it fails here, the teardown still releases (it checks the flag).
+    if (!this.pendingRequestReleased) {
+      try {
+        await decrementPendingRequest(this.options.req?.user?.id);
+        this.pendingRequestReleased = true;
+      } catch (err) {
+        logger.error(`[AgentClient] Failed to release request slot on pause ${streamId}`, err);
+      }
+    }
     await GenerationJobManager.emitChunk(streamId, {
       event: ApprovalEvents.ON_PENDING_ACTION,
       data: pendingAction,

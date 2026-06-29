@@ -584,7 +584,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           titleAbortController.abort();
           acceptsTitleEvents = false;
           resolveConvoReady();
-          await finishResumableRequest(req, userId);
+          // handleRunInterrupt already released the concurrency slot the moment it paused
+          // (so a fast /resume isn't 429'd); only release here if that didn't happen.
+          // Always run the MCP request-context cleanup.
+          await cleanupMCPRequestContextForReq(req);
+          if (!client?.pendingRequestReleased) {
+            await decrementPendingRequest(userId);
+          }
           if (client) {
             disposeClient(client);
           }

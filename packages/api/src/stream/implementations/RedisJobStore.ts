@@ -40,25 +40,44 @@ const JOB_CAS_LUA =
   'return 1';
 
 /**
- * XADD a chunk + refresh the chunk-stream TTL WITHOUT ever shrinking it.
+ * XADD a chunk + set the chunk-stream TTL to the right window WITHOUT ever shrinking it.
  *
- * During a live stream the running TTL is refreshed on every chunk. But when a job
- * pauses for HITL review, `transitionStatus` extends the chunk-key TTL to the (much
- * longer) approval window; the very next chunk is the `on_pending_action` event, and
- * an unconditional `EXPIRE running` would reset that long TTL back to ~20m. The
- * pre-pause aggregated content would then be evicted before the user resolves the
- * approval, so `getResumeState()` loses the tool call + earlier content. Only set the
- * running TTL when the current TTL is shorter (or unset), so a paused key keeps its
- * extended window.
+ * During a live stream the running TTL is refreshed on every chunk. But a job paused
+ * for HITL review must keep its chunk stream alive for the whole approval window, not
+ * the ~20m running TTL — otherwise the pre-pause aggregated content (tool call + earlier
+ * text) is evicted before the user resolves and `getResumeState()` loses it.
  *
- *   KEYS: [chunks]
+ * `transitionStatus` extends the chunk-key TTL to the approval window at pause time, but
+ * that alone is not enough:
+ *   1. The pause's `EXPIRE chunks` is a no-op if the chunk key does not exist yet — and
+ *      `appendChunk` is fire-and-forget, so the first chunk's XADD can land AFTER the
+ *      pause, or an ask-user pause can occur before any chunk was ever persisted.
+ *   2. The `on_pending_action` chunk (and any chunk that races in after the pause) would
+ *      otherwise reset an already-extended TTL back to the short running TTL.
+ * So this script derives the target window itself: the running TTL normally, but when the
+ * job hash is paused (`status == "requires_action"`) it takes the larger of the running
+ * TTL and the job key's own remaining TTL (which `transitionStatus` set to the approval
+ * window). It only ever EXTENDS — `cur < target` — so a normally-running stream keeps the
+ * round-10 extend-only behavior and is never inflated to the approval window.
+ *
+ * Reading the paused window from the job key (rather than always max-ing against it) is
+ * what keeps a normal running run on the short TTL: TTL(jobKey) is only the long approval
+ * window while paused; for a running job the job key carries the running TTL, so target
+ * stays `run`.
+ *
+ *   KEYS: [chunks, job]
  *   ARGV: [eventJson, runningTtl]
  */
 const CHUNK_APPEND_LUA =
   'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
   'local run = tonumber(ARGV[2]) ' +
+  'local target = run ' +
+  'if redis.call("HGET", KEYS[2], "status") == "requires_action" then ' +
+  'local jt = redis.call("TTL", KEYS[2]) ' +
+  'if jt > target then target = jt end ' +
+  'end ' +
   'local cur = redis.call("TTL", KEYS[1]) ' +
-  'if cur < run then redis.call("EXPIRE", KEYS[1], run) end ' +
+  'if cur < target then redis.call("EXPIRE", KEYS[1], target) end ' +
   'return 1';
 
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
@@ -973,15 +992,21 @@ export class RedisJobStore implements IJobStore {
    */
   async appendChunk(streamId: string, event: unknown): Promise<void> {
     const key = KEYS.chunks(streamId);
-    // XADD + extend-only EXPIRE in a single atomic eval. Refreshing the TTL on every
-    // chunk (vs only once) keeps the key alive through long streams, but it must NEVER
-    // shrink an already-longer TTL — a paused (requires_action) job extends this key to
-    // the approval window, and the on_pending_action append would otherwise reset it to
-    // the short running TTL, evicting the pre-pause content before resume.
+    const jobKey = KEYS.job(streamId);
+    // XADD + derive-and-extend-only EXPIRE in a single atomic eval. Refreshing the TTL on
+    // every chunk (vs only once) keeps the key alive through long streams, but it must
+    // NEVER shrink an already-longer TTL — a paused (requires_action) job needs this key
+    // to live for the whole approval window, and the on_pending_action append (or any
+    // chunk that lands after the pause) would otherwise reset it to the short running TTL.
+    // The script reads the paused window from the job key, so it bumps to the approval TTL
+    // even when the pause's own EXPIRE no-op'd because this key didn't exist yet, while a
+    // normally-running run still settles on the short running TTL. Both keys share the
+    // {streamId} hash tag, so the 2-key eval stays on one slot under Redis Cluster.
     await this.redis.eval(
       CHUNK_APPEND_LUA,
-      1,
+      2,
       key,
+      jobKey,
       JSON.stringify(event),
       String(this.ttl.running),
     );
