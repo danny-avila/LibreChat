@@ -562,6 +562,32 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
+    if (!output.artifact && output.name === 'openrouter:web_search') {
+      artifactPromises.push(
+        (async () => {
+          const references = parseOpenRouterWebSearchContent(output.content);
+          if (!references.length) {
+            return null;
+          }
+          const attachment = {
+            type: Tools.web_search,
+            messageId: metadata?.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata?.thread_id,
+            [Tools.web_search]: { turn: 0, references },
+          };
+          if (streamId || res.headersSent) {
+            writeAttachment(res, streamId, attachment);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing OpenRouter web search content:', error);
+          return null;
+        }),
+      );
+      return;
+    }
+
     if (!output.artifact) {
       return;
     }
@@ -1143,6 +1169,50 @@ function buildSummarizationHandlers({ isStreaming, res }) {
   };
 }
 
+/**
+ * Extracts url_citation annotations from an on_chat_model_end AIMessage and writes a
+ * web_search attachment event if any are found. Called from both the regular chat path
+ * (openai.js) and the Responses API path (responses.js / service.ts).
+ *
+ * @param {import('express').Response} res
+ * @param {string | null} streamId
+ * @param {unknown} data - The on_chat_model_end event data
+ * @param {string} [messageId] - The message ID to associate the attachment with
+ */
+function emitCitationAnnotations(res, streamId, data, messageId) {
+  const rawAnnotations = /** @type {any} */ (data)?.output?.additional_kwargs?.annotations;
+  if (!Array.isArray(rawAnnotations) || rawAnnotations.length === 0) {
+    return;
+  }
+
+  const references = rawAnnotations.reduce((acc, a) => {
+    if (a.type !== 'url_citation') {
+      return acc;
+    }
+    const url = a.url || a.url_citation?.url;
+    if (!url) {
+      return acc;
+    }
+    acc.push({ link: url, type: 'link', title: a.title || a.url_citation?.title || url });
+    return acc;
+  }, []);
+
+  if (!references.length) {
+    return;
+  }
+
+  const attachment = {
+    type: Tools.web_search,
+    messageId,
+    toolCallId: `openrouter_ws_${nanoid(8)}`,
+    [Tools.web_search]: { turn: 0, references },
+  };
+
+  if (streamId || res.headersSent) {
+    writeAttachment(res, streamId, attachment);
+  }
+}
+
 module.exports = {
   ModelEndHandler,
   agentLogHandler,
@@ -1152,5 +1222,6 @@ module.exports = {
   isStreamWritable,
   markSummarizationUsage,
   buildSummarizationHandlers,
+  emitCitationAnnotations,
   createResponsesToolEndCallback,
 };
