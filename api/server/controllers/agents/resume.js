@@ -420,7 +420,23 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   }
 
   const pendingAction = job.metadata?.pendingAction;
-  if (job.status !== 'requires_action' || isPendingActionStale({ pendingAction })) {
+  if (job.status !== 'requires_action') {
+    return res.status(409).json({ error: 'No live pending action to resume' });
+  }
+  if (isPendingActionStale({ pendingAction })) {
+    // The action expired between the pending-action SSE and this submit. Drive the expiry
+    // NOW (expire CAS + terminal SSE) instead of waiting for the periodic sweeper —
+    // otherwise the job sits `requires_action` with a dead action and any attached SSE
+    // client never gets a terminal event, so the stream appears to hang even though the
+    // UI already reported the action as expired.
+    try {
+      await GenerationJobManager.expireApproval(streamId, pendingAction?.actionId);
+    } catch (err) {
+      logger.warn(
+        '[ResumeAgentController] Failed to expire stale action on submit',
+        err?.message ?? err,
+      );
+    }
     return res.status(409).json({ error: 'No live pending action to resume' });
   }
   // Require the actionId the UI sends: without it, a stale/malformed client could

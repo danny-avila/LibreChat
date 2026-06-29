@@ -581,24 +581,56 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // resumed approval doesn't leave a "finished" response in history; the resume
           // path overwrites it with the full completed message on success.
           if (response?.messageId) {
+            // Guard against a fast /resume: the user can approve the instant the
+            // pending-action SSE lands, and resume.js can then claim + finalize — saving
+            // the COMPLETED response — while we're still awaiting `response.databasePromise`
+            // above. Marking the row unfinished now would clobber that completed content
+            // with this stale pre-pause response. Only mark unfinished while the job is
+            // STILL paused on THIS generation's action: a claim transitions it out of
+            // `requires_action`, and a replacement bumps `createdAt`. Fail open on a read
+            // error so a genuinely never-resumed approval isn't left looking "finished".
+            let stillPaused = true;
             try {
-              await saveMessage(
-                {
-                  userId,
-                  isTemporary: req?.body?.isTemporary,
-                  interfaceConfig: req?.config?.interfaceConfig,
-                },
-                { ...response, endpoint: endpointOption.endpoint, unfinished: true, user: userId },
-                {
-                  context:
-                    'api/server/controllers/agents/request.js - HITL pause (mark unfinished)',
-                },
+              const liveJob = await GenerationJobManager.getJob(streamId);
+              stillPaused =
+                !!liveJob &&
+                liveJob.status === 'requires_action' &&
+                (client?.jobCreatedAt == null || liveJob.createdAt === client.jobCreatedAt);
+            } catch (readErr) {
+              logger.warn(
+                '[ResumableAgentController] Pause unfinished-save liveness check failed; proceeding',
+                readErr?.message ?? readErr,
               );
-            } catch (saveErr) {
-              logger.error(
-                '[ResumableAgentController] Failed to mark paused response unfinished',
-                saveErr,
+            }
+            if (!stillPaused) {
+              logger.debug(
+                `[ResumableAgentController] Skipping pause unfinished-save — ${streamId} already resumed/replaced`,
               );
+            } else {
+              try {
+                await saveMessage(
+                  {
+                    userId,
+                    isTemporary: req?.body?.isTemporary,
+                    interfaceConfig: req?.config?.interfaceConfig,
+                  },
+                  {
+                    ...response,
+                    endpoint: endpointOption.endpoint,
+                    unfinished: true,
+                    user: userId,
+                  },
+                  {
+                    context:
+                      'api/server/controllers/agents/request.js - HITL pause (mark unfinished)',
+                  },
+                );
+              } catch (saveErr) {
+                logger.error(
+                  '[ResumableAgentController] Failed to mark paused response unfinished',
+                  saveErr,
+                );
+              }
             }
           }
           titleAbortController.abort();

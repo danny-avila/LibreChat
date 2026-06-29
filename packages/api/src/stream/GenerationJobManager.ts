@@ -1671,6 +1671,29 @@ class GenerationJobManagerClass {
    * the store's own cleanup). The durable checkpoint is reclaimed by its Mongo TTL
    * index, which shares the approval window, so no cross-layer delete is needed here.
    */
+  /**
+   * Expire a single observed-stale pending approval NOW (immediate, not via the periodic
+   * sweep): run the `requires_action → aborted` CAS — pinned to `actionId` so a concurrent
+   * resolve + re-pause on a fresh action isn't aborted — and, on success, emit the terminal
+   * `APPROVAL_EXPIRED_ERROR` so any attached SSE client gets a terminal event instead of a
+   * hung stream. Used by the periodic sweeper and by the resume route, which observes a
+   * just-expired action when the user submits a decision after the TTL lapsed. Returns true
+   * if this call expired the action.
+   */
+  async expireApproval(streamId: string, actionId?: string): Promise<boolean> {
+    const expired = await this._approvals.expire(streamId, actionId);
+    if (!expired) {
+      return false;
+    }
+    try {
+      await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
+    } catch (err) {
+      logger.error(`[GenerationJobManager] Failed to notify expired approval ${streamId}`, err);
+    }
+    this.runningJobs.delete(streamId);
+    return true;
+  }
+
   private async expireStaleApprovals(): Promise<void> {
     let changed = false;
     for (const streamId of this.runtimeState.keys()) {
@@ -1712,16 +1735,11 @@ class GenerationJobManagerClass {
       // as stale. Between this read and the CAS, the user could resolve it and the run
       // re-pause on a fresh action; without the id, the CAS (status-only) would abort
       // that valid new pause and leave it terminal.
-      const expired = await this._approvals.expire(streamId, job.pendingAction?.actionId);
-      if (!expired) {
+      const didExpire = await this.expireApproval(streamId, job.pendingAction?.actionId);
+      if (!didExpire) {
         continue;
       }
-      try {
-        await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
-      } catch (err) {
-        logger.error(`[GenerationJobManager] Failed to notify expired approval ${streamId}`, err);
-      }
-      changed = this.runningJobs.delete(streamId) || changed;
+      changed = true;
       logger.debug(`[GenerationJobManager] Expired pending approval: ${streamId}`);
     }
     if (changed) {

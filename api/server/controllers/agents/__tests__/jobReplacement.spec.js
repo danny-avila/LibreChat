@@ -569,4 +569,50 @@ describe('HITL Resume Fidelity Guards (round 18)', () => {
       expect(body).toEqual({ conversationId: 'c1' });
     });
   });
+
+  describe('J2 — pause unfinished-save is skipped once a fast resume took over', () => {
+    // Mirrors request.js: only mark the paused row unfinished while the job is STILL paused
+    // on THIS generation's action. A claim transitions it out of requires_action and a
+    // replacement bumps createdAt — either means a /resume now owns the row, so marking it
+    // unfinished would clobber the resumed turn's completed content. Fail open on read error.
+    const shouldMarkUnfinished = async ({ jobCreatedAt, streamId }) => {
+      let stillPaused = true;
+      try {
+        const liveJob = await mockGenerationJobManager.getJob(streamId);
+        stillPaused =
+          !!liveJob &&
+          liveJob.status === 'requires_action' &&
+          (jobCreatedAt == null || liveJob.createdAt === jobCreatedAt);
+      } catch {
+        stillPaused = true;
+      }
+      return stillPaused;
+    };
+
+    it('marks unfinished while still paused on this generation', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue({
+        status: 'requires_action',
+        createdAt: 1000,
+      });
+      expect(await shouldMarkUnfinished({ jobCreatedAt: 1000, streamId: 'c1' })).toBe(true);
+    });
+
+    it('skips the unfinished-save once a fast resume claimed it (no longer requires_action)', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue({ status: 'running', createdAt: 1000 });
+      expect(await shouldMarkUnfinished({ jobCreatedAt: 1000, streamId: 'c1' })).toBe(false);
+    });
+
+    it('skips the unfinished-save when a newer request replaced the job', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue({
+        status: 'requires_action',
+        createdAt: 2000,
+      });
+      expect(await shouldMarkUnfinished({ jobCreatedAt: 1000, streamId: 'c1' })).toBe(false);
+    });
+
+    it('fails open (marks unfinished) when the liveness read throws', async () => {
+      mockGenerationJobManager.getJob.mockRejectedValue(new Error('store down'));
+      expect(await shouldMarkUnfinished({ jobCreatedAt: 1000, streamId: 'c1' })).toBe(true);
+    });
+  });
 });

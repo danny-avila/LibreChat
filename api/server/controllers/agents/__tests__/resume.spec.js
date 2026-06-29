@@ -54,6 +54,7 @@ const mockGenerationJobManager = {
   emitDone: jest.fn(),
   emitError: jest.fn(),
   completeJob: jest.fn(),
+  expireApproval: jest.fn(),
   approvals: { resolve: jest.fn() },
 };
 
@@ -347,20 +348,25 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
     });
 
-    it('409 when the job is not in requires_action', async () => {
+    it('409 when the job is not in requires_action (already terminal; no expire)', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob({ status: 'running' }));
       const res = await post(approveBody());
       expect(res.status).toBe(409);
       expect(res.body.error).toMatch(/no live pending action/i);
+      // Already resolved/terminal — nothing to expire.
+      expect(mockGenerationJobManager.expireApproval).not.toHaveBeenCalled();
     });
 
-    it('409 when the pending action has expired (stale)', async () => {
+    it('409 AND drives expiry when the pending action has expired (stale)', async () => {
       const job = makeToolApprovalJob();
       job.metadata.pendingAction.expiresAt = Date.now() - 1_000;
       mockGenerationJobManager.getJob.mockResolvedValue(job);
       const res = await post(approveBody());
       expect(res.status).toBe(409);
       expect(res.body.error).toMatch(/no live pending action/i);
+      // The stale action is expired NOW (expire CAS + terminal SSE) so an attached SSE
+      // client gets a terminal event instead of hanging until the periodic sweeper runs.
+      expect(mockGenerationJobManager.expireApproval).toHaveBeenCalledWith(CONVO_ID, ACTION_ID);
     });
 
     it('400 when actionId is missing', async () => {

@@ -1558,6 +1558,11 @@ class AgentClient extends BaseClient {
         run = await createRun({
           agents,
           messages,
+          // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
+          // persists the pending action; the /resume route rebuilds + continues the run), so it
+          // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
+          // leave this off so an approval-gated tool can't pause where there's no resume path.
+          hitlCapable: true,
           indexTokenCountMap,
           initialSummary,
           initialSessions,
@@ -1889,6 +1894,9 @@ class AgentClient extends BaseClient {
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
+        // The resumed run can pause AGAIN (another tool, a follow-up question), and this
+        // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
+        hitlCapable: true,
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so a deferred tool the paused call targets
         // would be absent from the rebuilt toolMap; these names (captured at pause)

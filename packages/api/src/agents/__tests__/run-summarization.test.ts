@@ -69,6 +69,11 @@ jest.mock('@librechat/agents', () => {
   };
 });
 
+// Stub the durable checkpointer so the HITL-enabled path doesn't need a live Mongo.
+jest.mock('~/agents/checkpointer', () => ({
+  getAgentCheckpointer: jest.fn().mockResolvedValue({}),
+}));
+
 import { Run } from '@librechat/agents';
 
 /** Minimal RunAgent factory */
@@ -1940,5 +1945,59 @@ describe('createRun deferred-tool replay (HITL resume)', () => {
       { messages: [], discoveredToolNames: ['deep_tool'] },
     );
     expect(defNames(agents)).not.toContain('deep_tool');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: HITL wiring gated to resumable callers (Codex J3)
+//
+// The tool-approval wiring (humanInTheLoop switch + PreToolUse hook) must engage ONLY for
+// callers that implement the pause/resume lifecycle. AgentClient passes hitlCapable: true;
+// the OpenAI-compatible + Responses controllers don't, so an approval-gated tool can't
+// pause on a route with no approval surface or resume endpoint.
+// ---------------------------------------------------------------------------
+describe('HITL wiring is gated on hitlCapable', () => {
+  const hitlAppConfig = {
+    config: {},
+    fileStrategy: FileSources.local,
+    imageOutputType: 'png',
+    endpoints: {
+      [EModelEndpoint.agents]: { toolApproval: { enabled: true } },
+    },
+  } as unknown as AppConfig;
+
+  const runAndGetConfig = async (extra: Record<string, unknown>) => {
+    await createRun({
+      agents: [makeAgent()] as never,
+      signal: new AbortController().signal,
+      appConfig: hitlAppConfig,
+      streaming: true,
+      streamUsage: true,
+      ...extra,
+    });
+    const createMock = Run.create as jest.Mock;
+    return createMock.mock.calls[0][0] as Record<string, unknown>;
+  };
+
+  it('attaches humanInTheLoop when the caller is hitlCapable and approval is enabled', async () => {
+    const config = await runAndGetConfig({ hitlCapable: true });
+    expect(config.humanInTheLoop).toBeDefined();
+    expect(config.hooks).toBeDefined();
+  });
+
+  it('does NOT attach HITL for a non-resumable caller even when approval is enabled', async () => {
+    const config = await runAndGetConfig({ hitlCapable: false });
+    expect(config).not.toHaveProperty('humanInTheLoop');
+    expect(config.graphConfig).toBeDefined();
+    // No checkpointer either — the run is identical to the no-HITL path.
+    expect(
+      (config.graphConfig as { compileOptions?: { checkpointer?: unknown } }).compileOptions
+        ?.checkpointer,
+    ).toBeUndefined();
+  });
+
+  it('defaults to non-HITL when hitlCapable is omitted', async () => {
+    const config = await runAndGetConfig({});
+    expect(config).not.toHaveProperty('humanInTheLoop');
   });
 });

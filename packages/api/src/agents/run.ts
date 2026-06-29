@@ -886,6 +886,7 @@ export async function createRun({
   calibrationRatio,
   appConfig,
   subagentUsageSink,
+  hitlCapable = false,
   streaming = true,
   streamUsage = true,
 }: {
@@ -928,6 +929,15 @@ export async function createRun({
    * Switch to the `RunConfig` pick once the dependency is bumped.
    */
   subagentUsageSink?: (event: SubagentUsageEvent) => void;
+  /**
+   * Whether the caller implements the HITL pause/resume lifecycle (inspects
+   * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
+   * tool-approval wiring: only AgentClient (chat + resume) sets this. The OpenAI-compatible
+   * and Responses controllers leave it false, so an approval-gated tool can't pause on a
+   * route that has no approval surface or resume endpoint (it would otherwise emit a normal
+   * final response / `[DONE]` with the tool call left unresolved).
+   */
+  hitlCapable?: boolean;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -1176,7 +1186,13 @@ export async function createRun({
   const toolApprovalPolicy = resolveToolApprovalPolicy({
     endpoint: agentsEndpointConfig?.toolApproval,
   });
-  const hitl = buildHITLRunWiring(toolApprovalPolicy);
+  // Gate HITL to callers that actually implement the pause/resume lifecycle. The
+  // OpenAI-compatible + Responses controllers also call createRun/processStream but never
+  // inspect `run.getInterrupt()` or persist a pending action — so an approval-gated tool
+  // would pause with no approval surface or resume endpoint, and the route would emit a
+  // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
+  // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
+  const hitl = hitlCapable ? buildHITLRunWiring(toolApprovalPolicy) : undefined;
   if (hitl) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
