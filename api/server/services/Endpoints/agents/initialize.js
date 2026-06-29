@@ -234,6 +234,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     summarizationOptions,
     aggregateContent,
     toolEndCallback,
+    artifactPromises,
     collectedUsage,
     collectedThoughtSignatures,
     streamId,

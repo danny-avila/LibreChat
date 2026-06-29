@@ -1,5 +1,5 @@
 import { memo, useMemo, useCallback } from 'react';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, Tools } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
   SearchResultData,
@@ -13,6 +13,7 @@ import { EditTextPart, EmptyText } from './Parts';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';
+import WebSearch from './WebSearch';
 import Container from './Container';
 import Part from './Part';
 
@@ -131,6 +132,35 @@ const ContentParts = memo(function ContentParts({
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
   /**
+   * Web search attachments not tied to any tool-call content part. Provider-hosted
+   * web search (e.g. OpenRouter's `openrouter:web_search`) runs server-side and emits
+   * citation attachments without a corresponding `web_search` tool-call part, so the
+   * per-part `WebSearch` in `Part.tsx` never mounts for them. Render a standalone
+   * "Web searched" indicator at the message level instead.
+   */
+  const orphanWebSearchAttachments = useMemo(() => {
+    if (!attachments?.length) {
+      return [];
+    }
+    const toolCallIds = new Set<string>();
+    for (const part of content ?? []) {
+      if (!part) {
+        continue;
+      }
+      const id = getToolCallId(part);
+      if (id) {
+        toolCallIds.add(id);
+      }
+    }
+    return attachments.filter(
+      (a) =>
+        a?.type === Tools.web_search &&
+        a[Tools.web_search] != null &&
+        !(a.toolCallId != null && toolCallIds.has(a.toolCallId)),
+    );
+  }, [attachments, content]);
+
+  /**
    * Interim skill cards — rendered in a separate slot ABOVE the Parts
    * iteration based purely on the `manualSkills` message field. `content`
    * is only read to determine the "Running → Ran" visual transition
@@ -186,6 +216,16 @@ const ContentParts = memo(function ContentParts({
     pendingSkills.map((name) => (
       <PendingSkillCall key={`pending-skill-${name}`} skillName={name} loaded={hasRealContent} />
     ));
+
+  const renderOrphanWebSearch = () =>
+    orphanWebSearchAttachments.length > 0 ? (
+      <WebSearch
+        isLast={false}
+        initialProgress={0.1}
+        isSubmitting={effectiveIsSubmitting}
+        attachments={orphanWebSearchAttachments}
+      />
+    ) : null;
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
@@ -342,6 +382,7 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={effectiveIsSubmitting}
           renderPart={renderPart}
         />
+        {renderOrphanWebSearch()}
       </>
     );
   }
@@ -350,6 +391,7 @@ const ContentParts = memo(function ContentParts({
   return (
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
+      {renderOrphanWebSearch()}
       {renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
