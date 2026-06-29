@@ -355,6 +355,9 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        if (process.env.DEBUG_LLM_CONFIG) {
+          dumpDebugToFile('reasoning-delta', { delta: data?.delta });
+        }
         aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
