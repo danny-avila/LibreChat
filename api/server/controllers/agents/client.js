@@ -1173,6 +1173,24 @@ class AgentClient extends BaseClient {
    * @param {AbortController} [params.abortController]
    */
   /**
+   * @deprecated Agent Chain — strip hidden intermediate sequential-agent content
+   * before persistence, keeping only the last part + tool_call parts. Mirrors the
+   * chat path so a HITL resume doesn't persist/emit intermediate outputs the
+   * agent's `hide_sequential_outputs` setting is meant to hide.
+   */
+  applyHideSequentialOutputsFilter() {
+    if (!this.options.agent?.hide_sequential_outputs || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    this.contentParts = this.contentParts.filter(
+      (part, index) =>
+        index >= this.contentParts.length - 1 ||
+        part.type === ContentTypes.TOOL_CALL ||
+        part.tool_call_ids,
+    );
+  }
+
+  /**
    * Surface any human-in-the-loop interrupt the SDK captured during the most
    * recent `processStream` / `resume`. When the run paused for tool approval (or
    * an ask-user question), mark the job `requires_action`, persist the pending
@@ -1547,7 +1565,6 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
-      const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
 
       /**
@@ -1587,20 +1604,7 @@ class AgentClient extends BaseClient {
         this.contentParts.unshift(...manualParts);
       }
 
-      /** @deprecated Agent Chain */
-      if (hideSequentialOutputs) {
-        this.contentParts = this.contentParts.filter((part, index) => {
-          // Include parts that are either:
-          // 1. At or after the finalContentStart index
-          // 2. Of type tool_call
-          // 3. Have tool_call_ids property
-          return (
-            index >= this.contentParts.length - 1 ||
-            part.type === ContentTypes.TOOL_CALL ||
-            part.tool_call_ids
-          );
-        });
-      }
+      this.applyHideSequentialOutputsFilter();
     } catch (err) {
       if (abortController.signal.aborted) {
         logger.debug(
@@ -1863,6 +1867,12 @@ class AgentClient extends BaseClient {
       // The model may pause AGAIN (another tool needs approval, or a follow-up
       // question). Re-arm the same interrupt gate so the cycle can repeat.
       await this.handleRunInterrupt(run, streamId);
+
+      // Mirror chatCompletion: strip hidden intermediate sequential-agent content
+      // before resume finalize/re-pause persistence reads `this.contentParts`, so a
+      // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
+      // is meant to hide.
+      this.applyHideSequentialOutputsFilter();
     } catch (err) {
       if (abortController.signal.aborted) {
         logger.debug(

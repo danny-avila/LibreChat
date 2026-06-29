@@ -156,8 +156,21 @@ function buildSubmissionFromResumeState(
     endpoint: null,
   } as TConversation;
 
+  // On reload, `messages` is the full DB array, which already holds the paused user
+  // row and the partial (unfinished) assistant row under the same ids that
+  // `userMessage` / `initialResponse` (and the resume final event's request/response
+  // messages) re-supply. Strip them so createdHandler/finalHandler — which build
+  // `[...messages, requestMessage, responseMessage]` — don't append a duplicate pair.
+  const pausedResponseIdUnpadded = initialResponse.messageId.replace(/_+$/, '');
+  const dedupedMessages = messages.filter(
+    (m) =>
+      m.messageId !== userMessage.messageId &&
+      m.messageId !== initialResponse.messageId &&
+      m.messageId !== pausedResponseIdUnpadded,
+  );
+
   return {
-    messages,
+    messages: dedupedMessages,
     userMessage,
     initialResponse,
     conversation,
