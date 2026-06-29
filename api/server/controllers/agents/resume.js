@@ -481,21 +481,29 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // turn would be dropped — an approved code/read-file tool would resume without them.
   // The resume body doesn't carry them, so source them from the persisted user message.
   if (!Array.isArray(req.body.files) || req.body.files.length === 0) {
-    const pausedUserMessageId = job.metadata.userMessage?.messageId;
-    if (pausedUserMessageId) {
-      try {
-        const [row] = await getMessages(
-          { conversationId, messageId: pausedUserMessageId },
-          'files',
-        );
-        if (Array.isArray(row?.files) && row.files.length > 0) {
-          req.body.files = row.files;
+    // Prefer the files persisted on the JOB at onStart — they don't depend on the user DB
+    // row being saved, which the approval prompt can race (the row save may still be in
+    // flight when a fast /resume reads it). Fall back to the DB row for older jobs.
+    const metaFiles = job.metadata.userMessage?.files;
+    if (Array.isArray(metaFiles) && metaFiles.length > 0) {
+      req.body.files = metaFiles;
+    } else {
+      const pausedUserMessageId = job.metadata.userMessage?.messageId;
+      if (pausedUserMessageId) {
+        try {
+          const [row] = await getMessages(
+            { conversationId, messageId: pausedUserMessageId },
+            'files',
+          );
+          if (Array.isArray(row?.files) && row.files.length > 0) {
+            req.body.files = row.files;
+          }
+        } catch (err) {
+          logger.warn(
+            '[ResumeAgentController] Failed to restore paused user message files',
+            err?.message ?? err,
+          );
         }
-      } catch (err) {
-        logger.warn(
-          '[ResumeAgentController] Failed to restore paused user message files',
-          err?.message ?? err,
-        );
       }
     }
   }
@@ -530,6 +538,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
 
     // Bind the rebuilt client to the in-flight turn's identity (no new user message).
     client.conversationId = streamId;
+    // The resume operates on the SAME job (it moved it running again), so its identity is
+    // the paused job's createdAt — used by the re-pause CAS pre-check + checkpoint prune to
+    // avoid acting on a job a newer request has since replaced.
+    client.jobCreatedAt = job.createdAt;
     client.responseMessageId = job.metadata.responseMessageId;
     client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
     // Read the pre-pause content BEFORE swapping the store's content reference: the
@@ -572,26 +584,47 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     await finalizeResumedTurn({ req, client, job, streamId, conversationId, addTitle });
   } catch (err) {
     logger.error('[ResumeAgentController] Resume failed', err);
+    // Job-replacement guard (mirrors finalizeResumedTurn's success-path guard): if a
+    // newer request reused this conversationId while the resume was failing, do NOT emit
+    // the error to / complete / prune the NEWER turn's job. The finally still releases
+    // the slot + disposes. Proceed with finalization if the replacement check itself fails.
+    let stillLive = true;
     try {
-      await GenerationJobManager.emitError(streamId, err?.message ?? 'Resume failed');
-    } catch (emitErr) {
-      logger.error('[ResumeAgentController] Failed to emit resume error', emitErr);
+      const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+      stillLive = !!liveJob && liveJob.createdAt === job.createdAt;
+    } catch (readErr) {
+      logger.warn('[ResumeAgentController] Replacement check failed; finalizing anyway', readErr);
     }
-    try {
-      await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed');
-    } catch (completeErr) {
-      logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
-      // Last resort: force a terminal state so the job isn't orphaned in `running`.
-      await GenerationJobManager.getJobStore()
-        .updateJob(streamId, { status: 'error', completedAt: Date.now(), error: 'Resume failed' })
-        .catch((updErr) =>
-          logger.error('[ResumeAgentController] Fallback job finalize failed', updErr),
-        );
+    if (!stillLive) {
+      logger.warn(
+        `[ResumeAgentController] Skipping failed-resume finalization — job ${streamId} was replaced`,
+      );
+    } else {
+      try {
+        await GenerationJobManager.emitError(streamId, err?.message ?? 'Resume failed');
+      } catch (emitErr) {
+        logger.error('[ResumeAgentController] Failed to emit resume error', emitErr);
+      }
+      try {
+        await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed');
+      } catch (completeErr) {
+        logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
+        // Last resort: force a terminal state so the job isn't orphaned in `running`.
+        await GenerationJobManager.getJobStore()
+          .updateJob(streamId, {
+            status: 'error',
+            completedAt: Date.now(),
+            error: 'Resume failed',
+          })
+          .catch((updErr) =>
+            logger.error('[ResumeAgentController] Fallback job finalize failed', updErr),
+          );
+      }
+      await deleteAgentCheckpoint(
+        conversationId,
+        req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+      );
     }
-    await deleteAgentCheckpoint(
-      conversationId,
-      req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-    );
   } finally {
     // Tear down the MCP request-context store seeded before the ACK (parity with
     // request.js's finishResumableRequest). No-op if it was never seeded.

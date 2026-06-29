@@ -359,6 +359,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
 
     client = result.client;
+    // Tag the client with THIS generation's identity so HITL terminal side-effects
+    // (pause CAS, checkpoint prune) can tell whether a newer request has since replaced
+    // this job on the same conversationId before acting on it.
+    client.jobCreatedAt = jobCreatedAt;
 
     // Resolve title timing from the public agents endpoint first, then fall
     // back to the agent's actual backing provider/custom endpoint.
@@ -465,6 +469,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               conversationId: userMsg.conversationId,
               text: userMsg.text,
               quotes: userMsg.quotes,
+              // Persist the turn's uploaded files here (authoritative job metadata) so a
+              // HITL resume sources them from the job, not the user DB row — which the
+              // approval prompt can race (the row save may still be in flight when a fast
+              // /resume reads it). Without this an approved tool run can rebuild without the
+              // paused turn's files.
+              ...(Array.isArray(req.body?.files) &&
+                req.body.files.length > 0 && { files: req.body.files }),
               // Skill selections aren't on `userMsg` yet at onStart (BaseClient adds them
               // later), so source them from the request — otherwise this update overwrites
               // the preliminary metadata and a HITL-resumed turn loses its skill pills.
@@ -485,6 +496,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             // and it's what the live client renders the user bubble from.
             message: {
               ...userMessage,
+              // Carry files so trackUserMessage (the authoritative writer) persists them on
+              // job.metadata.userMessage for a HITL resume (see the updateMetadata above).
+              ...(Array.isArray(req.body?.files) &&
+                req.body.files.length > 0 && { files: req.body.files }),
               ...(Array.isArray(req.body?.manualSkills) &&
                 req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
               ...(Array.isArray(req.body?.alwaysAppliedSkills) &&

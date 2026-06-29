@@ -1359,7 +1359,11 @@ class GenerationJobManagerClass {
     }
 
     const { message } = event;
-    const skills = message as { manualSkills?: string[]; alwaysAppliedSkills?: string[] };
+    const extra = message as {
+      manualSkills?: string[];
+      alwaysAppliedSkills?: string[];
+      files?: unknown[];
+    };
     const updates: Partial<SerializableJobData> = {
       createdEventEmitted: true,
       userMessage: {
@@ -1368,14 +1372,18 @@ class GenerationJobManagerClass {
         conversationId: message.conversationId,
         text: message.text,
         quotes: message.quotes,
+        // Persist the turn's uploaded files so a HITL resume sources them from the job
+        // (this authoritative writer), not a user DB row whose save can still be racing
+        // the approval prompt.
+        ...(Array.isArray(extra.files) && extra.files.length > 0 && { files: extra.files }),
         // Carry skill selections so a HITL resume's reconstructed requestMessage keeps
         // its pills — this is the authoritative writer of job.metadata.userMessage and
         // would otherwise drop them (the emitted created message includes them).
-        ...(Array.isArray(skills.manualSkills) &&
-          skills.manualSkills.length > 0 && { manualSkills: skills.manualSkills }),
-        ...(Array.isArray(skills.alwaysAppliedSkills) &&
-          skills.alwaysAppliedSkills.length > 0 && {
-            alwaysAppliedSkills: skills.alwaysAppliedSkills,
+        ...(Array.isArray(extra.manualSkills) &&
+          extra.manualSkills.length > 0 && { manualSkills: extra.manualSkills }),
+        ...(Array.isArray(extra.alwaysAppliedSkills) &&
+          extra.alwaysAppliedSkills.length > 0 && {
+            alwaysAppliedSkills: extra.alwaysAppliedSkills,
           }),
       },
     };

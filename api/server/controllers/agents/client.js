@@ -1238,6 +1238,19 @@ class AgentClient extends BaseClient {
       resumeContext: pickResumeContext(this.options.req?.body),
     });
 
+    // Job-replacement guard: streamId == conversationId is reused per conversation, so a
+    // newer request can replace this run's job. If this (older) run hits an interrupt
+    // after a replacement, pausing would flip the NEWER job to requires_action with this
+    // stale run's pending action, blocking fresh work behind the wrong approval. Only
+    // pause when the live job is still the one THIS run created (mirrors request.js).
+    if (this.jobCreatedAt != null) {
+      const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+      if (!liveJob || liveJob.createdAt !== this.jobCreatedAt) {
+        logger.debug(`[AgentClient] Interrupt fired but job ${streamId} was replaced; not pausing`);
+        return;
+      }
+    }
+
     const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);
     if (!paused) {
       logger.debug(
@@ -1698,7 +1711,23 @@ class AgentClient extends BaseClient {
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
       if (!this.pendingApproval && isHITLEnabled(agentsEConfig?.toolApproval)) {
         try {
-          await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
+          // Job-replacement guard: only prune if THIS generation is still the live job.
+          // A newer request can replace this one on the same conversationId; if this
+          // (older) run's finally lands after the newer run paused, pruning by
+          // conversationId would delete the NEWER run's checkpoint and break its /resume.
+          const resumableStreamId = this.options.req?._resumableStreamId;
+          let replaced = false;
+          if (resumableStreamId && this.jobCreatedAt != null) {
+            const liveJob = await GenerationJobManager.getJobStore().getJob(resumableStreamId);
+            replaced = !liveJob || liveJob.createdAt !== this.jobCreatedAt;
+          }
+          if (replaced) {
+            logger.debug('[AgentClient] Skipping checkpoint prune — job was replaced', {
+              streamId: resumableStreamId,
+            });
+          } else {
+            await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
+          }
         } catch (err) {
           logger.warn('[AgentClient] Failed to prune checkpoint after completion', err);
         }

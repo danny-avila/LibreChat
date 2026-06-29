@@ -35,6 +35,9 @@ export interface SerializableJobData {
     /** Skill selections, carried so a HITL-resumed turn's requestMessage keeps its pills. */
     manualSkills?: string[];
     alwaysAppliedSkills?: string[];
+    /** Uploaded files for the turn, carried so a HITL resume sources them from the job
+     *  rather than a user DB row whose save can still be racing the approval prompt. */
+    files?: unknown[];
   };
 
   /** Response message ID for reconnection */
