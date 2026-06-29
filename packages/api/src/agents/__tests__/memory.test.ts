@@ -2,7 +2,13 @@ import { Response } from 'express';
 import { Providers } from '@librechat/agents';
 import { Tools } from 'librechat-data-provider';
 import type { MemoryArtifact } from 'librechat-data-provider';
-import { createMemoryTool, processMemory } from '../memory';
+import { createMemoryTool, processMemory, resolveMemoryLLMConfig } from '../memory';
+
+// Mock the provider-config resolver so tests don't load the heavy endpoint
+// initialization graph and can control credential resolution.
+jest.mock('~/endpoints/config/providers', () => ({
+  getProviderConfig: jest.fn(),
+}));
 
 // Mock the logger
 // `winston.format` must be a callable factory (real winston returns a Format
@@ -580,5 +586,73 @@ describe('processMemory - GPT-5+ handling', () => {
         }),
       }),
     );
+  });
+});
+
+describe('resolveMemoryLLMConfig', () => {
+  const mockReq = { config: {} } as never;
+  const mockDb = { getUserKey: jest.fn(), getUserKeyValues: jest.fn() } as never;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns undefined when no agent config is present', async () => {
+    const result = await resolveMemoryLLMConfig({ req: mockReq, memoryConfig: {}, db: mockDb });
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined when agent is configured by id only', async () => {
+    const result = await resolveMemoryLLMConfig({
+      req: mockReq,
+      memoryConfig: { agent: { id: 'some-agent-id' } },
+      db: mockDb,
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it('resolves llmConfig with credentials for an inline provider/model agent', async () => {
+    const { getProviderConfig } = jest.requireMock('~/endpoints/config/providers');
+    const getOptions = jest.fn().mockResolvedValue({
+      llmConfig: { provider: 'openai', model: 'gpt-4.1-mini', apiKey: 'resolved-key' },
+      configOptions: { baseURL: 'https://example.com' },
+    });
+    (getProviderConfig as jest.Mock).mockReturnValue({
+      getOptions,
+      overrideProvider: 'openai',
+    });
+
+    const result = await resolveMemoryLLMConfig({
+      req: mockReq,
+      memoryConfig: { agent: { provider: 'openai', model: 'gpt-4.1-mini' } },
+      db: mockDb,
+    });
+
+    expect(getOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: 'openai',
+        model_parameters: expect.objectContaining({ model: 'gpt-4.1-mini' }),
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        apiKey: 'resolved-key',
+        configuration: { baseURL: 'https://example.com' },
+      }),
+    );
+  });
+
+  it('returns undefined when provider resolution throws', async () => {
+    const { getProviderConfig } = jest.requireMock('~/endpoints/config/providers');
+    (getProviderConfig as jest.Mock).mockImplementation(() => {
+      throw new Error('Provider not supported');
+    });
+
+    const result = await resolveMemoryLLMConfig({
+      req: mockReq,
+      memoryConfig: { agent: { provider: 'bogus', model: 'x' } },
+      db: mockDb,
+    });
+    expect(result).toBeUndefined();
   });
 });

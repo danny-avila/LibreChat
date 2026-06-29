@@ -1,10 +1,17 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess, mergeMemoryValues } = require('@librechat/api');
+const {
+  Tokenizer,
+  generateCheckAccess,
+  mergeMemoryValues,
+  resolveMemoryLLMConfig,
+} = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
   toggleUserMemories,
   getRoleByName,
+  getUserKey,
+  getUserKeyValues,
   deleteMemory,
   setMemory,
 } = require('~/models');
@@ -127,12 +134,17 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
 
     let finalValue = trimmedValue;
     if (existing) {
+      const llmConfig = await resolveMemoryLLMConfig({
+        req,
+        memoryConfig,
+        db: { getUserKey, getUserKeyValues },
+      });
       finalValue = await mergeMemoryValues({
         existingValue: existing.value,
         newValue: trimmedValue,
         key: trimmedKey,
         mergeRunId: `rest-merge-${trimmedKey}-${req.user.id}`,
-        llmConfig: memoryConfig?.llmConfig,
+        llmConfig,
       });
     }
 

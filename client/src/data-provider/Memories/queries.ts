@@ -89,7 +89,11 @@ export const useCreateMemoryMutation = (
         queryClient.setQueryData<MemoriesResponse>([QueryKeys.memories], (oldData) => {
           if (!oldData) return oldData;
 
-          const newMemories = [...oldData.memories, data.memory];
+          const existingIndex = oldData.memories.findIndex((m) => m.key === data.memory.key);
+          const newMemories =
+            existingIndex === -1
+              ? [...oldData.memories, data.memory]
+              : oldData.memories.map((m, i) => (i === existingIndex ? data.memory : m));
           const totalTokens = newMemories.reduce(
             (sum, memory) => sum + (memory.tokenCount || 0),
             0,
@@ -109,6 +113,7 @@ export const useCreateMemoryMutation = (
           };
         });
 
+        queryClient.invalidateQueries([QueryKeys.memories]);
         options?.onSuccess?.(data, variables, context);
       },
     },

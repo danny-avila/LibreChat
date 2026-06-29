@@ -17,8 +17,10 @@ import type {
 import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
-import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
+import type { TAttachment, MemoryArtifact, TMemoryConfig } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
+import type { ServerRequest, EndpointDbMethods } from '~/types';
+import { getProviderConfig } from '~/endpoints/config/providers';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
@@ -146,13 +148,59 @@ export async function mergeMemoryValues({
 
     const content = await run.processStream(inputs, config);
     if (typeof content === 'string' && content.trim()) {
-      logger.debug(`[MemoryMerge] Merged memory for key "${key}"`);
+      logger.info(`[MemoryMerge] Merged memory for key "${key}"`);
       return content.trim();
     }
   } catch (error) {
     logger.warn(`[MemoryMerge] Failed to merge memory for key "${key}", using new value`, error);
   }
   return newValue;
+}
+
+/**
+ * Resolves a usable LLM config (including credentials) for memory merging,
+ * mirroring how the chat flow resolves the configured memory agent's provider.
+ * Returns undefined when no inline agent config is present or resolution fails.
+ */
+export async function resolveMemoryLLMConfig({
+  req,
+  memoryConfig,
+  db,
+}: {
+  req: ServerRequest;
+  memoryConfig?: TMemoryConfig;
+  db: EndpointDbMethods;
+}): Promise<Partial<LLMConfig> | undefined> {
+  const agent = memoryConfig?.agent;
+  if (!agent || !('provider' in agent) || !agent.provider || !agent.model) {
+    if (agent && 'id' in agent && agent.id) {
+      logger.warn(
+        '[MemoryMerge] memory.agent is configured by id; inline provider/model is required to resolve merge credentials outside the chat flow. Falling back to default merge config.',
+      );
+    }
+    return undefined;
+  }
+
+  try {
+    const { getOptions, overrideProvider } = getProviderConfig({
+      provider: agent.provider,
+      appConfig: req.config,
+    });
+    const options = await getOptions({
+      req,
+      endpoint: overrideProvider,
+      model_parameters: { ...(agent.model_parameters ?? {}), model: agent.model },
+      db,
+    });
+    const llmConfig = { ...(options.llmConfig as Partial<LLMConfig>) };
+    if (options.configOptions) {
+      (llmConfig as OpenAIClientOptions).configuration = options.configOptions;
+    }
+    return llmConfig;
+  } catch (error) {
+    logger.warn('[MemoryMerge] Failed to resolve memory agent LLM config for merge', error);
+    return undefined;
+  }
 }
 
 /**
