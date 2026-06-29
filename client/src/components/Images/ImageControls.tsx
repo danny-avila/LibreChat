@@ -9,6 +9,8 @@ import { useLocalize } from '~/hooks';
 const PILL_TRIGGER_CLASS =
   'h-8 w-auto gap-1 rounded-lg border-border-light bg-transparent px-2.5 text-xs text-text-secondary hover:bg-surface-hover';
 
+const DROPDOWN_CONTENT_CLASS = 'bg-surface-secondary text-text-primary';
+
 const readImageDimensions = (file: File): Promise<{ width: number; height: number }> =>
   new Promise((resolve) => {
     const url = URL.createObjectURL(file);
@@ -96,7 +98,7 @@ export default function ImageControls({
         <SelectTrigger className={PILL_TRIGGER_CLASS} aria-label={localize('com_ui_aspect_ratio')}>
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className={DROPDOWN_CONTENT_CLASS}>
           {aspectRatios.map((ratio) => (
             <SelectItem key={ratio} value={ratio}>
               {ratio}
@@ -110,7 +112,7 @@ export default function ImageControls({
           <SelectTrigger className={PILL_TRIGGER_CLASS} aria-label={paramLabel}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className={DROPDOWN_CONTENT_CLASS}>
             {selectedModel.paramValues.map((v) => (
               <SelectItem key={v} value={v}>
                 {v}

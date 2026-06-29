@@ -142,7 +142,7 @@ export default function ImageWorkspace() {
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-surface-secondary text-text-primary">
               {models.map((m) => (
                 <SelectItem key={m.id} value={m.id}>
                   {m.label}
