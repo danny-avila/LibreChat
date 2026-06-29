@@ -1,11 +1,10 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess } = require('@librechat/api');
+const { Tokenizer, generateCheckAccess, mergeMemoryValues } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
   toggleUserMemories,
   getRoleByName,
-  createMemory,
   deleteMemory,
   setMemory,
 } = require('~/models');
@@ -116,45 +115,60 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
   }
 
   try {
-    const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
+    const trimmedKey = key.trim();
+    const trimmedValue = value.trim();
 
     const memories = await getAllUserMemories(req.user.id);
 
-    const appConfig = req.config;
-    const memoryConfig = appConfig?.memory;
+    const memoryConfig = req.config?.memory;
     const tokenLimit = memoryConfig?.tokenLimit;
 
+    const existing = memories.find((m) => m.key === trimmedKey);
+
+    let finalValue = trimmedValue;
+    if (existing) {
+      finalValue = await mergeMemoryValues({
+        existingValue: existing.value,
+        newValue: trimmedValue,
+        key: trimmedKey,
+        mergeRunId: `rest-merge-${trimmedKey}-${req.user.id}`,
+        llmConfig: memoryConfig?.llmConfig,
+      });
+    }
+
+    const tokenCount = Tokenizer.getTokenCount(finalValue, 'o200k_base');
+
     if (tokenLimit) {
+      const existingTokens = existing?.tokenCount ?? 0;
       const currentTotalTokens = memories.reduce(
         (sum, memory) => sum + (memory.tokenCount || 0),
         0,
       );
-      if (currentTotalTokens + tokenCount > tokenLimit) {
+      const effectiveTotal = currentTotalTokens - existingTokens;
+      if (effectiveTotal + tokenCount > tokenLimit) {
         return res.status(400).json({
-          error: `Adding this memory would exceed the token limit of ${tokenLimit}. Current usage: ${currentTotalTokens} tokens.`,
+          error: `Adding this memory would exceed the token limit of ${tokenLimit}. Current usage: ${effectiveTotal} tokens.`,
         });
       }
     }
 
-    const result = await createMemory({
+    const result = await setMemory({
       userId: req.user.id,
-      key: key.trim(),
-      value: value.trim(),
+      key: trimmedKey,
+      value: finalValue,
       tokenCount,
     });
 
     if (!result.ok) {
-      return res.status(500).json({ error: 'Failed to create memory.' });
+      return res.status(500).json({ error: 'Failed to save memory.' });
     }
 
     const updatedMemories = await getAllUserMemories(req.user.id);
-    const newMemory = updatedMemories.find((m) => m.key === key.trim());
+    const savedMemory = updatedMemories.find((m) => m.key === trimmedKey);
+    const statusCode = existing ? 200 : 201;
 
-    res.status(201).json({ created: true, memory: newMemory });
+    res.status(statusCode).json({ created: !existing, memory: savedMemory });
   } catch (error) {
-    if (error.message && error.message.includes('already exists')) {
-      return res.status(409).json({ error: 'Memory with this key already exists.' });
-    }
     res.status(500).json({ error: error.message });
   }
 });
