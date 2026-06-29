@@ -5,6 +5,8 @@
  * Handles input conversion, message formatting, and request validation.
  */
 import type { Response as ServerResponse } from 'express';
+import { Tools } from 'librechat-data-provider';
+import type { ResultReference, SearchResultData } from 'librechat-data-provider';
 import type {
   RequestValidationResult,
   ResponseRequest,
@@ -35,6 +37,7 @@ import {
   emitReasoningContentPartDone,
   emitReasoningItemDone,
   updateTrackerUsage,
+  writeAttachmentEvent,
   type StreamHandlerConfig,
 } from './handlers';
 
@@ -540,7 +543,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     },
 
     /**
-     * Handle chat model end (usage collection)
+     * Handle chat model end (usage collection + url_citation annotation extraction)
      */
     on_chat_model_end: {
       handle: (_event: string, data: unknown): void => {
@@ -549,29 +552,61 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
             usage_metadata?: {
               input_tokens?: number;
               output_tokens?: number;
-              // OpenAI format
-              input_token_details?: {
-                cache_creation?: number;
-                cache_read?: number;
-              };
-              // Anthropic format
+              input_token_details?: { cache_creation?: number; cache_read?: number };
               cache_creation_input_tokens?: number;
               cache_read_input_tokens?: number;
+            };
+            additional_kwargs?: {
+              annotations?: Array<{
+                type?: string;
+                url?: string;
+                title?: string;
+                url_citation?: { url?: string; title?: string };
+              }>;
             };
           };
         };
 
         const usage = endData?.output?.usage_metadata;
         if (usage) {
-          // Extract cached tokens from either OpenAI or Anthropic format
           const cachedTokens =
             (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
-
           updateTrackerUsage(config.tracker, {
             promptTokens: usage.input_tokens,
             completionTokens: usage.output_tokens,
             cachedTokens,
           });
+        }
+
+        const rawAnnotations = endData?.output?.additional_kwargs?.annotations;
+        if (Array.isArray(rawAnnotations) && rawAnnotations.length > 0) {
+          const references = rawAnnotations.reduce<ResultReference[]>((acc, a) => {
+            if (a.type !== 'url_citation') {
+              return acc;
+            }
+            const url = a.url || a.url_citation?.url;
+            if (!url) {
+              return acc;
+            }
+            acc.push({
+              link: url,
+              type: 'link',
+              title: a.title || a.url_citation?.title || url,
+            });
+            return acc;
+          }, []);
+
+          if (references.length > 0) {
+            const searchData: SearchResultData = { turn: 0, references };
+            const attachment = {
+              type: Tools.web_search,
+              toolCallId: `openrouter_ws_${config.tracker.nextSequence()}`,
+              [Tools.web_search]: searchData,
+            };
+            writeAttachmentEvent(config.res, config.tracker.nextSequence(), attachment, {
+              messageId: config.context.responseId,
+            });
+          }
         }
       },
     },
