@@ -179,7 +179,12 @@ redis:
 langfuseFanout:
   enabled: true
   central:
-    baseUrl: https://cloud.langfuse.com
+    # Use either baseUrl or baseUrlSecret. baseUrlSecret lets deployments reuse
+    # an existing LANGFUSE_BASE_URL secret instead of duplicating the URL.
+    baseUrl: ""
+    baseUrlSecret:
+      name: librechat
+      key: LANGFUSE_BASE_URL
     authHeaderSecret:
       name: langfuse-central
       key: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER

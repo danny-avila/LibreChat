@@ -304,6 +304,9 @@ langfuseFanout:
     annotations: {}
   central:
     baseUrl: https://cloud.langfuse.com
+    baseUrlSecret:
+      name: ""
+      key: LANGFUSE_BASE_URL
     authHeaderSecret:
       name: ""
       key: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER

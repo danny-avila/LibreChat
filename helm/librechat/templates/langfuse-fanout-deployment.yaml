@@ -45,7 +45,14 @@ spec:
               protocol: TCP
           env:
             - name: LANGFUSE_FANOUT_CENTRAL_BASE_URL
+            {{- with .Values.langfuseFanout.central.baseUrlSecret.name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: {{ $.Values.langfuseFanout.central.baseUrlSecret.key | quote }}
+            {{- else }}
               value: {{ .Values.langfuseFanout.central.baseUrl | quote }}
+            {{- end }}
             - name: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
               valueFrom:
                 secretKeyRef:
@@ -99,7 +106,14 @@ spec:
               protocol: TCP
           env:
             - name: LANGFUSE_FANOUT_CENTRAL_BASE_URL
+            {{- with .Values.langfuseFanout.central.baseUrlSecret.name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: {{ $.Values.langfuseFanout.central.baseUrlSecret.key | quote }}
+            {{- else }}
               value: {{ .Values.langfuseFanout.central.baseUrl | quote }}
+            {{- end }}
             - name: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
               valueFrom:
                 secretKeyRef:

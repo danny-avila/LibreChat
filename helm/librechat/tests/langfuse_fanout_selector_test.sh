@@ -32,6 +32,8 @@ cp "${CHART_DIR}/templates/langfuse-fanout-deployment.yaml" \
 
 helm template librechat "${RENDER_CHART_DIR}" \
   --set langfuseFanout.enabled=true \
+  --set langfuseFanout.central.baseUrlSecret.name=librechat \
+  --set langfuseFanout.central.baseUrlSecret.key=LANGFUSE_BASE_URL \
   --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
   --set langfuseFanout.redis.uri=redis://langfuse-fanout-redis:6379 \
   --show-only templates/service.yaml \
@@ -109,6 +111,10 @@ function envValue(env, name) {
   return (env ?? []).find((entry) => entry.name === name)?.value;
 }
 
+function envEntry(env, name) {
+  return (env ?? []).find((entry) => entry.name === name);
+}
+
 const mainService = find('Service', 'librechat-librechat');
 const fanoutService = find('Service', 'librechat-librechat-langfuse-fanout');
 const fanoutDeployment = find('Deployment', 'librechat-librechat-langfuse-fanout');
@@ -117,6 +123,12 @@ const fanoutContainer = fanoutDeployment.spec?.template?.spec?.containers?.find(
 );
 if (!fanoutContainer) {
   fail('missing langfuse-fanout container');
+}
+const otelCollectorContainer = fanoutDeployment.spec?.template?.spec?.containers?.find(
+  (container) => container.name === 'otelcol',
+);
+if (!otelCollectorContainer) {
+  fail('missing otelcol container');
 }
 
 const mainSelector = mainService.spec?.selector ?? {};
@@ -142,6 +154,15 @@ if (fanoutMetadataLabels['app.kubernetes.io/name'] !== fanoutSelector['app.kuber
 }
 if (envValue(fanoutContainer.env, 'LANGFUSE_FANOUT_REDIS_URI') !== 'redis://langfuse-fanout-redis:6379') {
   fail('fanout Deployment did not render configured Redis URI');
+}
+for (const container of [fanoutContainer, otelCollectorContainer]) {
+  const centralBaseUrl = envEntry(container.env, 'LANGFUSE_FANOUT_CENTRAL_BASE_URL');
+  if (
+    centralBaseUrl?.valueFrom?.secretKeyRef?.name !== 'librechat' ||
+    centralBaseUrl?.valueFrom?.secretKeyRef?.key !== 'LANGFUSE_BASE_URL'
+  ) {
+    fail(`${container.name} did not render central base URL from the configured secret`);
+  }
 }
 if (
   envValue(fanoutContainer.env, 'LANGFUSE_FANOUT_PUBLIC_URL') !==
