@@ -1885,7 +1885,10 @@ describe('createRun deferred-tool replay (HITL resume)', () => {
     });
   };
 
-  const captureAgents = async (agent: ReturnType<typeof makeAgent>, extra: Record<string, unknown>) => {
+  const captureAgents = async (
+    agent: ReturnType<typeof makeAgent>,
+    extra: Record<string, unknown>,
+  ) => {
     const signal = new AbortController().signal;
     await createRun({
       agents: [agent] as never,
