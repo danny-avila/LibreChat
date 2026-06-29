@@ -811,18 +811,20 @@ function createToolInstance({
   const _call = async (toolArguments, config) => {
     const effectiveUser = config?.configurable?.user ?? capturedUser;
     const permissionUser = effectiveUser;
-    const userId = resolveToolCallUserId({
-      effectiveUser,
-      capturedUser,
-      invocationUserId: config?.configurable?.user_id,
-      serverConfig: capturedServerConfig,
-    });
     /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
     /** @type {AbortSignal} */
     let derivedSignal = null;
+    /** @type {string | undefined} */
+    let userId;
 
     try {
+      userId = resolveToolCallUserId({
+        effectiveUser,
+        capturedUser,
+        invocationUserId: config?.configurable?.user_id,
+        serverConfig: capturedServerConfig,
+      });
       const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
       const canUseMCP = mcpPermissionContext
         ? await mcpPermissionContext.canUseServers(permissionUser)

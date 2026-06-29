@@ -439,8 +439,8 @@ const refreshController = async (req, res) => {
               }
             }
           } catch (bridgeError) {
-            logger.debug('[refreshController] Refresh-token bridge lookup failed', {
-              error: bridgeError.message,
+            logger.warn('[refreshController] Refresh-token bridge lookup failed', {
+              error: bridgeError instanceof Error ? bridgeError.message : bridgeError,
             });
           }
         }

@@ -16,7 +16,15 @@ jest.mock('~/utils/graph', () => ({
   ...jest.requireActual('~/utils/graph'),
   preProcessGraphTokens: jest.fn(async (options) => options),
 }));
-jest.mock('~/utils');
+jest.mock('~/utils', () => {
+  const { isEnabled } = jest.requireActual('~/utils/common');
+  const { math } = jest.requireActual('~/utils/math');
+  return {
+    isEnabled,
+    math,
+    processMCPEnv: jest.fn(),
+  };
+});
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),
@@ -395,6 +403,10 @@ describe('MCPConnectionFactory', () => {
   });
 
   describe('OAuth event handling', () => {
+    beforeEach(() => {
+      mockConnectionInstance.connect.mockRejectedValue(new Error('OAuth authentication required'));
+    });
+
     it('should handle oauthRequired event for returnOnOAuth scenario', async () => {
       const basicOptions = {
         serverName: 'test-server',

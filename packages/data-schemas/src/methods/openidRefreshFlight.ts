@@ -9,13 +9,17 @@ import type {
 } from '~/types';
 import logger from '~/config/winston';
 
-function isDuplicateKeyError(error: unknown): boolean {
+function hasErrorCode(error: unknown): error is { code: number } {
   return (
     typeof error === 'object' &&
     error != null &&
     'code' in error &&
-    (error as { code?: number }).code === 11000
+    typeof (error as { code: unknown }).code === 'number'
   );
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return hasErrorCode(error) && error.code === 11000;
 }
 
 export function createOpenIDRefreshFlightMethods(mongoose: typeof import('mongoose')): {
