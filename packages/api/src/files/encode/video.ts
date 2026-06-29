@@ -3,6 +3,7 @@ import { isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, VideoResult } from '~/types';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
+import { runGuardedEncode } from './memoryGuard';
 import { validateVideo } from '~/files/validation';
 
 /**
@@ -30,7 +31,11 @@ export async function encodeAndFormatVideos(
   const result: VideoResult = { videos: [], files: [] };
 
   const results = await Promise.allSettled(
-    files.map((file) => getFileStream(req, file, encodingMethods, getStrategyFunctions)),
+    files.map((file) =>
+      runGuardedEncode(file.bytes ?? 0, () =>
+        getFileStream(req, file, encodingMethods, getStrategyFunctions),
+      ),
+    ),
   );
 
   for (const settledResult of results) {
