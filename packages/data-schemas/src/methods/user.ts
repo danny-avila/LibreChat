@@ -26,6 +26,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
   updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  acceptTerms: (userId: string) => Promise<IUser | null>;
   searchUsers: ({
     searchPattern,
     limit,
@@ -251,6 +252,28 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
       new: true,
       runValidators: true,
     }).lean<IUser>();
+  }
+
+  /**
+   * Atomically records terms acceptance for a user.
+   * Sets termsAccepted and, only when no timestamp is already stored, stamps
+   * termsAcceptedAt with the server time so the first acceptance within a terms
+   * cycle is preserved across concurrent or repeated requests.
+   */
+  async function acceptTerms(userId: string): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    return await User.findByIdAndUpdate(
+      userId,
+      [
+        {
+          $set: {
+            termsAccepted: true,
+            termsAcceptedAt: { $ifNull: ['$termsAcceptedAt', '$$NOW'] },
+          },
+        },
+      ],
+      { new: true, runValidators: true },
+    ).lean<IUser>();
   }
 
   /**
@@ -511,6 +534,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
     countUsers,
     createUser,
     updateUser,
+    acceptTerms,
     searchUsers,
     getUserById,
     generateToken,

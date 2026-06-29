@@ -7,7 +7,10 @@ const mockGrantCreationPermissions = jest.fn();
 const mockUpdateSharedLinkPermissionsExpiration = jest.fn();
 const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
 const mockBuildSharedLinkStartupPayload = jest.fn();
-const mockCanAccessSharedLink = jest.fn((_req, _res, next) => next());
+const mockCanAccessSharedLink = jest.fn((req, _res, next) => {
+  req.shareResourceId = 'resource-123';
+  next();
+});
 const mockGetAppConfig = jest.fn();
 const mockGetTenantId = jest.fn(() => undefined);
 
@@ -105,6 +108,17 @@ jest.mock('~/server/services/Config/app', () => ({
   getAppConfig: (...args) => mockGetAppConfig(...args),
 }));
 
+jest.mock('~/server/middleware/limiters', () => ({
+  createForkLimiters: () => ({
+    forkIpLimiter: (_req, _res, next) => next(),
+    forkUserLimiter: (_req, _res, next) => next(),
+  }),
+}));
+
+jest.mock('~/server/utils/import/fork', () => ({
+  forkSharedConversation: jest.fn(),
+}));
+
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
 const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
@@ -123,6 +137,7 @@ const {
   backfillSharedLinkFiles,
   getRoleByName,
 } = require('~/models');
+const { forkSharedConversation } = require('~/server/utils/import/fork');
 const shareRouter = require('../share');
 
 const activeExpiration = new Date('2030-01-01T00:00:00.000Z');
@@ -132,11 +147,11 @@ const lean = (value) => ({
   lean: jest.fn().mockResolvedValue(value),
 });
 
-const buildApp = ({ retentionMode = RetentionMode.TEMPORARY } = {}) => {
+const buildApp = ({ retentionMode = RetentionMode.TEMPORARY, user = { id: 'user-123' } } = {}) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.user = { id: 'user-123' };
+    req.user = user;
     req.config = { interfaceConfig: { retentionMode } };
     next();
   });
@@ -503,6 +518,68 @@ describe('share routes', () => {
     expect(response.status).toBe(200);
     expect(mockSharedLinksAccess).not.toHaveBeenCalled();
     expect(deleteSharedLinkWithCleanup).toHaveBeenCalledWith('user-123', 'share-123');
+  });
+});
+
+describe('share fork route', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('forks a shared conversation for the requesting user', async () => {
+    const forkResult = {
+      conversation: { conversationId: 'convo-456', title: 'Shared Title' },
+      messages: [{ messageId: 'msg-456' }],
+    };
+    forkSharedConversation.mockResolvedValue(forkResult);
+
+    const response = await request(
+      buildApp({ user: { id: 'user-123', role: 'USER', tenantId: 'tenant-viewer' } }),
+    )
+      .post('/api/share/share-123/fork')
+      .send({ targetMessageIndex: 3 });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual(forkResult);
+    expect(forkSharedConversation).toHaveBeenCalledWith({
+      shareId: 'share-123',
+      shareResourceId: 'resource-123',
+      requestUserId: 'user-123',
+      userRole: 'USER',
+      userTenantId: 'tenant-viewer',
+      targetMessageIndex: 3,
+      snapshotFiles: true,
+    });
+  });
+
+  it('forces snapshotFiles=false into the fork when the file snapshot kill switch is active', async () => {
+    isFileSnapshotKillSwitchActive.mockReturnValueOnce(true);
+    forkSharedConversation.mockResolvedValue({
+      conversation: { conversationId: 'convo-456' },
+      messages: [],
+    });
+
+    await request(buildApp()).post('/api/share/share-123/fork');
+
+    expect(forkSharedConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshotFiles: false }),
+    );
+  });
+
+  it('returns 404 when the shared conversation is missing or empty', async () => {
+    forkSharedConversation.mockResolvedValue(null);
+
+    const response = await request(buildApp()).post('/api/share/share-123/fork');
+
+    expect(response.status).toBe(404);
+  });
+
+  it('returns 500 when forking fails', async () => {
+    forkSharedConversation.mockRejectedValue(new Error('db down'));
+
+    const response = await request(buildApp()).post('/api/share/share-123/fork');
+
+    expect(response.status).toBe(500);
   });
 });
 

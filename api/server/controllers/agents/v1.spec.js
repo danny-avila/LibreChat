@@ -1,8 +1,14 @@
 const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { agentSchema, fileSchema } = require('@librechat/data-schemas');
-const { FileSources, PermissionBits, ResourceType } = require('librechat-data-provider');
+const { agentSchema, aclEntrySchema, fileSchema, userSchema } = require('@librechat/data-schemas');
+const {
+  FileSources,
+  PermissionBits,
+  PrincipalModel,
+  PrincipalType,
+  ResourceType,
+} = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Only mock the dependencies that are not database-related
@@ -73,6 +79,7 @@ jest.mock('~/cache', () => ({
 const {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
+  getAgentVersions: getAgentVersionsHandler,
   duplicateAgent: duplicateAgentHandler,
   revertAgentVersion: revertAgentVersionHandler,
   updateAgent: updateAgentHandler,
@@ -91,6 +98,32 @@ const { refreshS3Url } = require('@librechat/api');
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
  */
 let Agent;
+let AclEntry;
+let User;
+
+const OWNER_PERMISSION_BITS =
+  PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+
+const createOwner = (overrides = {}) =>
+  User.create({
+    name: 'Agent Owner',
+    email: `owner-${nanoid(8)}@example.com`,
+    provider: 'local',
+    emailVerified: true,
+    ...overrides,
+  });
+
+const grantAgentOwner = ({ agent, owner, grantedAt = new Date() }) =>
+  AclEntry.create({
+    principalType: PrincipalType.USER,
+    principalModel: PrincipalModel.USER,
+    principalId: owner._id,
+    resourceType: ResourceType.AGENT,
+    resourceId: agent._id,
+    permBits: OWNER_PERMISSION_BITS,
+    grantedBy: owner._id,
+    grantedAt,
+  });
 
 describe('Agent Controllers - Mass Assignment Protection', () => {
   let mongoServer;
@@ -102,6 +135,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     const mongoUri = mongoServer.getUri();
     await mongoose.connect(mongoUri);
     Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+    AclEntry = mongoose.models.AclEntry || mongoose.model('AclEntry', aclEntrySchema);
+    User = mongoose.models.User || mongoose.model('User', userSchema);
     // Register File so orphan-pruning tests (and the tool_resources validation
     // test, which now needs real File docs for its ids) have a working model.
     mongoose.models.File || mongoose.model('File', fileSchema);
@@ -114,6 +149,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
   beforeEach(async () => {
     await Agent.deleteMany({});
+    await AclEntry.deleteMany({});
+    await User.deleteMany({});
     await mongoose.models.File.deleteMany({});
 
     // Reset all mocks
@@ -509,6 +546,100 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.model_parameters).toEqual({ useResponsesApi: true });
       expect(response.model_parameters.temperature).toBeUndefined();
       expect(response.model_parameters.apiKey).toBeUndefined();
+    });
+
+    test('should return owner_contact from the first ACL owner when support_contact is missing', async () => {
+      const owner = await createOwner({
+        name: 'Primary Owner',
+        email: 'primary.owner@example.com',
+      });
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Owner Contact Agent',
+        description: 'Uses owner fallback',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: owner._id,
+      });
+      await grantAgentOwner({ agent, owner });
+
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.owner_contact).toEqual({
+        name: 'Primary Owner',
+        email: 'primary.owner@example.com',
+      });
+    });
+
+    test('should not return owner_contact when support_contact is present', async () => {
+      const owner = await createOwner({
+        name: 'Primary Owner',
+        email: 'primary.owner@example.com',
+      });
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Support Contact Agent',
+        description: 'Uses support contact',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: owner._id,
+        support_contact: { name: 'Support Team', email: 'support@example.com' },
+      });
+      await grantAgentOwner({ agent, owner });
+
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.support_contact).toEqual({
+        name: 'Support Team',
+        email: 'support@example.com',
+      });
+      expect(response.owner_contact).toBeUndefined();
+    });
+  });
+
+  describe('getAgentVersionsHandler', () => {
+    test('returns the version history and excludes it from the basic VIEW response', async () => {
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Versioned Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        versions: [
+          { name: 'V1', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
+          { name: 'V2', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
+        ],
+      });
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes);
+      const basicResponse = mockRes.json.mock.calls[0][0];
+      expect(basicResponse.versions).toBeUndefined();
+      expect(basicResponse.version).toBe(2);
+
+      mockRes.json.mockClear();
+      await getAgentVersionsHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const versions = mockRes.json.mock.calls[0][0];
+      expect(Array.isArray(versions)).toBe(true);
+      expect(versions).toHaveLength(2);
+      expect(versions.map((v) => v.name)).toEqual(['V1', 'V2']);
+    });
+
+    test('returns 404 when the agent does not exist', async () => {
+      mockReq.params = { id: `agent_${uuidv4()}` };
+
+      await getAgentVersionsHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(404);
     });
   });
 
@@ -1301,6 +1432,71 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.data).toHaveLength(1);
       expect(response.data[0].id).toBe(agentA1.id);
       expect(response.data[0].name).toBe('Agent A1');
+    });
+
+    test('should return owner_contact for list agents missing support_contact', async () => {
+      const owner = await createOwner({
+        _id: userA,
+        name: 'List Owner',
+        email: 'list.owner@example.com',
+      });
+      await grantAgentOwner({ agent: agentA1, owner });
+
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([agentA1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data[0].owner_contact).toEqual({
+        name: 'List Owner',
+        email: 'list.owner@example.com',
+      });
+    });
+
+    test('should use the first ACL owner when an agent has multiple owners', async () => {
+      const firstOwner = await createOwner({
+        name: 'First Owner',
+        email: 'first.owner@example.com',
+      });
+      const secondOwner = await createOwner({
+        name: 'Second Owner',
+        email: 'second.owner@example.com',
+      });
+      await grantAgentOwner({
+        agent: agentA1,
+        owner: secondOwner,
+        grantedAt: new Date('2024-02-01T00:00:00.000Z'),
+      });
+      await grantAgentOwner({
+        agent: agentA1,
+        owner: firstOwner,
+        grantedAt: new Date('2024-01-01T00:00:00.000Z'),
+      });
+
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([agentA1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data[0].owner_contact).toEqual({
+        name: 'First Owner',
+        email: 'first.owner@example.com',
+      });
+    });
+
+    test('should omit owner_contact when no owner user can be resolved', async () => {
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([agentA1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data[0].owner_contact).toBeUndefined();
     });
 
     test('should return only expected safe list fields for VIEW callers', async () => {
