@@ -857,6 +857,10 @@ export const endpointSchema = baseEndpointSchema.merge(
         defaultParamsEndpoint: z.string().default('custom'),
         reasoningFormat: eReasoningParameterFormatSchema.optional(),
         reasoningKey: eReasoningResponseKeySchema.optional(),
+        /** Replays `reasoning_content` within a run's tool-call turns (e.g. Xiaomi MiMo, Kimi). */
+        includeReasoningContent: z.boolean().optional(),
+        /** Also reconstructs `reasoning_content` from persisted history across turns (implies `includeReasoningContent`). */
+        includeReasoningHistory: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
@@ -1218,6 +1222,8 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
+    defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),
     remoteAgents: z
       .object({
@@ -1246,6 +1252,7 @@ export const interfaceSchema = z
           create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
+          snapshotFiles: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -1309,6 +1316,7 @@ export const interfaceSchema = z
       create: true,
       share: true,
       public: true,
+      snapshotFiles: true,
     },
   });
 
@@ -1389,6 +1397,8 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Whether shared links snapshot conversation files (gates the per-link "share files" checkbox). */
+  sharedLinksSnapshotFilesEnabled?: boolean;
   /** Effective default timing for when conversation titles become fetchable.
    * `immediate` = fetch in parallel with the active stream (default);
    * `final` = fetch only after the stream completes (legacy). */
@@ -1440,6 +1450,19 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
 };
+
+export type TSharedLinkStartupInterface = Pick<
+  Partial<TInterfaceConfig>,
+  'privacyPolicy' | 'termsOfService'
+>;
+
+export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &
+  Pick<
+    Partial<TStartupConfig>,
+    'analyticsGtmId' | 'bundlerURL' | 'customFooter' | 'staticBundlerURL'
+  > & {
+    interface?: TSharedLinkStartupInterface;
+  };
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',

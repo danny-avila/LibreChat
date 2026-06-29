@@ -282,14 +282,25 @@ describe('estimateTokens', () => {
 });
 
 describe('normalizeUsageUnits', () => {
-  it('keeps cache additive for Anthropic even when cache <= input', () => {
-    /** Magnitude heuristic would wrongly treat this as inclusive and drop
-     *  cache from input; the provider says additive (input is uncached-only) */
+  it('subtracts cache from input for Anthropic (input_tokens is cache-inclusive)', () => {
+    /** The agents SDK folds cache into Anthropic input_tokens, so cache is a
+     *  subset of input and must be subtracted: 900 − 100 read = 800. */
     expect(
       normalizeUsageUnits({
         input_tokens: 900,
         output_tokens: 100,
         provider: Providers.ANTHROPIC,
+        input_token_details: { cache_read: 100 },
+      }),
+    ).toEqual({ input: 800, output: 100, cacheWrite: 0, cacheRead: 100 });
+  });
+
+  it('keeps cache additive for Bedrock (Converse input_tokens excludes cache)', () => {
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 900,
+        output_tokens: 100,
+        provider: Providers.BEDROCK,
         input_token_details: { cache_read: 100 },
       }),
     ).toEqual({ input: 900, output: 100, cacheWrite: 0, cacheRead: 100 });
@@ -329,14 +340,28 @@ describe('normalizeUsageUnits', () => {
     ).toBe(500);
   });
 
-  it('does not mistake additive cache for missing completion tokens', () => {
-    /** Anthropic total includes cache; without the cache adjustment the repair
-     *  would falsely inflate completion */
+  it('does not mistake additive cache for missing completion tokens (Bedrock)', () => {
+    /** Bedrock keeps cache separate, so total = input + output + cache (1700).
+     *  Without the cache adjustment the repair would falsely inflate completion. */
     expect(
       normalizeUsageUnits({
         input_tokens: 1000,
         output_tokens: 200,
         total_tokens: 1700,
+        provider: Providers.BEDROCK,
+        input_token_details: { cache_creation: 300, cache_read: 200 },
+      }).output,
+    ).toBe(200);
+  });
+
+  it('does not inflate completion for cache-inclusive Anthropic totals', () => {
+    /** Anthropic total already includes cache (input 1000 covers the 500 cache),
+     *  so total 1200 leaves output at 200 — no false repair. */
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 1000,
+        output_tokens: 200,
+        total_tokens: 1200,
         provider: Providers.ANTHROPIC,
         input_token_details: { cache_creation: 300, cache_read: 200 },
       }).output,

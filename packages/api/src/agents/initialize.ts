@@ -21,8 +21,8 @@ import type {
   TUser,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
+import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
-import type { IMongoFile } from '@librechat/data-schemas';
 import type {
   ServerRequest,
   EndpointDbMethods,
@@ -261,6 +261,8 @@ export type InitializedAgent = Agent & {
   maxToolResultChars?: number;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
   reasoningKey?: ReasoningResponseKey;
+  /** Whether to reconstruct `reasoning_content` from persisted history across turns (custom endpoint opt-in). */
+  includeReasoningHistory?: boolean;
   /**
    * Whether the code-execution environment is available *for this agent*.
    * Narrower than the incoming `params.codeEnvAvailable` admin flag — this
@@ -411,22 +413,30 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
     fileIds?: string[],
-    options?: { user?: string },
+    options?: { user?: string; tenantId?: string | null },
   ) => Promise<unknown[]>;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
   /** Filter files by agent access permissions (ownership or agent attachment) */
   filterFilesByAgentAccess?: TFilterFilesByAgentAccess;
   /** Get tool files by IDs (user-uploaded files only, code files handled separately) */
-  getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
+  getToolFilesByIds: (
+    fileIds: string[],
+    toolSet: Set<EToolResources>,
+    ownerScope?: FileOwnerScope,
+  ) => Promise<unknown[]>;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
   /** Get code-generated files by conversation ID and the file_ids
    *  referenced from messages in the current thread (collected via
    *  `messages.files[].file_id` during thread walk). */
-  getCodeGeneratedFiles?: (conversationId: string, threadFileIds?: string[]) => Promise<unknown[]>;
+  getCodeGeneratedFiles?: (
+    conversationId: string,
+    threadFileIds?: string[],
+    ownerScope?: FileOwnerScope,
+  ) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
-  getUserCodeFiles?: (fileIds: string[]) => Promise<unknown[]>;
+  getUserCodeFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
   getMessages?: (
     filter: { conversationId: string },
@@ -563,6 +573,9 @@ export async function initializeAgent(
     isInitialAgent = false,
   } = params;
   const requestFileOwnerId = req.user?.id;
+  const requestFileOwnerScope: FileOwnerScope | undefined = requestFileOwnerId
+    ? { userId: requestFileOwnerId, tenantId: req.user?.tenantId }
+    : undefined;
 
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
@@ -610,7 +623,13 @@ export async function initializeAgent(
       }
     }
 
-    const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
+    const toolFiles = requestFileOwnerScope
+      ? ((await db.getToolFilesByIds(
+          fileIds,
+          toolResourceSet,
+          requestFileOwnerScope,
+        )) as IMongoFile[])
+      : [];
 
     /**
      * Retrieve execute_code files filtered to the current thread.
@@ -651,14 +670,25 @@ export async function initializeAgent(
        *  which sibling first generated them — see `getCodeGeneratedFiles`
        *  for the branched-conversation rationale. */
       if (db.getCodeGeneratedFiles) {
-        codeGeneratedFiles = (await db.getCodeGeneratedFiles(
-          conversationId,
-          threadFileIds,
-        )) as IMongoFile[];
+        codeGeneratedFiles = requestFileOwnerScope
+          ? ((await db.getCodeGeneratedFiles(
+              conversationId,
+              threadFileIds,
+              requestFileOwnerScope,
+            )) as IMongoFile[])
+          : [];
       }
 
-      if (db.getUserCodeFiles && threadFileIds && threadFileIds.length > 0) {
-        userCodeFiles = (await db.getUserCodeFiles(threadFileIds)) as IMongoFile[];
+      if (
+        db.getUserCodeFiles &&
+        requestFileOwnerScope &&
+        threadFileIds &&
+        threadFileIds.length > 0
+      ) {
+        userCodeFiles = (await db.getUserCodeFiles(
+          threadFileIds,
+          requestFileOwnerScope,
+        )) as IMongoFile[];
       }
     }
 
@@ -668,21 +698,27 @@ export async function initializeAgent(
         requestFiles.length && requestFileOwnerId
           ? ((await db.updateFilesUsage(requestFiles, undefined, {
               user: requestFileOwnerId,
+              tenantId: req.user?.tenantId,
             })) as IMongoFile[])
           : [];
       const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
       const trustedToolFiles = allToolFiles.filter(
         (file) => !requestUsageFileIds.has(file.file_id),
       );
-      const toolUsageFiles = trustedToolFiles.length
-        ? ((await db.updateFilesUsage(trustedToolFiles)) as IMongoFile[])
-        : [];
+      let toolUsageFiles: IMongoFile[] = [];
+      if (trustedToolFiles.length > 0 && requestFileOwnerId) {
+        toolUsageFiles = (await db.updateFilesUsage(trustedToolFiles, undefined, {
+          user: requestFileOwnerId,
+          tenantId: req.user?.tenantId,
+        })) as IMongoFile[];
+      }
       currentFiles = requestUsageFiles.concat(toolUsageFiles);
     }
   } else if (requestFiles.length) {
     currentFiles = requestFileOwnerId
       ? ((await db.updateFilesUsage(requestFiles, undefined, {
           user: requestFileOwnerId,
+          tenantId: req.user?.tenantId,
         })) as IMongoFile[])
       : [];
   }
@@ -1112,6 +1148,7 @@ export async function initializeAgent(
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
       now: req.conversationCreatedAt,
+      timezone: req.body?.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
       agent.instructions = undefined;
@@ -1222,6 +1259,7 @@ export async function initializeAgent(
     baseContextTokens,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
+    includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
     skillAuthoringAvailable,
     fileAuthoringToolNames: fileAuthoringToolNames.size > 0 ? fileAuthoringToolNames : undefined,
     skillCount,

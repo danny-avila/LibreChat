@@ -284,6 +284,29 @@ export function isDeepSeekReasoningProvider(
   return matchesDeepSeekModel(model);
 }
 
+/**
+ * Whether prior assistant tool-call messages should have `reasoning_content`
+ * reconstructed when reformatting persisted history (cross-turn replay): either
+ * DeepSeek thinking-mode (#13366) or a custom OpenAI-compatible endpoint that
+ * opted in via `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+ */
+export function shouldReplayReasoningContent(
+  agent?: {
+    provider?: string | Providers | null;
+    model?: string | null;
+    model_parameters?: { model?: string | null } | null;
+    includeReasoningHistory?: boolean | null;
+  } | null,
+): boolean {
+  if (agent == null) {
+    return false;
+  }
+  if (agent.includeReasoningHistory === true) {
+    return true;
+  }
+  return isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+}
+
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;
@@ -309,6 +332,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
   reasoningKey?: ReasoningResponseKey;
+  /** Whether to reconstruct `reasoning_content` from persisted history across turns. */
+  includeReasoningHistory?: boolean;
   /**
    * Maximum characters allowed in a single tool result before truncation.
    * Overrides the default computed from maxContextTokens.
@@ -700,6 +725,36 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
 }
 
 /**
+ * Whether any agent reachable in the run — primary, handoff/parallel, or a
+ * nested subagent — opts into cross-turn `reasoning_content` reconstruction.
+ * Walks `subagentAgentConfigs` like {@link anyAgentHasCodeEnv}, since an
+ * opted-in custom endpoint may appear only as a (possibly pruned) subagent.
+ */
+export function anyAgentReplaysReasoningContent(
+  agents: Array<RunAgent | null | undefined>,
+): boolean {
+  const visited = new Set<string>();
+  const pending = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (shouldReplayReasoningContent(agent)) {
+      return true;
+    }
+    for (const child of agent.subagentAgentConfigs ?? []) {
+      if (!visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Builds SubagentConfig entries for an agent: optional self-spawn plus any
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
@@ -795,6 +850,17 @@ function buildSubagentConfigs(
   return configs;
 }
 
+function buildLangfuseConfig(tenantIdInput?: unknown) {
+  const tenantId = typeof tenantIdInput === 'string' ? tenantIdInput.trim() : '';
+  return {
+    deterministicTraceId: true,
+    ...(tenantId !== '' && {
+      metadata: { 'librechat.tenant.id': tenantId },
+      tags: [`tenant:${tenantId}`],
+    }),
+  };
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -817,6 +883,7 @@ export async function createRun({
   messages,
   requestBody,
   user,
+  tenantId,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -836,6 +903,7 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
+  tenantId?: string;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
   summarizationConfig?: SummarizationConfig;
@@ -1099,7 +1167,7 @@ export async function createRun({
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
-    langfuse: { deterministicTraceId: true },
+    langfuse: buildLangfuseConfig(tenantId ?? user?.tenantId),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),

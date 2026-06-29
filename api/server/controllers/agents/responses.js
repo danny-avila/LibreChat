@@ -11,7 +11,10 @@ const {
 } = require('librechat-data-provider');
 const {
   createRun,
+  applyContextToAgent,
   buildToolSet,
+  buildAgentScopedContext,
+  buildAgentContextAttachmentsByAgentId,
   createSafeUser,
   initializeAgent,
   loadSkillStates,
@@ -65,6 +68,8 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { resolveConfigServers } = require('~/server/services/MCP');
+const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -562,6 +567,29 @@ const createResponse = async (req, res) => {
     const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
     const mergedMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
+    const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId(runAgents);
+    const agentScopedContext = await buildAgentScopedContext({
+      agentIds: runAgents.map(({ id }) => id),
+      attachmentsByAgentId: agentContextAttachmentsByAgentId,
+      req,
+    });
+
+    const mcpManager = getMCPManager();
+    const configServers = await resolveConfigServers(req);
+
+    await Promise.all(
+      runAgents.map((runAgent) =>
+        applyContextToAgent({
+          agent: runAgent,
+          agentId: runAgent.id,
+          logger,
+          mcpManager,
+          configServers,
+          sharedRunContext: agentScopedContext.get(runAgent.id) ?? '',
+        }),
+      ),
+    );
+
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
     const actuallyStreaming = isStreaming && !streamingDisabled;
@@ -750,6 +778,7 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
+        tenantId: req.user?.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),
@@ -927,6 +956,7 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
+        tenantId: req.user?.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),

@@ -29,9 +29,68 @@ describe('getLLMConfig', () => {
 
     expect(result.llmConfig.clientOptions).toHaveProperty('fetchOptions');
     expect(result.llmConfig.clientOptions?.fetchOptions).toHaveProperty('dispatcher');
-    expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher).toBeDefined();
-    expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher.constructor.name).toBe(
-      'ProxyAgent',
+    const dispatcher = result.llmConfig.clientOptions?.fetchOptions?.dispatcher;
+    expect(dispatcher).toBeDefined();
+    expect(dispatcher?.constructor.name).toBe('ProxyAgent');
+  });
+
+  it('should harden user-provided reverse proxy URLs with a connect-time dispatcher and disabled redirects', () => {
+    const result = getLLMConfig('test-api-key', {
+      modelOptions: {},
+      reverseProxyUrl: 'https://user-provider.example.com',
+      baseURLIsUserProvided: true,
+      allowedAddresses: ['10.0.0.5:443'],
+    });
+
+    const fetchOptions = result.llmConfig.clientOptions?.fetchOptions as
+      | { dispatcher?: unknown; redirect?: string }
+      | undefined;
+    expect(fetchOptions).toEqual(
+      expect.objectContaining({
+        dispatcher: expect.any(Object),
+        redirect: 'error',
+      }),
+    );
+  });
+
+  it('should keep the SSRF-safe dispatcher when a proxy is configured for a user-provided URL', () => {
+    const result = getLLMConfig('test-api-key', {
+      modelOptions: {},
+      proxy: 'http://proxy:8080',
+      reverseProxyUrl: 'https://user-provider.example.com',
+      baseURLIsUserProvided: true,
+    });
+
+    const fetchOptions = result.llmConfig.clientOptions?.fetchOptions as
+      | { dispatcher?: { constructor: { name: string } }; redirect?: string }
+      | undefined;
+    expect(fetchOptions?.dispatcher?.constructor.name).toBe('Agent');
+    expect(fetchOptions).toEqual(expect.objectContaining({ redirect: 'error' }));
+  });
+
+  it('should keep SSRF fetch options when clientOptions are dropped for a user-provided URL', () => {
+    const result = getLLMConfig('test-api-key', {
+      modelOptions: {},
+      reverseProxyUrl: 'https://user-provider.example.com',
+      baseURLIsUserProvided: true,
+      dropParams: ['clientOptions'],
+    });
+
+    const clientOptions = result.llmConfig.clientOptions as
+      | {
+          baseURL?: string;
+          defaultHeaders?: Record<string, string>;
+          fetchOptions?: { dispatcher?: unknown; redirect?: string };
+        }
+      | undefined;
+    expect(result.llmConfig.anthropicApiUrl).toBe('https://user-provider.example.com');
+    expect(clientOptions?.baseURL).toBeUndefined();
+    expect(clientOptions?.defaultHeaders).toBeUndefined();
+    expect(clientOptions?.fetchOptions).toEqual(
+      expect.objectContaining({
+        dispatcher: expect.any(Object),
+        redirect: 'error',
+      }),
     );
   });
 
@@ -333,10 +392,9 @@ describe('getLLMConfig', () => {
 
       expect(result.llmConfig.clientOptions).toHaveProperty('fetchOptions');
       expect(result.llmConfig.clientOptions?.fetchOptions).toHaveProperty('dispatcher');
-      expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher).toBeDefined();
-      expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher.constructor.name).toBe(
-        'ProxyAgent',
-      );
+      const dispatcher = result.llmConfig.clientOptions?.fetchOptions?.dispatcher;
+      expect(dispatcher).toBeDefined();
+      expect(dispatcher?.constructor.name).toBe('ProxyAgent');
       expect(result.llmConfig.clientOptions).toHaveProperty('baseURL', 'https://reverse-proxy.com');
       expect(result.llmConfig).toHaveProperty('anthropicApiUrl', 'https://reverse-proxy.com');
     });
@@ -354,6 +412,46 @@ describe('getLLMConfig', () => {
         'anthropic-beta': `max-tokens-3-5-sonnet-2024-07-15,${FINE_GRAINED_TOOL_STREAMING_BETA}`,
       });
       expect(result.llmConfig.promptCache).toBe(true);
+    });
+
+    it('should pass promptCacheTtl to llmConfig when configured', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+          promptCacheTtl: '1h',
+        },
+      });
+
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('1h');
+    });
+
+    it('should omit promptCacheTtl when unset so the agents SDK applies its default', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+        },
+      });
+
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
+    });
+
+    it('should drop promptCacheTtl when promptCache is dropped via dropParams', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+          promptCacheTtl: '1h',
+        },
+        dropParams: ['promptCache'],
+      });
+
+      /** A dropped cache must not leave an orphaned TTL on the request. */
+      expect(result.llmConfig.promptCache).toBeUndefined();
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
     });
 
     it('should handle thinking and thinkingBudget options', () => {
@@ -494,9 +592,8 @@ describe('getLLMConfig', () => {
           },
         });
         expect(result.llmConfig.clientOptions?.fetchOptions).toHaveProperty('dispatcher');
-        expect(result.llmConfig.clientOptions?.fetchOptions?.dispatcher.constructor.name).toBe(
-          'ProxyAgent',
-        );
+        const dispatcher = result.llmConfig.clientOptions?.fetchOptions?.dispatcher;
+        expect(dispatcher?.constructor.name).toBe('ProxyAgent');
       });
 
       it('should handle Anthropic with reverse proxy like initialize.js', () => {

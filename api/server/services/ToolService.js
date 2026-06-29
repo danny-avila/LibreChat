@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, redactMessage } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
@@ -72,7 +72,6 @@ const { createMCPPermissionContext, resolveConfigServers } = require('~/server/s
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
 const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -1452,20 +1451,25 @@ async function loadToolsForExecution({
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
   ].filter((name) => toolNames.includes(name));
   const isPTCRequested = ptcToolNames.length > 0;
+  const isBashToolRequested = toolNames.includes(AgentConstants.BASH_TOOL);
+  const isLegacyExecuteCodeRequested = toolNames.includes(Tools.execute_code);
+  const isCodeExecutionToolRequested = isBashToolRequested || isLegacyExecuteCodeRequested;
 
   let enabledCapabilities;
-  if (actionsEnabled === undefined || isPTCRequested) {
+  if (actionsEnabled === undefined || isPTCRequested || isCodeExecutionToolRequested) {
     enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
   }
   if (actionsEnabled === undefined) {
     actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
   }
+  const codeExecutionEnabled =
+    enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
+    agent?.tools?.includes(Tools.execute_code) === true;
 
   const isPTC =
     isPTCRequested &&
     enabledCapabilities.has(AgentCapabilities.programmatic_tools) &&
-    enabledCapabilities.has(AgentCapabilities.execute_code) &&
-    agent?.tools?.includes(Tools.execute_code) === true;
+    codeExecutionEnabled;
 
   logger.debug(
     `[loadToolsForExecution] isToolSearch: ${isToolSearch}, toolRegistry: ${toolRegistry?.size ?? 'undefined'}`,
@@ -1499,7 +1503,16 @@ async function loadToolsForExecution({
     }
   }
 
-  const isBashTool = toolNames.includes(AgentConstants.BASH_TOOL);
+  const isBashTool =
+    isBashToolRequested &&
+    codeExecutionEnabled &&
+    toolRegistry?.has(AgentConstants.BASH_TOOL) === true;
+  if (isBashToolRequested && !isBashTool) {
+    logger.warn(
+      `[loadToolsForExecution] Skipping unregistered or unauthorized ${AgentConstants.BASH_TOOL}. ` +
+        `User: ${req.user.id} | Agent: ${agent?.id ?? 'unknown'}`,
+    );
+  }
   if (isBashTool) {
     try {
       const bashTool = createBashExecutionTool({
@@ -1536,9 +1549,22 @@ async function loadToolsForExecution({
   }
 
   const requestedNonSpecialToolNames = toolNames.filter((name) => !specialToolNames.has(name));
+  const allowedNonSpecialToolNames = requestedNonSpecialToolNames.filter((name) => {
+    if (name !== Tools.execute_code) {
+      return true;
+    }
+    const allowed = codeExecutionEnabled && toolRegistry?.has(Tools.execute_code) === true;
+    if (!allowed) {
+      logger.warn(
+        `[loadToolsForExecution] Skipping unregistered or unauthorized ${Tools.execute_code}. ` +
+          `User: ${req.user.id} | Agent: ${agent?.id ?? 'unknown'}`,
+      );
+    }
+    return allowed;
+  });
   const allToolNamesToLoad = isPTC
-    ? [...new Set([...requestedNonSpecialToolNames, ...ptcOrchestratedToolNames])]
-    : requestedNonSpecialToolNames;
+    ? [...new Set([...allowedNonSpecialToolNames, ...ptcOrchestratedToolNames])]
+    : allowedNonSpecialToolNames;
 
   const actionToolNames = [];
   const regularToolNames = [];

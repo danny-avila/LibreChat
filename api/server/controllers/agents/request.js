@@ -4,6 +4,7 @@ const {
   sendEvent,
   getViolationInfo,
   buildMessageFiles,
+  getReferencedQuotes,
   resolveTitleTiming,
   GenerationJobManager,
   filterPersistableAbortContent,
@@ -93,16 +94,25 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
   return `${messageId.replace(/_+$/, '')}_`;
 }
 
-function getPreliminaryUserMessage({ messageId, parentMessageId, text }, conversationId) {
+function getPreliminaryUserMessage({ messageId, parentMessageId, text, quotes }, conversationId) {
   if (typeof messageId !== 'string' || messageId.length === 0) {
     return null;
   }
+
+  /**
+   * Seed normalized quotes here too: if the user aborts before `sendMessage`
+   * reaches `onStart` (during init/tool loading), `abortMiddleware` falls back
+   * to this preliminary metadata, which must carry the excerpts so the stopped
+   * turn keeps its `MessageQuotes`.
+   */
+  const referencedQuotes = getReferencedQuotes(quotes);
 
   return {
     messageId,
     parentMessageId,
     conversationId,
     text,
+    ...(referencedQuotes != null && { quotes: referencedQuotes }),
   };
 }
 
@@ -439,6 +449,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               parentMessageId: userMsg.parentMessageId,
               conversationId: userMsg.conversationId,
               text: userMsg.text,
+              quotes: userMsg.quotes,
             },
           });
 
@@ -930,6 +941,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
           parentMessageId: userMsg.parentMessageId,
           conversationId,
           text: userMsg.text,
+          quotes: userMsg.quotes,
         },
       });
     };

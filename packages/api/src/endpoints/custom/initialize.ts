@@ -94,9 +94,9 @@ function buildCustomOptions(
   endpointConfig: Partial<TEndpoint>,
   appConfig?: AppConfig,
   endpointTokenConfig?: Record<string, unknown>,
+  forwardHeaders = true,
 ) {
   const customOptions: Record<string, unknown> = {
-    headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
@@ -109,6 +109,10 @@ function buildCustomOptions(
     streamRate: endpointConfig.streamRate,
     endpointTokenConfig,
   };
+
+  if (forwardHeaders) {
+    customOptions.headers = endpointConfig.headers;
+  }
 
   const allConfig = appConfig?.endpoints?.all;
   if (allConfig) {
@@ -131,17 +135,21 @@ function buildAnthropicCustomConfig({
   modelOptions,
   endpointConfig,
   userProvidesURL,
+  allowedAddresses,
 }: {
   apiKey: string;
   baseURL: string;
   modelOptions: AnthropicModelOptions;
   endpointConfig: Partial<TEndpoint>;
   userProvidesURL: boolean;
+  allowedAddresses?: string[] | null;
 }): InitializeResultBase {
   const result = getAnthropicLLMConfig(apiKey, {
     modelOptions,
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses,
     headers: userProvidesURL ? undefined : endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
@@ -209,10 +217,10 @@ export async function initializeCustom({
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
-  const apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
+  const apiKey = userProvidesKey || userProvidesURL ? userValues?.apiKey : CUSTOM_API_KEY;
   const baseURL = userProvidesURL ? userValues?.baseURL : CUSTOM_BASE_URL;
 
-  if (userProvidesKey && !apiKey) {
+  if ((userProvidesKey || userProvidesURL) && !apiKey) {
     throw new Error(
       JSON.stringify({
         type: ErrorTypes.NO_USER_KEY,
@@ -273,6 +281,8 @@ export async function initializeCustom({
     await fetchModels({
       apiKey,
       baseURL,
+      baseURLIsUserProvided: userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
       name: endpoint,
       user: userId,
       tokenKey,
@@ -291,10 +301,17 @@ export async function initializeCustom({
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
-  const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig);
+  const customOptions = buildCustomOptions(
+    endpointConfig,
+    appConfig,
+    endpointTokenConfig,
+    !userProvidesURL,
+  );
 
   const clientOptions: Record<string, unknown> = {
     reverseProxyUrl: baseURL ?? null,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     proxy: PROXY ?? null,
     ...customOptions,
   };
@@ -312,6 +329,7 @@ export async function initializeCustom({
       modelOptions: modelOptions as AnthropicModelOptions,
       endpointConfig,
       userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     });
     options.endpointTokenConfig = endpointTokenConfig;
   } else {

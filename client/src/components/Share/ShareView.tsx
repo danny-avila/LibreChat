@@ -16,11 +16,11 @@ import {
   OGDialogContent,
   OGDialogTrigger,
 } from '@librechat/client';
-import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
+import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/Selectors';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
+import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
 import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
@@ -29,9 +29,9 @@ import store from '~/store';
 
 function SharedView() {
   const localize = useLocalize();
-  const { data: config } = useGetStartupConfig(undefined, { context: 'share' });
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
+  const { data: config } = useGetSharedStartupConfig(shareId);
   const { data, isLoading } = useGetSharedMessages(shareId ?? '');
   const dataTree = data && buildTree({ messages: data.messages });
   const messagesTree = dataTree?.length === 0 ? null : (dataTree ?? null);
@@ -148,7 +148,7 @@ function SharedView() {
     );
 
   return (
-    <ShareContext.Provider value={{ isSharedConvo: true }}>
+    <ShareContext.Provider value={{ isSharedConvo: true, shareId }}>
       <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
         <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
           {artifactsContainer}

@@ -104,8 +104,8 @@ export const useGetAgentByIdQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
-      enabled: isValidAgentId && (config?.enabled ?? true),
       ...config,
+      enabled: isValidAgentId && (config?.enabled ?? true),
     },
   );
 };

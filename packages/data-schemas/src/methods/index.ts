@@ -1,9 +1,9 @@
 import type { RoleMethods, RoleDeps } from './role';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
+import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
-import { createFileMethods, type FileMethods } from './file';
 import { createKeyMethods, type KeyMethods } from './key';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
@@ -20,6 +20,14 @@ import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
+import {
+  createAuditLogMethods,
+  AUDIT_SCHEMA_VERSION,
+  MAX_AUDIT_EXPORT_ROWS,
+  MAX_AUDIT_LOG_LIMIT,
+  MAX_AUDIT_VERIFY_ROWS,
+  type AuditLogMethods,
+} from './auditLog';
 import { createShareMethods, type ShareMethods } from './share';
 /* Tier 1 — Simple CRUD */
 import { createActionMethods, type ActionMethods } from './action';
@@ -101,6 +109,7 @@ export {
   deriveStructuredFrontmatterFields,
   inferSkillFileCategory,
 };
+export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -115,6 +124,7 @@ export type AllMethods = UserMethods &
   UserGroupMethods &
   AclEntryMethods &
   SystemGrantMethods &
+  AuditLogMethods &
   ShareMethods &
   AccessRoleMethods &
   PluginAuthMethods &
@@ -242,6 +252,7 @@ export function createMethods(
     ...createUserGroupMethods(mongoose),
     ...aclEntryMethods,
     ...systemGrantMethods,
+    ...createAuditLogMethods(mongoose),
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
     /* Tier 1 */
@@ -277,6 +288,7 @@ export type {
   RoleMethods,
   KeyMethods,
   FileMethods,
+  FileOwnerScope,
   MemoryMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,
@@ -284,6 +296,7 @@ export type {
   UserGroupMethods,
   AclEntryMethods,
   SystemGrantMethods,
+  AuditLogMethods,
   ShareMethods,
   AccessRoleMethods,
   PluginAuthMethods,

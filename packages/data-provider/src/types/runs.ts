@@ -1,3 +1,5 @@
+import { inputTokensIncludesCache } from '../schemas';
+
 export enum ContentTypes {
   TEXT = 'text',
   THINK = 'think',
@@ -87,6 +89,29 @@ export type TContextUsageEvent = {
 };
 
 /**
+ * Request payload for a server-side context-usage projection: "what context
+ * would the next call send for this branch under this config", computed by the
+ * agents SDK without invoking the model. Powers the gauge in states the live
+ * snapshot can't cover (page load of a snapshot-less branch, window/model
+ * switch). `messageId` is the viewed branch's tail; the server walks its parent
+ * chain.
+ */
+export type TContextProjectionRequest = {
+  conversationId: string;
+  messageId: string;
+  endpoint: string;
+  model?: string;
+  agentId?: string;
+  spec?: string;
+  maxContextTokens?: number;
+  /** Provider-calibrated ratio from a prior snapshot, applied as a static seed. */
+  calibrationRatio?: number;
+  /** Client-only cache-bust: a branch content revision so a message edit
+   *  (which keeps the same tail id) refetches. The server ignores it. */
+  revision?: number;
+};
+
+/**
  * Per-response usage rollup persisted on `responseMessage.metadata.usage`, in
  * display units (input excludes cache; output includes repaired completion).
  * Normalized per-event on the backend before summing so a reloaded conversation
@@ -124,6 +149,57 @@ export type TTokenUsageEvent = {
    *  rates); present only when `interface.contextCost` is enabled. Clients sum
    *  this rather than re-deriving cost from base rates. */
   cost?: number;
+};
+
+/**
+ * Full prompt token count for one completed model call — the EXACT context the
+ * model saw, provider-aware: additive providers (Bedrock) report `input_tokens`
+ * excluding cache, so cache reads/writes are added back; subset providers
+ * (Anthropic, OpenAI, …) already fold cache into `input_tokens`. When the
+ * provider is absent (custom/OpenAI-compatible payloads), fall back to the same
+ * magnitude heuristic `normalizeUsageUnits` uses — cache ≤ input means it's
+ * already included — so cached events aren't re-inflated. The ground truth the
+ * gauge reconciles its calibrated estimate to.
+ */
+export const promptTokensFromUsage = (event: TTokenUsageEvent): number => {
+  const input = event.input_tokens ?? 0;
+  const details = event.input_token_details ?? {};
+  const cacheRead = details.cache_read ?? 0;
+  const cacheCreation = details.cache_creation ?? 0;
+  const includesCache =
+    event.provider != null
+      ? inputTokensIncludesCache(event.provider)
+      : cacheRead + cacheCreation <= input;
+  return includesCache ? input : input + cacheRead + cacheCreation;
+};
+
+/**
+ * Reconciles a pre-invoke context snapshot's CALIBRATED estimate to a call's
+ * ACTUAL prompt tokens. The SDK's calibration multiplier scales only
+ * `messageTokens` (instructions/summary are raw tiktoken counts), and it can
+ * over-shoot badly when a provider injects server-side content the SDK never
+ * counted (e.g. Anthropic web search) — pinning the gauge several× too high and
+ * persisting it. Trust the provider's own prompt count: keep the raw
+ * instruction/summary rows, set `messageTokens` to the remainder, and recompute
+ * the free space. No-op when `promptTokens` is unusable.
+ */
+export const reconcileContextUsage = (
+  snapshot: TContextUsageEvent,
+  promptTokens: number,
+): TContextUsageEvent => {
+  if (!Number.isFinite(promptTokens) || promptTokens <= 0) {
+    return snapshot;
+  }
+  const { breakdown } = snapshot;
+  const budget = snapshot.contextBudget ?? breakdown.maxContextTokens;
+  const nonMessageTokens = (breakdown.instructionTokens ?? 0) + (breakdown.summaryTokens ?? 0);
+  const messageTokens = Math.max(0, promptTokens - nonMessageTokens);
+  return {
+    ...snapshot,
+    breakdown: { ...breakdown, messageTokens },
+    remainingContextTokens:
+      budget != null ? Math.max(0, budget - promptTokens) : snapshot.remainingContextTokens,
+  };
 };
 
 /** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */

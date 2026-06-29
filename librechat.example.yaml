@@ -169,6 +169,15 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Tools pinned to the prompt bar by default for all users.
+  # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
+  # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
+  # Use 'mcp' (or a specific MCP server name) to pin the MCP servers dropdown.
+  # When omitted, tools start unpinned and the MCP dropdown keeps its default (pinned).
+  # defaultPinnedTools:
+  #   - 'artifacts'
+  #   - 'execute_code'
+  #   - 'mcp'
   # Remote Agents configuration
   # Controls user permissions for remote agents with external API support
   # remoteAgents:
@@ -183,6 +192,7 @@ interface:
   #   create: false
   #   share: true
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
+  #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
   # mcpServers:
   # Controls user permissions for MCP (Model Context Protocol) server management
   # - use: Allow users to use configured MCP servers

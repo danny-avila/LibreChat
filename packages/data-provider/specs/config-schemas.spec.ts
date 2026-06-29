@@ -991,6 +991,20 @@ describe('interfaceSchema', () => {
     expect(result.retentionMode).toBe(RetentionMode.ALL);
     expect(result.retainAgentFiles).toBe(true);
   });
+
+  it('accepts defaultPinnedTools as a string array', () => {
+    const result = interfaceSchema.parse({
+      defaultPinnedTools: ['artifacts', 'execute_code', 'mcp'],
+    });
+
+    expect(result.defaultPinnedTools).toEqual(['artifacts', 'execute_code', 'mcp']);
+  });
+
+  it('leaves defaultPinnedTools undefined when not provided', () => {
+    const result = interfaceSchema.parse({ modelSelect: true });
+
+    expect(result.defaultPinnedTools).toBeUndefined();
+  });
 });
 
 describe('summarizationTriggerSchema', () => {

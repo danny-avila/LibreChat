@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import type { TMessage, TConversation, TModelTokenomics } from 'librechat-data-provider';
+import type {
+  TMessage,
+  TConversation,
+  TModelTokenomics,
+  TContextUsageEvent,
+  TContextProjectionRequest,
+} from 'librechat-data-provider';
 import type { BranchTotals, BranchUsage } from '~/utils/tokens';
 import type { ContextSnapshot } from '~/store/usage';
 import {
@@ -24,6 +30,7 @@ import {
   findBranchSnapshotAnchor,
 } from '~/utils';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import { useContextProjectionQuery } from '~/data-provider';
 import useTokenLimits from './useTokenLimits';
 
 export interface TokenUsageParams {
@@ -78,6 +85,55 @@ export default function useTokenUsage({
   const setBranchTotals = useSetAtom(branchTotalsFamily(conversationKey));
   const setTotalUsage = useSetAtom(totalUsageFamily(conversationKey));
   const limits = useTokenLimits(conversation);
+
+  /** Deepest persisted/live snapshot on the viewed branch (present only for
+   *  turns generated with the feature on). Gates the projection fetch and is a
+   *  render source. */
+  const branchSnapshot = useMemo(() => {
+    if (snapshotsByAnchor.size === 0) {
+      return null;
+    }
+    const anchor = findBranchSnapshotAnchor(
+      conversationKey,
+      branchTotals.tailId,
+      snapshotsByAnchor,
+    );
+    return anchor != null ? (snapshotsByAnchor.get(anchor) ?? null) : null;
+  }, [conversationKey, branchTotals.tailId, snapshotsByAnchor]);
+
+  const resolvedMax = limits.maxContextTokens;
+
+  /** Project the branch (agents SDK, no model call) ONLY when no persisted/live
+   *  snapshot covers it — snapshot-less branches (G2: pre-feature history,
+   *  imports, never-generated branches). A present snapshot stays authoritative;
+   *  reliable window-switch (G1) detection needs the snapshot to carry its
+   *  model/window (deferred to the fidelity follow-up), and the SDK window
+   *  (reserve-derived) doesn't equal the client-resolved raw window, so we must
+   *  NOT mis-flag a valid snapshot as stale here. Cached + refetched by branch/
+   *  endpoint/model/window/revision. */
+  const projectionParams: TContextProjectionRequest | null =
+    !isSubmitting &&
+    branchSnapshot == null &&
+    conversation?.conversationId != null &&
+    conversation.conversationId !== Constants.NEW_CONVO &&
+    branchTotals.tailId != null &&
+    conversation.endpoint != null
+      ? {
+          conversationId: conversation.conversationId,
+          messageId: branchTotals.tailId,
+          /** Resolved provider/model (e.g. an agent's actual provider, not the
+           *  `agents` endpoint) so the server picks the right tokenizer. */
+          endpoint: limits.endpoint || conversation.endpoint,
+          model: limits.model || conversation.model || undefined,
+          agentId: conversation.agent_id ?? undefined,
+          spec: conversation.spec ?? undefined,
+          maxContextTokens: resolvedMax,
+          /** Content revision so an in-place message edit (same tail id) refetches. */
+          revision: branchTotals.input + branchTotals.output,
+        }
+      : null;
+  const { data: projectionData } = useContextProjectionQuery(projectionParams);
+  const projection = projectionData ?? null;
 
   /** Branch/total provider usage is index-derived; the in-flight response is
    *  the only live add (the pending holder), counted into both — it sits on the
@@ -186,41 +242,46 @@ export default function useTokenUsage({
       snapshot != null &&
       (isSubmitting || (snapshot.anchorMessageId != null && branchTotals.containsAnchor));
 
-    /** When the live snapshot belongs to another branch, recover this branch's
-     *  own finalized snapshot (if it was generated this session) by walking the
-     *  branch for its deepest stored anchor — keeps the granular rows on switch
-     *  instead of dropping to coarse totals. */
-    let activeSnapshot: ContextSnapshot | null = currentActive ? snapshot : null;
-    if (activeSnapshot == null && !isSubmitting && snapshotsByAnchor.size > 0) {
-      const anchor = findBranchSnapshotAnchor(
-        conversationKey,
-        branchTotals.tailId,
-        snapshotsByAnchor,
-      );
-      activeSnapshot = anchor != null ? (snapshotsByAnchor.get(anchor) ?? null) : null;
+    /** Precedence: live/active snapshot → persisted branch snapshot → server
+     *  projection (snapshot-less branches, G2) → per-message estimate. The first
+     *  two preserve the pre-projection behavior exactly; the projection only
+     *  slots in ahead of the estimate when no snapshot exists. Snapshot and
+     *  projection share the render-relevant fields, so they render uniformly. */
+    let effective: ContextSnapshot | TContextUsageEvent | null = null;
+    /** A server projection is the SDK's windowing but, in this first cut, omits
+     *  instruction/tool overhead — so it's surfaced as an ESTIMATE (a better one
+     *  than sumBranch), never a false-authoritative number. Real snapshots stay
+     *  authoritative. */
+    let projected = false;
+    if (currentActive) {
+      effective = snapshot;
+    } else if (branchSnapshot != null) {
+      effective = branchSnapshot;
+    } else if (projection != null) {
+      effective = projection;
+      projected = true;
     }
 
-    if (activeSnapshot != null) {
-      const breakdown = activeSnapshot.breakdown;
-      const maxTokens = activeSnapshot.contextBudget ?? breakdown.maxContextTokens;
-      const instructionTokens =
-        activeSnapshot.effectiveInstructionTokens ?? breakdown.instructionTokens;
+    if (effective != null) {
+      const breakdown = effective.breakdown;
+      const maxTokens = effective.contextBudget ?? breakdown.maxContextTokens;
+      const instructionTokens = effective.effectiveInstructionTokens ?? breakdown.instructionTokens;
       const baseUsed =
-        activeSnapshot.remainingContextTokens != null
-          ? maxTokens - activeSnapshot.remainingContextTokens
+        effective.remainingContextTokens != null
+          ? maxTokens - effective.remainingContextTokens
           : instructionTokens + breakdown.messageTokens;
-      /** The snapshot is pre-invoke: in-flight output rides on `liveTokens`
-       *  (0 unless streaming this branch), the last call's finalized output on
-       *  `completedOutputTokens`. */
+      /** The snapshot/projection is pre-invoke: in-flight output rides on
+       *  `liveTokens` (0 unless streaming this branch), the last call's finalized
+       *  output on `completedOutputTokens` (absent on a projection → 0). */
       const usedTokens =
-        Math.max(0, baseUsed) + liveTokens + (activeSnapshot.completedOutputTokens ?? 0);
+        Math.max(0, baseUsed) + liveTokens + (effective.completedOutputTokens ?? 0);
       return {
         usedTokens,
         maxTokens,
         percent: maxTokens > 0 ? Math.min((usedTokens / maxTokens) * 100, 100) : 0,
-        isEstimate: false,
-        snapshot: activeSnapshot,
-        snapshotActive: true,
+        isEstimate: projected,
+        snapshot: projected ? null : (effective as ContextSnapshot),
+        snapshotActive: !projected,
         branchTotals,
         branchUsage,
         totalUsage,
@@ -266,7 +327,7 @@ export default function useTokenUsage({
     hasUsage,
     liveTokens,
     limits,
-    snapshotsByAnchor,
-    conversationKey,
+    branchSnapshot,
+    projection,
   ]);
 }
