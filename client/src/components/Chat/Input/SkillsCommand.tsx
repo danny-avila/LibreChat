@@ -9,7 +9,12 @@ import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { useHasAccess, useLocalize, useSkillActiveState } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
-import { useGetStartupConfig, useMCPToolsQuery, useSkillsInfiniteQuery } from '~/data-provider';
+import {
+  useGetStartupConfig,
+  useMCPServersQuery,
+  useMCPToolsQuery,
+  useSkillsInfiniteQuery,
+} from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
 import { ephemeralAgentByConvoId } from '~/store';
 import {
@@ -19,7 +24,7 @@ import {
   insertTextAtCursor,
   isMcpToolMention,
   removeCharIfLast,
-  resolveScopedMcpServerNames,
+  resolveMcpServersForSkillsPopover,
 } from '~/utils';
 import MentionItem from './MentionItem';
 import store from '~/store';
@@ -104,6 +109,9 @@ function SkillsCommandContent({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
   });
+  const { data: configuredMcpServers, isLoading: mcpServersLoading } = useMCPServersQuery({
+    enabled: canUseMcp,
+  });
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId));
   const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
@@ -116,14 +124,19 @@ function SkillsCommandContent({
     [specName, startupConfig],
   );
 
-  const scopedMcpServerNames = useMemo(
+  const globalMcpServerNames = useMemo(
+    () => Object.keys(configuredMcpServers ?? {}),
+    [configuredMcpServers],
+  );
+
+  const mcpSkillsPopoverServerNames = useMemo(
     () =>
-      resolveScopedMcpServerNames({
-        globalServerNames: Object.keys(startupConfig?.mcpServers ?? {}),
-        modelSpecServerNames: modelSpec?.mcpServers,
+      resolveMcpServersForSkillsPopover({
+        globalServerNames: globalMcpServerNames,
+        modelSpecInfrastructureServers: modelSpec?.mcpServers,
         ephemeralMcpServers: ephemeralAgent?.mcp,
       }),
-    [startupConfig?.mcpServers, modelSpec?.mcpServers, ephemeralAgent?.mcp],
+    [globalMcpServerNames, modelSpec?.mcpServers, ephemeralAgent?.mcp],
   );
 
   const {
@@ -131,7 +144,7 @@ function SkillsCommandContent({
     isLoading: mcpToolsLoading,
     isError: mcpToolsError,
   } = useMCPToolsQuery({
-    enabled: canUseMcp && scopedMcpServerNames.size > 0,
+    enabled: canUseMcp && !mcpServersLoading && globalMcpServerNames.length > 0,
   });
 
   const agentsMap = useAgentsMapContext();
@@ -216,8 +229,8 @@ function SkillsCommandContent({
   }, [data?.pages, agentSkillIds, isActive]);
 
   const mcpToolOptions = useMemo(
-    () => buildMcpToolMentionOptions(mcpToolsData, scopedMcpServerNames),
-    [mcpToolsData, scopedMcpServerNames],
+    () => buildMcpToolMentionOptions(mcpToolsData, mcpSkillsPopoverServerNames),
+    [mcpToolsData, mcpSkillsPopoverServerNames],
   );
 
   const capabilityOptions = useMemo(

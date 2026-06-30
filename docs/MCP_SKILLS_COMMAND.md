@@ -73,15 +73,17 @@ User types '$'
 
 ---
 
-## Scoping rules (`resolveScopedMcpServerNames`)
+## Scoping rules (`resolveMcpServersForSkillsPopover`)
 
-Mirrors ephemeral agent MCP exposure:
+The `$` popover lists MCP tools from **skill-catalog servers only**, not every MCP wired into the agent at runtime.
 
-1. **Global** — all keys from `startupConfig.mcpServers` (YAML `mcpServers:` block).
-2. **Model spec** — `modelSpec.mcpServers` when `conversation.spec` is set.
-3. **Ephemeral toggles** — `ephemeralAgent.mcp` from Recoil (user Tools menu selections).
+1. **Global skill catalogs** — keys from `GET /api/mcp/servers` (`useMCPServersQuery`) that are **not** listed in the active modelSpec's `mcpServers` array.
+2. **Infrastructure exclusion** — modelSpec `mcpServers` entries (e.g. `filesystem`, `excel`) are agent infrastructure for document generation; their tools are hidden from `$`.
+3. **Ephemeral toggles** — non-infrastructure servers from `ephemeralAgent.mcp` are included when the user enables them in the Tools menu.
 
-Union of all three sets; tools from other servers are hidden.
+Example (AIWP): global `{ filesystem, excel, smbteam-mcp }` + modelSpec `[filesystem, excel]` → popover shows **only** `smbteam-mcp` tools (`intake_qualifier`, `lead_follow_up`, …).
+
+Runtime agent loading still uses the full union in `loadEphemeralAgent`; only the discovery UI is narrowed.
 
 ---
 

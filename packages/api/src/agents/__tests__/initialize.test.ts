@@ -226,9 +226,7 @@ function countNamedWebSearchTools(tools: unknown[] | undefined): number {
   );
 }
 
-function countWebSearchDefinitions(
-  toolDefinitions: Array<{ name: string }> | undefined,
-): number {
+function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | undefined): number {
   return (
     toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
     0
@@ -348,7 +346,7 @@ describe('initializeAgent — Anthropic web_search precedence', () => {
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(0);
   });
 
-  it('removes Anthropic native web_search in headless/scheduled runs even without a custom handler', async () => {
+  it('keeps Anthropic native web_search in headless/scheduled runs when no custom handler is registered', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.ANTHROPIC,
       providerTools: [nativeWebSearchTool],
@@ -368,8 +366,8 @@ describe('initializeAgent — Anthropic web_search precedence', () => {
       db,
     );
 
-    expect(result.tools).toEqual([]);
-    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+    expect(result.tools).toEqual([nativeWebSearchTool]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(1);
   });
 
   it('keeps LibreChat web_search definitions when native Anthropic search is not enabled', async () => {
