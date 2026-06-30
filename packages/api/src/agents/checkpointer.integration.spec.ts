@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { emptyCheckpoint, INTERRUPT } from '@langchain/langgraph-checkpoint';
+import { emptyCheckpoint, ERROR, INTERRUPT } from '@langchain/langgraph-checkpoint';
 import type { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
 import {
   getAgentCheckpointer,
@@ -140,8 +140,8 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
 
   it('persists a checkpoint anchored by a NON-interrupt write (delta-channel safety)', async () => {
     // K1/K3: a delta-channel graph can putWrites on a checkpoint that an interrupt
-    // checkpoint then depends on — even without the __interrupt__ marker. Any pending
-    // write must anchor its checkpoint so resume can walk the chain.
+    // checkpoint then depends on — even without the __interrupt__ marker. A write on a
+    // real (non-`__`-prefixed) channel must anchor its checkpoint so resume can walk the chain.
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
     const { config, checkpoint, metadata } = putArgs(threadId);
@@ -153,6 +153,28 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     await saver!.put(config, checkpoint, metadata);
 
     expect(await saver!.getTuple(readConfig(threadId))).toBeDefined();
+  });
+
+  it('does NOT persist an error-only checkpoint (failed non-paused turn — no leak)', async () => {
+    // A turn that throws before any pause records a pending write on the `__error__`
+    // bookkeeping channel, then a `put` (probe-confirmed against @langchain/langgraph). That
+    // checkpoint is never HITL-resumable, so the lazy saver must discard it rather than leave
+    // it durable until the next fresh-turn prune / Mongo TTL.
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const { config, checkpoint, metadata } = putArgs(threadId);
+    await saver!.putWrites(
+      { configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id } },
+      [[ERROR, 'boom']], // '__error__' — bookkeeping channel, not resumable
+      'task-1',
+    );
+    await saver!.put(config, checkpoint, metadata);
+
+    expect(await saver!.getTuple(readConfig(threadId))).toBeUndefined();
+    const count = await mongoose.connection
+      .db!.collection('agent_checkpoints')
+      .countDocuments({ thread_id: threadId });
+    expect(count).toBe(0);
   });
 
   it('persists an interrupt checkpoint and carries its __interrupt__ pending write', async () => {
@@ -203,5 +225,30 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     expect(await coll.countDocuments({ thread_id: tPause })).toBeGreaterThan(0);
     const state = await pauseGraph.getState({ configurable: { thread_id: tPause } });
     expect(state.next.length).toBeGreaterThan(0); // the interrupted node is still pending → resumable
+  });
+
+  it('end-to-end: a real graph that THROWS before pausing persists no checkpoint', async () => {
+    // F2: a failed non-paused turn records an `__error__` pending write + a put. The lazy
+    // saver must discard it so a conversation that errors (and is never retried) leaves nothing
+    // durable behind — the clean-path prune that used to catch this was removed.
+    const { StateGraph, START, END, Annotation } = await import('@langchain/langgraph');
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const coll = mongoose.connection.db!.collection('agent_checkpoints');
+
+    const State = Annotation.Root({ x: Annotation });
+    const boomGraph = new StateGraph(State)
+      .addNode('a', () => {
+        throw new Error('boom');
+      })
+      .addEdge(START, 'a')
+      .addEdge('a', END)
+      .compile({ checkpointer: saver as never });
+
+    const tErr = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    await expect(
+      boomGraph.invoke({ x: 'start' }, { configurable: { thread_id: tErr }, durability: 'exit' }),
+    ).rejects.toThrow('boom');
+
+    expect(await coll.countDocuments({ thread_id: tErr })).toBe(0);
   });
 });
