@@ -241,7 +241,7 @@ describe('MessageNav', () => {
   });
 
   describe('indicator styling', () => {
-    it('uses narrower width for user turns and wider for assistant turns', () => {
+    it('gives every message rib the same short resting width regardless of role', () => {
       const messages = [
         buildMessage({ messageId: 'u', text: 'user msg', isCreatedByUser: true }),
         buildMessage({ messageId: 'a', text: 'assistant msg' }),
@@ -252,9 +252,7 @@ describe('MessageNav', () => {
       const userLine = userInd.querySelector('span');
       const assistantLine = assistantInd.querySelector('span');
       expect(userLine?.className).toContain('w-4');
-      expect(userLine?.className).not.toContain('w-[26px]');
-      expect(assistantLine?.className).toContain('w-[26px]');
-      expect(assistantLine?.className).not.toContain('w-4');
+      expect(assistantLine?.className).toContain('w-4');
     });
   });
 
@@ -325,11 +323,12 @@ describe('MessageNav', () => {
       expect(mid).toBeGreaterThan(far);
     });
 
-    it('gives assistant ribs a wider peak than user ribs and keeps the end marker square', () => {
+    it('magnifies every message rib uniformly and keeps the end marker square', () => {
       const user = ribDimsFor({ id: 'u', isUser: true, preview: '' });
       const assistant = ribDimsFor({ id: 'a', isUser: false, preview: '' });
       const end = ribDimsFor({ id: 'e', isUser: false, preview: '', isEnd: true });
-      expect(assistant.peakW).toBeGreaterThan(user.peakW);
+      expect(assistant.baseW).toBe(user.baseW);
+      expect(assistant.peakW).toBe(user.peakW);
       expect(user.peakW).toBeGreaterThan(user.baseW);
       expect(end.baseW).toBe(end.baseH);
       expect(end.peakW).toBe(end.peakH);

@@ -108,8 +108,7 @@ function computeTargetScroll(
 type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
 
 const RIB_END: RibDims = { baseW: 4, baseH: 4, peakW: 6, peakH: 6 };
-const RIB_USER: RibDims = { baseW: 16, baseH: 3, peakW: 44, peakH: 6 };
-const RIB_ASSISTANT: RibDims = { baseW: 26, baseH: 3, peakW: 52, peakH: 6 };
+const RIB_MESSAGE: RibDims = { baseW: 16, baseH: 3, peakW: 52, peakH: 6 };
 
 /** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
 const MAG_INFLUENCE = 50;
@@ -117,10 +116,7 @@ const MAG_INFLUENCE = 50;
 const TOOLTIP_OPEN_DELAY = 60;
 
 export function ribDimsFor(entry: MessageEntry): RibDims {
-  if (entry.isEnd) {
-    return RIB_END;
-  }
-  return entry.isUser ? RIB_USER : RIB_ASSISTANT;
+  return entry.isEnd ? RIB_END : RIB_MESSAGE;
 }
 
 /** Cosine bell: 1 at the pointer, easing to 0 at the influence radius. */
@@ -149,12 +145,7 @@ const MessageIndicator = memo(function MessageIndicator({
   label: string;
   onSelect: (id: string) => void;
 }) {
-  let baseSize = 'h-[3px] w-[26px]';
-  if (entry.isEnd) {
-    baseSize = 'h-1 w-1';
-  } else if (entry.isUser) {
-    baseSize = 'h-[3px] w-4';
-  }
+  const baseSize = entry.isEnd ? 'h-1 w-1' : 'h-[3px] w-4';
   return (
     <button
       type="button"
@@ -1087,7 +1078,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
-        className="flex min-h-0 w-14 cursor-grab touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
+        className="flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {entries.map((entry) => {
