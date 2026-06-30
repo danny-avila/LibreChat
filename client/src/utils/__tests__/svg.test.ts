@@ -549,6 +549,30 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><style>.fx{filter:url(#dropShadow)}</style><defs><filter id="dropShadow"><feFlood flood-color="#e00" /></filter></defs><path class="fx" fill="#000" d="M4 4h16v16H4z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
+
+    it('preserves a glyph recolored by a feColorMatrix filter', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="r"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" /></filter></defs><path filter="url(#r)" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves a glyph recolored by a feComponentTransfer filter', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="ct"><feComponentTransfer><feFuncR type="linear" slope="0" intercept="1" /></feComponentTransfer></filter></defs><path filter="url(#ct)" fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a grayscale glyph with a color-neutral blur filter', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="b"><feGaussianBlur stdDeviation="1" /></filter></defs><path filter="url(#b)" fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores an unreferenced recoloring filter', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><filter id="r"><feColorMatrix type="hueRotate" values="90" /></filter></defs><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('opaque background (not tintable as a mask)', () => {
