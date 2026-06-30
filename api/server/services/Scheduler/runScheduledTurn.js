@@ -48,7 +48,25 @@ async function executeTurn({ owner, schedule, conversationId: providedConversati
     tenantId: owner.tenantId,
   };
   const target = resolveRunTarget(schedule, appConfig);
-  const body = buildRunBody({ schedule, conversationId, target });
+
+  /**
+   * Detect whether web search is configured at the model-spec level so the
+   * ephemeral agent can mirror that intent. Three independent signals:
+   *   - modelSpec.webSearch          — LibreChat's custom web_search flag
+   *   - modelSpec.preset.addParams.web_search   — Anthropic native override
+   *   - modelSpec.preset.defaultParams.web_search — Anthropic native default
+   * Any truthy signal means we propagate web_search: true into the ephemeral
+   * agent, ensuring resolveAnthropicToolConflicts swaps native→custom and the
+   * tool node has a handler for web_search tool calls.
+   */
+  const specs = appConfig?.modelSpecs?.list ?? [];
+  const modelSpec = target.spec ? specs.find((s) => s.name === target.spec) : null;
+  const enableWebSearch =
+    modelSpec?.webSearch === true ||
+    modelSpec?.preset?.addParams?.web_search === true ||
+    modelSpec?.preset?.defaultParams?.web_search === true;
+
+  const body = buildRunBody({ schedule, conversationId, target, enableWebSearch });
   const req = buildHeadlessReq({ user, appConfig, body });
   const res = buildHeadlessRes();
 
