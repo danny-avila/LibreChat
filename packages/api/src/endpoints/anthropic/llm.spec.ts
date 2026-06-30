@@ -1408,7 +1408,7 @@ describe('getLLMConfig', () => {
         });
       });
 
-      it('should future-proof Claude 5.x Sonnet models with 64K default', () => {
+      it('should default Claude 5.x Sonnet models to 128K (matches Anthropic spec)', () => {
         const testCases = [
           'claude-sonnet-5',
           'claude-sonnet-5-0',
@@ -1420,7 +1420,7 @@ describe('getLLMConfig', () => {
           const result = getLLMConfig('test-key', {
             modelOptions: { model },
           });
-          expect(result.llmConfig.maxTokens).toBe(64000);
+          expect(result.llmConfig.maxTokens).toBe(128000);
         });
       });
 
@@ -1458,20 +1458,20 @@ describe('getLLMConfig', () => {
 
       it('should future-proof Claude 6-9.x models with correct defaults', () => {
         const testCases = [
-          // Claude 6.x - Sonnet/Haiku get 64K, Opus gets 128K
-          { model: 'claude-sonnet-6', expected: 64000 },
+          // Claude 6.x - Sonnet/Opus get 128K, Haiku gets 64K
+          { model: 'claude-sonnet-6', expected: 128000 },
           { model: 'claude-haiku-6-0', expected: 64000 },
           { model: 'claude-opus-6-1', expected: 128000 },
           // Claude 7.x
-          { model: 'claude-sonnet-7-20270101', expected: 64000 },
+          { model: 'claude-sonnet-7-20270101', expected: 128000 },
           { model: 'claude-haiku-7.5', expected: 64000 },
           { model: 'claude-opus-7', expected: 128000 },
           // Claude 8.x
-          { model: 'claude-sonnet-8', expected: 64000 },
+          { model: 'claude-sonnet-8', expected: 128000 },
           { model: 'claude-haiku-8-2', expected: 64000 },
           { model: 'claude-opus-8-latest', expected: 128000 },
           // Claude 9.x
-          { model: 'claude-sonnet-9', expected: 64000 },
+          { model: 'claude-sonnet-9', expected: 128000 },
           { model: 'claude-haiku-9', expected: 64000 },
           { model: 'claude-opus-9', expected: 128000 },
         ];
