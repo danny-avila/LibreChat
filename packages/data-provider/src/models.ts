@@ -30,6 +30,14 @@ export type TModelSpec = {
   groupIcon?: string | EModelEndpoint;
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
+  /**
+   * When false, the spec is omitted from the model selector menu and from the
+   * client startup config, but remains usable when invoked explicitly by name
+   * via the `spec` field (server-side resolution uses the full, unfiltered list).
+   * Unlike `showIconInMenu` (which only hides the icon), this hides the whole entry.
+   * Defaults to true (listed).
+   */
+  showInMenu?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
   /** Hide the chat input tool badge row while this model spec is active. */
@@ -53,6 +61,7 @@ export const tModelSpecSchema = z.object({
   groupIcon: z.union([z.string(), eModelEndpointSchema]).optional(),
   showIconInMenu: z.boolean().optional(),
   showIconInHeader: z.boolean().optional(),
+  showInMenu: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
   hideBadgeRow: z.boolean().optional(),
