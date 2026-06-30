@@ -206,7 +206,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           )}
         </div>
         {description && (
-          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
+          <div className="animate-fadeIn mt-4 max-w-md text-center font-serif text-sm font-normal text-text-primary">
             {description}
           </div>
         )}

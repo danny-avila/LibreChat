@@ -27,10 +27,9 @@ const markdownCSS = `
 .markdown-body {
   -ms-text-size-adjust: 100%;
   -webkit-text-size-adjust: 100%;
-  line-height: 1.5;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.65;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 20px;
   word-wrap: break-word;
   color: #24292f;
   background-color: #ffffff;
