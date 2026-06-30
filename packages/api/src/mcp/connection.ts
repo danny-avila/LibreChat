@@ -1266,8 +1266,8 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
-    // Advertise the UI capability so servers expose app-enhanced tools; suppressed when MCP Apps
-    // are disabled by config.
+    // io.modelcontextprotocol/ui is a per-session host capability, so it tracks the instance-wide
+    // apps setting; per-tenant apps policy is enforced downstream, not renegotiated per request.
     const appsEnabled = params.enableApps !== false;
     const capabilities: ClientCapabilities = appsEnabled
       ? { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [RESOURCE_MIME_TYPE] } } }
