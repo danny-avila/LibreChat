@@ -10,8 +10,7 @@ const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReas
 
 type ThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
-  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue }
-  | { type: 'disabled' };
+  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue };
 
 /**
  * Resolves the final `thinking.display` value for an adaptive-thinking request.
@@ -402,13 +401,9 @@ export const bedrockInputParser = s.tConversationSchema
         delete additionalFields.effort;
 
         if (additionalFields.thinking === false) {
+          delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
           delete additionalFields.thinkingDisplay;
-          if (requiresExplicitThinkingDisabled(typedData.model as string)) {
-            additionalFields.thinking = { type: 'disabled' };
-          } else {
-            delete additionalFields.thinking;
-          }
         } else {
           /**
            * Persisted agent `model_parameters` round-trip back through this

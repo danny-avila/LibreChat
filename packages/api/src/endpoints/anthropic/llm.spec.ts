@@ -1236,6 +1236,19 @@ describe('getLLMConfig', () => {
         expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
       });
 
+      it('should keep Sonnet 5 thinking off when a disabled config round-trips from persistence', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-sonnet-5',
+            // Persisted model_parameters round-trip the prior disabled object,
+            // not a boolean — it must stay disabled, not flip back to adaptive.
+            thinking: { type: 'disabled' } as unknown as boolean,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+      });
+
       it('should omit sampling parameters for Sonnet 5', () => {
         const result = getLLMConfig('test-key', {
           modelOptions: {
