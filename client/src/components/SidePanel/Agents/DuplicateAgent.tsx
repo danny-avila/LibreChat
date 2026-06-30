@@ -1,5 +1,6 @@
 import { CopyPlus } from 'lucide-react';
 import { useToastContext, Button } from '@librechat/client';
+import { logAgentDuplication } from '~/nj/analytics/logHelpers';
 import { useDuplicateAgentMutation } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
 import { useLocalize } from '~/hooks';
@@ -29,6 +30,7 @@ export default function DuplicateAgent({ agent_id }: { agent_id: string }) {
   }
 
   const handleDuplicate = () => {
+    logAgentDuplication(agent_id);
     duplicateAgent.mutate({ agent_id });
   };
 
