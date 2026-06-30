@@ -202,6 +202,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const enforcedCall = parseCompactConvo.mock.calls[1];
     expect(enforcedCall[0]).toEqual(
       expect.objectContaining({
+        endpoint: 'AnthropicClaude',
         defaultParamsEndpoint: EModelEndpoint.anthropic,
       }),
     );
@@ -210,6 +211,51 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(enforcedResult.maxOutputTokens).toBe(8192);
     expect(enforcedResult.temperature).toBe(0.7);
     expect(enforcedResult.maxContextTokens).toBe(50000);
+  });
+
+  it('should route enforced model specs through the preset provider when the request carries a stale endpoint', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const modelSpec = {
+      name: 'claude-sonnet-latest',
+      preset: {
+        endpoint: EModelEndpoint.anthropic,
+        model: 'claude-sonnet-4-6',
+      },
+    };
+
+    const req = createReq(
+      {
+        endpoint: 'OpenRouter',
+        endpointType: EModelEndpoint.custom,
+        spec: 'claude-sonnet-latest',
+        model: 'claude-sonnet-4-6',
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [modelSpec],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(mockAgentBuildOptions).toHaveBeenCalledWith(
+      req,
+      EModelEndpoint.anthropic,
+      expect.objectContaining({ model: 'claude-sonnet-4-6', spec: 'claude-sonnet-latest' }),
+      undefined,
+    );
+    expect(req.body.endpointOption.endpoint).toBe(EModelEndpoint.anthropic);
+
+    const enforcedCall = parseCompactConvo.mock.calls[1];
+    expect(enforcedCall[0]).toEqual(
+      expect.objectContaining({
+        endpoint: EModelEndpoint.anthropic,
+      }),
+    );
   });
 
   it('should restore private model spec preset fields in non-enforced mode', async () => {

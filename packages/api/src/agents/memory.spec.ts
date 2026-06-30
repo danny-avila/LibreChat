@@ -27,13 +27,17 @@ const mockResolveHeaders = jest.fn((opts) => {
   return result;
 });
 
-jest.mock('~/utils', () => ({
-  Tokenizer: {
-    getTokenCount: jest.fn(() => 10),
-  },
-  createSafeUser: (user: unknown) => mockCreateSafeUser(user),
-  resolveHeaders: (opts: unknown) => mockResolveHeaders(opts),
-}));
+jest.mock('~/utils', () => {
+  const actual = jest.requireActual('~/utils');
+  return {
+    ...actual,
+    Tokenizer: {
+      getTokenCount: jest.fn(() => 10),
+    },
+    createSafeUser: (user: unknown) => mockCreateSafeUser(user),
+    resolveHeaders: (opts: unknown) => mockResolveHeaders(opts),
+  };
+});
 
 const { createSafeUser } = jest.requireMock('~/utils');
 

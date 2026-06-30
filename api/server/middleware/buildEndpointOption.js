@@ -57,6 +57,11 @@ async function buildEndpointOption(req, res, next) {
 
   const appConfig = req.config;
   let appliedModelSpecPrivateFields = new Set();
+  /** Provider endpoint for ephemeral agents — may differ from `req.body.endpoint`
+   *  when a conversation still carries a stale endpoint (e.g. OpenRouter) after a
+   *  model-spec migration to a native provider (e.g. anthropic). */
+  let providerEndpoint = endpoint;
+  let providerEndpointType = endpointType;
   /**
    * On the agents endpoint a tool-enabled spec runs as an ephemeral agent: the
    * request `endpoint` is `agents` while the spec's `preset.endpoint` is the
@@ -84,13 +89,19 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'Model spec mismatch' });
     }
 
+    providerEndpoint = currentModelSpec.preset?.endpoint ?? endpoint;
+    providerEndpointType =
+      providerEndpoint !== endpoint
+        ? (currentModelSpec.preset?.endpointType ?? undefined)
+        : endpointType;
+
     try {
       const result = applyModelSpecPreset({
         modelSpec: currentModelSpec,
         parsedBody: currentModelSpec.preset,
-        endpoint,
-        endpointType,
-        defaultParamsEndpoint,
+        endpoint: providerEndpoint,
+        endpointType: providerEndpointType,
+        defaultParamsEndpoint: getDefaultParamsEndpoint(endpointsConfig, providerEndpoint),
         includePresetDefaults: true,
       });
       parsedBody = result.parsedBody;
@@ -106,13 +117,19 @@ async function buildEndpointOption(req, res, next) {
         return handleError(res, { text: 'Model spec mismatch' });
       }
 
+      providerEndpoint = modelSpec.preset?.endpoint ?? endpoint;
+      providerEndpointType =
+        providerEndpoint !== endpoint
+          ? (modelSpec.preset?.endpointType ?? undefined)
+          : endpointType;
+
       try {
         const result = applyModelSpecPreset({
           modelSpec,
           parsedBody,
-          endpoint,
-          endpointType,
-          defaultParamsEndpoint,
+          endpoint: providerEndpoint,
+          endpointType: providerEndpointType,
+          defaultParamsEndpoint: getDefaultParamsEndpoint(endpointsConfig, providerEndpoint),
         });
         parsedBody = result.parsedBody;
         appliedModelSpecPrivateFields = result.appliedPrivateFields;
@@ -138,7 +155,7 @@ async function buildEndpointOption(req, res, next) {
 
     // TODO: use object params
     req.body = req.body || {}; // Express 5: ensure req.body exists
-    req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
+    req.body.endpointOption = await builder(providerEndpoint, parsedBody, providerEndpointType);
 
     if (req.body.files && !isAgents) {
       req.body.endpointOption.attachments = updateFilesUsage(req.body.files);
