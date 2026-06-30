@@ -93,9 +93,12 @@ function resolveAnthropicToolConflicts({
     return tools;
   }
 
-  if (!hasToolDefinition(toolDefinitions, Tools.web_search)) {
+  const hasNativeWebSearch = tools.some((tool) => getToolName(tool) === Tools.web_search);
+  if (!hasNativeWebSearch) {
     return tools;
   }
+
+  const hasCustomWebSearch = hasToolDefinition(toolDefinitions, Tools.web_search);
 
   let removed = 0;
   const resolvedTools = tools.filter((tool) => {
@@ -107,9 +110,15 @@ function resolveAnthropicToolConflicts({
   });
 
   if (removed > 0) {
-    logger.debug(
-      `[initializeAgent] Removed ${removed} Anthropic native web_search tool(s); LibreChat web_search is enabled.`,
-    );
+    if (hasCustomWebSearch) {
+      logger.debug(
+        `[initializeAgent] Removed ${removed} Anthropic native web_search tool(s); LibreChat web_search is enabled.`,
+      );
+    } else {
+      logger.debug(
+        `[initializeAgent] Removed ${removed} Anthropic native web_search tool(s); no LibreChat web_search handler registered (prevents unresolvable tool_use calls).`,
+      );
+    }
   }
 
   return resolvedTools;
