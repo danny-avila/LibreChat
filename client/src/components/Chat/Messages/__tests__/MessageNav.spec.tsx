@@ -303,6 +303,26 @@ describe('MessageNav', () => {
       expect(userLine?.className).toContain('w-4');
       expect(assistantLine?.className).toContain('w-4');
     });
+
+    it('lights up only the in-viewport ribs at rest (no hover)', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('a')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+
+      const ribA = container.querySelector('[data-msg-id="a"]') as HTMLElement;
+      const ribB = container.querySelector('[data-msg-id="b"]') as HTMLElement;
+      expect(ribA.className).toContain('opacity-100');
+      expect(ribA.className).not.toContain('opacity-40');
+      expect(ribB.className).toContain('opacity-40');
+    });
   });
 
   describe('preview text', () => {

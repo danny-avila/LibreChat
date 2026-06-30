@@ -130,9 +130,12 @@ export function magnifyFalloff(distance: number, influence: number): number {
 }
 
 const indicatorButtonClasses = cn(
-  'flex h-1.5 w-full items-center justify-end rounded-sm',
+  'flex h-1.5 w-full items-center justify-end rounded-sm transition-opacity duration-300',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
 );
+
+const dimIndicatorClasses =
+  'opacity-40 group-hover/nav:opacity-100 group-focus-within/nav:opacity-100';
 
 const MessageIndicator = memo(function MessageIndicator({
   entry,
@@ -155,7 +158,7 @@ const MessageIndicator = memo(function MessageIndicator({
         e.stopPropagation();
         onSelect(entry.id);
       }}
-      className={indicatorButtonClasses}
+      className={cn(indicatorButtonClasses, isHighlighted ? 'opacity-100' : dimIndicatorClasses)}
       aria-label={label}
       aria-current={isCurrent ? 'true' : undefined}
       data-msg-id={entry.id}
@@ -172,8 +175,9 @@ const MessageIndicator = memo(function MessageIndicator({
 });
 
 const chevronButtonClasses = cn(
-  'rounded-md p-0.5 text-text-tertiary transition-colors',
-  'group-hover/nav:text-text-secondary group-focus-within/nav:text-text-secondary',
+  'rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
+  'group-hover/nav:text-text-secondary group-hover/nav:opacity-100',
+  'group-focus-within/nav:text-text-secondary group-focus-within/nav:opacity-100',
   'group-hover/nav:hover:text-text-primary',
   'group-hover/nav:disabled:opacity-30 group-focus-within/nav:disabled:opacity-30',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
@@ -1113,8 +1117,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       className={cn(
         'group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))]',
         '-translate-y-1/2 flex-col items-end gap-1.5 px-1.5 py-2 md:flex',
-        'opacity-30 transition-opacity duration-300',
-        'focus-within:opacity-100 hover:opacity-100',
       )}
     >
       <button
