@@ -1,0 +1,178 @@
+name: Upstream LibreChat Sync
+
+on:
+  schedule:
+    - cron: '0 9 * * 1' # Every Monday at 9am UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — report what would change without creating a PR'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Register the ours merge driver so .gitattributes rules fire
+          git config merge.ours.driver true
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/danny-avila/LibreChat.git
+          git fetch upstream main --no-tags
+
+      - name: Compute sync metadata
+        id: meta
+        run: |
+          FORK_BASE=$(git merge-base HEAD upstream/main || echo "unknown")
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+          UPSTREAM_SHORT=$(git rev-parse --short upstream/main)
+          COMMIT_COUNT=$(git rev-list --count HEAD..upstream/main)
+          DATE=$(date +%Y%m%d)
+          BRANCH="sync/upstream-${DATE}"
+
+          echo "fork_base=${FORK_BASE}" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=${UPSTREAM_SHA}" >> "$GITHUB_OUTPUT"
+          echo "upstream_short=${UPSTREAM_SHORT}" >> "$GITHUB_OUTPUT"
+          echo "commit_count=${COMMIT_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          COUNT="${{ steps.meta.outputs.commit_count }}"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No new upstream commits. Nothing to sync."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found ${COUNT} new upstream commit(s)."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create sync branch and merge
+        if: steps.check.outputs.has_changes == 'true' && inputs.dry_run != 'true'
+        id: merge
+        run: |
+          BRANCH="${{ steps.meta.outputs.branch }}"
+          git checkout -b "$BRANCH"
+
+          # Attempt merge; .gitattributes ours-driver resolves owned files automatically
+          if git merge upstream/main --no-ff -m "chore: merge upstream LibreChat ${{ steps.meta.outputs.upstream_short }}"; then
+            echo "merge_status=clean" >> "$GITHUB_OUTPUT"
+          else
+            # Collect still-conflicting files (ours-driver already resolved its set)
+            CONFLICTS=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+            echo "merge_status=conflicts" >> "$GITHUB_OUTPUT"
+            echo "conflict_files=${CONFLICTS}" >> "$GITHUB_OUTPUT"
+            # Stage everything resolvable so the branch is pushable for review
+            git checkout --ours -- $(git diff --name-only --diff-filter=U) 2>/dev/null || true
+            git add -A
+            git commit -m "chore: merge upstream LibreChat ${{ steps.meta.outputs.upstream_short }} [CONFLICTS NEED REVIEW]"
+          fi
+
+          git push origin "$BRANCH"
+
+      - name: Build PR body
+        if: steps.check.outputs.has_changes == 'true' && inputs.dry_run != 'true'
+        id: pr_body
+        run: |
+          UPSTREAM_LOG=$(git log HEAD..upstream/main --oneline --no-walk=unsorted | head -40 || true)
+          OWNED_FILES_RESOLVED=$(git diff --name-only ORIG_HEAD..HEAD -- \
+            'api/app/clients/tools/util/gmail.js' \
+            'api/app/clients/tools/util/googleDrive.js' \
+            'api/app/clients/tools/util/googleCalendar.js' \
+            'api/app/clients/tools/util/microsoftMail.js' \
+            'api/app/clients/tools/util/microsoftOneDrive.js' \
+            'api/app/clients/tools/util/dropbox.js' \
+            'api/app/clients/tools/util/box.js' \
+            'api/app/clients/tools/util/clio.js' \
+            'api/server/routes/config.js' \
+            'librechat.yaml' 2>/dev/null | tr '\n' ' ' || true)
+
+          MERGE_STATUS="${{ steps.merge.outputs.merge_status }}"
+          CONFLICTS="${{ steps.merge.outputs.conflict_files }}"
+
+          if [ "$MERGE_STATUS" = "clean" ]; then
+            STATUS_SECTION="✅ **Clean merge** — all conflicts auto-resolved via \`.gitattributes\` ownership rules."
+          else
+            STATUS_SECTION="⚠️ **Conflicts require manual resolution** in the following files:\n\`\`\`\n${CONFLICTS}\n\`\`\`\nSee \`docs/UPSTREAM_SYNC.md\` for the resolution playbook."
+          fi
+
+          BODY="## Upstream LibreChat Sync — ${{ steps.meta.outputs.date }}
+
+Merging **${{ steps.meta.outputs.commit_count }} upstream commit(s)** up to \`${{ steps.meta.outputs.upstream_short }}\` from [danny-avila/LibreChat](https://github.com/danny-avila/LibreChat).
+
+${STATUS_SECTION}
+
+### Upstream commits included
+\`\`\`
+${UPSTREAM_LOG}
+\`\`\`
+
+### Auto-resolved (kept ours)
+Files in \`.gitattributes\` ownership list that had conflicts were automatically resolved in our favour:
+\`${OWNED_FILES_RESOLVED:-none}\`
+
+### Reviewer checklist
+- [ ] Review upstream changes in shared files (data-provider types, core routes, packages)
+- [ ] Check if any upstream feature overlaps with our custom integrations (Nango, Scheduler, Tenant)
+- [ ] Run \`npm run build\` and relevant test suites before merging
+- [ ] If upstream added native integrations we already custom-built, decide whether to adopt upstream's version
+
+See [docs/UPSTREAM_SYNC.md](../docs/UPSTREAM_SYNC.md) for the full merge playbook."
+
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Open PR
+        if: steps.check.outputs.has_changes == 'true' && inputs.dry_run != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `chore: upstream LibreChat sync ${{ steps.meta.outputs.date }} (${{ steps.meta.outputs.commit_count }} commits)`,
+              head: '${{ steps.meta.outputs.branch }}',
+              base: 'main',
+              body: `${{ steps.pr_body.outputs.body }}`,
+            });
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              labels: ['upstream-sync'],
+            });
+            console.log(`Created PR #${pr.number}: ${pr.html_url}`);
+
+      - name: Dry run summary
+        if: steps.check.outputs.has_changes == 'true' && inputs.dry_run == 'true'
+        run: |
+          echo "=== DRY RUN — no branch or PR created ==="
+          echo "Upstream commits that would be merged:"
+          git log HEAD..upstream/main --oneline | head -40
+          echo ""
+          echo "Files changed upstream (vs our HEAD):"
+          git diff --name-only HEAD..upstream/main | head -60
+
+      - name: No-op summary
+        if: steps.check.outputs.has_changes == 'false'
+        run: echo "Already up to date with upstream. No PR needed."
