@@ -558,6 +558,8 @@ modelSpecs:
         endpoint: openAI
         model: gpt-5.5-pro
         useResponsesApi: true
+        addParams:
+          web_search: true
         max_tokens: 8192
         reasoning_effort: medium
         greeting: How can I help you today?
@@ -651,6 +653,8 @@ modelSpecs:
         endpoint: openAI
         model: gpt-5.5
         useResponsesApi: true
+        addParams:
+          web_search: true
         max_tokens: 8192
         reasoning_effort: medium
         greeting: How can I help you today?
@@ -665,6 +669,8 @@ modelSpecs:
         endpoint: openAI
         model: o3
         useResponsesApi: true
+        addParams:
+          web_search: true
         max_tokens: 16384
         reasoning_effort: medium
         greeting: How can I help you today?
@@ -707,6 +713,12 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-sonnet-4-6
+        # Mirrored from endpoints.anthropic.addParams so the scheduler's
+        # enableWebSearch detection (runScheduledTurn.js) picks it up at
+        # the modelSpec level — otherwise scheduled skills run with no
+        # web search tool available.
+        addParams:
+          web_search: true
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -718,6 +730,8 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-haiku-4-5-20251001
+        addParams:
+          web_search: true
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
