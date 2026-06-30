@@ -1,23 +1,33 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ScrollText } from 'lucide-react';
 import { AutoSizer, List } from 'react-virtualized';
-import { Spinner, useCombobox } from '@librechat/client';
+import { MCPIcon, Spinner, useCombobox } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
-import { useLocalize, useSkillActiveState } from '~/hooks';
+import { useHasAccess, useLocalize, useSkillActiveState } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
-import { useSkillsInfiniteQuery } from '~/data-provider';
+import { useGetStartupConfig, useMCPToolsQuery, useSkillsInfiniteQuery } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
 import { ephemeralAgentByConvoId } from '~/store';
-import { removeCharIfLast } from '~/utils';
+import {
+  buildMcpToolMentionOptions,
+  formatMcpToolHint,
+  getModelSpec,
+  insertTextAtCursor,
+  isMcpToolMention,
+  removeCharIfLast,
+  resolveScopedMcpServerNames,
+} from '~/utils';
 import MentionItem from './MentionItem';
 import store from '~/store';
 
 const commandChar = '$';
 const ROW_HEIGHT = 44;
 const skillIcon = <ScrollText className="icon-md text-cyan-500" />;
+const mcpToolIcon = <MCPIcon className="icon-md text-text-primary" aria-hidden="true" />;
 
 /**
  * Determines whether a skill should appear in the `$` command popover.
@@ -80,18 +90,49 @@ function SkillsCommandContent({
   textAreaRef,
   conversationId,
   agentId,
+  specName,
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   conversationId: string;
   agentId?: string | null;
+  specName?: string | null;
 }) {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+  const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId));
   const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const setPendingManualSkills = useSetRecoilState(
     store.pendingManualSkillsByConvoId(conversationId),
   );
+
+  const modelSpec = useMemo(
+    () => getModelSpec({ specName, startupConfig }),
+    [specName, startupConfig],
+  );
+
+  const scopedMcpServerNames = useMemo(
+    () =>
+      resolveScopedMcpServerNames({
+        globalServerNames: Object.keys(startupConfig?.mcpServers ?? {}),
+        modelSpecServerNames: modelSpec?.mcpServers,
+        ephemeralMcpServers: ephemeralAgent?.mcp,
+      }),
+    [startupConfig?.mcpServers, modelSpec?.mcpServers, ephemeralAgent?.mcp],
+  );
+
+  const {
+    data: mcpToolsData,
+    isLoading: mcpToolsLoading,
+    isError: mcpToolsError,
+  } = useMCPToolsQuery({
+    enabled: canUseMcp && scopedMcpServerNames.size > 0,
+  });
 
   const agentsMap = useAgentsMapContext();
   const { isActive } = useSkillActiveState();
@@ -174,13 +215,23 @@ function SkillsCommandContent({
     return options;
   }, [data?.pages, agentSkillIds, isActive]);
 
+  const mcpToolOptions = useMemo(
+    () => buildMcpToolMentionOptions(mcpToolsData, scopedMcpServerNames),
+    [mcpToolsData, scopedMcpServerNames],
+  );
+
+  const capabilityOptions = useMemo(
+    () => [...skillOptions, ...mcpToolOptions],
+    [skillOptions, mcpToolOptions],
+  );
+
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: '',
-    options: skillOptions,
+    options: capabilityOptions,
   });
 
   const initInputRef = useInitPopoverInput({
@@ -203,6 +254,23 @@ function SkillsCommandContent({
 
       if (textAreaRef.current) {
         removeCharIfLast(textAreaRef.current, commandChar);
+      }
+
+      if (isMcpToolMention(mention)) {
+        setEphemeralAgent((prev) => {
+          const current = prev?.mcp ?? [];
+          if (current.includes(mention.serverName)) {
+            return prev ?? { mcp: current };
+          }
+          return { ...(prev || {}), mcp: [...current, mention.serverName] };
+        });
+
+        if (textAreaRef.current) {
+          insertTextAtCursor(textAreaRef.current, formatMcpToolHint(mention.toolName));
+        }
+
+        textAreaRef.current?.focus();
+        return;
       }
 
       setEphemeralAgent((prev) => {
@@ -235,6 +303,19 @@ function SkillsCommandContent({
     ],
   );
 
+  const isCapabilitiesLoading =
+    (isLoading || isFetchingNextPage || mcpToolsLoading) && matches.length === 0;
+  const showSkillsLoadError =
+    open && isError && matches.length === 0 && mcpToolOptions.length === 0;
+  const showMcpLoadError =
+    open && mcpToolsError && matches.length === 0 && skillOptions.length === 0;
+  const showEmptyState =
+    open &&
+    !isCapabilitiesLoading &&
+    !showSkillsLoadError &&
+    !showMcpLoadError &&
+    matches.length === 0;
+
   useEffect(() => {
     if (!open) {
       setActiveIndex(0);
@@ -254,12 +335,14 @@ function SkillsCommandContent({
   }, []);
 
   useEffect(() => {
-    const el = document.getElementById(`skill-item-${activeIndex}`);
+    const mention = matches[activeIndex] as MentionOption | undefined;
+    const itemType = mention?.type ?? 'skill';
+    const el = document.getElementById(`${itemType}-item-${activeIndex}`);
     el?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
-  }, [activeIndex]);
+  }, [activeIndex, matches]);
 
   const rowRenderer = ({
-    index,
+    index: rowIndex,
     key,
     style,
   }: {
@@ -267,14 +350,17 @@ function SkillsCommandContent({
     key: string;
     style: React.CSSProperties;
   }) => {
-    const mention = matches[index] as MentionOption;
+    const mention = matches[rowIndex] as MentionOption;
+    const rowType = mention.type === 'mcp-tool' ? 'mcp-tool' : 'skill';
     return (
       <MentionItem
-        index={index}
-        type="skill"
+        index={rowIndex}
+        type={rowType}
         key={key}
         style={style}
-        onClick={() => {
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
           if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
           }
@@ -282,9 +368,13 @@ function SkillsCommandContent({
           handleSelect(mention);
         }}
         name={mention.label ?? ''}
-        icon={mention.icon}
-        description={mention.description}
-        isActive={index === activeIndex}
+        icon={mention.type === 'mcp-tool' ? mcpToolIcon : mention.icon}
+        description={
+          mention.type === 'mcp-tool' && isMcpToolMention(mention)
+            ? `${mention.serverName}${mention.description ? ` · ${mention.description}` : ''}`
+            : mention.description
+        }
+        isActive={rowIndex === activeIndex}
       />
     );
   };
@@ -294,7 +384,7 @@ function SkillsCommandContent({
       <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
         <input
           ref={initInputRef}
-          placeholder={localize('com_ui_skills_command_placeholder')}
+          placeholder={localize('com_ui_capabilities_command_placeholder')}
           className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
           autoComplete="off"
           value={searchValue}
@@ -342,19 +432,24 @@ function SkillsCommandContent({
             }, 150);
           }}
         />
-        {open && (isLoading || isFetchingNextPage) && matches.length === 0 && (
+        {open && isCapabilitiesLoading && (
           <div className="flex h-32 items-center justify-center text-text-primary">
             <Spinner />
           </div>
         )}
-        {open && isError && (
+        {showSkillsLoadError && (
           <div className="p-4 text-center text-sm text-text-secondary">
             {localize('com_ui_skills_load_error')}
           </div>
         )}
-        {open && !isLoading && !isFetchingNextPage && !isError && matches.length === 0 && (
+        {showMcpLoadError && (
           <div className="p-4 text-center text-sm text-text-secondary">
-            {localize(searchValue ? 'com_ui_no_skills_found' : 'com_ui_skills_empty')}
+            {localize('com_ui_mcp_tools_load_error')}
+          </div>
+        )}
+        {showEmptyState && (
+          <div className="p-4 text-center text-sm text-text-secondary">
+            {localize(searchValue ? 'com_ui_no_capabilities_found' : 'com_ui_capabilities_empty')}
           </div>
         )}
         {open && matches.length > 0 && (
@@ -384,11 +479,13 @@ const SkillsCommand = memo(function SkillsCommand({
   textAreaRef,
   conversationId,
   agentId,
+  specName,
 }: {
   index: number;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   conversationId: string;
   agentId?: string | null;
+  specName?: string | null;
 }) {
   const show = useRecoilValue(store.showSkillsPopoverFamily(index));
   if (!show) {
@@ -400,6 +497,7 @@ const SkillsCommand = memo(function SkillsCommand({
       textAreaRef={textAreaRef}
       conversationId={conversationId}
       agentId={agentId}
+      specName={specName}
     />
   );
 });
