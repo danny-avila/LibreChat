@@ -84,11 +84,14 @@ function hasResumableWrite(writes: PendingWrite[]): boolean {
  * runs race on the same conversation (`thread_id`).
  *
  * **Why "resumable" and not "any" write.** A non-paused turn that ERRORS still records a pending
- * write — on the `__error__` bookkeeping channel — followed by a `put` (probe-confirmed). Anchoring
- * on *any* write would persist that failed-turn checkpoint, and since the clean-path prune was
- * removed it would linger until the next fresh turn or the TTL. An errored turn is never
+ * write — on the `__error__` bookkeeping channel — followed by a `put` (probe-confirmed). Such a
+ * batch is dropped on BOTH paths: `putWrites` does not forward it to the writes collection (else an
+ * orphan write row with no surviving parent checkpoint would linger until the TTL / next prune),
+ * and because it is not anchored its `put` discards the checkpoint too. An errored turn is never
  * HITL-resumable, so {@link hasResumableWrite} excludes bookkeeping-only batches (`__error__`,
- * `__scheduled__`, `__resume__`) and the checkpoint is discarded at the source — no leak.
+ * `__scheduled__`, `__resume__`) and the failed turn leaves NOTHING durable — verified against a
+ * real `MongoDBSaver` (mongodb-memory-server): a throwing graph persists 0 checkpoints AND 0 write
+ * rows, while interrupt→resume is unaffected (its `__interrupt__` write is forwarded as before).
  *
  * For LibreChat's agent graph (standard `Annotation`/`MessagesAnnotation` channels, no
  * `DeltaChannel` — grep-confirmed in `@librechat/agents`) a clean run makes no `putWrites` at all,
@@ -118,12 +121,19 @@ export class LazyMongoSaver extends MongoDBSaver {
     writes: PendingWrite[],
     taskId: string,
   ): Promise<void> {
+    if (!hasResumableWrite(writes)) {
+      // A bookkeeping-only batch (e.g. `__error__` from a failed, non-paused turn). Its
+      // checkpoint is discarded by `put`, so forwarding to `super.putWrites` would leave an
+      // ORPHAN row in the writes collection — a write whose parent checkpoint never persists —
+      // until the Mongo TTL or the conversation's next pre-run prune. Drop it entirely: a
+      // non-resumable batch is never read back on resume, so nothing durable is needed.
+      return;
+    }
+    // Anchor the checkpoint so its `put` persists it: an interrupt (a HITL pause), or a real
+    // state/delta channel a later checkpoint depends on. Keyed on the globally-unique checkpoint
+    // id so concurrent runs on the same `thread_id` can't cross-consume anchors.
     const checkpointId = config.configurable?.checkpoint_id as string | undefined;
-    if (checkpointId && hasResumableWrite(writes)) {
-      // Anchor only checkpoints whose writes matter for resume: an interrupt (a HITL pause),
-      // or a real state/delta channel a later checkpoint depends on. Bookkeeping-only batches
-      // (e.g. `__error__` from a failed, non-paused turn) are NOT anchored, so their checkpoint
-      // is discarded by `put` rather than leaking until the next prune / Mongo TTL.
+    if (checkpointId) {
       this.recordWriteAnchor(checkpointId);
     }
     return super.putWrites(config, writes, taskId);

@@ -155,11 +155,13 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     expect(await saver!.getTuple(readConfig(threadId))).toBeDefined();
   });
 
-  it('does NOT persist an error-only checkpoint (failed non-paused turn — no leak)', async () => {
+  it('does NOT persist an error-only checkpoint OR its write row (failed non-paused turn — no leak)', async () => {
     // A turn that throws before any pause records a pending write on the `__error__`
     // bookkeeping channel, then a `put` (probe-confirmed against @langchain/langgraph). That
-    // checkpoint is never HITL-resumable, so the lazy saver must discard it rather than leave
-    // it durable until the next fresh-turn prune / Mongo TTL.
+    // checkpoint is never HITL-resumable, so the lazy saver must leave NOTHING durable: not the
+    // checkpoint (discarded by `put`) and not the write row (`putWrites` drops a bookkeeping-only
+    // batch instead of forwarding it, which would otherwise orphan a row in the writes collection
+    // until the next fresh-turn prune / Mongo TTL).
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
     const { config, checkpoint, metadata } = putArgs(threadId);
@@ -171,10 +173,13 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     await saver!.put(config, checkpoint, metadata);
 
     expect(await saver!.getTuple(readConfig(threadId))).toBeUndefined();
-    const count = await mongoose.connection
-      .db!.collection('agent_checkpoints')
-      .countDocuments({ thread_id: threadId });
-    expect(count).toBe(0);
+    const db = mongoose.connection.db!;
+    expect(await db.collection('agent_checkpoints').countDocuments({ thread_id: threadId })).toBe(
+      0,
+    );
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
+    ).toBe(0);
   });
 
   it('persists an interrupt checkpoint and carries its __interrupt__ pending write', async () => {
@@ -249,6 +254,40 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
       boomGraph.invoke({ x: 'start' }, { configurable: { thread_id: tErr }, durability: 'exit' }),
     ).rejects.toThrow('boom');
 
+    // Nothing durable: neither the checkpoint nor an orphan row in the writes collection.
     expect(await coll.countDocuments({ thread_id: tErr })).toBe(0);
+    const writesColl = mongoose.connection.db!.collection('agent_checkpoint_writes');
+    expect(await writesColl.countDocuments({ thread_id: tErr })).toBe(0);
+  });
+
+  it('end-to-end: an interrupt persists, then resumes to completion with the approval value', async () => {
+    // Guards the `putWrites` change: the `__interrupt__` write must still be forwarded (it is
+    // resumable) so a paused run rehydrates and the resume value flows in. Mirrors the real HITL
+    // round-trip across a fresh `invoke` on the same thread_id.
+    const { StateGraph, START, END, interrupt, Annotation, Command } = await import(
+      '@langchain/langgraph'
+    );
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+
+    const State = Annotation.Root({ approved: Annotation });
+    const graph = new StateGraph(State)
+      .addNode('gate', () => ({ approved: interrupt('approve?') }))
+      .addNode('done', () => ({}))
+      .addEdge(START, 'gate')
+      .addEdge('gate', 'done')
+      .addEdge('done', END)
+      .compile({ checkpointer: saver as never });
+
+    const thread = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const cfg = { configurable: { thread_id: thread }, durability: 'exit' as const };
+
+    // Pause at the interrupt.
+    await graph.invoke({ approved: null }, cfg);
+    const paused = await graph.getState(cfg);
+    expect(paused.next.length).toBeGreaterThan(0);
+
+    // Resume with the approval — the paused run rehydrates from the durable interrupt checkpoint.
+    const out = await graph.invoke(new Command({ resume: 'YES' }), cfg);
+    expect(out.approved).toBe('YES');
   });
 });
