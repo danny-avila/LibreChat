@@ -3,6 +3,7 @@ import {
   buildMcpToolMentionOptions,
   formatMcpToolHint,
   parseMcpPluginKey,
+  resolveMcpServersForSkillsPopover,
   resolveScopedMcpServerNames,
 } from '../mcpToolsForPopover';
 
@@ -28,11 +29,42 @@ describe('resolveScopedMcpServerNames', () => {
   });
 });
 
+describe('resolveMcpServersForSkillsPopover', () => {
+  it('excludes modelSpec infrastructure servers from the popover scope', () => {
+    const scoped = resolveMcpServersForSkillsPopover({
+      globalServerNames: ['filesystem', 'excel', 'smbteam-mcp'],
+      modelSpecInfrastructureServers: ['filesystem', 'excel'],
+    });
+
+    expect([...scoped]).toEqual(['smbteam-mcp']);
+  });
+
+  it('adds non-infrastructure ephemeral servers', () => {
+    const scoped = resolveMcpServersForSkillsPopover({
+      globalServerNames: ['filesystem', 'smbteam-mcp'],
+      modelSpecInfrastructureServers: ['filesystem', 'excel'],
+      ephemeralMcpServers: ['partner-skills-mcp'],
+    });
+
+    expect([...scoped].sort()).toEqual(['partner-skills-mcp', 'smbteam-mcp']);
+  });
+
+  it('does not include infrastructure servers enabled only via ephemeral toggles', () => {
+    const scoped = resolveMcpServersForSkillsPopover({
+      globalServerNames: ['filesystem', 'smbteam-mcp'],
+      modelSpecInfrastructureServers: ['filesystem', 'excel'],
+      ephemeralMcpServers: ['excel'],
+    });
+
+    expect([...scoped]).toEqual(['smbteam-mcp']);
+  });
+});
+
 describe('parseMcpPluginKey', () => {
   it('parses tool and server from plugin key', () => {
-    expect(parseMcpPluginKey('create_pptx_mcp_smbteam-mcp')).toEqual({
-      toolName: 'create_pptx',
-      serverName: 'smbteam-mcp',
+    expect(parseMcpPluginKey('lead_follow_up_mcp_smbteam_mcp')).toEqual({
+      toolName: 'lead_follow_up',
+      serverName: 'smbteam_mcp',
     });
   });
 

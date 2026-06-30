@@ -64,9 +64,16 @@ jest.mock('~/store', () => ({
 
 const mockUseSkillsInfiniteQuery = jest.fn();
 const mockUseMCPToolsQuery = jest.fn();
+const mockUseMCPServersQuery = jest.fn();
 const mockUseGetStartupConfig = jest.fn();
 jest.mock('~/data-provider', () => ({
   useSkillsInfiniteQuery: () => mockUseSkillsInfiniteQuery(),
+  useMCPServersQuery: (config?: { enabled?: boolean }) => {
+    if (config?.enabled === false) {
+      return { data: undefined, isLoading: false };
+    }
+    return mockUseMCPServersQuery();
+  },
   useMCPToolsQuery: (config?: { enabled?: boolean }) => {
     if (config?.enabled === false) {
       return { data: undefined, isLoading: false, isError: false };
@@ -189,6 +196,10 @@ beforeEach(() => {
     data: undefined,
     isLoading: false,
     isError: false,
+  });
+  mockUseMCPServersQuery.mockReturnValue({
+    data: {},
+    isLoading: false,
   });
   mockUseGetStartupConfig.mockReturnValue({
     data: { mcpServers: {} },
@@ -464,7 +475,15 @@ describe('SkillsCommand', () => {
       configurable: true,
     });
     mockUseGetStartupConfig.mockReturnValue({
-      data: { mcpServers: { 'smbteam-mcp': {} } },
+      data: {
+        modelSpecs: {
+          list: [{ name: 'aiw-assistant', mcpServers: ['filesystem', 'excel'] }],
+        },
+      },
+    });
+    mockUseMCPServersQuery.mockReturnValue({
+      data: { filesystem: {}, excel: {}, 'smbteam-mcp': {} },
+      isLoading: false,
     });
     mockUseMCPToolsQuery.mockReturnValue({
       data: {
@@ -476,9 +495,9 @@ describe('SkillsCommand', () => {
             authConfig: [],
             tools: [
               {
-                name: 'create_pptx',
-                pluginKey: 'create_pptx_mcp_smbteam-mcp',
-                description: 'Create a PowerPoint deck',
+                name: 'intake_qualifier',
+                pluginKey: 'intake_qualifier_mcp_smbteam-mcp',
+                description: 'Scores and qualifies inbound prospects',
               },
             ],
           },
@@ -489,9 +508,16 @@ describe('SkillsCommand', () => {
     });
 
     const textAreaRef = makeTextarea('$');
-    render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        specName="aiw-assistant"
+      />,
+    );
 
-    const mcpButton = await screen.findByRole('button', { name: /create_pptx/i });
+    const mcpButton = await screen.findByRole('button', { name: /intake_qualifier/i });
     await act(async () => {
       await user.click(mcpButton);
     });
@@ -503,8 +529,83 @@ describe('SkillsCommand', () => {
     ) => { mcp?: string[] };
     expect(agentUpdater(null)).toEqual({ mcp: ['smbteam-mcp'] });
     expect(agentUpdater({ mcp: ['smbteam-mcp'] })).toEqual({ mcp: ['smbteam-mcp'] });
-    expect(textAreaRef.current?.value).toBe('Use "create_pptx" to ');
+    expect(textAreaRef.current?.value).toBe('Use "intake_qualifier" to ');
     expect(mockSetShowSkillsPopover).toHaveBeenCalledWith(false);
+  });
+
+  it('hides infrastructure MCP tools listed in modelSpec from the popover', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        modelSpecs: {
+          list: [{ name: 'aiw-assistant', mcpServers: ['filesystem', 'excel'] }],
+        },
+      },
+    });
+    mockUseMCPServersQuery.mockReturnValue({
+      data: { filesystem: {}, excel: {}, 'smbteam-mcp': {} },
+      isLoading: false,
+    });
+    mockUseMCPToolsQuery.mockReturnValue({
+      data: {
+        servers: {
+          filesystem: {
+            name: 'filesystem',
+            icon: '',
+            authenticated: true,
+            authConfig: [],
+            tools: [
+              {
+                name: 'write_file',
+                pluginKey: 'write_file_mcp_filesystem',
+                description: 'Write a text file',
+              },
+            ],
+          },
+          excel: {
+            name: 'excel',
+            icon: '',
+            authenticated: true,
+            authConfig: [],
+            tools: [
+              {
+                name: 'create_pptx',
+                pluginKey: 'create_pptx_mcp_excel',
+                description: 'Create a PowerPoint deck',
+              },
+            ],
+          },
+          'smbteam-mcp': {
+            name: 'smbteam-mcp',
+            icon: '',
+            authenticated: true,
+            authConfig: [],
+            tools: [
+              {
+                name: 'lead_follow_up',
+                pluginKey: 'lead_follow_up_mcp_smbteam-mcp',
+                description: 'Multi-touch follow-up sequences',
+              },
+            ],
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    const textAreaRef = makeTextarea('$');
+    render(
+      <SkillsCommand
+        index={0}
+        textAreaRef={textAreaRef}
+        conversationId={CONVO_ID}
+        specName="aiw-assistant"
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: /lead_follow_up/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /write_file/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /create_pptx/i })).toBeNull();
   });
 });
 

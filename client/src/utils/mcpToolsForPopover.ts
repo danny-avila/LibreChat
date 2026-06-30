@@ -46,6 +46,42 @@ export function resolveScopedMcpServerNames({
   return scoped;
 }
 
+/**
+ * MCP servers whose tools belong in the `$` popover (user-invocable skill catalog).
+ *
+ * AIWP wires infrastructure MCPs (filesystem, excel) through modelSpec `mcpServers`
+ * for agent runtime document generation. The SMB Team skill catalog lives on globally
+ * configured servers such as `smbteam-mcp` that are not in that infrastructure list.
+ *
+ * `globalServerNames` should come from `GET /api/mcp/servers` (`useMCPServersQuery`), not
+ * `startupConfig.mcpServers` — the startup config payload does not include MCP server keys.
+ */
+export function resolveMcpServersForSkillsPopover({
+  globalServerNames,
+  modelSpecInfrastructureServers,
+  ephemeralMcpServers,
+}: {
+  globalServerNames: string[];
+  modelSpecInfrastructureServers?: string[];
+  ephemeralMcpServers?: string[];
+}): Set<string> {
+  const infrastructure = new Set(modelSpecInfrastructureServers ?? []);
+  const scoped = new Set<string>();
+  for (const name of globalServerNames) {
+    if (name && !infrastructure.has(name)) {
+      scoped.add(name);
+    }
+  }
+  if (ephemeralMcpServers) {
+    for (const name of ephemeralMcpServers) {
+      if (name && !infrastructure.has(name)) {
+        scoped.add(name);
+      }
+    }
+  }
+  return scoped;
+}
+
 export function parseMcpPluginKey(
   pluginKey: string,
 ): { toolName: string; serverName: string } | null {
