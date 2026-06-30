@@ -31,6 +31,9 @@ jest.mock('recoil', () => {
       if (atom === 'show-skills-popover') {
         return mockShowSkillsPopover.current;
       }
+      if (atom === 'ephemeral-agent') {
+        return undefined;
+      }
       return undefined;
     }),
     useRecoilState: jest.fn(() => [null, jest.fn()]),
@@ -60,8 +63,17 @@ jest.mock('~/store', () => ({
 }));
 
 const mockUseSkillsInfiniteQuery = jest.fn();
+const mockUseMCPToolsQuery = jest.fn();
+const mockUseGetStartupConfig = jest.fn();
 jest.mock('~/data-provider', () => ({
   useSkillsInfiniteQuery: () => mockUseSkillsInfiniteQuery(),
+  useMCPToolsQuery: (config?: { enabled?: boolean }) => {
+    if (config?.enabled === false) {
+      return { data: undefined, isLoading: false, isError: false };
+    }
+    return mockUseMCPToolsQuery();
+  },
+  useGetStartupConfig: () => mockUseGetStartupConfig(),
 }));
 
 /* Phase 2: the popover reads agent skill config via useAgentsMapContext
@@ -78,6 +90,7 @@ const mockIsActive = jest.fn();
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useSkillActiveState: () => ({ isActive: mockIsActive }),
+  useHasAccess: () => true,
 }));
 
 jest.mock('@librechat/client', () => {
@@ -171,6 +184,14 @@ beforeEach(() => {
     fetchNextPage: jest.fn(),
     hasNextPage: false,
     isFetchingNextPage: false,
+  });
+  mockUseMCPToolsQuery.mockReturnValue({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  });
+  mockUseGetStartupConfig.mockReturnValue({
+    data: { mcpServers: {} },
   });
   /* Defaults: empty agents map and every skill active. Individual tests
      override these and pass `agentId` as a prop to exercise the Phase 2
@@ -434,6 +455,56 @@ describe('SkillsCommand', () => {
 
     expect(screen.queryByRole('button', { name: /Brand Guidelines/i })).toBeNull();
     expect(screen.getByRole('button', { name: /Style Guide/i })).toBeInTheDocument();
+  });
+
+  it('selecting an MCP tool adds the server to ephemeralAgent.mcp and inserts a natural-language hint', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(document, 'queryCommandSupported', {
+      value: jest.fn().mockReturnValue(false),
+      configurable: true,
+    });
+    mockUseGetStartupConfig.mockReturnValue({
+      data: { mcpServers: { 'smbteam-mcp': {} } },
+    });
+    mockUseMCPToolsQuery.mockReturnValue({
+      data: {
+        servers: {
+          'smbteam-mcp': {
+            name: 'smbteam-mcp',
+            icon: '',
+            authenticated: true,
+            authConfig: [],
+            tools: [
+              {
+                name: 'create_pptx',
+                pluginKey: 'create_pptx_mcp_smbteam-mcp',
+                description: 'Create a PowerPoint deck',
+              },
+            ],
+          },
+        },
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    const textAreaRef = makeTextarea('$');
+    render(<SkillsCommand index={0} textAreaRef={textAreaRef} conversationId={CONVO_ID} />);
+
+    const mcpButton = await screen.findByRole('button', { name: /create_pptx/i });
+    await act(async () => {
+      await user.click(mcpButton);
+    });
+
+    expect(mockSetPendingManualSkills).not.toHaveBeenCalled();
+    expect(mockSetEphemeralAgent).toHaveBeenCalledTimes(1);
+    const agentUpdater = mockSetEphemeralAgent.mock.calls[0][0] as (
+      prev: { mcp?: string[] } | null,
+    ) => { mcp?: string[] };
+    expect(agentUpdater(null)).toEqual({ mcp: ['smbteam-mcp'] });
+    expect(agentUpdater({ mcp: ['smbteam-mcp'] })).toEqual({ mcp: ['smbteam-mcp'] });
+    expect(textAreaRef.current?.value).toBe('Use "create_pptx" to ');
+    expect(mockSetShowSkillsPopover).toHaveBeenCalledWith(false);
   });
 });
 

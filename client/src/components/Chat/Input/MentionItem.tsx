@@ -6,7 +6,7 @@ export interface MentionItemProps {
   name: string;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   index: number;
-  type?: 'prompt' | 'mention' | 'add-convo' | 'skill';
+  type?: 'prompt' | 'mention' | 'add-convo' | 'skill' | 'mcp-tool';
   icon?: React.ReactNode;
   isActive?: boolean;
   description?: string;
@@ -28,6 +28,9 @@ export default function MentionItem({
       type="button"
       style={style}
       tabIndex={index}
+      onMouseDown={(e) => {
+        e.preventDefault();
+      }}
       onClick={onClick}
       id={`${type}-item-${index}`}
       className="w-full touch-manipulation"

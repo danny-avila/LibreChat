@@ -268,6 +268,7 @@ const ChatForm = memo(function ChatForm({
             textAreaRef={textAreaRef}
             conversationId={conversationId}
             agentId={conversation?.agent_id}
+            specName={conversation?.spec}
           />
           <div
             onClick={handleContainerClick}
