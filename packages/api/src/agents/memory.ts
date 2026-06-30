@@ -94,6 +94,47 @@ const defaultMergeLLMConfig: LLMConfig = {
   disableStreaming: true,
 };
 
+/**
+ * Extracts plain text from a Run.processStream result, which may be a string,
+ * an array of content parts ({ type: 'text', text }), or a message-like object
+ * whose `content`/`text` holds the value. Returns null when no text is found.
+ */
+function extractTextContent(content: unknown): string | null {
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part;
+        }
+        if (part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string') {
+          return (part as { text: string }).text;
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+    return text.length > 0 ? text : null;
+  }
+
+  if (content && typeof content === 'object') {
+    const obj = content as { text?: unknown; content?: unknown };
+    if (typeof obj.text === 'string') {
+      const trimmed = obj.text.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+    if (obj.content != null) {
+      return extractTextContent(obj.content);
+    }
+  }
+
+  return null;
+}
+
 export async function mergeMemoryValues({
   existingValue,
   newValue,
@@ -147,10 +188,14 @@ export async function mergeMemoryValues({
     } as const;
 
     const content = await run.processStream(inputs, config);
-    if (typeof content === 'string' && content.trim()) {
-      logger.info(`[MemoryMerge] Merged memory for key "${key}"`);
-      return content.trim();
+    const merged = extractTextContent(content);
+    if (merged) {
+      logger.debug(`[MemoryMerge] Merged memory for key "${key}"`);
+      return merged;
     }
+    logger.warn(
+      `[MemoryMerge] Merge for key "${key}" produced no text content; using new value`,
+    );
   } catch (error) {
     logger.warn(`[MemoryMerge] Failed to merge memory for key "${key}", using new value`, error);
   }

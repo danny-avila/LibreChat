@@ -450,6 +450,16 @@ endpoints:
     addParams:
       web_search: true
 
+  # Native OpenAI — uses OPENAI_API_KEY. The GPT/o-series specs route here.
+  # useResponsesApi (set per-spec) enables OpenAI's hosted web search + url_citation
+  # annotations, which render as the favicon "Web searched" indicator.
+  openAI:
+    titleModel: gpt-5.5
+
+  # Native Google (Gemini) — uses GOOGLE_KEY. The Gemini specs route here.
+  google:
+    titleModel: gemini-2.5-flash
+
   # OpenRouter — single OpenAI-compatible gateway powering the curated model picker.
   # To add a model: add its slug to `models.default` below AND add a matching spec
   # under `modelSpecs.list` (reuse the `*aiw_tools` / `*aiw_instructions` anchors).
@@ -533,10 +543,11 @@ modelSpecs:
       group: OpenAI
       groupIcon: openAI
       preset:
-        endpoint: OpenRouter
-        model: openai/gpt-5.5-pro
+        endpoint: openAI
+        model: gpt-5.5-pro
         useResponsesApi: true
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: &aiw_instructions |
           You are the AI Workforce Pro assistant, built by SMB Team to help small and medium-sized businesses work more efficiently.
@@ -618,9 +629,11 @@ modelSpecs:
       description: Balanced OpenAI flagship for everyday business tasks.
       group: OpenAI
       preset:
-        endpoint: OpenRouter
-        model: openai/gpt-5.5
+        endpoint: openAI
+        model: gpt-5.5
+        useResponsesApi: true
         max_tokens: 8192
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -630,9 +643,11 @@ modelSpecs:
       description: OpenAI reasoning model for multi-step analysis, math, and coding.
       group: OpenAI
       preset:
-        endpoint: OpenRouter
-        model: openai/o3
+        endpoint: openAI
+        model: o3
+        useResponsesApi: true
         max_tokens: 16384
+        reasoning_effort: medium
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -643,8 +658,8 @@ modelSpecs:
       group: Google
       groupIcon: google
       preset:
-        endpoint: OpenRouter
-        model: google/gemini-2.5-pro
+        endpoint: google
+        model: gemini-2.5-pro
         max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
@@ -655,8 +670,8 @@ modelSpecs:
       description: Fast Google model with strong reasoning for quick workflows.
       group: Google
       preset:
-        endpoint: OpenRouter
-        model: google/gemini-2.5-flash
+        endpoint: google
+        model: gemini-2.5-flash
         max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
@@ -664,14 +679,13 @@ modelSpecs:
     - <<: *aiw_tools
       name: claude-sonnet-latest
       label: Claude Sonnet
-      description: Anthropic's latest Sonnet — always routes to the newest Sonnet release on OpenRouter.
+      description: Anthropic's latest Sonnet for complex reasoning and long-form work.
       default: true
       group: Anthropic
       groupIcon: anthropic
       preset:
-        endpoint: OpenRouter
-        model: "~anthropic/claude-sonnet-latest"
-        max_tokens: 8192
+        endpoint: anthropic
+        model: claude-sonnet-4-6
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -681,9 +695,8 @@ modelSpecs:
       description: Fast, compact Anthropic model for quick tasks and high-throughput workflows.
       group: Anthropic
       preset:
-        endpoint: OpenRouter
-        model: anthropic/claude-haiku-4.5
-        max_tokens: 8192
+        endpoint: anthropic
+        model: claude-haiku-4-5
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
@@ -867,6 +880,7 @@ memory:
   tokenLimit: 4000
   personalize: true
   agent:
+    enabled: true
     provider: "OpenRouter"
     model: "google/gemini-2.5-flash"
     instructions: "You are a memory management assistant. Read the user's stored memories and inject relevant context into conversations when applicable."

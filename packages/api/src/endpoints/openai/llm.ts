@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { logger } from '@librechat/data-schemas';
 import {
   EModelEndpoint,
   removeNullishValues,
@@ -570,6 +573,32 @@ export function getOpenAILLMConfig({
 
   if (hasModelKwargs) {
     llmConfig.modelKwargs = modelKwargs;
+  }
+
+  if (process.env.DEBUG_LLM_CONFIG) {
+    try {
+      const dir = process.env.DEBUG_DUMP_DIR || '/app/logs';
+      const payload = {
+        model: llmConfig.model,
+        useOpenRouter,
+        streaming: (llmConfig as Record<string, unknown>).streaming,
+        disableStreaming: (llmConfig as Record<string, unknown>).disableStreaming,
+        useResponsesApi: (llmConfig as Record<string, unknown>).useResponsesApi,
+        reasoning_effort_input: reasoning_effort,
+        llmConfig_reasoning: (llmConfig as Record<string, unknown>).reasoning,
+        llmConfig_reasoning_effort: (llmConfig as Record<string, unknown>).reasoning_effort,
+        llmConfig_include_reasoning: (llmConfig as Record<string, unknown>).include_reasoning,
+        modelKwargs_reasoning: modelKwargs.reasoning,
+        modelKwargs_plugins: modelKwargs.plugins,
+        tools: tools.map((t) => (t as Record<string, unknown>).type ?? 'fn'),
+      };
+      fs.appendFileSync(
+        path.join(dir, 'llm-config.log'),
+        `${new Date().toISOString()} ${JSON.stringify(payload, null, 2)}\n\n`,
+      );
+    } catch (error) {
+      logger.error('[DEBUG_LLM_CONFIG] failed to write dump:', error);
+    }
   }
 
   if (!azure) {

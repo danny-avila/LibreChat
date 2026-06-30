@@ -1,3 +1,37 @@
 # Force LF line endings for shell scripts and git hooks (required for cross-platform compatibility)
 .husky/* text eol=lf
 *.sh text eol=lf
+
+# ---------------------------------------------------------------------------
+# Upstream sync: files fully owned by this fork always resolve to ours on merge.
+# Register the driver once per machine: git config merge.ours.driver true
+# ---------------------------------------------------------------------------
+
+# Nango OAuth integration handlers
+api/app/clients/tools/util/gmail.js merge=ours
+api/app/clients/tools/util/googleDrive.js merge=ours
+api/app/clients/tools/util/googleCalendar.js merge=ours
+api/app/clients/tools/util/microsoftMail.js merge=ours
+api/app/clients/tools/util/microsoftOneDrive.js merge=ours
+api/app/clients/tools/util/microsoftCalendar.js merge=ours
+api/app/clients/tools/util/dropbox.js merge=ours
+api/app/clients/tools/util/box.js merge=ours
+api/app/clients/tools/util/clio.js merge=ours
+
+# Admin & tenant management
+api/server/routes/admin/** merge=ours
+
+# Scheduled skills backend
+api/server/services/Scheduler/** merge=ours
+api/server/routes/skillSchedules.js merge=ours
+
+# Branding & app config
+api/server/routes/config.js merge=ours
+
+# Custom frontend components
+client/src/components/Integrations/** merge=ours
+client/src/components/ScheduledSkills/** merge=ours
+client/src/components/Skills/SaveSkillBanner.tsx merge=ours
+
+# Curated model/endpoint configuration
+librechat.yaml merge=ours

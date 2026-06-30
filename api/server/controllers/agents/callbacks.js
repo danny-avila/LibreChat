@@ -1,6 +1,31 @@
+const fs = require('fs');
+const path = require('path');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  Tools,
+  StepTypes,
+  FileContext,
+  ErrorTypes,
+  ContentTypes,
+} = require('librechat-data-provider');
+
+/**
+ * Writes a full debug payload to a file under the mounted logs dir, bypassing the
+ * winston logger (which truncates messages to DEBUG_MESSAGE_LENGTH, read before .env
+ * loads). Opt-in via the relevant DEBUG_* env var. Best-effort; never throws.
+ * @param {string} tag - Basename for the log file (no extension).
+ * @param {unknown} payload - Serialized as pretty JSON.
+ */
+function dumpDebugToFile(tag, payload) {
+  try {
+    const dir = process.env.DEBUG_DUMP_DIR || '/app/logs';
+    const line = `${new Date().toISOString()} ${JSON.stringify(payload, null, 2)}\n\n`;
+    fs.appendFileSync(path.join(dir, `${tag}.log`), line);
+  } catch (error) {
+    logger.error(`[dumpDebugToFile] failed to write ${tag}:`, error);
+  }
+}
 const {
   GraphEvents,
   GraphNodeKeys,
@@ -33,13 +58,19 @@ class ModelEndHandler {
    *   providers don't emit `additional_kwargs.signatures`, so capture is also
    *   a no-op for them even when the map is provided.
    */
-  constructor(collectedUsage, collectedThoughtSignatures = null, citationSink = null) {
+  constructor(
+    collectedUsage,
+    collectedThoughtSignatures = null,
+    citationSink = null,
+    reasoningSink = null,
+  ) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
     this.citationSink = citationSink;
+    this.reasoningSink = reasoningSink;
   }
 
   finalize(errorMessage) {
@@ -82,6 +113,10 @@ class ModelEndHandler {
 
       if (this.citationSink) {
         this.citationSink.emit(data, metadata?.run_id);
+      }
+
+      if (this.reasoningSink) {
+        this.reasoningSink.emit(data, metadata?.run_id);
       }
 
       const usage = data?.output?.usage_metadata;
@@ -240,11 +275,45 @@ function getDefaultHandlers({
     emit: (data, messageId) =>
       emitCitationAnnotations(res, streamId, data, messageId, artifactPromises),
   };
+  /**
+   * Tracks whether reasoning streamed as ON_REASONING_DELTA events this turn. Some
+   * providers (notably Anthropic via OpenRouter) don't stream reasoning — it only
+   * lands on the final message's `additional_kwargs.reasoning_content`. In that case
+   * the reasoningSink injects it at model-end so the "thinking" content part (and its
+   * UI bubble) still appears. The flag prevents double-rendering for providers that
+   * already streamed it.
+   */
+  const reasoningState = { streamed: false };
+  const streamTiming = { count: 0 };
+  const reasoningSink = {
+    emit: (data, messageId) => {
+      if (reasoningState.streamed) {
+        return;
+      }
+      const ak = data?.output?.additional_kwargs;
+      const text =
+        typeof ak?.reasoning_content === 'string'
+          ? ak.reasoning_content
+          : typeof ak?.reasoning === 'string'
+            ? ak.reasoning
+            : '';
+      if (!text.trim()) {
+        return;
+      }
+      const reasoningData = {
+        runId: messageId,
+        delta: { content: [{ type: ContentTypes.THINK, [ContentTypes.THINK]: text }] },
+      };
+      aggregateContent({ event: GraphEvents.ON_REASONING_DELTA, data: reasoningData });
+      emitEvent(res, streamId, { event: GraphEvents.ON_REASONING_DELTA, data: reasoningData });
+    },
+  };
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(
       collectedUsage,
       collectedThoughtSignatures,
       citationSink,
+      reasoningSink,
     ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
@@ -320,6 +389,12 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        if (process.env.DEBUG_LLM_CONFIG) {
+          streamTiming.count += 1;
+          const text = data?.delta?.content;
+          const len = typeof text === 'string' ? text.length : JSON.stringify(text ?? '').length;
+          dumpDebugToFile('stream-timing', { n: streamTiming.count, at: Date.now(), len });
+        }
         aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
@@ -336,6 +411,7 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        reasoningState.streamed = true;
         aggregateContent({ event, data });
         if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
@@ -1250,13 +1326,10 @@ function collectCitationReferences(output) {
   }, []);
 
   if (process.env.DEBUG_OPENROUTER_CITATIONS && references.length === 0) {
-    logger.info('[OpenRouter citations] no references extracted from model-end message', {
-      additionalKwargsKeys: Object.keys(output.additional_kwargs ?? {}),
-      responseMetadataKeys: Object.keys(output.response_metadata ?? {}),
-      contentType: Array.isArray(output.content) ? 'array' : typeof output.content,
-      contentSample: JSON.stringify(output.content)?.slice(0, 2000),
-      additionalKwargsSample: JSON.stringify(output.additional_kwargs)?.slice(0, 2000),
-      responseMetadataSample: JSON.stringify(output.response_metadata)?.slice(0, 2000),
+    dumpDebugToFile('openrouter-citations', {
+      additionalKwargs: output.additional_kwargs,
+      response_metadata: output.response_metadata,
+      content: output.content,
     });
   }
 
