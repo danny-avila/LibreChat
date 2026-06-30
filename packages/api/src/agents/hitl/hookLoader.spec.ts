@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-import { loadToolApprovalHooks } from './hookLoader';
 import { getRegisteredToolApprovalHookCount, clearToolApprovalHooks } from './hooks';
+import { loadToolApprovalHooks } from './hookLoader';
 
 /** A conforming hook module: (options) => (context) => (input) => decision. */
 const goodModule = (options?: Record<string, unknown>) => () => async () => ({

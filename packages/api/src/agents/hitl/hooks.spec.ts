@@ -1,10 +1,10 @@
+import type { ToolApprovalHook } from './hooks';
 import {
   registerToolApprovalHook,
   getRegisteredToolApprovalHookCount,
   clearToolApprovalHooks,
   buildToolApprovalHooks,
 } from './hooks';
-import type { ToolApprovalHook } from './hooks';
 
 const denyHook: ToolApprovalHook = async () => ({ decision: 'deny' });
 

@@ -1,6 +1,6 @@
 import { HookRegistry } from '@librechat/agents';
-import { buildHITLRunWiring } from './runtime';
 import { registerToolApprovalHook, clearToolApprovalHooks } from './hooks';
+import { buildHITLRunWiring } from './runtime';
 
 describe('buildHITLRunWiring', () => {
   test('returns undefined when HITL is disabled (the default)', () => {
