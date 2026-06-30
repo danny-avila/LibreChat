@@ -82,41 +82,219 @@ interface:
     modalAcceptance: true
     modalTitle: 'Terms of Service for AI Workforce Pro'
     modalContent: |
-      # Terms and Conditions for AI Workforce Pro
+      # Terms of Service for AI Workforce Pro
 
-      *Effective Date: July 01, 2026*
+      *Effective Date: July 1, 2026*
 
-      Welcome to AI Workforce Pro. These Terms of Service ("Terms") govern your use of this AI workforce platform and the services we offer. By accessing or using the service, you agree to be bound by these Terms and our Privacy Policy.
+      Please read these Terms of Service ("**Terms**") carefully before using AI Workforce Pro. By creating an account or using the Service, you agree to be bound by these Terms.
 
-      ## 1. Access and Use
+      ## 1. Acceptance and Eligibility
 
-      Your organization grants you access to AI Workforce Pro subject to these Terms. You may use the platform only for authorized business purposes and in accordance with your organization's policies.
+      By accessing or using AI Workforce Pro (the "**Service**"), you ("**you**" or "**User**") agree to these Terms and any policies referenced herein, including our Privacy Policy. The Service is provided by The SMB Team, LLC ("**SMB Team**," "**we**," "**us**," or "**our**"). If you are using the Service on behalf of an entity, you represent that you have authority to bind that entity to these Terms.
 
-      ## 2. User Data
+      You must be at least 18 years old and legally capable of entering into a binding contract to use the Service. The Service is intended for use by businesses and licensed professionals.
 
-      We collect personal data, such as your name, email address, and usage information, as described in our Privacy Policy. This information is collected to provide and improve our services, process transactions, and communicate with you.
+      ## 2. Service Description
 
-      ## 3. Non-Personal Data Collection
+      AI Workforce Pro is a browser-based artificial intelligence platform that provides conversational AI tools, third-party application integrations, and workflow automation for businesses (with a current focus on law firms). The Service may include features such as AI-generated drafting, summarization, search, third-party app connections (via OAuth), and administrative configuration.
 
-      The service uses cookies to enhance user experience, analyze usage, and facilitate certain functionalities. By using the service, you consent to the use of cookies in accordance with our Privacy Policy.
+      The Service is delivered as software-as-a-service ("**SaaS**") and is updated continuously. Features may be added, modified, or removed at our discretion.
 
-      ## 4. Use of the Service
+      ## 3. Account Registration; Users; Tenants
 
-      You agree to use AI Workforce Pro only for lawful purposes and in a manner that does not infringe the rights of, restrict, or inhibit anyone else's use and enjoyment of the service. Prohibited behavior includes harassing or causing distress or inconvenience to any person, transmitting obscene or offensive content, or disrupting the normal flow of dialogue within the service.
+      **3.1 Accounts.** You must create an account to use the Service. You agree to provide accurate, complete information and to keep your account credentials secure. You are responsible for all activity that occurs under your account.
 
-      ## 5. Governing Law
+      **3.2 Tenants.** Accounts are organized into "**Tenants**," which represent your organization or workspace. Data within a Tenant is isolated from other Tenants. The administrator of a Tenant ("**Tenant Admin**") may invite additional users to that Tenant and configure tenant-level settings. You may not access another Tenant's data without authorization.
 
-      These Terms shall be governed by and construed in accordance with the laws of the United States, without giving effect to any principles of conflicts of law.
+      **3.3 Authorized Users.** If you are a Tenant Admin, you may authorize employees, contractors, or agents to access the Service under your Tenant. You remain liable for all activity by Authorized Users under your Tenant.
 
-      ## 6. Changes to the Terms
+      **3.4 Suspension.** We may suspend or terminate accounts that violate these Terms, abuse the Service, or pose a security or legal risk.
 
-      We reserve the right to modify these Terms at any time. We will notify users of any changes by email. Your continued use of the service after such changes have been notified will constitute your consent to such changes.
+      ## 4. Acceptable Use
 
-      ## 7. Contact Information
+      **4.1 Behavioral Prohibitions.** You agree not to:
 
-      If you have any questions about these Terms, please contact your organization administrator.
+      - Use the Service for unlawful, harmful, or fraudulent purposes
+      - Use the Service to generate or distribute content that violates applicable law or third-party rights
+      - Attempt to reverse engineer, decompile, or extract source code from the Service
+      - Bypass, disable, or interfere with security or access controls
+      - Share account credentials with unauthorized parties
+      - Use the Service to develop a competing product
+      - Submit confidential third-party information without authorization
+      - Use automated means (bots, scrapers) to access the Service except through documented APIs
+      - Use the Service in any manner that could overload, damage, or impair its operation
 
-      By using AI Workforce Pro, you acknowledge that you have read these Terms of Service and agree to be bound by them.
+      **4.2 Prohibited Data Inputs.** AI Workforce Pro encrypts data in transit and at rest and operates under contractual no-training agreements with our AI model providers. However, no online service can provide the specialized handling, audit trails, or certifications required for certain highly sensitive data categories. **You agree NOT to input the following types of data into the Service, and you accept full responsibility for any input that violates this restriction:**
+
+      - **Criminal defense discovery materials** subject to court protective orders, sealed evidence, grand jury materials, or other court-restricted documents
+      - **Classified, controlled unclassified information (CUI), or government-restricted information** not authorized for cloud processing
+      - **Protected health information (PHI)** as defined by HIPAA, including patient records, treatment notes, or any health data you do not have authorization to share with a third-party processor
+      - **Personally identifiable information (PII) of third parties** — including Social Security numbers, government identification numbers, financial account numbers, and biometric data — where you do not have authorization to share with a third-party processor
+      - **Trade secrets and confidential business information** subject to non-disclosure agreements (NDAs) that do not expressly permit AI or third-party processing
+      - **Privileged information whose disclosure to a third-party AI processor would waive or impair the privilege** — particularly communications with opposing counsel, opposing parties, or other third parties (use of the Service for routine work within your own firm is governed by Section 7)
+      - **Confidential settlement terms or settlement-negotiation communications** under court protective orders, unless your order expressly permits AI processing
+      - **Material subject to sealed court orders** of any kind
+      - **Banking, credit card, or authentication credentials** of yourself or any third party (including passwords, PINs, multi-factor codes, and account recovery keys)
+      - **Information whose disclosure would violate** applicable export control laws (ITAR, EAR), data localization laws, or sector-specific regulations (e.g., FCPA, GLBA, COPPA, GDPR Article 9 special categories)
+      - **Client trust account data** (e.g., IOLTA records) where input is not expressly authorized by your professional licensing rules
+
+      **If you are uncertain whether specific data falls within a prohibited category, do not input it.** Consult your organization's compliance officer, in-house counsel, or other legal advisor before submitting. SMB Team does not pre-screen or assess the appropriateness of submitted data on your behalf.
+
+      **Service limitations.** SMB Team's contractual protections with AI model providers are designed for general business and professional use. They do not extend additional security guarantees for the categories above, and submitting such data may breach these Terms and applicable law.
+
+      ## 5. AI Output Accuracy and Limitations
+
+      **5.1 AI is not infallible.** AI Workforce Pro is built on large language models and related AI technologies. AI-generated output may be inaccurate, incomplete, outdated, biased, or otherwise unsuitable for your purpose. The Service may "hallucinate" — that is, generate plausible-sounding output that is factually incorrect.
+
+      **5.2 Your responsibility.** You are solely responsible for evaluating, verifying, and editing AI output before using it. You must apply independent professional judgment to any output before relying on it, sharing it externally, or making any material decision based on it.
+
+      **5.3 No professional advice.** AI output does not constitute legal, financial, tax, medical, or other professional advice. The Service does not establish a professional or fiduciary relationship between you and SMB Team or between you and any AI model provider.
+
+      ## 6. Prohibited High-Impact Uses
+
+      You may not use AI Workforce Pro as the sole basis for:
+
+      - Credit, lending, or other consumer finance decisions
+      - Investment recommendations made to clients without licensed professional review
+      - Employment, hiring, compensation, or termination decisions
+      - Medical diagnosis, treatment, or prescription decisions
+      - Regulatory filings, compliance determinations, or court submissions
+      - Any decision that requires a licensed professional to be accountable for the outcome
+
+      Where AI output is used as one input among many in such decisions, you must clearly disclose its use to all affected parties and retain final human review.
+
+      ## 7. Professional User Responsibilities
+
+      If you are a licensed attorney, accountant, financial advisor, or other licensed professional using the Service in your practice:
+
+      - You remain fully responsible for compliance with your professional licensing requirements, rules of professional conduct, and client confidentiality obligations.
+      - You are responsible for disclosing AI assistance to clients where required by professional standards or applicable law.
+      - You must obtain any necessary client consent before inputting client data into the Service.
+      - You are responsible for retaining required records and supervising AI-assisted work product.
+
+      ## 8. Subscription Terms; Payment; Late Fees
+
+      **8.1 Subscription.** Access to the Service is provided on a subscription basis. Each subscription includes:
+
+      - A **flat monthly base fee** covering up to **five (5) active employee seats** and **ten million (10,000,000) usage credits per month**.
+      - **Additional employees** beyond the included five may be added at any time for an incremental per-seat add-on fee. Added seats remain billable for the remainder of the then-current contract term and cannot be removed mid-term.
+      - **Additional credits** beyond the included monthly ten million are billed in arrears at the end of each billing period based on actual usage. A "**credit**" is the platform's metered usage unit, generally corresponding to AI model tokens consumed.
+
+      Current pricing — including the base monthly fee, per-seat add-on rate, and overage credit rate — is set forth in your subscription order or on our pricing page.
+
+      **8.2 Billing.** Base subscription fees are billed in advance on the first day of each billing period and are non-refundable except as expressly stated. Add-on employee fees are billed in advance starting in the billing period in which the seat is added. Overage credit charges are billed in arrears at the end of each billing period.
+
+      **8.3 Late Fees.** Past-due amounts accrue a late fee of 5% per month, compounded monthly until paid. If your account is more than thirty (30) days past due, we may suspend or restrict access without further notice.
+
+      **8.4 Taxes.** Fees do not include taxes. You are responsible for any sales, use, value-added, or similar taxes arising from your use of the Service, except for taxes on our net income.
+
+      ## 9. Term; Renewal; Termination
+
+      **9.1 Initial Term.** Unless otherwise specified in your subscription order, the initial term is one (1) year from your first day of access (the "**Initial Term**").
+
+      **9.2 Renewal.** The Initial Term automatically renews for successive one-year periods unless either party gives written notice of non-renewal at least thirty (30) days before the renewal date.
+
+      **9.3 Termination for Cause.** Either party may terminate for material breach upon ten (10) days' written notice describing the breach, provided the breaching party fails to cure within the ten-day notice period.
+
+      **9.4 Termination by Us for Convenience.** We may terminate for convenience upon thirty (30) days' written notice, in which case we will refund any prepaid, unused subscription fees on a pro-rata basis.
+
+      **9.5 Effect of Termination.** Upon termination, your access ends. We will retain your data for a reasonable period (typically 30 days) to allow export; after that, we may delete your data. Sections that by their nature should survive termination (including IP, confidentiality, liability, and dispute resolution) will survive.
+
+      ## 10. Data Ownership; User Content
+
+      **10.1 Your data.** You retain ownership of all content you submit to the Service ("**User Content**"), including prompts, files, and conversation history.
+
+      **10.2 License to operate.** You grant SMB Team a limited, non-exclusive, royalty-free license to host, store, process, transmit, and display User Content solely for the purpose of providing the Service to you.
+
+      **10.3 AI model providers.** We use third-party AI model providers to process User Content. Our primary model provider is **Anthropic**, and we operate under Anthropic's Teams plan, which contractually prohibits Anthropic from using customer data to train its models. Additional models are made available through **OpenRouter**, and we restrict our integration to OpenRouter's Zero Data Retention ("**ZDR**") endpoints only — meaning requests are routed only to model endpoints that contractually do not store or train on customer data. Free-tier OpenRouter endpoints (which may use data for training) are not enabled.
+
+      **10.4 No training on your data.** We do not use your User Content to train AI models. Through our agreements with Anthropic (Teams plan) and our ZDR-only restriction on OpenRouter, our model providers also do not train on or retain your User Content beyond what is necessary for short-term service operation and abuse detection.
+
+      ## 11. Intellectual Property
+
+      **11.1 Service IP.** SMB Team owns all right, title, and interest in the Service, including underlying software, algorithms, models, user interface, branding, and improvements. No license is granted to you except as expressly stated in these Terms.
+
+      **11.2 AI output ownership.** As between you and SMB Team, you own AI-generated output that you create using the Service ("**Output**"), subject to (i) the limitations of applicable law regarding AI-generated content, (ii) third-party rights, and (iii) your compliance with these Terms.
+
+      **11.3 Feedback.** If you provide feedback, ideas, or suggestions regarding the Service, you grant SMB Team a perpetual, royalty-free license to use them without obligation.
+
+      ## 12. Third-Party Integrations
+
+      The Service may allow you to connect third-party applications (e.g., Google Workspace, Microsoft 365, Clio) via OAuth authorization flows. These integrations are subject to the terms and privacy policies of those third parties. We are not responsible for the practices of third-party providers and you are responsible for managing the permissions you grant.
+
+      If you grant the Service access to your third-party data, you authorize us to access, store, and process that data solely as needed to provide the integration. You may revoke access at any time through your account settings or directly with the third party.
+
+      ## 13. Confidentiality
+
+      **13.1 Confidential Information.** "**Confidential Information**" means non-public information disclosed by one party to the other that is marked or reasonably understood to be confidential, including business plans, financial information, customer lists, and trade secrets.
+
+      **13.2 Obligations.** Each party agrees to (i) use the other's Confidential Information only to perform under these Terms, and (ii) protect it with the same degree of care it uses for its own Confidential Information (and no less than reasonable care). Confidentiality obligations survive termination indefinitely for trade secrets and for three (3) years for other Confidential Information.
+
+      **13.3 Exclusions.** Confidentiality obligations do not apply to information that is publicly available, independently developed, rightfully received from a third party without restriction, or required to be disclosed by law (provided prompt notice is given to the disclosing party where permitted).
+
+      ## 14. Service Availability; Modifications
+
+      We strive for high availability but do not guarantee uninterrupted access. We may modify, suspend, or discontinue any portion of the Service with or without notice. Material changes will be communicated reasonably in advance where practicable. Beta or pre-release features may be offered with reduced support and warranties.
+
+      ## 15. Disclaimers and Warranties
+
+      THE SERVICE AND ANY AI OUTPUT ARE PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY. SMB TEAM SPECIFICALLY DISCLAIMS WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, ACCURACY, COMPLETENESS, AND UNINTERRUPTED OPERATION.
+
+      WE DO NOT WARRANT THAT THE SERVICE WILL MEET YOUR REQUIREMENTS, BE ERROR-FREE, SECURE, OR THAT DEFECTS WILL BE CORRECTED. WE DO NOT WARRANT THE ACCURACY, COMPLETENESS, OR RELIABILITY OF AI-GENERATED OUTPUT.
+
+      ## 16. Limitation of Liability
+
+      TO THE MAXIMUM EXTENT PERMITTED BY LAW:
+
+      **16.1** SMB TEAM'S TOTAL CUMULATIVE LIABILITY FOR ALL CLAIMS ARISING OUT OF OR RELATED TO THE SERVICE OR THESE TERMS IS LIMITED TO THE GREATER OF (A) THE FEES YOU PAID US IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM, OR (B) ONE HUNDRED DOLLARS ($100).
+
+      **16.2** IN NO EVENT WILL SMB TEAM BE LIABLE FOR INDIRECT, INCIDENTAL, CONSEQUENTIAL, SPECIAL, OR PUNITIVE DAMAGES, INCLUDING LOST PROFITS, LOST GOODWILL, LOST DATA, BUSINESS INTERRUPTION, OR THE COST OF SUBSTITUTE SERVICES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+      **16.3** SMB TEAM WILL NOT BE LIABLE FOR DAMAGES ARISING FROM (I) YOUR USE OR RELIANCE ON AI-GENERATED OUTPUT, (II) ACTIONS OR OMISSIONS OF THIRD-PARTY MODEL PROVIDERS OR INTEGRATIONS, (III) UNAUTHORIZED ACCESS DUE TO YOUR FAILURE TO PROTECT CREDENTIALS, OR (IV) LOSS OF DATA THAT WAS NOT BACKED UP BY YOU.
+
+      **16.4** Estimates of performance or output quality do not constitute guarantees.
+
+      ## 17. Indemnification
+
+      You agree to defend, indemnify, and hold harmless SMB Team and its officers, directors, employees, and agents from and against any claims, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of: (i) your use of the Service, (ii) your User Content, (iii) your violation of these Terms or applicable law, (iv) your failure to obtain client consent or to comply with professional or regulatory obligations, or (v) your infringement of third-party rights.
+
+      ## 18. Force Majeure
+
+      Neither party will be liable for delays or failures in performance resulting from causes beyond its reasonable control, including acts of God, war, terrorism, pandemics, labor disputes, government action, internet or telecommunications failures, or third-party service outages. If a force majeure event prevents performance for more than thirty (30) consecutive days, either party may terminate for cause.
+
+      ## 19. Dispute Resolution; Arbitration; Governing Law
+
+      **19.1 Governing Law.** These Terms are governed by Delaware law without regard to its conflict-of-laws principles.
+
+      **19.2 Informal Resolution.** Before initiating arbitration, the parties agree to attempt good-faith resolution by negotiation for at least thirty (30) days following written notice of the dispute.
+
+      **19.3 Binding Arbitration.** Any dispute that cannot be resolved informally will be resolved by binding arbitration administered by the American Arbitration Association under its Commercial Arbitration Rules. Arbitration will take place in Wilmington, Delaware, or another mutually agreed location, before a single arbitrator. Each party will bear its own attorneys' fees and split arbitrator fees equally, except as otherwise awarded by the arbitrator.
+
+      **19.4 Class Action Waiver.** Both parties waive any right to participate in a class, collective, or representative action against the other.
+
+      **19.5 Jury Waiver.** EACH PARTY WAIVES ITS RIGHT TO A JURY TRIAL.
+
+      **19.6 Injunctive Relief.** Either party may seek injunctive relief in a court of competent jurisdiction to protect intellectual property rights or Confidential Information without first using arbitration.
+
+      **19.7 Statute of Limitations.** No claim arising out of these Terms may be brought more than two (2) years after the cause of action accrues, except for claims of non-payment or IP infringement.
+
+      ## 20. General Provisions
+
+      **20.1 Independent Contractor.** The parties are independent contractors. Nothing in these Terms creates a partnership, joint venture, or agency relationship.
+
+      **20.2 Assignment.** You may not assign these Terms without our written consent. We may assign without consent in connection with a merger, acquisition, or sale of assets.
+
+      **20.3 Notices.** Notices to SMB Team must be sent to **support@smbteam.com** or by mail to **The SMB Team, LLC, 3 Bala Plaza Ste 101E, Bala Cynwyd, PA 19004**. Notices to you may be sent to the email associated with your account.
+
+      **20.4 Entire Agreement.** These Terms (together with the Privacy Policy and any subscription order) constitute the entire agreement between you and SMB Team regarding the Service and supersede all prior agreements on the subject.
+
+      **20.5 Severability.** If any provision is held unenforceable, the remaining provisions will remain in effect.
+
+      **20.6 Waiver.** Failure to enforce any right is not a waiver of that right.
+
+      **20.7 Attorneys' Fees.** The prevailing party in any dispute is entitled to recover reasonable attorneys' fees and costs.
+
+      **20.8 Updates.** We may update these Terms from time to time. Material changes will be communicated with reasonable advance notice (typically by email and in-app notice). Continued use of the Service after changes take effect constitutes acceptance of the updated Terms.
 
   modelSelect: true
   parameters: false
