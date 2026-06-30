@@ -76,21 +76,8 @@ jest.mock('~/components/MCP/MCPServerStatusIcon', () => ({
 }));
 jest.mock('~/components/MCP/McpOAuthDialog', () => ({
   __esModule: true,
-  default: ({
-    open,
-    oauthUrl,
-    onCancel,
-  }: {
-    open: boolean;
-    oauthUrl: string;
-    onCancel: () => void;
-  }) =>
-    open ? (
-      <div data-testid="oauth-dialog">
-        {oauthUrl}
-        <button type="button" data-testid="oauth-cancel" onClick={onCancel} />
-      </div>
-    ) : null,
+  default: ({ open, oauthUrl }: { open: boolean; oauthUrl: string }) =>
+    open ? <div data-testid="oauth-dialog">{oauthUrl}</div> : null,
 }));
 
 jest.mock('@librechat/client', () => {
@@ -208,19 +195,6 @@ describe('McpSection', () => {
     expect(await screen.findByTestId('oauth-dialog')).toHaveTextContent(
       'https://oauth.example/authorize?x=1',
     );
-  });
-
-  test('cancelling the OAuth flow closes the dialog', async () => {
-    mockInitializeServer.mockResolvedValue({
-      success: true,
-      oauthRequired: true,
-      oauthUrl: 'https://oauth.example/authorize?x=1',
-    });
-    render(<McpSection item={item} />);
-    fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
-    await screen.findByTestId('oauth-dialog');
-    fireEvent.click(screen.getByTestId('oauth-cancel'));
-    expect(screen.queryByTestId('oauth-dialog')).not.toBeInTheDocument();
   });
 
   test('shows empty hint when the server exposes no tools', () => {

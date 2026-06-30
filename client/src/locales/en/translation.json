@@ -1326,6 +1326,7 @@
   "com_ui_mcp_invalid_url": "Please enter a valid URL",
   "com_ui_mcp_no_description": "No description available",
   "com_ui_mcp_oauth_cancelled": "OAuth login cancelled for {{0}}",
+  "com_ui_mcp_oauth_description": "Continue to authenticate, or copy the link to open it on another device.",
   "com_ui_mcp_oauth_qr_code_description": "QR code to open the OAuth login on another device",
   "com_ui_mcp_oauth_scan_qr": "Scan to open on your phone",
   "com_ui_mcp_oauth_timeout": "OAuth login timed out for {{0}}",

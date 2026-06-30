@@ -8,6 +8,13 @@ jest.mock('~/hooks', () => ({
   useCopyToClipboard: () => jest.fn(),
 }));
 
+jest.mock('~/components/Messages/Content/CopyButton', () => ({
+  __esModule: true,
+  default: ({ onClick }: { onClick: () => void }) => (
+    <button type="button" data-testid="copy-url" onClick={onClick} />
+  ),
+}));
+
 jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   const Pass = ({ children }: { children?: ReactNode }) =>
@@ -18,16 +25,37 @@ jest.mock('@librechat/client', () => {
     OGDialogContent: Pass,
     OGDialogTitle: Pass,
     OGDialogDescription: Pass,
+    Input: ({
+      value,
+      'data-testid': testId,
+      'aria-label': ariaLabel,
+    }: {
+      value?: string;
+      'data-testid'?: string;
+      'aria-label'?: string;
+    }) =>
+      React.createElement('input', {
+        readOnly: true,
+        value,
+        'data-testid': testId,
+        'aria-label': ariaLabel,
+      }),
     Button: ({
       children,
       onClick,
       'aria-label': ariaLabel,
+      'aria-expanded': ariaExpanded,
     }: {
       children?: ReactNode;
       onClick?: () => void;
       'aria-label'?: string;
+      'aria-expanded'?: boolean;
     }) =>
-      React.createElement('button', { type: 'button', onClick, 'aria-label': ariaLabel }, children),
+      React.createElement(
+        'button',
+        { type: 'button', onClick, 'aria-label': ariaLabel, 'aria-expanded': ariaExpanded },
+        children,
+      ),
   };
 });
 
@@ -36,17 +64,25 @@ const baseProps = {
   onOpenChange: jest.fn(),
   serverName: 'srv',
   oauthUrl: 'https://oauth.example/authorize?x=1',
-  canCancel: false,
-  onCancel: jest.fn(),
 };
 
 describe('McpOAuthDialog', () => {
-  test('renders the continue button, the copyable URL, and a QR code', () => {
+  test('renders the continue button, copyable URL, and a QR toggle (collapsed by default)', () => {
     render(<McpOAuthDialog {...baseProps} />);
     expect(screen.getByText('com_ui_continue_oauth')).toBeInTheDocument();
-    expect(screen.getByTestId('mcp-oauth-url')).toHaveTextContent(baseProps.oauthUrl);
+    expect(screen.getByTestId('mcp-oauth-url')).toHaveValue(baseProps.oauthUrl);
+    expect(screen.getByTestId('copy-url')).toBeInTheDocument();
+    const toggle = screen.getByLabelText('com_ui_show_qr');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('com_ui_hide_qr')).not.toBeInTheDocument();
+  });
+
+  test('toggling flips the QR label and aria-expanded', () => {
+    render(<McpOAuthDialog {...baseProps} />);
+    fireEvent.click(screen.getByLabelText('com_ui_show_qr'));
+    const toggle = screen.getByLabelText('com_ui_hide_qr');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('com_ui_mcp_oauth_scan_qr')).toBeInTheDocument();
-    expect(document.querySelector('svg')).toBeInTheDocument();
   });
 
   test('Continue opens the OAuth URL in a new tab', () => {
@@ -55,13 +91,6 @@ describe('McpOAuthDialog', () => {
     fireEvent.click(screen.getByText('com_ui_continue_oauth'));
     expect(openSpy).toHaveBeenCalledWith(baseProps.oauthUrl, '_blank', 'noopener,noreferrer');
     openSpy.mockRestore();
-  });
-
-  test('shows a Cancel action only when cancellable', () => {
-    const { rerender } = render(<McpOAuthDialog {...baseProps} canCancel={false} />);
-    expect(screen.queryByText('com_ui_cancel')).not.toBeInTheDocument();
-    rerender(<McpOAuthDialog {...baseProps} canCancel={true} />);
-    expect(screen.getByText('com_ui_cancel')).toBeInTheDocument();
   });
 
   test('renders nothing without an OAuth URL', () => {

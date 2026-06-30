@@ -59,14 +59,8 @@ interface Props {
 export default function McpSection({ item }: Props) {
   const localize = useLocalize();
   const { control, getValues, setValue } = useFormContext<AgentForm>();
-  const {
-    getServerStatusIconProps,
-    getConfigDialogProps,
-    initializeServer,
-    getOAuthUrl,
-    isCancellable,
-    cancelOAuthFlow,
-  } = useMCPServerManager();
+  const { getServerStatusIconProps, getConfigDialogProps, initializeServer, getOAuthUrl } =
+    useMCPServerManager();
   const [oauthOpen, setOauthOpen] = useState(false);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [prevConnected, setPrevConnected] = useState(false);
@@ -332,12 +326,6 @@ export default function McpSection({ item }: Props) {
         onOpenChange={setOauthOpen}
         serverName={serverName}
         oauthUrl={oauthUrl ?? getOAuthUrl(serverName) ?? ''}
-        canCancel={isCancellable(serverName)}
-        onCancel={() => {
-          cancelOAuthFlow(serverName);
-          setOauthOpen(false);
-          setOauthUrl(null);
-        }}
       />
     </div>
   );
