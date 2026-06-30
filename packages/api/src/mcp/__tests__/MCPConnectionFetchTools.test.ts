@@ -58,6 +58,19 @@ function createConnectionWithListTools(listTools: jest.Mock): MCPConnection {
   return conn;
 }
 
+function createConnectionWithResourceClient(client: {
+  listResources?: jest.Mock;
+  readResource?: jest.Mock;
+}): MCPConnection {
+  const conn = new MCPConnection({
+    serverName: 'resource-test',
+    serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
+    useSSRFProtection: false,
+  });
+  conn.client = client as unknown as MCPConnection['client'];
+  return conn;
+}
+
 function expectListToolsCall(
   listTools: jest.Mock,
   callNumber: number,
@@ -294,5 +307,53 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(tools).toEqual([]);
     expect(listTools).toHaveBeenCalledTimes(1);
     expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Failed to fetch tools'));
+  });
+});
+
+describe('MCPConnection resources', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('follows resource nextCursor pages', async () => {
+    const listResources = jest.fn(async (params?: { cursor?: string }) => {
+      if (params?.cursor == null) {
+        return { resources: [{ uri: 'file://a.md', name: 'A' }], nextCursor: 'next' };
+      }
+      return { resources: [{ uri: 'file://b.md', name: 'B' }] };
+    });
+    const conn = createConnectionWithResourceClient({ listResources });
+
+    const resources = await conn.fetchResources();
+
+    expect(resources.map((resource) => resource.uri)).toEqual(['file://a.md', 'file://b.md']);
+    expect(listResources).toHaveBeenNthCalledWith(
+      1,
+      undefined,
+      expect.objectContaining({ timeout: undefined }),
+    );
+    expect(listResources).toHaveBeenNthCalledWith(
+      2,
+      { cursor: 'next' },
+      expect.objectContaining({ timeout: undefined }),
+    );
+  });
+
+  it('calls SDK readResource with the URI', async () => {
+    const readResource = jest.fn().mockResolvedValue({
+      contents: [{ uri: 'file://a.md', text: 'hello', mimeType: 'text/markdown' }],
+    });
+    const conn = createConnectionWithResourceClient({ readResource });
+
+    const result = await conn.readResource('file://a.md');
+
+    expect(result.contents[0]).toMatchObject({ uri: 'file://a.md', text: 'hello' });
+    expect(readResource).toHaveBeenCalledWith(
+      { uri: 'file://a.md' },
+      expect.objectContaining({
+        timeout: undefined,
+        resetTimeoutOnProgress: true,
+      }),
+    );
   });
 });

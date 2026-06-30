@@ -10,6 +10,8 @@ import {
 } from 'librechat-data-provider';
 import type {
   EmbeddedResource,
+  ReadResourceResult,
+  Resource,
   ListToolsResult,
   ImageContent,
   AudioContent,
@@ -39,12 +41,8 @@ export type MCPOptions = z.infer<typeof MCPOptionsSchema> & {
   >;
 };
 export type MCPServers = z.infer<typeof MCPServersSchema>;
-export interface MCPResource {
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-}
+export type MCPResource = Resource;
+export type MCPReadResourceResult = ReadResourceResult;
 
 export interface LCFunctionTool {
   type: 'function';
@@ -266,6 +264,7 @@ export interface ToolDiscoveryOptions {
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
+  resources?: MCPResource[] | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
 }

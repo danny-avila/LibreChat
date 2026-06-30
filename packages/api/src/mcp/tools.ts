@@ -1,8 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
-import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
+import type { LCAvailableTools, LCFunctionTool, MCPResource, ParsedServerConfig } from './types';
 import { requiresEphemeralUserConnection } from './utils';
+
+export const MCPResourceListToolName = 'resources/list';
+export const MCPResourceReadToolName = 'resources/read';
 
 export interface MCPToolInput {
   name: string;
@@ -27,6 +30,7 @@ export interface MCPToolCacheService {
     userId: string;
     serverName: string;
     tools: MCPToolInput[] | null;
+    resources?: MCPResource[] | null;
     serverConfig?: ParsedServerConfig;
   }) => Promise<LCAvailableTools>;
   mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
@@ -45,6 +49,72 @@ export interface MCPToolCacheService {
 
 export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheService {
   const { getCachedTools, setCachedTools, getServerConfig } = deps;
+
+  function createToolEntry(
+    name: string,
+    description: string,
+    parameters: JsonSchemaType,
+  ): LCFunctionTool {
+    return {
+      type: 'function',
+      ['function']: {
+        name,
+        description,
+        parameters,
+      },
+    };
+  }
+
+  function getResourceToolDefinitions(serverName: string, resources?: MCPResource[] | null) {
+    if (!resources?.length) {
+      return {};
+    }
+
+    const listName = `${MCPResourceListToolName}${Constants.mcp_delimiter}${serverName}`;
+    const readName = `${MCPResourceReadToolName}${Constants.mcp_delimiter}${serverName}`;
+
+    return {
+      [listName]: createToolEntry(
+        listName,
+        `List available MCP resources from server "${serverName}".`,
+        { type: 'object', properties: {}, required: [] } as JsonSchemaType,
+      ),
+      [readName]: createToolEntry(
+        readName,
+        `Read an MCP resource from server "${serverName}" by URI.`,
+        {
+          type: 'object',
+          properties: {
+            uri: {
+              type: 'string',
+              description: 'The URI of the MCP resource to read.',
+            },
+          },
+          required: ['uri'],
+        } as JsonSchemaType,
+      ),
+    } satisfies LCAvailableTools;
+  }
+
+  function buildServerTools(
+    serverName: string,
+    tools: MCPToolInput[] | null,
+    resources?: MCPResource[] | null,
+  ): LCAvailableTools {
+    const serverTools: LCAvailableTools = {};
+    const mcpDelimiter = Constants.mcp_delimiter;
+
+    for (const tool of tools ?? []) {
+      const name = `${tool.name}${mcpDelimiter}${serverName}`;
+      serverTools[name] = createToolEntry(
+        name,
+        tool.description ?? '',
+        tool.inputSchema ?? ({ type: 'object', properties: {} } as JsonSchemaType),
+      );
+    }
+
+    return { ...serverTools, ...getResourceToolDefinitions(serverName, resources) };
+  }
 
   /**
    * Request-scoped servers resolve runtime user/request placeholders per
@@ -76,42 +146,28 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     userId: string;
     serverName: string;
     tools: MCPToolInput[] | null;
+    resources?: MCPResource[] | null;
     serverConfig?: ParsedServerConfig;
   }): Promise<LCAvailableTools> {
-    const { userId, serverName, tools, serverConfig } = params;
+    const { userId, serverName, tools, resources, serverConfig } = params;
     try {
-      const serverTools: LCAvailableTools = {};
-      const mcpDelimiter = Constants.mcp_delimiter;
+      const serverTools = buildServerTools(serverName, tools, resources);
+      const count = Object.keys(serverTools).length;
 
-      if (tools == null || tools.length === 0) {
+      if (count === 0) {
         logger.debug(`[MCP Cache] No tools to update for server ${serverName} (user: ${userId})`);
         return serverTools;
       }
 
-      for (const tool of tools) {
-        const name = `${tool.name}${mcpDelimiter}${serverName}`;
-        const entry: LCFunctionTool = {
-          type: 'function',
-          ['function']: {
-            name,
-            description: tool.description ?? '',
-            parameters: tool.inputSchema ?? ({ type: 'object', properties: {} } as JsonSchemaType),
-          },
-        };
-        serverTools[name] = entry;
-      }
-
       if (await isRequestScoped(userId, serverName, serverConfig)) {
         logger.debug(
-          `[MCP Cache] Built ${tools.length} tools for request-scoped server ${serverName} (user: ${userId}) without caching`,
+          `[MCP Cache] Built ${count} tools for request-scoped server ${serverName} (user: ${userId}) without caching`,
         );
         return serverTools;
       }
 
       await setCachedTools(serverTools, { userId, serverName });
-      logger.debug(
-        `[MCP Cache] Updated ${tools.length} tools for server ${serverName} (user: ${userId})`,
-      );
+      logger.debug(`[MCP Cache] Updated ${count} tools for server ${serverName} (user: ${userId})`);
       return serverTools;
     } catch (error) {
       logger.error(
@@ -181,4 +237,44 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   }
 
   return { updateMCPServerTools, mergeAppTools, cacheMCPServerTools, getMCPServerTools };
+}
+
+export function createMCPResourceTools(
+  serverName: string,
+  resources?: MCPResource[] | null,
+): LCAvailableTools {
+  if (!resources?.length) {
+    return {};
+  }
+
+  const listName = `${MCPResourceListToolName}${Constants.mcp_delimiter}${serverName}`;
+  const readName = `${MCPResourceReadToolName}${Constants.mcp_delimiter}${serverName}`;
+
+  return {
+    [listName]: {
+      type: 'function',
+      ['function']: {
+        name: listName,
+        description: `List available MCP resources from server "${serverName}".`,
+        parameters: { type: 'object', properties: {}, required: [] } as JsonSchemaType,
+      },
+    },
+    [readName]: {
+      type: 'function',
+      ['function']: {
+        name: readName,
+        description: `Read an MCP resource from server "${serverName}" by URI.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            uri: {
+              type: 'string',
+              description: 'The URI of the MCP resource to read.',
+            },
+          },
+          required: ['uri'],
+        } as JsonSchemaType,
+      },
+    },
+  };
 }

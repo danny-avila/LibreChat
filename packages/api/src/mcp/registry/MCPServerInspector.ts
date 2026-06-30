@@ -13,6 +13,7 @@ import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
+import { createMCPResourceTools } from '~/mcp/tools';
 import { isEnabled } from '~/utils';
 
 /**
@@ -177,7 +178,10 @@ export class MCPServerInspector {
     serverName: string,
     connection: MCPConnection,
   ): Promise<t.LCAvailableTools> {
-    const tools = await connection.fetchTools();
+    const [tools, resources] = await Promise.all([
+      connection.fetchTools(),
+      connection.fetchResources(),
+    ]);
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
@@ -192,6 +196,6 @@ export class MCPServerInspector {
       };
     });
 
-    return toolFunctions;
+    return { ...toolFunctions, ...createMCPResourceTools(serverName, resources) };
   }
 }
