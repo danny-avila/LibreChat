@@ -177,3 +177,6 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 *.tgz
+
+# Scratch handoff docs (not for commit)
+*_HANDOFF.md

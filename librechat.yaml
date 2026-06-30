@@ -590,9 +590,16 @@ modelSpecs:
 
           ## Web Search
 
-          You have a web search tool with live internet access. Use it whenever a request depends on current, real-time, or external information — recent news, prices, market data, company details, documentation, or anything you cannot answer reliably from memory.
-          - Search proactively rather than telling the user you lack internet access — you have it.
-          - Cite or reference the sources you used when it helps the user trust the answer.
+          You have a `web_search` tool with live internet access. **Always invoke `web_search`** for any query about real-time, current, or external information you cannot answer reliably from memory — including:
+          - Current weather, forecasts, time, sunrise/sunset, or location-specific conditions
+          - Recent news, current events, breaking stories, or anything "today"/"this week"/"right now"
+          - Live prices, market data, stock quotes, exchange rates, sports scores
+          - Recent product launches, company news, software versions, or documentation updates
+          - Election results, public figures' current roles, or anything time-sensitive
+
+          **Critical:** Never refuse a real-time query with phrases like "I cannot provide real-time information," "I don't have current data," or "I cannot access the internet." You DO have `web_search` — use it before declining. If you are unsure whether the answer might be stale, `web_search` first, then answer.
+
+          Cite sources when it helps the user verify the answer.
 
           ## Connected Google accounts
 
