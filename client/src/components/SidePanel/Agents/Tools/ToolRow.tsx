@@ -1,7 +1,8 @@
 import { memo, useState } from 'react';
-import { Info, X } from 'lucide-react';
-import type { AgentItem } from './items/types';
+import { Info, Settings, X } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentItem } from './items/types';
+import { hasConfigurableSettings } from './items/configurable';
 import { getIconForItem } from './items/icons';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -53,6 +54,8 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
   const localize = useLocalize();
   const suffix = getSuffix(item);
   const displayName = item.kind === 'builtin' ? localize(item.name as TranslationKeys) : item.name;
+  const configurable = hasConfigurableSettings(item);
+  const DetailIcon = configurable ? Settings : Info;
 
   return (
     <div className="group relative flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-secondary">
@@ -60,7 +63,7 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
         <RowIcon item={item} />
         <span className="flex min-w-0 items-center gap-1 truncate text-sm text-text-primary">
           <span className="truncate font-medium">{displayName}</span>
-          {suffix && <span className="text-text-tertiary">{suffix}</span>}
+          {suffix && <span className="text-text-secondary">{suffix}</span>}
         </span>
       </div>
       {item.status === 'needs_setup' && (
@@ -78,14 +81,16 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
         <button
           type="button"
           onClick={() => onInfo(item)}
-          aria-label={localize('com_ui_tools_info')}
+          aria-label={
+            configurable ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
+          }
           className={cn(
             'flex size-6 items-center justify-center rounded-md text-text-secondary',
             'hover:bg-surface-hover hover:text-text-primary',
             'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
           )}
         >
-          <Info className="size-3.5" aria-hidden="true" />
+          <DetailIcon className="size-3.5" aria-hidden="true" />
         </button>
         <button
           type="button"

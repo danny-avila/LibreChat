@@ -2663,7 +2663,7 @@ html {
 }
 
 .tooltip {
-  z-index: 150;
+  z-index: 900;
   cursor: pointer;
   border-radius: 0.275rem;
   background-color: var(--surface-primary);

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { Constants, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Input,
   OGDialog,
@@ -8,19 +9,19 @@ import {
   OGDialogContent,
   OGDialogDescription,
 } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm } from '~/common';
-import { useLocalize, useHasAccess } from '~/hooks';
+import { useBuiltinAuthMap, useUninstallToolCredentials } from './hooks';
+import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
+import { deriveSelectedItems, itemKey } from './items/selectors';
+import { computeToggleAction } from './items/mutations';
 import { useGetFavoritesQuery } from '~/data-provider';
-import { useAgentPanelContext } from '~/Providers';
 import MarketplaceSidebar from './MarketplaceSidebar';
 import MarketplaceCatalog from './MarketplaceCatalog';
+import { useLocalize, useHasAccess } from '~/hooks';
+import { useAgentPanelContext } from '~/Providers';
 import ItemDialog from './ItemDialog/ItemDialog';
-import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
-import { computeToggleAction } from './items/mutations';
-import { deriveSelectedItems, itemKey } from './items/selectors';
 import { applyFilter } from './items/filtering';
 import { buildCatalog } from './items/catalog';
 
@@ -49,6 +50,8 @@ export default function ToolsMarketplaceDialog({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
   });
+  const builtinAuthMap = useBuiltinAuthMap();
+  const uninstallToolCredentials = useUninstallToolCredentials();
 
   const { data: favorites } = useGetFavoritesQuery();
 
@@ -109,8 +112,9 @@ export default function ToolsMarketplaceDialog({
         skills: [],
         actions: agentActions,
         permissions: { mcp: hasMcpAccess, skills: false },
+        builtinAuthMap,
       }),
-    [agentsConfig, regularTools, mcpServersMap, agentActions, hasMcpAccess],
+    [agentsConfig, regularTools, mcpServersMap, agentActions, hasMcpAccess, builtinAuthMap],
   );
 
   const selectedItems = useMemo(
@@ -180,22 +184,49 @@ export default function ToolsMarketplaceDialog({
             current.filter((t) => t !== patch.id),
             { shouldDirty: true },
           );
+          uninstallToolCredentials(patch.id);
+          break;
+        }
+        case 'mcp-add': {
+          if (item.kind !== 'mcp') break;
+          const toolIds = (item.server.tools ?? []).map((t) => t.tool_id);
+          const current = (getValues('tools') ?? []) as string[];
+          setValue('tools', Array.from(new Set([...current, ...toolIds])), { shouldDirty: true });
+          break;
+        }
+        case 'mcp-remove': {
+          if (item.kind !== 'mcp') break;
+          const toolIds = new Set((item.server.tools ?? []).map((t) => t.tool_id));
+          const serverToken = `${Constants.mcp_server}${Constants.mcp_delimiter}${item.id}`;
+          const current = (getValues('tools') ?? []) as string[];
+          setValue(
+            'tools',
+            current.filter((t) => t !== serverToken && !toolIds.has(t)),
+            { shouldDirty: true },
+          );
           break;
         }
         default:
           break;
       }
     },
-    [getValues, setValue, selectedIds],
+    [getValues, setValue, selectedIds, uninstallToolCredentials],
   );
 
   const handleCardClick = useCallback(
     (item: AgentItem) => {
-      if (item.kind === 'mcp' || item.kind === 'action') {
+      /** Actions have no simple enable toggle — clicking always opens the editor. */
+      if (item.kind === 'action') {
         setDetailItem(item);
         return;
       }
       if (item.kind === 'builtin' && item.id === 'context') {
+        setDetailItem(item);
+        return;
+      }
+      /** An MCP server with no exposed tools yet can't be enabled in place — open
+       * its dialog so it can be connected/configured first. */
+      if (item.kind === 'mcp' && item.toolCount === 0) {
         setDetailItem(item);
         return;
       }

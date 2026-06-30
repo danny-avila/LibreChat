@@ -11,7 +11,11 @@ function DropzoneContent({ label, hint }: { label: string; hint?: string }) {
       </span>
       <span className="flex flex-col gap-0.5">
         <span className="text-sm font-medium text-text-primary">{label}</span>
-        {hint ? <span className="text-xs font-normal text-text-tertiary">{hint}</span> : null}
+        {hint ? (
+          <span className="text-xs font-normal text-text-secondary transition-colors group-hover:text-text-primary">
+            {hint}
+          </span>
+        ) : null}
       </span>
     </span>
   );

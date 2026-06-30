@@ -1,23 +1,25 @@
 import { Input } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
-import type { AgentForm, IconComponentTypes } from '~/common';
+import type { AgentForm, ExtendedFile, IconComponentTypes } from '~/common';
+import { useLocalize, useAgentCapabilities } from '~/hooks';
+import AgentCategorySelector from './AgentCategorySelector';
 import { validateEmail, getIconKey, cn } from '~/utils';
 import { useAgentPanelContext } from '~/Providers';
-import AgentCategorySelector from './AgentCategorySelector';
-import { useLocalize } from '~/hooks';
-import { Panel } from '~/common';
+import ToolsSection from './Tools/ToolsSection';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
-import ToolsSection from './Tools/ToolsSection';
+import FileContext from './FileContext';
 import AgentAvatar from './AgentAvatar';
+import { Panel } from '~/common';
 
 const fieldClass = 'h-9';
 
 export default function AgentConfig() {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
-  const { setActivePanel, endpointsConfig } = useAgentPanelContext();
+  const { setActivePanel, endpointsConfig, agentsConfig } = useAgentPanelContext();
+  const { contextEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const {
     control,
@@ -27,6 +29,7 @@ export default function AgentConfig() {
   const model = useWatch({ control, name: 'model' });
   const agent = useWatch({ control, name: 'agent' });
   const agent_id = useWatch({ control, name: 'id' });
+  const contextFiles = (agent?.context_files ?? []) as Array<[string, ExtendedFile]>;
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let Icon: IconComponentTypes | null | undefined;
@@ -147,6 +150,13 @@ export default function AgentConfig() {
 
       {/* TOOLS — unified built-ins / tools / actions / mcp / skills */}
       <ToolsSection agentId={agent_id} />
+
+      {/* FILE CONTEXT — standalone section, separate from the tool library */}
+      {contextEnabled && (
+        <div className="mb-3">
+          <FileContext agent_id={agent_id} files={contextFiles} />
+        </div>
+      )}
 
       {/* SUPPORT CONTACT */}
       <div className="mb-3 flex flex-col">

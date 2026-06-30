@@ -24,7 +24,14 @@ export default function ItemDialog({ item, agentId, onClose }: Props) {
         {item && (
           <div className="flex max-h-[85vh] flex-col">
             <ItemDialogHeader item={item} />
-            <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">
+            <div
+              className={cn(
+                'px-6 pb-6 pt-2',
+                isAction
+                  ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+                  : 'flex-1 overflow-y-auto',
+              )}
+            >
               <ItemDialogBody item={item} agentId={agentId} onClose={onClose} />
             </div>
           </div>

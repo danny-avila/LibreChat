@@ -1,13 +1,14 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
-import McpSection from '../sections/McpSection';
 import type { McpItem } from '../../items/types';
+import McpSection from '../sections/McpSection';
 
 const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
 
 jest.mock('react-hook-form', () => ({
-  useFormContext: () => ({ setValue: mockSetValue, getValues: mockGetValues }),
+  useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
+  useWatch: () => mockGetValues(),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -30,6 +31,10 @@ jest.mock('~/hooks', () => ({
     isToolProgrammatic: () => false,
     toggleToolDefer: jest.fn(),
     toggleToolProgrammatic: jest.fn(),
+    areAllToolsDeferred: () => false,
+    areAllToolsProgrammatic: () => false,
+    toggleDeferAll: jest.fn(),
+    toggleProgrammaticAll: jest.fn(),
   }),
 }));
 
@@ -146,6 +151,13 @@ describe('McpSection', () => {
       [],
       expect.objectContaining({ shouldDirty: true }),
     );
+  });
+
+  test('selection state tracks the watched tools field (re-render on toggle)', () => {
+    mockGetValues.mockReturnValue(['mcp:srv:a']);
+    render(<McpSection item={item} />);
+    expect(screen.getByTestId('tool-mcp:srv:a')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('tool-mcp:srv:b')).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('shows empty hint when the server exposes no tools', () => {

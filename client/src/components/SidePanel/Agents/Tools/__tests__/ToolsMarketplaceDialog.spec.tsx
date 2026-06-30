@@ -57,6 +57,11 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
 }));
 
+jest.mock('../hooks', () => ({
+  useBuiltinAuthMap: () => new Map(),
+  useUninstallToolCredentials: () => jest.fn(),
+}));
+
 jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   const passthrough =

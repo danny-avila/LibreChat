@@ -17,9 +17,9 @@ import {
 import type { ActionAuthForm } from '~/common';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
-import ActionsInput from '../ActionsInput';
 import { useDeleteAgentAction } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
+import ActionsInput from '../ActionsInput';
 import { useLocalize } from '~/hooks';
 
 interface ActionEditorProps {
@@ -100,11 +100,11 @@ export default function ActionEditor({
       <OGDialogTrigger asChild>
         <Button
           type="button"
-          variant="subtle"
+          variant="destructive"
           size="icon"
           disabled={isEphemeralAgent(agentId) || !action.action_id}
           aria-label={localize('com_ui_delete_action')}
-          className="flex-shrink-0 text-red-500"
+          title={localize('com_ui_delete_action')}
         >
           <TrashIcon className="h-4 w-4" />
         </Button>
@@ -141,26 +141,15 @@ export default function ActionEditor({
 
   return (
     <FormProvider {...methods}>
-      <form className="h-full grow overflow-hidden">
-        <div className="h-full overflow-auto text-sm">
-          <div className="flex min-h-full flex-col pb-3">
-            <div>
-              <p className="mt-1 text-xs text-text-secondary">
-                {localize('com_assistants_actions_info')}
-              </p>
-              <ActionsAuth />
-            </div>
-            <div className="flex flex-1 flex-col">
-              <ActionsInput
-                action={action}
-                agent_id={agentId}
-                setAction={setAction}
-                onCreated={onCreated}
-                footerStart={deleteButton}
-              />
-            </div>
-          </div>
-        </div>
+      <form className="flex min-h-0 flex-1 flex-col text-sm">
+        <ActionsAuth />
+        <ActionsInput
+          action={action}
+          agent_id={agentId}
+          setAction={setAction}
+          onCreated={onCreated}
+          footerStart={deleteButton}
+        />
       </form>
     </FormProvider>
   );

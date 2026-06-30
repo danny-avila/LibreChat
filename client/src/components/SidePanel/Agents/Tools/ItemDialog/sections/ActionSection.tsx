@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ActionItem } from '../../items/types';
-import ActionEditor from '../../ActionEditor';
 import { useAgentPanelContext } from '~/Providers';
+import ActionEditor from '../../ActionEditor';
 
 /** Sentinel id the marketplace assigns to its create-action selection (cross-file contract). */
 const NEW_ACTION_ID = '__new_action__';
@@ -22,7 +22,7 @@ export default function ActionSection({ item, agentId, onClose }: Props) {
   }, [isCreate, item.action, setAction]);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex min-h-0 flex-1 flex-col">
       <ActionEditor
         agentId={agentId}
         onClose={onClose}

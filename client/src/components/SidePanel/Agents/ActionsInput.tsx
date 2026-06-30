@@ -3,23 +3,21 @@ import debounce from 'lodash/debounce';
 import { Maximize2 } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import {
+  validateAndParseOpenAPISpec,
+  openapiToFunction,
+  AuthTypeEnum,
+} from 'librechat-data-provider';
+import {
   Button,
   Spinner,
   Textarea,
-  Skeleton,
   OGDialog,
-  OGDialogClose,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
   OGDialogDescription,
   useToastContext,
 } from '@librechat/client';
-import {
-  validateAndParseOpenAPISpec,
-  openapiToFunction,
-  AuthTypeEnum,
-} from 'librechat-data-provider';
 import type {
   Action,
   FunctionTool,
@@ -28,8 +26,8 @@ import type {
 } from 'librechat-data-provider';
 import type { ActionAuthForm } from '~/common';
 import type { Spec } from './ActionsTable';
+import { ActionsTable, ActionsTableSkeleton, columns } from './ActionsTable';
 import ActionCallback from '~/components/SidePanel/Builder/ActionCallback';
-import { ActionsTable, columns } from './ActionsTable';
 import { useUpdateAgentAction } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
@@ -43,20 +41,6 @@ const debouncedValidation = debounce(
 );
 
 /** Placeholder rows shaped like the "Available actions" table (Name / Method / Path). */
-function ActionsTableSkeleton() {
-  return (
-    <div className="flex flex-col gap-2 pt-1" aria-busy="true" aria-live="polite">
-      {Array.from({ length: 3 }, (_, i) => (
-        <div key={i} className="flex items-center gap-3 border-b border-border-light pb-2.5 pt-1">
-          <Skeleton className="h-3.5 w-1/3" />
-          <Skeleton className="h-3.5 w-12" />
-          <Skeleton className="h-3.5 flex-1" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function ActionsInput({
   action,
   agent_id,
@@ -97,7 +81,7 @@ export default function ActionsInput({
     }
     setInputValue(rawSpec);
     setIsValidating(true);
-    debouncedValidation(rawSpec, handleResult);
+    handleResult(validateAndParseOpenAPISpec(rawSpec));
   }, [action?.metadata.raw_spec]);
 
   useEffect(() => {
@@ -251,7 +235,7 @@ export default function ActionsInput({
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-col">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <label
             htmlFor="schemaInput"
@@ -269,40 +253,36 @@ export default function ActionsInput({
             <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
           </button>
         </div>
-        <div className="mb-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-medium ring-0 hover:border-border-heavy">
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            <Textarea
-              id="schemaInput"
-              value={inputValue}
-              onChange={handleInputChange}
-              spellCheck="false"
-              placeholder={localize('com_ui_enter_openapi_schema')}
-              className="min-h-[12rem] flex-1 resize-y rounded-none border-0 bg-transparent p-2 font-mono text-xs focus-visible:ring-0"
-            />
+        <Textarea
+          id="schemaInput"
+          value={inputValue}
+          onChange={handleInputChange}
+          spellCheck="false"
+          placeholder={localize('com_ui_enter_openapi_schema')}
+          className="block min-h-[12rem] w-full resize-y rounded-lg border border-border-light bg-transparent p-3 font-mono text-xs leading-relaxed transition-colors focus-visible:border-border-heavy focus-visible:ring-0"
+        />
+        {validationError && (
+          <div className="mt-1.5 text-xs text-red-500">
+            {validationError.split('\n').map((line: string, i: number) => (
+              <div key={i}>{line}</div>
+            ))}
           </div>
-          {validationError && (
-            <div className="border-t border-border-light p-2 text-red-500">
-              {validationError.split('\n').map((line: string, i: number) => (
-                <div key={i}>{line}</div>
-              ))}
-            </div>
-          )}
-        </div>
+        )}
       </div>
       {(data || showSkeleton) && (
-        <div className="my-2">
-          <div className="flex items-center">
-            <label className="block text-sm font-medium text-text-primary">
-              {localize('com_assistants_available_actions')}
-            </label>
+        <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <label className="mb-1 block shrink-0 text-sm font-medium text-text-primary">
+            {localize('com_assistants_available_actions')}
+          </label>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {data ? <ActionsTable columns={columns} data={data} /> : <ActionsTableSkeleton />}
           </div>
-          {data ? <ActionsTable columns={columns} data={data} /> : <ActionsTableSkeleton />}
         </div>
       )}
-      <div className="relative my-1">
+      <div className="mt-4 shrink-0">
         <ActionCallback action_id={action?.action_id} />
       </div>
-      <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 pt-4">
         <div className="flex items-center">{footerStart}</div>
         <Button
           type="button"
@@ -316,38 +296,32 @@ export default function ActionsInput({
       </div>
 
       <OGDialog open={isSchemaDialogOpen} onOpenChange={setIsSchemaDialogOpen}>
-        <OGDialogContent
-          className="flex h-[85vh] max-h-[85vh] w-11/12 max-w-5xl flex-col gap-4 p-6"
-          showCloseButton={false}
-        >
-          <OGDialogHeader className="mb-2 pr-14">
-            <OGDialogTitle className="text-left text-2xl font-semibold">
+        <OGDialogContent className="flex h-[85vh] max-h-[85vh] w-11/12 max-w-5xl flex-col gap-3 p-5">
+          <OGDialogHeader className="space-y-0 pr-10">
+            <OGDialogTitle className="text-left text-sm font-medium text-text-primary">
               {localize('com_ui_schema')}
             </OGDialogTitle>
             <OGDialogDescription className="sr-only">
               {localize('com_ui_enter_openapi_schema')}
             </OGDialogDescription>
           </OGDialogHeader>
-          <Textarea
-            value={inputValue}
-            onChange={handleInputChange}
-            spellCheck="false"
-            placeholder={localize('com_ui_enter_openapi_schema')}
-            aria-label={localize('com_ui_schema')}
-            className="min-h-0 flex-1 resize-none bg-transparent font-mono text-sm leading-relaxed"
-          />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-medium bg-surface-secondary focus-within:border-border-heavy">
+            <Textarea
+              value={inputValue}
+              onChange={handleInputChange}
+              spellCheck="false"
+              placeholder={localize('com_ui_enter_openapi_schema')}
+              aria-label={localize('com_ui_schema')}
+              className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-[13px] leading-relaxed focus-visible:ring-0"
+            />
+          </div>
           {validationError && (
-            <div className="max-h-24 overflow-y-auto text-sm text-red-500">
+            <div className="max-h-24 shrink-0 overflow-y-auto text-xs text-red-500">
               {validationError.split('\n').map((line: string, i: number) => (
                 <div key={i}>{line}</div>
               ))}
             </div>
           )}
-          <div className="flex items-center justify-end">
-            <OGDialogClose asChild>
-              <Button>{localize('com_ui_done')}</Button>
-            </OGDialogClose>
-          </div>
         </OGDialogContent>
       </OGDialog>
     </>

@@ -1,6 +1,8 @@
 import { useState, useId } from 'react';
-import { PlusCircle, Maximize2 } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
+import { PlusCircle, Maximize2 } from 'lucide-react';
+import { specialVariables } from 'librechat-data-provider';
+import { Controller, useFormContext } from 'react-hook-form';
 import {
   Button,
   DropdownPopup,
@@ -10,12 +12,10 @@ import {
   OGDialogHeader,
   OGDialogTitle,
 } from '@librechat/client';
-import { specialVariables } from 'librechat-data-provider';
-import { Controller, useFormContext } from 'react-hook-form';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
-import { cn } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 const textareaClass =
   'lc-field flex w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:border-border-medium focus-visible:ring-2 focus-visible:ring-ring-primary disabled:cursor-not-allowed disabled:opacity-50';
@@ -84,7 +84,7 @@ export default function Instructions() {
             }
             items={variableItems}
             menuId={menuId}
-            className="z-30"
+            className="pointer-events-auto z-30"
           />
           <button
             type="button"
@@ -172,7 +172,7 @@ export default function Instructions() {
               }
               items={variableItems}
               menuId={dialogMenuId}
-              className="z-[200]"
+              className="pointer-events-auto z-[200]"
             />
             <OGDialogClose asChild>
               <Button>{localize('com_ui_done')}</Button>

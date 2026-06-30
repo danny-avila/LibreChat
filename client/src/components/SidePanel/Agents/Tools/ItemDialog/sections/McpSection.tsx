@@ -1,19 +1,20 @@
-import { useFormContext } from 'react-hook-form';
-import { Checkbox } from '@librechat/client';
+import { Clock, Code2 } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
-import type { AgentForm } from '~/common';
+import { useFormContext, useWatch } from 'react-hook-form';
+import { Checkbox, Skeleton, TooltipAnchor } from '@librechat/client';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { McpItem } from '../../items/types';
-import MCPToolItem from '../../../MCPToolItem';
-import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import { useAgentPanelContext } from '~/Providers';
+import type { AgentForm } from '~/common';
 import {
   useAgentCapabilities,
   useGetAgentsConfig,
   useMCPServerManager,
   useMCPToolOptions,
 } from '~/hooks';
+import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
+import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
+import { useAgentPanelContext } from '~/Providers';
+import MCPToolItem from '../../../MCPToolItem';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -54,15 +55,23 @@ interface Props {
 
 export default function McpSection({ item }: Props) {
   const localize = useLocalize();
-  const { getValues, setValue } = useFormContext<AgentForm>();
+  const { control, getValues, setValue } = useFormContext<AgentForm>();
   const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
-  const { mcpServersMap } = useAgentPanelContext();
+  const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
   const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(
     agentsConfig?.capabilities,
   );
-  const { isToolDeferred, isToolProgrammatic, toggleToolDefer, toggleToolProgrammatic } =
-    useMCPToolOptions();
+  const {
+    isToolDeferred,
+    isToolProgrammatic,
+    toggleToolDefer,
+    toggleToolProgrammatic,
+    areAllToolsDeferred,
+    areAllToolsProgrammatic,
+    toggleDeferAll,
+    toggleProgrammaticAll,
+  } = useMCPToolOptions();
 
   const serverName = item.server.serverName;
   const serverToken = `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`;
@@ -72,10 +81,12 @@ export default function McpSection({ item }: Props) {
   const tools = liveServer.tools ?? [];
   const hasTools = tools.length > 0;
 
-  const getSelectedTools = (): string[] => {
-    const formTools = (getValues('tools') ?? []) as string[];
-    return tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
-  };
+  /** Subscribe to the tools field so selection toggles re-render this section.
+   * `getValues` is a non-reactive read and left the checkboxes visually stale. */
+  const formTools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
+
+  const getSelectedTools = (): string[] =>
+    tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
 
   /** Replace this server's selection. Strips every tool_id AND the server-level
    * placeholder token, so passing `[]` fully detaches the server. */
@@ -101,13 +112,18 @@ export default function McpSection({ item }: Props) {
 
   const selectedTools = getSelectedTools();
   const allSelected = hasTools && selectedTools.length === tools.length;
+  const allDeferred = areAllToolsDeferred(tools);
+  const allProgrammatic = areAllToolsProgrammatic(tools);
   const statusIconProps = getServerStatusIconProps(serverName);
   const configDialogProps = getConfigDialogProps();
-  const statusDisplay = getStatusDisplay(
-    statusIconProps?.serverStatus?.connectionState,
-    statusIconProps?.isInitializing ?? false,
-    liveServer.isConfigured,
-  );
+  const connectionState = statusIconProps?.serverStatus?.connectionState;
+  const isInitializing = statusIconProps?.isInitializing ?? false;
+  const statusDisplay = getStatusDisplay(connectionState, isInitializing, liveServer.isConfigured);
+  /** A connected server's tools arrive with the (cold-cache) MCP tools fetch, and
+   * the server is also briefly toolless while initializing — show a skeleton in
+   * both cases instead of a misleading "no tools" message. */
+  const toolsLoading =
+    !hasTools && (mcpToolsLoading || isInitializing || connectionState === 'connecting');
 
   return (
     <div className="flex flex-col gap-5">
@@ -134,26 +150,93 @@ export default function McpSection({ item }: Props) {
             {localize('com_ui_tools_mcp_tools_section')}
           </span>
           {hasTools && (
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
-              <Checkbox
-                checked={allSelected}
-                onCheckedChange={(checked) => toggleAll(checked === true)}
-                aria-label={
-                  allSelected
+            <div className="flex items-center gap-0.5">
+              {deferredToolsEnabled && (
+                <TooltipAnchor
+                  description={
+                    allDeferred
+                      ? localize('com_ui_mcp_undefer_all')
+                      : localize('com_ui_mcp_defer_all')
+                  }
+                  side="top"
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => toggleDeferAll(tools)}
+                      aria-pressed={allDeferred}
+                      aria-label={
+                        allDeferred
+                          ? localize('com_ui_mcp_undefer_all')
+                          : localize('com_ui_mcp_defer_all')
+                      }
+                      className={cn(
+                        'flex size-7 items-center justify-center rounded-md transition-colors',
+                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                        allDeferred
+                          ? 'text-amber-600 dark:text-amber-500'
+                          : 'text-text-secondary hover:text-text-primary',
+                      )}
+                    >
+                      <Clock className="size-4" aria-hidden="true" />
+                    </button>
+                  }
+                />
+              )}
+              {programmaticToolsEnabled && (
+                <TooltipAnchor
+                  description={
+                    allProgrammatic
+                      ? localize('com_ui_mcp_unprogrammatic_all')
+                      : localize('com_ui_mcp_programmatic_all')
+                  }
+                  side="top"
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => toggleProgrammaticAll(tools)}
+                      aria-pressed={allProgrammatic}
+                      aria-label={
+                        allProgrammatic
+                          ? localize('com_ui_mcp_unprogrammatic_all')
+                          : localize('com_ui_mcp_programmatic_all')
+                      }
+                      className={cn(
+                        'flex size-7 items-center justify-center rounded-md transition-colors',
+                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                        allProgrammatic
+                          ? 'text-violet-600 dark:text-violet-500'
+                          : 'text-text-secondary hover:text-text-primary',
+                      )}
+                    >
+                      <Code2 className="size-4" aria-hidden="true" />
+                    </button>
+                  }
+                />
+              )}
+              {(deferredToolsEnabled || programmaticToolsEnabled) && (
+                <span className="mx-1 h-4 w-px bg-border-light" aria-hidden="true" />
+              )}
+              <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs text-text-secondary">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={(checked) => toggleAll(checked === true)}
+                  aria-label={
+                    allSelected
+                      ? localize('com_ui_tools_mcp_deselect_all')
+                      : localize('com_ui_tools_mcp_select_all')
+                  }
+                  className="size-4 rounded border border-border-medium"
+                />
+                <span>
+                  {allSelected
                     ? localize('com_ui_tools_mcp_deselect_all')
-                    : localize('com_ui_tools_mcp_select_all')
-                }
-                className="size-4 rounded border border-border-medium"
-              />
-              <span>
-                {allSelected
-                  ? localize('com_ui_tools_mcp_deselect_all')
-                  : localize('com_ui_tools_mcp_select_all')}
-              </span>
-            </label>
+                    : localize('com_ui_tools_mcp_select_all')}
+                </span>
+              </label>
+            </div>
           )}
         </div>
-        {hasTools ? (
+        {hasTools && (
           <div className="flex flex-col gap-1">
             {tools.map((tool) => (
               <MCPToolItem
@@ -170,7 +253,18 @@ export default function McpSection({ item }: Props) {
               />
             ))}
           </div>
-        ) : (
+        )}
+        {!hasTools && toolsLoading && (
+          <div className="flex flex-col gap-1" aria-busy="true" aria-live="polite">
+            {['w-3/5', 'w-1/2', 'w-2/5'].map((width) => (
+              <div key={width} className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                <Skeleton className="size-4 shrink-0 rounded" />
+                <Skeleton className={cn('h-4 rounded', width)} />
+              </div>
+            ))}
+          </div>
+        )}
+        {!hasTools && !toolsLoading && (
           <p className="rounded-xl border border-dashed border-border-light p-3 text-center text-xs text-text-tertiary">
             {localize('com_ui_tools_mcp_no_tools')}
           </p>

@@ -2,21 +2,23 @@ import { useState, useMemo, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Label, OGDialog, OGDialogTemplate, useToastContext } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { AgentForm } from '~/common';
+import { PermissionTypes, Permissions, AgentCapabilities } from 'librechat-data-provider';
+import type { TPlugin } from 'librechat-data-provider';
 import type { AgentItem } from './items/types';
-import ToolRow from './ToolRow';
-import ItemDialog from './ItemDialog/ItemDialog';
-import SkillsDialog from './SkillsDialog';
+import type { AgentForm } from '~/common';
+import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
+import { useBuiltinAuthMap, useUninstallToolCredentials } from './hooks';
+import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
-import { buildCatalog } from './items/catalog';
 import { deriveSelectedItems } from './items/selectors';
 import { computeToggleAction } from './items/mutations';
-import { useAgentPanelContext } from '~/Providers';
-import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
-import { useRemoveMCPTool } from '~/hooks/MCP';
 import { useLocalize, useHasAccess } from '~/hooks';
+import { useAgentPanelContext } from '~/Providers';
+import ItemDialog from './ItemDialog/ItemDialog';
+import { buildCatalog } from './items/catalog';
 import { isEphemeralAgent } from '~/common';
+import SkillsDialog from './SkillsDialog';
+import ToolRow from './ToolRow';
 
 interface Props {
   agentId: string;
@@ -56,7 +58,14 @@ export default function ToolsSection({ agentId }: Props) {
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
-  const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: hasSkillsAccess });
+  const skillsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.skills) ?? false,
+    [agentsConfig],
+  );
+  const showSkills = hasSkillsAccess && skillsEnabled;
+  const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
+  const builtinAuthMap = useBuiltinAuthMap();
+  const uninstallToolCredentials = useUninstallToolCredentials();
 
   const tools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
   const skills = (useWatch({ control, name: 'skills' }) ?? []) as string[];
@@ -83,7 +92,8 @@ export default function ToolsSection({ agentId }: Props) {
         mcpServersMap: mcpServersMap ?? new Map(),
         skills: skillsData?.skills ?? [],
         actions: agentActions,
-        permissions: { mcp: hasMcpAccess, skills: hasSkillsAccess },
+        permissions: { mcp: hasMcpAccess, skills: showSkills },
+        builtinAuthMap,
       }),
     [
       agentsConfig,
@@ -92,7 +102,8 @@ export default function ToolsSection({ agentId }: Props) {
       skillsData,
       agentActions,
       hasMcpAccess,
-      hasSkillsAccess,
+      showSkills,
+      builtinAuthMap,
     ],
   );
 
@@ -146,6 +157,7 @@ export default function ToolsSection({ agentId }: Props) {
             current.filter((t) => t !== patch.id),
             { shouldDirty: true },
           );
+          uninstallToolCredentials(patch.id);
           break;
         }
         case 'skill-remove': {
@@ -167,7 +179,7 @@ export default function ToolsSection({ agentId }: Props) {
           setOpen(true);
       }
     },
-    [getValues, setValue, removeMCPTool],
+    [getValues, setValue, removeMCPTool, uninstallToolCredentials],
   );
 
   const confirmActionRemoval = useCallback(() => {
@@ -186,7 +198,56 @@ export default function ToolsSection({ agentId }: Props) {
     setPendingActionRemoval(null);
   }, [pendingActionRemoval, agentId, deleteAgentAction, showToast, localize]);
 
-  const toolItems = useMemo(() => selected.filter((item) => item.kind !== 'skill'), [selected]);
+  const { mcpServerNames: attachedMcpServers } = useVisibleTools(
+    tools,
+    regularTools ?? undefined,
+    mcpServersMap ?? new Map(),
+  );
+
+  /** MCP servers still referenced by the agent's tools but absent from the available
+   * servers map (removed from config, or a legacy server-only token). The catalog is
+   * built from available servers, so these would otherwise be invisible and
+   * unremovable — surface them as removable "needs setup" rows, mirroring the old
+   * UnconfiguredMCPTool. */
+  const orphanedMcpItems = useMemo<AgentItem[]>(
+    () =>
+      attachedMcpServers
+        .filter((name) => mcpServersMap?.has(name) !== true)
+        .map((name) => ({
+          kind: 'mcp',
+          id: name,
+          name,
+          description: '',
+          iconKey: 'mcp',
+          status: 'needs_setup',
+          toolCount: 0,
+          server: {
+            serverName: name,
+            tools: [],
+            isConfigured: false,
+            isConnected: false,
+            metadata: { name, pluginKey: name, description: '' } as TPlugin,
+          },
+        })),
+    [attachedMcpServers, mcpServersMap],
+  );
+
+  /** MCP rows show how many of the server's tools are enabled for this agent, not
+   * the total the server exposes, so the count reflects what the agent can use. */
+  const toolItems = useMemo(() => {
+    const enabled = new Set(tools);
+    const withCounts = selected
+      .filter((item) => item.kind !== 'skill')
+      .map((item) =>
+        item.kind === 'mcp'
+          ? {
+              ...item,
+              toolCount: (item.server.tools ?? []).filter((t) => enabled.has(t.tool_id)).length,
+            }
+          : item,
+      );
+    return [...withCounts, ...orphanedMcpItems];
+  }, [selected, orphanedMcpItems, tools]);
   const skillItems = useMemo(() => selected.filter((item) => item.kind === 'skill'), [selected]);
 
   return (
@@ -201,7 +262,7 @@ export default function ToolsSection({ agentId }: Props) {
         onInfo={setDialogItem}
         onRemove={handleQuickRemove}
       />
-      {hasSkillsAccess && (
+      {showSkills && (
         <SelectedSection
           title={localize('com_ui_skills')}
           addLabel={localize('com_ui_add_skills')}

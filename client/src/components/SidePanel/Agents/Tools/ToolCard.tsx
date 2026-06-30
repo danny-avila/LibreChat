@@ -1,9 +1,9 @@
 import { memo, useState } from 'react';
 import { BadgeCheck, Check, Settings } from 'lucide-react';
-import type { AgentItem } from './items/types';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentItem } from './items/types';
+import { hasConfigurableSettings } from './items/configurable';
 import { getIconForItem } from './items/icons';
-import { pluginNeedsAuth } from './items/auth';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -32,16 +32,6 @@ const KIND_LABEL_KEYS: Record<AgentItem['kind'], TranslationKeys> = {
   mcp: 'com_ui_tools_kind_mcp',
   action: 'com_ui_tools_kind_actions',
 };
-
-function hasConfigurableSettings(item: AgentItem): boolean {
-  if (item.kind === 'builtin') {
-    return item.id === 'artifacts' || item.id === 'file_search' || item.id === 'context';
-  }
-  if (item.kind === 'tool') {
-    return pluginNeedsAuth(item.plugin);
-  }
-  return false;
-}
 
 interface ItemIconProps {
   item: AgentItem;
@@ -141,9 +131,9 @@ function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) 
           </div>
         </div>
         {description ? (
-          <p className="line-clamp-2 text-xs leading-relaxed text-text-secondary">{description}</p>
+          <p className="line-clamp-3 text-xs leading-snug text-text-secondary">{description}</p>
         ) : (
-          <p className="line-clamp-2 text-xs italic text-text-tertiary">
+          <p className="line-clamp-3 text-xs italic leading-snug text-text-tertiary">
             {isNative ? localize('com_ui_tools_native_short') : kindLabel}
           </p>
         )}
@@ -169,8 +159,8 @@ function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) 
           }}
           aria-label={localize('com_ui_tools_configure')}
           className={cn(
-            'absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-lg text-text-tertiary',
-            'opacity-0 transition-opacity duration-150 hover:bg-surface-tertiary hover:text-text-primary',
+            'absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-lg text-text-secondary',
+            'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
             'group-focus-within:opacity-100 group-hover:opacity-100',
             'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
           )}

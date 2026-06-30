@@ -1,7 +1,7 @@
 import { AgentCapabilities } from 'librechat-data-provider';
 import type { TPlugin, TSkillSummary, Action } from 'librechat-data-provider';
-import type { MCPServerInfo } from '~/common';
 import type { AgentItem, SkillItem, BuiltinId } from './types';
+import type { MCPServerInfo } from '~/common';
 import { pluginNeedsAuth } from './auth';
 
 /** Maps skill summaries to catalog items, flagging the current user's own skills. */
@@ -66,12 +66,6 @@ const BUILTIN_DEFINITIONS: BuiltinDef[] = [
     descriptionKey: 'com_ui_artifacts_subtext',
   },
   {
-    id: AgentCapabilities.context,
-    iconKey: 'context',
-    nameKey: 'com_agents_file_context_label',
-    descriptionKey: 'com_agents_file_context_description',
-  },
-  {
     id: AgentCapabilities.file_search,
     iconKey: 'file_search',
     nameKey: 'com_assistants_file_search',
@@ -118,6 +112,7 @@ export function buildCatalog(inputs: BuildCatalogInputs): AgentItem[] {
         iconKey: 'mcp',
         server,
         toolCount: server.tools?.length ?? 0,
+        status: server.isConfigured === false ? 'needs_setup' : undefined,
       });
     }
   }

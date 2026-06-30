@@ -19,7 +19,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/Providers', () => ({
   useAgentPanelContext: () => ({
-    agentsConfig: { capabilities: [] },
+    agentsConfig: { capabilities: ['skills'] },
     regularTools: [],
     mcpServersMap: new Map(),
     actions: [],
@@ -33,6 +33,12 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/hooks/MCP', () => ({
   useRemoveMCPTool: () => ({ removeTool: jest.fn() }),
+  useVisibleTools: () => ({ toolIds: [], mcpServerNames: [] }),
+}));
+
+jest.mock('../hooks', () => ({
+  useBuiltinAuthMap: () => new Map(),
+  useUninstallToolCredentials: () => jest.fn(),
 }));
 
 jest.mock('@librechat/client', () => ({

@@ -1,7 +1,7 @@
-import { LayoutGrid, ListFilter, Wrench, Server, Workflow, Star, User, Plus } from 'lucide-react';
 import { useState, useMemo } from 'react';
-import { Button, DropdownPopup } from '@librechat/client';
 import * as Ariakit from '@ariakit/react/menu';
+import { Button, DropdownPopup } from '@librechat/client';
+import { LayoutGrid, ListFilter, Wrench, Server, Workflow, Star, User, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { AgentItemKind, ItemFilter } from './items/types';
 import { useLocalize } from '~/hooks';
@@ -91,6 +91,7 @@ export default function MarketplaceSidebar({
         isOpen={createOpen}
         setIsOpen={setCreateOpen}
         menuId="marketplace-create-new"
+        className="pointer-events-auto"
         trigger={
           <Ariakit.MenuButton
             render={

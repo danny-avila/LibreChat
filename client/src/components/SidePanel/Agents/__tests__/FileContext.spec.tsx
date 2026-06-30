@@ -58,6 +58,7 @@ jest.mock('@ariakit/react', () => ({
 jest.mock('@librechat/client', () => ({
   SharePointIcon: () => <span />,
   DropdownPopup: () => null,
+  TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
   CircleHelpIcon: () => <span />,
   HoverCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   HoverCardPortal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

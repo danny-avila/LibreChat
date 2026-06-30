@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
+import { motion } from 'framer-motion';
 import { useFormContext } from 'react-hook-form';
-import * as RadioGroup from '@radix-ui/react-radio-group';
 import { ChevronRight, KeyRound, ShieldCheck, ShieldOff } from 'lucide-react';
 import {
   AuthTypeEnum,
@@ -9,21 +9,19 @@ import {
 } from 'librechat-data-provider';
 import {
   Input,
+  Radio,
   Button,
   OGDialog,
   SecretInput,
-  OGDialogClose,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
   OGDialogTrigger,
-  OGDialogDescription,
 } from '@librechat/client';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { TranslationKeys } from '~/hooks';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 interface AuthMethod {
   value: AuthTypeEnum;
@@ -59,6 +57,13 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
   const { watch, setValue, trigger } = useFormContext();
   const type = watch('type');
   const current = AUTH_METHODS.find((method) => method.value === type) ?? AUTH_METHODS[0];
+  const authOptions = AUTH_METHODS.filter(
+    (method) => !(method.value === AuthTypeEnum.OAuth && disableOAuth === true),
+  ).map((method) => ({
+    value: method.value,
+    label: localize(method.titleKey),
+    icon: <method.icon className="size-4" aria-hidden={true} />,
+  }));
 
   const handleSave = async () => {
     const result = await trigger(undefined, { shouldFocus: true });
@@ -75,7 +80,7 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
         <OGDialogTrigger asChild>
           <button
             type="button"
-            className="group flex w-full items-center gap-3 rounded-xl border border-border-medium bg-surface-primary px-3 py-2.5 text-left transition-colors hover:border-border-heavy hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className="group flex w-full items-center gap-3 rounded-xl border border-border-light bg-transparent px-3 py-2.5 text-left transition-colors hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
           >
             <current.icon className="size-5 shrink-0 text-text-secondary" aria-hidden={true} />
             <span className="min-w-0 flex-1">
@@ -86,88 +91,79 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
                 {localize(current.descKey)}
               </span>
             </span>
-            <ChevronRight
-              className="size-4 shrink-0 text-text-tertiary transition-transform group-hover:translate-x-0.5"
-              aria-hidden={true}
-            />
+            <ChevronRight className="text-text-tertiar size-4 shrink-0" aria-hidden={true} />
           </button>
         </OGDialogTrigger>
       </div>
-      <OGDialogContent className="w-full max-w-lg overflow-hidden bg-surface-primary p-0 text-text-primary">
-        <OGDialogHeader className="space-y-1 border-b border-border-light px-6 py-4 pr-10">
+      <OGDialogContent className="w-full max-w-lg bg-surface-primary text-text-primary">
+        <OGDialogHeader>
           <OGDialogTitle className="text-lg font-semibold">
             {localize('com_ui_authentication')}
           </OGDialogTitle>
-          <OGDialogDescription>{localize('com_ui_authentication_desc')}</OGDialogDescription>
         </OGDialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
-          <RadioGroup.Root
+        <div>
+          <span id="auth-method-label" className="sr-only">
+            {localize('com_ui_authentication_type')}
+          </span>
+          <Radio
+            options={authOptions}
             value={type}
-            onValueChange={(value) => setValue('type', value)}
-            aria-label={localize('com_ui_authentication_type')}
-            className="flex flex-col gap-2"
-          >
-            {AUTH_METHODS.map((method) => {
-              const selected = type === method.value;
-              const disabled = method.value === AuthTypeEnum.OAuth && disableOAuth === true;
-              return (
-                <RadioGroup.Item
-                  key={method.value}
-                  value={method.value}
-                  disabled={disabled}
-                  className={cn(
-                    'group flex items-center gap-3 rounded-xl border p-3 text-left transition-colors',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                    'disabled:cursor-not-allowed disabled:opacity-50',
-                    selected
-                      ? 'border-border-heavy bg-surface-active'
-                      : 'border-border-light hover:border-border-medium hover:bg-surface-hover',
-                  )}
-                >
-                  <method.icon
-                    className={cn(
-                      'size-5 shrink-0',
-                      selected ? 'text-text-primary' : 'text-text-secondary',
-                    )}
-                    aria-hidden={true}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-text-primary">
-                      {localize(method.titleKey)}
-                    </span>
-                    <span className="block text-xs text-text-secondary">
-                      {localize(method.descKey)}
-                    </span>
-                  </span>
-                  <span
-                    className={cn(
-                      'flex size-4 shrink-0 items-center justify-center rounded-full border',
-                      selected ? 'border-text-primary' : 'border-border-heavy',
-                    )}
-                  >
-                    {selected && <span className="size-2 rounded-full bg-text-primary" />}
-                  </span>
-                </RadioGroup.Item>
-              );
-            })}
-          </RadioGroup.Root>
-
-          {type !== AuthTypeEnum.None && (
-            <div className="mt-5 space-y-4 border-t border-border-light pt-5">
-              {type === AuthTypeEnum.ServiceHttp ? <ApiKey /> : <OAuth />}
-            </div>
-          )}
+            onChange={(value) => setValue('type', value)}
+            fullWidth
+            aria-labelledby="auth-method-label"
+          />
+          <AnimatedAuthFields type={type} />
         </div>
-        <div className="flex justify-end gap-2 border-t border-border-light px-6 py-4">
-          <OGDialogClose asChild>
-            <Button variant="outline">{localize('com_ui_cancel')}</Button>
-          </OGDialogClose>
-          <Button variant="submit" onClick={handleSave}>
-            {localize('com_ui_save')}
+        <div className="flex justify-end">
+          <Button variant="default" onClick={handleSave}>
+            {localize('com_ui_done')}
           </Button>
         </div>
       </OGDialogContent>
     </OGDialog>
+  );
+}
+
+/**
+ * Animates the auth fields' height to their measured content height. Animating to
+ * a measured pixel value (instead of `height: 'auto'`) is what lets the
+ * ApiKey <-> OAuth swap tween between two different heights — `auto` never changes,
+ * so it would jump. The content swaps instantly; only the container height eases.
+ */
+function AnimatedAuthFields({ type }: { type: AuthTypeEnum }) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | 'auto'>(type === AuthTypeEnum.None ? 0 : 'auto');
+
+  useLayoutEffect(() => {
+    const el = innerRef.current;
+    if (!el) {
+      return;
+    }
+    const measure = () => setHeight(type === AuthTypeEnum.None ? 0 : el.scrollHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [type]);
+
+  let fields: ReactNode = null;
+  if (type === AuthTypeEnum.ServiceHttp) {
+    fields = <ApiKey />;
+  } else if (type === AuthTypeEnum.OAuth) {
+    fields = <OAuth />;
+  }
+
+  return (
+    <motion.div
+      initial={false}
+      animate={{ height, opacity: type === AuthTypeEnum.None ? 0 : 1 }}
+      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+      className="overflow-hidden"
+    >
+      <div ref={innerRef} className="space-y-4 pt-4">
+        {fields}
+      </div>
+    </motion.div>
   );
 }
 
@@ -209,28 +205,16 @@ function SegmentedField({
       <label id={id} className="block text-xs font-medium text-text-secondary">
         {label}
       </label>
-      <RadioGroup.Root
+      <Radio
+        options={options.map((option) => ({
+          value: option.value,
+          label: localize(option.labelKey),
+        }))}
         value={value}
-        onValueChange={onValueChange}
+        onChange={onValueChange}
+        fullWidth
         aria-labelledby={id}
-        className="inline-flex w-full rounded-lg border border-border-light p-0.5"
-      >
-        {options.map((option) => (
-          <RadioGroup.Item
-            key={option.value}
-            value={option.value}
-            className={cn(
-              'flex-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-              value === option.value
-                ? 'bg-surface-active text-text-primary shadow-sm'
-                : 'text-text-secondary hover:text-text-primary',
-            )}
-          >
-            {localize(option.labelKey)}
-          </RadioGroup.Item>
-        ))}
-      </RadioGroup.Root>
+      />
     </div>
   );
 }
