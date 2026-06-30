@@ -10,7 +10,8 @@ const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReas
 
 type ThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
-  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue };
+  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue }
+  | { type: 'disabled' };
 
 /**
  * Resolves the final `thinking.display` value for an adaptive-thinking request.
@@ -290,7 +291,11 @@ export const bedrockInputSchema = s.tConversationSchema
     if ((obj as AnthropicInput).additionalModelRequestFields?.thinking != null) {
       const _obj = obj as AnthropicInput;
       const thinking = _obj.additionalModelRequestFields.thinking;
-      obj.thinking = !!thinking;
+      const isDisabled =
+        typeof thinking === 'object' &&
+        thinking !== null &&
+        (thinking as { type?: string }).type === 'disabled';
+      obj.thinking = isDisabled ? false : !!thinking;
       obj.thinkingBudget =
         typeof thinking === 'object' && 'budget_tokens' in thinking
           ? thinking.budget_tokens
@@ -401,9 +406,13 @@ export const bedrockInputParser = s.tConversationSchema
         delete additionalFields.effort;
 
         if (additionalFields.thinking === false) {
-          delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
           delete additionalFields.thinkingDisplay;
+          if (requiresExplicitThinkingDisabled(typedData.model as string)) {
+            additionalFields.thinking = { type: 'disabled' };
+          } else {
+            delete additionalFields.thinking;
+          }
         } else {
           /**
            * Persisted agent `model_parameters` round-trip back through this

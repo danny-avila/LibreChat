@@ -580,6 +580,16 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
+    test('should send explicit disabled thinking for Bedrock Sonnet 5 when thinking is off', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-5',
+        thinking: false,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+    });
+
     test('should respect custom thinking budget', () => {
       const input = {
         model: 'anthropic.claude-sonnet-4',
@@ -843,6 +853,18 @@ describe('bedrockInputParser', () => {
         },
       }) as Record<string, unknown>;
       expect(persisted.thinkingDisplay).toBe('summarized');
+    });
+
+    test('coerces a persisted disabled AMRF.thinking back to thinking=false (Sonnet 5)', () => {
+      /** A persisted Sonnet 5 "thinking off" carries AMRF.thinking =
+       * { type: 'disabled' }. The schema must coerce that to top-level
+       * thinking=false (not the truthy-object default of true), so the parser
+       * re-emits the disabled config instead of flipping back to adaptive. */
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-sonnet-5',
+        additionalModelRequestFields: { thinking: { type: 'disabled' } },
+      }) as Record<string, unknown>;
+      expect(persisted.thinking).toBe(false);
     });
 
     test('ignores unknown display values during round-trip extraction', () => {
