@@ -1215,6 +1215,51 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig).not.toHaveProperty('topK');
       });
 
+      it('should request summarized thinking display for Sonnet 5 (opt back in)', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-sonnet-5', thinking: true },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should send explicit disabled thinking for Sonnet 5 when thinking is off', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-sonnet-5', thinking: false },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+      });
+
+      it('should omit sampling parameters for Sonnet 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-sonnet-5',
+            thinking: true,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
+      it('should NOT send explicit disabled thinking for pre-5 Sonnet (omission is off)', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-sonnet-4-6', thinking: false },
+        });
+
+        expect(result.llmConfig.thinking).toBeUndefined();
+      });
+
       it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
         const pre47Models = ['claude-opus-4-6', 'claude-sonnet-4-6'];
 
