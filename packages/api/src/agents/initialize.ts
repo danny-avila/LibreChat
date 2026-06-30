@@ -103,13 +103,13 @@ function resolveAnthropicToolConflicts({
   const hasCustomWebSearch = hasToolDefinition(toolDefinitions, Tools.web_search);
 
   /**
-   * Keep Anthropic's native web_search when it is the only search available:
-   * interactive runs with no custom handler rely on it (Anthropic resolves it
-   * server-side). Remove it only when a custom handler exists (avoids a duplicate)
-   * or in headless/scheduled runs, where an unhandled native tool_use yields no
-   * web_search_tool_result block and Anthropic returns a 400.
+   * Keep Anthropic's native web_search when no custom handler is registered.
+   * Anthropic resolves it server-side (web_search_tool_result inline via
+   * fine-grained-tool-streaming) for both interactive and scheduled runs.
+   * Only remove it when a custom LibreChat handler exists so the custom
+   * implementation takes precedence.
    */
-  if (!hasCustomWebSearch && !headless) {
+  if (!hasCustomWebSearch) {
     return tools;
   }
 

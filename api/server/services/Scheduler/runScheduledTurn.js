@@ -50,21 +50,19 @@ async function executeTurn({ owner, schedule, conversationId: providedConversati
   const target = resolveRunTarget(schedule, appConfig);
 
   /**
-   * Detect whether web search is configured at the model-spec level so the
-   * ephemeral agent can mirror that intent. Three independent signals:
-   *   - modelSpec.webSearch          — LibreChat's custom web_search flag
-   *   - modelSpec.preset.addParams.web_search   — Anthropic native override
-   *   - modelSpec.preset.defaultParams.web_search — Anthropic native default
-   * Any truthy signal means we propagate web_search: true into the ephemeral
-   * agent, ensuring resolveAnthropicToolConflicts swaps native→custom and the
-   * tool node has a handler for web_search tool calls.
+   * `webSearch: true` on a model spec opts into LibreChat's custom web_search
+   * tool (Serper / Tavily / etc). This is the Gemini path.
+   *
+   * `addParams.web_search: true` enables the provider's NATIVE web search at
+   * the endpoint level (Anthropic web_search_20250305, OpenAI web_search).
+   * Native search is handled server-side by the provider and does not require a
+   * LibreChat tool handler — do NOT set ephemeralAgent.web_search for these
+   * specs or the scheduler will try to load a custom provider that isn't
+   * configured, leaving the model with no functional search tool.
    */
   const specs = appConfig?.modelSpecs?.list ?? [];
   const modelSpec = target.spec ? specs.find((s) => s.name === target.spec) : null;
-  const enableWebSearch =
-    modelSpec?.webSearch === true ||
-    modelSpec?.preset?.addParams?.web_search === true ||
-    modelSpec?.preset?.defaultParams?.web_search === true;
+  const enableWebSearch = modelSpec?.webSearch === true;
 
   const body = buildRunBody({ schedule, conversationId, target, enableWebSearch });
   const req = buildHeadlessReq({ user, appConfig, body });
