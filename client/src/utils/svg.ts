@@ -49,6 +49,34 @@ const FILTER_COLOR_DEFAULTS = new Map<string, string>([
 ]);
 
 /**
+ * Filter primitives whose color contribution we already model (the flood/lighting
+ * color sources) or that only move, blur, or combine existing pixels without
+ * introducing or remapping color, plus their light-source/merge children. Any
+ * primitive outside this set (`feColorMatrix`, `feComponentTransfer`, `feImage`,
+ * `feTurbulence`, ...) can recolor the source into a fixed color a mask would
+ * discard, so an SVG whose rendered content references such a filter is preserved
+ * rather than tinted. A safelist keeps unknown/new primitives on the safe side.
+ */
+const COLOR_SAFE_FILTER_PRIMITIVES = new Set([
+  'feflood',
+  'fedropshadow',
+  'fediffuselighting',
+  'fespecularlighting',
+  'fedistantlight',
+  'fepointlight',
+  'fespotlight',
+  'femerge',
+  'femergenode',
+  'fegaussianblur',
+  'feoffset',
+  'fetile',
+  'femorphology',
+  'fecomposite',
+  'feblend',
+  'fedisplacementmap',
+]);
+
+/**
  * Shapes that render with SVG's default black fill when none is supplied. Includes
  * `polyline` (SVG closes it for fill painting) but not `line`, which has no area.
  */
@@ -568,11 +596,13 @@ function collectFilterPrimitiveColors(filter: Element, rules: StyleRule[]): stri
   return colors;
 }
 
-function collectFilterColors(
+/** The set of `<filter>` elements referenced by rendered (visible, non-template)
+ * content, so only filters that actually paint are inspected. */
+function referencedFilters(
   root: Element,
   rules: StyleRule[],
   referenceUses: Map<Element, Element[][]>,
-): string[] {
+): Set<Element> {
   const filters = new Set<Element>();
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
     if (
@@ -590,9 +620,31 @@ function collectFilterColors(
       }
     }
   }
+  return filters;
+}
+
+function filterColors(filters: Set<Element>, rules: StyleRule[]): string[] {
   return normalizeColors(
     Array.from(filters).flatMap((filter) => collectFilterPrimitiveColors(filter, rules)),
   );
+}
+
+/**
+ * True when a referenced filter contains a primitive that can recolor its input
+ * beyond the flood/lighting sources we collect, since we cannot predict the tone it
+ * produces (e.g. `feColorMatrix` mapping a black glyph to a fixed red logo). Such an
+ * SVG must keep its colors rather than be flattened to a `currentColor` mask.
+ */
+function filtersRecolor(filters: Set<Element>): boolean {
+  for (const filter of filters) {
+    for (const el of Array.from(filter.querySelectorAll('*'))) {
+      const name = el.nodeName.toLowerCase();
+      if (name.startsWith('fe') && !COLOR_SAFE_FILTER_PRIMITIVES.has(name)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -1004,8 +1056,9 @@ function hasDefaultBlackUse(root: Element, rules: StyleRule[]): boolean {
  * raster (`<image>`) or foreign (`<foreignObject>`) content, has no opaque
  * background, and resolves to a single grayscale tone (or relies on the default
  * black fill / `currentColor`). Anything with a second tone (a background shape,
- * an accent, or a second shade), a chromatic color, or that is unparseable
- * returns false, since a CSS mask would flatten it to a solid block.
+ * an accent, or a second shade), a chromatic color, a filter that recolors its
+ * input, or that is unparseable returns false, since a CSS mask would flatten it
+ * to a solid block.
  */
 export function isMonochromeSvg(svg: string): boolean {
   const root = parseSvgRoot(svg);
@@ -1020,10 +1073,14 @@ export function isMonochromeSvg(svg: string): boolean {
     return false;
   }
   const referenceUses = referenceMap(root, rules);
+  const filters = referencedFilters(root, rules, referenceUses);
+  if (filtersRecolor(filters)) {
+    return false;
+  }
   const levels = new Set<number>();
   for (const color of [
     ...collectColors(root, rules, referenceUses),
-    ...collectFilterColors(root, rules, referenceUses),
+    ...filterColors(filters, rules),
   ]) {
     if (color === CURRENT_COLOR) {
       levels.add(CURRENT_COLOR_TONE);
