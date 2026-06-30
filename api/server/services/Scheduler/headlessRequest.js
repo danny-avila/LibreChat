@@ -142,10 +142,18 @@ function resolveRunTarget(schedule, appConfig) {
  * endpoint/model (explicit or default model spec) is used and the ephemeral
  * skills toggle is set so the primed skill resolves.
  *
- * @param {{ schedule: object, conversationId: string, target: object }} params
+ * `enableWebSearch` mirrors the model spec's web-search intent back into the
+ * ephemeral agent so LibreChat's custom web_search tool is loaded alongside
+ * the Anthropic native one. `resolveAnthropicToolConflicts` then removes the
+ * native tool, keeping the custom implementation active. Without this, the
+ * native tool fires (srvtoolu_ IDs) but no tool handler is registered in the
+ * tool node, causing the follow-up API call to omit the required
+ * web_search_tool_result block and triggering a 400 from Anthropic.
+ *
+ * @param {{ schedule: object, conversationId: string, target: object, enableWebSearch?: boolean }} params
  * @returns {object} request body
  */
-function buildRunBody({ schedule, conversationId, target }) {
+function buildRunBody({ schedule, conversationId, target, enableWebSearch = false }) {
   const isAgent = !!target.agent_id;
   const body = {
     conversationId,
@@ -162,6 +170,9 @@ function buildRunBody({ schedule, conversationId, target }) {
   }
   if (!isAgent) {
     body.ephemeralAgent = { skills: true };
+    if (enableWebSearch) {
+      body.ephemeralAgent.web_search = true;
+    }
   }
   return body;
 }
