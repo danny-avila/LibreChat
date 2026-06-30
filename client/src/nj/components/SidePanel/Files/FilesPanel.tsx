@@ -16,6 +16,8 @@ import { atomWithLocalStorage } from '~/store/utils';
  * Hooks into functionality from parent built-in files panel via constructor params, but otherwise
  * is pretty much does everything else on its own.
  */
+const showSplashPageState = atomWithLocalStorage('filesPanelSplashPage', true);
+
 export default function FilesPanel({
   files,
   handleFileClick,
@@ -23,9 +25,7 @@ export default function FilesPanel({
   files: TFile[];
   handleFileClick: (file: TFile) => void;
 }) {
-  const [showSplashPage, setShowSplashPage] = useRecoilState(
-    atomWithLocalStorage('filesPanelSplashPage', true),
-  );
+  const [showSplashPage, setShowSplashPage] = useRecoilState(showSplashPageState);
   const [filenameFilter, setFilenameFilter] = useState('');
 
   const filteredFiles = filenameFilter
