@@ -73,6 +73,12 @@ export async function initializeGoogle({
   if (googleConfig) {
     clientOptions.streamRate = googleConfig.streamRate;
     clientOptions.titleModel = googleConfig.titleModel;
+    if (googleConfig.addParams && typeof googleConfig.addParams === 'object') {
+      clientOptions.addParams = googleConfig.addParams as Record<string, unknown>;
+    }
+    if (Array.isArray(googleConfig.dropParams)) {
+      clientOptions.dropParams = googleConfig.dropParams;
+    }
   }
 
   if (allConfig) {

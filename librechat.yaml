@@ -457,8 +457,13 @@ endpoints:
     titleModel: gpt-5.5
 
   # Native Google (Gemini) — uses GOOGLE_KEY. The Gemini specs route here.
+  # Enables Google's native Search grounding (the `googleSearch` tool).
+  # getGoogleConfig injects it into the request's tools array when web_search is
+  # true, mirroring Anthropic above. Requires initialize.ts to forward addParams.
   google:
     titleModel: gemini-2.5-flash
+    addParams:
+      web_search: true
 
   # OpenRouter — single OpenAI-compatible gateway powering the curated model picker.
   # To add a model: add its slug to `models.default` below AND add a matching spec
