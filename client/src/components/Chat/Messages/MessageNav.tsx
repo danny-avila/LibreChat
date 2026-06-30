@@ -672,6 +672,35 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     clearTooltip();
   }, [resetMagnify, clearTooltip]);
 
+  const handleColumnFocus = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => {
+      const col = columnRef.current;
+      const target = e.target as HTMLElement;
+      if (!col || !target.getAttribute?.('data-msg-id')) {
+        return;
+      }
+      const colRect = col.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
+      pointerYRef.current = rect.top - colRect.top + col.scrollTop + rect.height / 2;
+      if (magRafRef.current == null) {
+        magRafRef.current = requestAnimationFrame(applyMagnify);
+      }
+    },
+    [applyMagnify],
+  );
+
+  const handleColumnBlur = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => {
+      const col = columnRef.current;
+      const next = e.relatedTarget as Node | null;
+      if (col && next && col.contains(next)) {
+        return;
+      }
+      handlePointerLeave();
+    },
+    [handlePointerLeave],
+  );
+
   useEffect(
     () => () => {
       if (magRafRef.current != null) {
@@ -1097,6 +1126,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
+        onFocus={handleColumnFocus}
+        onBlur={handleColumnBlur}
         onClick={handleColumnClick}
         className="flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}

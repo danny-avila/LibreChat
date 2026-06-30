@@ -875,6 +875,57 @@ describe('MessageNav', () => {
     });
   });
 
+  describe('keyboard accessibility', () => {
+    function setupFocusableNav() {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const result = renderNav(messages);
+      const column = result.container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      return { ...result, column };
+    }
+
+    it('highlights and previews a rib when it receives keyboard focus, like hover', () => {
+      const { container, column } = setupFocusableNav();
+      const ribA = container.querySelector('[data-msg-id="a"]') as HTMLElement;
+
+      act(() => {
+        ribA.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        jest.advanceTimersByTime(80);
+      });
+
+      expect(ribA.querySelector('span')?.className).toContain('bg-gray-800');
+      const tip = document.body.querySelector('[role="tooltip"]');
+      expect(tip).not.toBeNull();
+      expect(tip).toHaveTextContent('alpha');
+      expect(column).toBeDefined();
+    });
+
+    it('clears the highlight and preview when focus leaves the rail', () => {
+      const { container } = setupFocusableNav();
+      const ribA = container.querySelector('[data-msg-id="a"]') as HTMLElement;
+
+      act(() => {
+        ribA.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        jest.advanceTimersByTime(80);
+      });
+      act(() => {
+        ribA.dispatchEvent(
+          new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }),
+        );
+      });
+
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+      const white = Array.from(container.querySelectorAll('[data-msg-id] span')).filter((s) =>
+        s.className.includes('bg-gray-800'),
+      );
+      expect(white).toHaveLength(0);
+    });
+  });
+
   describe('drag to scroll', () => {
     function setupDraggableNav() {
       const messages = Array.from({ length: 5 }, (_, i) =>
