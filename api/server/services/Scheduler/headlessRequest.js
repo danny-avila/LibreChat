@@ -22,6 +22,7 @@ function buildHeadlessReq({ user, appConfig, body }) {
     user,
     config: appConfig,
     app: { locals: {} },
+    fromScheduler: true,
     baseUrl: AGENTS_BASE_URL,
     originalUrl: AGENTS_BASE_URL,
     path: '/',

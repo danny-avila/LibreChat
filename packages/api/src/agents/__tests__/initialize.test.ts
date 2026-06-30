@@ -348,6 +348,30 @@ describe('initializeAgent — Anthropic web_search precedence', () => {
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(0);
   });
 
+  it('removes Anthropic native web_search in headless/scheduled runs even without a custom handler', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      providerTools: [nativeWebSearchTool],
+    });
+    (req as unknown as { fromScheduler?: boolean }).fromScheduler = true;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+  });
+
   it('keeps LibreChat web_search definitions when native Anthropic search is not enabled', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.ANTHROPIC,
