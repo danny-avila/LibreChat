@@ -122,13 +122,13 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
   });
 });
 
-describe('InterruptOnlyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
-  it('does NOT persist a clean-exit checkpoint (a bare put with no interrupt write)', async () => {
+describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
+  it('does NOT persist a clean-exit checkpoint (a bare put with no pending writes)', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
     const { config, checkpoint, metadata } = putArgs(threadId);
 
-    // A non-paused run's exit put — no preceding interrupt putWrites.
+    // A non-paused run's exit put — no preceding putWrites.
     await saver!.put(config, checkpoint, metadata);
 
     expect(await saver!.getTuple(readConfig(threadId))).toBeUndefined();
@@ -136,6 +136,23 @@ describe('InterruptOnlyMongoSaver (lazy persistence — mongodb-memory-server)',
       .db!.collection('agent_checkpoints')
       .countDocuments({ thread_id: threadId });
     expect(count).toBe(0);
+  });
+
+  it('persists a checkpoint anchored by a NON-interrupt write (delta-channel safety)', async () => {
+    // K1/K3: a delta-channel graph can putWrites on a checkpoint that an interrupt
+    // checkpoint then depends on — even without the __interrupt__ marker. Any pending
+    // write must anchor its checkpoint so resume can walk the chain.
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const { config, checkpoint, metadata } = putArgs(threadId);
+    await saver!.putWrites(
+      { configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id } },
+      [['some_delta_channel', { msgs: ['delta'] }]],
+      'task-1',
+    );
+    await saver!.put(config, checkpoint, metadata);
+
+    expect(await saver!.getTuple(readConfig(threadId))).toBeDefined();
   });
 
   it('persists an interrupt checkpoint and carries its __interrupt__ pending write', async () => {
