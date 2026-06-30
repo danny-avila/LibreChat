@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, act, fireEvent } from '@testing-library/react';
 
+type ReactNode = React.ReactNode;
 type RefObject<T> = React.RefObject<T>;
 
 type TestMessage = {
@@ -35,6 +36,17 @@ jest.mock('~/hooks', () => ({
     () =>
     (key: string, opts?: Record<string, string | number>): string =>
       opts ? `${key}|${JSON.stringify(opts)}` : key,
+}));
+
+// The nav no longer renders HoverCard, but `~/utils` transitively imports the
+// dual CJS/ESM @librechat/client whose dist pulls ESM-only @ariakit subpaths
+// that jest cannot resolve. Stub the module so the unit under test stays isolated.
+jest.mock('@librechat/client', () => ({
+  HoverCard: ({ children }: { children: ReactNode }) => <>{children}</>,
+  HoverCardTrigger: ({ children, asChild }: { children: ReactNode; asChild?: boolean }) =>
+    asChild ? children : <div>{children}</div>,
+  HoverCardPortal: ({ children }: { children: ReactNode }) => <>{children}</>,
+  HoverCardContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 if (typeof window.matchMedia !== 'function') {
@@ -807,6 +819,38 @@ describe('MessageNav', () => {
 
       const navButtons = container.querySelectorAll('[data-msg-id]');
       expect(Array.from(navButtons)).not.toContain(document.activeElement);
+    });
+  });
+
+  describe('click to jump', () => {
+    it('jumps to the hovered (focused) message when the column is clicked off a rib line', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container, scrollable } = renderNav(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      const writes: number[] = [];
+      Object.defineProperty(scrollable, 'scrollTop', {
+        get: () => 0,
+        set: (v: number) => writes.push(v),
+        configurable: true,
+      });
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(120);
+      });
+
+      act(() => {
+        fireEvent.click(column);
+        jest.advanceTimersByTime(32);
+      });
+
+      expect(writes.length).toBeGreaterThan(0);
     });
   });
 

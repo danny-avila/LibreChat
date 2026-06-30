@@ -151,7 +151,10 @@ const MessageIndicator = memo(function MessageIndicator({
   return (
     <button
       type="button"
-      onClick={() => onSelect(entry.id)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(entry.id);
+      }}
       className={indicatorButtonClasses}
       aria-label={label}
       aria-current={isCurrent ? 'true' : undefined}
@@ -373,6 +376,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     [scrollToStart, focusMessage],
   );
 
+  const handleColumnClick = useCallback(() => {
+    const id = focusedIdRef.current;
+    if (id) {
+      handleSelect(id);
+    }
+  }, [handleSelect]);
+
   const focusNav = useCallback((): boolean => {
     const nav = navRef.current;
     if (!nav) {
@@ -489,6 +499,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     if (!col) {
       return;
     }
+    const colRect = col.getBoundingClientRect();
+    const scrollTop = col.scrollTop;
     const layout: Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }> = [];
     const kids = col.children;
     for (let i = 0; i < kids.length; i++) {
@@ -499,10 +511,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!id || !line || !entry) {
         continue;
       }
+      const rect = button.getBoundingClientRect();
       layout.push({
         id,
         line,
-        center: button.offsetTop + button.offsetHeight / 2,
+        center: rect.top - colRect.top + scrollTop + rect.height / 2,
         dims: ribDimsFor(entry),
       });
     }
@@ -1080,6 +1093,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
+        onClick={handleColumnClick}
         className="flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
