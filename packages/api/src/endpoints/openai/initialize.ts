@@ -127,6 +127,21 @@ export async function initializeOpenAI({
     throw new Error(`${endpoint} API Key not provided.`);
   }
 
+  const openAIConfig = appConfig?.endpoints?.[EModelEndpoint.openAI];
+  /**
+   * Forward endpoint-level addParams/dropParams for the native OpenAI path so
+   * `web_search: true` reaches getOpenAIConfig and enables the hosted web search
+   * tool. The Azure path sets these from its group config above.
+   */
+  if (!isAzureOpenAI && openAIConfig) {
+    if (openAIConfig.addParams && typeof openAIConfig.addParams === 'object') {
+      clientOptions.addParams = openAIConfig.addParams as Record<string, unknown>;
+    }
+    if (Array.isArray(openAIConfig.dropParams)) {
+      clientOptions.dropParams = openAIConfig.dropParams;
+    }
+  }
+
   const modelOptions = {
     ...(model_parameters ?? {}),
     model: modelName,
@@ -145,7 +160,6 @@ export async function initializeOpenAI({
     (options as InitializeResultBase).useLegacyContent = true;
   }
 
-  const openAIConfig = appConfig?.endpoints?.[EModelEndpoint.openAI];
   const allConfig = appConfig?.endpoints?.all;
   const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
 

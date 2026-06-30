@@ -451,19 +451,23 @@ endpoints:
       web_search: true
 
   # Native OpenAI — uses OPENAI_API_KEY. The GPT/o-series specs route here.
-  # useResponsesApi (set per-spec) enables OpenAI's hosted web search + url_citation
-  # annotations, which render as the favicon "Web searched" indicator.
+  # web_search enables OpenAI's hosted web search via the Responses API; getLLMConfig
+  # adds the { type: 'web_search' } tool and forces useResponsesApi, which also yields
+  # url_citation annotations (the favicon "Web searched" indicator). Mirrors Anthropic.
+  # Unlike Google, OpenAI's hosted search coexists with the other function tools.
   openAI:
     titleModel: gpt-5.5
-
-  # Native Google (Gemini) — uses GOOGLE_KEY. The Gemini specs route here.
-  # Enables Google's native Search grounding (the `googleSearch` tool).
-  # getGoogleConfig injects it into the request's tools array when web_search is
-  # true, mirroring Anthropic above. Requires initialize.ts to forward addParams.
-  google:
-    titleModel: gemini-2.5-flash
     addParams:
       web_search: true
+
+  # Native Google (Gemini) — uses GOOGLE_KEY. The Gemini specs route here.
+  # NOTE: native grounding (web_search → googleSearch tool) is intentionally OFF.
+  # Google rejects native grounding when other function tools are present (Drive,
+  # Gmail, MCP, etc.), which every Gemini spec enables — it errors with "built-in
+  # Google tools are not supported with external tools." Revisit via a custom
+  # search provider (e.g. Tavily) that coexists with function tools.
+  google:
+    titleModel: gemini-2.5-flash
 
   # OpenRouter — single OpenAI-compatible gateway powering the curated model picker.
   # To add a model: add its slug to `models.default` below AND add a matching spec
