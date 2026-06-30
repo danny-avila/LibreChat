@@ -87,7 +87,9 @@ describe('DownloadArtifact', () => {
   let anchorClick: jest.SpyInstance;
 
   beforeEach(() => {
-    mockFileDownload.mockClear();
+    mockFileDownload.mockReset();
+    // The attachment helper resolves to `true` when a file was delivered.
+    mockFileDownload.mockResolvedValue(true);
     createObjectURL = jest.fn(() => 'blob:mock');
     revokeObjectURL = jest.fn();
     Object.defineProperty(window.URL, 'createObjectURL', {
@@ -107,14 +109,29 @@ describe('DownloadArtifact', () => {
     anchorClick.mockRestore();
   });
 
-  it('downloads the original file (not the preview) for an office artifact', async () => {
-    render(<DownloadArtifact artifact={officeArtifact} />);
+  it('downloads the original file (not the preview) for an office artifact and shows success', async () => {
+    const { container } = render(<DownloadArtifact artifact={officeArtifact} />);
     await act(async () => {
       fireEvent.click(screen.getByRole('button'));
     });
     expect(mockFileDownload).toHaveBeenCalledTimes(1);
     // The preview HTML must NOT be serialized into a blob download.
     expect(createObjectURL).not.toHaveBeenCalled();
+    // A delivered file flips the button to the success checkmark.
+    expect(container.querySelector('.lucide-circle-check-big')).not.toBeNull();
+  });
+
+  it('does NOT show success when the original-file download fails', async () => {
+    // Expired code-output URL / 404 share download: the helper resolves
+    // to false instead of throwing. The checkmark must stay hidden.
+    mockFileDownload.mockResolvedValueOnce(false);
+    const { container } = render(<DownloadArtifact artifact={officeArtifact} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button'));
+    });
+    expect(mockFileDownload).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('.lucide-circle-check-big')).toBeNull();
+    expect(container.querySelector('.lucide-download')).not.toBeNull();
   });
 
   it('serializes content as a blob for a non-file-backed (LLM-authored) artifact', async () => {

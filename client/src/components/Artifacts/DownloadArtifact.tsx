@@ -71,8 +71,13 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   const handleDownload = async (event: React.MouseEvent<HTMLButtonElement>) => {
     try {
       if (downloadOriginalFile) {
-        await downloadAttachment(event);
-        markDownloaded();
+        // Only flag success when a file was actually delivered; the
+        // attachment helper swallows fetch errors (e.g. an expired
+        // code-output URL or a 404 share download) and resolves either way.
+        const downloaded = await downloadAttachment(event);
+        if (downloaded) {
+          markDownloaded();
+        }
         return;
       }
       downloadContent();
