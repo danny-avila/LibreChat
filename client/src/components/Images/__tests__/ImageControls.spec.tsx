@@ -74,12 +74,12 @@ const editModel: TImageModel = {
 
 const baseProps = {
   selectedModel: editModel,
+  style: 'none',
   aspectRatio: '1:1',
   aspectRatios: ['1:1'],
-  param: '1k',
   imageUrls: [] as string[],
+  onStyleChange: jest.fn(),
   onAspectRatioChange: jest.fn(),
-  onParamChange: jest.fn(),
   onImageUrlsChange: mockOnImageUrlsChange,
   onUploadStart: jest.fn(),
   onUploadEnd: jest.fn(),
@@ -134,9 +134,8 @@ describe('ImageControls reference upload', () => {
     });
   });
 
-  it('uses a capitalized param label for the control', () => {
+  it('renders the style selector', () => {
     render(<ImageControls {...baseProps} />);
-    // paramKey 'resolution' -> 'Resolution' (exposed as the control's aria-label)
-    expect(screen.getByLabelText('Resolution')).toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_image_style')).toBeInTheDocument();
   });
 });

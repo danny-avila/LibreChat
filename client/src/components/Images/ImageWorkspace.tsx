@@ -19,6 +19,7 @@ import {
   POLL_TIMEOUT_COUNT,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { applyStyleToPrompt, DEFAULT_IMAGE_STYLE } from './styles';
 import ImageControls from './ImageControls';
 import ImageGallery from './ImageGallery';
 
@@ -34,7 +35,7 @@ export default function ImageWorkspace() {
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [param, setParam] = useState('');
+  const [style, setStyle] = useState(DEFAULT_IMAGE_STYLE);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [predictionId, setPredictionId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -42,12 +43,10 @@ export default function ImageWorkspace() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const pollCountRef = useRef(0);
 
-  // Sync model/param defaults once config loads
+  // Sync model/aspect-ratio defaults once config loads
   useEffect(() => {
     if (config && !model) {
       setModel(config.default);
-      const found = config.models.find((m) => m.id === config.default);
-      setParam(found?.defaultParam ?? '');
     }
     if (
       config &&
@@ -61,8 +60,6 @@ export default function ImageWorkspace() {
 
   const handleModelChange = (value: string) => {
     setModel(value);
-    const found = config?.models.find((m) => m.id === value);
-    setParam(found?.defaultParam ?? '');
     setImageUrls([]);
   };
 
@@ -118,10 +115,9 @@ export default function ImageWorkspace() {
     setErrorMsg(null);
     setIsGenerating(true);
     generateImage({
-      prompt: prompt.trim(),
+      prompt: applyStyleToPrompt(prompt.trim(), style),
       model,
       aspectRatio,
-      param: param || undefined,
       imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
     });
   };
@@ -182,12 +178,12 @@ export default function ImageWorkspace() {
             {models.length > 0 ? (
               <ImageControls
                 selectedModel={selectedModel}
+                style={style}
                 aspectRatio={aspectRatio}
                 aspectRatios={aspectRatios}
-                param={param}
                 imageUrls={imageUrls}
+                onStyleChange={setStyle}
                 onAspectRatioChange={setAspectRatio}
-                onParamChange={setParam}
                 onImageUrlsChange={setImageUrls}
                 onUploadStart={() => setIsUploading(true)}
                 onUploadEnd={() => setIsUploading(false)}

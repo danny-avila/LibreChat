@@ -5,6 +5,7 @@ import { dataService } from 'librechat-data-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@librechat/client';
 import type { TImageModel } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
+import { IMAGE_STYLES } from './styles';
 
 const PILL_TRIGGER_CLASS =
   'h-8 w-auto gap-1 rounded-lg border-border-light bg-transparent px-2.5 text-xs text-text-secondary hover:bg-surface-hover';
@@ -28,12 +29,12 @@ const readImageDimensions = (file: File): Promise<{ width: number; height: numbe
 
 interface ImageControlsProps {
   selectedModel: TImageModel | undefined;
+  style: string;
   aspectRatio: string;
   aspectRatios: string[];
-  param: string;
   imageUrls: string[];
+  onStyleChange: (value: string) => void;
   onAspectRatioChange: (value: string) => void;
-  onParamChange: (value: string) => void;
   onImageUrlsChange: (urls: string[]) => void;
   onUploadStart: () => void;
   onUploadEnd: () => void;
@@ -42,12 +43,12 @@ interface ImageControlsProps {
 
 export default function ImageControls({
   selectedModel,
+  style,
   aspectRatio,
   aspectRatios,
-  param,
   imageUrls,
+  onStyleChange,
   onAspectRatioChange,
-  onParamChange,
   onImageUrlsChange,
   onUploadStart,
   onUploadEnd,
@@ -55,10 +56,6 @@ export default function ImageControls({
 }: ImageControlsProps) {
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const paramLabel = selectedModel
-    ? selectedModel.paramKey.charAt(0).toUpperCase() + selectedModel.paramKey.slice(1)
-    : '';
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -94,6 +91,19 @@ export default function ImageControls({
       role="group"
       aria-label={localize('com_ui_images')}
     >
+      <Select value={style} onValueChange={onStyleChange}>
+        <SelectTrigger className={PILL_TRIGGER_CLASS} aria-label={localize('com_ui_image_style')}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className={DROPDOWN_CONTENT_CLASS}>
+          {IMAGE_STYLES.map((s) => (
+            <SelectItem key={s.id} value={s.id}>
+              {localize(s.labelKey)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
       <Select value={aspectRatio} onValueChange={onAspectRatioChange}>
         <SelectTrigger className={PILL_TRIGGER_CLASS} aria-label={localize('com_ui_aspect_ratio')}>
           <SelectValue />
@@ -106,21 +116,6 @@ export default function ImageControls({
           ))}
         </SelectContent>
       </Select>
-
-      {selectedModel && selectedModel.paramValues.length > 0 && (
-        <Select value={param} onValueChange={onParamChange}>
-          <SelectTrigger className={PILL_TRIGGER_CLASS} aria-label={paramLabel}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className={DROPDOWN_CONTENT_CLASS}>
-            {selectedModel.paramValues.map((v) => (
-              <SelectItem key={v} value={v}>
-                {v}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
 
       {selectedModel?.supportsEdit && (
         <>
