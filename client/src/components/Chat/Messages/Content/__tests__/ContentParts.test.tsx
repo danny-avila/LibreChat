@@ -4,6 +4,7 @@ import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
   mapAttachments: () => ({}),
   groupSequentialToolCalls: (parts: Array<{ part: unknown; idx: number }>) =>
     parts.map((p) => ({ type: 'single' as const, part: p })),
