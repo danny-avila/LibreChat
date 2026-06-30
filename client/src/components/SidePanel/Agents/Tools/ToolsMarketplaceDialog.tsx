@@ -12,7 +12,7 @@ import {
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm } from '~/common';
-import { useBuiltinAuthMap, useUninstallToolCredentials } from './hooks';
+import { useBuiltinAuthMap, useShowMemory, useUninstallToolCredentials } from './hooks';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
 import { deriveSelectedItems, itemKey } from './items/selectors';
 import { computeToggleAction } from './items/mutations';
@@ -51,6 +51,7 @@ export default function ToolsMarketplaceDialog({
     permission: Permissions.USE,
   });
   const builtinAuthMap = useBuiltinAuthMap();
+  const showMemory = useShowMemory();
   const uninstallToolCredentials = useUninstallToolCredentials();
 
   const { data: favorites } = useGetFavoritesQuery();
@@ -68,6 +69,7 @@ export default function ToolsMarketplaceDialog({
   const executeCode = (useWatch({ control, name: 'execute_code' }) ?? false) as boolean;
   const webSearch = (useWatch({ control, name: 'web_search' }) ?? false) as boolean;
   const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
+  const memory = (useWatch({ control, name: 'memory' }) ?? false) as boolean;
   const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
   const agent = useWatch({ control, name: 'agent' });
   const contextFiles = (agent?.context_files ?? []) as Array<[string, unknown]>;
@@ -112,9 +114,18 @@ export default function ToolsMarketplaceDialog({
         skills: [],
         actions: agentActions,
         permissions: { mcp: hasMcpAccess, skills: false },
+        showMemory,
         builtinAuthMap,
       }),
-    [agentsConfig, regularTools, mcpServersMap, agentActions, hasMcpAccess, builtinAuthMap],
+    [
+      agentsConfig,
+      regularTools,
+      mcpServersMap,
+      agentActions,
+      hasMcpAccess,
+      showMemory,
+      builtinAuthMap,
+    ],
   );
 
   const selectedItems = useMemo(
@@ -124,6 +135,7 @@ export default function ToolsMarketplaceDialog({
           execute_code: executeCode,
           web_search: webSearch,
           file_search: fileSearch,
+          memory,
           artifacts,
           tools,
           skills: [],
@@ -138,6 +150,7 @@ export default function ToolsMarketplaceDialog({
       executeCode,
       webSearch,
       fileSearch,
+      memory,
       artifacts,
       tools,
       contextFiles,

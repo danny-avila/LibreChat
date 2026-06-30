@@ -37,6 +37,14 @@ export interface BuildCatalogInputs {
    * undefined, so builtins are treated as ready until proven otherwise.
    */
   builtinAuthMap?: Map<string, boolean>;
+  /**
+   * Whether the Memory capability should be offered. Unlike the other builtins,
+   * Memory is gated by permission and user personalization in addition to the
+   * admin-enabled capability, so the caller collapses all of that into a single
+   * flag (see `showMemory` in `ToolsSection`) instead of deriving it from
+   * `agentsConfig.capabilities` here.
+   */
+  showMemory?: boolean;
 }
 
 interface BuiltinDef {
@@ -99,6 +107,16 @@ export function buildCatalog(inputs: BuildCatalogInputs): AgentItem[] {
       name: def.nameKey,
       description: def.descriptionKey,
       status: inputs.builtinAuthMap?.get(def.id) === true ? 'needs_setup' : undefined,
+    });
+  }
+
+  if (inputs.showMemory) {
+    items.push({
+      kind: 'builtin',
+      id: AgentCapabilities.memory,
+      iconKey: 'memory',
+      name: 'com_ui_memory',
+      description: 'com_agents_memory_info',
     });
   }
 

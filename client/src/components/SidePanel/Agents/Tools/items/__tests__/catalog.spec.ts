@@ -1,7 +1,7 @@
 import { AgentCapabilities } from 'librechat-data-provider';
-import { buildCatalog } from '../catalog';
-import { makePlugin, makeSkill, makeAction } from 'test/itemFactories';
 import type { BuildCatalogInputs } from '../catalog';
+import { makePlugin, makeSkill, makeAction } from 'test/itemFactories';
+import { buildCatalog } from '../catalog';
 
 const emptyInputs: BuildCatalogInputs = {
   agentsConfig: { capabilities: [] },
@@ -28,6 +28,13 @@ describe('buildCatalog', () => {
       AgentCapabilities.execute_code,
       AgentCapabilities.web_search,
     ]);
+  });
+
+  test('emits the memory builtin only when showMemory is set', () => {
+    const memoryId = (i: { kind: string; id: string }) =>
+      i.kind === 'builtin' && i.id === AgentCapabilities.memory;
+    expect(buildCatalog(emptyInputs).find(memoryId)).toBeUndefined();
+    expect(buildCatalog({ ...emptyInputs, showMemory: true }).find(memoryId)).toBeDefined();
   });
 
   test('hides MCP items when the user lacks MCP permission', () => {

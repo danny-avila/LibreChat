@@ -2,8 +2,10 @@ import { useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
 import { Tools, AuthType, AgentCapabilities } from 'librechat-data-provider';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
+import { useLocalize, useHasMemoryAccess } from '~/hooks';
 import { useVerifyAgentToolAuth } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useAuthContext } from '~/hooks/AuthContext';
+import { useAgentPanelContext } from '~/Providers';
 
 /**
  * Maps builtin capability ids to whether they still need setup (USER_PROVIDED auth
@@ -31,6 +33,24 @@ export function useBuiltinAuthMap(): Map<string, boolean> {
  * removing a tool only drops it from the form and leaves the saved credentials
  * orphaned server-side. Fired unconditionally — a no-op for tools without creds.
  */
+/**
+ * Resolves whether the Memory capability should be offered in the builder.
+ * Mirrors the legacy `AgentConfig` gate: the admin must enable the `memory`
+ * capability, the user must hold the memory permission, and the user must not
+ * have opted out of memories in personalization. Collapsed into one flag here
+ * so both the selected list (`ToolsSection`) and the marketplace
+ * (`ToolsMarketplaceDialog`) gate the catalog item identically.
+ */
+export function useShowMemory(): boolean {
+  const { agentsConfig } = useAgentPanelContext();
+  const hasMemoryAccess = useHasMemoryAccess();
+  const { user } = useAuthContext();
+  return useMemo(() => {
+    const memoryEnabled = agentsConfig?.capabilities?.includes(AgentCapabilities.memory) ?? false;
+    return hasMemoryAccess && memoryEnabled && user?.personalization?.memories !== false;
+  }, [agentsConfig, hasMemoryAccess, user]);
+}
+
 export function useUninstallToolCredentials(): (toolId: string) => void {
   const localize = useLocalize();
   const { showToast } = useToastContext();

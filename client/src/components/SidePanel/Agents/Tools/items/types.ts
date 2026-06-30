@@ -13,6 +13,7 @@ export type BuiltinId =
   | `${AgentCapabilities.web_search}`
   | `${AgentCapabilities.file_search}`
   | `${AgentCapabilities.artifacts}`
+  | `${AgentCapabilities.memory}`
   | `${AgentCapabilities.context}`;
 
 export type AgentItemStatus = 'ready' | 'needs_setup' | 'disabled';

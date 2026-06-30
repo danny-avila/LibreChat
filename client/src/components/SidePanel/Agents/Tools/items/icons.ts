@@ -1,6 +1,7 @@
 import {
   Code,
   Globe,
+  Brain,
   Sparkles,
   FileText,
   FileSearch,
@@ -39,6 +40,10 @@ const BUILTIN_ICONS: Record<string, ItemIcon> = {
   file_search: {
     Icon: FileSearch,
     colorClass: 'bg-pink-500/15 text-pink-600 dark:text-pink-300',
+  },
+  memory: {
+    Icon: Brain,
+    colorClass: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300',
   },
 };
 

@@ -1,7 +1,7 @@
 import { AgentCapabilities, Constants } from 'librechat-data-provider';
-import { deriveSelectedItems } from '../selectors';
-import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
 import type { AgentItem } from '../types';
+import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
+import { deriveSelectedItems } from '../selectors';
 
 const mcpServerToken = (serverName: string) =>
   `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`;
@@ -14,6 +14,7 @@ const sampleCatalog: AgentItem[] = [
   { kind: 'builtin', id: 'artifacts', name: 'Art', description: '', iconKey: 'artifacts' },
   { kind: 'builtin', id: 'context', name: 'Ctx', description: '', iconKey: 'context' },
   { kind: 'builtin', id: 'file_search', name: 'FS', description: '', iconKey: 'file_search' },
+  { kind: 'builtin', id: 'memory', name: 'Memory', description: '', iconKey: 'memory' },
   {
     kind: 'tool',
     id: 'dalle',
@@ -36,6 +37,7 @@ const emptyFormState = {
   execute_code: false,
   web_search: false,
   file_search: false,
+  memory: false,
   artifacts: '',
   tools: [] as string[],
   skills: [] as string[],
@@ -59,6 +61,11 @@ describe('deriveSelectedItems', () => {
     expect(ids).toContain(AgentCapabilities.execute_code);
     expect(ids).toContain(AgentCapabilities.artifacts);
     expect(ids).not.toContain(AgentCapabilities.web_search);
+  });
+
+  test('selects the memory builtin by its flag', () => {
+    const result = deriveSelectedItems({ ...emptyFormState, memory: true }, sampleCatalog, []);
+    expect(result.map((i) => i.id)).toContain(AgentCapabilities.memory);
   });
 
   test('treats non-empty knowledge_files as file_search selected even without an explicit flag', () => {

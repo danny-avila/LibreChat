@@ -6,8 +6,8 @@ import { PermissionTypes, Permissions, AgentCapabilities } from 'librechat-data-
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
+import { useBuiltinAuthMap, useShowMemory, useUninstallToolCredentials } from './hooks';
 import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
-import { useBuiltinAuthMap, useUninstallToolCredentials } from './hooks';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
 import { deriveSelectedItems } from './items/selectors';
@@ -64,6 +64,8 @@ export default function ToolsSection({ agentId }: Props) {
   );
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
+
+  const showMemory = useShowMemory();
   const builtinAuthMap = useBuiltinAuthMap();
   const uninstallToolCredentials = useUninstallToolCredentials();
 
@@ -72,6 +74,7 @@ export default function ToolsSection({ agentId }: Props) {
   const executeCode = (useWatch({ control, name: 'execute_code' }) ?? false) as boolean;
   const webSearch = (useWatch({ control, name: 'web_search' }) ?? false) as boolean;
   const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
+  const memory = (useWatch({ control, name: 'memory' }) ?? false) as boolean;
   const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
   const agent = useWatch({ control, name: 'agent' });
 
@@ -93,6 +96,7 @@ export default function ToolsSection({ agentId }: Props) {
         skills: skillsData?.skills ?? [],
         actions: agentActions,
         permissions: { mcp: hasMcpAccess, skills: showSkills },
+        showMemory,
         builtinAuthMap,
       }),
     [
@@ -103,6 +107,7 @@ export default function ToolsSection({ agentId }: Props) {
       agentActions,
       hasMcpAccess,
       showSkills,
+      showMemory,
       builtinAuthMap,
     ],
   );
@@ -114,6 +119,7 @@ export default function ToolsSection({ agentId }: Props) {
           execute_code: executeCode,
           web_search: webSearch,
           file_search: fileSearch,
+          memory,
           artifacts,
           tools,
           skills,
@@ -128,6 +134,7 @@ export default function ToolsSection({ agentId }: Props) {
       executeCode,
       webSearch,
       fileSearch,
+      memory,
       artifacts,
       tools,
       skills,

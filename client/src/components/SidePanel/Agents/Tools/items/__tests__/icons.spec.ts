@@ -1,6 +1,6 @@
-import { getIconForItem } from '../icons';
-import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
 import type { AgentItem } from '../types';
+import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
+import { getIconForItem } from '../icons';
 
 describe('getIconForItem', () => {
   test('returns icon + color for built-in execute_code', () => {
@@ -14,6 +14,19 @@ describe('getIconForItem', () => {
     const result = getIconForItem(item);
     expect(result.Icon).toBeDefined();
     expect(result.colorClass).toMatch(/emerald|green/);
+  });
+
+  test('returns the Brain icon + indigo color for built-in memory', () => {
+    const item: AgentItem = {
+      kind: 'builtin',
+      id: 'memory',
+      name: 'Memory',
+      description: '',
+      iconKey: 'memory',
+    };
+    const result = getIconForItem(item);
+    expect(result.Icon).toBeDefined();
+    expect(result.colorClass).toMatch(/indigo/);
   });
 
   test('returns a distinct color class per kind', () => {
