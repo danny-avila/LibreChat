@@ -12,7 +12,12 @@ import {
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm } from '~/common';
-import { useBuiltinAuthMap, useShowMemory, useUninstallToolCredentials } from './hooks';
+import {
+  useBuiltinAuthMap,
+  useShowMemory,
+  useWebSearchUserProvided,
+  useUninstallToolCredentials,
+} from './hooks';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
 import { deriveSelectedItems, itemKey } from './items/selectors';
 import { computeToggleAction } from './items/mutations';
@@ -52,6 +57,7 @@ export default function ToolsMarketplaceDialog({
   });
   const builtinAuthMap = useBuiltinAuthMap();
   const showMemory = useShowMemory();
+  const webSearchUserProvided = useWebSearchUserProvided();
   const uninstallToolCredentials = useUninstallToolCredentials();
 
   const { data: favorites } = useGetFavoritesQuery();
@@ -115,6 +121,7 @@ export default function ToolsMarketplaceDialog({
         actions: agentActions,
         permissions: { mcp: hasMcpAccess, skills: false },
         showMemory,
+        webSearchUserProvided,
         builtinAuthMap,
       }),
     [
@@ -124,6 +131,7 @@ export default function ToolsMarketplaceDialog({
       agentActions,
       hasMcpAccess,
       showMemory,
+      webSearchUserProvided,
       builtinAuthMap,
     ],
   );

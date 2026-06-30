@@ -10,7 +10,12 @@ import { pluginNeedsAuth } from './auth';
 export function hasConfigurableSettings(item: AgentItem): boolean {
   switch (item.kind) {
     case 'builtin':
-      return item.id === 'artifacts' || item.id === 'file_search' || item.id === 'context';
+      return (
+        item.id === 'artifacts' ||
+        item.id === 'file_search' ||
+        item.id === 'context' ||
+        (item.id === 'web_search' && item.userProvidedAuth === true)
+      );
     case 'tool':
       return pluginNeedsAuth(item.plugin);
     case 'mcp':

@@ -28,6 +28,21 @@ export function useBuiltinAuthMap(): Map<string, boolean> {
 }
 
 /**
+ * Whether `web_search` uses USER_PROVIDED auth (a user-managed key). When false
+ * the deployment uses SYSTEM_DEFINED keys, so there is nothing for the user to
+ * configure. Shares the `useBuiltinAuthMap` React Query key, so it adds no
+ * request. Threaded into `buildCatalog` so the card/row affordance is decided
+ * synchronously (cog vs info) without a per-row hook.
+ */
+export function useWebSearchUserProvided(): boolean {
+  const { data } = useVerifyAgentToolAuth({ toolId: Tools.web_search }, { retry: 1 });
+  return useMemo(
+    () => data?.authTypes?.some(([, authType]) => authType === AuthType.USER_PROVIDED) ?? false,
+    [data],
+  );
+}
+
+/**
  * Returns a callback that revokes a tool's stored user credentials when it is
  * removed from an agent, mirroring the legacy `AgentTool` removal. Without it,
  * removing a tool only drops it from the form and leaves the saved credentials

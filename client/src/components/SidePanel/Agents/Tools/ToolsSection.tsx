@@ -6,7 +6,12 @@ import { PermissionTypes, Permissions, AgentCapabilities } from 'librechat-data-
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
-import { useBuiltinAuthMap, useShowMemory, useUninstallToolCredentials } from './hooks';
+import {
+  useBuiltinAuthMap,
+  useShowMemory,
+  useWebSearchUserProvided,
+  useUninstallToolCredentials,
+} from './hooks';
 import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
@@ -66,6 +71,7 @@ export default function ToolsSection({ agentId }: Props) {
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
 
   const showMemory = useShowMemory();
+  const webSearchUserProvided = useWebSearchUserProvided();
   const builtinAuthMap = useBuiltinAuthMap();
   const uninstallToolCredentials = useUninstallToolCredentials();
 
@@ -97,6 +103,7 @@ export default function ToolsSection({ agentId }: Props) {
         actions: agentActions,
         permissions: { mcp: hasMcpAccess, skills: showSkills },
         showMemory,
+        webSearchUserProvided,
         builtinAuthMap,
       }),
     [
@@ -108,6 +115,7 @@ export default function ToolsSection({ agentId }: Props) {
       hasMcpAccess,
       showSkills,
       showMemory,
+      webSearchUserProvided,
       builtinAuthMap,
     ],
   );

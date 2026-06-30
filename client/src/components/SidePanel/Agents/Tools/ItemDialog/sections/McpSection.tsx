@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Clock, Code2 } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Checkbox, Skeleton, TooltipAnchor } from '@librechat/client';
+import { Button, Spinner, Checkbox, Skeleton, TooltipAnchor } from '@librechat/client';
+import type { MouseEvent } from 'react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { McpItem } from '../../items/types';
 import type { AgentForm } from '~/common';
@@ -13,6 +15,7 @@ import {
 } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
+import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
 import { useAgentPanelContext } from '~/Providers';
 import MCPToolItem from '../../../MCPToolItem';
 import { useLocalize } from '~/hooks';
@@ -56,7 +59,17 @@ interface Props {
 export default function McpSection({ item }: Props) {
   const localize = useLocalize();
   const { control, getValues, setValue } = useFormContext<AgentForm>();
-  const { getServerStatusIconProps, getConfigDialogProps } = useMCPServerManager();
+  const {
+    getServerStatusIconProps,
+    getConfigDialogProps,
+    initializeServer,
+    getOAuthUrl,
+    isCancellable,
+    cancelOAuthFlow,
+  } = useMCPServerManager();
+  const [oauthOpen, setOauthOpen] = useState(false);
+  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
+  const [prevConnected, setPrevConnected] = useState(false);
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
   const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(
@@ -124,6 +137,35 @@ export default function McpSection({ item }: Props) {
    * both cases instead of a misleading "no tools" message. */
   const toolsLoading =
     !hasTools && (mcpToolsLoading || isInitializing || connectionState === 'connecting');
+  const isConnected = connectionState === 'connected';
+  const isBusy = isInitializing || connectionState === 'connecting';
+
+  /** Close + clear the OAuth dialog once the server connects, and don't let it
+   * reopen on its own if the connection later drops. No useEffect — adjust state
+   * during render by comparing against the previous connection result. */
+  if (prevConnected !== isConnected) {
+    setPrevConnected(isConnected);
+    if (isConnected) {
+      setOauthOpen(false);
+      setOauthUrl(null);
+    }
+  }
+
+  /** Connect inline from this first dialog. Servers with custom user variables are
+   * routed to the config dialog (which sets the vars and initializes); others
+   * connect directly. `autoOpenOAuth=false` surfaces the URL in our OAuth dialog
+   * (continue / copy / QR) instead of the browser silently opening a tab. */
+  const handleConnect = async (e: MouseEvent) => {
+    if (statusIconProps != null && statusIconProps.hasCustomUserVars) {
+      statusIconProps.onConfigClick(e);
+      return;
+    }
+    const res = await initializeServer(serverName, false);
+    if (res?.oauthRequired && res.oauthUrl) {
+      setOauthUrl(res.oauthUrl);
+      setOauthOpen(true);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -141,8 +183,21 @@ export default function McpSection({ item }: Props) {
             {localize(statusDisplay.labelKey)}
           </span>
         </div>
-        {statusIconProps && <MCPServerStatusIcon {...statusIconProps} />}
+        {isConnected && statusIconProps && <MCPServerStatusIcon {...statusIconProps} />}
       </div>
+
+      {!isConnected && (
+        <Button
+          type="button"
+          variant="submit"
+          className="w-full gap-2"
+          disabled={isBusy}
+          onClick={handleConnect}
+        >
+          {isBusy && <Spinner className="size-4" />}
+          {localize('com_nav_mcp_connect_server', { 0: serverName })}
+        </Button>
+      )}
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
@@ -272,6 +327,18 @@ export default function McpSection({ item }: Props) {
       </div>
 
       {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+      <McpOAuthDialog
+        open={oauthOpen && !isConnected}
+        onOpenChange={setOauthOpen}
+        serverName={serverName}
+        oauthUrl={oauthUrl ?? getOAuthUrl(serverName) ?? ''}
+        canCancel={isCancellable(serverName)}
+        onCancel={() => {
+          cancelOAuthFlow(serverName);
+          setOauthOpen(false);
+          setOauthUrl(null);
+        }}
+      />
     </div>
   );
 }

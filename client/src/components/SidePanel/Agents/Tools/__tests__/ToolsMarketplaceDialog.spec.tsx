@@ -60,6 +60,7 @@ jest.mock('react-router-dom', () => ({
 jest.mock('../hooks', () => ({
   useBuiltinAuthMap: () => new Map(),
   useShowMemory: () => false,
+  useWebSearchUserProvided: () => false,
   useUninstallToolCredentials: () => jest.fn(),
 }));
 

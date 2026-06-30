@@ -5,6 +5,7 @@ import McpSection from '../sections/McpSection';
 
 const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
+const mockInitializeServer = jest.fn();
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
@@ -17,6 +18,7 @@ jest.mock('~/Providers', () => ({
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+  useCopyToClipboard: () => jest.fn(),
   useAgentCapabilities: () => ({
     deferredToolsEnabled: false,
     programmaticToolsEnabled: false,
@@ -25,6 +27,10 @@ jest.mock('~/hooks', () => ({
   useMCPServerManager: () => ({
     getServerStatusIconProps: () => null,
     getConfigDialogProps: () => null,
+    initializeServer: mockInitializeServer,
+    getOAuthUrl: () => undefined,
+    isCancellable: () => false,
+    cancelOAuthFlow: jest.fn(),
   }),
   useMCPToolOptions: () => ({
     isToolDeferred: () => false,
@@ -67,6 +73,24 @@ jest.mock('~/components/MCP/MCPConfigDialog', () => ({
 jest.mock('~/components/MCP/MCPServerStatusIcon', () => ({
   __esModule: true,
   default: () => null,
+}));
+jest.mock('~/components/MCP/McpOAuthDialog', () => ({
+  __esModule: true,
+  default: ({
+    open,
+    oauthUrl,
+    onCancel,
+  }: {
+    open: boolean;
+    oauthUrl: string;
+    onCancel: () => void;
+  }) =>
+    open ? (
+      <div data-testid="oauth-dialog">
+        {oauthUrl}
+        <button type="button" data-testid="oauth-cancel" onClick={onCancel} />
+      </div>
+    ) : null,
 }));
 
 jest.mock('@librechat/client', () => {
@@ -114,6 +138,7 @@ describe('McpSection', () => {
   beforeEach(() => {
     mockSetValue.mockClear();
     mockGetValues.mockReturnValue([]);
+    mockInitializeServer.mockReset();
   });
 
   test('renders one row per tool', () => {
@@ -158,6 +183,44 @@ describe('McpSection', () => {
     render(<McpSection item={item} />);
     expect(screen.getByTestId('tool-mcp:srv:a')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('tool-mcp:srv:b')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('renders an inline Connect button when the server is not connected', () => {
+    render(<McpSection item={item} />);
+    expect(screen.getByText('com_nav_mcp_connect_server')).toBeInTheDocument();
+  });
+
+  test('clicking Connect initializes the server without auto-opening OAuth', () => {
+    mockInitializeServer.mockResolvedValue({ success: true });
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
+    expect(mockInitializeServer).toHaveBeenCalledWith('srv', false);
+  });
+
+  test('opens the OAuth dialog only when initialize reports oauthRequired', async () => {
+    mockInitializeServer.mockResolvedValue({
+      success: true,
+      oauthRequired: true,
+      oauthUrl: 'https://oauth.example/authorize?x=1',
+    });
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
+    expect(await screen.findByTestId('oauth-dialog')).toHaveTextContent(
+      'https://oauth.example/authorize?x=1',
+    );
+  });
+
+  test('cancelling the OAuth flow closes the dialog', async () => {
+    mockInitializeServer.mockResolvedValue({
+      success: true,
+      oauthRequired: true,
+      oauthUrl: 'https://oauth.example/authorize?x=1',
+    });
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
+    await screen.findByTestId('oauth-dialog');
+    fireEvent.click(screen.getByTestId('oauth-cancel'));
+    expect(screen.queryByTestId('oauth-dialog')).not.toBeInTheDocument();
   });
 
   test('shows empty hint when the server exposes no tools', () => {

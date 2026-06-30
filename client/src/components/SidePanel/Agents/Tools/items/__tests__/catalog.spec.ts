@@ -37,6 +37,21 @@ describe('buildCatalog', () => {
     expect(buildCatalog({ ...emptyInputs, showMemory: true }).find(memoryId)).toBeDefined();
   });
 
+  test('flags web_search userProvidedAuth from the webSearchUserProvided input', () => {
+    const findWebSearch = (inputs: BuildCatalogInputs) =>
+      buildCatalog(inputs).find(
+        (i) => i.kind === 'builtin' && i.id === AgentCapabilities.web_search,
+      );
+    const base = {
+      ...emptyInputs,
+      agentsConfig: { capabilities: [AgentCapabilities.web_search] },
+    };
+    const userProvided = findWebSearch({ ...base, webSearchUserProvided: true });
+    const systemDefined = findWebSearch({ ...base, webSearchUserProvided: false });
+    expect(userProvided?.kind === 'builtin' && userProvided.userProvidedAuth).toBe(true);
+    expect(systemDefined?.kind === 'builtin' && systemDefined.userProvidedAuth).toBe(false);
+  });
+
   test('hides MCP items when the user lacks MCP permission', () => {
     const map = new Map();
     map.set('srv', { serverName: 'srv', isConfigured: true, tools: [] });

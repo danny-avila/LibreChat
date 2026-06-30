@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
-import ToolCard from '../ToolCard';
 import type { AgentItem } from '../items/types';
+import ToolCard from '../ToolCard';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -11,6 +11,7 @@ jest.mock('~/hooks', () => ({
       const parts = Object.entries(options).map(([name, value]) => `${name}=${String(value)}`);
       return `${key}[${parts.join(',')}]`;
     },
+  useAuthContext: () => ({ user: { id: 'u1' } }),
 }));
 
 const skill: AgentItem = {
@@ -68,5 +69,38 @@ describe('ToolCard', () => {
     };
     render(<ToolCard item={mcp} selected={false} onToggle={jest.fn()} />);
     expect(screen.queryByText('com_ui_tools_count[count=14]')).not.toBeInTheDocument();
+  });
+
+  test('renders public and shared-author badges for another user public skill', () => {
+    const shared: AgentItem = {
+      kind: 'skill',
+      id: 's2',
+      name: 'Shared',
+      description: '',
+      iconKey: 'skill',
+      skill: {
+        _id: 's2',
+        name: 'Shared',
+        author: 'u2',
+        authorName: 'Alice',
+        isPublic: true,
+      } as never,
+    };
+    render(<ToolCard item={shared} selected={false} onToggle={jest.fn()} />);
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_sr_public_skill')).toBeInTheDocument();
+  });
+
+  test('omits the author badge for the current user own skill', () => {
+    const own: AgentItem = {
+      kind: 'skill',
+      id: 's3',
+      name: 'Mine',
+      description: '',
+      iconKey: 'skill',
+      skill: { _id: 's3', name: 'Mine', author: 'u1', authorName: 'Me', isPublic: false } as never,
+    };
+    render(<ToolCard item={own} selected={false} onToggle={jest.fn()} />);
+    expect(screen.queryByText('Me')).not.toBeInTheDocument();
   });
 });

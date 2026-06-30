@@ -1,10 +1,10 @@
 import { memo, useState } from 'react';
-import { BadgeCheck, Check, Settings } from 'lucide-react';
+import { BadgeCheck, Check, Globe, Info, Settings, User } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import { hasConfigurableSettings } from './items/configurable';
+import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconForItem } from './items/icons';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface ToolCardProps {
@@ -79,14 +79,24 @@ function ItemIconView({ item, size }: ItemIconProps) {
 function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) {
   const localize = useLocalize();
   const { name, description } = useDisplayStrings(item);
+  const { user } = useAuthContext();
   const isNative = item.kind === 'builtin';
   const kindLabel = localize(KIND_LABEL_KEYS[item.kind]);
   const canConfigure = hasConfigurableSettings(item) && onConfigure !== undefined;
+  const skill = item.kind === 'skill' ? item.skill : undefined;
+  const isPublicSkill = skill?.isPublic === true;
+  const isSharedSkill = skill != null && skill.author !== user?.id && Boolean(skill.authorName);
+  const showInfoOnly =
+    item.kind === 'builtin' &&
+    item.id === 'web_search' &&
+    !canConfigure &&
+    onConfigure !== undefined;
+  const DetailIcon = canConfigure ? Settings : Info;
 
   return (
     <div
       className={cn(
-        'group relative flex h-32 w-full flex-col rounded-2xl border',
+        'group relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border',
         selected
           ? 'border-emerald-500/60 bg-emerald-500/[0.06] shadow-sm'
           : 'border-border-light bg-transparent hover:border-border-medium hover:bg-surface-tertiary hover:shadow-sm',
@@ -137,27 +147,50 @@ function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) 
             {isNative ? localize('com_ui_tools_native_short') : kindLabel}
           </p>
         )}
-        {item.kind === 'action' && item.endpointCount > 0 && (
-          <div className="mt-auto flex w-full items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] text-text-tertiary">
-              {localize(
-                item.endpointCount === 1
-                  ? 'com_ui_tools_endpoint_count_one'
-                  : 'com_ui_tools_endpoint_count',
-                { count: item.endpointCount },
-              )}
-            </span>
+        {(item.kind === 'action' && item.endpointCount > 0) || isPublicSkill || isSharedSkill ? (
+          <div className="mt-auto flex w-full flex-wrap items-center gap-1.5">
+            {item.kind === 'action' && item.endpointCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] text-text-tertiary">
+                {localize(
+                  item.endpointCount === 1
+                    ? 'com_ui_tools_endpoint_count_one'
+                    : 'com_ui_tools_endpoint_count',
+                  { count: item.endpointCount },
+                )}
+              </span>
+            )}
+            {isSharedSkill && skill && (
+              <span
+                className="inline-flex max-w-[60%] items-center gap-1 rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] text-text-tertiary"
+                title={localize('com_ui_tools_shared_by', { name: skill.authorName })}
+                aria-label={localize('com_ui_tools_shared_by', { name: skill.authorName })}
+              >
+                <User className="size-2.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{skill.authorName}</span>
+              </span>
+            )}
+            {isPublicSkill && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-surface-tertiary px-1.5 py-0.5 text-[10px] text-text-tertiary"
+                title={localize('com_ui_sr_public_skill')}
+                aria-label={localize('com_ui_sr_public_skill')}
+              >
+                <Globe className="size-2.5" aria-hidden="true" />
+              </span>
+            )}
           </div>
-        )}
+        ) : null}
       </button>
-      {canConfigure && (
+      {(canConfigure || showInfoOnly) && (
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onConfigure?.(item);
           }}
-          aria-label={localize('com_ui_tools_configure')}
+          aria-label={
+            canConfigure ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
+          }
           className={cn(
             'absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-lg text-text-secondary',
             'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
@@ -165,7 +198,7 @@ function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) 
             'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
           )}
         >
-          <Settings className="size-4" aria-hidden="true" />
+          <DetailIcon className="size-4" aria-hidden="true" />
         </button>
       )}
     </div>

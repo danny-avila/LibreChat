@@ -1,11 +1,12 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
-import MarketplaceCatalog from '../MarketplaceCatalog';
 import type { AgentItem } from '../items/types';
+import MarketplaceCatalog from '../MarketplaceCatalog';
 import { itemKey } from '../items/selectors';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+  useAuthContext: () => ({ user: { id: 'u1' } }),
 }));
 
 const items: AgentItem[] = [

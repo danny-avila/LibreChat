@@ -1,17 +1,20 @@
 import { useMemo, useState, useCallback } from 'react';
-import { Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Radio,
   Input,
+  Button,
   OGDialog,
   OGDialogTitle,
   OGDialogContent,
   OGDialogDescription,
 } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { AgentItem } from './items/types';
+import type { TSkill } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { CategoryOption } from './CategoryFilter';
+import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
 import {
   useListSkillsQuery,
@@ -19,10 +22,13 @@ import {
   useGetSkillFavoritesQuery,
 } from '~/data-provider';
 import { useLocalize, useHasAccess, useAuthContext } from '~/hooks';
+import { CreateSkillDialog } from '~/components/Skills/dialogs';
 import MarketplaceCatalog from './MarketplaceCatalog';
-import ItemDialog from './ItemDialog/ItemDialog';
+import { CategoryIcon } from '~/components/Prompts';
 import { buildSkillItems } from './items/catalog';
+import ItemDialog from './ItemDialog/ItemDialog';
 import { applyFilter } from './items/filtering';
+import CategoryFilter from './CategoryFilter';
 import { itemKey } from './items/selectors';
 
 interface SkillsDialogProps {
@@ -47,6 +53,10 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
   const hasSkillsAccess = useHasAccess({
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
+  });
+  const hasCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.CREATE,
   });
   const { data: skillsData, isLoading: isLoadingSkills } = useListSkillsQuery(
     { limit: 100 },
@@ -76,6 +86,8 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
 
   const [view, setView] = useState<SkillView>('marketplace');
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<string | 'all'>('all');
+  const [createOpen, setCreateOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<AgentItem | null>(null);
 
   const catalog = useMemo(
@@ -83,9 +95,39 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
     [skillsData, user?.id],
   );
 
+  const categoryOptions = useMemo<CategoryOption[]>(() => {
+    const seen = new Set<string>();
+    const options: CategoryOption[] = [];
+    for (const item of catalog) {
+      if (item.kind !== 'skill') {
+        continue;
+      }
+      const value = item.skill.category;
+      if (!value || seen.has(value)) {
+        continue;
+      }
+      seen.add(value);
+      options.push({
+        value,
+        label: value,
+        icon: <CategoryIcon category={value} className="size-4" />,
+      });
+    }
+    return options;
+  }, [catalog]);
+
   const filtered = useMemo(
-    () => applyFilter(catalog, { search, kind: 'skill', category: 'all', view }, { favoritedIds }),
-    [catalog, search, view, favoritedIds],
+    () => applyFilter(catalog, { search, kind: 'skill', category, view }, { favoritedIds }),
+    [catalog, search, category, view, favoritedIds],
+  );
+
+  const handleSkillCreated = useCallback(
+    (skill: TSkill) => {
+      const current = (getValues('skills') ?? []) as string[];
+      setValue('skills', Array.from(new Set([...current, skill._id])), { shouldDirty: true });
+      setView('mine');
+    },
+    [getValues, setValue],
   );
 
   const handleToggle = useCallback(
@@ -110,7 +152,9 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
   );
 
   const emptyKey: TranslationKeys | undefined =
-    !search.trim() && view === 'marketplace' ? 'com_ui_no_skills_found' : undefined;
+    !search.trim() && category === 'all' && view === 'marketplace'
+      ? 'com_ui_no_skills_found'
+      : undefined;
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
@@ -120,9 +164,24 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
         </OGDialogDescription>
         <div className="flex h-[80vh] max-h-[760px] flex-col">
           <div className="flex flex-col gap-3 border-b border-border-light px-6 pb-4 pt-5">
-            <OGDialogTitle className="pr-10 text-base font-semibold text-text-primary">
-              {localize('com_ui_skills')}
-            </OGDialogTitle>
+            <div className="flex items-center justify-between gap-2 pr-10">
+              <OGDialogTitle className="text-base font-semibold text-text-primary">
+                {localize('com_ui_skills')}
+              </OGDialogTitle>
+              {hasCreateAccess && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCreateOpen(true)}
+                  aria-label={localize('com_ui_create_skill')}
+                  className="shrink-0 gap-1.5"
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  <span className="truncate">{localize('com_ui_create_skill')}</span>
+                </Button>
+              )}
+            </div>
 
             <div className="flex items-center gap-2">
               <div className="relative min-w-0 flex-1">
@@ -139,13 +198,17 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
                   className="h-[42px] bg-transparent pl-9"
                 />
               </div>
+              <CategoryFilter options={categoryOptions} value={category} onChange={setCategory} />
               <label id="skills-view-label" className="sr-only">
                 {localize('com_ui_skills_filter')}
               </label>
               <Radio
                 options={viewOptions}
                 value={view}
-                onChange={(value) => setView(value as SkillView)}
+                onChange={(value) => {
+                  setView(value as SkillView);
+                  setCategory('all');
+                }}
                 className="flex-shrink-0 p-1"
                 aria-labelledby="skills-view-label"
               />
@@ -167,6 +230,11 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
           </div>
         </div>
         <ItemDialog item={detailItem} agentId={agentId} onClose={() => setDetailItem(null)} />
+        <CreateSkillDialog
+          isOpen={createOpen}
+          setIsOpen={setCreateOpen}
+          onCreated={handleSkillCreated}
+        />
       </OGDialogContent>
     </OGDialog>
   );
