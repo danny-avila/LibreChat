@@ -533,7 +533,10 @@ modelSpecs:
       <<: &aiw_tools
         executeCode: true
         fileSearch: true
-        webSearch: true
+        # Default OFF so Claude/OpenAI keep their native web search (enabled via
+        # endpoint addParams). Gemini overrides this to true to use the custom
+        # provider, since Gemini's native grounding conflicts with function tools.
+        webSearch: false
         googleDrive: true
         googleMail: true
         googleCalendar: true
@@ -661,6 +664,7 @@ modelSpecs:
         instructions: *aiw_instructions
 
     - <<: *aiw_tools
+      webSearch: true
       name: gemini-2.5-pro
       label: Gemini 2.5 Pro
       description: Google's top-tier model for reasoning, coding, and scientific work.
@@ -674,6 +678,7 @@ modelSpecs:
         instructions: *aiw_instructions
 
     - <<: *aiw_tools
+      webSearch: true
       name: gemini-2.5-flash
       label: Gemini 2.5 Flash
       description: Fast Google model with strong reasoning for quick workflows.
@@ -808,6 +813,15 @@ modelSpecs:
 #     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
+
+# Web Search — active config. Powers the custom web_search tool used by Gemini
+# (interactive) and by every model in scheduled/headless runs. Serper returns
+# Google results and also fetches page content, so one key covers search + scrape.
+# Requires SERPER_API_KEY in the environment.
+webSearch:
+  searchProvider: serper
+  serperApiKey: '${SERPER_API_KEY}'
+  scraperProvider: serper
 
 # Web Search Configuration (optional)
 # webSearch:
