@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { Button } from '@librechat/client';
 import { Download, CircleCheckBig } from 'lucide-react';
 import type { Artifact } from '~/common';
-import { useAttachmentLink } from '~/components/Chat/Messages/Content/Parts/LogLink';
+import {
+  useAttachmentLink,
+  isLocallyStoredSource,
+} from '~/components/Chat/Messages/Content/Parts/LogLink';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { isPreviewOnlyArtifact } from '~/utils/artifacts';
 import { useCodeState } from '~/Providers/EditorContext';
@@ -21,9 +24,20 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
    * text artifacts keep the blob path: their `content` IS the file (and
    * reflects any in-panel edits). */
   const { download } = artifact;
-  const downloadOriginalFile =
-    isPreviewOnlyArtifact(artifact.type) &&
-    (download?.filepath != null || download?.file_id != null);
+  /* Only take the original-file branch when `useAttachmentLink` can
+   * actually fetch something: a usable `filepath` (http target, share
+   * route, or code-output URL) OR enough metadata for the local-file
+   * API path (`isLocallyStoredSource` + file_id + user). A shared link
+   * to a non-snapshotted code-execution artifact strips source/user and
+   * deletes filepath while keeping file_id; without this guard that lone
+   * file_id would route to an empty fetch and download nothing instead
+   * of falling back to the preview-content blob. */
+  const hasUsableRoute =
+    (download?.filepath != null && download.filepath !== '') ||
+    (download?.file_id != null &&
+      download?.user != null &&
+      isLocallyStoredSource(download?.source));
+  const downloadOriginalFile = isPreviewOnlyArtifact(artifact.type) && hasUsableRoute;
   const { handleDownload: downloadAttachment } = useAttachmentLink({
     href: download?.filepath ?? '',
     filename: artifact.title ?? fileName,

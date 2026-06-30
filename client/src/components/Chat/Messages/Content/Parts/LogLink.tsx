@@ -27,7 +27,7 @@ interface AttachmentLinkOptions {
  * Files with these sources are stored on the LibreChat server and should
  * use the /api/files/download endpoint instead of direct URL access.
  */
-const isLocallyStoredSource = (source?: string): boolean => {
+export const isLocallyStoredSource = (source?: string): boolean => {
   if (!source) {
     return false;
   }
