@@ -1,5 +1,6 @@
 // Mock all dependencies - define mocks before imports
-// Mock all dependencies
+const mockGetTenantId = jest.fn();
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
@@ -7,6 +8,7 @@ jest.mock('@librechat/data-schemas', () => ({
     info: jest.fn(),
     warn: jest.fn(),
   },
+  getTenantId: mockGetTenantId,
 }));
 
 // Create mock registry instance
@@ -94,6 +96,7 @@ describe('tests for the new helper functions used by the MCP connection status e
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(MCPOAuthHandler, 'generateFlowId');
+    mockGetTenantId.mockReturnValue(undefined);
 
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
@@ -358,6 +361,28 @@ describe('tests for the new helper functions used by the MCP connection status e
           flowId: mockFlowId,
         }),
       );
+    });
+
+    it('should check the tenant-scoped OAuth flow when tenant context exists', async () => {
+      mockGetTenantId.mockReturnValue('tenant/a');
+      MCPOAuthHandler.generateFlowId.mockReturnValue('tenant-flow-id');
+      const mockFlowState = {
+        status: 'PENDING',
+        createdAt: Date.now() - 60000,
+        ttl: 180000,
+      };
+      const mockFlowManager = { getFlowState: jest.fn(() => mockFlowState) };
+      mockGetFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
+
+      expect(MCPOAuthHandler.generateFlowId).toHaveBeenCalledWith(
+        mockUserId,
+        mockServerName,
+        'tenant/a',
+      );
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith('tenant-flow-id', 'mcp_oauth');
+      expect(result).toEqual({ hasActiveFlow: true, hasFailedFlow: false });
     });
 
     it('should return false flags for other statuses', async () => {
@@ -749,6 +774,7 @@ describe('User parameter passing tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetTenantId.mockReturnValue(undefined);
     mockReinitMCPServer = require('./Tools/mcp').reinitMCPServer;
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
@@ -809,6 +835,57 @@ describe('User parameter passing tests', () => {
         }),
       );
       expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
+    });
+
+    it('should fail tenant-scoped OAuth flows when tool loading is aborted', async () => {
+      const mockUser = { id: 'tenant-user', name: 'Tenant User' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const abortController = new AbortController();
+      const mockFlowManager = {
+        createFlowWithHandler: jest.fn(),
+        failFlow: jest.fn(),
+      };
+      mockGetTenantId.mockReturnValue('tenant/a');
+      mockGetFlowStateManager.mockReturnValue(mockFlowManager);
+      MCPOAuthHandler.generateFlowId.mockReturnValue('tenant-flow-id');
+
+      let resolveReinit;
+      mockReinitMCPServer.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveReinit = resolve;
+          }),
+      );
+
+      const createToolsPromise = createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'tenant-abort-server',
+        provider: 'openai',
+        signal: abortController.signal,
+        userMCPAuthMap: {},
+        config: { type: 'stdio' },
+      });
+
+      abortController.abort();
+      resolveReinit({ tools: [], availableTools: {} });
+      await createToolsPromise;
+
+      expect(MCPOAuthHandler.generateFlowId).toHaveBeenCalledWith(
+        mockUser.id,
+        'tenant-abort-server',
+        'tenant/a',
+      );
+      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+        'tenant-flow-id',
+        'mcp_oauth',
+        expect.any(Error),
+      );
+      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+        'tenant-flow-id',
+        'mcp_get_tokens',
+        expect.any(Error),
+      );
     });
 
     it('should throw error if user is not provided', async () => {

@@ -95,6 +95,13 @@ function evictStale(map, ttl) {
 const unavailableMsg =
   "This tool's MCP server is temporarily unavailable. Please try again shortly.";
 
+function getOAuthFlowId(userId, serverName, tenantId = getTenantId()) {
+  if (!tenantId) {
+    return MCPOAuthHandler.generateFlowId(userId, serverName);
+  }
+  return MCPOAuthHandler.generateFlowId(userId, serverName, tenantId);
+}
+
 async function getAppConfigForRequest(req) {
   const user = req?.user;
   return await getAppConfigForUser(user?.id, user);
@@ -344,12 +351,13 @@ function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
  * @param {string} params.userId - The ID of the user.
  * @param {string} params.serverName - The name of the server.
  * @param {string} params.toolName - The name of the tool.
+ * @param {string} [params.tenantId] - The tenant ID for the current request.
  * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
  */
-function createAbortHandler({ userId, serverName, toolName, flowManager }) {
+function createAbortHandler({ userId, serverName, toolName, tenantId, flowManager }) {
   return function () {
     logger.info(`[MCP][User: ${userId}][${serverName}][${toolName}] Tool call aborted`);
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const flowId = getOAuthFlowId(userId, serverName, tenantId);
     // Clean up both mcp_oauth and mcp_get_tokens flows
     flowManager.failFlow(flowId, 'mcp_oauth', new Error('Tool call aborted'));
     flowManager.failFlow(flowId, 'mcp_get_tokens', new Error('Tool call aborted'));
@@ -379,6 +387,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {import('@librechat/api').ParsedServerConfig} [params.serverConfig] - Used to bypass reconnect throttling for request-scoped servers.
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
@@ -392,6 +401,7 @@ async function reconnectServer({
   configServers,
   userMCPAuthMap,
   requestBody,
+  requestScopedConnections,
   streamId = null,
 }) {
   logger.debug(
@@ -423,7 +433,8 @@ async function reconnectServer({
   });
 
   // Set up abort handler to clean up OAuth flows if request is aborted
-  const oauthFlowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+  const tenantId = user?.tenantId ?? getTenantId();
+  const oauthFlowId = getOAuthFlowId(user.id, serverName, tenantId);
   const abortHandler = () => {
     logger.info(
       `[MCP][User: ${user.id}][${serverName}] Tool loading aborted, cleaning up OAuth flows`,
@@ -468,6 +479,7 @@ async function reconnectServer({
       flowManager,
       userMCPAuthMap,
       requestBody,
+      requestScopedConnections,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -498,6 +510,7 @@ async function reconnectServer({
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
@@ -513,6 +526,7 @@ async function createMCPTools({
   configServers,
   userMCPAuthMap,
   requestBody,
+  requestScopedConnections,
   streamId = null,
 }) {
   const serverConfig =
@@ -551,6 +565,7 @@ async function createMCPTools({
     configServers,
     userMCPAuthMap,
     requestBody,
+    requestScopedConnections,
     streamId,
   });
   if (result === null) {
@@ -575,6 +590,7 @@ async function createMCPTools({
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
       requestBody,
+      requestScopedConnections,
       config: serverConfig,
     });
     if (toolInstance) {
@@ -599,6 +615,7 @@ async function createMCPTools({
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
@@ -615,6 +632,7 @@ async function createMCPTool({
   userMCPAuthMap,
   availableTools,
   requestBody,
+  requestScopedConnections,
   config,
   configServers,
   onAvailableTools,
@@ -674,6 +692,7 @@ async function createMCPTool({
       configServers,
       userMCPAuthMap,
       requestBody,
+      requestScopedConnections,
       streamId,
     });
     if (result?.availableTools) {
@@ -699,6 +718,7 @@ async function createMCPTool({
     mcpPermissionContext,
     user,
     requestBody,
+    requestScopedConnections,
     provider,
     toolName,
     serverName,
@@ -713,6 +733,7 @@ function createToolInstance({
   mcpPermissionContext,
   user: capturedUser = null,
   requestBody: capturedRequestBody,
+  requestScopedConnections: capturedRequestScopedConnections,
   toolName,
   serverName,
   serverConfig: capturedServerConfig,
@@ -788,7 +809,8 @@ function createToolInstance({
       });
 
       if (derivedSignal) {
-        abortHandler = createAbortHandler({ userId, serverName, toolName, flowManager });
+        const tenantId = config?.configurable?.user?.tenantId ?? getTenantId();
+        abortHandler = createAbortHandler({ userId, serverName, toolName, tenantId, flowManager });
         derivedSignal.addEventListener('abort', abortHandler, { once: true });
       }
 
@@ -806,6 +828,8 @@ function createToolInstance({
         },
         user: effectiveUser,
         requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
+        requestScopedConnections:
+          config?.configurable?.requestScopedConnections ?? capturedRequestScopedConnections,
         customUserVars,
         flowManager,
         tokenMethods: {
@@ -915,12 +939,13 @@ async function getMCPSetupData(userId, options = {}) {
  * Check OAuth flow status for a user and server
  * @param {string} userId - The user ID
  * @param {string} serverName - The server name
+ * @param {string} [tenantId] - The tenant ID for the current request.
  * @returns {Object} Object containing hasActiveFlow and hasFailedFlow flags
  */
-async function checkOAuthFlowStatus(userId, serverName) {
+async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()) {
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
-  const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+  const flowId = getOAuthFlowId(userId, serverName, tenantId);
 
   try {
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');

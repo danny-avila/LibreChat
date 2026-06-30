@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
@@ -38,6 +38,7 @@ import {
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
@@ -67,6 +68,16 @@ type TTitleEvent = {
 
 const hasRealTitle = (title?: string | null): title is string =>
   title != null && title !== '' && title !== 'New Chat';
+
+/** Skill caches refreshed when a chat turn authors a skill via `create_file`/`edit_file`. */
+const SKILL_QUERY_KEYS = [
+  QueryKeys.skills,
+  QueryKeys.skill,
+  QueryKeys.skillFiles,
+  QueryKeys.skillFileContent,
+  QueryKeys.skillTree,
+  QueryKeys.skillNodeContent,
+] as const;
 
 export const buildCreatedInitialResponse = ({
   initialResponse,
@@ -272,17 +283,39 @@ export default function useEventHandlers({
   const navigate = useNavigate();
   const location = useLocation();
 
+  /** Re-queue the turn's quoted excerpts when an early abort restores the draft,
+   *  so retrying the restored message still sends the references — the pending
+   *  queue was already drained on submit. */
+  const restorePendingQuotes = useRecoilCallback(
+    ({ set }) =>
+      (convoId: string, quotes?: string[]) => {
+        if (Array.isArray(quotes) && quotes.length > 0) {
+          set(store.pendingQuotesByConvoId(convoId), quotes);
+        }
+      },
+    [],
+  );
+
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
+  /** `refetchType: 'all'` so cached-but-unmounted skill queries refresh too —
+   *  they opt out of `refetchOnMount`, so a plain invalidation would leave
+   *  the Skills panel stale until a manual refresh. */
+  const onSkillAuthoringComplete = useCallback(() => {
+    for (const key of SKILL_QUERY_KEYS) {
+      queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
+    }
+  }, [queryClient]);
   const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
     setIsSubmitting,
     lastAnnouncementTimeRef,
+    onSkillAuthoringComplete,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
 
@@ -469,6 +502,8 @@ export default function useEventHandlers({
     [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
   );
 
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
+
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
@@ -491,6 +526,7 @@ export default function useEventHandlers({
       });
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
+        focusRegeneratedResponse(initialResponse.parentMessageId);
       } else {
         setMessages([...messages, userMessage, initialResponse]);
       }
@@ -561,6 +597,7 @@ export default function useEventHandlers({
       announcePolite,
       setConversation,
       applyAgentTemplate,
+      focusRegeneratedResponse,
     ],
   );
 
@@ -635,6 +672,7 @@ export default function useEventHandlers({
               abortMessages,
             );
             setDraft({ id: currentConvoId, value: requestMessage?.text });
+            restorePendingQuotes(currentConvoId, requestMessage?.quotes);
             return;
           }
 
@@ -646,6 +684,7 @@ export default function useEventHandlers({
           setMessages([]);
           queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
           setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
+          restorePendingQuotes(String(Constants.NEW_CONVO), requestMessage?.quotes);
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
@@ -710,6 +749,7 @@ export default function useEventHandlers({
 
           setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
           setDraft({ id: currentConvoId, value: requestMessage?.text });
+          restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
           }
@@ -840,6 +880,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      restorePendingQuotes,
     ],
   );
 

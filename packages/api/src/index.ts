@@ -19,12 +19,15 @@ export * from './mcp/zod';
 export * from './mcp/errors';
 export * from './mcp/cache';
 export * from './mcp/tools';
+export * from './mcp/request';
 /* Utilities */
 export * from './mcp/utils';
 export * from './utils';
 export { default as Tokenizer, countTokens } from './utils/tokenizer';
 export type { EncodingName } from './utils/tokenizer';
 export * from './db/utils';
+/* HTML */
+export * from './html';
 /* OAuth */
 export * from './oauth';
 export * from './mcp/oauth/OAuthReconnectionManager';
@@ -65,6 +68,7 @@ export * from './cache';
 /* Shared Links */
 export * from './shared-links/access';
 export * from './shared-links/service';
+export * from './shared-links/config';
 /* Stream */
 export * from './stream';
 /* Diagnostics */

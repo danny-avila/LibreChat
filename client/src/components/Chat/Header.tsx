@@ -48,7 +48,7 @@ function Header({ index = 0, isLandingPage = false }: { index?: number; isLandin
       <div className="hide-scrollbar flex w-full items-center justify-between gap-2 overflow-x-auto">
         <div className="mx-1 flex items-center">
           <NewJerseyLogo index={index} />
-          <OpenSidebar className="md:hidden" />
+          {isSmallScreen ? <OpenSidebar /> : null}
           {!(navVisible && isSmallScreen) && (
             <div
               className={cn(

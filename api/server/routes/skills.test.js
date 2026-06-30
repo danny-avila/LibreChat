@@ -33,6 +33,7 @@ const {
 } = require('librechat-data-provider');
 
 let mockFileConfig;
+const mockMaybeRunGitHubSkillSyncForRequest = jest.fn(async () => false);
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
@@ -66,6 +67,10 @@ jest.mock('~/server/services/Files/strategies', () => ({
 
 jest.mock('~/server/utils/getFileStrategy', () => ({
   getFileStrategy: jest.fn().mockReturnValue('local'),
+}));
+
+jest.mock('~/server/services/Skills/sync', () => ({
+  maybeRunGitHubSkillSyncForRequest: mockMaybeRunGitHubSkillSyncForRequest,
 }));
 
 jest.mock('~/models', () => {
@@ -152,6 +157,7 @@ afterEach(async () => {
   await AclEntry.deleteMany({});
   currentTestUser = testUsers.owner;
   mockFileConfig = undefined;
+  mockMaybeRunGitHubSkillSyncForRequest.mockClear();
 });
 
 afterAll(async () => {
@@ -409,6 +415,12 @@ describe('Skill routes', () => {
       setTestUser(testUsers.owner);
       const res = await request(app).get('/api/skills');
       expect(res.status).toBe(200);
+      expect(mockMaybeRunGitHubSkillSyncForRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ fileStrategy: 'local' }),
+          user: expect.objectContaining({ id: testUsers.owner._id.toString() }),
+        }),
+      );
       expect(res.body.skills.length).toBe(1);
       expect(res.body.skills[0].name).toBe('mine-skill');
     });

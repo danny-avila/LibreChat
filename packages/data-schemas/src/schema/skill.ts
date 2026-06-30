@@ -182,12 +182,9 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
     /**
      * Provenance of this skill's canonical definition.
      *
-     * - `inline` — authored directly inside LibreChat (the only path wired
-     *   up in phase 1).
-     * - `github` / `notion` — **reserved for phase 2+ external sync**. No
-     *   code path currently produces these values. The column exists now so
-     *   a future sync worker can populate `source` + `sourceMetadata` without
-     *   a schema migration.
+     * - `inline` — authored directly inside LibreChat.
+     * - `github` — mirrored from a configured GitHub skill sync source.
+     * - `notion` — reserved for future external sync integrations.
      */
     source: {
       type: String,
@@ -195,10 +192,8 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
       default: 'inline',
     },
     /**
-     * Arbitrary JSON provenance payload keyed by `source`. Phase 2+ sync
-     * workers will use this to store the upstream commit SHA (github),
-     * page id (notion), etc. Unused in phase 1 — kept `Mixed` to avoid
-     * committing to a shape before the sync paths exist.
+     * Arbitrary JSON provenance payload keyed by `source`. GitHub sync stores
+     * source id, upstream path, commit/blob SHAs, and sync status here.
      */
     sourceMetadata: {
       type: Schema.Types.Mixed,
@@ -234,5 +229,7 @@ skillSchema.index({ author: 1, tenantId: 1 });
 skillSchema.index({ category: 1, updatedAt: -1 });
 skillSchema.index({ updatedAt: -1, _id: 1 });
 skillSchema.index({ name: 1, author: 1, tenantId: 1 }, { unique: true });
+skillSchema.index({ source: 1, 'sourceMetadata.upstreamId': 1, tenantId: 1 });
+skillSchema.index({ source: 1, 'sourceMetadata.sourceId': 1, tenantId: 1 });
 
 export default skillSchema;

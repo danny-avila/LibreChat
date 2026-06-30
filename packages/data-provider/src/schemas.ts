@@ -80,6 +80,33 @@ export const isOpenAILikeProvider = (provider?: string | null): boolean => {
   return openAILikeProviders.has(provider ?? '');
 };
 
+/**
+ * Providers whose `usage_metadata.input_tokens` ALREADY INCLUDES cached tokens
+ * (`input_token_details.cache_*` is a subset, not an additional charge):
+ * Google/Vertex (`promptTokenCount`), OpenAI/Azure (`prompt_tokens`), and the
+ * OpenAI-compatible family. `@librechat/agents`' `getAnthropicUsageMetadata`
+ * folds `cache_creation` + `cache_read` into `input_tokens`, so Anthropic is a
+ * subset provider too; without this the cache portion is billed twice. Bedrock
+ * stays additive — its Converse path passes AWS `inputTokens` through unmodified.
+ * Single source of truth shared by the backend billing path
+ * (`packages/api/src/agents/usage.ts`) and the client usage normalization.
+ */
+export const cacheSubsetProviders = new Set<string>([
+  Providers.OPENAI,
+  Providers.AZURE,
+  Providers.GOOGLE,
+  Providers.VERTEXAI,
+  Providers.XAI,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.MOONSHOT,
+  Providers.ANTHROPIC,
+]);
+
+export const inputTokensIncludesCache = (provider?: string | null): boolean => {
+  return cacheSubsetProviders.has(provider ?? '');
+};
+
 export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
   return documentSupportedProviders.has(provider ?? '');
 };
@@ -494,6 +521,9 @@ export const anthropicSettings = {
   promptCache: {
     default: true as const,
   },
+  promptCacheTtl: {
+    default: undefined,
+  },
   thinking: {
     default: true as const,
   },
@@ -749,6 +779,8 @@ export const tMessageSchema = z.object({
   feedback: feedbackSchema.optional(),
   /** metadata */
   metadata: z.record(z.unknown()).optional(),
+  /** Output tokens for assistant messages, calibrated prompt-side estimate for user messages */
+  tokenCount: z.number().optional(),
   contextMeta: z
     .object({
       calibrationRatio: z
@@ -782,6 +814,14 @@ export const tMessageSchema = z.object({
    * what actually ran, not the current catalog).
    */
   alwaysAppliedSkills: z.array(z.string()).optional(),
+  /**
+   * Verbatim excerpts the user quoted (via the "Add to chat" selection
+   * popup) to reference on this turn. UI metadata that `MessageQuotes`
+   * renders above the user bubble so the references persist on reload. The
+   * excerpts are merged into the user message text sent to the model at
+   * request time and counted in the user message token count.
+   */
+  quotes: z.array(z.string()).optional(),
 });
 
 export type MemoryArtifact = {
@@ -881,6 +921,7 @@ export const tConversationSchema = z.object({
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
   promptCache: z.boolean().optional(),
+  promptCacheTtl: z.enum(['5m', '1h']).optional(),
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
@@ -914,6 +955,8 @@ export const tConversationSchema = z.object({
   thinkingDisplay: eThinkingDisplaySchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
+  /* Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: z.boolean().optional(),
   /* disable streaming */
   disableStreaming: z.boolean().optional(),
   /* assistant */
@@ -1024,6 +1067,8 @@ export const tQueryParamsSchema = tConversationSchema
     useResponsesApi: true,
     /** @endpoints openAI, anthropic, google */
     web_search: true,
+    /** @endpoints google */
+    url_context: true,
     /** @endpoints openAI, custom, azureOpenAI */
     disableStreaming: true,
     /** @endpoints google, anthropic, bedrock */
@@ -1034,6 +1079,7 @@ export const tQueryParamsSchema = tConversationSchema
     maxOutputTokens: true,
     /** @endpoints anthropic */
     promptCache: true,
+    promptCacheTtl: true,
     thinking: true,
     thinkingBudget: true,
     thinkingLevel: true,
@@ -1144,6 +1190,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   thinkingBudget: true,
   thinkingLevel: true,
   web_search: true,
+  url_context: true,
   fileTokenLimit: true,
   iconURL: true,
   greeting: true,
@@ -1178,6 +1225,7 @@ export const googleGenConfigSchema = z
       })
       .optional(),
     web_search: z.boolean().optional(),
+    url_context: z.boolean().optional(),
   })
   .strip()
   .optional();
@@ -1340,7 +1388,7 @@ export const openAISchema = openAIBaseSchema
   .catch(() => ({}));
 
 export const openRouterSchema = openAIBaseSchema
-  .merge(tConversationSchema.pick({ promptCache: true }))
+  .merge(tConversationSchema.pick({ promptCache: true, promptCacheTtl: true }))
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
@@ -1375,6 +1423,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   topK: true,
   resendFiles: true,
   promptCache: true,
+  promptCacheTtl: true,
   thinking: true,
   thinkingBudget: true,
   effort: true,

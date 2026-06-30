@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import type { FunctionToolCall, SummaryContentPart } from './assistants';
+import type { TTokenUsageEvent, TContextUsageEvent } from './runs';
 import type { TAttachment, TPlugin } from 'src/schemas';
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 
@@ -231,6 +232,10 @@ export namespace Agents {
       data?: unknown;
       [key: string]: unknown;
     }>;
+    /** Cumulative provider-reported usage for the run; backfills usage totals on resume */
+    collectedUsage?: TTokenUsageEvent[];
+    /** Latest context window snapshot; restores the usage gauge on resume */
+    contextUsage?: TContextUsageEvent;
   }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during

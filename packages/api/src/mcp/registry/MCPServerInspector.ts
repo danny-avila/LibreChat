@@ -150,8 +150,8 @@ export class MCPServerInspector {
   private async fetchServerCapabilities(): Promise<void> {
     const capabilities = this.connection!.client.getServerCapabilities();
     this.config.capabilities = JSON.stringify(capabilities);
-    const tools = await this.connection!.client.listTools();
-    this.config.tools = tools.tools.map((tool) => tool.name).join(', ');
+    const tools = await this.connection!.fetchTools();
+    this.config.tools = tools.map((tool) => tool.name).join(', ');
   }
 
   private async fetchToolFunctions(): Promise<void> {
@@ -171,7 +171,7 @@ export class MCPServerInspector {
     serverName: string,
     connection: MCPConnection,
   ): Promise<t.LCAvailableTools> {
-    const { tools }: t.MCPToolListResponse = await connection.client.listTools();
+    const tools = await connection.fetchTools();
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {

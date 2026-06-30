@@ -519,8 +519,16 @@ export function getModelMaxTokens(
   endpoint: EModelEndpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
-  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint as keyof typeof maxTokensMap];
-  return getModelTokenValue(modelName, tokensMap);
+  /** A partial override only covers the models it lists; fall back to the
+   *  built-in map for unlisted models instead of dropping to the default
+   *  budget (matches buildTokenConfigMap and getMultiplier). */
+  if (endpointTokenConfig != null) {
+    const overrideValue = getModelTokenValue(modelName, endpointTokenConfig);
+    if (overrideValue != null) {
+      return overrideValue;
+    }
+  }
+  return getModelTokenValue(modelName, maxTokensMap[endpoint as keyof typeof maxTokensMap]);
 }
 
 /**
@@ -536,9 +544,18 @@ export function getModelMaxOutputTokens(
   endpoint: EModelEndpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
-  const tokensMap =
-    endpointTokenConfig ?? maxOutputTokensMap[endpoint as keyof typeof maxOutputTokensMap];
-  return getModelTokenValue(modelName, tokensMap, 'output');
+  /** Partial override fallback — see getModelMaxTokens */
+  if (endpointTokenConfig != null) {
+    const overrideValue = getModelTokenValue(modelName, endpointTokenConfig, 'output');
+    if (overrideValue != null) {
+      return overrideValue;
+    }
+  }
+  return getModelTokenValue(
+    modelName,
+    maxOutputTokensMap[endpoint as keyof typeof maxOutputTokensMap],
+    'output',
+  );
 }
 
 /**

@@ -66,6 +66,69 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.buildInfo).toBe(true);
   });
 
+  it('disables context cost by default', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.contextCost).toBe(false);
+  });
+
+  it('preserves a disabled context cost flag', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        contextCost: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.contextCost).toBe(false);
+  });
+
+  it('preserves enabled context cost config', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        contextCost: true,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.contextCost).toBe(true);
+  });
+
+  it('passes through a configured display currency', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        currency: { code: 'EUR', rate: 0.92 },
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.currency).toEqual({ code: 'EUR', rate: 0.92 });
+  });
+
+  it('omits currency when it is not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.currency).toBeUndefined();
+  });
+
   it('preserves enabled URL auto-submit config', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {
@@ -120,5 +183,29 @@ describe('loadDefaultInterface', () => {
 
     expect(interfaceConfig?.retentionMode).toBe(RetentionMode.ALL);
     expect(interfaceConfig?.retainAgentFiles).toBe(true);
+  });
+
+  it('passes through configured default pinned tools', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        defaultPinnedTools: ['artifacts', 'execute_code', 'mcp'],
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.defaultPinnedTools).toEqual(['artifacts', 'execute_code', 'mcp']);
+  });
+
+  it('omits default pinned tools when not explicitly configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('defaultPinnedTools');
   });
 });

@@ -220,6 +220,46 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(req.body.endpointOption.chatProjectId).toBe('project-1');
   });
 
+  it('should rebuild enforced custom specs from the backend preset when compact parsing drops raw fields', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const modelSpec = {
+      name: 'approved-custom',
+      preset: {
+        endpoint: 'Mock Provider A',
+        endpointType: EModelEndpoint.custom,
+        model: 'mock-model-a',
+        promptPrefix: 'Use the approved custom model spec.',
+      },
+    };
+
+    const req = createReq(
+      {
+        endpoint: 'Mock Provider A',
+        endpointType: EModelEndpoint.custom,
+        spec: 'approved-custom',
+        model: { stale: 'cached-client-value' },
+        agent_id: 'agent_from_cached_client_state',
+        chatProjectId: 'project-1',
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [modelSpec],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(parseCompactConvo.mock.results[0].value).toEqual({});
+    expect(req.body.endpointOption.spec).toBe('approved-custom');
+    expect(req.body.endpointOption.model).toBe('mock-model-a');
+    expect(req.body.endpointOption.promptPrefix).toBe('Use the approved custom model spec.');
+    expect(req.body.endpointOption.chatProjectId).toBe('project-1');
+  });
+
   it('should restore private model spec preset fields in non-enforced mode', async () => {
     mockGetEndpointsConfig.mockResolvedValue({});
 
@@ -444,6 +484,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
 
     expect(updateFilesUsage).toHaveBeenCalledWith(req.body.files, undefined, {
       user: 'user-1',
+      tenantId: undefined,
     });
     expect(req.body.endpointOption.attachments).toBe(attachments);
   });

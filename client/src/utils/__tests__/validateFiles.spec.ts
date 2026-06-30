@@ -98,6 +98,22 @@ describe('validateFiles', () => {
     expect(setError).toHaveBeenCalledWith('Unsupported file type: application/x-unknown');
   });
 
+  it('normalizes Windows ZIP MIME type before validation', () => {
+    const fileList = [makeFile('archive.zip', 'application/x-zip-compressed', 1024)];
+    const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });
+    expect(result).toBe(true);
+    expect(fileList[0].type).toBe('application/zip');
+    expect(setError).not.toHaveBeenCalled();
+  });
+
+  it('infers ZIP MIME type when the browser does not provide one', () => {
+    const fileList = [makeFile('archive.zip', '', 1024)];
+    const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });
+    expect(result).toBe(true);
+    expect(fileList[0].type).toBe('application/zip');
+    expect(setError).not.toHaveBeenCalled();
+  });
+
   it('rejects when file size equals fileSizeLimit (>= comparison)', () => {
     const limit = 5 * megabyte;
     endpointFileConfig = makeEndpointConfig({ fileSizeLimit: limit });

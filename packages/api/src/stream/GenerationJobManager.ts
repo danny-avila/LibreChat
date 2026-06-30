@@ -1,6 +1,17 @@
-import { Constants, parseTextParts } from 'librechat-data-provider';
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
-import type { Agents, TMessageContentParts } from 'librechat-data-provider';
+import {
+  Constants,
+  UsageEvents,
+  parseTextParts,
+  reconcileContextUsage,
+  promptTokensFromUsage,
+} from 'librechat-data-provider';
+import type {
+  TMessageContentParts,
+  TContextUsageEvent,
+  TTokenUsageEvent,
+  Agents,
+} from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
@@ -12,10 +23,10 @@ import type {
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
-  recordGenerationJob,
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
+  recordGenerationJob,
 } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
@@ -176,6 +187,9 @@ class GenerationJobManagerClass {
 
   /** Serializes replay-event read/modify/write updates per stream. */
   private replayEventWriteQueues = new Map<string, Promise<void>>();
+
+  /** Serializes token-usage read/modify/write updates per stream. */
+  private tokenUsageWriteQueues = new Map<string, Promise<void>>();
 
   private cleanupInterval: NodeJS.Timeout | null = null;
 
@@ -649,6 +663,7 @@ class GenerationJobManagerClass {
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
     this.replayEventWriteQueues.delete(streamId);
+    this.tokenUsageWriteQueues.delete(streamId);
 
     // For error jobs, DON'T delete immediately - keep around so late-connecting
     // clients can receive the error. This handles the race condition where error
@@ -763,6 +778,7 @@ class GenerationJobManagerClass {
             parentMessageId: jobData.userMessage.parentMessageId,
             conversationId: jobData.conversationId,
             text: jobData.userMessage.text ?? '',
+            quotes: jobData.userMessage.quotes,
             isCreatedByUser: true,
           }
         : null,
@@ -794,6 +810,7 @@ class GenerationJobManagerClass {
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
     this.replayEventWriteQueues.delete(streamId);
+    this.tokenUsageWriteQueues.delete(streamId);
 
     // Immediate cleanup if configured (default: true)
     if (this._cleanupOnComplete) {
@@ -1053,6 +1070,8 @@ class GenerationJobManagerClass {
     await this.trackUserMessage(streamId, event);
     await this.trackTitleEvent(streamId, event);
     await this.trackReplayEvent(streamId, event);
+    await this.trackContextUsage(streamId, event);
+    await this.trackTokenUsage(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -1151,6 +1170,56 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Persist the latest context usage snapshot (one per model call) so a
+   * resuming client can restore the context gauge without waiting for the
+   * next model call.
+   */
+  private async trackContextUsage(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!('event' in event) || event.event !== UsageEvents.ON_CONTEXT_USAGE) {
+      return;
+    }
+
+    /** Share the token-usage queue so snapshot + usage writes are serialized per
+     *  stream: `persistTokenUsage` reconciles the stored snapshot (read-modify-
+     *  write), and a snapshot landing between its read and write — or a stale
+     *  reconciled write landing after a newer snapshot — would clobber the newer
+     *  run's gauge when visible calls interleave. FIFO ordering keeps each call's
+     *  pre-invoke snapshot ahead of its own usage and behind the next snapshot. */
+    await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
+      this.jobStore.updateJob(streamId, {
+        contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
+      }),
+    );
+  }
+
+  /**
+   * Chains a read/modify/write job update onto the stream's queue so
+   * concurrent writers can't clobber each other's merged state.
+   */
+  private async queueJobWrite(
+    queues: Map<string, Promise<void>>,
+    streamId: string,
+    write: () => Promise<void>,
+  ): Promise<void> {
+    const previousWrite = queues.get(streamId) ?? Promise.resolve();
+    const nextWrite = previousWrite
+      .catch(() => {
+        // Keep the queue moving even if a prior metadata write failed.
+      })
+      .then(write);
+
+    queues.set(streamId, nextWrite);
+
+    try {
+      await nextWrite;
+    } finally {
+      if (queues.get(streamId) === nextWrite) {
+        queues.delete(streamId);
+      }
+    }
+  }
+
+  /**
    * Persist replay-only stream events that are needed to reconstruct active
    * UI state on resume but are not represented by aggregated message content.
    */
@@ -1159,22 +1228,68 @@ class GenerationJobManagerClass {
       return;
     }
 
-    const previousWrite = this.replayEventWriteQueues.get(streamId) ?? Promise.resolve();
-    const nextWrite = previousWrite
-      .catch(() => {
-        // Keep the queue moving even if a prior replay metadata write failed.
-      })
-      .then(() => this.persistReplayEvent(streamId, event));
+    await this.queueJobWrite(this.replayEventWriteQueues, streamId, () =>
+      this.persistReplayEvent(streamId, event),
+    );
+  }
 
-    this.replayEventWriteQueues.set(streamId, nextWrite);
+  /**
+   * Persist per-model-call token usage so resuming clients can rebuild
+   * usage totals on any replica (the live collectedUsage array only exists
+   * on the generating instance).
+   */
+  private async trackTokenUsage(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!('event' in event) || event.event !== UsageEvents.ON_TOKEN_USAGE) {
+      return;
+    }
 
-    try {
-      await nextWrite;
-    } finally {
-      if (this.replayEventWriteQueues.get(streamId) === nextWrite) {
-        this.replayEventWriteQueues.delete(streamId);
+    await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
+      this.persistTokenUsage(streamId, event as { data?: unknown }),
+    );
+  }
+
+  private async persistTokenUsage(streamId: string, event: { data?: unknown }): Promise<void> {
+    const jobData = await this.jobStore.getJob(streamId);
+    if (!jobData || event.data == null) {
+      return;
+    }
+
+    let tokenUsage: unknown[] = [];
+    if (jobData.tokenUsage) {
+      try {
+        tokenUsage = JSON.parse(jobData.tokenUsage) as unknown[];
+      } catch {
+        tokenUsage = [];
       }
     }
+    tokenUsage.push(event.data);
+
+    const update: Partial<SerializableJobData> = { tokenUsage: JSON.stringify(tokenUsage) };
+
+    /** Reconcile the resume snapshot to this call's ACTUAL prompt tokens. A primary
+     *  usage is the post-invoke truth for the call the latest stored snapshot
+     *  precedes (no snapshot is captured between a call's pre-invoke dispatch and
+     *  its usage), so a resuming client restores the real context instead of the
+     *  calibration-inflated estimate — and a mid-call resume (no usage yet) simply
+     *  keeps the raw snapshot rather than mis-applying an earlier call's tokens. */
+    const usage = event.data as TTokenUsageEvent;
+    if (usage.usage_type == null && jobData.contextUsage) {
+      try {
+        const snapshot = JSON.parse(jobData.contextUsage) as TContextUsageEvent | null;
+        if (
+          snapshot != null &&
+          (snapshot.runId == null || usage.runId == null || snapshot.runId === usage.runId)
+        ) {
+          update.contextUsage = JSON.stringify(
+            reconcileContextUsage(snapshot, promptTokensFromUsage(usage)),
+          );
+        }
+      } catch {
+        /* leave the stored snapshot as-is on parse failure */
+      }
+    }
+
+    await this.jobStore.updateJob(streamId, update);
   }
 
   private async persistReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
@@ -1234,6 +1349,7 @@ class GenerationJobManagerClass {
         parentMessageId: message.parentMessageId,
         conversationId: message.conversationId,
         text: message.text,
+        quotes: message.quotes,
       },
     };
 
@@ -1342,10 +1458,32 @@ class GenerationJobManagerClass {
       }
     }
 
+    let contextUsage: t.ResumeState['contextUsage'];
+    if (jobData.contextUsage) {
+      try {
+        contextUsage = JSON.parse(jobData.contextUsage) as t.ResumeState['contextUsage'];
+      } catch {
+        // Ignore malformed persisted context usage.
+      }
+    }
+
+    /** Persisted per model call by trackTokenUsage — unlike the live
+     *  collectedUsage reference, this survives cross-replica resumes. */
+    let collectedUsage: t.ResumeState['collectedUsage'];
+    if (jobData.tokenUsage) {
+      try {
+        const parsed = JSON.parse(jobData.tokenUsage) as t.ResumeState['collectedUsage'];
+        collectedUsage = parsed && parsed.length > 0 ? parsed : undefined;
+      } catch {
+        // Ignore malformed persisted token usage.
+      }
+    }
+
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
       runStepsLength: runSteps.length,
       aggregatedContentLength: aggregatedContent.length,
+      collectedUsageLength: collectedUsage?.length ?? 0,
     });
 
     return {
@@ -1359,6 +1497,8 @@ class GenerationJobManagerClass {
       model: jobData.model,
       titleEvent,
       replayEvents,
+      collectedUsage,
+      contextUsage,
     };
   }
 
@@ -1576,6 +1716,7 @@ class GenerationJobManagerClass {
     this.syncRunningJobMetrics();
     this.runStepBuffers?.clear();
     this.replayEventWriteQueues.clear();
+    this.tokenUsageWriteQueues.clear();
 
     logger.debug('[GenerationJobManager] Destroyed');
   }

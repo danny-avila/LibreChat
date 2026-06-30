@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowState } from '~/flow/types';
@@ -85,6 +85,72 @@ export abstract class UserConnectionManager {
       );
     }
     const ephemeralConnection = config ? requiresEphemeralUserConnection(config) : false;
+    const requestScopedConnections = ephemeralConnection
+      ? opts.requestScopedConnections
+      : undefined;
+    if (requestScopedConnections) {
+      const requestConnectionKey = `${userId}:${serverName}`;
+      const existing = requestScopedConnections.connections.get(requestConnectionKey) as
+        | MCPConnection
+        | undefined;
+      if (existing) {
+        if (!config || (config.updatedAt && existing.isStale(config.updatedAt))) {
+          await existing.disconnect().catch((error) => {
+            logger.warn(
+              `[MCP][User: ${userId}][${serverName}] Failed to disconnect stale request-scoped connection`,
+              error,
+            );
+          });
+          requestScopedConnections.connections.delete(requestConnectionKey);
+        } else if (await existing.isConnected()) {
+          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
+          this.updateUserLastActivity(userId);
+          return existing;
+        } else {
+          requestScopedConnections.connections.delete(requestConnectionKey);
+        }
+      }
+
+      const pending = requestScopedConnections.pending.get(requestConnectionKey) as
+        | Promise<MCPConnection>
+        | undefined;
+      if (pending) {
+        logger.debug(
+          `[MCP][User: ${userId}][${serverName}] Joining in-flight request-scoped connection attempt`,
+        );
+        return pending;
+      }
+
+      const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);
+      const connectionPromise = this.createUserConnectionInternal(
+        {
+          ...opts,
+          forceNew: true,
+          ephemeralConnection: true,
+          serverConfig: config,
+          oauthStart: this.createPendingOAuthStart(serverName, userId, pendingOAuth),
+        },
+        userId,
+        forceNew === true,
+      ).then((connection) => {
+        requestScopedConnections.connections.set(requestConnectionKey, connection);
+        return connection;
+      });
+
+      requestScopedConnections.pending.set(
+        requestConnectionKey,
+        connectionPromise as Promise<unknown>,
+      );
+
+      try {
+        return await connectionPromise;
+      } finally {
+        if (requestScopedConnections.pending.get(requestConnectionKey) === connectionPromise) {
+          requestScopedConnections.pending.delete(requestConnectionKey);
+        }
+      }
+    }
+
     const forceNewConnection = forceNew || ephemeralConnection;
     const clearCooldown = forceNew === true;
 
@@ -247,7 +313,7 @@ export abstract class UserConnectionManager {
       return undefined;
     }
 
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
     const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
     return this.getPendingOAuthStart(existingFlow);
   }
@@ -387,8 +453,8 @@ export abstract class UserConnectionManager {
         graphTokenResolver,
       });
       const registry = MCPServersRegistry.getInstance();
-      const allowedDomains = registry.getAllowedDomains();
-      const allowedAddresses = registry.getAllowedAddresses();
+      const { allowedDomains, allowedAddresses, useSSRFProtection } =
+        await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
       await this.assertResolvedRuntimeConfigAllowed({
         config: runtimeConfig,
         user,
@@ -403,9 +469,10 @@ export abstract class UserConnectionManager {
         serverConfig: runtimeConfig,
         serverName: serverName,
         dbSourced: isUserSourced(runtimeConfig),
-        useSSRFProtection: registry.shouldEnableSSRFProtection(),
+        useSSRFProtection,
         allowedDomains,
         allowedAddresses,
+        ephemeralConnection,
       };
 
       const useOAuth = requiresOAuthMachinery(runtimeConfig);
@@ -598,8 +665,10 @@ export abstract class UserConnectionManager {
     }
 
     const registry = MCPServersRegistry.getInstance();
-    const allowedDomains = registry.getAllowedDomains();
-    const allowedAddresses = registry.getAllowedAddresses();
+    const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
+      userId: user?.id,
+      role: user?.role,
+    });
     const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
     if (!allowed) {
       throw new McpError(

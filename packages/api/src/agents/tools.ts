@@ -140,13 +140,13 @@ Use for text, CSV, JSON, Markdown, logs, and small source files at paths returne
 const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to a file from code execution output, such as "/mnt/data/result.csv" or another path returned by the execution tool.',
     },
   },
-  required: ['file_path'],
+  required: ['path'],
 }) as LCTool['parameters'];
 
 const CODE_READ_FILE_DEF: LCTool = Object.freeze({
@@ -159,7 +159,7 @@ const CODE_READ_FILE_DEF: LCTool = Object.freeze({
 const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to write. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. For SKILL.md, the YAML frontmatter name must match {skillName}.',
@@ -174,13 +174,13 @@ const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       default: false,
     },
   },
-  required: ['file_path', 'content'],
+  required: ['path', 'content'],
 }) as LCTool['parameters'];
 
 const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to write in the code-execution sandbox, such as "/mnt/data/result.txt". Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.',
@@ -195,13 +195,13 @@ const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       default: false,
     },
   },
-  required: ['file_path', 'content'],
+  required: ['path', 'content'],
 }) as LCTool['parameters'];
 
 const SKILL_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to edit. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. edit_file cannot rename skills; keep SKILL.md frontmatter name equal to {skillName}.',
@@ -227,13 +227,13 @@ const SKILL_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       },
     },
   },
-  required: ['file_path'],
+  required: ['path'],
 }) as LCTool['parameters'];
 
 const CODE_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description: 'Path to edit in the code-execution sandbox, such as "/mnt/data/result.txt".',
     },
@@ -258,7 +258,7 @@ const CODE_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       },
     },
   },
-  required: ['file_path'],
+  required: ['path'],
 }) as LCTool['parameters'];
 
 const SKILL_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
