@@ -342,7 +342,18 @@ function getLLMConfig(
     });
   }
 
-  if (!shouldDropClientOptions) {
+  /**
+   * Skip fine-grained tool streaming for headless scheduler runs.
+   *
+   * With the beta, Anthropic streams `server_tool_use` + `web_search_tool_result` events
+   * inline. The installed @librechat/agents version adds `server_tool_use` IDs to
+   * `AIMessage.tool_calls` without including the corresponding `web_search_tool_result`
+   * in the message content, causing a second API call whose message history is rejected
+   * by Anthropic with 400. Without the beta, Anthropic still performs the web search
+   * server-side and returns the results as plain text — no tool streaming events, no
+   * incomplete message history, no 400.
+   */
+  if (!shouldDropClientOptions && !options.headless) {
     if (!requestOptions.clientOptions) {
       requestOptions.clientOptions = {};
     }

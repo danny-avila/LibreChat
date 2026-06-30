@@ -27,4 +27,6 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   resolvedConversation?: Partial<TConversation> | null;
   /** Passport strategy that populated req.user for this request. */
   authStrategy?: string;
+  /** Set by the scheduler for headless (no live HTTP/SSE) agent runs. */
+  fromScheduler?: boolean;
 };

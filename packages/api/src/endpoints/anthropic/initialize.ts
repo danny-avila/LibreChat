@@ -75,6 +75,8 @@ export async function initializeAnthropic({
     ...(vertexOptions && { vertexOptions }),
     // Pass full Vertex AI config including model mappings
     ...(vertexConfig && { vertexConfig }),
+    // Scheduler runs are headless; skip streaming betas the installed agents SDK can't handle
+    ...(req.fromScheduler === true && { headless: true }),
   };
 
   const anthropicConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic];

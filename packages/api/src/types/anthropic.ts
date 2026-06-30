@@ -90,6 +90,8 @@ export interface AnthropicConfigOptions {
   vertexOptions?: VertexAIClientOptions;
   /** Full Vertex AI configuration including model mappings from YAML config */
   vertexConfig?: TVertexAISchema;
+  /** True for headless scheduler runs — skips streaming betas that older agents versions can't handle. */
+  headless?: boolean;
 }
 
 /**
