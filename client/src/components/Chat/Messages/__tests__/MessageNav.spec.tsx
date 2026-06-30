@@ -852,6 +852,27 @@ describe('MessageNav', () => {
 
       expect(writes.length).toBeGreaterThan(0);
     });
+
+    it('highlights only the hovered rib white, dimming the rest', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(20);
+      });
+
+      const ribs = Array.from(container.querySelectorAll('[data-msg-id]'));
+      const white = ribs.filter((r) => r.querySelector('span')?.className.includes('bg-gray-800'));
+      expect(white).toHaveLength(1);
+      expect(white[0]).toHaveAttribute('data-msg-id', 'a');
+    });
   });
 
   describe('drag to scroll', () => {

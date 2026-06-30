@@ -136,13 +136,13 @@ const indicatorButtonClasses = cn(
 
 const MessageIndicator = memo(function MessageIndicator({
   entry,
-  isActive,
+  isHighlighted,
   isCurrent,
   label,
   onSelect,
 }: {
   entry: MessageEntry;
-  isActive: boolean;
+  isHighlighted: boolean;
   isCurrent: boolean;
   label: string;
   onSelect: (id: string) => void;
@@ -164,7 +164,7 @@ const MessageIndicator = memo(function MessageIndicator({
         className={cn(
           'block rounded-full',
           baseSize,
-          isActive ? 'bg-gray-800 dark:bg-gray-100' : 'bg-gray-400 dark:bg-gray-500',
+          isHighlighted ? 'bg-gray-800 dark:bg-gray-100' : 'bg-gray-400 dark:bg-gray-500',
         )}
       />
     </button>
@@ -237,6 +237,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const [tip, setTip] = useState<{ id: string; text: string; top: number; right: number } | null>(
     null,
   );
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const entryById = useMemo(() => {
     const map = new Map<string, MessageEntry>();
@@ -562,7 +563,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       clearTimeout(tipTimerRef.current);
       tipTimerRef.current = null;
     }
-    focusedIdRef.current = null;
+    if (focusedIdRef.current !== null) {
+      focusedIdRef.current = null;
+      setHoveredId(null);
+    }
     if (tipShownRef.current) {
       tipShownRef.current = false;
       setTip(null);
@@ -576,6 +580,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return;
       }
       focusedIdRef.current = id;
+      setHoveredId(id);
       if (tipShownRef.current) {
         revealTip(id);
         return;
@@ -1106,11 +1111,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
                   : 'com_ui_message_nav_go_to_assistant',
                 { 0: entry.preview.slice(0, 30) },
               );
+          const isHighlighted =
+            hoveredId != null ? hoveredId === entry.id : visibleIds.has(entry.id);
           return (
             <MessageIndicator
               key={entry.id}
               entry={entry}
-              isActive={visibleIds.has(entry.id)}
+              isHighlighted={isHighlighted}
               isCurrent={currentId === entry.id}
               onSelect={handleSelect}
               label={label}
