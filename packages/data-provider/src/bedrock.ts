@@ -387,6 +387,26 @@ export const bedrockInputParser = s.tConversationSchema
       }
     });
 
+    /**
+     * Persisted `model_parameters` can carry a prior "thinking off" only inside
+     * `additionalModelRequestFields.thinking = { type: 'disabled' }` (a known
+     * key that isn't spread into `additionalFields`). `initializeBedrock` feeds
+     * those params straight through this parser, so surface that as
+     * `thinking: false` — otherwise the disabled branch is skipped and the
+     * config rebuilds adaptive, flipping a user's Sonnet 5 setting back on.
+     */
+    const persistedThinking = (
+      typedData.additionalModelRequestFields as { thinking?: unknown } | undefined
+    )?.thinking;
+    if (
+      additionalFields.thinking === undefined &&
+      typeof persistedThinking === 'object' &&
+      persistedThinking !== null &&
+      (persistedThinking as { type?: string }).type === 'disabled'
+    ) {
+      additionalFields.thinking = false;
+    }
+
     /** Configure thinking for Bedrock Anthropic models: 3.7 Sonnet, Claude 4+ (opus/sonnet/haiku), and Mythos-class (Fable/Mythos). */
     if (
       typeof typedData.model === 'string' &&

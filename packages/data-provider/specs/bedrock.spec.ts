@@ -590,6 +590,19 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.thinking).toEqual({ type: 'disabled' });
     });
 
+    test('should keep Bedrock Sonnet 5 thinking off when only the persisted AMRF disabled config remains', () => {
+      // initializeBedrock feeds persisted model_parameters straight through this
+      // parser. A prior "thinking off" survives only as AMRF.thinking; it must
+      // not be rebuilt as adaptive on reload.
+      const input = {
+        model: 'anthropic.claude-sonnet-5',
+        additionalModelRequestFields: { thinking: { type: 'disabled' } },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+    });
+
     test('should respect custom thinking budget', () => {
       const input = {
         model: 'anthropic.claude-sonnet-4',
