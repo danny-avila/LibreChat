@@ -926,6 +926,72 @@ describe('MessageNav', () => {
     });
   });
 
+  describe('preview live sync', () => {
+    it('refreshes the open tooltip text when the hovered message updates in place', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent('alpha');
+
+      // Message text updates in place (e.g. streaming). A re-render happens without
+      // the pointer leaving the rail; the tooltip should reflect the new preview.
+      mockUseGetMessagesByConvoId.mockReturnValue({
+        data: [
+          buildMessage({ messageId: 'a', text: 'alpha streamed more', isCreatedByUser: true }),
+          buildMessage({ messageId: 'b', text: 'bravo' }),
+          buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+        ],
+      });
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('a')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(20);
+      });
+      act(() => {
+        jest.advanceTimersByTime(260);
+      });
+
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent(
+        'alpha streamed more',
+      );
+    });
+  });
+
+  describe('browser compatibility', () => {
+    it('uses legacy MediaQueryList listeners when addEventListener is unavailable', () => {
+      const original = window.matchMedia;
+      const addListener = jest.fn();
+      const removeListener = jest.fn();
+      window.matchMedia = (() => ({ matches: false, addListener, removeListener })) as never;
+      try {
+        const messages = [
+          buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+          buildMessage({ messageId: 'b', text: 'bravo' }),
+          buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+        ];
+        let result: ReturnType<typeof renderNav> | undefined;
+        expect(() => {
+          result = renderNav(messages);
+        }).not.toThrow();
+        expect(addListener).toHaveBeenCalledTimes(1);
+        result?.unmount();
+        expect(removeListener).toHaveBeenCalledTimes(1);
+      } finally {
+        window.matchMedia = original;
+      }
+    });
+  });
+
   describe('drag to scroll', () => {
     function setupDraggableNav() {
       const messages = Array.from({ length: 5 }, (_, i) =>

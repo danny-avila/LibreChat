@@ -234,9 +234,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const tipElRef = useRef<HTMLDivElement | null>(null);
   const tipPosRef = useRef({ top: 0, right: 0 });
 
-  const [tip, setTip] = useState<{ id: string; text: string; top: number; right: number } | null>(
-    null,
-  );
+  const [tip, setTip] = useState<{ id: string; top: number; right: number } | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const entryById = useMemo(() => {
@@ -491,8 +489,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     const onChange = () => {
       reducedMotionRef.current = mq.matches;
     };
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
   }, []);
 
   const measureRibs = useCallback(() => {
@@ -547,15 +549,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   const revealTip = useCallback(
     (id: string | null) => {
-      const entry = id ? entryById.get(id) : undefined;
-      if (!entry) {
+      if (!id || !entryById.has(id)) {
         setTip(null);
         return;
       }
-      const text = entry.isEnd ? localize('com_ui_scroll_to_bottom') : entry.preview;
-      setTip({ id: entry.id, text, top: tipPosRef.current.top, right: tipPosRef.current.right });
+      setTip({ id, top: tipPosRef.current.top, right: tipPosRef.current.right });
     },
-    [entryById, localize],
+    [entryById],
   );
 
   const clearTooltip = useCallback(() => {
@@ -1099,6 +1099,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return null;
   }
 
+  const tipEntry = tip ? entryById.get(tip.id) : undefined;
+  let tipText = '';
+  if (tipEntry) {
+    tipText = tipEntry.isEnd ? localize('com_ui_scroll_to_bottom') : tipEntry.preview;
+  }
+
   return (
     <nav
       ref={navRef}
@@ -1179,7 +1185,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
             }}
             className="pointer-events-none max-w-[280px] rounded-md border border-border-medium bg-surface-secondary px-3 py-2 text-text-secondary shadow-lg"
           >
-            <p className="line-clamp-3 text-xs">{tip.text}</p>
+            <p className="line-clamp-3 text-xs">{tipText}</p>
           </div>,
           document.body,
         )}
