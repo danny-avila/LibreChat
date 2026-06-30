@@ -1,9 +1,11 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import ContentParts from '../ContentParts';
+import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
@@ -151,9 +153,14 @@ const imageAttachment = (toolCallId: string, name = 'tiny.png'): TAttachment =>
     conversationId: 'c1',
   }) as unknown as TAttachment;
 
+/** Seed the tool-expansion atom so these tests assert against a known initial
+ *  collapsed state instead of inheriting the product default, which a fork may
+ *  change (or upstream may flip later) and silently break these assertions. */
+const seedCollapsed = ({ set }: MutableSnapshot) => set(store.autoExpandTools, false);
+
 const renderContentParts = (props: React.ComponentProps<typeof ContentParts>) =>
   render(
-    <RecoilRoot>
+    <RecoilRoot initializeState={seedCollapsed}>
       <ContentParts {...props} />
     </RecoilRoot>,
   );
@@ -242,7 +249,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     const nextContent = [makeTextPart('streamed preface'), ...content];
 
     const { rerender } = render(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts {...baseProps} content={content} />
       </RecoilRoot>,
     );
@@ -254,7 +261,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
     rerender(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts {...baseProps} content={nextContent} />
       </RecoilRoot>,
     );
@@ -270,7 +277,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     const completedContent = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
 
     const { rerender } = render(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts {...baseProps} isSubmitting isLatestMessage content={runningContent} />
       </RecoilRoot>,
     );
@@ -281,7 +288,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     fireEvent.click(screen.getAllByTestId('progress-text')[0]);
 
     rerender(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts
           {...baseProps}
           isSubmitting={false}
@@ -301,7 +308,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     const content = [makeMcpToolCallWithoutId('first'), makeMcpToolCallWithoutId('second')];
 
     const { rerender } = render(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts {...baseProps} messageId="msg1" content={content} />
       </RecoilRoot>,
     );
@@ -313,7 +320,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
     rerender(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts {...baseProps} messageId="msg2" content={content} />
       </RecoilRoot>,
     );
@@ -328,7 +335,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
 
     const { rerender } = render(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts {...baseProps} messageId="placeholder-msg" content={content} />
       </RecoilRoot>,
     );
@@ -340,7 +347,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
     rerender(
-      <RecoilRoot>
+      <RecoilRoot initializeState={seedCollapsed}>
         <ContentParts {...baseProps} messageId="server-msg" content={content} />
       </RecoilRoot>,
     );

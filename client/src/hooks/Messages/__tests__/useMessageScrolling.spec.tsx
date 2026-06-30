@@ -2,10 +2,12 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import {
   MessagesViewContext,
   type MessagesViewContextValue,
 } from '~/Providers/MessagesViewContext';
+import store from '~/store';
 
 type MockScrollToBottom = jest.Mock & {
   cancel: jest.Mock;
@@ -149,6 +151,12 @@ function ScrollingHarness({ messagesTree }: { messagesTree?: TMessage[] | null }
   );
 }
 
+/** Seed the auto-scroll atom so these tests assert against a known disabled
+ *  state instead of inheriting the product default, which a fork may change (or
+ *  upstream may flip later); a `true` default would fire scrollToBottom on mount
+ *  and silently break the `not.toHaveBeenCalled()` assertions below. */
+const seedAutoScrollOff = ({ set }: MutableSnapshot) => set(store.autoScroll, false);
+
 function renderScrolling({
   contextOverrides,
   messagesTree,
@@ -157,7 +165,7 @@ function renderScrolling({
   messagesTree?: TMessage[] | null;
 } = {}) {
   return render(
-    <RecoilRoot>
+    <RecoilRoot initializeState={seedAutoScrollOff}>
       <MessagesViewContext.Provider value={createContextValue(contextOverrides)}>
         <ScrollingHarness messagesTree={messagesTree} />
       </MessagesViewContext.Provider>

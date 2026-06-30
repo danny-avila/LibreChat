@@ -1,10 +1,12 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import ToolCallGroup from '../ToolCallGroup';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import { scheduleMessageContentLayoutReconcile } from '~/hooks';
+import ToolCallGroup from '../ToolCallGroup';
+import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
@@ -90,9 +92,14 @@ const fileAttachment: TAttachment = {
   conversationId: 'c1',
 } as unknown as TAttachment;
 
+/** Seed the tool-expansion atom so these tests assert against a known initial
+ *  collapsed state instead of inheriting the product default, which a fork may
+ *  change (or upstream may flip later) and silently break these assertions. */
+const seedCollapsed = ({ set }: MutableSnapshot) => set(store.autoExpandTools, false);
+
 const renderGroup = (props: React.ComponentProps<typeof ToolCallGroup>) =>
   render(
-    <RecoilRoot>
+    <RecoilRoot initializeState={seedCollapsed}>
       <ToolCallGroup {...props} />
     </RecoilRoot>,
   );
