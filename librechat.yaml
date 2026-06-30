@@ -696,7 +696,7 @@ modelSpecs:
       group: Anthropic
       preset:
         endpoint: anthropic
-        model: claude-haiku-4-5
+        model: claude-haiku-4-5-20251001
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
