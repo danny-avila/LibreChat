@@ -19,6 +19,7 @@
 const express = require('express');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
+const { bklIdentityHeaders } = require('@librechat/api');
 
 const router = express.Router();
 
@@ -42,10 +43,14 @@ router.use(async (req, res) => {
 
   // ─── BIMS user identity forward ───────────────────────────────────
   // req.user 는 passport 가 attach (jwtStrategy 또는 localStrategy 이후).
-  // 비로그인 요청 (예: /bkl/health) 은 req.user 없음 → header 안 보냄.
+  // 비로그인 요청 (예: /bkl/health) 은 req.user 없음 → identity header 안 보냄.
+  // bklIdentityHeaders() 가 X-BKL-User-Sid/-Id/-Nm, X-LC-User-* 를 일관되게
+  // 생성 (sid 없으면 omit, 이름은 URL-encode). 같은 helper 가 chat completion
+  // outbound (custom endpoint initialize) 에도 쓰여 주입이 한 곳에서 관리됨.
   const forwardHeaders = {
     'Content-Type': req.headers['content-type'] || 'application/json',
     Accept: req.headers['accept'] || 'application/json',
+    ...bklIdentityHeaders(req),
   };
 
   // ─── ai-api service token (server-side only) ──────────────────────
@@ -53,45 +58,6 @@ router.use(async (req, res) => {
   // JWT) 은 forward 하지 않으므로 덮어쓸 위험 없음.
   if (BKL_API_TOKEN) {
     forwardHeaders['Authorization'] = `Bearer ${BKL_API_TOKEN}`;
-  }
-
-  if (req.user) {
-    // bkl_sid / bkl_user_id 가 있으면 ACL 매칭에 쓸 수 있음
-    if (req.user.bkl_sid != null) {
-      forwardHeaders['X-BKL-User-Sid'] = String(req.user.bkl_sid);
-    }
-
-    // Fallback for migrated users: 신 image 배포 전에 로그인한 user 는
-    // bkl_user_id 가 아직 저장 안 됨 (JWT 만료 전까지 patched localStrategy 가 안 돌아감).
-    // 그 사이에 RAG query 가 들어오면 ACL 가 비공개 사건 모두 drop 함.
-    // → username 을 fallback 으로 forward. BIMS userId 패턴이 lowercase.dot 또는
-    //   UPPERCASE 약자라 LibreChat username (= BIMS userId 그대로 저장됨) 과
-    //   일치하는 경우가 대부분 (대소문자는 ACLFilter 가 정규화).
-    // 재로그인 시 patched localStrategy 가 정상 bkl_user_id 저장 → 이후 정확.
-    const effectiveBklUserId = req.user.bkl_user_id || req.user.username || null;
-    if (effectiveBklUserId) {
-      forwardHeaders['X-BKL-User-Id'] = String(effectiveBklUserId);
-    }
-
-    if (req.user.bkl_user_nm) {
-      // 디버그/로깅용. ACL 매칭에는 안 씀 (한글, 동명이인).
-      // encodeURIComponent — HTTP header 에 non-ASCII 안전하게.
-      forwardHeaders['X-BKL-User-Nm'] = encodeURIComponent(req.user.bkl_user_nm);
-    } else if (req.user.name) {
-      // fallback — name 도 한글일 수 있음
-      forwardHeaders['X-BKL-User-Nm'] = encodeURIComponent(req.user.name);
-    }
-    if (req.user._id) {
-      // LibreChat MongoDB _id — 추적용
-      forwardHeaders['X-LC-User-Id'] = String(req.user._id);
-    }
-    if (req.user.email) {
-      forwardHeaders['X-LC-User-Email'] = String(req.user.email);
-    }
-    if (req.user.role) {
-      // ADMIN 인 경우 bkl-api 측에서 ACL bypass 가능
-      forwardHeaders['X-LC-User-Role'] = String(req.user.role);
-    }
   }
 
   try {

@@ -11,7 +11,7 @@ import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } 
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
-import { isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { isUserProvided, checkUserKeyExpiry, withBklIdentityHeaders } from '~/utils';
 import { standardCache } from '~/cache';
 
 const { PROXY } = process.env;
@@ -151,6 +151,22 @@ export async function initializeCustom({
   }
 
   const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig);
+
+  // ── BKL identity forwarding ─────────────────────────────────────────
+  // For the BKL custom endpoint (ai-api), enrich the configured headers with
+  // the authenticated user's BIMS identity (X-BKL-User-Sid / -Id / -Nm,
+  // X-LC-User-*) so the ai-api BIMS ACL can permit access to that user's
+  // private matters (open10=false). Gated inside the helper on the endpoint
+  // opting in via an X-BKL-* / X-LC-* header in librechat.yaml, so other
+  // custom endpoints never receive identity headers. Resolved here (with the
+  // full req.user) rather than via {{LIBRECHAT_USER_*}} placeholders because
+  // bkl_sid is not an allowed placeholder field and the display name needs
+  // URL-encoding for the ai-api. These concrete values pass unchanged through
+  // the later resolveHeaders() step on both the completion and title paths.
+  customOptions.headers = withBklIdentityHeaders(
+    customOptions.headers as Record<string, string> | undefined,
+    req,
+  );
 
   const clientOptions: Record<string, unknown> = {
     reverseProxyUrl: baseURL ?? null,
