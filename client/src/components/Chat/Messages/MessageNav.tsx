@@ -61,12 +61,14 @@ export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry 
 function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
   const nodes = root.querySelectorAll<HTMLElement>('.message-render');
   const entries: MessageEntry[] = [];
+  const seen = new Set<string>();
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
     const id = node.id;
-    if (!id) {
+    if (!id || seen.has(id)) {
       continue;
     }
+    seen.add(id);
     const msg = messagesById.get(id);
     entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
   }

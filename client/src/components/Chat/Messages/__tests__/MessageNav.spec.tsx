@@ -238,6 +238,43 @@ describe('MessageNav', () => {
         'c',
       ]);
     });
+
+    it('renders one rib per message even when a message nests duplicate .message-render nodes', () => {
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: [] });
+      const scrollable = document.createElement('div');
+      scrollable.className = 'scrollbar-gutter-stable';
+      const content = document.createElement('div');
+      scrollable.appendChild(content);
+      for (const [i, id] of ['a', 'b', 'c'].entries()) {
+        const div = document.createElement('div');
+        div.id = id;
+        div.className = 'message-render';
+        div.textContent = `msg-${id}`;
+        if (id === 'b') {
+          const part = document.createElement('div');
+          part.id = id;
+          part.className = 'message-render';
+          part.textContent = 'msg-b-part';
+          div.appendChild(part);
+        }
+        Object.defineProperty(div, 'offsetTop', { value: i * 200, configurable: true });
+        Object.defineProperty(div, 'offsetHeight', { value: 150, configurable: true });
+        content.appendChild(div);
+      }
+      document.body.appendChild(scrollable);
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const indicators = container.querySelectorAll('[data-msg-id]');
+      expect(Array.from(indicators).map((el) => el.getAttribute('data-msg-id'))).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+    });
   });
 
   describe('indicator styling', () => {
