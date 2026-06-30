@@ -4,7 +4,7 @@ import { createReadStream } from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
-import { logAxiosError, readFileAsString } from '~/utils';
+import { logAxiosError, readFileAsString, bklIdentityHeaders } from '~/utils';
 import { generateShortLivedToken } from '~/crypto/jwt';
 
 /**
@@ -39,6 +39,7 @@ export async function parseText({
           headers: {
             accept: 'application/json',
             ...formData.getHeaders(),
+            ...bklIdentityHeaders(req),
           },
           timeout: 300000,
         },
