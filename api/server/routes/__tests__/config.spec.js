@@ -202,7 +202,7 @@ describe('GET /api/config', () => {
       expect(response.body).toHaveProperty('serverDomain');
     });
 
-    it('should advertise CloudFront cookie refresh only when signed-cookie mode is active', async () => {
+    it('should withhold CloudFront config from the unauthenticated response even when active', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       mockGetCloudFrontConfig.mockReturnValue({
         domain: 'https://cdn.example.com',
@@ -215,12 +215,8 @@ describe('GET /api/config', () => {
 
       const response = await request(app).get('/api/config');
 
-      expect(response.body.cloudFront).toEqual({
-        cookieRefresh: {
-          endpoint: '/api/auth/cloudfront/refresh',
-          domain: 'https://cdn.example.com',
-        },
-      });
+      // CloudFront is consumed only after login (useAppStartup); anonymous callers must not receive it.
+      expect(response.body).not.toHaveProperty('cloudFront');
     });
 
     it('should omit CloudFront cookie refresh when signed-cookie mode is inactive', async () => {
@@ -249,33 +245,21 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('cloudFront');
     });
 
-    it('should default allowAccountDeletion to true when env var is unset', async () => {
-      mockGetAppConfig.mockResolvedValue(baseAppConfig);
-      const app = createApp(null);
-
-      const response = await request(app).get('/api/config');
-
-      expect(response.body.allowAccountDeletion).toBe(true);
-    });
-
-    it('should set allowAccountDeletion to false when ALLOW_ACCOUNT_DELETION=false', async () => {
-      process.env.ALLOW_ACCOUNT_DELETION = 'false';
-      mockGetAppConfig.mockResolvedValue(baseAppConfig);
-      const app = createApp(null);
-
-      const response = await request(app).get('/api/config');
-
-      expect(response.body.allowAccountDeletion).toBe(false);
-    });
-
-    it('should set allowAccountDeletion to true when ALLOW_ACCOUNT_DELETION=true', async () => {
+    it('should strip post-login-only fields from the unauthenticated response', async () => {
       process.env.ALLOW_ACCOUNT_DELETION = 'true';
+      process.env.HELP_AND_FAQ_URL = 'https://help.example.com';
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(null);
 
       const response = await request(app).get('/api/config');
 
-      expect(response.body.allowAccountDeletion).toBe(true);
+      // Post-login informational fields must not leak to anonymous callers (#13102).
+      expect(response.body).not.toHaveProperty('allowAccountDeletion');
+      expect(response.body).not.toHaveProperty('helpAndFaqURL');
+      expect(response.body).not.toHaveProperty('sharedLinksEnabled');
+      expect(response.body).not.toHaveProperty('publicSharedLinksEnabled');
+      expect(response.body).not.toHaveProperty('openidReuseTokens');
+      expect(response.body).not.toHaveProperty('showBirthdayIcon');
     });
 
     it('should return 500 when getAppConfig throws', async () => {
@@ -329,6 +313,36 @@ describe('GET /api/config', () => {
       expect(response.body.modelSpecs).toEqual({ list: [{ name: 'test-spec' }] });
       expect(response.body.balance).toEqual({ enabled: true, startBalance: 10000 });
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
+    });
+
+    it('should include CloudFront config in the authenticated response when active', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'cookies',
+        cookieDomain: '.example.com',
+        privateKey: 'test-private-key',
+        keyPairId: 'K123ABC',
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.cloudFront).toEqual({
+        cookieRefresh: {
+          endpoint: '/api/auth/cloudfront/refresh',
+          domain: 'https://cdn.example.com',
+        },
+      });
+    });
+
+    it('should default allowAccountDeletion to true for authenticated users when env var is unset', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowAccountDeletion).toBe(true);
     });
 
     it('should strip private prompt fields from model spec presets', async () => {
