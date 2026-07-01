@@ -3,8 +3,8 @@ import { isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, AudioResult } from '~/types';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
-import { runGuardedEncode } from './memoryGuard';
 import { validateAudio } from '~/files/validation';
+import { runGuardedEncode } from './memoryGuard';
 
 /**
  * Encodes and formats audio files for different providers

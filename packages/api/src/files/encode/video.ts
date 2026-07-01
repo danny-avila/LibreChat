@@ -3,8 +3,8 @@ import { isDocumentSupportedProvider } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, VideoResult } from '~/types';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
-import { runGuardedEncode } from './memoryGuard';
 import { validateVideo } from '~/files/validation';
+import { runGuardedEncode } from './memoryGuard';
 
 /**
  * Encodes and formats video files for different providers
