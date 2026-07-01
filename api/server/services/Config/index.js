@@ -2,6 +2,7 @@ const appConfig = require('./app');
 const mcpToolsCache = require('./mcp');
 const { config } = require('./EndpointService');
 const getCachedTools = require('./getCachedTools');
+const { getBrandConfig } = require('./brand');
 const loadCustomConfig = require('./loadCustomConfig');
 const loadConfigModels = require('./loadConfigModels');
 const loadDefaultModels = require('./loadDefaultModels');
@@ -10,6 +11,7 @@ const loadAsyncEndpoints = require('./loadAsyncEndpoints');
 
 module.exports = {
   config,
+  getBrandConfig,
   loadCustomConfig,
   loadConfigModels,
   loadDefaultModels,

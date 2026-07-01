@@ -1,0 +1,114 @@
+# Brand DOM contract: Chatgpt
+# This is the selector contract SPE automation targets. Mirror the REAL platform's DOM.
+# null = real platform does not expose this identifier. TODO = needs dev to inventory.
+# Response-area selectors (response_container/content) are how sims READ output - high priority.
+brand: chatgpt
+deployment_subdomain: chat
+deployment_url: chat.patoexpectsspeed.com
+# Placeholders below use ${token} syntax = value injected dynamically at render time,
+# NOT a literal string to hardcode. Tokens used in this file:
+placeholders:
+  "${planName}": The account's plan tier label
+  "${username}": The signed-in user's display name
+  "${chatTitle}": The title of the conversation the control belongs to
+
+controls:
+  model_switcher:
+    label: ChatGPT
+    aria: Model selector
+    testid: model-switcher-dropdown-button
+    id: null
+  model_search:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: null
+    menu_role: menu
+    menu_attr: "data-radix-menu-content"
+    option_row_role: menuitemradio
+    option_row_class: __menu-item
+    option_selected_attr: "aria-checked=true"
+    notes: "No search input - ChatGPT picker is a Radix role=menu. Match model rows by role=menuitemradio + class __menu-item + visible model-name text (span); selected row has aria-checked=true. No per-model testid. ids (radix-_r_*) are dynamic. Free account shows only 2 rows (ChatGPT / ChatGPT Business)."
+  composer:
+    label: null
+    placeholder: Ask anything
+    aria: Chat with ChatGPT
+    testid: null
+    id: prompt-textarea
+  send_button:
+    label: null
+    aria: Send prompt
+    testid: send-button
+    id: composer-submit-button
+  stop_generating:
+    label: null
+    aria: Stop answering
+    testid: stop-button
+    id: composer-submit-button
+  voice_button:
+    label: null
+    aria: Start Voice
+    testid: null
+    id: null
+  dictation_button:
+    label: null
+    aria: Start dictation
+    testid: null
+    id: null
+  attach_file:
+    label: null
+    aria: Add files and more
+    testid: composer-plus-btn
+    id: composer-plus-btn
+  new_chat:
+    label: New chat
+    aria: null
+    testid: create-new-chat-button
+    id: null
+  history_section:
+    label: Recents
+    aria: null
+    testid: null
+    id: null
+  conversation_options:
+    label: null
+    aria: "Open conversation options ${chatTitle}"
+    testid: history-item-0-options
+    id: null
+  regenerate:
+    label: null
+    aria: Switch model
+    testid: null
+    id: null
+  copy_response:
+    label: null
+    aria: Copy response
+    testid: copy-turn-action-button
+    id: null
+  account_menu:
+    label: "${username} ${planName}"
+    aria: "${username} ${planName}, open profile menu In the collapsed/tiny version of the sidebar, the aria-label is simply Open profile menu"
+    testid: accounts-profile-button
+    id: null
+  settings:
+    label: "Settings, hidden"
+    aria: null
+    testid: settings-menu-item
+    id: null
+  response_container:
+    label: null
+    aria: null
+    testid: "conversation-turn-${turnIndex}"
+    id: null
+    classes: agent-turn
+    attr: "data-turn=assistant"
+    notes: "Multiple stable handles: data-testid=conversation-turn-N (N=turn index), data-turn=assistant, data-turn-id=request-WEB:*. Inner div also carries class agent-turn (what SPE reads today). sr-only <h4> says \"ChatGPT said:\"."
+  response_content:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: markdown
+    attr: "data-message-author-role=assistant"
+    notes: "Best handle: data-message-author-role=assistant on the message div (also has data-message-id and data-message-model-slug=<model>). Rendered text is inside a .markdown div within it."

@@ -9,6 +9,7 @@ const { defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
+const { getBrandConfig } = require('~/server/services/Config/brand');
 const { getAppConfig } = require('~/server/services/Config/app');
 
 const router = express.Router();
@@ -100,6 +101,11 @@ function buildSharedPayload() {
 
   if (typeof process.env.CUSTOM_FOOTER === 'string') {
     payload.customFooter = process.env.CUSTOM_FOOTER;
+  }
+
+  const brand = getBrandConfig();
+  if (brand) {
+    payload.brand = brand;
   }
 
   return payload;
