@@ -6,6 +6,13 @@ const DEFAULT_THINKING_BUDGET = 2000;
 export const BEDROCK_OUTPUT_128K_BETA = 'output-128k-2025-02-19';
 export const BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
 
+/** Betas LibreChat injects itself, safe to strip from persisted AMRF when a
+ * model no longer supports them; anything else in `anthropic_beta` is a user opt-in. */
+const GENERATED_BEDROCK_BETAS = new Set<string>([
+  BEDROCK_OUTPUT_128K_BETA,
+  BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
+]);
+
 const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
 
 type ThinkingConfig =
@@ -431,9 +438,16 @@ export const bedrockInputParser = s.tConversationSchema
       const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
 
       if (isAdaptive) {
+        /** Persisted AMRF is spread into the final request, so clearing only
+         * `additionalFields` leaves a stale value from a prior selection. */
+        const persistedAmrf = typedData.additionalModelRequestFields as
+          | Record<string, unknown>
+          | undefined;
         const effort = additionalFields.effort;
         if (effort && typeof effort === 'string' && effort !== '') {
           additionalFields.output_config = { effort };
+        } else if (persistedAmrf) {
+          delete persistedAmrf.output_config;
         }
         delete additionalFields.effort;
 
@@ -444,6 +458,11 @@ export const bedrockInputParser = s.tConversationSchema
             additionalFields.thinking = { type: 'disabled' };
           } else {
             delete additionalFields.thinking;
+            /** Disable-by-omission models (Opus 4.7+): drop the persisted
+             * adaptive config so turning thinking off actually disables it. */
+            if (persistedAmrf) {
+              delete persistedAmrf.thinking;
+            }
           }
         } else {
           /**
@@ -541,14 +560,24 @@ export const bedrockInputParser = s.tConversationSchema
         delete amrf.reasoning_effort;
         /** A Claude model that does not support Bedrock thinking (e.g. a bare
          * `claude-3-5-sonnet` inference profile) must not carry stale thinking
-         * fields from a previously-selected thinking model. `anthropic_beta` is
-         * left alone — it's the generic Bedrock Anthropic beta field and may
-         * hold a user opt-in (e.g. extended output on Claude 3.5). */
+         * fields from a previously-selected thinking model. Drop only the
+         * LibreChat-generated betas (output-128k, fine-grained tool streaming);
+         * user opt-ins in `anthropic_beta` are preserved. */
         if (!isThinkingModel) {
           delete amrf.thinking;
           delete amrf.thinkingBudget;
           delete amrf.effort;
           delete amrf.output_config;
+          if (Array.isArray(amrf.anthropic_beta)) {
+            const kept = amrf.anthropic_beta.filter(
+              (header) => !GENERATED_BEDROCK_BETAS.has(header as string),
+            );
+            if (kept.length > 0) {
+              amrf.anthropic_beta = kept;
+            } else {
+              delete amrf.anthropic_beta;
+            }
+          }
         }
       }
 

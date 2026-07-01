@@ -534,6 +534,59 @@ describe('bedrockInputParser', () => {
       expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
     });
 
+    // The persisted AMRF is spread back into the final request, so clearing only
+    // the freshly-built fields leaves a stale value from a prior selection.
+    test('clears stale persisted output_config when an adaptive model is re-parsed without effort', () => {
+      const input = {
+        model: 'claude-opus-4-8',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'summarized' },
+          output_config: { effort: 'high' },
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.output_config).toBeUndefined();
+      expect(amrf?.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    });
+
+    test('disabling thinking on a bare adaptive model clears the persisted adaptive config', () => {
+      const input = {
+        model: 'claude-opus-4-8',
+        thinking: false,
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'summarized' },
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.thinking).toBeUndefined();
+    });
+
+    test('strips only LibreChat-generated betas from persisted AMRF, keeping user betas', () => {
+      const input = {
+        model: 'claude-3-5-sonnet',
+        additionalModelRequestFields: {
+          anthropic_beta: [BEDROCK_OUTPUT_128K_BETA, 'context-1m-2025-08-07'],
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toEqual(['context-1m-2025-08-07']);
+    });
+
+    test('drops persisted anthropic_beta entirely when it holds only generated betas', () => {
+      const input = {
+        model: 'claude-3-5-sonnet',
+        additionalModelRequestFields: {
+          anthropic_beta: [BEDROCK_OUTPUT_128K_BETA, BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA],
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toBeUndefined();
+    });
+
     test('should match anthropic.claude-haiku-6 model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-haiku-6',
