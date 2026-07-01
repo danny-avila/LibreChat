@@ -673,6 +673,17 @@ export const bedrockInputParser = s.tConversationSchema
  * @returns The object with thinking configured appropriately
  */
 /**
+ * `anthropicSettings.maxOutputTokens.reset` only matches the canonical
+ * family-first id (`claude-sonnet-5`); Bedrock also accepts number-first
+ * aliases (`claude-5-sonnet`, `claude-4-7-sonnet`) that this file gates as
+ * thinking models. Canonicalize to family-first so those aliases resolve to the
+ * real ceiling instead of the 8192 fallback.
+ */
+function toFamilyFirstClaudeId(model: string): string {
+  return model.replace(/claude-(\d+(?:[-.]\d+)?)-(sonnet|opus|haiku)/, 'claude-$2-$1');
+}
+
+/**
  * Thinking tokens share the `maxTokens` output budget with tool-call arguments
  * (e.g. a `create_file` `content`), so a low default truncates large authored
  * files mid-argument. Mirror the direct-Anthropic path and default to the
@@ -684,7 +695,7 @@ function resolveThinkingMaxTokens(data: AnthropicInput): number {
     return explicit;
   }
   const model = typeof data.model === 'string' ? data.model : '';
-  return s.anthropicSettings.maxOutputTokens.reset(model);
+  return s.anthropicSettings.maxOutputTokens.reset(toFamilyFirstClaudeId(model));
 }
 
 function configureThinking(data: AnthropicInput): AnthropicInput {

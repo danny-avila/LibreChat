@@ -1285,6 +1285,21 @@ describe('bedrockInputParser', () => {
       expect(output.maxTokens).toBe(128000);
     });
 
+    // Number-first aliases (claude-4-7-sonnet, claude-5-sonnet) are gated as
+    // thinking models here but are not matched by the family-first reset()
+    // regex; they must still resolve to the real ceiling, not the 8192 fallback.
+    test.each([
+      ['anthropic.claude-4-7-sonnet', 64000],
+      ['claude-5-sonnet', 128000],
+      ['anthropic.claude-4-8-opus', 128000],
+    ])('defaults number-first adaptive alias %s to its real max output', (model, expected) => {
+      const parsed = bedrockInputParser.parse({ model }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect((amrf.thinking as { type: string }).type).toBe('adaptive');
+      expect(output.maxTokens).toBe(expected);
+    });
+
     test('defaults non-adaptive thinking maxTokens to the model max output', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
