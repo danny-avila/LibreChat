@@ -96,9 +96,10 @@ export const capForcedRetentionExpiry = (
  * and stays a no-op once a conversation already conforms.
  *
  * Each message keeps its own earlier deadline: a carried-over message whose per-message TTL
- * already expires sooner than the forced window is marked temporary but its `expiredAt` is
- * left untouched (`$min`), so converting the conversation never extends data that was already
- * scheduled to expire sooner.
+ * already expires sooner than the forced window is marked temporary but keeps its `expiredAt`,
+ * so converting the conversation never extends data that was already scheduled to expire
+ * sooner. A permanent message (`expiredAt` null/missing) instead receives the forced deadline
+ * (`$ifNull` guards `$min` from selecting the null), so the TTL index can remove it.
  */
 export const forceConversationMessagesTemporary = async (
   Message: Model<IMessage>,
@@ -108,7 +109,14 @@ export const forceConversationMessagesTemporary = async (
 ): Promise<void> => {
   await Message.updateMany(
     { conversationId, user: userId, ...forcedRetentionGapFilter<IMessage>(expiredAt) },
-    [{ $set: { isTemporary: true, expiredAt: { $min: ['$expiredAt', expiredAt] } } }],
+    [
+      {
+        $set: {
+          isTemporary: true,
+          expiredAt: { $min: [{ $ifNull: ['$expiredAt', expiredAt] }, expiredAt] },
+        },
+      },
+    ],
   );
 };
 
@@ -250,7 +258,14 @@ export const cascadeForcedRetentionByTag = async (
         conversationId: { $in: conversationIds },
         ...forcedRetentionGapFilter<IMessage>(expiredAt),
       },
-      [{ $set: { isTemporary: true, expiredAt: { $min: ['$expiredAt', expiredAt] } } }],
+      [
+        {
+          $set: {
+            isTemporary: true,
+            expiredAt: { $min: [{ $ifNull: ['$expiredAt', expiredAt] }, expiredAt] },
+          },
+        },
+      ],
     );
     await SharedLink.updateMany(
       {
@@ -294,9 +309,14 @@ export const sweepForcedRetention = async (
     }
     try {
       const expiredAt = capForcedRetentionExpiry(convo.expiredAt, forcedExpiredAt);
-      await Conversation.updateOne({ _id: convo._id }, { $set: { isTemporary: true, expiredAt } });
+      /**
+       * Convert the dependent messages and shares before marking the conversation itself
+       * conforming. If a child backfill throws, the conversation stays non-conforming so the
+       * gap-filtered query picks it up again on a re-run, keeping the sweep safe to repeat.
+       */
       await forceConversationMessagesTemporary(Message, user, conversationId, expiredAt);
       await capConversationSharedLinks(SharedLink, user, conversationId, expiredAt);
+      await Conversation.updateOne({ _id: convo._id }, { $set: { isTemporary: true, expiredAt } });
       result.conversations += 1;
     } catch {
       result.errors += 1;
