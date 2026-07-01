@@ -6,6 +6,7 @@ interface CustomIconProps {
   src: string;
   alt?: string;
   className?: string;
+  monochrome?: boolean;
   onError?: ReactEventHandler<HTMLImageElement>;
 }
 
@@ -13,11 +14,18 @@ interface CustomIconProps {
  * Renders a user-provided custom icon (e.g. an MCP server `iconPath` or a model
  * group `groupIcon`). Monochrome SVG glyphs are masked with `currentColor` so
  * they follow the active theme, while raster images and multi-color SVG logos
- * keep their original colors. The tint color is inherited from the element's
- * text color, so set a `text-*` class on `className`.
+ * keep their original colors. Pass an explicit `monochrome` flag to skip
+ * detection when the icon's config already declares it. The tint color is
+ * inherited from the element's text color, so set a `text-*` class on `className`.
  */
-export default function CustomIcon({ src, alt = '', className, onError }: CustomIconProps) {
-  const { shouldTint } = useAdaptiveIcon(src);
+export default function CustomIcon({
+  src,
+  alt = '',
+  className,
+  monochrome,
+  onError,
+}: CustomIconProps) {
+  const { shouldTint } = useAdaptiveIcon(src, monochrome);
   const decorative = alt === '';
 
   if (shouldTint) {
