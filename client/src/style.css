@@ -1496,6 +1496,27 @@ button {
   background-color: transparent;
 }
 
+.markdown-table-wrapper {
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.25rem;
+  scrollbar-color: var(--border-medium) transparent;
+  scrollbar-width: thin;
+}
+
+.markdown-table-wrapper::-webkit-scrollbar {
+  height: 0.5rem;
+}
+
+.markdown-table-wrapper::-webkit-scrollbar-thumb {
+  background-color: var(--border-medium);
+}
+
+.markdown-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-heavy);
+}
+
 /* Show scrollbar only on hover */
 .scrollbar-hover {
   scrollbar-width: thin;
@@ -2682,14 +2703,19 @@ html {
   color: var(--text-primary);
 }
 
-.account-settings-popover .select-item[data-active-item] {
-  box-shadow: 0 0 0 2px hsl(var(--ring));
-}
-
 .popover-ui[data-enter] {
   opacity: 1;
   scale: 1;
   translate: 0;
+}
+
+.popover-ui.popover-from-left {
+  transform-origin: left;
+  translate: -0.5rem 0;
+  margin-top: 0;
+}
+.popover-ui.popover-from-left[data-enter] {
+  translate: 0 0;
 }
 
 .animate-popover-top,

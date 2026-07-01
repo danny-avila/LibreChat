@@ -63,6 +63,10 @@ const messageSchema: Schema<IMessage> = new Schema(
       required: true,
       default: false,
     },
+    isTemporary: {
+      type: Boolean,
+      default: false,
+    },
     unfinished: {
       type: Boolean,
       default: false,
@@ -138,6 +142,15 @@ const messageSchema: Schema<IMessage> = new Schema(
      * the user bubble to preserve the audit trail of what actually ran.
      */
     alwaysAppliedSkills: { type: [String], default: undefined },
+    /**
+     * Verbatim excerpts the user quoted (via the "Add to chat" selection
+     * popup) to reference on this turn. UI metadata only — `MessageQuotes`
+     * renders these on the user bubble so the references persist through
+     * reload and history. The excerpts are merged into the user message text
+     * sent to the model at request time (counted in the user message token
+     * count), so they are not duplicated into the stored `text`.
+     */
+    quotes: { type: [String], default: undefined },
     /*
     attachments: {
       type: [
@@ -180,6 +193,6 @@ messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1, tenantId: 1 }, { unique: true });
 
 // index for MeiliSearch sync operations
-messageSchema.index({ _meiliIndex: 1, expiredAt: 1 });
+messageSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 
 export default messageSchema;

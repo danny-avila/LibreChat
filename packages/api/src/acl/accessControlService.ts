@@ -1,13 +1,21 @@
-import { Types, ClientSession, DeleteResult } from 'mongoose';
-import { AllMethods, IAclEntry, createMethods, logger } from '@librechat/data-schemas';
-import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provider';
+import { Types } from 'mongoose';
+import { createMethods, logger } from '@librechat/data-schemas';
+import {
+  AccessRoleIds,
+  PermissionBits,
+  PrincipalType,
+  ResourceType,
+} from 'librechat-data-provider';
+import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
+import type { ClientSession, DeleteResult } from 'mongoose';
+
+import type { ResolvedPrincipal } from '~/types/principal';
 
 export class AccessControlService {
   private _dbMethods: AllMethods;
-  private _aclModel;
+
   constructor(mongoose: typeof import('mongoose')) {
     this._dbMethods = createMethods(mongoose);
-    this._aclModel = mongoose.models.AclEntry;
   }
 
   /**
@@ -20,6 +28,7 @@ export class AccessControlService {
    * @param {string} params.accessRoleId - The ID of the role (e.g., AccessRoleIds.AGENT_VIEWER, AccessRoleIds.AGENT_EDITOR)
    * @param {Types.ObjectId} params.grantedBy - User ID granting the permission
    * @param {ClientSession} [params.session] - Optional MongoDB session for transactions
+   * @param {Date} [params.expiredAt] - Optional expiration for resource-tied permissions
    * @returns {Promise<IAclEntry>} The created or updated ACL entry
    */
   public async grantPermission(args: {
@@ -29,9 +38,10 @@ export class AccessControlService {
     resourceId: string | Types.ObjectId;
     accessRoleId: AccessRoleIds;
 
-    grantedBy: string | Types.ObjectId;
+    grantedBy?: string | Types.ObjectId;
     session?: ClientSession;
     roleId?: string | Types.ObjectId;
+    expiredAt?: Date;
   }): Promise<IAclEntry | null> {
     const {
       principalType,
@@ -41,6 +51,7 @@ export class AccessControlService {
       accessRoleId,
       grantedBy,
       session,
+      expiredAt,
     } = args;
     try {
       if (!Object.values(PrincipalType).includes(principalType)) {
@@ -93,6 +104,7 @@ export class AccessControlService {
         grantedBy,
         session,
         role._id,
+        expiredAt,
       );
     } catch (error) {
       logger.error(
@@ -124,18 +136,54 @@ export class AccessControlService {
     requiredPermissions: number;
   }): Promise<Types.ObjectId[]> {
     try {
+      const principalsList = await this.getUserPrincipals({ userId, role });
+      return await this.findAccessibleResourcesForPrincipals({
+        principalsList,
+        resourceType,
+        requiredPermissions,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
+        // Re-throw validation errors
+        if (error.message.includes('requiredPermissions must be')) {
+          throw error;
+        }
+      }
+      return [];
+    }
+  }
+
+  public async getUserPrincipals({
+    userId,
+    role,
+  }: {
+    userId: string | Types.ObjectId;
+    role?: string;
+  }): Promise<ResolvedPrincipal[]> {
+    return await this._dbMethods.getUserPrincipals({ userId, role });
+  }
+
+  public async findAccessibleResourcesForPrincipals({
+    principalsList,
+    resourceType,
+    requiredPermissions,
+  }: {
+    principalsList: ResolvedPrincipal[];
+    resourceType: string;
+    requiredPermissions: number;
+  }): Promise<Types.ObjectId[]> {
+    try {
       if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
         throw new Error('requiredPermissions must be a positive number');
       }
 
       this.validateResourceType(resourceType as ResourceType);
 
-      // Get all principals for the user (user + groups + public)
-      const principalsList = await this._dbMethods.getUserPrincipals({ userId, role });
-
       if (principalsList.length === 0) {
         return [];
       }
+
       return await this._dbMethods.findAccessibleResources(
         principalsList,
         resourceType,
@@ -143,8 +191,9 @@ export class AccessControlService {
       );
     } catch (error) {
       if (error instanceof Error) {
-        logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
-        // Re-throw validation errors
+        logger.error(
+          `[PermissionService.findAccessibleResourcesForPrincipals] Error: ${error.message}`,
+        );
         if (error.message.includes('requiredPermissions must be')) {
           throw error;
         }
@@ -266,7 +315,7 @@ export class AccessControlService {
         throw new Error(`Invalid resource ID: ${resourceId}`);
       }
 
-      const result = await this._aclModel.deleteMany({
+      const result = await this._dbMethods.deleteAclEntries({
         resourceType,
         resourceId,
       });
@@ -330,6 +379,33 @@ export class AccessControlService {
         if (error.message.includes('requiredPermission must be')) {
           throw error;
         }
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Check if a resource has a PUBLIC AclEntry (accessible to everyone).
+   * Unlike checkPermission, this does not require a user context.
+   */
+  public async hasPublicAccess({
+    resourceType,
+    resourceId,
+  }: {
+    resourceType: ResourceType;
+    resourceId: string | Types.ObjectId;
+  }): Promise<boolean> {
+    try {
+      this.validateResourceType(resourceType);
+      return await this._dbMethods.hasPermission(
+        [{ principalType: PrincipalType.PUBLIC }],
+        resourceType,
+        resourceId,
+        PermissionBits.VIEW,
+      );
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`[PermissionService.hasPublicAccess] Error: ${error.message}`);
       }
       return false;
     }

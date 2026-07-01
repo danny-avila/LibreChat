@@ -1,10 +1,16 @@
-import { AnthropicEffort, anthropicSettings, eAnthropicEffortSchema } from './schemas';
+import {
+  AnthropicEffort,
+  googleSettings,
+  anthropicSettings,
+  compactGoogleSchema,
+  eAnthropicEffortSchema,
+} from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
     const { reset } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet models', () => {
+    describe('Claude Sonnet 4.x models (64K limit)', () => {
       it('should return 64K for claude-sonnet-4', () => {
         expect(reset('claude-sonnet-4')).toBe(64000);
       });
@@ -13,12 +19,22 @@ describe('anthropicSettings', () => {
         expect(reset('claude-sonnet-4-5')).toBe(64000);
       });
 
-      it('should return 64K for claude-sonnet-5', () => {
-        expect(reset('claude-sonnet-5')).toBe(64000);
+      it('should return 64K for claude-sonnet-4-6', () => {
+        expect(reset('claude-sonnet-4-6')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 5+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-5', () => {
+        expect(reset('claude-sonnet-5')).toBe(128000);
       });
 
-      it('should return 64K for future versions like claude-sonnet-9', () => {
-        expect(reset('claude-sonnet-9')).toBe(64000);
+      it('should return 128K for future versions like claude-sonnet-9', () => {
+        expect(reset('claude-sonnet-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit minor versions like claude-sonnet-5-10', () => {
+        expect(reset('claude-sonnet-5-10')).toBe(128000);
       });
     });
 
@@ -259,6 +275,20 @@ describe('anthropicSettings', () => {
       });
     });
 
+    describe('Claude Sonnet 5+ models (128K cap)', () => {
+      it('should allow 100K for claude-sonnet-5', () => {
+        expect(set(100000, 'claude-sonnet-5')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-5 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should cap at 128K for future versions like claude-sonnet-9', () => {
+        expect(set(150000, 'claude-sonnet-9')).toBe(128000);
+      });
+    });
+
     describe('Claude Opus 4.5+ models (64K cap)', () => {
       it('should cap at 64K for claude-opus-4-5 when value exceeds', () => {
         expect(set(100000, 'claude-opus-4-5')).toBe(64000);
@@ -350,6 +380,120 @@ describe('anthropicSettings', () => {
       it('should allow 128K exactly', () => {
         expect(set(128000, 'claude-3-opus')).toBe(128000);
       });
+    });
+  });
+});
+
+describe('googleSettings', () => {
+  describe('maxOutputTokens.reset()', () => {
+    const { reset } = googleSettings.maxOutputTokens;
+
+    describe('current Gemini text models (64K, Vertex-safe)', () => {
+      it.each([
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-pro-preview-05-06',
+        'gemini-3',
+        'gemini-3-pro',
+        'gemini-3.1',
+        'gemini-3.1-flash-lite',
+        'gemini-3.5-flash',
+        'models/gemini-3.5-flash',
+        'gemini-4-pro',
+        'gemini-10-flash',
+      ])('returns 65535 for %s', (model) => {
+        expect(reset(model)).toBe(65535);
+      });
+    });
+
+    describe('Gemini image models (32K)', () => {
+      it.each(['gemini-2.5-flash-image', 'gemini-3-pro-image'])('returns 32768 for %s', (model) => {
+        expect(reset(model)).toBe(32768);
+      });
+    });
+
+    describe('legacy/deprecated Gemini and Gemma models (8K)', () => {
+      it.each([
+        'gemini',
+        'gemini-pro',
+        'gemini-pro-vision',
+        'gemini-1.0-pro',
+        'gemini-1.5-pro',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash-8b',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-2.0-flash-preview-image-generation',
+        'gemini-exp-1206',
+        'gemma-3-27b',
+      ])('returns 8192 for %s', (model) => {
+        expect(reset(model)).toBe(8192);
+      });
+    });
+  });
+
+  describe('maxOutputTokens.set()', () => {
+    const { set } = googleSettings.maxOutputTokens;
+
+    it('caps current Gemini models at 65535', () => {
+      expect(set(100000, 'gemini-2.5-pro')).toBe(65535);
+      expect(set(100000, 'gemini-3.5-flash')).toBe(65535);
+    });
+
+    it('allows values within the current 64K limit', () => {
+      expect(set(32000, 'gemini-2.5-flash')).toBe(32000);
+      expect(set(65535, 'gemini-3.5-flash')).toBe(65535);
+    });
+
+    it('caps Gemini image models at 32768', () => {
+      expect(set(65535, 'gemini-2.5-flash-image')).toBe(32768);
+      expect(set(32768, 'gemini-2.5-flash-image')).toBe(32768);
+    });
+
+    it('caps legacy Gemini models at 8192', () => {
+      expect(set(65535, 'gemini-2.0-flash')).toBe(8192);
+      expect(set(20000, 'gemini-1.5-flash')).toBe(8192);
+    });
+
+    it('allows values within the legacy 8K limit', () => {
+      expect(set(4096, 'gemini-1.5-flash')).toBe(4096);
+      expect(set(8192, 'gemini-2.0-flash')).toBe(8192);
+    });
+  });
+
+  describe('compactGoogleSchema (model-aware maxOutputTokens)', () => {
+    it('strips the model default for current Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        maxOutputTokens: 65535,
+      });
+      expect(result.maxOutputTokens).toBeUndefined();
+    });
+
+    it('preserves a deliberate below-default value for current Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        maxOutputTokens: 8192,
+      });
+      expect(result.maxOutputTokens).toBe(8192);
+    });
+
+    it('strips the legacy default for legacy Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-1.5-flash',
+        maxOutputTokens: 8192,
+      });
+      expect(result.maxOutputTokens).toBeUndefined();
+    });
+
+    it('preserves chat project membership metadata', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        chatProjectId: 'project-1',
+      });
+      expect(result.chatProjectId).toBe('project-1');
     });
   });
 });

@@ -9,6 +9,7 @@ const {
   refreshAccessToken,
   GenerationJobManager,
   createSSRFSafeAgents,
+  validateActionOAuthMetadata,
 } = require('@librechat/api');
 const {
   Time,
@@ -28,7 +29,7 @@ const {
   deleteActions,
   deleteAssistant,
 } = require('~/models');
-const { getFlowStateManager } = require('~/config');
+const { getActionFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -203,6 +204,8 @@ async function createActionTool({
       if (metadata.auth && metadata.auth.type !== AuthTypeEnum.None) {
         try {
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
+            await validateActionOAuthMetadata(metadata.auth, allowedAddresses);
+
             const action_id = action.action_id;
             const identifier = `${userId}:${action.action_id}`;
             const requestLogin = async () => {
@@ -240,7 +243,7 @@ async function createActionTool({
                   },
                 };
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
-                const flowManager = getFlowStateManager(flowsCache);
+                const flowManager = getActionFlowStateManager(flowsCache);
                 await flowManager.createFlowWithHandler(
                   `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
@@ -266,6 +269,7 @@ async function createActionTool({
                     client_url: metadata.auth.client_url,
                     redirect_uri: `${process.env.DOMAIN_SERVER}/api/actions/${action_id}/oauth/callback`,
                     token_exchange_method: metadata.auth.token_exchange_method,
+                    allowedAddresses,
                     /** Encrypted values */
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,
@@ -328,6 +332,7 @@ async function createActionTool({
                       encrypted_oauth_client_id: encrypted.oauth_client_id,
                       token_exchange_method: metadata.auth.token_exchange_method,
                       encrypted_oauth_client_secret: encrypted.oauth_client_secret,
+                      allowedAddresses,
                     },
                     {
                       findToken,
@@ -336,7 +341,7 @@ async function createActionTool({
                     },
                   );
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
-                const flowManager = getFlowStateManager(flowsCache);
+                const flowManager = getActionFlowStateManager(flowsCache);
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',

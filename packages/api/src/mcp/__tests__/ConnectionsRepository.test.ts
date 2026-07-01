@@ -21,12 +21,20 @@ jest.mock('../MCPConnectionFactory', () => ({
 jest.mock('../connection');
 
 // Mock the registry
+const mockShouldEnableSSRFProtection = jest.fn().mockReturnValue(false);
+const mockGetAllowedDomains = jest.fn().mockReturnValue(null);
+const mockGetAllowedAddresses = jest.fn().mockReturnValue(null);
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
-  shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
-  getAllowedDomains: jest.fn().mockReturnValue(null),
-  getAllowedAddresses: jest.fn().mockReturnValue(null),
+  shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
+  getAllowedDomains: mockGetAllowedDomains,
+  getAllowedAddresses: mockGetAllowedAddresses,
+  resolveAllowlists: jest.fn(async () => ({
+    allowedDomains: mockGetAllowedDomains(),
+    allowedAddresses: mockGetAllowedAddresses(),
+    useSSRFProtection: mockShouldEnableSSRFProtection(),
+  })),
 };
 
 jest.mock('../registry/MCPServersRegistry', () => ({
@@ -430,6 +438,18 @@ describe('ConnectionsRepository', () => {
         expect(await repository.has('customVarStartupServer')).toBe(false);
       });
 
+      it('should NOT allow connection to OBO servers', async () => {
+        mockServerConfigs.oboServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          obo: {
+            scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite',
+          },
+        };
+
+        expect(await repository.has('oboServer')).toBe(false);
+      });
+
       it('should disconnect existing connection when server becomes not allowed', async () => {
         // Initially setup as regular server
         mockServerConfigs.changingServer = {
@@ -521,6 +541,18 @@ describe('ConnectionsRepository', () => {
         };
 
         expect(await repository.has('customVarServer')).toBe(true);
+      });
+
+      it('should allow connection to OBO servers', async () => {
+        mockServerConfigs.oboServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          obo: {
+            scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite',
+          },
+        };
+
+        expect(await repository.has('oboServer')).toBe(true);
       });
 
       it('should return null from get() when server config does not exist', async () => {

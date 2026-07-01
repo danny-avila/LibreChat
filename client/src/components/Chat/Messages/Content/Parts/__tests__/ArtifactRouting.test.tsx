@@ -1,8 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import type { MutableSnapshot } from 'recoil';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { TAttachment } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import Attachment, { AttachmentGroup } from '../Attachment';
 import store from '~/store';
 
@@ -16,6 +16,10 @@ jest.mock('~/hooks', () => ({
    * routing tests don't exercise the preview flow itself — stub it
    * to a no-op so it doesn't blow up jsdom rendering. */
   useAttachmentPreviewSync: () => ({ status: 'ready', previewError: undefined, isPolling: false }),
+  useExpandCollapse: (isExpanded: boolean) => ({
+    style: { display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr' },
+    ref: { current: null },
+  }),
 }));
 
 jest.mock('../LogLink', () => ({
@@ -194,9 +198,8 @@ describe('Attachment routing for tool artifacts', () => {
      * yet); use it as the canonical "unrouted text" example. */
     const json = baseAttachment({
       filename: 'data.json',
-      type: 'application/json',
       text: '{"a":1,"b":2}',
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<Attachment attachment={json} />);
     expect(container.querySelector('pre')).not.toBeNull();
     expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
@@ -540,10 +543,9 @@ describe('ToolArtifactCard click behaviour', () => {
     const xlsx = baseAttachment({
       file_id: 'just-resolved-xlsx',
       filename: 'data.xlsx',
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: '<table>resolved</table>',
       textFormat: 'html',
-    } as Partial<TAttachment>);
+    });
     const initializeState = (snap: MutableSnapshot) => {
       snap.set(store.isSubmittingFamily(0), false);
       snap.set(store.artifactsVisibility, false);
@@ -576,10 +578,9 @@ describe('ToolArtifactCard click behaviour', () => {
     const xlsx = baseAttachment({
       file_id: 'one-shot-xlsx',
       filename: 'data.xlsx',
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: '<table>resolved</table>',
       textFormat: 'html',
-    } as Partial<TAttachment>);
+    });
     const initializeState = (snap: MutableSnapshot) => {
       snap.set(store.isSubmittingFamily(0), false);
       snap.set(store.artifactsVisibility, false);
@@ -706,22 +707,61 @@ describe('AttachmentGroup routing', () => {
     const empty = baseAttachment({
       file_id: 'empty-zip',
       filename: 'placeholder.zip',
-      type: 'application/zip',
       bytes: 0,
-    } as Partial<TAttachment>);
+    });
     const real = baseAttachment({
       file_id: 'real-zip',
       filename: 'archive.zip',
-      type: 'application/zip',
       bytes: 1024,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_n_files' }));
     const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
     expect(chips.length).toBe(2);
     const filenames = chips.map((c) => c.textContent ?? '');
     // Real chip must render before the empty placeholder.
     expect(filenames[0]).toMatch(/archive\.zip/);
     expect(filenames[1]).toMatch(/placeholder\.zip/);
+  });
+
+  it('keeps multiple downloadable files in their own collapsed group while images render outwardly', () => {
+    const first = baseAttachment({
+      file_id: 'file-a',
+      filename: 'a.zip',
+    });
+    const second = baseAttachment({
+      file_id: 'file-b',
+      filename: 'b.zip',
+    });
+    const json = baseAttachment({
+      file_id: 'file-c',
+      filename: 'c.json',
+      text: '{"c":true}',
+    });
+    const image = baseAttachment({
+      file_id: 'image-a',
+      filename: 'preview.png',
+      width: 16,
+      height: 16,
+    });
+
+    const { container } = renderWith(
+      <AttachmentGroup attachments={[first, second, json, image]} />,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(panel?.firstElementChild).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByTestId('image')).toBeInTheDocument();
+    expect(screen.getAllByTestId('file-container').map((chip) => chip.textContent)).not.toContain(
+      'c.json',
+    );
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('c.json')).toBeInTheDocument();
+    expect(container.querySelector('pre')?.textContent).toBe('{"c":true}');
   });
 
   it('passes a non-dotfile filename through to FileContainer unchanged', () => {
@@ -735,9 +775,8 @@ describe('AttachmentGroup routing', () => {
     const sandboxFile = baseAttachment({
       file_id: 'sandbox-zip',
       filename: 'archive-deadbe.zip',
-      type: 'application/zip',
       bytes: 1024,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[sandboxFile]} />);
     const chip = container.querySelector('[data-testid="file-container"]');
     expect(chip?.textContent).toBe('archive-deadbe.zip');
@@ -753,9 +792,8 @@ describe('AttachmentGroup routing', () => {
     const sandboxDotfile = baseAttachment({
       file_id: 'sandbox-config',
       filename: '_.config-abcdef.zip',
-      type: 'application/zip',
       bytes: 12,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[sandboxDotfile]} />);
     const chip = container.querySelector('[data-testid="file-container"]');
     expect(chip?.textContent).toBe('.config.zip');
@@ -774,7 +812,6 @@ describe('AttachmentGroup routing', () => {
       baseAttachment({
         file_id: 'pending-1',
         filename: 'data.xlsx',
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         status: 'pending',
       } as Partial<TAttachment>),
       baseAttachment({
@@ -810,7 +847,6 @@ describe('AttachmentGroup routing', () => {
       baseAttachment({
         file_id: 'c',
         filename: 'data.json',
-        type: 'application/json',
         text: '{"a":1}',
       } as Partial<TAttachment>),
       baseAttachment({
@@ -826,9 +862,15 @@ describe('AttachmentGroup routing', () => {
     expect(screen.getByText('index.html')).toBeInTheDocument();
     // Mermaid render
     expect(screen.getByTestId('mermaid-render')).toBeInTheDocument();
-    // Inline text fallback for JSON (CSV now goes to SPREADSHEET)
-    expect(container.querySelector('pre')).not.toBeNull();
-    // FileContainer for the plain zip (and potentially others)
-    expect(screen.getAllByTestId('file-container').length).toBeGreaterThan(0);
+    // JSON and plain zip are both downloadable file outputs, so they collapse together.
+    const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const chipLabels = screen.getAllByTestId('file-container').map((chip) => chip.textContent);
+    expect(chipLabels).toContain('archive.zip');
+    expect(chipLabels).not.toContain('data.json');
+
+    fireEvent.click(toggle);
+    expect(screen.getByText('data.json')).toBeInTheDocument();
+    expect(container.querySelector('pre')?.textContent).toBe('{"a":1}');
   });
 });

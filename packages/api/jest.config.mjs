@@ -1,3 +1,11 @@
+const esModules = [
+  '@langchain/langgraph',
+  '@langchain/langgraph-checkpoint',
+  '@langchain/langgraph-sdk',
+  '@mistralai/mistralai',
+  'uuid',
+].join('|');
+
 export default {
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
@@ -23,6 +31,7 @@ export default {
       },
     ],
   },
+  transformIgnorePatterns: [`/node_modules/(?!(${esModules})/).*/`],
   moduleNameMapper: {
     '^@src/(.*)$': '<rootDir>/src/$1',
     '~/(.*)': '<rootDir>/src/$1',

@@ -36,7 +36,7 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
   processFileUpload: jest.fn(),
-  processDeleteRequest: jest.fn(),
+  processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
   processAgentFileUpload: jest.fn(),
 }));
 

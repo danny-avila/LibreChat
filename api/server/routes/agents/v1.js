@@ -81,6 +81,23 @@ router.get(
   }),
   (req, res) => v1.getAgent(req, res, true), // Expanded version
 );
+
+/**
+ * Retrieves an agent's version history (EDIT permission required).
+ * Loaded lazily so the editor doesn't transfer large histories up front.
+ * @route GET /agents/:id/versions
+ * @param {string} req.params.id - Agent identifier.
+ * @returns {Agent[]} 200 - Agent version history - application/json
+ */
+router.get(
+  '/:id/versions',
+  checkAgentAccess,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  v1.getAgentVersions,
+);
 /**
  * Updates an agent.
  * @route PATCH /agents/:id

@@ -36,6 +36,7 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
+const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
@@ -463,6 +464,7 @@ const processCodeOutput = async ({
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
         metadata: { codeEnvRef },
+        ...(await getRetentionExpiry(req)),
       };
       await createFile(file, true);
       return { file: Object.assign(file, { messageId, toolCallId }) };
@@ -565,6 +567,7 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
+      ...(await getRetentionExpiry(req)),
     };
 
     if (expectsPreview) {
@@ -1039,11 +1042,101 @@ async function readSandboxFile({ file_path, session_id, files, req }) {
   }
 }
 
+/**
+ * Writes a UTF-8 text file into the code-execution sandbox by running a
+ * small Python writer through the sandbox `/exec` endpoint. The payload is
+ * base64-encoded JSON so neither the file path nor the content is
+ * interpolated into shell syntax.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path - Path inside the sandbox (prefer `/mnt/data/...`).
+ * @param {string} params.content - Complete UTF-8 text content to write.
+ * @param {string} [params.session_id] - Sandbox session id from the seeded context.
+ * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
+ * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
+ * @returns {Promise<{stdout?: string, stderr?: string, session_id?: string, files?: Array<Object>} | null>}
+ */
+async function writeSandboxFile({ file_path, content, session_id, files, req }) {
+  const baseURL = getCodeBaseURL();
+  if (!baseURL) {
+    return null;
+  }
+
+  const payload = Buffer.from(
+    JSON.stringify({
+      file_path,
+      content_b64: Buffer.from(content, 'utf8').toString('base64'),
+    }),
+    'utf8',
+  ).toString('base64');
+  const code = [
+    "python3 - <<'PY'",
+    'import base64, json, os',
+    `payload = ${JSON.stringify(payload)}`,
+    "data = json.loads(base64.b64decode(payload).decode('utf-8'))",
+    "path = data['file_path']",
+    "content = base64.b64decode(data['content_b64'])",
+    'parent = os.path.dirname(path)',
+    'if parent:',
+    '    os.makedirs(parent, exist_ok=True)',
+    "with open(path, 'wb') as f:",
+    '    f.write(content)',
+    'print(f"WROTE {len(content)} bytes to {path}")',
+    'PY',
+  ].join('\n');
+
+  /** @type {Record<string, unknown>} */
+  const postData = { lang: 'bash', code };
+  if (session_id) {
+    postData.session_id = session_id;
+  }
+  if (files && files.length > 0) {
+    postData.files = files;
+  }
+
+  try {
+    const authHeaders = await getCodeApiAuthHeaders(req);
+    const response = await axios({
+      method: 'post',
+      url: `${baseURL}/exec`,
+      data: postData,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+    const result = response?.data ?? {};
+    if (result.stderr && (result.stdout == null || result.stdout === '')) {
+      throw new Error(String(result.stderr).trim());
+    }
+    if (result.stdout == null && result.session_id == null) {
+      return null;
+    }
+    return {
+      stdout: result.stdout == null ? undefined : String(result.stdout),
+      stderr: result.stderr == null ? undefined : String(result.stderr),
+      session_id: result.session_id,
+      files: result.files,
+    };
+  } catch (error) {
+    logAxiosError({
+      message: `Error writing sandbox file "${file_path}"`,
+      error,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   primeFiles,
   checkIfActive,
   getSessionInfo,
   processCodeOutput,
   readSandboxFile,
+  writeSandboxFile,
   runPreviewFinalize,
 };

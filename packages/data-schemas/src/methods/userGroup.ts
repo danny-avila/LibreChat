@@ -5,7 +5,117 @@ import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 
-export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
+export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
+  findGroupById: (
+    groupId: string | Types.ObjectId,
+    projection?: Record<string, 0 | 1>,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+  findGroupByExternalId: (
+    idOnTheSource: string,
+    source?: 'entra' | 'local',
+    projection?: Record<string, 0 | 1>,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+  findGroupsByExternalIds: (
+    idsOnTheSource: string[],
+    source?: 'entra' | 'local',
+    session?: ClientSession,
+  ) => Promise<IGroup[]>;
+  findGroupsByNamePattern: (
+    namePattern: string,
+    source?: 'entra' | 'local' | null,
+    limit?: number,
+    session?: ClientSession,
+  ) => Promise<IGroup[]>;
+  findGroupsByMemberId: (
+    userId: string | Types.ObjectId,
+    session?: ClientSession,
+  ) => Promise<IGroup[]>;
+  createGroup: (groupData: Partial<IGroup>, session?: ClientSession) => Promise<IGroup>;
+  upsertGroupByExternalId: (
+    idOnTheSource: string,
+    source: 'entra' | 'local',
+    updateData: Partial<IGroup>,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+  addUserToGroup: (
+    userId: string | Types.ObjectId,
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ) => Promise<{ user: IUser; group: IGroup | null }>;
+  removeUserFromGroup: (
+    userId: string | Types.ObjectId,
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ) => Promise<{ user: IUser; group: IGroup | null }>;
+  removeUserFromAllGroups: (userId: string | Types.ObjectId) => Promise<void>;
+  findGroupByQuery: (
+    filter: Record<string, unknown>,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+  updateGroupById: (
+    groupId: string | Types.ObjectId,
+    data: Record<string, unknown>,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+  bulkUpdateGroups: (
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+    options?: { session?: ClientSession },
+  ) => Promise<import('mongoose').UpdateWriteOpResult>;
+  getUserGroups: (userId: string | Types.ObjectId, session?: ClientSession) => Promise<IGroup[]>;
+  getUserPrincipals: (
+    params: {
+      userId: string | Types.ObjectId;
+      role?: string | null;
+    },
+    session?: ClientSession,
+  ) => Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>>;
+  syncUserEntraGroups: (
+    userId: string | Types.ObjectId,
+    entraGroups: Array<{ id: string; name: string; description?: string; email?: string }>,
+    session?: ClientSession,
+  ) => Promise<{
+    user: IUser;
+    addedGroups: IGroup[];
+    removedGroups: IGroup[];
+  }>;
+  searchPrincipals: (
+    searchPattern: string,
+    limitPerType?: number,
+    typeFilter?: Array<PrincipalType.USER | PrincipalType.GROUP | PrincipalType.ROLE> | null,
+    session?: ClientSession,
+  ) => Promise<TPrincipalSearchResult[]>;
+  calculateRelevanceScore: (item: TPrincipalSearchResult, searchPattern: string) => number;
+  sortPrincipalsByRelevance: <
+    T extends { _searchScore?: number; type: string; name?: string; email?: string },
+  >(
+    results: T[],
+  ) => T[];
+  listGroups: (
+    filter?: {
+      source?: 'local' | 'entra';
+      search?: string;
+      limit?: number;
+      offset?: number;
+    },
+    session?: ClientSession,
+  ) => Promise<IGroup[]>;
+  countGroups: (
+    filter?: { source?: 'local' | 'entra'; search?: string },
+    session?: ClientSession,
+  ) => Promise<number>;
+  deleteGroup: (
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+  removeMemberById: (
+    groupId: string | Types.ObjectId,
+    memberId: string,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+} {
   /**
    * Find a group by its ID
    * @param groupId - The group ID
@@ -86,7 +196,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<IGroup[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
-    const regex = new RegExp(namePattern, 'i');
+    const regex = new RegExp(escapeRegExp(namePattern), 'i');
     const query: Record<string, unknown> = {
       $or: [{ name: regex }, { email: regex }, { description: regex }],
     };
@@ -436,8 +546,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @returns Relevance score (0-100)
    */
   function calculateRelevanceScore(item: TPrincipalSearchResult, searchPattern: string): number {
-    const exactRegex = new RegExp(`^${searchPattern}$`, 'i');
-    const startsWithPattern = searchPattern.toLowerCase();
+    const normalizedPattern = searchPattern.toLowerCase();
 
     /** Get searchable text based on type */
     const searchableFields =
@@ -453,16 +562,16 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       let score = 0;
 
       /** Exact match gets highest score */
-      if (exactRegex.test(field)) {
+      if (fieldLower === normalizedPattern) {
         score = 100;
-      } else if (fieldLower.startsWith(startsWithPattern)) {
+      } else if (fieldLower.startsWith(normalizedPattern)) {
         /** Starts with query gets high score */
         score = 80;
-      } else if (fieldLower.includes(startsWithPattern)) {
+      } else if (fieldLower.includes(normalizedPattern)) {
         /** Contains query gets medium score */
         score = 50;
       } else {
-        /** Default score for regex match */
+        /** Default score for database match */
         score = 10;
       }
 
@@ -551,6 +660,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     }
 
     const trimmedPattern = searchPattern.trim();
+    const escapedPattern = escapeRegExp(trimmedPattern);
     const promises: Promise<TPrincipalSearchResult[]>[] = [];
 
     if (!typeFilter || typeFilter.includes(PrincipalType.USER)) {
@@ -558,7 +668,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       const userFields = 'name email username avatar provider idOnTheSource';
       /** For now, we'll use a direct query instead of searchUsers */
       const User = mongoose.models.User as Model<IUser>;
-      const regex = new RegExp(trimmedPattern, 'i');
+      const regex = new RegExp(escapedPattern, 'i');
       const userQuery = User.find({
         $or: [{ name: regex }, { email: regex }, { username: regex }],
       })
@@ -601,7 +711,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (!typeFilter || typeFilter.includes(PrincipalType.ROLE)) {
       const Role = mongoose.models.Role as Model<IRole>;
       if (Role) {
-        const regex = new RegExp(trimmedPattern, 'i');
+        const regex = new RegExp(escapedPattern, 'i');
         const roleQuery = Role.find({ name: regex }).select('name').limit(limitPerType);
 
         if (session) {
@@ -680,7 +790,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     filter: Record<string, unknown>,
     update: Record<string, unknown>,
     options?: { session?: ClientSession },
-  ) {
+  ): Promise<import('mongoose').UpdateWriteOpResult> {
     const Group = mongoose.models.Group as Model<IGroup>;
     return Group.updateMany(filter, update, options || {});
   }

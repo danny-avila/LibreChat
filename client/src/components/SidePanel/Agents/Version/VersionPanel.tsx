@@ -1,8 +1,12 @@
-import { ChevronLeft } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
-import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
-import type { AgentWithVersions, VersionContext } from './types';
+import type { AgentWithVersions, VersionContext, VersionRecord } from './types';
+import {
+  useGetAgentVersionsQuery,
+  useRevertAgentVersionMutation,
+  useGetExpandedAgentByIdQuery,
+} from '~/data-provider';
 import { isActiveVersion } from './isActiveVersion';
 import { useAgentPanelContext } from '~/Providers';
 import VersionContent from './VersionContent';
@@ -16,7 +20,15 @@ export default function VersionPanel() {
 
   const selectedAgentId = agent_id ?? '';
 
-  const { data: agent, isLoading, error, refetch } = useGetAgentByIdQuery(selectedAgentId);
+  const { data: agent } = useGetExpandedAgentByIdQuery(selectedAgentId, {
+    enabled: !!selectedAgentId,
+  });
+  const {
+    data: versionsData,
+    isLoading,
+    error,
+    refetch,
+  } = useGetAgentVersionsQuery(selectedAgentId);
 
   const revertAgentVersion = useRevertAgentVersionMutation({
     onSuccess: () => {
@@ -34,7 +46,7 @@ export default function VersionPanel() {
     },
   });
 
-  const agentWithVersions = agent as AgentWithVersions;
+  const agentWithVersions = agent as AgentWithVersions | undefined;
 
   const currentAgent = useMemo(() => {
     if (!agentWithVersions) return null;
@@ -48,14 +60,15 @@ export default function VersionPanel() {
     };
   }, [agentWithVersions]);
 
+  const versionRecords = useMemo<VersionRecord[]>(() => versionsData ?? [], [versionsData]);
+
   const versions = useMemo(() => {
-    const versionsCopy = [...(agentWithVersions?.versions || [])];
-    return versionsCopy.sort((a, b) => {
+    return [...versionRecords].sort((a, b) => {
       const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
       const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
       return bTime - aTime;
     });
-  }, [agentWithVersions?.versions]);
+  }, [versionRecords]);
 
   const activeVersion = useMemo(() => {
     return versions.length > 0
@@ -73,7 +86,7 @@ export default function VersionPanel() {
 
     return versions.map((version, displayIndex) => {
       const originalIndex =
-        agentWithVersions?.versions?.findIndex(
+        versionRecords.findIndex(
           (v) =>
             v.updatedAt === version.updatedAt &&
             v.createdAt === version.createdAt &&
@@ -87,7 +100,7 @@ export default function VersionPanel() {
         isActive: displayIndex === activeVersionId,
       };
     });
-  }, [versions, currentAgent, agentWithVersions?.versions]);
+  }, [versions, currentAgent, versionRecords]);
 
   const versionContext: VersionContext = useMemo(
     () => ({

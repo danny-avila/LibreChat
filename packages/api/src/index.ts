@@ -1,4 +1,6 @@
 export * from './app';
+/* Artifacts */
+export * from './artifacts';
 /* Admin */
 export * from './admin';
 export * from './cdn';
@@ -7,6 +9,7 @@ export * from './auth';
 /* API Keys */
 export * from './apiKeys';
 /* MCP */
+export * from './mcp/mcpConfig';
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
@@ -16,12 +19,15 @@ export * from './mcp/zod';
 export * from './mcp/errors';
 export * from './mcp/cache';
 export * from './mcp/tools';
+export * from './mcp/request';
 /* Utilities */
 export * from './mcp/utils';
 export * from './utils';
 export { default as Tokenizer, countTokens } from './utils/tokenizer';
 export type { EncodingName } from './utils/tokenizer';
 export * from './db/utils';
+/* HTML */
+export * from './html';
 /* OAuth */
 export * from './oauth';
 export * from './mcp/oauth/OAuthReconnectionManager';
@@ -33,10 +39,16 @@ export * from './flow/manager';
 export * from './middleware';
 /* Memory */
 export * from './memory';
+/* Model Specs */
+export * from './modelSpecs';
 /* Agents */
 export * from './agents';
+/* Actions */
+export * from './actions';
 /* Prompts */
 export * from './prompts';
+/* Projects */
+export * from './projects';
 /* Skills */
 export * from './skills';
 /* Endpoints */
@@ -49,12 +61,20 @@ export * from './storage';
 export * from './tools';
 /* web search */
 export * from './web';
+/* Langfuse */
+export * from './langfuse';
 /* Cache */
 export * from './cache';
+/* Shared Links */
+export * from './shared-links/access';
+export * from './shared-links/service';
+export * from './shared-links/config';
 /* Stream */
 export * from './stream';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
+/* RUM */
+export * from './rum/proxy';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

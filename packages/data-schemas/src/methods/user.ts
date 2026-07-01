@@ -1,13 +1,113 @@
 import mongoose, { FilterQuery } from 'mongoose';
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
-export const DEFAULT_SESSION_EXPIRY = 1000 * 60 * 15;
+export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
 
 /** Factory function that takes mongoose instance and returns the methods */
-export function createUserMethods(mongoose: typeof import('mongoose')) {
+export function createUserMethods(mongoose: typeof import('mongoose')): {
+  findUser: (
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+  ) => Promise<IUser | null>;
+  findUsers: (
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ) => Promise<IUser[]>;
+  countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
+  createUser: (
+    data: CreateUserRequest,
+    balanceConfig?: BalanceConfig,
+    disableTTL?: boolean,
+    returnUser?: boolean,
+  ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
+  updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  acceptTerms: (userId: string) => Promise<IUser | null>;
+  searchUsers: ({
+    searchPattern,
+    limit,
+    fieldsToSelect,
+  }: {
+    searchPattern: string;
+    limit?: number;
+    fieldsToSelect?: string | string[] | null;
+  }) => Promise<
+    {
+      _id: mongoose.Types.ObjectId;
+      id: string;
+      name?: string;
+      username?: string;
+      email: string;
+      emailVerified: boolean;
+      password?: string;
+      avatar?: string;
+      provider: string;
+      role?: string;
+      googleId?: string;
+      facebookId?: string;
+      openidId?: string;
+      samlId?: string;
+      ldapId?: string;
+      githubId?: string;
+      discordId?: string;
+      appleId?: string;
+      plugins?: string[];
+      openidIssuer?: string;
+      twoFactorEnabled?: boolean;
+      totpSecret?: string;
+      backupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      pendingTotpSecret?: string;
+      pendingBackupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      refreshToken?: Array<{
+        refreshToken: string;
+      }>;
+      expiresAt?: Date;
+      termsAccepted?: boolean;
+      personalization?: {
+        memories?: boolean;
+      };
+      favorites?: import('librechat-data-provider').TUserFavorite[];
+      skillStates?: Record<string, boolean>;
+      createdAt?: Date;
+      updatedAt?: Date;
+      idOnTheSource?: string;
+      tenantId?: string;
+      federatedTokens?: import('~/types').OIDCTokens;
+      openidTokens?: import('~/types').OIDCTokens;
+      $locals: Record<string, unknown>;
+      $op: 'save' | 'validate' | 'remove' | null;
+      $where: Record<string, unknown>;
+      baseModelName?: string;
+      collection: mongoose.Collection;
+      db: mongoose.Connection;
+      errors?: mongoose.Error.ValidationError;
+      isNew: boolean;
+      schema: mongoose.Schema;
+    }[]
+  >;
+  getUserById: (userId: string, fieldsToSelect?: string | string[] | null) => Promise<IUser | null>;
+  generateToken: (user: IUser, expiresIn?: number) => Promise<string>;
+  deleteUserById: (userId: string) => Promise<UserDeleteResult>;
+  updateUserPlugins: (
+    userId: string,
+    plugins: string[] | undefined,
+    pluginKey: string,
+    action: 'install' | 'uninstall',
+  ) => Promise<IUser | null>;
+  toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
+} {
   /**
    * Normalizes email fields in search criteria to lowercase and trimmed.
    * Handles both direct email fields and $or arrays containing email conditions.
@@ -155,6 +255,28 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Atomically records terms acceptance for a user.
+   * Sets termsAccepted and, only when no timestamp is already stored, stamps
+   * termsAcceptedAt with the server time so the first acceptance within a terms
+   * cycle is preserved across concurrent or repeated requests.
+   */
+  async function acceptTerms(userId: string): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    return await User.findByIdAndUpdate(
+      userId,
+      [
+        {
+          $set: {
+            termsAccepted: true,
+            termsAcceptedAt: { $ifNull: ['$termsAcceptedAt', '$$NOW'] },
+          },
+        },
+      ],
+      { new: true, runValidators: true },
+    ).lean<IUser>();
+  }
+
+  /**
    * Retrieve a user by ID and convert the found user document to a plain object.
    */
   async function getUserById(
@@ -254,12 +376,74 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchPattern: string;
     limit?: number;
     fieldsToSelect?: string | string[] | null;
-  }) {
+  }): Promise<
+    {
+      _id: mongoose.Types.ObjectId;
+      id: string;
+      name?: string;
+      username?: string;
+      email: string;
+      emailVerified: boolean;
+      password?: string;
+      avatar?: string;
+      provider: string;
+      role?: string;
+      googleId?: string;
+      facebookId?: string;
+      openidId?: string;
+      samlId?: string;
+      ldapId?: string;
+      githubId?: string;
+      discordId?: string;
+      appleId?: string;
+      plugins?: string[];
+      openidIssuer?: string;
+      twoFactorEnabled?: boolean;
+      totpSecret?: string;
+      backupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      pendingTotpSecret?: string;
+      pendingBackupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      refreshToken?: Array<{
+        refreshToken: string;
+      }>;
+      expiresAt?: Date;
+      termsAccepted?: boolean;
+      personalization?: {
+        memories?: boolean;
+      };
+      favorites?: import('librechat-data-provider').TUserFavorite[];
+      skillStates?: Record<string, boolean>;
+      createdAt?: Date;
+      updatedAt?: Date;
+      idOnTheSource?: string;
+      tenantId?: string;
+      federatedTokens?: import('~/types').OIDCTokens;
+      openidTokens?: import('~/types').OIDCTokens;
+      $locals: Record<string, unknown>;
+      $op: 'save' | 'validate' | 'remove' | null;
+      $where: Record<string, unknown>;
+      baseModelName?: string;
+      collection: mongoose.Collection;
+      db: mongoose.Connection;
+      errors?: mongoose.Error.ValidationError;
+      isNew: boolean;
+      schema: mongoose.Schema;
+    }[]
+  > {
     if (!searchPattern || searchPattern.trim().length === 0) {
       return [];
     }
 
-    const regex = new RegExp(searchPattern.trim(), 'i');
+    const trimmedPattern = searchPattern.trim();
+    const regex = new RegExp(escapeRegExp(trimmedPattern), 'i');
     const User = mongoose.models.User;
 
     const query = User.find({
@@ -273,8 +457,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     const users = await query.lean<IUser[]>();
 
     // Score results by relevance
-    const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
-    const startsWithPattern = searchPattern.trim().toLowerCase();
+    const startsWithPattern = trimmedPattern.toLowerCase();
 
     const scoredUsers = users.map((user) => {
       const searchableFields = [user.name, user.email, user.username].filter(
@@ -287,7 +470,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         let score = 0;
 
         // Exact match gets highest score
-        if (exactRegex.test(field)) {
+        if (fieldLower === startsWithPattern) {
           score = 100;
         }
         // Starts with query gets high score
@@ -298,7 +481,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         else if (fieldLower.includes(startsWithPattern)) {
           score = 50;
         }
-        // Default score for regex match
+        // Default score for database match
         else {
           score = 10;
         }
@@ -351,6 +534,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     countUsers,
     createUser,
     updateUser,
+    acceptTerms,
     searchUsers,
     getUserById,
     generateToken,

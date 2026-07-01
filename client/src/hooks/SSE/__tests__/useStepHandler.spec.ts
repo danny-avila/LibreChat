@@ -1,5 +1,5 @@
-import { renderHook, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
+import { renderHook, act } from '@testing-library/react';
 import {
   Constants,
   StepTypes,
@@ -17,8 +17,20 @@ import type {
   SubagentUpdateEvent,
   Agents,
 } from 'librechat-data-provider';
-import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { subagentProgressByToolCallId } from '~/store/subagents';
+import useStepHandler from '~/hooks/SSE/useStepHandler';
+
+/** `Constants` is a heterogeneous enum (`string | number`); annotate as
+ *  `string` so the member is usable where a `string` field is expected. */
+const USE_PRELIM_RESPONSE_MESSAGE_ID: string = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
+
+const getToolCallName = (part?: TMessageContentParts): string | undefined => {
+  if (part?.type !== ContentTypes.TOOL_CALL) {
+    return undefined;
+  }
+  const { tool_call: toolCall } = part;
+  return 'name' in toolCall ? toolCall.name : undefined;
+};
 
 type TSubmissionForTest = {
   userMessage: TMessage;
@@ -37,6 +49,7 @@ describe('useStepHandler', () => {
   const mockSetMessages = jest.fn();
   const mockGetMessages = jest.fn();
   const mockAnnouncePolite = jest.fn();
+  const mockOnSkillAuthoringComplete = jest.fn();
   const mockLastAnnouncementTimeRef = { current: 0 };
 
   const createHookParams = () => ({
@@ -44,6 +57,7 @@ describe('useStepHandler', () => {
     getMessages: mockGetMessages,
     announcePolite: mockAnnouncePolite,
     lastAnnouncementTimeRef: mockLastAnnouncementTimeRef,
+    onSkillAuthoringComplete: mockOnSkillAuthoringComplete,
   });
 
   const createUserMessage = (overrides: Partial<TMessage> = {}): TMessage => ({
@@ -234,6 +248,182 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('should preserve multiple tool call steps for the same preliminary response', () => {
+      const responseMessage = createResponseMessage();
+      let currentMessages = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({ initialResponse: responseMessage });
+
+      const firstRunStep = createToolCallRunStep({
+        id: 'step-oauth-eli',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 0,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const secondRunStep = createToolCallRunStep({
+        id: 'step-oauth-vespa',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 1,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-vespa',
+              name: `oauth${Constants.mcp_delimiter}Vespa`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: firstRunStep },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: secondRunStep },
+          submission,
+        );
+      });
+
+      const responseMsg = currentMessages.find((m) => !m.isCreatedByUser);
+      expect(responseMsg?.content).toHaveLength(2);
+      expect(getToolCallName(responseMsg?.content?.[0])).toBe(`oauth${Constants.mcp_delimiter}ELI`);
+      expect(getToolCallName(responseMsg?.content?.[1])).toBe(
+        `oauth${Constants.mcp_delimiter}Vespa`,
+      );
+    });
+
+    it('should clear OAuth prompt slots when one occupies the real response slot', () => {
+      const responseMessage = createResponseMessage();
+      let currentMessages = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({ initialResponse: responseMessage });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createToolCallRunStep({
+              id: 'step-oauth-eli',
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 0,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [
+                  {
+                    id: 'tool-call-eli',
+                    name: `oauth${Constants.mcp_delimiter}ELI`,
+                    args: '',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                ],
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createToolCallRunStep({
+              id: 'step-oauth-vespa',
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 1,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [
+                  {
+                    id: 'tool-call-vespa',
+                    name: `oauth${Constants.mcp_delimiter}Vespa`,
+                    args: '',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                ],
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              id: 'step-message',
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 0,
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-message', 'Ready') },
+          submission,
+        );
+      });
+
+      const responseMsg = currentMessages.find((m) => !m.isCreatedByUser);
+      expect(responseMsg?.content).toEqual([{ type: ContentTypes.TEXT, text: 'Ready' }]);
+    });
+
+    it('should not replace the message list from a shorter refresh during tool call steps', () => {
+      const userMessage = createUserMessage();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValueOnce([userMessage, responseMessage]).mockReturnValueOnce([]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        runId: responseMessage.messageId,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: runStep },
+          createSubmission({ userMessage, initialResponse: responseMessage }),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      expect(lastCall.map((message: TMessage) => message.messageId)).toEqual([
+        userMessage.messageId,
+        responseMessage.messageId,
+      ]);
+    });
+
     it('should replay buffered deltas after registering step', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
@@ -283,6 +473,541 @@ describe('useStepHandler', () => {
       const setMessagesCall = mockSetMessages.mock.calls[0][0];
       expect(setMessagesCall).toContainEqual(
         expect.objectContaining({ messageId: userMsg.messageId }),
+      );
+    });
+
+    it('keeps the pending user message when replayed OAuth tool calls merge immediately', () => {
+      const rootUser = createUserMessage({ messageId: 'root-user' });
+      const selectedResponse = createResponseMessage({
+        messageId: 'selected-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const followUpUser = createUserMessage({
+        messageId: 'follow-up-user',
+        parentMessageId: selectedResponse.messageId,
+      });
+      const followUpResponse = createResponseMessage({
+        messageId: 'follow-up-response',
+        parentMessageId: followUpUser.messageId,
+      });
+      const siblingResponse = createResponseMessage({
+        messageId: 'sibling-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const pendingUser = createUserMessage({
+        messageId: 'pending-user',
+        parentMessageId: followUpResponse.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'pending-user_',
+        parentMessageId: pendingUser.messageId,
+      });
+
+      let currentMessages = [
+        rootUser,
+        selectedResponse,
+        followUpUser,
+        followUpResponse,
+        siblingResponse,
+      ];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: pendingUser,
+        messages: currentMessages,
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        selectedResponse.messageId,
+        followUpUser.messageId,
+        followUpResponse.messageId,
+        siblingResponse.messageId,
+        pendingUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(currentMessages.at(-1)).toEqual(
+        expect.objectContaining({
+          messageId: initialResponse.messageId,
+          parentMessageId: pendingUser.messageId,
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: ContentTypes.TOOL_CALL,
+              tool_call: expect.objectContaining({
+                name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              }),
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('keeps pending OAuth ancestry when content arrives after an orphaned refresh', () => {
+      const rootUser = createUserMessage({ messageId: 'root-user' });
+      const existingResponse = createResponseMessage({
+        messageId: 'existing-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const pendingUser = createUserMessage({
+        messageId: 'pending-user',
+        parentMessageId: existingResponse.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'pending-user_',
+        parentMessageId: pendingUser.messageId,
+      });
+
+      let currentMessages = [rootUser, existingResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({
+        userMessage: pendingUser,
+        messages: [rootUser, existingResponse],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createToolCallRunStep({
+              id: 'step-oauth-login',
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [
+                  {
+                    id: 'tool-call-oauth',
+                    name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+                    args: '',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                ],
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              id: 'step-message',
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 0,
+            }),
+          },
+          submission,
+        );
+      });
+
+      currentMessages = [initialResponse];
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-message', 'Ready') },
+          submission,
+        );
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        existingResponse.messageId,
+        pendingUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(currentMessages.at(-1)).toEqual(
+        expect.objectContaining({
+          parentMessageId: pendingUser.messageId,
+          content: [{ type: ContentTypes.TEXT, text: 'Ready' }],
+        }),
+      );
+    });
+
+    it('replaces the preliminary OAuth response when post-auth streaming uses a stable response id', () => {
+      const rootUser = createUserMessage({ messageId: 'root-user' });
+      const existingResponse = createResponseMessage({
+        messageId: 'existing-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const pendingUser = createUserMessage({
+        messageId: 'pending-user',
+        parentMessageId: existingResponse.messageId,
+      });
+      const preliminaryResponse = createResponseMessage({
+        messageId: 'pending-user_',
+        parentMessageId: pendingUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              type: ToolCallTypes.TOOL_CALL,
+              args: '',
+            },
+          },
+        ],
+      });
+      const stableResponse = createResponseMessage({
+        messageId: 'stable-response',
+        parentMessageId: pendingUser.messageId,
+      });
+
+      let currentMessages = [rootUser, existingResponse, preliminaryResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({
+        userMessage: pendingUser,
+        messages: [rootUser, existingResponse],
+        initialResponse: preliminaryResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              id: 'step-message',
+              runId: stableResponse.messageId,
+              index: 0,
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        existingResponse.messageId,
+        pendingUser.messageId,
+        stableResponse.messageId,
+      ]);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-message', 'Ready') },
+          submission,
+        );
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        existingResponse.messageId,
+        pendingUser.messageId,
+        stableResponse.messageId,
+      ]);
+      expect(currentMessages.at(-1)).toEqual(
+        expect.objectContaining({
+          messageId: stableResponse.messageId,
+          parentMessageId: pendingUser.messageId,
+          content: [{ type: ContentTypes.TEXT, text: 'Ready' }],
+        }),
+      );
+    });
+
+    it('should not insert regenerate transport userMessage before preliminary OAuth steps', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'synthetic-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      let currentMessages = [originalUser];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser, originalResponse],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages).toHaveLength(2);
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(currentMessages).not.toContainEqual(
+        expect.objectContaining({ messageId: regenerateUserMessage.messageId }),
+      );
+      expect(currentMessages[1]?.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.TOOL_CALL,
+          tool_call: expect.objectContaining({
+            name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+          }),
+        }),
+      );
+    });
+
+    it('should preserve regenerate history when OAuth steps arrive before optimistic state commits', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'synthetic-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      mockGetMessages.mockReturnValue([]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      expect(lastCall).toHaveLength(2);
+      expect(lastCall.map((message: TMessage) => message.messageId)).toEqual([
+        originalUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(lastCall).not.toContainEqual(
+        expect.objectContaining({ messageId: regenerateUserMessage.messageId }),
+      );
+      expect(lastCall[1]?.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.TOOL_CALL,
+          tool_call: expect.objectContaining({
+            name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+          }),
+        }),
+      );
+    });
+
+    it('does not seed non-tail regenerate run steps from the latest assistant message', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Original response',
+          },
+        ],
+      });
+      const followUpUser = createUserMessage({
+        messageId: 'follow-up-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+      const latestResponse = createResponseMessage({
+        messageId: 'latest-response-message',
+        parentMessageId: followUpUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Latest response content must not leak into regenerate',
+          },
+        ],
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+        content: [],
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'server-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      let currentMessages = [originalUser, originalResponse, followUpUser, latestResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({
+        id: 'step-message-create',
+        runId: 'server-regenerated-response-message',
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const regeneratedResponse = currentMessages.find(
+        (message) => message.messageId === 'server-regenerated-response-message',
+      );
+      expect(regeneratedResponse).toEqual(
+        expect.objectContaining({
+          parentMessageId: originalUser.messageId,
+          content: [],
+        }),
+      );
+      expect(regeneratedResponse?.content).not.toEqual(latestResponse.content);
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        'server-regenerated-response-message',
+      ]);
+    });
+
+    it('preserves sibling assistant responses when regenerating one response', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const selectedResponse = createResponseMessage({
+        messageId: 'selected-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Selected response',
+          },
+        ],
+      });
+      const siblingResponse = createResponseMessage({
+        messageId: 'sibling-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Sibling response should stay visible',
+          },
+        ],
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'selected-response-message_',
+        parentMessageId: originalUser.messageId,
+        content: [],
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'server-regenerate-user-message',
+        parentMessageId: selectedResponse.messageId,
+        responseMessageId: initialResponse.messageId,
+      });
+
+      let currentMessages = [originalUser, selectedResponse, siblingResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({
+        id: 'step-message-create',
+        runId: 'server-regenerated-response-message',
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser, selectedResponse, siblingResponse],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        siblingResponse.messageId,
+        'server-regenerated-response-message',
+      ]);
+      expect(currentMessages).not.toContainEqual(
+        expect.objectContaining({ messageId: selectedResponse.messageId }),
       );
     });
 
@@ -722,6 +1447,86 @@ describe('useStepHandler', () => {
       expect(toolCallContent?.tool_call?.progress).toBe(1);
     });
 
+    it('signals skill authoring when a completed create_file call targets a skill path', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: 'skills/demo/SKILL.md', content: '# Demo' }),
+            output: 'Updated skills/demo/SKILL.md (6 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(mockOnSkillAuthoringComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not signal skill authoring for non-skill file authoring calls', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: '/mnt/data/report.md', content: '# Report' }),
+            output: 'Created /mnt/data/report.md (8 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(mockOnSkillAuthoringComplete).not.toHaveBeenCalled();
+    });
+
     it('should warn when step not found for completed event', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
@@ -755,6 +1560,59 @@ describe('useStepHandler', () => {
         'No run step or runId found for completed tool call event',
       );
       consoleSpy.mockRestore();
+    });
+
+    it('should mark completed OAuth prompts as finished', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-eli',
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: {
+              result: {
+                id: 'step-oauth-eli',
+                index: 0,
+                tool_call: {
+                  id: 'tool-call-eli',
+                  name: `oauth${Constants.mcp_delimiter}ELI`,
+                  args: '',
+                  output: 'OAuth authentication completed',
+                  type: ToolCallTypes.TOOL_CALL,
+                },
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall.find((m: TMessage) => !m.isCreatedByUser);
+      expect(responseMsg?.content?.[0]?.tool_call?.progress).toBe(1);
     });
   });
 

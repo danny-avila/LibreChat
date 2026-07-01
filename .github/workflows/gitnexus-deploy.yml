@@ -2,14 +2,10 @@
 #
 # Architecture:
 #   GitHub Actions (deploy)
-#     1. Resolves latest successful index runs for main, dev, and every
-#        open PR that already has an index artifact (contributor-gated
-#        upstream by the index workflow's author_association check)
+#     1. Resolves latest successful index runs for main and dev
 #     2. Downloads each matching .gitnexus/ artifact
 #     3. Rsyncs them into /opt/gitnexus/indexes/<name>/ on the droplet
-#     4. Removes any stale folders on the droplet for PRs that closed
-#        (even though gitnexus-cleanup-pr.yml also handles that path,
-#        this is a safety net in case the close event was missed)
+#     4. Removes any stale folders on the droplet that are not main/dev
 #     5. Pulls latest image, force-recreates gitnexus, reloads Caddy,
 #        and polls docker health until the container reports healthy
 #   The caddy container is untouched — no TLS churn.
@@ -58,14 +54,14 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 'Optional PR number to post completion comment on (set by bot-triggered dispatches from gitnexus-index.yml)'
+        description: 'Optional PR number for status comments from bot-triggered dispatches'
         type: string
         default: ''
 
 permissions:
   actions: read
   contents: read
-  pull-requests: write # post completion comments on served PR indexes
+  pull-requests: write # post status comments on PR command dispatches
 
 # Global serialization. Earlier versions used per-ref concurrency with
 # cancel-in-progress so rapid pushes to the same ref coalesced but deploys
@@ -84,7 +80,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITNEXUS_VERSION: '1.5.3'
+  GITNEXUS_VERSION: '1.6.7'
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/librechat-gitnexus
 
 jobs:
@@ -93,7 +89,12 @@ jobs:
   build-image:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        (github.event.workflow_run.head_branch == 'main' ||
+         github.event.workflow_run.head_branch == 'dev')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -158,7 +159,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-      pull-requests: write # post deploy-complete comments on served PR indexes
+      pull-requests: write # post deploy-complete comments on PR command dispatches
     steps:
       - name: Checkout deploy config
         uses: actions/checkout@v4
@@ -217,62 +218,7 @@ jobs:
               core.info(`${branch}: run ${fresh.workflow_run.id} -> ${name}`);
             }
 
-            // --- open PRs with at least one successful index run ---
-            // github.paginate handles the 100-per-page ceiling automatically
-            // so the resolution works on repos with 200+ concurrent open PRs.
-            const openPrs = await github.paginate(github.rest.pulls.list, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              per_page: 100,
-            });
-            core.info(`Found ${openPrs.length} open PRs`);
-
-            // Parallelize artifact lookups in fixed-size batches so the
-            // resolve step runs in seconds instead of minutes on big repos,
-            // without burning the GitHub API rate limit all at once.
-            const BATCH_SIZE = 10;
-            const prMatches = [];
-            for (let i = 0; i < openPrs.length; i += BATCH_SIZE) {
-              const batch = openPrs.slice(i, i + BATCH_SIZE);
-              const results = await Promise.all(
-                batch.map(async (pr) => {
-                  const artifactName = `gitnexus-index-pr-${pr.number}`;
-                  const fresh = await latestArtifact(artifactName);
-                  return fresh ? { pr, artifactName, fresh } : null;
-                }),
-              );
-              for (const hit of results) {
-                if (hit) prMatches.push(hit);
-              }
-            }
-
-            // Cap to the N most recent PR indexes by artifact creation time.
-            // On a 10GB droplet each index is ~130MB; 3 PRs + main + dev ≈
-            // 650MB of index data, leaving headroom for the ~700MB Docker image
-            // and OS. Older PR indexes are evicted by the prune step.
-            const MAX_PR_INDEXES = 3;
-            prMatches.sort(
-              (a, b) => new Date(b.fresh.created_at) - new Date(a.fresh.created_at),
-            );
-            const keptPrs = prMatches.slice(0, MAX_PR_INDEXES);
-            const evictedPrs = prMatches.slice(MAX_PR_INDEXES);
-
-            for (const { pr, artifactName, fresh } of keptPrs) {
-              serve.push({
-                name: `LibreChat-pr-${pr.number}`,
-                artifactName,
-                runId: fresh.workflow_run.id,
-              });
-              core.info(`PR #${pr.number}: run ${fresh.workflow_run.id} -> LibreChat-pr-${pr.number}`);
-            }
-            if (evictedPrs.length) {
-              core.info(
-                `Evicted ${evictedPrs.length} older PR indexes (cap=${MAX_PR_INDEXES}): ` +
-                  evictedPrs.map((e) => `#${e.pr.number}`).join(', '),
-              );
-            }
-            core.info(`Serving ${keptPrs.length} PR indexes out of ${prMatches.length} with artifacts (${openPrs.length} open PRs total)`);
+            core.info('PR index deploys are paused; serving main and dev only.');
 
             if (!serve.length) {
               core.setFailed('No indexes to serve');
@@ -387,7 +333,7 @@ jobs:
           # ── Step 1: prune FIRST ────────────────────────────────
           # Remove any folders on the droplet that aren't in the active set.
           # This frees disk BEFORE rsyncing new data, which matters on a
-          # 10GB disk where each index is ~130MB.
+          # 10GB disk where each current index is ~400MB.
           echo "Pruning stale indexes (keeping: $ACTIVE_NAMES)"
           ssh -i ~/.ssh/deploy_key "$SSH_USER@$SSH_HOST" \
             ACTIVE_NAMES="$ACTIVE_NAMES" bash <<'REMOTE'
@@ -415,8 +361,8 @@ jobs:
           # it into place. If rsync fails, the old index survives intact
           # and the partial temp dir is cleaned up — no production data
           # is lost. The brief period where both old + new exist costs
-          # ~130MB of extra disk, but the prune step already freed
-          # space from evicted PR indexes so this fits on a 10GB disk.
+          # ~400MB of extra disk, but the prune step already freed
+          # space from evicted indexes so this fits on a 10GB disk.
           for dir in staging/*/; do
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
@@ -460,10 +406,11 @@ jobs:
 
             # ── Disk cleanup ──────────────────────────────────────
             # Docker accumulates old image layers, dangling images, and
-            # build cache across deploys. On a 60GB droplet with a 700MB+
-            # gitnexus image, this fills the disk after ~40 deploys.
-            # Prune everything not used by currently-running containers
-            # BEFORE pulling the new image so the extract has room.
+            # build cache across deploys. This droplet is only ~8.7GB
+            # usable with a 700MB+ gitnexus image, so disk pressure is
+            # constant. Prune everything not used by currently-running
+            # containers BEFORE pulling the new image so the extract has
+            # room; the post-recreate prune below reclaims the old image.
             echo "Disk before cleanup:"
             df -h / | tail -1
             # Omit --volumes: Caddy's caddy-data and caddy-config volumes
@@ -475,15 +422,26 @@ jobs:
             echo "Disk after cleanup:"
             df -h / | tail -1
 
-            # Fail fast if disk is critically low even after prune
+            # Fail fast if disk is critically low even after prune. The
+            # gitnexus image is ~700MB and shares most layers with the
+            # running one, so an incremental pull needs well under 1GB.
+            # 1536MB leaves headroom on this small droplet without the
+            # over-conservative 2GB guard aborting on a healthy box.
             AVAIL_MB=$(df --output=avail -m / | tail -1 | tr -d ' ')
-            if [ "$AVAIL_MB" -lt 2048 ]; then
+            if [ "$AVAIL_MB" -lt 1536 ]; then
               echo "::error::Disk critically low (${AVAIL_MB}MB free). Aborting deploy."
               exit 1
             fi
 
             docker compose pull gitnexus
             docker compose up -d --force-recreate gitnexus
+
+            # The previous gitnexus image is now dangling (the running
+            # container was recreated onto the freshly pulled image). The
+            # pre-pull prune above couldn't touch it because it was still
+            # in use at that point. Reclaim it now so the old generation
+            # doesn't accumulate — critical on this 10GB droplet.
+            docker image prune -f 2>/dev/null || true
 
             # Reload Caddy in-place so a changed Caddyfile takes effect
             # without losing TLS certs or restarting connections. If caddy
@@ -555,15 +513,41 @@ jobs:
           DEPLOY_STATUS: ${{ job.status }}
         with:
           script: |
+            const deployUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const matrix = JSON.parse(process.env.MATRIX || '[]');
             let prNum = null;
 
             // Case 1: dispatched directly with pr_number (bot-fallback path)
             if (process.env.DISPATCH_PR_NUMBER && process.env.DISPATCH_PR_NUMBER !== '') {
-              prNum = parseInt(process.env.DISPATCH_PR_NUMBER, 10);
+              const dispatchPrRaw = process.env.DISPATCH_PR_NUMBER;
+              if (!/^\d+$/.test(dispatchPrRaw)) {
+                core.setFailed(`Invalid PR number: ${dispatchPrRaw}`);
+                return;
+              }
+
+              const dispatchPrNum = Number(dispatchPrRaw);
+              const servedPr = matrix.some((m) => m.name === `LibreChat-pr-${dispatchPrNum}`);
+
+              if (!servedPr) {
+                const body = [
+                  '### GitNexus: PR deploy skipped',
+                  '',
+                  'PR-specific deploys are paused; only `LibreChat` and `LibreChat-dev` are currently served.',
+                  `[Deploy run](${deployUrl})`,
+                ].join('\n');
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: dispatchPrNum,
+                  body,
+                });
+                return;
+              }
+
+              prNum = dispatchPrNum;
             }
             // Case 2: workflow_run trigger from a PR index run
             else if (context.eventName === 'workflow_run') {
-              const matrix = JSON.parse(process.env.MATRIX || '[]');
               const triggerRunId = Number(process.env.TRIGGER_RUN_ID);
               const match = matrix.find(
                 (m) => m.runId === triggerRunId && m.name.startsWith('LibreChat-pr-'),
@@ -578,7 +562,6 @@ jobs:
               return;
             }
 
-            const deployUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const ok = process.env.DEPLOY_STATUS === 'success';
             const body = [
               `### GitNexus: ${ok ? '🚀 deployed' : '❌ deploy failed'}`,

@@ -18,12 +18,14 @@ const {
   getEndpointFileConfig,
   documentParserMimeTypes,
 } = require('librechat-data-provider');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
   processAudioFile,
   getStorageMetadata,
+  sweepExpiredFiles: sweepExpiredFilesWithDeps,
+  startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -36,6 +38,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
+const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
@@ -64,6 +67,19 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
   };
 };
 
+const hasCodeEnvRef = (file) => file?.metadata?.codeEnvRef != null;
+
+const isMissingStorageError = (err) => {
+  const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
+  if ([404, '404', 'ENOENT', 'NoSuchKey', 'NotFound', 'ResourceNotFound'].includes(code)) {
+    return true;
+  }
+
+  return /(?:file|object|blob|key|resource) (?:not found|does not exist)|no such (?:file|key)/i.test(
+    String(err?.message ?? ''),
+  );
+};
+
 /**
  * Enqueues the delete operation to the leaky bucket queue if necessary, or adds it directly to promises.
  *
@@ -72,10 +88,19 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
  * @param {MongoFile} params.file - The file object to delete.
  * @param {Function} params.deleteFile - The delete file function.
  * @param {Promise[]} params.promises - The array of promises to await.
- * @param {string[]} params.resolvedFileIds - The array of promises to await.
+ * @param {Set<string>} params.resolvedFileIds - File IDs whose storage delete succeeded.
+ * @param {Set<string>} params.failedFileIds - File IDs whose storage delete failed.
  * @param {OpenAI | undefined} [params.openai] - If an OpenAI file, the initialized OpenAI client.
  */
-function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileIds, openai }) {
+function enqueueDeleteOperation({
+  req,
+  file,
+  deleteFile,
+  promises,
+  resolvedFileIds,
+  failedFileIds,
+  openai,
+}) {
   if (checkOpenAIStorage(file.source)) {
     // Enqueue to leaky bucket
     promises.push(
@@ -85,10 +110,17 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
           [],
           (err, result) => {
             if (err) {
+              if (isMissingStorageError(err)) {
+                resolvedFileIds.add(file.file_id);
+                logger.warn('File storage was already missing during delete', err);
+                resolve(result);
+                return;
+              }
+              failedFileIds.add(file.file_id);
               logger.error('Error deleting file from OpenAI source', err);
               reject(err);
             } else {
-              resolvedFileIds.push(file.file_id);
+              resolvedFileIds.add(file.file_id);
               resolve(result);
             }
           },
@@ -99,14 +131,63 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
     // Add directly to promises
     promises.push(
       deleteFile(req, file)
-        .then(() => resolvedFileIds.push(file.file_id))
+        .then(() => resolvedFileIds.add(file.file_id))
         .catch((err) => {
+          if (isMissingStorageError(err)) {
+            resolvedFileIds.add(file.file_id);
+            logger.warn('File storage was already missing during delete', err);
+            return;
+          }
+          failedFileIds.add(file.file_id);
           logger.error('Error deleting file', err);
           return Promise.reject(err);
         }),
     );
   }
 }
+
+const getDeleteMethod = ({ source, deletionMethods }) => {
+  if (deletionMethods[source]) {
+    return deletionMethods[source];
+  }
+
+  const { deleteFile } = getStrategyFunctions(source);
+  if (!deleteFile) {
+    throw new Error(`Delete function not implemented for ${source}`);
+  }
+
+  deletionMethods[source] = deleteFile;
+  return deleteFile;
+};
+
+const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMethods }) => {
+  return async (req, file, openai) => {
+    const secondaryDeleteMethods = [];
+    if (file.embedded === true && source !== FileSources.vectordb) {
+      secondaryDeleteMethods.push(
+        getDeleteMethod({ source: FileSources.vectordb, deletionMethods }),
+      );
+    }
+    if (hasCodeEnvRef(file) && source !== FileSources.execute_code) {
+      secondaryDeleteMethods.push(
+        getDeleteMethod({ source: FileSources.execute_code, deletionMethods }),
+      );
+    }
+
+    try {
+      await deleteFile(req, file, openai);
+    } catch (err) {
+      if (!isMissingStorageError(err)) {
+        throw err;
+      }
+      logger.warn('Primary file storage was already missing during delete', err);
+    }
+
+    await Promise.all(
+      secondaryDeleteMethods.map((secondaryDeleteFile) => secondaryDeleteFile(req, file)),
+    );
+  };
+};
 
 // TODO: refactor as currently only image files can be deleted this way
 // as other filetypes will not reside in public path
@@ -121,11 +202,13 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
  * @param {string} [params.req.body.assistant_id] - The assistant ID if file uploaded is associated to an assistant.
  * @param {string} [params.req.body.tool_resource] - The tool resource if assistant file uploaded is associated to a tool resource.
  *
- * @returns {Promise<void>}
+ * @returns {Promise<{ deletedFileIds: string[], failedFileIds: string[] }>}
+ * @throws {Error} When storage deletion cannot be scheduled or file metadata cleanup fails.
  */
 const processDeleteRequest = async ({ req, files }) => {
   const appConfig = req.config;
-  const resolvedFileIds = [];
+  const resolvedFileIds = new Set();
+  const failedFileIds = new Set();
   const deletionMethods = {};
   const promises = [];
 
@@ -167,7 +250,7 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     if (source === FileSources.text) {
-      resolvedFileIds.push(file.file_id);
+      resolvedFileIds.add(file.file_id);
       continue;
     }
 
@@ -191,25 +274,16 @@ const processDeleteRequest = async ({ req, files }) => {
       promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
     }
 
-    if (deletionMethods[source]) {
-      enqueueDeleteOperation({
-        req,
-        file,
-        deleteFile: deletionMethods[source],
-        promises,
-        resolvedFileIds,
-        openai,
-      });
-      continue;
-    }
-
-    const { deleteFile } = getStrategyFunctions(source);
-    if (!deleteFile) {
-      throw new Error(`Delete function not implemented for ${source}`);
-    }
-
-    deletionMethods[source] = deleteFile;
-    enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileIds, openai });
+    const deleteFile = getDeleteMethod({ source, deletionMethods });
+    enqueueDeleteOperation({
+      req,
+      file,
+      deleteFile: createDeleteFileWithSecondaryStorage({ source, deleteFile, deletionMethods }),
+      promises,
+      resolvedFileIds,
+      failedFileIds,
+      openai,
+    });
   }
 
   if (agentFiles.length > 0) {
@@ -222,16 +296,59 @@ const processDeleteRequest = async ({ req, files }) => {
   }
 
   await Promise.allSettled(promises);
-  await db.deleteFiles(resolvedFileIds);
-
-  if (resolvedFileIds.length > 0) {
+  const deletedFileIds = [...resolvedFileIds];
+  let metadataDeletedFileIds = deletedFileIds;
+  if (deletedFileIds.length > 0) {
     try {
-      await db.removeAgentResourceFilesFromAllAgents({ file_ids: resolvedFileIds });
+      await db.deleteFiles(deletedFileIds);
     } catch (error) {
-      logger.error('Error cleaning up orphaned agent file references', error);
+      logger.error('Error deleting file metadata after storage deletion', error);
+      deletedFileIds.forEach((fileId) => failedFileIds.add(fileId));
+      metadataDeletedFileIds = [];
+      throw error;
+    }
+    if (metadataDeletedFileIds.length > 0) {
+      try {
+        await db.removeAgentResourceFilesFromAllAgents({ file_ids: metadataDeletedFileIds });
+      } catch (error) {
+        logger.error('Error cleaning up orphaned agent file references', error);
+      }
     }
   }
+
+  return {
+    deletedFileIds: metadataDeletedFileIds,
+    failedFileIds: [...failedFileIds],
+  };
 };
+
+/**
+ * Deletes expired file storage before removing the corresponding File records.
+ *
+ * Mongo TTL indexes delete only the metadata document, so file retention uses
+ * this application sweep for records with `expiredAt` instead.
+ *
+ * @param {object} params
+ * @param {AppConfig} params.appConfig
+ * @param {number} [params.limit]
+ * @param {() => Promise<AppConfig>} [params.loadAppConfig]
+ * @returns {Promise<{ scanned: number, deleted: number, failed: number }>}
+ */
+async function sweepExpiredFiles(options = {}) {
+  return sweepExpiredFilesWithDeps(options, {
+    getExpiredFiles: db.getExpiredFiles,
+    processDeleteRequest,
+    logger,
+  });
+}
+
+function startExpiredFileSweep(options = {}) {
+  return startExpiredFileSweepWithDeps(options, {
+    sweepExpiredFiles,
+    runAsSystem,
+    logger,
+  });
+}
 
 /**
  * Processes a file URL using a specified file handling strategy. This function accepts a strategy name,
@@ -251,6 +368,7 @@ const processDeleteRequest = async ({ req, files }) => {
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
  * @param {string} [params.tenantId] - Optional tenant identifier for tenant-prefixed storage paths.
+ * @param {ServerRequest} [params.req] - Request context used to apply data retention metadata.
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
@@ -262,6 +380,7 @@ const processFileURL = async ({
   basePath,
   context,
   tenantId,
+  req,
 }) => {
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
@@ -305,6 +424,7 @@ const processFileURL = async ({
         source: fileStrategy,
         type,
         context,
+        ...(await getRetentionExpiry(req)),
         tenantId,
         width: dimensions.width,
         height: dimensions.height,
@@ -355,6 +475,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       context: FileContext.message_attachment,
       source,
       type: `image/${appConfig.imageOutputType}`,
+      ...(await getRetentionExpiry(req)),
       width,
       height,
       tenantId: req.user.tenantId,
@@ -415,6 +536,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       source,
       type,
       width,
+      ...(await getRetentionExpiry(req)),
       height,
       tenantId: req.user.tenantId,
     },
@@ -517,6 +639,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
+      ...(await getRetentionExpiry(req)),
       embedded,
       source,
       height,
@@ -631,20 +754,28 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
-      const fileInfo = removeNullishValues({
-        text,
-        bytes,
-        file_id,
-        temp_file_id,
-        user: req.user.id,
-        type,
-        filepath: filepath ?? file.path,
-        source: FileSources.text,
-        filename: file.originalname,
-        model: messageAttachment ? undefined : req.body.model,
-        context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-        tenantId: req.user.tenantId,
+      const retentionExpiry = await getAgentFileRetentionExpiry({
+        req,
+        messageAttachment,
+        tool_resource,
       });
+      const fileInfo = {
+        ...removeNullishValues({
+          text,
+          bytes,
+          file_id,
+          temp_file_id,
+          user: req.user.id,
+          type,
+          filepath: filepath ?? file.path,
+          source: FileSources.text,
+          filename: file.originalname,
+          model: messageAttachment ? undefined : req.body.model,
+          context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+          tenantId: req.user.tenantId,
+        }),
+        ...retentionExpiry,
+      };
 
       if (!messageAttachment && tool_resource) {
         await db.addAgentResourceFile({
@@ -825,24 +956,32 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  const fileInfo = removeNullishValues({
-    user: req.user.id,
-    file_id,
-    temp_file_id,
-    bytes,
-    filepath,
-    ...storageMetadata,
-    filename: filename ?? sanitizeFilename(file.originalname),
-    context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-    model: messageAttachment ? undefined : req.body.model,
-    metadata: fileInfoMetadata,
-    type: file.mimetype,
-    embedded,
-    source,
-    height,
-    width,
-    tenantId: req.user.tenantId,
+  const retentionExpiry = await getAgentFileRetentionExpiry({
+    req,
+    messageAttachment,
+    tool_resource,
   });
+  const fileInfo = {
+    ...removeNullishValues({
+      user: req.user.id,
+      file_id,
+      temp_file_id,
+      bytes,
+      filepath,
+      ...storageMetadata,
+      filename: filename ?? sanitizeFilename(file.originalname),
+      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+      model: messageAttachment ? undefined : req.body.model,
+      metadata: fileInfoMetadata,
+      type: file.mimetype,
+      embedded,
+      source,
+      height,
+      width,
+      tenantId: req.user.tenantId,
+    }),
+    ...retentionExpiry,
+  };
 
   const result = await db.createFile(fileInfo, true);
 
@@ -887,6 +1026,7 @@ const processOpenAIFile = async ({
     source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
+    ...(await getRetentionExpiry(openai.req)),
     tenantId: openai.req?.user?.tenantId,
   };
 
@@ -894,7 +1034,11 @@ const processOpenAIFile = async ({
     await db.createFile(file, true);
   } else if (updateUsage) {
     try {
-      await db.updateFileUsage({ file_id });
+      await db.updateFileUsage({
+        file_id,
+        user: userId,
+        tenantId: openai.req?.user?.tenantId,
+      });
     } catch (error) {
       logger.error('Error updating file usage', error);
     }
@@ -931,9 +1075,14 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     context: FileContext.assistants_output,
     file_id,
     filename,
+    ...(await getRetentionExpiry(req)),
     tenantId: req.user.tenantId,
   };
-  db.createFile(file, true);
+  try {
+    await db.createFile(file, true);
+  } catch (error) {
+    logger.warn('Error saving OpenAI image output file metadata', error);
+  }
   return file;
 };
 
@@ -1091,6 +1240,7 @@ async function saveBase64Image(
       user: req.user.id,
       bytes: image.bytes,
       width: image.width,
+      ...(await getRetentionExpiry(req)),
       height: image.height,
       tenantId: req.user.tenantId,
     },
@@ -1182,6 +1332,8 @@ module.exports = {
   saveBase64Image,
   processImageFile,
   uploadImageBuffer,
+  sweepExpiredFiles,
+  startExpiredFileSweep,
   processFileUpload,
   processDeleteRequest,
   processAgentFileUpload,

@@ -1,5 +1,10 @@
+import {
+  EModelEndpoint,
+  AgentCapabilities,
+  defaultAssistantsVersion,
+} from 'librechat-data-provider';
 import type { DeepPartial, TCustomConfig } from 'librechat-data-provider';
-import { loadSummarizationConfig } from './service';
+import { AppService, loadSummarizationConfig } from './service';
 import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
@@ -76,5 +81,107 @@ describe('loadSummarizationConfig', () => {
     expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0][0])).toContain('Invalid summarization config');
+  });
+});
+
+describe('AppService assistants config', () => {
+  it('preserves configured Assistants API versions', async () => {
+    const config = {
+      endpoints: {
+        [EModelEndpoint.assistants]: {
+          version: 'v3',
+        },
+        [EModelEndpoint.azureOpenAI]: {
+          assistants: true,
+          groups: [
+            {
+              group: 'azure-assistants-test',
+              apiKey: 'test-key',
+              instanceName: 'azure-assistants-test',
+              assistants: true,
+              version: '2024-02-15-preview',
+              models: {
+                'gpt-4': {
+                  deploymentName: 'gpt-4',
+                },
+              },
+            },
+          ],
+        },
+        [EModelEndpoint.azureAssistants]: {
+          version: 4,
+        },
+      },
+    } as DeepPartial<TCustomConfig>;
+
+    const result = await AppService({ config });
+
+    expect(result.endpoints?.[EModelEndpoint.assistants]?.version).toBe('v3');
+    expect(result.endpoints?.[EModelEndpoint.azureAssistants]?.version).toBe(4);
+  });
+
+  it('keeps Azure Assistants default version when only Azure OpenAI enables assistants', async () => {
+    const config = {
+      endpoints: {
+        [EModelEndpoint.azureOpenAI]: {
+          assistants: true,
+          groups: [
+            {
+              group: 'azure-assistants-test',
+              apiKey: 'test-key',
+              instanceName: 'azure-assistants-test',
+              assistants: true,
+              version: '2024-02-15-preview',
+              models: {
+                'gpt-4': {
+                  deploymentName: 'gpt-4',
+                },
+              },
+            },
+          ],
+        },
+      },
+    } as DeepPartial<TCustomConfig>;
+
+    const result = await AppService({ config });
+
+    expect(result.endpoints?.[EModelEndpoint.azureAssistants]?.version).toBe(
+      defaultAssistantsVersion.azureAssistants,
+    );
+  });
+});
+
+describe('AppService memory capability', () => {
+  it('strips the memory capability when no memory config is present', async () => {
+    const result = await AppService({ config: {} as DeepPartial<TCustomConfig> });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+      AgentCapabilities.memory,
+    );
+  });
+
+  it('keeps the memory capability when memory is configured and enabled', async () => {
+    const config = { memory: { tokenLimit: 10000 } } as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).toContain(
+      AgentCapabilities.memory,
+    );
+  });
+
+  it('strips the memory capability when memory is explicitly disabled', async () => {
+    const config = { memory: { disabled: true } } as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+      AgentCapabilities.memory,
+    );
+  });
+
+  it('strips the memory capability even when an agents endpoint block is configured', async () => {
+    const config = {
+      endpoints: { [EModelEndpoint.agents]: { disableBuilder: true } },
+    } as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+      AgentCapabilities.memory,
+    );
   });
 });

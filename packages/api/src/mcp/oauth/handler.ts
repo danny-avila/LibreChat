@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { TokenExchangeMethodEnum, type MCPOptions } from 'librechat-data-provider';
 import {
   checkResourceAllowed,
   resourceUrlFromServerUrl,
@@ -13,16 +13,17 @@ import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import { TokenExchangeMethodEnum, type MCPOptions } from 'librechat-data-provider';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { FlowStateManager } from '~/flow/manager';
 import type {
   OAuthClientInformation,
   OAuthProtectedResourceMetadata,
+  OAuthStoredClientMetadata,
   MCPOAuthFlowMetadata,
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import type { FlowStateManager } from '~/flow/manager';
 import {
   resolveTokenEndpointAuthMethod,
   getForcedTokenEndpointAuthMethod,
@@ -31,22 +32,16 @@ import {
 } from './methods';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { probeResourceMetadataHint } from './resourceHint';
-import { MCPTokenStorage } from './tokens';
+import { createHardenedOAuthFetch } from './hardenedFetch';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
+import { MCPTokenStorage } from './tokens';
+import { getOAuthUrlPort } from './url';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
 
-function getOAuthUrlPort(url: URL): string {
-  if (url.port) return url.port;
-  if (url.protocol === 'http:') return '80';
-  if (url.protocol === 'https:') return '443';
-  return '';
-}
-
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
-  private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
 
   /**
    * Creates a fetch function with custom headers injected
@@ -54,7 +49,12 @@ export class MCPOAuthHandler {
   private static createOAuthFetch(
     headers: Record<string, string>,
     clientInfo?: OAuthClientInformation,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+    signal?: AbortSignal,
   ): FetchLike {
+    const hardenedFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+
     return async (url: string | URL, init?: RequestInit): Promise<Response> => {
       const newHeaders = new Headers(init?.headers ?? {});
       for (const [key, value] of Object.entries(headers)) {
@@ -118,15 +118,17 @@ export class MCPOAuthHandler {
           }
         }
 
-        return fetch(url, {
+        return hardenedFetch(url, {
           ...init,
           body: params.toString(),
           headers: newHeaders,
+          signal: init?.signal ?? signal,
         });
       }
-      return fetch(url, {
+      return hardenedFetch(url, {
         ...init,
         headers: newHeaders,
+        signal: init?.signal ?? signal,
       });
     };
   }
@@ -151,7 +153,12 @@ export class MCPOAuthHandler {
     let authServerUrl = new URL(serverUrl);
     let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
-    const fetchFn = this.createOAuthFetch(oauthHeaders);
+    const fetchFn = this.createOAuthFetch(
+      oauthHeaders,
+      undefined,
+      allowedDomains,
+      allowedAddresses,
+    );
 
     /**
      * RFC 9728 §5.1: when the server's 401 `WWW-Authenticate` header advertises a
@@ -346,6 +353,48 @@ export class MCPOAuthHandler {
     return metadata;
   }
 
+  private static hasUnpinnedClientSecret(config?: MCPOptions['oauth']): boolean {
+    return !!(
+      config?.client_id &&
+      config.client_secret &&
+      (!config.authorization_url || !config.token_url)
+    );
+  }
+
+  public static buildStoredClientMetadata(
+    metadata?: OAuthMetadata,
+    resourceMetadata?: OAuthProtectedResourceMetadata,
+  ): OAuthStoredClientMetadata | undefined {
+    if (!metadata) {
+      return undefined;
+    }
+    const storedMetadata: OAuthStoredClientMetadata = { ...metadata };
+    if (resourceMetadata?.resource) {
+      storedMetadata.resource = new URL(resourceMetadata.resource).href;
+    }
+    return storedMetadata;
+  }
+
+  private static appendResourceParameter(body: URLSearchParams, resource?: string): void {
+    if (!resource) {
+      return;
+    }
+    body.set('resource', resource);
+  }
+
+  private static assertNoUnpinnedClientSecret(config?: MCPOptions['oauth']): void {
+    if (config?.client_secret && !config.client_id) {
+      throw new Error('[MCPOAuth] OAuth client_secret requires oauth.client_id.');
+    }
+
+    if (!this.hasUnpinnedClientSecret(config)) {
+      return;
+    }
+    throw new Error(
+      '[MCPOAuth] OAuth client_secret requires both oauth.authorization_url and oauth.token_url; refusing to use it with auto-discovered OAuth endpoints.',
+    );
+  }
+
   /**
    * Registers an OAuth client dynamically
    */
@@ -356,6 +405,8 @@ export class MCPOAuthHandler {
     resourceMetadata?: OAuthProtectedResourceMetadata,
     redirectUri?: string,
     tokenExchangeMethod?: TokenExchangeMethodEnum,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): Promise<OAuthClientInformation> {
     logger.debug(
       `[MCPOAuth] Starting client registration for ${sanitizeUrlForLogging(serverUrl)}, server metadata:`,
@@ -417,7 +468,7 @@ export class MCPOAuthHandler {
     const clientInfo = await registerClient(serverUrl, {
       metadata: metadata as unknown as SDKOAuthMetadata,
       clientMetadata,
-      fetchFn: this.createOAuthFetch(oauthHeaders),
+      fetchFn: this.createOAuthFetch(oauthHeaders, undefined, allowedDomains, allowedAddresses),
     });
 
     const forcedAuthMethod = getForcedTokenEndpointAuthMethod(tokenExchangeMethod);
@@ -452,17 +503,20 @@ export class MCPOAuthHandler {
     allowedDomains?: string[] | null,
     findToken?: TokenMethods['findToken'],
     allowedAddresses?: string[] | null,
+    tenantId?: string,
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(
       `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
     );
 
-    const flowId = this.generateFlowId(userId, serverName);
+    const flowId = this.generateFlowId(userId, serverName, tenantId);
     const state = this.generateState();
 
     logger.debug(`[MCPOAuth] Generated flowId: ${flowId}, state: ${state}`);
 
     try {
+      this.assertNoUnpinnedClientSecret(config);
+
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
 
@@ -548,6 +602,16 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
+        /**
+         * Auth0/Cognito-style `audience` parameter. Forwarded as-is; the provider
+         * decides whether it accepts RFC 8707 `resource`, the legacy `audience`,
+         * or both. See `OAuthOptionsSchema.audience`.
+         */
+        if (config?.audience) {
+          authorizationUrl.searchParams.set('audience', config.audience);
+          logger.debug(`[MCPOAuth] Added audience parameter (pre-configured): ${config.audience}`);
+        }
+
         const flowMetadata: MCPOAuthFlowMetadata = {
           serverName,
           userId,
@@ -556,7 +620,10 @@ export class MCPOAuthHandler {
           codeVerifier,
           clientInfo,
           metadata,
+          ...(allowedDomains !== undefined && { allowedDomains }),
+          ...(allowedAddresses !== undefined && { allowedAddresses }),
           ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
+          ...(tenantId && { tenantId }),
         };
 
         logger.debug(
@@ -589,7 +656,16 @@ export class MCPOAuthHandler {
       let clientInfo: OAuthClientInformation | undefined;
       let reusedStoredClient = false;
 
-      if (findToken) {
+      if (config?.client_id) {
+        logger.debug(`[MCPOAuth] Using predefined public client_id for ${serverName}`);
+        clientInfo = {
+          client_id: config.client_id,
+          redirect_uris: [redirectUri],
+          scope: config.scope,
+          token_endpoint_auth_method: 'none',
+        };
+        logger.debug(`[MCPOAuth] Using predefined client with ID: ${clientInfo.client_id}`);
+      } else if (findToken) {
         try {
           const existing = await MCPTokenStorage.getClientInfoAndMetadata({
             userId,
@@ -630,6 +706,7 @@ export class MCPOAuthHandler {
       }
 
       if (!clientInfo) {
+        logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
         clientInfo = await this.registerOAuthClient(
           authServerUrl.toString(),
           metadata,
@@ -637,6 +714,8 @@ export class MCPOAuthHandler {
           resourceMetadata,
           redirectUri,
           config?.token_exchange_method,
+          allowedDomains,
+          allowedAddresses,
         );
         logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
       }
@@ -685,6 +764,7 @@ export class MCPOAuthHandler {
             `[MCPOAuth] Added resource parameter to authorization URL: ${canonicalResource}`,
           );
         } else {
+          // resource omitted on purpose — see comment below in the `else` branch.
           /**
            * Reachable only when `discoverOAuthProtectedResourceMetadata` did not return a
            * document (404 / network error / server does not implement RFC 9728). If a PRM
@@ -696,6 +776,16 @@ export class MCPOAuthHandler {
             `[MCPOAuth] No protected resource metadata available for ${serverName}. ` +
               'This can cause issues with some Authorization Servers that expect a "resource" parameter.',
           );
+        }
+
+        /**
+         * Auth0/Cognito-style `audience` parameter. Independent of `resource` (RFC 8707):
+         * some authorization servers ignore `resource` and only mint API-scoped tokens
+         * when `audience` is supplied. See `OAuthOptionsSchema.audience`.
+         */
+        if (config?.audience) {
+          authorizationUrl.searchParams.set('audience', config.audience);
+          logger.debug(`[MCPOAuth] Added audience parameter (discovered flow): ${config.audience}`);
         }
       } catch (error) {
         logger.error(`[MCPOAuth] startAuthorization failed:`, error);
@@ -711,8 +801,11 @@ export class MCPOAuthHandler {
         clientInfo,
         metadata,
         resourceMetadata,
+        ...(allowedDomains !== undefined && { allowedDomains }),
+        ...(allowedAddresses !== undefined && { allowedAddresses }),
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
         ...(reusedStoredClient && { reusedStoredClient }),
+        ...(tenantId && { tenantId }),
       };
 
       logger.debug(
@@ -739,9 +832,9 @@ export class MCPOAuthHandler {
   /**
    * Completes the OAuth flow by exchanging the authorization code for tokens.
    *
-   * `allowedDomains` is intentionally absent: all URLs used here (serverUrl,
-   * token_endpoint) originate from {@link MCPOAuthFlowMetadata} that was
-   * SSRF-validated during {@link initiateOAuthFlow}. No new URL resolution occurs.
+   * The token exchange reuses the SSRF policy captured during
+   * {@link initiateOAuthFlow} and enforces it again at connect time. This closes
+   * DNS rebinding gaps between the preflight validation and the callback request.
    */
   static async completeOAuthFlow(
     flowId: string,
@@ -770,7 +863,7 @@ export class MCPOAuthHandler {
       if (metadata.resourceMetadata) {
         /**
          * Defense-in-depth: re-assert the RFC 9728 §3.3 binding against the flow's stored
-         * server URL. Flow state has a 10-minute TTL, so a flow initiated under older
+         * server URL. Flow state has a bounded TTL, so a flow initiated under older
          * (pre-fix) code could still be in-flight at upgrade time carrying unvalidated
          * resource metadata. Re-validating here closes that window without requiring ops
          * teams to flush flow state on deploy (GHSA-gvpj-vm2f-2m23).
@@ -789,7 +882,12 @@ export class MCPOAuthHandler {
         codeVerifier: metadata.codeVerifier,
         authorizationCode,
         resource,
-        fetchFn: this.createOAuthFetch(oauthHeaders, metadata.clientInfo),
+        fetchFn: this.createOAuthFetch(
+          oauthHeaders,
+          metadata.clientInfo,
+          metadata.allowedDomains,
+          metadata.allowedAddresses,
+        ),
       });
 
       logger.debug('[MCPOAuth] Token exchange successful', {
@@ -836,8 +934,55 @@ export class MCPOAuthHandler {
    * Generates a flow ID for the OAuth flow
    * @returns Consistent ID so concurrent requests share the same flow
    */
-  public static generateFlowId(userId: string, serverName: string): string {
-    return `${userId}:${serverName}`;
+  public static generateFlowId(userId: string, serverName: string, tenantId?: string): string {
+    const flowId = `${userId}:${serverName}`;
+    if (!tenantId) {
+      return flowId;
+    }
+    return `tenant:${encodeURIComponent(tenantId)}:${flowId}`;
+  }
+
+  public static parseFlowId(
+    flowId: string,
+  ): { userId: string; serverName: string; tenantId?: string } | null {
+    const parts = flowId.split(':');
+    if (parts[0] === 'tenant') {
+      if (parts.length < 4 || !parts[1] || !parts[2]) {
+        return null;
+      }
+      let tenantId: string;
+      try {
+        tenantId = decodeURIComponent(parts[1]);
+      } catch {
+        return null;
+      }
+      const serverName = parts.slice(3).join(':');
+      if (!serverName) {
+        return null;
+      }
+      return {
+        tenantId,
+        userId: parts[2],
+        serverName,
+      };
+    }
+
+    if (parts.length < 2 || !parts[0]) {
+      return null;
+    }
+    const serverName = parts.slice(1).join(':');
+    if (!serverName) {
+      return null;
+    }
+    return {
+      userId: parts[0],
+      serverName,
+    };
+  }
+
+  /** Same shape as `generateFlowId`; kept distinct so token-fetch flows can diverge from OAuth flows */
+  public static generateTokenFlowId(userId: string, serverName: string, tenantId?: string): string {
+    return this.generateFlowId(userId, serverName, tenantId);
   }
 
   /**
@@ -1017,6 +1162,68 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Posts a `refresh_token` grant, transparently retrying without the `scope`
+   * parameter when — and only when — the authorization server rejects the request
+   * because of that parameter.
+   *
+   * RFC 6749 §6 makes `scope` optional on refresh (the server reuses the originally
+   * granted scope when it is omitted). LibreChat sends it by default because some
+   * servers expect it, but others — notably Salesforce — reject any `scope` on the
+   * refresh grant with HTTP 400 "scope parameter not supported". A failed refresh
+   * forces a full re-authentication, which on multi-replica deployments amplifies the
+   * PKCE retry storm, so we recover automatically instead of surfacing the failure.
+   */
+  private static async postRefreshRequest(
+    oauthFetch: ReturnType<typeof createHardenedOAuthFetch>,
+    tokenUrl: string | URL,
+    headers: HeadersInit,
+    body: URLSearchParams,
+    serverName: string,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const response = await oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
+    if (response.ok || !body.has('scope')) {
+      return response;
+    }
+
+    /** Body is consumed here, so this branch must either retry or throw — never fall through. */
+    const errorText = await response.text();
+    if (!this.isScopeParameterRejection(response.status, errorText)) {
+      throw new Error(
+        `Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`,
+      );
+    }
+
+    logger.warn(
+      `[MCPOAuth] ${serverName} rejected the scope parameter on token refresh (HTTP ${response.status}); retrying without scope per RFC 6749 §6`,
+    );
+    body.delete('scope');
+    return oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
+  }
+
+  /**
+   * Narrowly detects "this server does not accept a `scope` parameter on the refresh
+   * grant" so the retry-without-scope fallback can never mask unrelated refresh
+   * failures (e.g. `invalid_grant` for an expired/revoked refresh token). Matches the
+   * RFC 6749 `invalid_scope` error and Salesforce's "scope parameter not supported".
+   */
+  private static isScopeParameterRejection(status: number, body: string): boolean {
+    if (status < 400 || status >= 500) {
+      return false;
+    }
+    const lower = body.toLowerCase();
+    if (!lower.includes('scope')) {
+      return false;
+    }
+    return (
+      lower.includes('invalid_scope') ||
+      lower.includes('not supported') ||
+      lower.includes('unsupported') ||
+      lower.includes('not allowed')
+    );
+  }
+
+  /**
    * Refreshes OAuth tokens using a refresh token
    */
   static async refreshOAuthTokens(
@@ -1027,11 +1234,13 @@ export class MCPOAuthHandler {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      resource?: string;
     },
     oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    signal?: AbortSignal,
   ): Promise<MCPOAuthTokens> {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
 
@@ -1068,9 +1277,25 @@ export class MCPOAuthHandler {
         } else if (!metadata.serverUrl) {
           throw new Error('No token URL available for refresh');
         } else {
+          if (
+            this.hasUnpinnedClientSecret(config) &&
+            metadata.clientInfo.client_id === config?.client_id &&
+            metadata.clientInfo.client_secret === config.client_secret
+          ) {
+            throw new Error(
+              '[MCPOAuth] Stored OAuth client_secret from unpinned configuration cannot be used with auto-discovered token endpoints. Configure oauth.token_url or re-authenticate without oauth.client_secret.',
+            );
+          }
+
           /** Auto-discover OAuth configuration for refresh */
           const serverUrl = new URL(metadata.serverUrl);
-          const fetchFn = this.createOAuthFetch(oauthHeaders);
+          const fetchFn = this.createOAuthFetch(
+            oauthHeaders,
+            undefined,
+            allowedDomains,
+            allowedAddresses,
+            signal,
+          );
           const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
           if (!oauthMetadata) {
@@ -1103,6 +1328,26 @@ export class MCPOAuthHandler {
         /** Add scope if available */
         if (metadata.clientInfo.scope) {
           body.append('scope', metadata.clientInfo.scope);
+        }
+        this.appendResourceParameter(body, metadata.resource);
+
+        /**
+         * Forward Auth0-style `audience` on refresh by default — Auth0 strips the
+         * API audience from refreshed access tokens unless it is re-supplied on
+         * every refresh, otherwise the next MCP call 401s once the initial token
+         * expires.
+         *
+         * Operators with strict OAuth 2.0 token endpoints (Cognito and similar)
+         * that documents refresh requests as `grant_type` + `client_id` +
+         * `refresh_token` only, and that maintain the original `aud` claim on
+         * refresh, can opt out by setting `forward_audience_on_refresh: false`.
+         * See `OAuthOptionsSchema.forward_audience_on_refresh`.
+         */
+        if (config?.audience && config?.forward_audience_on_refresh !== false) {
+          body.append('audience', config.audience);
+          logger.debug(
+            `[MCPOAuth] Added audience parameter to refresh request: ${config.audience}`,
+          );
         }
 
         const headers: HeadersInit = {
@@ -1149,11 +1394,15 @@ export class MCPOAuthHandler {
           has_auth_header: !!headers['Authorization'],
         });
 
-        const response = await fetch(tokenUrl, {
-          method: 'POST',
+        const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+        const response = await this.postRefreshRequest(
+          oauthFetch,
+          tokenUrl,
           headers,
           body,
-        });
+          metadata.serverName,
+          signal,
+        );
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -1185,6 +1434,7 @@ export class MCPOAuthHandler {
         if (config.scope) {
           body.append('scope', config.scope);
         }
+        this.appendResourceParameter(body, metadata.resource);
 
         const headers: HeadersInit = {
           Accept: 'application/json',
@@ -1232,11 +1482,15 @@ export class MCPOAuthHandler {
           body.append('client_id', config.client_id);
         }
 
-        const response = await fetch(tokenUrl, {
-          method: 'POST',
+        const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+        const response = await this.postRefreshRequest(
+          oauthFetch,
+          tokenUrl,
           headers,
           body,
-        });
+          metadata.serverName,
+          signal,
+        );
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -1256,7 +1510,13 @@ export class MCPOAuthHandler {
 
       /** Auto-discover OAuth configuration for refresh */
       const serverUrl = new URL(metadata.serverUrl);
-      const fetchFn = this.createOAuthFetch(oauthHeaders);
+      const fetchFn = this.createOAuthFetch(
+        oauthHeaders,
+        undefined,
+        allowedDomains,
+        allowedAddresses,
+        signal,
+      );
       const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
       let tokenUrl: URL;
@@ -1279,6 +1539,7 @@ export class MCPOAuthHandler {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       });
+      this.appendResourceParameter(body, metadata.resource);
 
       const headers: HeadersInit = {
         Accept: 'application/json',
@@ -1286,10 +1547,12 @@ export class MCPOAuthHandler {
         ...oauthHeaders,
       };
 
-      const response = await fetch(tokenUrl, {
+      const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+      const response = await oauthFetch(tokenUrl, {
         method: 'POST',
         headers,
         body,
+        signal,
       });
 
       if (!response.ok) {
@@ -1361,7 +1624,8 @@ export class MCPOAuthHandler {
     logger.info(
       `[MCPOAuth] Revoking tokens for ${serverName} via ${sanitizeUrlForLogging(revokeUrl.toString())}`,
     );
-    const response = await fetch(revokeUrl, {
+    const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+    const response = await oauthFetch(revokeUrl, {
       method: 'POST',
       body: body.toString(),
       headers,

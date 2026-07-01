@@ -6,6 +6,7 @@ const {
   PrincipalModel,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
+  Constants,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -68,9 +69,10 @@ jest.mock('~/cache', () => ({
 }));
 
 const { initializeClient } = require('./initialize');
+const { getSkillToolDeps } = require('./skillDeps');
 const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
-const { createAgent } = require('~/models');
+const { createAgent, createSkill } = require('~/models');
 
 jest.spyOn(logger, 'warn').mockImplementation(() => {});
 
@@ -183,6 +185,15 @@ describe('initializeClient — processAgent ACL gate', () => {
     });
 
     const edges = [{ from: PRIMARY_ID, to: AUTHORIZED_ID, edgeType: 'handoff' }];
+    const requestAttachment = { file_id: 'request_file', filename: 'request.txt' };
+    const primaryContextAttachment = { file_id: 'primary_context', filename: 'primary.txt' };
+    const handoffContextAttachment = { file_id: 'handoff_context', filename: 'handoff.txt' };
+    const primaryConfig = {
+      ...makePrimaryConfig(edges),
+      attachments: [primaryContextAttachment, requestAttachment],
+      requestAttachments: [requestAttachment],
+      agentContextAttachments: [primaryContextAttachment],
+    };
     const handoffConfig = {
       id: AUTHORIZED_ID,
       edges: [],
@@ -190,14 +201,13 @@ describe('initializeClient — processAgent ACL gate', () => {
       toolRegistry: new Map(),
       userMCPAuthMap: null,
       tool_resources: {},
+      agentContextAttachments: [handoffContextAttachment],
     };
 
     let callCount = 0;
     mockInitializeAgent.mockImplementation(() => {
       callCount++;
-      return callCount === 1
-        ? Promise.resolve(makePrimaryConfig(edges))
-        : Promise.resolve(handoffConfig);
+      return callCount === 1 ? Promise.resolve(primaryConfig) : Promise.resolve(handoffConfig);
     });
 
     await initializeClient({
@@ -210,6 +220,99 @@ describe('initializeClient — processAgent ACL gate', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
     expect(agentClientArgs.agent.edges).toHaveLength(1);
     expect(agentClientArgs.agent.edges[0].to).toBe(AUTHORIZED_ID);
+    expect(agentClientArgs.attachments).toEqual([requestAttachment]);
+    expect(agentClientArgs.agentContextAttachmentsByAgentId.get(PRIMARY_ID)).toEqual([
+      primaryContextAttachment,
+    ]);
+    expect(agentClientArgs.agentContextAttachmentsByAgentId.get(AUTHORIZED_ID)).toEqual([
+      handoffContextAttachment,
+    ]);
+  });
+
+  it('does not enable skill authoring for VIEW-only shared skills', async () => {
+    const { skill } = await createSkill({
+      name: 'shared-view-only',
+      description: 'Use for read-only sharing.',
+      body: '# Shared view-only skill\n',
+      author: new mongoose.Types.ObjectId(),
+      authorName: 'Skill Owner',
+    });
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.SKILL,
+      resourceId: skill._id,
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+
+    const endpointOption = makeEndpointOption();
+    endpointOption.agent = Promise.resolve({
+      id: PRIMARY_ID,
+      name: 'Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+      skills_enabled: true,
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(false);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.accessibleSkillIds.map(String)).toContain(skill._id.toString());
+    expect(initializeParams.skillAuthoringAvailable).toBe(false);
+  });
+
+  it('enables skill authoring when model specs enable skills for an ephemeral agent', async () => {
+    const endpointOption = makeEndpointOption();
+    endpointOption.spec = 'spec-skills';
+    endpointOption.agent = Promise.resolve({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      name: 'Ephemeral Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    req.config.modelSpecs = {
+      list: [{ name: 'spec-skills', skills: true }],
+    };
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(true);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.agent.skills_enabled).toBe(true);
+    expect(initializeParams.skillAuthoringAvailable).toBe(true);
   });
 });
 
@@ -434,6 +537,48 @@ describe('initializeClient — subagent loading', () => {
     expect(arg.toolRegistry).toBeInstanceOf(Map);
     expect(arg.tool_resources).toEqual({ file_search: { file_ids: ['file_1'] } });
     expect(arg.actionsEnabled).toBe(true);
+  });
+
+  it('threads run-scoped MCP tool definitions into ON_TOOL_EXECUTE loading', async () => {
+    /** Regression guard for the request-scoped MCP/PTC handoff: the
+     *  `mcpAvailableTools` discovered at run start must survive
+     *  `buildAgentToolContext` and reach `loadToolsForExecution`, otherwise
+     *  request-scoped servers reinitialize on every programmatic tool call
+     *  and can trip the MCP circuit breaker under parallel calls. */
+    const mcpTool = 'list_tables_mcp_ClickHouse';
+    const mcpAvailableTools = {
+      ClickHouse: {
+        [mcpTool]: {
+          type: 'function',
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      },
+    };
+    const primaryConfig = {
+      ...makePrimaryConfig({}),
+      toolRegistry: new Map([[mcpTool, { name: mcpTool }]]),
+      mcpAvailableTools,
+    };
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(capturedToolExecuteOptions?.loadTools).toBeInstanceOf(Function);
+    await capturedToolExecuteOptions.loadTools([mcpTool], PRIMARY_ID);
+
+    expect(mockLoadToolsForExecution).toHaveBeenCalledTimes(1);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ mcpAvailableTools }),
+    );
   });
 
   it('deduplicates repeated ids in subagents.agent_ids', async () => {

@@ -6,6 +6,7 @@ export interface IConversation extends Document {
   title?: string;
   user?: string;
   messages?: Types.ObjectId[];
+  isTemporary?: boolean;
   // Fields provided by conversationPreset (adjust types as needed)
   endpoint?: string;
   endpointType?: string;
@@ -26,6 +27,7 @@ export interface IConversation extends Document {
   file_ids?: string[];
   resendImages?: boolean;
   promptCache?: boolean;
+  promptCacheTtl?: '5m' | '1h';
   thinking?: boolean;
   thinkingBudget?: number;
   effort?: string;
@@ -37,10 +39,12 @@ export interface IConversation extends Document {
   instructions?: string;
   stop?: string[];
   isArchived?: boolean;
+  pinned?: boolean;
   iconURL?: string;
   greeting?: string;
   spec?: string;
   tags?: string[];
+  chatProjectId?: string | null;
   tools?: string[];
   maxContextTokens?: number;
   max_tokens?: number;
@@ -49,6 +53,7 @@ export interface IConversation extends Document {
   verbosity?: string;
   useResponsesApi?: boolean;
   web_search?: boolean;
+  url_context?: boolean;
   disableStreaming?: boolean;
   fileTokenLimit?: number;
   // Additional fields

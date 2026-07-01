@@ -35,11 +35,11 @@ Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
 
 describe('UIResourceCarousel', () => {
   const mockUIResources: UIResource[] = [
-    { uri: 'resource1', mimeType: 'text/html', text: 'Resource 1' },
-    { uri: 'resource2', mimeType: 'text/html', text: 'Resource 2' },
-    { uri: 'resource3', mimeType: 'text/html', text: 'Resource 3' },
-    { uri: 'resource4', mimeType: 'text/html', text: 'Resource 4' },
-    { uri: 'resource5', mimeType: 'text/html', text: 'Resource 5' },
+    { resourceId: 'resource1', uri: 'resource1', mimeType: 'text/html', text: 'Resource 1' },
+    { resourceId: 'resource2', uri: 'resource2', mimeType: 'text/html', text: 'Resource 2' },
+    { resourceId: 'resource3', uri: 'resource3', mimeType: 'text/html', text: 'Resource 3' },
+    { resourceId: 'resource4', uri: 'resource4', mimeType: 'text/html', text: 'Resource 4' },
+    { resourceId: 'resource5', uri: 'resource5', mimeType: 'text/html', text: 'Resource 5' },
   ];
 
   const mockHandleUIAction = handleUIAction as jest.MockedFunction<typeof handleUIAction>;

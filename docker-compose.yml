@@ -20,6 +20,13 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      - PROXY=${PROXY:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,::1},${no_proxy:-},mongodb,chat-mongodb,meilisearch,chat-meilisearch,rag_api,vectordb,host.docker.internal
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-localhost,127.0.0.1,::1},${NO_PROXY:-},mongodb,chat-mongodb,meilisearch,chat-meilisearch,rag_api,vectordb,host.docker.internal
     volumes:
       - type: bind
         source: ./.env
@@ -27,6 +34,23 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./skill:/app/skill
+  admin-panel:
+    container_name: admin-panel
+    image: registry.librechat.ai/clickhouse/librechat-admin-panel:latest
+    ports:
+      - "${ADMIN_PANEL_PORT:-3000}:3000"
+    depends_on:
+      - api
+    restart: always
+    environment:
+      - PORT=3000
+      # Plain expansion (not :?) so `docker compose down`/`pull` still run when this is unset.
+      # The panel itself refuses to start without it; set ADMIN_PANEL_SESSION_SECRET in .env.
+      - SESSION_SECRET=${ADMIN_PANEL_SESSION_SECRET}
+      - API_SERVER_URL=http://api:${PORT:-3080}
+      - VITE_API_BASE_URL=${DOMAIN_CLIENT:-http://localhost:3080}
+      - SESSION_COOKIE_SECURE=${ADMIN_PANEL_SESSION_COOKIE_SECURE:-false}
   mongodb:
     container_name: chat-mongodb
     image: mongo:8.0.20

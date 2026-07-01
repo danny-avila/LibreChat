@@ -11,6 +11,9 @@ const messageLimiters = require('./messageLimiters');
 const promptUsageLimiter = require('./promptUsageLimiter');
 const verifyEmailLimiter = require('./verifyEmailLimiter');
 const resetPasswordLimiter = require('./resetPasswordLimiter');
+const twoFactorTempLimiter = require('./twoFactorTempLimiter');
+const verifyEmailSubmissionLimiter = require('./verifyEmailSubmissionLimiter');
+const resetPasswordSubmissionLimiter = require('./resetPasswordSubmissionLimiter');
 
 module.exports = {
   ...uploadLimiters,
@@ -25,4 +28,7 @@ module.exports = {
   createSTTLimiters,
   verifyEmailLimiter,
   resetPasswordLimiter,
+  verifyEmailSubmissionLimiter,
+  resetPasswordSubmissionLimiter,
+  twoFactorTempLimiter,
 };

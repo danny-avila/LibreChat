@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowUp, ArrowDown, ArrowDownUp } from 'lucide-react';
 import {
@@ -37,7 +38,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   sorting,
   onSortingChange,
   customActionsRenderer,
-}: DataTableProps<TData, TValue>) {
+}: DataTableProps<TData, TValue>): JSX.Element {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
@@ -140,6 +141,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       }
     });
     return newVisibility;
+    /* isSmallScreen is intentionally a dependency: it forces a fresh result
+       reference when the viewport crosses the mobile breakpoint so the effect
+       below re-applies column visibility, even though the body doesn't read it. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSmallScreen, columns]);
 
   useEffect(() => {
@@ -266,8 +271,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     overscan: dynamicOverscan,
   });
 
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const totalSize = rowVirtualizer.getTotalSize();
+  // Only read the virtualizer when active; the non-virtualized branch renders rows directly,
+  // so engaging it for small tables is wasted render-phase work.
+  const virtualRows = virtualizationActive ? rowVirtualizer.getVirtualItems() : [];
+  const totalSize = virtualizationActive ? rowVirtualizer.getTotalSize() : 0;
   const paddingTop = virtualRows[0]?.start ?? 0;
   const paddingBottom =
     virtualRows.length > 0 ? totalSize - (virtualRows[virtualRows.length - 1]?.end ?? 0) : 0;
@@ -510,15 +517,24 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
                   const metaWidth = (header.column.columnDef.meta as { width?: number } | undefined)
                     ?.width;
-                  const widthStyle = isSelectHeader
-                    ? { width: '32px', maxWidth: '32px', minWidth: '32px' }
-                    : metaWidth && metaWidth >= 1 && metaWidth <= 100
-                      ? {
-                          width: `${metaWidth}%`,
-                          maxWidth: `${metaWidth}%`,
-                          minWidth: `${metaWidth}%`,
-                        }
-                      : {};
+                  let widthStyle: React.CSSProperties = {};
+                  if (isSelectHeader) {
+                    widthStyle = { width: '32px', maxWidth: '32px', minWidth: '32px' };
+                  } else if (metaWidth != null && metaWidth >= 1 && metaWidth <= 100) {
+                    widthStyle = {
+                      width: `${metaWidth}%`,
+                      maxWidth: `${metaWidth}%`,
+                      minWidth: `${metaWidth}%`,
+                    };
+                  }
+
+                  const sortDirection = header.column.getIsSorted();
+                  let ariaSort: 'ascending' | 'descending' | undefined;
+                  if (sortDirection === 'asc') {
+                    ariaSort = 'ascending';
+                  } else if (sortDirection === 'desc') {
+                    ariaSort = 'descending';
+                  }
                   return (
                     <TableHead
                       key={header.id}
@@ -537,13 +553,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       role={canSort ? 'button' : undefined}
                       tabIndex={canSort ? 0 : undefined}
                       aria-label={sortAriaLabel}
-                      aria-sort={
-                        header.column.getIsSorted() === 'asc'
-                          ? 'ascending'
-                          : header.column.getIsSorted() === 'desc'
-                            ? 'descending'
-                            : undefined
-                      }
+                      aria-sort={ariaSort}
                     >
                       {isSelectHeader ? (
                         flexRender(header.column.columnDef.header, header.getContext())

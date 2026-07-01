@@ -1,16 +1,17 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import {
   Constants,
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
   logger,
   /* Conversations */
   addConvoToAllQueries,
+  findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
 } from '~/utils';
@@ -34,6 +35,7 @@ export const useUpdateConversationMutation = (
         const targetId = payload.conversationId || id;
         queryClient.setQueryData([QueryKeys.conversation, targetId], updatedConvo);
         updateConvoInAllQueries(queryClient, targetId, () => updatedConvo);
+        queryClient.invalidateQueries([QueryKeys.projectConversations]);
       },
     },
   );
@@ -123,6 +125,9 @@ export const useArchiveConvoMutation = (
           [QueryKeys.conversation, vars.conversationId],
           isArchived ? null : _data,
         );
+        if (_data.chatProjectId) {
+          queryClient.invalidateQueries([QueryKeys.project, _data.chatProjectId]);
+        }
 
         onSuccess?.(_data, vars, context);
       },
@@ -136,7 +141,29 @@ export const useArchiveConvoMutation = (
           queryKey: archivedConvoQueryKey,
           refetchPage: (_, index) => index === 0,
         });
+        queryClient.invalidateQueries([QueryKeys.projectConversations]);
+        queryClient.invalidateQueries([QueryKeys.projects]);
       },
+      ..._options,
+    },
+  );
+};
+
+export const usePinConversationMutation = (
+  options?: t.PinConversationOptions,
+): UseMutationResult<t.TPinConversationResponse, unknown, t.TPinConversationRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, ..._options } = options || {};
+
+  return useMutation(
+    [MutationKeys.convoPin],
+    (payload: t.TPinConversationRequest) => dataService.pinConversation(payload),
+    {
+      onSuccess: (data, vars, context) => {
+        updateConvoInAllQueries(queryClient, vars.conversationId, () => data);
+        onSuccess?.(data, vars, context);
+      },
+      onError,
       ..._options,
     },
   );
@@ -145,24 +172,32 @@ export const useArchiveConvoMutation = (
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<
     t.TCreateShareLinkRequest,
-    { conversationId: string; targetMessageId?: string }
+    { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean }
   >,
 ): UseMutationResult<
   t.TSharedLinkResponse,
   unknown,
-  { conversationId: string; targetMessageId?: string },
+  { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean },
   unknown
 > => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
+    ({
+      conversationId,
+      targetMessageId,
+      snapshotFiles,
+    }: {
+      conversationId: string;
+      targetMessageId?: string;
+      snapshotFiles?: boolean;
+    }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
-      return dataService.createSharedLink(conversationId, targetMessageId);
+      return dataService.createSharedLink(conversationId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -176,17 +211,25 @@ export const useCreateSharedLinkMutation = (
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, { shareId: string }>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, { shareId: string }, unknown> => {
+  options?: t.MutationOptions<
+    t.TUpdateShareLinkRequest,
+    t.TUpdateShareLinkRequest & { snapshotFiles?: boolean }
+  >,
+): UseMutationResult<
+  t.TSharedLinkResponse,
+  unknown,
+  t.TUpdateShareLinkRequest & { snapshotFiles?: boolean },
+  unknown
+> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ shareId }) => {
+    ({ shareId, targetMessageId, snapshotFiles }) => {
       if (!shareId) {
         throw new Error('Share ID is required');
       }
-      return dataService.updateSharedLink(shareId);
+      return dataService.updateSharedLink(shareId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -475,6 +518,30 @@ export const useDeleteConversationMutation = (
         // TODO: CHECK THIS, no-op; restore if needed
       },
       onSuccess: (data, vars, context) => {
+        const deletedConversation = vars.conversationId
+          ? queryClient.getQueryData<t.TConversation>([QueryKeys.conversation, vars.conversationId])
+          : undefined;
+        let deletedProjectId = deletedConversation?.chatProjectId;
+        if (!deletedProjectId && vars.conversationId) {
+          const cacheKeys = [QueryKeys.allConversations, QueryKeys.projectConversations];
+          for (const cacheKey of cacheKeys) {
+            const queries = queryClient.getQueryCache().findAll([cacheKey], { exact: false });
+            for (const query of queries) {
+              const found = findConversationInInfinite(
+                queryClient.getQueryData<InfiniteData<ConversationListResponse>>(query.queryKey),
+                vars.conversationId,
+              );
+              if (found?.chatProjectId) {
+                deletedProjectId = found.chatProjectId;
+                break;
+              }
+            }
+            if (deletedProjectId) {
+              break;
+            }
+          }
+        }
+
         if (vars.conversationId) {
           removeConvoFromAllQueries(queryClient, vars.conversationId);
         }
@@ -519,6 +586,12 @@ export const useDeleteConversationMutation = (
           queryKey: [QueryKeys.archivedConversations],
           refetchPage: (_, index) => index === 0,
         });
+        queryClient.invalidateQueries([QueryKeys.projectConversations]);
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.conversationTags]);
+        if (deletedProjectId) {
+          queryClient.invalidateQueries([QueryKeys.project, deletedProjectId]);
+        }
 
         options?.onSuccess?.(data, vars, context);
       },
@@ -550,6 +623,11 @@ export const useDuplicateConversationMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      queryClient.invalidateQueries([QueryKeys.projectConversations]);
+      queryClient.invalidateQueries([QueryKeys.projects]);
+      if (duplicatedConversation.chatProjectId) {
+        queryClient.invalidateQueries([QueryKeys.project, duplicatedConversation.chatProjectId]);
+      }
 
       if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
         queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
@@ -593,6 +671,11 @@ export const useForkConvoMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      queryClient.invalidateQueries([QueryKeys.projectConversations]);
+      queryClient.invalidateQueries([QueryKeys.projects]);
+      if (forkedConversation.chatProjectId) {
+        queryClient.invalidateQueries([QueryKeys.project, forkedConversation.chatProjectId]);
+      }
 
       if (forkedConversation.tags && forkedConversation.tags.length > 0) {
         queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
@@ -610,6 +693,41 @@ export const useForkConvoMutation = (
     },
     ..._options,
   });
+};
+
+export const useForkSharedConvoMutation = (
+  options?: t.ForkSharedConvoOptions,
+): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkSharedConvoRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options ?? {};
+
+  return useMutation(
+    (payload: t.TForkSharedConvoRequest) =>
+      dataService.forkSharedConversation(payload.shareId, payload.targetMessageIndex),
+    {
+      onSuccess: (data, vars, context) => {
+        const forkedConversation = data.conversation;
+        const forkedConversationId = forkedConversation?.conversationId;
+        if (!forkedConversationId) {
+          return;
+        }
+
+        queryClient.setQueryData(
+          [QueryKeys.conversation, forkedConversationId],
+          forkedConversation,
+        );
+        addConvoToAllQueries(queryClient, forkedConversation);
+        queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.allConversations],
+          refetchPage: (_, index) => index === 0,
+        });
+
+        onSuccess?.(data, vars, context);
+      },
+      ..._options,
+    },
+  );
 };
 
 export const useUploadConversationsMutation = (
@@ -1043,6 +1161,7 @@ export const useAcceptTermsMutation = (
     onSuccess: (data, variables, context) => {
       queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
         termsAccepted: true,
+        termsAcceptedAt: data.termsAcceptedAt,
       });
       options?.onSuccess?.(data, variables, context);
     },

@@ -840,6 +840,10 @@ describe('maybeRefreshCloudFrontAuthCookies', () => {
 
     expect(result).toMatchObject({ enabled: false, attempted: false, refreshed: false });
     expect(mockGetSignedCookies).not.toHaveBeenCalled();
+    expect(mockLogger.debug).not.toHaveBeenCalledWith(
+      '[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies skipped',
+      expect.any(Object),
+    );
   });
 
   it('does not refresh when imageSigning is not cookies', () => {
@@ -851,6 +855,10 @@ describe('maybeRefreshCloudFrontAuthCookies', () => {
 
     expect(result).toMatchObject({ enabled: false, attempted: false, refreshed: false });
     expect(mockGetSignedCookies).not.toHaveBeenCalled();
+    expect(mockLogger.debug).not.toHaveBeenCalledWith(
+      '[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies skipped',
+      expect.any(Object),
+    );
   });
 
   it('force-refreshes even when the scope cookie is fresh without calling OIDC refresh', () => {
