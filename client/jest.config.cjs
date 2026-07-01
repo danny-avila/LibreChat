@@ -32,7 +32,6 @@ module.exports = {
     '^librechat-data-provider/react-query$':
       '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
   },
-  resolver: '<rootDir>/src/nj/test/resolver.cjs',
   maxWorkers: '50%',
   restoreMocks: true,
   testResultsProcessor: 'jest-junit',
