@@ -1635,6 +1635,59 @@ describe('Claude Model Tests', () => {
       expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-sonnet-4-6');
     });
   });
+
+  it('should return correct context length for Claude Sonnet 5 (1M)', () => {
+    expect(getModelMaxTokens('claude-sonnet-5', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-5'],
+    );
+    expect(getModelMaxTokens('claude-sonnet-5')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-5'],
+    );
+  });
+
+  it('should return correct max output tokens for Claude Sonnet 5 (128K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxOutputTokens('claude-sonnet-5', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-5'],
+    );
+    expect(getModelMaxOutputTokens('claude-sonnet-5', EModelEndpoint.anthropic)).toBeGreaterThan(
+      getModelMaxOutputTokens('claude-sonnet-4-6', EModelEndpoint.anthropic),
+    );
+  });
+
+  it('should not match Claude Sonnet 5 against Claude Sonnet 4 keys', () => {
+    const modelVariations = [
+      'claude-sonnet-5',
+      'claude-sonnet-5-20260101',
+      'claude-sonnet-5-latest',
+      'anthropic/claude-sonnet-5',
+      'claude-sonnet-5/anthropic',
+      'anthropic.claude-sonnet-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const modelKey = findMatchingPattern(model, maxTokensMap[EModelEndpoint.anthropic]);
+      expect(modelKey).toBe('claude-sonnet-5');
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(
+        maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-5'],
+      );
+    });
+  });
+
+  it('should match model names correctly for Claude Sonnet 5', () => {
+    const modelVariations = [
+      'claude-sonnet-5',
+      'claude-sonnet-5-20260101',
+      'claude-sonnet-5-latest',
+      'anthropic/claude-sonnet-5',
+      'claude-sonnet-5/anthropic',
+      'claude-sonnet-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-sonnet-5');
+    });
+  });
 });
 
 describe('Moonshot/Kimi Model Tests', () => {

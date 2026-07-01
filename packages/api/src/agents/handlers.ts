@@ -2274,7 +2274,12 @@ async function handleCreateFileCall(
     return errorResult(tc, 'path is required');
   }
   if (typeof args.content !== 'string') {
-    return errorResult(tc, 'content is required');
+    return errorResult(
+      tc,
+      'content is required. If the file is large, your response may have been cut off at the ' +
+        'output token limit before content finished. Keep the main file lean and move bulky ' +
+        'sections (templates, schemas, long docs) into separate files written in their own calls.',
+    );
   }
   if (Buffer.byteLength(args.content, 'utf8') > MAX_AUTHORING_BYTES) {
     return errorResult(tc, `content exceeds ${MAX_AUTHORING_BYTES} byte limit`);

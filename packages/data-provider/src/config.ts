@@ -992,6 +992,45 @@ export const toolApprovalPolicySchema = z
 
 export type TToolApprovalPolicy = z.infer<typeof toolApprovalPolicySchema>;
 
+/**
+ * Durable checkpointer backing human-in-the-loop resume.
+ *
+ * When `toolApproval.enabled` is true, a run that pauses for review suspends its
+ * LangGraph state to a checkpoint; resuming rebuilds that state on a *fresh* `Run`
+ * — possibly on a different replica, or the same worker after a restart. That only
+ * works if the checkpoint outlives the original request, so HITL needs a durable
+ * saver, not the SDK's process-local `MemorySaver` fallback.
+ *
+ * Defaults are zero-config: with `toolApproval.enabled` on and no `checkpointer`
+ * block, LibreChat persists checkpoints to its primary MongoDB, so resume works
+ * across replicas out of the box.
+ *
+ * - `type: 'mongo'` (default) — persist to the app database; survives restarts and
+ *   resolves on any replica. A TTL index reclaims runs that are never resolved.
+ * - `type: 'memory'` — process-local only. Paused runs do NOT survive a restart and
+ *   can only be resolved on the originating worker. Single-process / dev only.
+ */
+export const checkpointerTypeSchema = z.enum(['mongo', 'memory']);
+export type TCheckpointerType = z.infer<typeof checkpointerTypeSchema>;
+
+export const checkpointerSchema = z
+  .object({
+    type: checkpointerTypeSchema.optional(),
+    /**
+     * Approval window, in seconds: how long a paused run waits for a decision
+     * before it is reclaimed. Drives both the Mongo TTL index on checkpoints and
+     * the pending-action expiry, keeping the two layers in lockstep. Defaults to
+     * 86400 (24h). Raise it for longer review windows.
+     */
+    ttl: z.number().int().positive().optional(),
+    /** Advanced: override the Mongo collection names used for checkpoints. */
+    checkpointCollectionName: z.string().optional(),
+    checkpointWritesCollectionName: z.string().optional(),
+  })
+  .optional();
+
+export type TCheckpointerConfig = z.infer<typeof checkpointerSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1016,6 +1055,9 @@ export const agentsEndpointSchema = baseEndpointSchema
       remoteApi: remoteApiSchema.optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
       toolApproval: toolApprovalPolicySchema,
+      /** Durable checkpointer backing HITL resume. Defaults to the app's MongoDB
+       *  when `toolApproval.enabled` is set; ignored otherwise. */
+      checkpointer: checkpointerSchema,
     }),
   )
   .default({
@@ -2145,6 +2187,7 @@ const sharedAnthropicModels = [
   'claude-fable-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
+  'claude-sonnet-5',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
   'claude-sonnet-4-5',
@@ -2170,6 +2213,7 @@ export const bedrockModels = [
   'anthropic.claude-fable-5',
   'anthropic.claude-opus-4-8',
   'anthropic.claude-opus-4-7',
+  'anthropic.claude-sonnet-5',
   'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',

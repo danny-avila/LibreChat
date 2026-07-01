@@ -3,6 +3,7 @@ export * from './attachments';
 export * from './chain';
 export * from './client';
 export * from './config';
+export * from './checkpointer';
 export * from './contact';
 export * from './context';
 export * from './discovery';

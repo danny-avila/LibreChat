@@ -217,6 +217,11 @@ export namespace Agents {
     parentMessageId?: string;
     conversationId?: string;
     text?: string;
+    /** Skill selections on the turn, carried so a HITL-resumed turn's reconstructed
+     *  requestMessage keeps its skill pills (they aren't on the DB row the client refetches
+     *  until reload). */
+    manualSkills?: string[];
+    alwaysAppliedSkills?: string[];
   }
 
   /** State data sent to reconnecting clients */
@@ -403,6 +408,21 @@ export namespace Agents {
      * worker that didn't originate the run.
      */
     threadId?: string;
+    /**
+     * Fingerprint of the request fields that determine the agent/graph + tool set
+     * (endpoint, agent_id, model, spec, ephemeralAgent), captured at pause time. The
+     * resume route recomputes it from the resume request and rejects a mismatch — the
+     * guard that catches an ephemeral-agent config swap, where `agent_id` is undefined
+     * so the id check can't.
+     */
+    requestFingerprint?: string;
+    /**
+     * Graph-determining request fields (endpoint, agent_id, model, spec, promptPrefix,
+     * ephemeralAgent) captured at pause. The resume route REPLAYS these onto the request
+     * before rebuilding the run, so a reload/cross-replica resume — where the client can
+     * no longer reconstruct the ephemeral config — still rebuilds the same agent/graph.
+     */
+    resumeContext?: Record<string, unknown>;
   }
 
   /**

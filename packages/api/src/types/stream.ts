@@ -20,6 +20,16 @@ export interface GenerationJobMetadata {
   model?: string;
   /** Prompt token count for abort token spending */
   promptTokens?: number;
+  /** Agent that initiated the run; a HITL resume verifies it rebuilds the same agent. */
+  agent_id?: string;
+  /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
+  isTemporary?: boolean;
+  /**
+   * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
+   * replays these into `createRun` because the rebuilt graph uses `messages: []`, so
+   * without them the paused deferred tool would be missing from the schema-only toolMap.
+   */
+  discoveredTools?: string[];
   /** Set when the job is paused for human review (status === 'requires_action') */
   pendingAction?: Agents.PendingAction;
 }

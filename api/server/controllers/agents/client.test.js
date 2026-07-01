@@ -48,6 +48,32 @@ jest.mock('~/config', () => ({
   })),
 }));
 
+describe('AgentClient - applyHideSequentialOutputsFilter', () => {
+  const textPart = (text) => ({ type: ContentTypes.TEXT, text });
+  const toolCallPart = (id) => ({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+
+  it('keeps only the last part + tool_call parts when hide_sequential_outputs is on', () => {
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [
+        textPart('intermediate'),
+        toolCallPart('tc1'),
+        textPart('reasoning'),
+        textPart('final'),
+      ],
+    };
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    expect(ctx.contentParts).toEqual([toolCallPart('tc1'), textPart('final')]);
+  });
+
+  it('is a no-op when hide_sequential_outputs is off', () => {
+    const parts = [textPart('a'), textPart('b')];
+    const ctx = { options: { agent: { hide_sequential_outputs: false } }, contentParts: parts };
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    expect(ctx.contentParts).toEqual([textPart('a'), textPart('b')]);
+  });
+});
+
 describe('AgentClient - titleConvo', () => {
   let client;
   let mockRun;

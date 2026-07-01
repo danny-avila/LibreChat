@@ -10,7 +10,8 @@ const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReas
 
 type ThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
-  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue };
+  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue }
+  | { type: 'disabled' };
 
 /**
  * Resolves the final `thinking.display` value for an adaptive-thinking request.
@@ -142,6 +143,10 @@ export function omitsThinkingByDefault(model: string): boolean {
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
     return true;
   }
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet.major >= 5) {
+    return true;
+  }
   if (s.isMythosClassModel(model)) {
     return true;
   }
@@ -153,10 +158,31 @@ export function omitsSamplingParameters(model: string): boolean {
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
     return true;
   }
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet.major >= 5) {
+    return true;
+  }
   if (s.isMythosClassModel(model)) {
     return true;
   }
   return false;
+}
+
+/**
+ * Whether disabling thinking requires sending an explicit `{ type: 'disabled' }`
+ * config rather than simply omitting the `thinking` field.
+ *
+ * Sonnet 5 treats an omitted `thinking` field as adaptive thinking ON by
+ * default, so honoring a user who turns thinking off means sending the disabled
+ * config explicitly. Opus 4.7+ run without thinking when the field is omitted,
+ * and Fable/Mythos reject an explicit disabled config (400, thinking always
+ * on), so both are excluded.
+ *
+ * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-sonnet-5
+ */
+export function requiresExplicitThinkingDisabled(model: string): boolean {
+  const sonnet = parseSonnetVersion(model);
+  return sonnet != null && sonnet.major >= 5;
 }
 
 /** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+, Fable/Mythos) */
@@ -265,7 +291,11 @@ export const bedrockInputSchema = s.tConversationSchema
     if ((obj as AnthropicInput).additionalModelRequestFields?.thinking != null) {
       const _obj = obj as AnthropicInput;
       const thinking = _obj.additionalModelRequestFields.thinking;
-      obj.thinking = !!thinking;
+      const isDisabled =
+        typeof thinking === 'object' &&
+        thinking !== null &&
+        (thinking as { type?: string }).type === 'disabled';
+      obj.thinking = isDisabled ? false : !!thinking;
       obj.thinkingBudget =
         typeof thinking === 'object' && 'budget_tokens' in thinking
           ? thinking.budget_tokens
@@ -357,6 +387,26 @@ export const bedrockInputParser = s.tConversationSchema
       }
     });
 
+    /**
+     * Persisted `model_parameters` can carry a prior "thinking off" only inside
+     * `additionalModelRequestFields.thinking = { type: 'disabled' }` (a known
+     * key that isn't spread into `additionalFields`). `initializeBedrock` feeds
+     * those params straight through this parser, so surface that as
+     * `thinking: false` — otherwise the disabled branch is skipped and the
+     * config rebuilds adaptive, flipping a user's Sonnet 5 setting back on.
+     */
+    const persistedThinking = (
+      typedData.additionalModelRequestFields as { thinking?: unknown } | undefined
+    )?.thinking;
+    if (
+      additionalFields.thinking === undefined &&
+      typeof persistedThinking === 'object' &&
+      persistedThinking !== null &&
+      (persistedThinking as { type?: string }).type === 'disabled'
+    ) {
+      additionalFields.thinking = false;
+    }
+
     /** Configure thinking for Bedrock Anthropic models: 3.7 Sonnet, Claude 4+ (opus/sonnet/haiku), and Mythos-class (Fable/Mythos). */
     if (
       typeof typedData.model === 'string' &&
@@ -376,9 +426,13 @@ export const bedrockInputParser = s.tConversationSchema
         delete additionalFields.effort;
 
         if (additionalFields.thinking === false) {
-          delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
           delete additionalFields.thinkingDisplay;
+          if (requiresExplicitThinkingDisabled(typedData.model as string)) {
+            additionalFields.thinking = { type: 'disabled' };
+          } else {
+            delete additionalFields.thinking;
+          }
         } else {
           /**
            * Persisted agent `model_parameters` round-trip back through this

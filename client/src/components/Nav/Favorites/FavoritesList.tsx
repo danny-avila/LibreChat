@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
@@ -127,7 +127,7 @@ const DraggableFavoriteItem = ({
   );
 };
 
-export default function FavoritesList({
+function FavoritesList({
   isSmallScreen,
   toggleNav,
 }: {
@@ -479,3 +479,7 @@ export default function FavoritesList({
     </div>
   );
 }
+
+FavoritesList.displayName = 'FavoritesList';
+
+export default memo(FavoritesList);

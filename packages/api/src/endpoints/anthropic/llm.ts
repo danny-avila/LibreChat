@@ -145,8 +145,19 @@ function getLLMConfig(
       ? ((persistedThinking as { display: string }).display as ThinkingDisplay | string)
       : undefined;
 
+  /**
+   * `thinking` may round-trip as the full Anthropic object rather than a
+   * boolean. Normalize to a flag so a persisted `{ type: 'disabled' }` (e.g. a
+   * Sonnet 5 "thinking off" config stored back into `model_parameters`) is
+   * treated as off — a truthy object would otherwise flip thinking back on.
+   */
+  const thinkingFlag =
+    typeof persistedThinking === 'object' && persistedThinking != null
+      ? (persistedThinking as { type?: string }).type !== 'disabled'
+      : (persistedThinking ?? anthropicSettings.thinking.default);
+
   const systemOptions = {
-    thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
+    thinking: thinkingFlag,
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
     promptCacheTtl:
       options.modelOptions?.promptCacheTtl ?? anthropicSettings.promptCacheTtl.default,

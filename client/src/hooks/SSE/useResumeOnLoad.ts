@@ -3,7 +3,7 @@ import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { StreamStatusResponse } from '~/data-provider';
-import { getBranchSiblingIndexesForTarget } from '~/utils';
+import { getBranchSiblingIndexesForTarget, applyPendingAction } from '~/utils';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
 
@@ -130,7 +130,7 @@ function buildSubmissionFromResumeState(
 
   // ALWAYS use aggregatedContent from resumeState - it has the latest content from the running job.
   // DB content may be stale (saved at disconnect, but generation continued).
-  const initialResponse: TMessage = {
+  let initialResponse: TMessage = {
     messageId: existingResponseMessage?.messageId ?? responseMessageId,
     parentMessageId: existingResponseMessage?.parentMessageId ?? userMessage.messageId,
     conversationId,
@@ -144,14 +144,33 @@ function buildSubmissionFromResumeState(
     iconURL: preferDefinedString(existingResponseMessage?.iconURL, resumeState.iconURL),
   } as TMessage;
 
+  // Re-paused turn: seed the approval / ask-user controls straight onto the
+  // placeholder so they render on load without waiting for the SSE sync replay.
+  if (resumeState.pendingAction) {
+    initialResponse = applyPendingAction(initialResponse, resumeState.pendingAction);
+  }
+
   const conversation: TConversation = {
     conversationId,
     title: 'Resumed Chat',
     endpoint: null,
   } as TConversation;
 
+  // On reload, `messages` is the full DB array, which already holds the paused user
+  // row and the partial (unfinished) assistant row under the same ids that
+  // `userMessage` / `initialResponse` (and the resume final event's request/response
+  // messages) re-supply. Strip them so createdHandler/finalHandler — which build
+  // `[...messages, requestMessage, responseMessage]` — don't append a duplicate pair.
+  const pausedResponseIdUnpadded = initialResponse.messageId.replace(/_+$/, '');
+  const dedupedMessages = messages.filter(
+    (m) =>
+      m.messageId !== userMessage.messageId &&
+      m.messageId !== initialResponse.messageId &&
+      m.messageId !== pausedResponseIdUnpadded,
+  );
+
   return {
-    messages,
+    messages: dedupedMessages,
     userMessage,
     initialResponse,
     conversation,

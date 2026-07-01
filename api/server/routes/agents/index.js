@@ -5,6 +5,8 @@ const {
   hasPersistableAbortContent,
   buildAbortedResponseMetadata,
   isPendingActionStale,
+  isHITLEnabled,
+  deleteAgentCheckpoint,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -231,7 +233,7 @@ router.get('/chat/status/:conversationId', async (req, res) => {
  * @access Private
  * @description Mounted before chatRouter to bypass buildEndpointOption middleware
  */
-router.post('/chat/abort', async (req, res) => {
+router.post('/chat/abort', configMiddleware, async (req, res) => {
   logger.debug(`[AgentStream] ========== ABORT ENDPOINT HIT ==========`);
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
   logger.debug(`[AgentStream] Body:`, req.body);
@@ -288,6 +290,17 @@ router.post('/chat/abort', async (req, res) => {
       abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
     });
 
+    // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
+    // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
+    // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when
+    // HITL is off or nothing was written.
+    const agentsCfg = req.config?.endpoints?.agents;
+    if (isHITLEnabled(agentsCfg?.toolApproval)) {
+      await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer).catch((err) =>
+        logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
+      );
+    }
+
     // CRITICAL: Save partial response BEFORE returning to prevent race condition.
     // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.
     // Only save if we have a valid responseMessageId (skip early aborts before generation started)
@@ -327,7 +340,10 @@ router.post('/chat/abort', async (req, res) => {
         await saveMessage(
           {
             userId: req?.user?.id,
-            isTemporary: req?.body?.isTemporary,
+            // Source from the job, not the request: the stop button posts only the
+            // conversationId, so trusting req.body.isTemporary would persist an aborted
+            // temporary-chat partial as a normal (orphaned) message.
+            isTemporary: jobData?.isTemporary ?? req?.body?.isTemporary,
             interfaceConfig: req?.config?.interfaceConfig,
           },
           responseMessage,

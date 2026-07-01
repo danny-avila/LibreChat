@@ -172,6 +172,21 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.approvals.expire(streamId)).toBe(false);
     });
 
+    test('a mismatched expectedActionId no-ops (protects a re-paused action from a stale sweep)', async () => {
+      const streamId = 'stream-expire-mismatch';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId, { actionId: 'action-A' }));
+
+      // A sweep that observed an OLDER (now-resolved) action must not abort the current
+      // pause — its CAS only fires when the live pendingActionId still matches.
+      expect(await manager.approvals.expire(streamId, 'stale-other-action')).toBe(false);
+      expect(await manager.getJobStatus(streamId)).toBe('requires_action');
+
+      // The matching id still expires it.
+      expect(await manager.approvals.expire(streamId, 'action-A')).toBe(true);
+      expect(await manager.getJobStatus(streamId)).toBe('aborted');
+    });
+
     test('sets completedAt so terminal cleanup can reclaim the job', async () => {
       const streamId = 'stream-expire-completed';
       await manager.createJob(streamId, 'user-1');
@@ -247,5 +262,90 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
     // A past-expiry approval must be finalized + reclaimed, not left resident.
     await store.cleanup();
     expect(await store.getJob('s1')).toBeNull();
+  });
+});
+
+describe('GenerationJobManager HITL resume metadata (round 19)', () => {
+  let manager: GenerationJobManagerClass;
+
+  beforeEach(() => {
+    manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+  });
+
+  afterEach(async () => {
+    await manager.destroy();
+  });
+
+  function buildAction(streamId: string) {
+    const payload = buildToolApprovalPayload([
+      { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_abc' },
+    ]);
+    return buildPendingAction(payload, {
+      streamId,
+      conversationId: streamId,
+      runId: 'run-1',
+      responseMessageId: 'msg-1',
+    });
+  }
+
+  // H1: round-18 captured discoveredTools but the metadata allowlists (updateMetadata,
+  // Redis deserialize, buildJobFacade) dropped it, so resume replayed `undefined`.
+  test('updateMetadata persists discoveredTools and the job facade exposes them', async () => {
+    const streamId = 'stream-discovered';
+    await manager.createJob(streamId, 'user-1');
+    await manager.updateMetadata(streamId, { discoveredTools: ['deep_tool', 'other_tool'] });
+    const job = await manager.getJob(streamId);
+    expect(job?.metadata.discoveredTools).toEqual(['deep_tool', 'other_tool']);
+  });
+
+  // H4: a pause that lands AFTER the resume snapshot but before the subscription must
+  // still reach the client. subscribeWithResume re-reads the live job and surfaces it.
+  test('subscribeWithResume surfaces a pause that the resume snapshot missed', async () => {
+    const streamId = 'stream-race';
+    await manager.createJob(streamId, 'user-1');
+    const action = buildAction(streamId);
+    await manager.approvals.pause(streamId, action);
+
+    // Simulate the snapshot being taken BEFORE the pause: drop pendingAction from the
+    // resume state even though the live job is now requires_action.
+    const realGetResumeState = manager.getResumeState.bind(manager);
+    jest.spyOn(manager, 'getResumeState').mockImplementation(async (id: string) => {
+      const state = await realGetResumeState(id);
+      return state ? { ...state, pendingAction: undefined } : state;
+    });
+
+    const result = await manager.subscribeWithResume(streamId, () => {});
+    const pending = result.pendingEvents.find(
+      (e) => 'event' in e && e.event === 'on_pending_action',
+    );
+    expect(pending).toBeDefined();
+    expect((pending as unknown as { data: { actionId: string } }).data.actionId).toBe(
+      action.actionId,
+    );
+    result.subscription?.unsubscribe();
+  });
+
+  // H4 negative: when the snapshot already carried the action, the re-read is skipped
+  // (the client gets it via resumeState.pendingAction) — no duplicate pending event.
+  test('does not re-surface the pending action when the snapshot already carried it', async () => {
+    const streamId = 'stream-norace';
+    await manager.createJob(streamId, 'user-1');
+    const action = buildAction(streamId);
+    await manager.approvals.pause(streamId, action);
+
+    const result = await manager.subscribeWithResume(streamId, () => {});
+    const pendingCount = result.pendingEvents.filter(
+      (e) => 'event' in e && e.event === 'on_pending_action',
+    ).length;
+    expect(pendingCount).toBe(0);
+    expect(result.resumeState?.pendingAction?.actionId).toBe(action.actionId);
+    result.subscription?.unsubscribe();
   });
 });
