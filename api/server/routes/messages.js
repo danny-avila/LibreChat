@@ -445,7 +445,6 @@ router.put(
       );
       await enforceForcedRetention(req, conversationId, messageId, 'PUT /api/messages - feedback');
 
-
       // Best-effort: Assistants messages do not have deterministic AgentRun traces.
       if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
         sendFeedbackScore({
