@@ -50,11 +50,16 @@ export function buildAppToolResult(resource: UIResource): AppToolResult | undefi
 }
 
 export function getMCPSandboxUrl(): string {
-  const configured = (import.meta.env as Record<string, string | undefined>).VITE_MCP_SANDBOX_URL;
-  const base = configured ?? `${apiBaseUrl()}/api/mcp/sandbox`;
+  const env = import.meta.env as Record<string, string | undefined>;
+  const base = env.VITE_MCP_SANDBOX_URL ?? `${apiBaseUrl()}/api/mcp/sandbox`;
+  const strictCsp =
+    env.VITE_MCP_SANDBOX_STRICT_CSP === 'true' || env.VITE_MCP_SANDBOX_STRICT_CSP === '1';
   try {
     const url = new URL(base, window.location.origin);
     url.searchParams.set('parentOrigin', window.location.origin);
+    if (strictCsp) {
+      url.searchParams.set('strictCsp', '1');
+    }
     return url.toString();
   } catch {
     return base;

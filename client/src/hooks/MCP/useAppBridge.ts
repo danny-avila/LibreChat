@@ -7,6 +7,7 @@ import {
   PostMessageTransport,
   buildAllowAttribute,
 } from '@modelcontextprotocol/ext-apps/app-bridge';
+import type { McpUiStyles } from '@modelcontextprotocol/ext-apps/app-bridge';
 import type { UIResource } from 'librechat-data-provider';
 import type { AppToolResult } from '~/utils/mcpApps';
 import {
@@ -23,6 +24,41 @@ import store from '~/store';
 type MessageContentBlock = { type?: string; text?: string };
 
 type SizeParams = { width?: number; height?: number };
+
+/** Maps the MCP Apps standard host style tokens onto LibreChat's theme CSS variables. Apps keep
+ * their own fallbacks for anything omitted, so a partial set is intentional. */
+const HOST_STYLE_VAR_MAP: Record<string, string> = {
+  '--color-background-primary': '--surface-primary',
+  '--color-background-secondary': '--surface-secondary',
+  '--color-background-tertiary': '--surface-tertiary',
+  '--color-background-danger': '--surface-destructive',
+  '--color-text-primary': '--text-primary',
+  '--color-text-secondary': '--text-secondary',
+  '--color-text-tertiary': '--text-tertiary',
+  '--color-text-danger': '--text-destructive',
+  '--color-text-warning': '--text-warning',
+  '--color-border-primary': '--border-medium',
+  '--color-border-secondary': '--border-light',
+  '--color-border-danger': '--border-destructive',
+};
+
+function readHostTheme(): 'light' | 'dark' {
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+}
+
+function buildHostStyleVariables(): McpUiStyles {
+  const computed = getComputedStyle(document.documentElement);
+  const variables: Record<string, string> = {};
+  for (const [specVar, lcVar] of Object.entries(HOST_STYLE_VAR_MAP)) {
+    const value = computed.getPropertyValue(lcVar).trim();
+    if (value) {
+      variables[specVar] = value;
+    }
+  }
+  // The token record is optional/partial by design (apps fall back on any we omit); the generated
+  // type requires every key, so assert the mapped subset.
+  return variables as McpUiStyles;
+}
 
 export function useAppBridge(
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
@@ -76,7 +112,7 @@ export function useAppBridge(
 
       const transport = new PostMessageTransport(iframe.contentWindow, iframe.contentWindow);
 
-      const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      const theme = readHostTheme();
       const { locale, timeZone } = Intl.DateTimeFormat().resolvedOptions();
       // Display-only views advertise no host-bound action capabilities so a well-behaved app
       // disables those affordances rather than issuing calls the host ignores.
@@ -98,6 +134,7 @@ export function useAppBridge(
             timeZone,
             displayMode: 'inline',
             availableDisplayModes: ['inline'],
+            styles: { variables: buildHostStyleVariables() },
           },
         },
       );
@@ -240,8 +277,34 @@ export function useAppBridge(
     iframe.addEventListener('load', handleLoad, { once: true });
     iframe.src = iframe.getAttribute('data-sandbox-url') ?? '';
 
+    // Host context is captured once at init, so push theme (and the derived style tokens) to the
+    // app when the user toggles light/dark while it is open.
+    let lastTheme = readHostTheme();
+    const themeObserver = new MutationObserver(() => {
+      const nextTheme = readHostTheme();
+      if (nextTheme === lastTheme) {
+        return;
+      }
+      lastTheme = nextTheme;
+      const activeBridge = bridgeRef.current;
+      if (!activeBridge) {
+        return;
+      }
+      Promise.resolve(
+        activeBridge.sendHostContextChange({
+          theme: nextTheme,
+          styles: { variables: buildHostStyleVariables() },
+        }),
+      ).catch((err: unknown) => logger.error('[MCP App] sendHostContextChange failed', err));
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
     return () => {
       cancelled = true;
+      themeObserver.disconnect();
       iframe.removeEventListener('load', handleLoad);
       bridgeRef.current?.teardownResource({}).catch(() => {});
       bridgeRef.current?.close();

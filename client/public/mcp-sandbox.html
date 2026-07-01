@@ -48,6 +48,13 @@
         return window.location.origin;
       })();
 
+      // A dedicated sandbox origin (parentOrigin differs from ours) isolates the inner frame from
+      // the host origin, so allow-same-origin can be granted; same-origin deployments cannot.
+      const dedicatedOrigin = window.location.origin !== trustedOrigin;
+      // Opt-in stricter CSP that drops unsafe-eval/wasm/blob/data from script-src for deployments
+      // that do not need them.
+      const strictCsp = new URLSearchParams(window.location.search).get('strictCsp') === '1';
+
       function notifyReady() {
         window.parent.postMessage(
           { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
@@ -131,15 +138,19 @@
           innerFrame = null;
         });
 
-        // Strip allow-same-origin from the inner frame regardless of what the host requested.
-        // Full cross-origin isolation requires the sandbox proxy to be served from a different
-        // origin than the host; stripping allow-same-origin provides partial mitigation when
-        // the proxy runs same-origin.
-        const requestedTokens = (params.sandbox || 'allow-scripts allow-forms')
-          .split(/\s+/)
-          .filter(Boolean);
-        innerFrame.sandbox =
-          requestedTokens.filter((t) => t !== 'allow-same-origin').join(' ') || 'allow-scripts';
+        // On a dedicated sandbox origin, grant allow-same-origin so storage-backed apps work
+        // (the spec's dedicated-origin model); the distinct origin keeps it away from the host.
+        // When the sandbox runs same-origin as the host, allow-same-origin would expose the host
+        // origin, so it is stripped regardless of what the host requested.
+        const sandboxTokens = new Set(
+          (params.sandbox || 'allow-scripts allow-forms').split(/\s+/).filter(Boolean),
+        );
+        if (dedicatedOrigin) {
+          sandboxTokens.add('allow-same-origin');
+        } else {
+          sandboxTokens.delete('allow-same-origin');
+        }
+        innerFrame.sandbox = Array.from(sandboxTokens).join(' ') || 'allow-scripts';
 
         const allowParts = [];
         if (permissions && typeof permissions === 'object') {
@@ -202,12 +213,14 @@
         const connectDomains = toDomainList(csp.connectDomains) || "'none'";
         const frameDomains = toDomainList(csp.frameDomains) || "'none'";
 
+        const scriptSrc = strictCsp
+          ? "script-src 'unsafe-inline' " + resourceDomains
+          : "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: " +
+            resourceDomains;
+
         return [
           "default-src 'none'",
-          (
-            "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: " +
-            resourceDomains
-          ).trim(),
+          scriptSrc.trim(),
           ("style-src 'unsafe-inline' " + resourceDomains).trim(),
           'connect-src ' + connectDomains,
           // form-action does not fall back to default-src, so with allow-forms a form could post to
