@@ -1,8 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { useRecoilState } from 'recoil';
 import uswdsIcons from '@uswds/uswds/img/sprite.svg';
-import { atomWithLocalStorage } from '~/store/utils';
+import { useLocalStorage } from '~/hooks';
 
 /**
  * Shows a small, dismissable tip.
@@ -20,9 +19,7 @@ export default function TipComponent({
   description: string;
   stateKey: string;
 }) {
-  const [showComplexBanner, setShowComplexBanner] = useRecoilState(
-    atomWithLocalStorage(stateKey, true),
-  );
+  const [showComplexBanner, setShowComplexBanner] = useLocalStorage(stateKey, true);
 
   if (!showComplexBanner) return null;
 

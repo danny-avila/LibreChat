@@ -9,6 +9,8 @@ import ActionsPanel from './ActionsPanel';
 import AgentPanel from './AgentPanel';
 import store from '~/store';
 
+const showSplashPageState = atomWithLocalStorage('agentPanelSplashPage', true);
+
 export default function AgentPanelSwitch() {
   return (
     <AgentPanelProvider>
@@ -20,9 +22,7 @@ export default function AgentPanelSwitch() {
 function AgentPanelSwitchWithContext() {
   const { activePanel, setCurrentAgentId } = useAgentPanelContext();
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(0));
-  const [showSplashPage, setShowSplashPage] = useRecoilState(
-    atomWithLocalStorage('agentPanelSplashPage', true),
-  );
+  const [showSplashPage, setShowSplashPage] = useRecoilState(showSplashPageState);
 
   useEffect(() => {
     const agent_id = agentId ?? '';
