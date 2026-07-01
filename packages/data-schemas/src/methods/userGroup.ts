@@ -146,7 +146,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    */
   async function findGroupByExternalId(
     idOnTheSource: string,
-    source: 'entra' | 'local' = 'entra',
+    source: 'entra' | 'local' | 'oidc' = 'entra',
     projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
@@ -167,7 +167,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    */
   async function findGroupsByExternalIds(
     idsOnTheSource: string[],
-    source: 'entra' | 'local' = 'entra',
+    source: 'entra' | 'local' | 'oidc' = 'entra',
     session?: ClientSession,
   ): Promise<IGroup[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -191,7 +191,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    */
   async function findGroupsByNamePattern(
     namePattern: string,
-    source: 'entra' | 'local' | null = null,
+    source: 'entra' | 'local' | 'oidc' | null = null,
     limit: number = 20,
     session?: ClientSession,
   ): Promise<IGroup[]> {
@@ -266,7 +266,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    */
   async function upsertGroupByExternalId(
     idOnTheSource: string,
-    source: 'entra' | 'local',
+    source: 'entra' | 'local' | 'oidc',
     updateData: Partial<IGroup>,
     session?: ClientSession,
   ): Promise<IGroup | null> {
@@ -796,7 +796,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
   }
 
   function buildGroupQuery(filter: {
-    source?: 'local' | 'entra';
+    source?: 'local' | 'entra' | 'oidc';
     search?: string;
   }): FilterQuery<IGroup> {
     const query: FilterQuery<IGroup> = {};
@@ -818,7 +818,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    */
   async function listGroups(
     filter: {
-      source?: 'local' | 'entra';
+      source?: 'local' | 'entra' | 'oidc';
       search?: string;
       limit?: number;
       offset?: number;
@@ -843,7 +843,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    * @param session - Optional MongoDB session for transactions
    */
   async function countGroups(
-    filter: { source?: 'local' | 'entra'; search?: string } = {},
+    filter: { source?: 'local' | 'entra' | 'oidc'; search?: string } = {},
     session?: ClientSession,
   ): Promise<number> {
     const Group = mongoose.models.Group as Model<IGroup>;

@@ -503,6 +503,7 @@ const searchPrincipals = async (req, res) => {
       sources: {
         local: finalResults.filter((r) => r.source === 'local').length,
         entra: finalResults.filter((r) => r.source === 'entra').length,
+        oidc: finalResults.filter((r) => r.source === 'oidc').length,
       },
     });
   } catch (error) {

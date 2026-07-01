@@ -6,7 +6,10 @@ const {
   isAdminPanelRedirect,
   generateAdminExchangeCode,
 } = require('@librechat/api');
-const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
+const {
+  syncUserEntraGroupMemberships,
+  syncUserOidcGroupsFromToken,
+} = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const getLogStores = require('~/cache/getLogStores');
 const { checkBan } = require('~/server/middleware');
@@ -65,10 +68,14 @@ function createOAuthHandler(redirectUri = domains.client) {
         return res.redirect(callbackUrl.toString());
       }
 
-      /** Standard OAuth flow - set cookies and redirect */
+      if (req.user && req.user.provider === 'openid' && req.user.tokenset) {
+        await syncUserOidcGroupsFromToken(req.user, req.user.tokenset);
+      }
+
+      // Entra Graph-API sync stays coupled to OPENID_REUSE_TOKENS to preserve pre-existing behavior
       if (
         req.user &&
-        req.user.provider == 'openid' &&
+        req.user.provider === 'openid' &&
         isEnabled(process.env.OPENID_REUSE_TOKENS) === true
       ) {
         await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);

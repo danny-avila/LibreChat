@@ -2532,6 +2532,71 @@ describe('setupOpenId', () => {
       expect(details).toEqual({ message: 'Email domain not allowed' });
     });
   });
+
+  describe('idOnTheSource fallback for non-Microsoft OIDC providers', () => {
+    it('should use oid claim for idOnTheSource when available (Microsoft)', async () => {
+      const userinfoWithOid = {
+        ...tokenset.claims(),
+        oid: 'microsoft-object-id-12345',
+      };
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfoWithOid });
+
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          idOnTheSource: 'microsoft-object-id-12345',
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('should fallback to sub claim for idOnTheSource when oid is missing (non-Microsoft)', async () => {
+      const userinfoWithoutOid = { ...tokenset.claims() };
+      delete userinfoWithoutOid.oid;
+
+      const { user } = await validate({ ...tokenset, claims: () => userinfoWithoutOid });
+
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          idOnTheSource: userinfoWithoutOid.sub,
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('should update existing user with idOnTheSource using oid || sub fallback', async () => {
+      const existingUser = {
+        _id: 'existingUserId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'existinguser',
+        name: 'Existing User',
+      };
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingUser;
+        }
+        return null;
+      });
+
+      const userinfoWithoutOid = { ...tokenset.claims() };
+      delete userinfoWithoutOid.oid;
+
+      await validate({ ...tokenset, claims: () => userinfoWithoutOid });
+
+      expect(updateUser).toHaveBeenCalledWith(
+        existingUser._id,
+        expect.objectContaining({
+          idOnTheSource: userinfoWithoutOid.sub,
+        }),
+      );
+    });
+  });
 });
 
 describe('getRoleSource', () => {
