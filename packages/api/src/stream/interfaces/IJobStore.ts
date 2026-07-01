@@ -32,10 +32,24 @@ export interface SerializableJobData {
     /** Quoted excerpts referenced on this turn, carried so resumable/aborted
      *  reconstructions of the user message keep their `MessageQuotes`. */
     quotes?: string[];
+    /** Skill selections, carried so a HITL-resumed turn's requestMessage keeps its pills. */
+    manualSkills?: string[];
+    alwaysAppliedSkills?: string[];
+    /** Uploaded files for the turn, carried so a HITL resume sources them from the job
+     *  rather than a user DB row whose save can still be racing the approval prompt. */
+    files?: unknown[];
   };
 
   /** Response message ID for reconnection */
   responseMessageId?: string;
+
+  /**
+   * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
+   * so a resume can replay them into `createRun` — the rebuilt graph uses `messages: []`
+   * (state comes from the checkpoint), so without these the paused deferred tool would be
+   * absent from the schema-only toolMap and resume would fail with "unknown tool".
+   */
+  discoveredTools?: string[];
 
   /** Whether the user-message created event has been emitted */
   createdEventEmitted?: boolean;
@@ -66,6 +80,20 @@ export interface SerializableJobData {
   iconURL?: string;
   model?: string;
   promptTokens?: number;
+
+  /**
+   * Agent that initiated the run. Persisted so a HITL resume can verify it rebuilds
+   * the SAME agent that paused — resuming Agent A's checkpoint on Agent B's graph
+   * would mis-execute the paused tool calls.
+   */
+  agent_id?: string;
+
+  /**
+   * Whether the originating turn was a temporary (non-persisted) chat. Persisted so
+   * a HITL resume keeps the resumed response temporary instead of saving it — the
+   * resume request can't be trusted to re-send the flag.
+   */
+  isTemporary?: boolean;
 
   /**
    * Set when status is `requires_action`. Describes the human review the

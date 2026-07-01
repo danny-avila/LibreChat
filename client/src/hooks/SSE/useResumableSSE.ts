@@ -12,6 +12,7 @@ import {
   apiBaseUrl,
   UsageEvents,
   createPayload,
+  ApprovalEvents,
   ViolationTypes,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -29,10 +30,13 @@ import type { TResData } from '~/common';
 import {
   logger,
   clearAllDrafts,
+  applyPendingAction,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
+  countTaggedApprovalParts,
   countTrailingOutputChars,
   markStreamStartFailedMetadata,
+  findPendingActionMessageIndex,
 } from '~/utils';
 import {
   useGetUserBalance,
@@ -449,6 +453,9 @@ export default function useResumableSSE(
   const submissionRef = useRef<TSubmission | null>(null);
   const optimisticStreamIdsRef = useRef(new Set<string>());
   const createdStreamIdsRef = useRef(new Set<string>());
+  /** Pending action whose tool-call content part hasn't rendered yet — retried
+   *  on the next frame so a fast pause-before-render race still attaches. */
+  const pendingActionRetryRef = useRef<number | null>(null);
 
   const {
     stepHandler,
@@ -506,6 +513,60 @@ export default function useResumableSSE(
         const submission = { ...currentSubmission, userMessage } as EventSubmission;
         for (const event of preCreatedStepEvents.splice(0)) {
           stepHandler(event, submission);
+        }
+      };
+
+      /**
+       * Maps a pending action onto the in-flight response message so the
+       * approval / ask-user UI renders. Syncs the result back into the step
+       * handler's map so subsequent deltas build on the approval-tagged content
+       * rather than clobbering it.
+       *
+       * If the mapping is a no-op (the paused tool-call content part hasn't
+       * rendered yet — a pause-before-render race), retry on subsequent frames
+       * so the approval still attaches. `ask_user_question` always applies (it
+       * appends a synthetic part), so only `tool_approval` ever retries.
+       */
+      // Keep retrying across frames (not just once): Recoil/React message updates from
+      // the preceding created/step events are async and can take several frames under
+      // load, so a single retry would drop a valid pause and leave the run with no
+      // approval controls. Bounded so a genuinely-absent target can't spin forever.
+      const PENDING_ACTION_MAX_RETRY_FRAMES = 120;
+      const applyPendingActionToMessages = (pendingAction: Agents.PendingAction, attempt = 0) => {
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            pendingActionRetryRef.current = requestAnimationFrame(() =>
+              applyPendingActionToMessages(pendingAction, attempt + 1),
+            );
+          }
+        };
+        const messages = getMessages() ?? [];
+        const index = findPendingActionMessageIndex(messages, pendingAction);
+        if (index < 0) {
+          retryNextFrame();
+          return;
+        }
+        const updated = applyPendingAction(messages[index], pendingAction);
+        const changed = updated !== messages[index];
+        if (changed) {
+          const nextMessages = [...messages];
+          nextMessages[index] = updated;
+          setMessages(nextMessages);
+          syncStepMessage(updated);
+        }
+        // A `tool_approval` pause can carry several `action_requests` whose tool-call
+        // parts render on different frames; tagging only the first to arrive would leave
+        // late siblings with no approval card, and the resume route then 400s the partial
+        // batch ("every paused tool call must be decided"). Keep retrying (bounded) until
+        // EVERY paused call is tagged. `ask_user_question` applies its single synthetic
+        // part in one shot, so it only needs the original "did anything change" retry.
+        if (pendingAction.payload.type === 'tool_approval') {
+          const expected = pendingAction.payload.action_requests.length;
+          if (countTaggedApprovalParts(updated, pendingAction.actionId) < expected) {
+            retryNextFrame();
+          }
+        } else if (!changed) {
+          retryNextFrame();
         }
       };
 
@@ -611,6 +672,12 @@ export default function useResumableSSE(
 
           if (data.event === UsageEvents.ON_TOKEN_USAGE) {
             usageHandler(data.data, { ...currentSubmission, userMessage });
+            return;
+          }
+
+          if (data.event === ApprovalEvents.ON_PENDING_ACTION) {
+            applyPendingActionToMessages(data.data as Agents.PendingAction);
+            setIsSubmitting(true);
             return;
           }
 
@@ -749,6 +816,15 @@ export default function useResumableSSE(
               }
             }
 
+            /**
+             * Re-pause on reconnect: the run is parked on a human-review
+             * interrupt. Re-apply the pending action so the approval / ask-user
+             * controls render after a reload or dropped connection.
+             */
+            if (data.resumeState?.pendingAction) {
+              applyPendingActionToMessages(data.resumeState.pendingAction as Agents.PendingAction);
+            }
+
             if (data.resumeState?.titleEvent) {
               titleHandler(data.resumeState.titleEvent);
             }
@@ -763,6 +839,10 @@ export default function useResumableSSE(
                   contextHandler(replayEvent.data, resumeSubmission);
                 } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {
                   usageHandler(replayEvent.data, resumeSubmission);
+                } else if (replayEvent.event === ApprovalEvents.ON_PENDING_ACTION) {
+                  // A pause that landed after the resume snapshot must still render its
+                  // controls (mirror the live handler), not fall through to stepHandler.
+                  applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -784,6 +864,12 @@ export default function useResumableSSE(
                   contextHandler(pendingEvent.data, resumeSubmission);
                 } else if (pendingEvent.event === UsageEvents.ON_TOKEN_USAGE) {
                   usageHandler(pendingEvent.data, resumeSubmission);
+                } else if (pendingEvent.event === ApprovalEvents.ON_PENDING_ACTION) {
+                  // In-memory mode can surface a pause that landed between getResumeState()
+                  // and the subscription here; route it to the same handler as a live event
+                  // so the approval / ask-user controls render (else the stream sits paused
+                  // with no UI until a full status reload).
+                  applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1288,6 +1374,10 @@ export default function useResumableSSE(
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+      if (pendingActionRetryRef.current != null) {
+        cancelAnimationFrame(pendingActionRetryRef.current);
+        pendingActionRetryRef.current = null;
       }
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;

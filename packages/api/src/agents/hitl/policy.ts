@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import type { ToolPolicyConfig } from '@librechat/agents';
 
@@ -10,6 +10,54 @@ import type { ToolPolicyConfig } from '@librechat/agents';
  * a stock approval prompt. Hosts that want it can pass an override.
  */
 const DEFAULT_REVIEW_DECISIONS: Agents.ToolApprovalDecisionType[] = ['approve', 'reject', 'edit'];
+
+/**
+ * Layered sources that combine into the effective tool-approval policy for a turn.
+ *
+ * Only {@link ToolApprovalPolicyLayers.endpoint} is consumed today; `agent` and
+ * `skills` are reserved seams so future per-agent / per-skill plumbing lands in
+ * {@link resolveToolApprovalPolicy} rather than being threaded through the run
+ * call site.
+ */
+export interface ToolApprovalPolicyLayers {
+  /**
+   * App/endpoint policy — `endpoints.agents.toolApproval` from librechat.yaml.
+   * The baseline, and the sole owner of the `enabled` kill switch.
+   */
+  endpoint?: TToolApprovalPolicy;
+  /**
+   * Per-agent override (not yet wired). Layered over `endpoint` to refine
+   * `mode`/`allow`/`deny`/`ask`/`reason` for a specific agent. Must NOT flip
+   * `enabled` — enablement stays endpoint-level by design.
+   */
+  agent?: TToolApprovalPolicy;
+  /**
+   * Skill-contributed policy (not yet wired). May only TIGHTEN — contribute
+   * `ask`/`deny` entries — never grant `bypass` or widen `allow`, so a selected
+   * skill can never silently auto-approve a tool.
+   */
+  skills?: TToolApprovalPolicy[];
+}
+
+/**
+ * Resolve the effective tool-approval policy for a turn from its layered sources.
+ *
+ * This is the single seam where policy sources combine, kept out of the run call
+ * site so adding per-agent or per-skill policy later is a change to ONE function
+ * rather than to `createRun`. Intended precedence once those layers are wired:
+ *   - `endpoint` is the baseline and owns the `enabled` kill switch;
+ *   - `agent` overrides `mode`/`allow`/`deny`/`ask`/`reason`;
+ *   - `skills` may only tighten (add `ask`/`deny`), never loosen.
+ *
+ * Today only `endpoint` is consumed, so the result is identical to reading
+ * `endpoints.agents.toolApproval` directly — `agent`/`skills` are accepted but
+ * not yet merged. Behaviour-preserving until those layers ship.
+ */
+export function resolveToolApprovalPolicy(
+  layers: ToolApprovalPolicyLayers,
+): TToolApprovalPolicy | undefined {
+  return layers.endpoint;
+}
 
 /**
  * Whether the HITL machinery should run for this policy.
@@ -121,6 +169,127 @@ export interface PendingActionContext {
   interruptId?: string;
   /** LangGraph `thread_id` (`RunInterruptResult.threadId`) for cross-process resume. */
   threadId?: string;
+  /** Fingerprint of the graph-determining request fields; see {@link computeAgentRequestFingerprint}. */
+  requestFingerprint?: string;
+  /** Graph-determining fields to replay on resume; see {@link RESUME_CONTEXT_KEYS}. */
+  resumeContext?: Record<string, unknown>;
+}
+
+/** Request fields that decide which agent/graph + tool set a turn runs. */
+export interface AgentRequestFingerprintFields {
+  endpoint?: string | null;
+  endpointType?: string | null;
+  agent_id?: string | null;
+  model?: string | null;
+  spec?: string | null;
+  /** Ephemeral agents derive their system instructions from this; pin it too. */
+  promptPrefix?: string | null;
+  ephemeralAgent?: Record<string, unknown> | null;
+}
+
+/** Stable, order-independent serialization of the ephemeral capability config. */
+function normalizeEphemeralAgent(ephemeral: Record<string, unknown> | null | undefined): unknown {
+  if (ephemeral == null || typeof ephemeral !== 'object') {
+    return null;
+  }
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(ephemeral).sort()) {
+    const value = ephemeral[key];
+    out[key] = Array.isArray(value) ? [...value].sort() : value;
+  }
+  return out;
+}
+
+/**
+ * Fingerprint the request fields that determine which agent/graph + tool set a turn
+ * runs. Persisted on the pending action at pause time and recomputed on resume; a
+ * mismatch means the resume would rebuild a DIFFERENT graph. This is the guard that
+ * catches an ephemeral-agent config swap — those have an undefined `agent_id`, so the
+ * id check alone can't tell two ephemeral configs apart.
+ */
+/**
+ * Request fields that determine the agent/graph + tool set, persisted with the pending
+ * action so the resume can REPLAY them server-side. The client can't reliably re-send
+ * these after a reload (e.g. the ephemeralAgent state resets), so replaying them from
+ * the job guarantees the rebuilt run is the SAME graph the pause used — durable resume
+ * works across reloads/replicas, and a crafted resume can't swap the tool set.
+ */
+export const RESUME_CONTEXT_KEYS = [
+  'endpoint',
+  'endpointType',
+  'agent_id',
+  'spec',
+  'model',
+  'promptPrefix',
+  'ephemeralAgent',
+  // The agents build reads addedConvo into endpointOption to add parallel/secondary
+  // agents; the resume POST can't reconstruct it, so replay it from the paused request.
+  'addedConvo',
+  // Feeds temporal prompt vars ({{current_datetime}} etc.) via initializeAgent. The
+  // resume POST omits it, so without replay a different-tz client (or none) compiles a
+  // different system prompt than the paused graph. Replay-only — not in the fingerprint.
+  'timezone',
+  // Manually-selected skills union their allowed-tools into the tool set before tools
+  // load (initializeAgent → resolveManualSkills), so they're graph-determining. The
+  // resume POST can't reliably re-send them after a reload; replay them, and the
+  // delete-absent half of applyResumeContext stops a crafted resume from injecting a
+  // different skill's tools (manualSkills isn't covered by the fingerprint). Replay-only.
+  // (alwaysAppliedSkills is NOT here — it's resolved server-side from the DB, not req.body.)
+  'manualSkills',
+] as const;
+
+export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>>;
+
+/** Extract the graph-determining fields from a request body for durable replay. */
+export function pickResumeContext(body: Record<string, unknown> | undefined | null): ResumeContext {
+  const ctx: ResumeContext = {};
+  if (body == null) {
+    return ctx;
+  }
+  for (const key of RESUME_CONTEXT_KEYS) {
+    if (body[key] !== undefined) {
+      ctx[key] = body[key];
+    }
+  }
+  return ctx;
+}
+
+/**
+ * Replay a persisted resume context onto a request body so the rebuilt run matches the
+ * paused one. Every graph-determining field is forced to the persisted value: a key the
+ * context HAS overwrites whatever the client sent; a key it LACKS is deleted from the
+ * body. The delete is the security half — without it, a field the paused turn never
+ * carried (e.g. `addedConvo`, which {@link computeAgentRequestFingerprint} does NOT
+ * cover) could be injected by a crafted resume to rebuild the paused single-agent
+ * checkpoint as a different multi-agent graph/tool set.
+ */
+export function applyResumeContext(
+  body: Record<string, unknown> | undefined | null,
+  ctx: ResumeContext | undefined | null,
+): void {
+  if (body == null || ctx == null) {
+    return;
+  }
+  for (const key of RESUME_CONTEXT_KEYS) {
+    if (ctx[key] !== undefined) {
+      body[key] = ctx[key];
+    } else {
+      delete body[key];
+    }
+  }
+}
+
+export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFields): string {
+  const canonical = JSON.stringify({
+    endpoint: fields.endpoint ?? null,
+    endpointType: fields.endpointType ?? null,
+    agent_id: fields.agent_id ?? null,
+    model: fields.model ?? null,
+    spec: fields.spec ?? null,
+    promptPrefix: fields.promptPrefix ?? null,
+    ephemeralAgent: normalizeEphemeralAgent(fields.ephemeralAgent),
+  });
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 /**
@@ -146,5 +315,7 @@ export function buildPendingAction(
     expiresAt: typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined,
     interruptId: ctx.interruptId,
     threadId: ctx.threadId,
+    requestFingerprint: ctx.requestFingerprint,
+    resumeContext: ctx.resumeContext,
   };
 }
