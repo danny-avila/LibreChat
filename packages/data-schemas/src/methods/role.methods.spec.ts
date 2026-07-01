@@ -2,10 +2,10 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librechat-data-provider';
 import type { IRole, IUser, RolePermissions } from '..';
-import { createRoleMethods } from './role';
-import { createModels } from '../models';
 import { _resetStrictCache } from '../models/plugins/tenantIsolation';
 import { tenantStorage } from '~/config/tenantContext';
+import { createRoleMethods } from './role';
+import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
