@@ -28,7 +28,6 @@ export class MCPServerInspector {
     private readonly useSSRFProtection: boolean = false,
     private readonly allowedDomains?: string[] | null,
     private readonly allowedAddresses?: string[] | null,
-    private readonly enableApps?: boolean,
   ) {}
 
   /**
@@ -46,7 +45,6 @@ export class MCPServerInspector {
     connection?: MCPConnection,
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
-    enableApps?: boolean,
   ): Promise<t.ParsedServerConfig> {
     // Validate domain against allowlist BEFORE attempting connection
     const isDomainAllowed = await isMCPDomainAllowed(rawConfig, allowedDomains, allowedAddresses);
@@ -64,7 +62,6 @@ export class MCPServerInspector {
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
-      enableApps,
     );
     await inspector.inspectServer();
     inspector.config.initDuration = Date.now() - start;
@@ -92,7 +89,6 @@ export class MCPServerInspector {
           useSSRFProtection: this.useSSRFProtection,
           allowedDomains: this.allowedDomains,
           allowedAddresses: this.allowedAddresses,
-          enableApps: this.enableApps,
         });
       }
 
@@ -183,11 +179,9 @@ export class MCPServerInspector {
         | Record<string, unknown>
         | undefined;
       const visibility = uiMeta?.visibility as string[] | undefined;
-      if (
-        Array.isArray(visibility) &&
-        visibility.includes('app') &&
-        !visibility.includes('model')
-      ) {
+      // An explicit visibility array that omits 'model' hides the tool from the agent (an absent
+      // field defaults to both scopes).
+      if (Array.isArray(visibility) && !visibility.includes('model')) {
         return;
       }
       const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;

@@ -9,7 +9,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type * as t from './types';
 
-interface ToolWithMeta {
+export interface ToolWithMeta {
   _meta?: Record<string, unknown> | null;
 }
 
@@ -40,14 +40,19 @@ export function getToolUiResourceUri(tool: ToolWithMeta): string | undefined {
   return undefined;
 }
 
-export function isToolVisibilityModelOnly(tool: ToolWithMeta): boolean {
+/**
+ * Visibility defaults to both scopes only when the field is absent. Once a server sends an explicit
+ * array, a scope is granted only if the array includes it, so an empty or future-scoped array (e.g.
+ * `[]`, `['model','internal']`) hides the tool from whichever scope it omits.
+ */
+export function isToolHiddenFromApp(tool: ToolWithMeta): boolean {
   const visibility = (tool._meta?.ui as McpUiToolMeta | undefined)?.visibility;
-  return Array.isArray(visibility) && visibility.length === 1 && visibility[0] === 'model';
+  return Array.isArray(visibility) && !visibility.includes('app');
 }
 
-export function isToolVisibilityAppOnly(tool: ToolWithMeta): boolean {
+export function isToolHiddenFromModel(tool: ToolWithMeta): boolean {
   const visibility = (tool._meta?.ui as McpUiToolMeta | undefined)?.visibility;
-  return Array.isArray(visibility) && visibility.length === 1 && visibility[0] === 'app';
+  return Array.isArray(visibility) && !visibility.includes('model');
 }
 
 /** Declared here rather than importing MCPManager to avoid a circular import. */

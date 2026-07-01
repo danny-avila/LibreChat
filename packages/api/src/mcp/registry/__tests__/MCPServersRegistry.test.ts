@@ -191,7 +191,6 @@ describe('MCPServersRegistry', () => {
         undefined,
         undefined,
         undefined,
-        true,
       );
     });
 
@@ -308,7 +307,6 @@ describe('MCPServersRegistry', () => {
         undefined,
         ['admin-added.com'],
         ['10.0.0.0/8'],
-        true,
       );
     });
 
@@ -639,7 +637,6 @@ describe('MCPServersRegistry', () => {
         undefined,
         undefined,
         undefined,
-        true,
       );
       expect(result['config-only-server']).toBeDefined();
       expect(result['config-only-server'].iconPath).toBe(

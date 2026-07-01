@@ -1097,7 +1097,6 @@ interface MCPConnectionParams {
   oauthTokens?: MCPOAuthTokens | null;
   useSSRFProtection?: boolean;
   allowedAddresses?: string[] | null;
-  enableApps?: boolean;
   ephemeralConnection?: boolean;
 }
 
@@ -1266,12 +1265,13 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
-    // io.modelcontextprotocol/ui is a per-session host capability, so it tracks the instance-wide
-    // apps setting; per-tenant apps policy is enforced downstream, not renegotiated per request.
-    const appsEnabled = params.enableApps !== false;
-    const capabilities: ClientCapabilities = appsEnabled
-      ? { extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [RESOURCE_MIME_TYPE] } } }
-      : {};
+    // io.modelcontextprotocol/ui is a per-session host capability: LibreChat can always render MCP
+    // App HTML, so it is advertised unconditionally. Whether apps are enabled for a given
+    // instance/tenant is enforced downstream (UI-resource attachment + app endpoints), never by
+    // withholding the handshake capability, so a scoped opt-in still reaches a capable server.
+    const capabilities: ClientCapabilities = {
+      extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [RESOURCE_MIME_TYPE] } },
+    };
     this.client = new Client(
       {
         name: '@librechat/api-client',

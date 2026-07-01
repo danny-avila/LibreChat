@@ -439,7 +439,6 @@ export class MCPServersRegistry {
         undefined,
         allowedDomains,
         allowedAddresses,
-        this.getAppsEnabled(),
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -498,7 +497,6 @@ export class MCPServersRegistry {
         undefined,
         allowedDomains,
         allowedAddresses,
-        this.getAppsEnabled(),
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
@@ -547,7 +545,6 @@ export class MCPServersRegistry {
         undefined,
         allowedDomains,
         allowedAddresses,
-        this.getAppsEnabled(),
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -696,7 +693,6 @@ export class MCPServersRegistry {
           undefined,
           allowedDomains,
           allowedAddresses,
-          this.getAppsEnabled(),
         ),
         CONFIG_SERVER_INIT_TIMEOUT_MS,
         `${prefix} Server initialization timed out`,

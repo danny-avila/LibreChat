@@ -363,7 +363,7 @@ describe('MCPServersInitializer', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       // Verify all configs were processed by inspector
-      // Signature: inspect(serverName, rawConfig, connection?, allowedDomains?, allowedAddresses?, enableApps?)
+      // Signature: inspect(serverName, rawConfig, connection?, allowedDomains?, allowedAddresses?)
       expect(mockInspect).toHaveBeenCalledTimes(5);
       expect(mockInspect).toHaveBeenCalledWith(
         'disabled_server',
@@ -371,7 +371,6 @@ describe('MCPServersInitializer', () => {
         undefined,
         undefined,
         undefined,
-        true,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'oauth_server',
@@ -379,7 +378,6 @@ describe('MCPServersInitializer', () => {
         undefined,
         undefined,
         undefined,
-        true,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'file_tools_server',
@@ -387,7 +385,6 @@ describe('MCPServersInitializer', () => {
         undefined,
         undefined,
         undefined,
-        true,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'search_tools_server',
@@ -395,7 +392,6 @@ describe('MCPServersInitializer', () => {
         undefined,
         undefined,
         undefined,
-        true,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'remote_no_oauth_server',
@@ -403,7 +399,6 @@ describe('MCPServersInitializer', () => {
         undefined,
         undefined,
         undefined,
-        true,
       );
     });
 
