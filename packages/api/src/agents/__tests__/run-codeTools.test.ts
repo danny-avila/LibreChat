@@ -100,12 +100,7 @@ describe('createRun code-tool eager/session wiring', () => {
     };
     expect(eager.enabled).toBe(true);
     expect(eager.excludeToolNames).toEqual(
-      expect.arrayContaining([
-        'create_file',
-        'edit_file',
-        'execute_code',
-        'bash_tool',
-      ]),
+      expect.arrayContaining(['create_file', 'edit_file', 'execute_code', 'bash_tool']),
     );
   });
 
