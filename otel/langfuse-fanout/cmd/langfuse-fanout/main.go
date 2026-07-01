@@ -265,7 +265,7 @@ func (g *gateway) handle(w http.ResponseWriter, r *http.Request) {
 func (g *gateway) handleTraces(w http.ResponseWriter, r *http.Request, route route) {
 	body, err := readMaybeGzip(r)
 	if err != nil {
-		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		g.writeGatewayError(w, r, route, "trace_export", http.StatusBadRequest, "failed to read request body", err)
 		return
 	}
 
@@ -275,7 +275,7 @@ func (g *gateway) handleTraces(w http.ResponseWriter, r *http.Request, route rou
 		strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 		body, err = addTenantRouteAttributes(body, contentType, route.destination)
 		if err != nil {
-			http.Error(w, "failed to add OTLP tenant routing attributes", http.StatusBadRequest)
+			g.writeGatewayError(w, r, route, "trace_route_attributes", http.StatusBadRequest, "failed to add OTLP tenant routing attributes", err)
 			return
 		}
 	}
@@ -285,7 +285,7 @@ func (g *gateway) handleTraces(w http.ResponseWriter, r *http.Request, route rou
 		contentEncoding = "gzip"
 		body, err = gzipBytes(body)
 		if err != nil {
-			http.Error(w, "failed to encode request body", http.StatusInternalServerError)
+			g.writeGatewayError(w, r, route, "trace_gzip", http.StatusInternalServerError, "failed to encode request body", err)
 			return
 		}
 	}
@@ -293,7 +293,7 @@ func (g *gateway) handleTraces(w http.ResponseWriter, r *http.Request, route rou
 	resp, err := g.forwardTraceToCollector(r.Context(), r.Header, body, contentType, contentEncoding)
 	if err != nil {
 		g.recordTraceExport(route, "error")
-		http.Error(w, fmt.Sprintf("trace collector export failed: %v", err), http.StatusBadGateway)
+		g.writeGatewayError(w, r, route, "trace_collector", http.StatusBadGateway, "trace collector export failed", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -307,18 +307,18 @@ func (g *gateway) handleTraces(w http.ResponseWriter, r *http.Request, route rou
 func (g *gateway) handleMediaCreate(w http.ResponseWriter, r *http.Request, route route) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 2<<20))
 	if err != nil {
-		http.Error(w, "failed to read media create request", http.StatusBadRequest)
+		g.writeGatewayError(w, r, route, "media_create", http.StatusBadRequest, "failed to read media create request", err)
 		return
 	}
 	if err := g.cfg.uploadStore.Ping(r.Context()); err != nil {
 		g.recordUploadPlanStoreError("ping")
-		http.Error(w, fmt.Sprintf("media upload plan store unavailable: %v", err), http.StatusBadGateway)
+		g.writeGatewayError(w, r, route, "upload_plan_ping", http.StatusBadGateway, "media upload plan store unavailable", err)
 		return
 	}
 
 	destinations := g.mediaDestinations(route, r.Header.Get("Authorization"))
 	if len(destinations) == 0 {
-		http.Error(w, "no media destinations configured", http.StatusBadGateway)
+		g.writeGatewayError(w, r, route, "media_create", http.StatusBadGateway, "no media destinations configured", nil)
 		return
 	}
 
@@ -341,29 +341,26 @@ func (g *gateway) handleMediaCreate(w http.ResponseWriter, r *http.Request, rout
 	wg.Wait()
 	for _, result := range responses {
 		if result.err != nil {
-			http.Error(w, fmt.Sprintf("%s media create failed: %v", result.destination.name, result.err), http.StatusBadGateway)
+			g.writeGatewayError(w, r, route, "media_create", http.StatusBadGateway, fmt.Sprintf("%s media create failed", result.destination.name), result.err, "upstream_destination", result.destination.name)
 			return
 		}
 	}
 
 	mediaID := responses[0].response.MediaID
 	if mediaID == "" {
-		http.Error(w, "upstream media create returned empty mediaId", http.StatusBadGateway)
+		g.writeGatewayError(w, r, route, "media_create", http.StatusBadGateway, "upstream media create returned empty mediaId", nil, "upstream_destination", responses[0].destination.name)
 		return
 	}
 	// Langfuse derives mediaId from the content hash today, so all fanout
 	// destinations should converge on the same id for the same POST body.
 	for _, response := range responses[1:] {
 		if response.response.MediaID != mediaID {
-			log.Printf(
-				"upstream media IDs differ: %s=%s %s=%s",
-				responses[0].destination.name,
-				mediaID,
-				response.destination.name,
-				response.response.MediaID,
-			)
 			g.recordMediaDivergence("media_id", response.destination.name)
-			http.Error(w, "upstream media IDs differ across destinations", http.StatusBadGateway)
+			g.writeGatewayError(w, r, route, "media_create", http.StatusBadGateway, "upstream media IDs differ across destinations", errors.New("upstream media IDs differ across destinations"),
+				"kind", "media_id",
+				"upstream_destination", response.destination.name,
+				"reference_destination", responses[0].destination.name,
+			)
 			return
 		}
 	}
@@ -393,6 +390,10 @@ func (g *gateway) handleMediaCreate(w http.ResponseWriter, r *http.Request, rout
 	}
 	if hadUploadURL {
 		for _, destination := range missingUploadURLDestinations {
+			g.logGatewayWarning(r, route, "media_create", "upstream media upload URL presence differs across destinations",
+				"kind", "upload_url_presence",
+				"upstream_destination", destination,
+			)
 			g.recordMediaDivergence("upload_url_presence", destination)
 		}
 	}
@@ -401,12 +402,12 @@ func (g *gateway) handleMediaCreate(w http.ResponseWriter, r *http.Request, rout
 	if len(uploadPlan.Destinations) > 0 {
 		uploadID, err := randomID()
 		if err != nil {
-			http.Error(w, "failed to create media upload id", http.StatusInternalServerError)
+			g.writeGatewayError(w, r, route, "upload_plan_create", http.StatusInternalServerError, "failed to create media upload id", err)
 			return
 		}
 		if err := g.storeUpload(r.Context(), uploadID, uploadPlan); err != nil {
 			g.recordUploadPlanStoreError("put")
-			http.Error(w, fmt.Sprintf("failed to store media upload plan: %v", err), http.StatusBadGateway)
+			g.writeGatewayError(w, r, route, "upload_plan_put", http.StatusBadGateway, "failed to store media upload plan", err)
 			return
 		}
 		g.recordUploadPlanCreated(uploadPlan)
@@ -420,13 +421,13 @@ func (g *gateway) handleMediaCreate(w http.ResponseWriter, r *http.Request, rout
 func (g *gateway) handleMediaPatch(w http.ResponseWriter, r *http.Request, route route) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
-		http.Error(w, "failed to read media patch request", http.StatusBadRequest)
+		g.writeGatewayError(w, r, route, "media_patch", http.StatusBadRequest, "failed to read media patch request", err)
 		return
 	}
 
 	destinations := g.mediaDestinations(route, r.Header.Get("Authorization"))
 	if len(destinations) == 0 {
-		http.Error(w, "no media destinations configured", http.StatusBadGateway)
+		g.writeGatewayError(w, r, route, "media_patch", http.StatusBadGateway, "no media destinations configured", nil)
 		return
 	}
 
@@ -450,7 +451,7 @@ func (g *gateway) handleMediaPatch(w http.ResponseWriter, r *http.Request, route
 	wg.Wait()
 	for _, result := range results {
 		if result.err != nil {
-			http.Error(w, fmt.Sprintf("%s media patch failed: %v", result.destination, result.err), http.StatusBadGateway)
+			g.writeGatewayError(w, r, route, "media_patch", http.StatusBadGateway, fmt.Sprintf("%s media patch failed", result.destination), result.err, "upstream_destination", result.destination)
 			return
 		}
 	}
@@ -460,16 +461,16 @@ func (g *gateway) handleMediaPatch(w http.ResponseWriter, r *http.Request, route
 func (g *gateway) handleMediaGet(w http.ResponseWriter, r *http.Request, route route) {
 	destinations := g.mediaDestinations(route, r.Header.Get("Authorization"))
 	if len(destinations) == 0 {
-		http.Error(w, "no media destinations configured", http.StatusBadGateway)
+		g.writeGatewayError(w, r, route, "media_get", http.StatusBadGateway, "no media destinations configured", nil)
 		return
 	}
 	target := destinations[0]
 	if route.destination != "" {
 		target = destinations[len(destinations)-1]
 	}
-	resp := g.getMedia(r.Context(), target, route.path, r.URL.RawQuery)
-	if resp == nil {
-		http.Error(w, "media get failed", http.StatusBadGateway)
+	resp, err := g.getMedia(r.Context(), target, route.path, r.URL.RawQuery)
+	if err != nil {
+		g.writeGatewayError(w, r, route, "media_get", http.StatusBadGateway, "media get failed", err, "upstream_destination", target.name)
 		return
 	}
 	defer resp.Body.Close()
@@ -478,21 +479,21 @@ func (g *gateway) handleMediaGet(w http.ResponseWriter, r *http.Request, route r
 	_, _ = io.Copy(w, resp.Body)
 }
 
-func (g *gateway) getMedia(ctx context.Context, target destination, path string, rawQuery string) *http.Response {
+func (g *gateway) getMedia(ctx context.Context, target destination, path string, rawQuery string) (*http.Response, error) {
 	upstreamURL := target.baseURL + path
 	if rawQuery != "" {
 		upstreamURL += "?" + rawQuery
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	req.Header.Set("Authorization", target.authorization)
 	resp, err := g.doUpstream(req, "media_get", target.name)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return resp
+	return resp, nil
 }
 
 func (g *gateway) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -520,21 +521,23 @@ func (g *gateway) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	plan, ok, err := g.takeUpload(r.Context(), uploadID)
 	if err != nil {
 		g.recordUploadPlanStoreError("take")
-		http.Error(w, "failed to load media upload plan", http.StatusBadGateway)
+		g.writeGatewayError(w, r, route{path: r.URL.Path}, "upload_plan_take", http.StatusBadGateway, "failed to load media upload plan", err)
 		return
 	}
 	if !ok {
 		g.recordUploadPlanMiss()
-		http.Error(w, "unknown or expired upload", http.StatusNotFound)
+		g.writeGatewayError(w, r, route{path: r.URL.Path}, "media_upload", http.StatusNotFound, "unknown or expired upload", nil)
 		return
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxUploadBytes(plan.ContentLength)))
 	if err != nil {
-		if err := g.restoreUpload(r.Context(), uploadID, plan); err != nil {
+		attrs := []any{}
+		if restoreErr := g.restoreUpload(r.Context(), uploadID, plan); restoreErr != nil {
 			g.recordUploadPlanStoreError("restore")
+			attrs = append(attrs, "restore_error", safeErrorMessage(restoreErr))
 		}
-		http.Error(w, "failed to read upload body", http.StatusBadRequest)
+		g.writeGatewayError(w, r, route{path: r.URL.Path}, "media_upload", http.StatusBadRequest, "failed to read upload body", err, attrs...)
 		return
 	}
 
@@ -558,10 +561,12 @@ func (g *gateway) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	for _, result := range results {
 		if result.err != nil {
-			if err := g.restoreUpload(r.Context(), uploadID, plan); err != nil {
+			attrs := []any{"upstream_destination", result.destination}
+			if restoreErr := g.restoreUpload(r.Context(), uploadID, plan); restoreErr != nil {
 				g.recordUploadPlanStoreError("restore")
+				attrs = append(attrs, "restore_error", safeErrorMessage(restoreErr))
 			}
-			http.Error(w, fmt.Sprintf("%s upload failed: %v", result.destination, result.err), http.StatusBadGateway)
+			g.writeGatewayError(w, r, route{path: r.URL.Path}, "media_upload", http.StatusBadGateway, fmt.Sprintf("%s upload failed", result.destination), result.err, attrs...)
 			return
 		}
 		if result.status > status {
@@ -606,8 +611,8 @@ func (g *gateway) forwardTraceToCollector(ctx context.Context, headers http.Head
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
-		text, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(text)))
+		drainResponseBody(resp.Body)
+		return nil, upstreamStatusError{status: resp.StatusCode}
 	}
 	return resp, nil
 }
@@ -625,8 +630,8 @@ func (g *gateway) postMediaCreate(ctx context.Context, dest destination, body []
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		text, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return mediaUploadResponse{}, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(text)))
+		drainResponseBody(resp.Body)
+		return mediaUploadResponse{}, upstreamStatusError{status: resp.StatusCode}
 	}
 	var result mediaUploadResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -674,8 +679,8 @@ func (g *gateway) putMedia(ctx context.Context, dest uploadDestination, body []b
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		text, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return resp.StatusCode, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(text)))
+		drainResponseBody(resp.Body)
+		return resp.StatusCode, upstreamStatusError{status: resp.StatusCode}
 	}
 	return resp.StatusCode, nil
 }
@@ -687,8 +692,8 @@ func (g *gateway) doExpect2xx(operation string, destination string, req *http.Re
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		text, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(text)))
+		drainResponseBody(resp.Body)
+		return upstreamStatusError{status: resp.StatusCode}
 	}
 	return nil
 }
@@ -697,13 +702,16 @@ func (g *gateway) doUpstream(req *http.Request, operation string, destination st
 	startedAt := time.Now()
 	resp, err := g.cfg.client.Do(req)
 	if err != nil {
+		duration := time.Since(startedAt)
 		if g.metrics != nil {
-			g.metrics.recordUpstream(operation, destination, "error", time.Since(startedAt))
+			g.metrics.recordUpstream(operation, destination, "error", duration)
 		}
 		return nil, err
 	}
+	duration := time.Since(startedAt)
+	upstreamStatusClass := statusClass(resp.StatusCode)
 	if g.metrics != nil {
-		g.metrics.recordUpstream(operation, destination, statusClass(resp.StatusCode), time.Since(startedAt))
+		g.metrics.recordUpstream(operation, destination, upstreamStatusClass, duration)
 	}
 	return resp, nil
 }
@@ -712,11 +720,7 @@ func (g *gateway) recordTraceExport(route route, result string) {
 	if g.metrics == nil {
 		return
 	}
-	destination := centralName
-	if route.destination != "" {
-		destination = "tenant_" + route.destination
-	}
-	g.metrics.recordTraceExport(destination, result)
+	g.metrics.recordTraceExport(routeDestinationLabel(route), result)
 }
 
 func (g *gateway) recordMediaDivergence(kind string, destination string) {
@@ -1032,6 +1036,10 @@ func copyResponseHeaders(target http.Header, source http.Header) {
 			target.Add(key, value)
 		}
 	}
+}
+
+func drainResponseBody(body io.Reader) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, 4096))
 }
 
 func normalizeBaseURL(value string) string {
