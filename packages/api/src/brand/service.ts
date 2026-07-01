@@ -9,17 +9,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !(value instanceof Error);
 }
 
-/** Resolve the YAML file for a brand. Prefers `<brand>.yaml`; when the files are
- * named by another convention (e.g. deployment subdomain), falls back to matching
- * the `brand:` field inside each file in the directory. */
+/** Resolve the YAML file for a brand. Files are matched on a single canonical
+ * rule: the file whose internal `brand:` field equals `brand`. Filenames are not
+ * significant (the repo names them by deployment subdomain: ans/chat/llm/sim). */
 function resolveBrandFile(brandsDir: string, brand: string): string | null {
-  for (const ext of ['yaml', 'yml']) {
-    const direct = path.join(brandsDir, `${brand}.${ext}`);
-    if (fs.existsSync(direct)) {
-      return direct;
-    }
-  }
-
   let entries: string[];
   try {
     entries = fs.readdirSync(brandsDir);

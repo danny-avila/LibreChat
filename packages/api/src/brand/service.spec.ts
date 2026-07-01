@@ -19,9 +19,19 @@ controls:
     classes: group
     attr: "data-is-streaming"
     notes: "Best handle: data-is-streaming attribute"
+  dictation_button:
+    aria: Record
+    tag: speech-dictation-mic-button
+    notes: "Same element as voice_button"
+    data_node_type: speech_dictation_mic_button
 `;
 
 const INVALID_YAML = `deployment_url: broken.example.com
+controls: not-a-map
+`;
+
+const INVALID_MATCHING_YAML = `brand: grok
+deployment_url: broken.example.com
 controls: not-a-map
 `;
 
@@ -30,7 +40,7 @@ describe('loadBrandConfig', () => {
 
   beforeAll(() => {
     brandsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'brands-'));
-    // File named by subdomain, not brand — exercises the brand-field fallback.
+    // File named by subdomain, not brand — resolution matches on the `brand:` field.
     fs.writeFileSync(path.join(brandsDir, 'ans.yaml'), CLAUDE_YAML);
     fs.writeFileSync(path.join(brandsDir, 'bad.yaml'), INVALID_YAML);
   });
@@ -43,7 +53,7 @@ describe('loadBrandConfig', () => {
     expect(loadBrandConfig(brandsDir, undefined)).toBeNull();
   });
 
-  it('resolves a brand by its `brand:` field when the filename differs', () => {
+  it('resolves a brand by its `brand:` field regardless of filename', () => {
     const config = loadBrandConfig(brandsDir, 'claude');
     expect(config).not.toBeNull();
     expect(config?.brand).toBe('claude');
@@ -52,20 +62,33 @@ describe('loadBrandConfig', () => {
     expect(config?.placeholders?.['${modelName}']).toBe('The currently selected model name');
   });
 
-  it('preserves known and catchall control fields', () => {
+  it('preserves core control fields', () => {
     const config = loadBrandConfig(brandsDir, 'claude');
     expect(config?.controls.composer.testid).toBe('chat-input');
     expect(config?.controls.composer.id).toBeNull();
-    // `attr` is not an explicitly-typed field; it survives via the catchall.
-    expect(config?.controls.response_container.attr).toBe('data-is-streaming');
+  });
+
+  it('keeps `tag` and `notes` through validation', () => {
+    const config = loadBrandConfig(brandsDir, 'claude');
+    expect(config?.controls.dictation_button.tag).toBe('speech-dictation-mic-button');
+    expect(config?.controls.dictation_button.notes).toBe('Same element as voice_button');
+  });
+
+  it('passes through unknown descriptive control fields', () => {
+    const config = loadBrandConfig(brandsDir, 'claude');
+    // Neither key is in the core schema — `.passthrough()` keeps them at runtime.
+    expect(config?.controls.response_container).toMatchObject({ attr: 'data-is-streaming' });
+    expect(config?.controls.dictation_button).toMatchObject({
+      data_node_type: 'speech_dictation_mic_button',
+    });
   });
 
   it('returns null for a brand with no matching file', () => {
     expect(loadBrandConfig(brandsDir, 'missing')).toBeNull();
   });
 
-  it('returns null (does not throw) when the config fails validation', () => {
-    fs.writeFileSync(path.join(brandsDir, 'grok.yaml'), INVALID_YAML);
+  it('returns null (does not throw) when the matched config fails validation', () => {
+    fs.writeFileSync(path.join(brandsDir, 'llm.yaml'), INVALID_MATCHING_YAML);
     expect(loadBrandConfig(brandsDir, 'grok')).toBeNull();
   });
 });

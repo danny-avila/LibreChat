@@ -1049,9 +1049,10 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
-/** A single control entry within a brand's DOM contract. Known fields are typed
- * explicitly; brand files also carry control-specific selectors (e.g. `menu_role`,
- * `attr`, `option_row_testid`), captured via the catchall. */
+/** A single control entry within a brand's DOM contract. Core fields are typed
+ * explicitly; brand files also carry control-specific descriptive selectors (e.g.
+ * `menu_role`, `attr`, `option_row_testid`, `data_node_type`) that vary per brand.
+ * `.passthrough()` preserves those unknown keys instead of stripping them. */
 export const brandControlSchema = z
   .object({
     label: z.string().nullable().optional(),
@@ -1063,7 +1064,7 @@ export const brandControlSchema = z
     tag: z.string().nullable().optional(),
     notes: z.string().nullable().optional(),
   })
-  .catchall(z.union([z.string(), z.null()]));
+  .passthrough();
 
 export const brandConfigSchema = z.object({
   brand: z.string(),
