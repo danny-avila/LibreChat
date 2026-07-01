@@ -1,3 +1,4 @@
+import { logger, decryptV3 } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
@@ -18,6 +19,25 @@ const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
 function appendPath(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, '')}${path}`;
+}
+
+/**
+ * Tenant secret keys written through the admin config API are encrypted at rest
+ * (v3 prefix). Decrypt them before use; plaintext values (e.g. legacy YAML
+ * config) pass through unchanged. Returns undefined on decrypt failure so tenant
+ * export is disabled rather than exporting with a broken key.
+ */
+function resolveTenantSecretKey(value?: string): string | undefined {
+  const normalized = normalizeString(value);
+  if (!normalized || !normalized.startsWith('v3:')) {
+    return normalized;
+  }
+  try {
+    return decryptV3(normalized);
+  } catch (error) {
+    logger.warn('[langfuse] Failed to decrypt tenant secret key; tenant export disabled', error);
+    return undefined;
+  }
 }
 
 export function isLangfuseTenantExportEnabled(): boolean {
@@ -93,7 +113,7 @@ export function buildLangfuseConfig({
   }
 
   const publicKey = normalizeString(config?.publicKey);
-  const secretKey = normalizeString(config?.secretKey);
+  const secretKey = resolveTenantSecretKey(config?.secretKey);
   const hasTenantCredentials = Boolean(publicKey && secretKey);
   const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
   const fanoutEnabled = isLangfuseFanoutEnabled(fanout);

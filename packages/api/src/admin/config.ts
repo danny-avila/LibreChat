@@ -12,6 +12,7 @@ import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
 import type { ServerRequest } from '~/types/http';
+import { encryptConfigSecretFields, redactConfigSecrets } from './secrets';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
@@ -247,7 +248,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         tenantId: user.tenantId,
         baseOnly,
       });
-      return res.status(200).json({ config: appConfig });
+      const safeConfig = redactConfigSecrets(structuredClone(appConfig));
+      return res.status(200).json({ config: safeConfig });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', error);
       return res.status(500).json({ error: 'Failed to get base config' });
@@ -284,7 +286,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      return res.status(200).json({ config });
+      const safeConfig = JSON.parse(JSON.stringify(config)) as IConfig;
+      if (safeConfig.overrides) {
+        redactConfigSecrets(safeConfig.overrides);
+      }
+      return res.status(200).json({ config: safeConfig });
     } catch (error) {
       logger.error('[adminConfig] getConfig error:', error);
       return res.status(500).json({ error: 'Failed to get config' });
@@ -537,7 +543,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalType,
         principalId,
         principalModel(principalType),
-        fields,
+        encryptConfigSecretFields(fields),
         requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
