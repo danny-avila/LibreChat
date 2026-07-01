@@ -12,6 +12,7 @@ import {
   useAssistantsMapContext,
 } from '~/Providers';
 import {
+  useBrand,
   useTextarea,
   useAutoSave,
   useLocalize,
@@ -22,7 +23,7 @@ import {
   useFocusChatEffect,
 } from '~/hooks';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
-import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import { cn, getModelSpec, removeFocusRings, interpolateBrandField } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
@@ -98,6 +99,20 @@ const ChatForm = memo(function ChatForm({
   } = useAddedChatContext();
   const assistantMap = useAssistantsMapContext();
   const { data: startupConfig } = useGetStartupConfig();
+
+  const { getControl: getBrandControl } = useBrand();
+  const brandComposer = getBrandControl('composer');
+  /** Brand overrides for the composer. A `null` brand field (or no active brand)
+   * keeps LibreChat's native value — this is a no-op for non-branded deployments. */
+  const composerAttrs = useMemo(
+    () => ({
+      placeholder: interpolateBrandField(brandComposer?.placeholder) ?? undefined,
+      ariaLabel: interpolateBrandField(brandComposer?.aria) ?? localize('com_ui_message_input'),
+      id: brandComposer?.id ?? mainTextareaId,
+      testid: brandComposer?.testid ?? 'text-input',
+    }),
+    [brandComposer, localize],
+  );
 
   const endpoint = useMemo(
     () => conversation?.endpointType ?? conversation?.endpoint,
@@ -320,13 +335,14 @@ const ChatForm = memo(function ChatForm({
                     onKeyUp={handleKeyUp}
                     onCompositionStart={handleCompositionStart}
                     onCompositionEnd={handleCompositionEnd}
-                    id={mainTextareaId}
+                    id={composerAttrs.id}
                     tabIndex={0}
-                    data-testid="text-input"
+                    data-testid={composerAttrs.testid}
                     rows={1}
+                    placeholder={composerAttrs.placeholder}
                     onFocus={handleTextareaFocus}
                     onBlur={handleTextareaBlur}
-                    aria-label={localize('com_ui_message_input')}
+                    aria-label={composerAttrs.ariaLabel}
                     onClick={handleFocusOrClick}
                     style={{ height: 44, overflowY: 'auto' }}
                     className={cn(
