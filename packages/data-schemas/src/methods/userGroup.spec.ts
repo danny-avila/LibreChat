@@ -1,6 +1,6 @@
 import mongoose, { Types } from 'mongoose';
-import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
@@ -381,6 +381,103 @@ describe('userGroup methods', () => {
 
       const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
       expect(rolePrincipal).toBeUndefined();
+    });
+
+    it('uses a supplied idOnTheSource authoritatively over the stored value', async () => {
+      const user = await createTestUser({ idOnTheSource: 'stored-ext-id' });
+      const group = await Group.create({
+        name: 'Team',
+        source: 'entra',
+        idOnTheSource: 'grp-ext',
+        memberIds: ['passed-ext-id'],
+      });
+
+      const principals = await methods.getUserPrincipals({
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'passed-ext-id',
+      });
+
+      const groupPrincipal = principals.find((p) => p.principalType === PrincipalType.GROUP);
+      expect(groupPrincipal!.principalId!.toString()).toBe(group._id.toString());
+    });
+
+    it('resolves groups without a user document when idOnTheSource is supplied', async () => {
+      const missingUserId = new Types.ObjectId().toString();
+      const group = await Group.create({
+        name: 'Orphan Team',
+        source: 'entra',
+        idOnTheSource: 'grp-orphan',
+        memberIds: ['ext-orphan'],
+      });
+
+      const principals = await methods.getUserPrincipals({
+        userId: missingUserId,
+        role: SystemRoles.USER,
+        idOnTheSource: 'ext-orphan',
+      });
+
+      const groupPrincipal = principals.find((p) => p.principalType === PrincipalType.GROUP);
+      expect(groupPrincipal!.principalId!.toString()).toBe(group._id.toString());
+    });
+
+    it('treats idOnTheSource null as a local user keyed by user id', async () => {
+      const user = await createTestUser();
+      const group = await Group.create({
+        name: 'Local Team',
+        source: 'local',
+        memberIds: [user._id.toString()],
+      });
+
+      const principals = await methods.getUserPrincipals({
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: null,
+      });
+
+      const groupPrincipal = principals.find((p) => p.principalType === PrincipalType.GROUP);
+      expect(groupPrincipal!.principalId!.toString()).toBe(group._id.toString());
+    });
+
+    it('falls back to resolving role and idOnTheSource from the DB when both are omitted', async () => {
+      const user = await createTestUser({ role: SystemRoles.ADMIN, idOnTheSource: 'ext-99' });
+      const group = await Group.create({
+        name: 'Entra Team',
+        source: 'entra',
+        idOnTheSource: 'grp-99',
+        memberIds: ['ext-99'],
+      });
+
+      const principals = await methods.getUserPrincipals({ userId: user._id.toString() });
+
+      const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
+      expect(rolePrincipal!.principalId).toBe(SystemRoles.ADMIN);
+      const groupPrincipal = principals.find((p) => p.principalType === PrincipalType.GROUP);
+      expect(groupPrincipal!.principalId!.toString()).toBe(group._id.toString());
+    });
+
+    it('returns only the group id from the projected group query', async () => {
+      const user = await createTestUser({ idOnTheSource: 'ext-proj' });
+      await Group.create({
+        name: 'Projected Team',
+        source: 'entra',
+        idOnTheSource: 'grp-proj',
+        description: 'should not leak',
+        memberIds: ['ext-proj'],
+      });
+
+      const principals = await methods.getUserPrincipals({
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'ext-proj',
+      });
+
+      const groupPrincipal = principals.find((p) => p.principalType === PrincipalType.GROUP);
+      expect(groupPrincipal).toEqual({
+        principalType: PrincipalType.GROUP,
+        principalId: expect.anything(),
+      });
+      expect(Object.keys(groupPrincipal!)).toEqual(['principalType', 'principalId']);
     });
   });
 
