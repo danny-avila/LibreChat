@@ -464,64 +464,9 @@ export function createUserGroupMethods(
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
     const cache = session ? undefined : deps.getCache?.(CacheKeys.USER_PRINCIPALS);
-    let cacheKey: string | undefined;
-    let lockToken: string | null | undefined;
-
-    if (cache) {
-      // Keep role modes distinct because `undefined` means "load DB role" while `null` means "skip role".
-      let roleCacheKey = role;
-      if (roleCacheKey === undefined) {
-        roleCacheKey = '__lookup__';
-      } else if (roleCacheKey === null) {
-        roleCacheKey = '__none__';
-      }
-      cacheKey = `user-principals:${getTenantId() || 'base'}:${userObjectId.toString()}:${roleCacheKey}`;
-
-      // Fast path: use a completed cache entry when it has the expected serialized shape.
-      try {
-        const cached = await cache.get(cacheKey);
-        if (Array.isArray(cached) && cached.every(isCachedPrincipal)) {
-          return hydratePrincipals(cached);
-        }
-      } catch {
-        // Cache failures should not block permission checks.
-      }
-
-      // Same-process dedup: concurrent misses in this Node process share one DB lookup.
-      const pending = pendingPrincipalLookups.get(cacheKey);
-      if (pending) {
-        return pending;
-      }
-
-      // Cross-process dedup: Redis-backed caches can wait while another container fills this key.
-      if (cache.acquireLock) {
-        let lockFailed = false;
-        try {
-          lockToken = await cache.acquireLock(`${cacheKey}:lock`);
-        } catch {
-          lockToken = undefined;
-          lockFailed = true;
-        }
-        if (!lockToken && !lockFailed) {
-          const lockWaitMs = Math.max(cache.lockWaitMs ?? 0, 0);
-          const waitUntil = Date.now() + lockWaitMs;
-          while (Date.now() < waitUntil) {
-            await new Promise((resolve) => setTimeout(resolve, USER_PRINCIPALS_LOCK_POLL_MS));
-            try {
-              const cached = await cache.get(cacheKey);
-              if (Array.isArray(cached) && cached.every(isCachedPrincipal)) {
-                return hydratePrincipals(cached);
-              }
-            } catch {
-              // Cache failures should not block permission checks.
-            }
-          }
-        }
-      }
-    }
 
     // Build principals from source of truth: user id, optional role, groups, and public access.
-    const lookup = (async (): Promise<Principal[]> => {
+    const buildPrincipals = async (): Promise<Principal[]> => {
       const principals: Principal[] = [
         { principalType: PrincipalType.USER, principalId: userObjectId },
       ];
@@ -552,38 +497,100 @@ export function createUserGroupMethods(
 
       principals.push({ principalType: PrincipalType.PUBLIC });
 
-      // Store a cache-safe representation; ObjectIds are serialized and hydrated on read.
+      return principals;
+    };
+
+    // No cache (e.g., session-scoped reads): build directly from the source of truth.
+    if (!cache) {
+      return buildPrincipals();
+    }
+
+    // Keep role modes distinct because `undefined` means "load DB role" while `null` means "skip role".
+    let roleCacheKey = role;
+    if (roleCacheKey === undefined) {
+      roleCacheKey = '__lookup__';
+    } else if (roleCacheKey === null) {
+      roleCacheKey = '__none__';
+    }
+    const cacheKey = `user-principals:${getTenantId() || 'base'}:${userObjectId.toString()}:${roleCacheKey}`;
+
+    const readCachedPrincipals = async (): Promise<Principal[] | undefined> => {
       try {
-        if (cache && cacheKey) {
-          await cache.set(cacheKey, serializePrincipals(principals));
+        const cached = await cache.get(cacheKey);
+        if (Array.isArray(cached) && cached.every(isCachedPrincipal)) {
+          return hydratePrincipals(cached);
         }
       } catch {
         // Cache failures should not block permission checks.
       }
-      return principals;
+      return undefined;
+    };
+
+    // Fast path: use a completed cache entry when it has the expected serialized shape.
+    const fastPath = await readCachedPrincipals();
+    if (fastPath) {
+      return fastPath;
+    }
+
+    // Same-process dedup: concurrent misses in this Node process attach to one shared flow
+    // that owns the cross-process lock, the poll loop, the DB lookup, and the cache write.
+    const pending = pendingPrincipalLookups.get(cacheKey);
+    if (pending) {
+      return pending;
+    }
+
+    const lookup = (async (): Promise<Principal[]> => {
+      let lockToken: string | null | undefined;
+      try {
+        // Cross-process dedup: Redis-backed caches can wait while another container fills this key.
+        if (cache.acquireLock) {
+          let lockFailed = false;
+          try {
+            lockToken = await cache.acquireLock(`${cacheKey}:lock`);
+          } catch {
+            lockToken = undefined;
+            lockFailed = true;
+          }
+          if (!lockToken && !lockFailed) {
+            const lockWaitMs = Math.max(cache.lockWaitMs ?? 0, 0);
+            const waitUntil = Date.now() + lockWaitMs;
+            while (Date.now() < waitUntil) {
+              await new Promise((resolve) => setTimeout(resolve, USER_PRINCIPALS_LOCK_POLL_MS));
+              const cached = await readCachedPrincipals();
+              if (cached) {
+                return cached;
+              }
+            }
+          }
+        }
+
+        const principals = await buildPrincipals();
+
+        // Store a cache-safe representation; ObjectIds are serialized and hydrated on read.
+        try {
+          await cache.set(cacheKey, serializePrincipals(principals));
+        } catch {
+          // Cache failures should not block permission checks.
+        }
+        return principals;
+      } finally {
+        if (lockToken) {
+          try {
+            await cache.releaseLock?.(`${cacheKey}:lock`, lockToken);
+          } catch {
+            // Lock cleanup failures expire by TTL and should not block permission checks.
+          }
+        }
+      }
     })();
 
-    if (!cache) {
-      return lookup;
-    }
-
-    if (!cacheKey) {
-      return lookup;
-    }
-
-    // Keep the in-process pending entry alive until the DB lookup and cache write finish.
+    // Register synchronously (no await between the pending check and this set) so every
+    // concurrent same-process caller attaches to this single flow rather than starting its own.
     pendingPrincipalLookups.set(cacheKey, lookup);
     try {
       return await lookup;
     } finally {
       pendingPrincipalLookups.delete(cacheKey);
-      if (cache && lockToken) {
-        try {
-          await cache.releaseLock?.(`${cacheKey}:lock`, lockToken);
-        } catch {
-          // Lock cleanup failures expire by TTL and should not block permission checks.
-        }
-      }
     }
   }
 

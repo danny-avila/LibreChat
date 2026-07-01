@@ -408,6 +408,36 @@ describe('userGroup methods', () => {
       expect(cache.set).toHaveBeenCalledTimes(1);
     });
 
+    it('shares one lock and DB build across concurrent same-process callers', async () => {
+      const user = await createTestUser({ role: SystemRoles.ADMIN });
+      const cache = {
+        get: jest.fn(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return undefined;
+        }),
+        set: jest.fn(async () => undefined),
+        acquireLock: jest.fn(async () => 'lock-token'),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 5000,
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => cache),
+      });
+
+      const [first, second, third] = await Promise.all([
+        cachedMethods.getUserPrincipals({ userId: user._id.toString() }),
+        cachedMethods.getUserPrincipals({ userId: user._id.toString() }),
+        cachedMethods.getUserPrincipals({ userId: user._id.toString() }),
+      ]);
+
+      expect(first).toEqual(second);
+      expect(second).toEqual(third);
+      // Only the shared flow acquires the lock, builds, writes, and releases once.
+      expect(cache.acquireLock).toHaveBeenCalledTimes(1);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+      expect(cache.releaseLock).toHaveBeenCalledTimes(1);
+    });
+
     it('waits for a Redis-locked principal cache build from another process', async () => {
       const user = await createTestUser({ role: SystemRoles.ADMIN });
       const cachedPrincipals = [
