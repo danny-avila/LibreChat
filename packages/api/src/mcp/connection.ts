@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
-import { fetch as undiciFetch, Agent } from 'undici';
+import { fetch as undiciFetch, Agent, Headers as UndiciHeaders } from 'undici';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
@@ -844,7 +844,7 @@ export class MCPConnection extends EventEmitter {
             eventSourceInit: {
               fetch: (url, init) => {
                 /** Merge headers: SSE defaults < init headers < user headers (user wins) */
-                const fetchHeaders = new Headers(
+                const fetchHeaders = new UndiciHeaders(
                   Object.assign({}, SSE_REQUEST_HEADERS, init?.headers, headers),
                 );
                 return undiciFetch(url, {
