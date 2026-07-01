@@ -45,6 +45,7 @@ const createMockParams = (
     body: Record<string, unknown>;
     user: { id: string };
     model_parameters: Record<string, unknown>;
+    agentId: string;
     env: Record<string, string | undefined>;
   }> = {},
 ): BaseInitializeParams => {
@@ -65,6 +66,7 @@ const createMockParams = (
     },
     endpoint: EModelEndpoint.bedrock,
     model_parameters: overrides.model_parameters ?? { model: 'anthropic.claude-3-sonnet' },
+    ...(overrides.agentId !== undefined && { agentId: overrides.agentId }),
     db: mockDb,
   } as unknown as BaseInitializeParams;
 };
@@ -378,6 +380,174 @@ describe('initializeBedrock', () => {
         expect(result.llmConfig.guardrailConfig).toEqual(expected);
       },
     );
+  });
+
+  describe('GuardrailConfig scoping (appliesTo)', () => {
+    const guardrail = { guardrailIdentifier: 'gr-scoped', guardrailVersion: '1' };
+
+    const buildParams = (appliesTo: Record<string, unknown>, body = {}, model_parameters = {}) =>
+      createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: { guardrailConfig: { ...guardrail, appliesTo } },
+          },
+        },
+        body,
+        model_parameters: { model: 'anthropic.claude-sonnet-4-6', ...model_parameters },
+      });
+
+    it('applies the guardrail when no appliesTo is set', async () => {
+      const params = createMockParams({
+        config: {
+          endpoints: { [EModelEndpoint.bedrock]: { guardrailConfig: guardrail } },
+        },
+      });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
+
+    it('applies the guardrail when req agent_id is in appliesTo.agentIds', async () => {
+      const params = buildParams({ agentIds: ['agent_guarded'] }, { agent_id: 'agent_guarded' });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
+
+    it('does NOT apply the guardrail when req agent_id is not in appliesTo.agentIds', async () => {
+      const params = buildParams({ agentIds: ['agent_guarded'] }, { agent_id: 'agent_plain' });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
+    });
+
+    it('does NOT apply the guardrail when no agent_id is present but agentIds is set', async () => {
+      const params = buildParams({ agentIds: ['agent_guarded'] }, {});
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
+    });
+
+    it('applies the guardrail when the model is in appliesTo.models', async () => {
+      const params = buildParams({ models: ['anthropic.claude-sonnet-4-6'] });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
+
+    it('does NOT apply the guardrail when the model is not in appliesTo.models', async () => {
+      const params = buildParams({ models: ['anthropic.claude-opus-4-6'] });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
+    });
+
+    it('requires ALL filters to match when both agentIds and models are set', async () => {
+      const params = buildParams(
+        { agentIds: ['agent_guarded'], models: ['anthropic.claude-opus-4-6'] },
+        { agent_id: 'agent_guarded' },
+      );
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
+    });
+
+    it('never leaks appliesTo into the guardrailConfig sent to Bedrock', async () => {
+      const params = buildParams({ agentIds: ['agent_guarded'] }, { agent_id: 'agent_guarded' });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).not.toHaveProperty('appliesTo');
+    });
+
+    it('matches a model wildcard across region prefixes and version suffixes', async () => {
+      const params = buildParams(
+        { models: ['*claude-sonnet-4-6*'] },
+        {},
+        {
+          model: 'us.anthropic.claude-sonnet-4-6-v1:0',
+        },
+      );
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
+
+    it('matches a region-prefix wildcard', async () => {
+      const params = buildParams(
+        { models: ['*.anthropic.claude-sonnet-4-6'] },
+        {},
+        {
+          model: 'eu.anthropic.claude-sonnet-4-6',
+        },
+      );
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
+
+    it('does NOT match a different model via wildcard', async () => {
+      const params = buildParams(
+        { models: ['*claude-sonnet-4-6*'] },
+        {},
+        {
+          model: 'eu.anthropic.claude-opus-4-6-v1:0',
+        },
+      );
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
+    });
+
+    it('treats dots in patterns literally (no regex injection)', async () => {
+      const params = buildParams(
+        { models: ['anthropic.claude-sonnet-4-6'] },
+        {},
+        {
+          model: 'anthropicXclaude-sonnet-4-6',
+        },
+      );
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
+    });
+
+    it('scopes by the current agent id (params.agentId) over the root req.body.agent_id', async () => {
+      const params = createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              guardrailConfig: { ...guardrail, appliesTo: { agentIds: ['agent_sub'] } },
+            },
+          },
+        },
+        body: { agent_id: 'agent_root' },
+        agentId: 'agent_sub',
+        model_parameters: { model: 'anthropic.claude-sonnet-4-6' },
+      });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
+
+    it('does NOT apply when the current agent id does not match (even if root does)', async () => {
+      const params = createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              guardrailConfig: { ...guardrail, appliesTo: { agentIds: ['agent_root'] } },
+            },
+          },
+        },
+        body: { agent_id: 'agent_root' },
+        agentId: 'agent_sub',
+        model_parameters: { model: 'anthropic.claude-sonnet-4-6' },
+      });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
+    });
+
+    it('matches the base agent id when the runtime id carries a parallel-run suffix', async () => {
+      const params = createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              guardrailConfig: { ...guardrail, appliesTo: { agentIds: ['agent_guarded'] } },
+            },
+          },
+        },
+        agentId: 'agent_guarded____1',
+        model_parameters: { model: 'anthropic.claude-sonnet-4-6' },
+      });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
   });
 
   describe('Proxy Configuration', () => {

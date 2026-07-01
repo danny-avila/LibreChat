@@ -1,6 +1,6 @@
 import type { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
 import type { BedrockConverseInput } from 'librechat-data-provider';
+import type { AwsCredentialIdentity } from '@aws-sdk/types';
 
 /**
  * AWS credentials for Bedrock
@@ -28,6 +28,27 @@ export interface GuardrailConfiguration {
   trace?: 'enabled' | 'disabled' | 'enabled_full';
   /** The processing mode for guardrail; 'sync' is the default guardrail behavior if unset */
   streamProcessingMode?: 'sync' | 'async';
+}
+
+/**
+ * LibreChat-side scoping for the global Bedrock guardrail. Each filter is
+ * optional; when present, the request must match it for the guardrail to apply.
+ * Omit `appliesTo` entirely to apply the guardrail to every Bedrock conversation.
+ */
+export interface GuardrailScope {
+  /** Restrict the guardrail to these agent IDs (matched against `req.body.agent_id`). */
+  agentIds?: string[];
+  /** Restrict the guardrail to these Bedrock model IDs. */
+  models?: string[];
+}
+
+/**
+ * The admin-configured global guardrail (`endpoints.bedrock.guardrailConfig`),
+ * which may carry an optional `appliesTo` scope. The scope is stripped before
+ * the config is forwarded to AWS.
+ */
+export interface ScopedGuardrailConfiguration extends GuardrailConfiguration {
+  appliesTo?: GuardrailScope;
 }
 
 /**
