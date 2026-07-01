@@ -420,13 +420,14 @@ export const bedrockInputParser = s.tConversationSchema
       additionalFields.thinking = false;
     }
 
-    /** Configure thinking for Bedrock Anthropic models: 3.7 Sonnet, Claude 4+ (opus/sonnet/haiku), and Mythos-class (Fable/Mythos). */
-    if (
+    /** Bedrock thinking-capable Claude models: 3.7 Sonnet, Claude 4+ (opus/sonnet/haiku), and Mythos-class (Fable/Mythos). */
+    const isThinkingModel =
       typeof typedData.model === 'string' &&
       (typedData.model.includes('claude-3-7-sonnet') ||
         BEDROCK_CLAUDE_4PLUS_THINKING.test(typedData.model) ||
-        s.isMythosClassModel(typedData.model))
-    ) {
+        s.isMythosClassModel(typedData.model));
+
+    if (isThinkingModel) {
       const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
 
       if (isAdaptive) {
@@ -538,6 +539,16 @@ export const bedrockInputParser = s.tConversationSchema
       } else {
         delete amrf.reasoning_config;
         delete amrf.reasoning_effort;
+        /** A Claude model that does not support Bedrock thinking (e.g. a bare
+         * `claude-3-5-sonnet` inference profile) must not carry stale thinking
+         * fields from a previously-selected thinking model. */
+        if (!isThinkingModel) {
+          delete amrf.anthropic_beta;
+          delete amrf.thinking;
+          delete amrf.thinkingBudget;
+          delete amrf.effort;
+          delete amrf.output_config;
+        }
       }
 
       if (shouldOmitSamplingParameters) {

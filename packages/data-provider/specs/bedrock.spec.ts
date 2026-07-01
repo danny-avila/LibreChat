@@ -501,6 +501,38 @@ describe('bedrockInputParser', () => {
       expect(additionalFields?.anthropic_beta).toBeUndefined();
     });
 
+    // Switching a persisted conversation to a non-thinking Claude model (bare or
+    // prefixed) must strip stale thinking fields carried over in AMRF, so they
+    // aren't sent to a profile that can't accept them.
+    test.each(['claude-3-5-sonnet', 'anthropic.claude-3-5-sonnet'])(
+      'strips stale thinking fields for non-thinking Claude %s',
+      (model) => {
+        const input = {
+          model,
+          additionalModelRequestFields: {
+            thinking: { type: 'adaptive', display: 'summarized' },
+            anthropic_beta: [BEDROCK_OUTPUT_128K_BETA],
+            output_config: { effort: 'high' },
+          },
+        };
+        const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+        const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+        expect(amrf?.thinking).toBeUndefined();
+        expect(amrf?.anthropic_beta).toBeUndefined();
+        expect(amrf?.output_config).toBeUndefined();
+      },
+    );
+
+    test('keeps thinking config for a bare thinking Claude model with persisted AMRF', () => {
+      const input = {
+        model: 'claude-sonnet-5',
+        additionalModelRequestFields: { thinking: { type: 'adaptive', display: 'summarized' } },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    });
+
     test('should match anthropic.claude-haiku-6 model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-haiku-6',
