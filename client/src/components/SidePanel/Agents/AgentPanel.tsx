@@ -29,6 +29,7 @@ import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import { logAgentDuplication } from '~/nj/analytics/logHelpers';
 import { useDuplicateAgentMutation } from '~/data-provider';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
@@ -272,6 +273,7 @@ export default function AgentPanel() {
   });
 
   const handleDuplicate = () => {
+    logAgentDuplication(agent_id);
     duplicateAgent.mutate({ agent_id });
   };
 

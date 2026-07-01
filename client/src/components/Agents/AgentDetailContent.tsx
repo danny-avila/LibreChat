@@ -16,6 +16,7 @@ import {
 import type t from 'librechat-data-provider';
 import { useDefaultConvo, useFavorites, useLocalize } from '~/hooks';
 import { clearMessagesCache, renderAgentAvatar } from '~/utils';
+import { logAgentDuplication } from '~/nj/analytics/logHelpers';
 import { useDuplicateAgentMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 
@@ -62,6 +63,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
   });
 
   const handleDuplicate = () => {
+    logAgentDuplication(agent.id);
     duplicateAgent.mutate({ agent_id: agent.id });
   };
 

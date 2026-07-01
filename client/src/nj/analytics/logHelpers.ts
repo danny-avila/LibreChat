@@ -1,6 +1,6 @@
-import { logEvent } from '~/nj/analytics/logEvent';
-import type { TFile } from 'librechat-data-provider';
 import { ErrorTypes, TMessage } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
+import { logEvent } from '~/nj/analytics/logEvent';
 import { ExtendedFile } from '~/common';
 
 // A place for our logging logic (to keep it separate from LibreChat files & minimize merge conflicts)
@@ -87,4 +87,8 @@ export function logCombinedFileSizeError(
 /** Error when too many files are uploaded for a single prompt. */
 export function logFileCountError(fileCount: number) {
   logEvent('upload_files_error_file_count', { object_count: fileCount });
+}
+
+export function logAgentDuplication(agentId: string) {
+  logEvent('agent_duplicated', { object_id: agentId });
 }

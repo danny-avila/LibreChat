@@ -1,14 +1,15 @@
-import * as Ariakit from '@ariakit/react';
-import { CopyPlus, MoreHorizontal, Trash } from 'lucide-react';
-import { DropdownPopup, useToastContext } from '@librechat/client';
 import React from 'react';
-import { useLocalize } from '~/hooks';
+import * as Ariakit from '@ariakit/react';
 import { Agent } from 'librechat-data-provider';
-import { useDeleteAgentMutation, useDuplicateAgentMutation } from '~/data-provider';
-import { AgentPanelProps, MenuItemProps } from '~/common';
-import { getDefaultAgentFormValues, logger } from '~/utils';
 import { useFormContext } from 'react-hook-form';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { CopyPlus, MoreHorizontal, Trash } from 'lucide-react';
+import { DropdownPopup, useToastContext } from '@librechat/client';
+import { useDeleteAgentMutation, useDuplicateAgentMutation } from '~/data-provider';
+import { logAgentDuplication } from '~/nj/analytics/logHelpers';
+import { getDefaultAgentFormValues, logger } from '~/utils';
+import { AgentPanelProps, MenuItemProps } from '~/common';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 /**
@@ -95,6 +96,7 @@ export default function ManageAgentDropdown({
       label: localize('com_ui_duplicate'),
       onClick: () => {
         if (agent?.id) {
+          logAgentDuplication(agent.id);
           duplicateAgent.mutate({ agent_id: agent.id });
         }
       },
