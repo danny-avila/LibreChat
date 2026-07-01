@@ -121,7 +121,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
         <span className="mx-1 inline-block w-full align-middle">
           <iframe
             srcDoc={uiResource.text}
-            sandbox="allow-scripts allow-forms"
+            sandbox=""
             style={{ width: '100%', minHeight: '200px', border: 'none' }}
             title={uiResource.uri}
           />

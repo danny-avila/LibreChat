@@ -29,13 +29,18 @@ const MCP_INVALID_REQUEST = -32600;
  */
 const resolveAppContext = async (req, serverName) => {
   const userId = req.user?.id;
-  // Fail closed on config resolution: a transient failure must reject rather than fall back to the
-  // base config and proxy to the wrong server. (Auth map resolution fails closed downstream.)
+  // Fail closed on both config and auth resolution: a transient lookup failure must reject rather
+  // than fall back to the base config (wrong server) or to unresolved/stale credentials. A user
+  // who genuinely has no vars resolves to undefined without throwing, so that path still proceeds.
   const [configServers, userMCPAuthMap] = await Promise.all([
     resolveConfigServers(req, { throwOnError: true }),
-    Promise.resolve()
-      .then(() => getUserMCPAuthMap({ userId, servers: [serverName], findPluginAuthsByKeys }))
-      .catch(() => undefined),
+    getUserMCPAuthMap({ userId, servers: [serverName], findPluginAuthsByKeys }).catch((err) => {
+      logger.error(
+        `[resolveAppContext] Failed to resolve MCP auth values for user ${userId}, server ${serverName}; failing closed`,
+        err,
+      );
+      throw err;
+    }),
   ]);
   const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
@@ -160,11 +165,13 @@ const serveMCPSandbox = async (_req, res) => {
     // Default to same-origin framing; when a dedicated sandbox origin is deployed, the operator
     // lists the allowed host origin(s) so the host page can frame this sandbox cross-origin.
     const allowedParents = (process.env.MCP_SANDBOX_FRAME_ANCESTORS || '').trim();
-    if (allowedParents) {
-      const ancestors = allowedParents
-        .split(/[\s,]+/)
-        .filter(Boolean)
-        .join(' ');
+    // Only accept scheme://host[:port] tokens. A raw value is interpolated into the CSP header, so
+    // an unvalidated token containing ";" would inject an unrelated directive.
+    const ancestors = allowedParents
+      .split(/[\s,]+/)
+      .filter((token) => /^https?:\/\/[a-zA-Z0-9][a-zA-Z0-9.-]*(?::\d{1,5})?$/.test(token))
+      .join(' ');
+    if (ancestors) {
       res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${ancestors}`);
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     } else {

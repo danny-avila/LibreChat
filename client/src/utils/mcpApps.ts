@@ -2,7 +2,7 @@ import { request, apiBaseUrl } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 
 export type AppToolResult = {
-  content: [];
+  content: unknown[];
   structuredContent?: Record<string, unknown>;
   isError?: boolean;
   _meta?: Record<string, unknown>;
@@ -28,7 +28,7 @@ export function isMcpAppResource(resource: UIResource): boolean {
  */
 export function buildAppToolResult(resource: UIResource): AppToolResult | undefined {
   const sc = resource.structuredContent as Record<string, unknown> | undefined | null;
-  const content = (resource.content as [] | undefined) ?? [];
+  const content = (resource.content as unknown[] | undefined) ?? [];
   const meta = resource.resultMeta as Record<string, unknown> | undefined;
   const hasStructured = !!sc && typeof sc === 'object' && !Array.isArray(sc);
   const isAppBacked = !!(resource.toolName && resource.serverName);

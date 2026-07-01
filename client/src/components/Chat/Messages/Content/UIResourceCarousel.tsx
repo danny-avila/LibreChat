@@ -101,7 +101,7 @@ function MCPAppCard({
     return (
       <iframe
         srcDoc={resource.text}
-        sandbox="allow-scripts allow-forms"
+        sandbox=""
         style={{ width: '100%', height: '100%', border: 'none' }}
         title={resource.uri}
       />

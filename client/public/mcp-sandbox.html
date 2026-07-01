@@ -170,11 +170,19 @@
       });
 
       function injectIntoHead(html, injection) {
-        if (/<head[^>]*>/i.test(html)) {
-          return html.replace(/<head([^>]*)>/i, '<head$1>' + injection);
-        }
-        if (/<html[^>]*>/i.test(html)) {
-          return html.replace(/<html([^>]*)>/i, '<html$1><head>' + injection + '</head>');
+        // A meta CSP only governs what is parsed after it, so it must come before any untrusted
+        // markup. If nothing but a doctype/<html> tag precedes <head>, insert the policy as the
+        // first head child and keep the document's structure. Otherwise (markup before <head>, or
+        // no <head>) wrap the document so no untrusted bytes are parsed ahead of the policy.
+        const headMatch = html.match(/<head[^>]*>/i);
+        if (headMatch) {
+          const beforeHead = html
+            .slice(0, headMatch.index)
+            .replace(/<!doctype[^>]*>/i, '')
+            .replace(/<html[^>]*>/i, '');
+          if (!/\S/.test(beforeHead)) {
+            return html.replace(/<head([^>]*)>/i, '<head$1>' + injection);
+          }
         }
         return (
           '<!DOCTYPE html><html><head>' + injection + '</head><body>' + html + '</body></html>'

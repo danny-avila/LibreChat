@@ -40,6 +40,7 @@ const {
   requireMCPAppsEnabled,
 } = require('~/server/controllers/mcpApps');
 const mcpAppToolCallLimiter = require('~/server/middleware/limiters/mcpAppToolCallLimiter');
+const mcpAppResourceLimiter = require('~/server/middleware/limiters/mcpAppResourceLimiter');
 const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
@@ -998,6 +999,7 @@ router.post(
   requireJwtAuth,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
+  mcpAppResourceLimiter,
   readMCPResource,
 );
 
@@ -1010,6 +1012,7 @@ router.post(
   requireJwtAuth,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
+  mcpAppResourceLimiter,
   listMCPResources,
 );
 
@@ -1022,6 +1025,7 @@ router.post(
   requireJwtAuth,
   checkMCPUsePermissions,
   requireMCPAppsEnabled,
+  mcpAppResourceLimiter,
   listMCPResourceTemplates,
 );
 

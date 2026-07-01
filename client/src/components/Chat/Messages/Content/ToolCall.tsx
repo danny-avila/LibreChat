@@ -90,7 +90,7 @@ const MCPAppView = React.memo(function MCPAppView({
       <div className="my-2">
         <iframe
           srcDoc={app.text}
-          sandbox="allow-scripts allow-forms"
+          sandbox=""
           style={{ width: '100%', minHeight: '200px', border: 'none' }}
           title={app.uri}
         />

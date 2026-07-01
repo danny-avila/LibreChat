@@ -96,8 +96,9 @@ describe('MCPUIResource', () => {
 
       const iframe = document.querySelector('iframe');
       expect(iframe).toBeInTheDocument();
-      expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
-      expect(iframe?.getAttribute('sandbox')).not.toContain('allow-same-origin');
+      // Non-app (no profile=mcp-app) inline HTML renders inert: scripts/forms run only through the
+      // sandbox-proxy app path, so this static iframe must not grant allow-scripts.
+      expect(iframe?.getAttribute('sandbox')).toBe('');
     });
 
     it('renders nothing for resources that are not renderable', () => {

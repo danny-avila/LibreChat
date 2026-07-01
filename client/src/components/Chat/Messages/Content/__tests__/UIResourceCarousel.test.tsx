@@ -88,7 +88,8 @@ describe('UIResourceCarousel', () => {
     render(<UIResourceCarousel uiResources={[inlineResource]} />);
     const iframe = document.querySelector('iframe');
     expect(iframe).toBeInTheDocument();
-    expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
+    // Non-app inline HTML renders inert (no allow-scripts); scripts run only via the sandbox proxy.
+    expect(iframe?.getAttribute('sandbox')).toBe('');
   });
 
   it('inline iframe does not have allow-same-origin', () => {
