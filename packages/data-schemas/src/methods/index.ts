@@ -53,6 +53,12 @@ import {
   type MarkScheduleResultInput,
 } from './skillSchedule';
 import {
+  createAgentJobMethods,
+  type AgentJobMethods,
+  type CreateAgentJobInput,
+  type RecordJobStepInput,
+} from './agentJob';
+import {
   createSkillMethods,
   type SkillMethods,
   type SkillDeps,
@@ -107,6 +113,7 @@ export type AllMethods = UserMethods &
   PromptMethods &
   SkillMethods &
   SkillScheduleMethods &
+  AgentJobMethods &
   AgentMethods &
   ConfigMethods &
   TenantMethods &
@@ -189,6 +196,8 @@ export function createMethods(
 
   const skillScheduleMethods = createSkillScheduleMethods(mongoose);
 
+  const agentJobMethods = createAgentJobMethods(mongoose);
+
   // Role methods with optional cache injection
   const roleDeps: RoleDeps = { getCache: deps.getCache };
   const roleMethods = createRoleMethods(mongoose, roleDeps);
@@ -239,6 +248,7 @@ export function createMethods(
     ...promptMethods,
     ...skillMethods,
     ...skillScheduleMethods,
+    ...agentJobMethods,
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -292,6 +302,9 @@ export type {
   CreateSkillScheduleInput,
   UpdateSkillScheduleInput,
   MarkScheduleResultInput,
+  AgentJobMethods,
+  CreateAgentJobInput,
+  RecordJobStepInput,
   AgentMethods,
   ConfigMethods,
   TenantMethods,

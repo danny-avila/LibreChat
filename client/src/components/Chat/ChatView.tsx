@@ -2,12 +2,19 @@ import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
-import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } from '~/hooks';
+import {
+  useAddedResponse,
+  useResumeOnLoad,
+  useAdaptiveSSE,
+  useChatHelpers,
+  useConversationJob,
+} from '~/hooks';
+import { ACTIVE_JOB_STATUSES } from '~/hooks/Jobs/status';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -15,6 +22,7 @@ import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
+import JobStatusBanner from './JobStatusBanner';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -31,6 +39,8 @@ function LoadingSpinner() {
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
+  const location = useLocation();
+  const bootstrapJobId = (location.state as { jobId?: string } | null)?.jobId;
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
 
@@ -53,6 +63,8 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse();
+  const conversationJob = useConversationJob(conversationId, bootstrapJobId);
+  const hasActiveJob = conversationJob != null && ACTIVE_JOB_STATUSES.has(conversationJob.status);
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
@@ -64,14 +76,23 @@ function ChatView({ index = 0 }: { index?: number }) {
   const isLandingPage =
     (!messagesTree || messagesTree.length === 0) &&
     (conversationId === Constants.NEW_CONVO || !conversationId);
-  const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
+  const isNavigating =
+    (!messagesTree || messagesTree.length === 0) &&
+    conversationId != null &&
+    conversationId !== Constants.NEW_CONVO &&
+    !hasActiveJob;
 
-  if (isLoading && conversationId !== Constants.NEW_CONVO) {
+  if (isLoading && conversationId !== Constants.NEW_CONVO && !hasActiveJob) {
     content = <LoadingSpinner />;
-  } else if ((isLoading || isNavigating) && !isLandingPage) {
+  } else if ((isLoading || isNavigating) && !isLandingPage && !hasActiveJob) {
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
-    content = <MessagesView messagesTree={messagesTree} />;
+    content =
+      hasActiveJob && !messagesTree ? (
+        <div aria-hidden="true" className="relative min-h-0 flex-1" />
+      ) : (
+        <MessagesView messagesTree={messagesTree} />
+      );
   } else {
     content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }
@@ -83,6 +104,7 @@ function ChatView({ index = 0 }: { index?: number }) {
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
               <Header />
+              <JobStatusBanner conversationId={conversationId} bootstrapJobId={bootstrapJobId} />
               <>
                 <div
                   className={cn(

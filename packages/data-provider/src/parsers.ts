@@ -481,9 +481,7 @@ export function extractMemory(text: string): {
   if (!text) {
     return { text: text ?? '', memory: null };
   }
-  const closed = text.match(
-    /\n*<memory\s+key=["']([^"']+)["']\s*>\s*([\s\S]*?)\s*<\/memory>\s*$/i,
-  );
+  const closed = text.match(/\n*<memory\s+key=["']([^"']+)["']\s*>\s*([\s\S]*?)\s*<\/memory>\s*$/i);
   if (closed && closed.index != null) {
     const key = closed[1].trim();
     const value = closed[2].trim();

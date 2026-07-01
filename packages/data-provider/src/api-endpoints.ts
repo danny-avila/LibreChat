@@ -396,6 +396,25 @@ export const skillSchedules = () => `${BASE_URL}/api/skill-schedules`;
 export const skillSchedule = (id: string) => `${skillSchedules()}/${encodeURIComponent(id)}`;
 export const runSkillSchedule = (id: string) => `${skillSchedule(id)}/run`;
 
+/* Long-horizon Agent Jobs */
+export const jobs = (params?: { status?: string; conversationId?: string }) => {
+  if (!params) {
+    return `${BASE_URL}/api/jobs`;
+  }
+  const search = new URLSearchParams();
+  if (params.status) {
+    search.set('status', params.status);
+  }
+  if (params.conversationId) {
+    search.set('conversationId', params.conversationId);
+  }
+  const query = search.toString();
+  return `${BASE_URL}/api/jobs${query ? `?${query}` : ''}`;
+};
+export const job = (id: string) => `${BASE_URL}/api/jobs/${encodeURIComponent(id)}`;
+export const cancelJob = (id: string) => `${job(id)}/cancel`;
+export const jobEvents = (id: string) => `${job(id)}/events`;
+
 export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 
 export const skillFile = (id: string, relativePath: string) =>

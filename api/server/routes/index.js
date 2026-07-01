@@ -20,6 +20,7 @@ const presets = require('./presets');
 const prompts = require('./prompts');
 const skills = require('./skills');
 const skillSchedules = require('./skillSchedules');
+const jobs = require('./jobs');
 const balance = require('./balance');
 const actions = require('./actions');
 const apiKeys = require('./apiKeys');
@@ -70,6 +71,7 @@ module.exports = {
   prompts,
   skills,
   skillSchedules,
+  jobs,
   actions,
   presets,
   balance,

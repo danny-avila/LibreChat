@@ -28,6 +28,7 @@ export * from './types/mutations';
 export * from './types/queries';
 export * from './types/skills';
 export * from './types/skillSchedules';
+export * from './types/jobs';
 export * from './types/runs';
 export * from './types/web';
 export * from './types/graph';

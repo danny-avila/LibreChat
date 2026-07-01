@@ -8,6 +8,7 @@ import * as q from './types/queries';
 import * as f from './types/files';
 import * as sk from './types/skills';
 import * as ss from './types/skillSchedules';
+import * as jb from './types/jobs';
 import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
@@ -966,6 +967,26 @@ export function runSkillSchedule(id: string): Promise<ss.TRunSkillScheduleRespon
   return request.post(endpoints.runSkillSchedule(id), {});
 }
 
+/* Long-horizon Agent Jobs */
+export function getJobs(params?: {
+  status?: string;
+  conversationId?: string;
+}): Promise<jb.TAgentJobsResponse> {
+  return request.get(endpoints.jobs(params));
+}
+
+export function getJob(id: string): Promise<jb.TAgentJobResponse> {
+  return request.get(endpoints.job(id));
+}
+
+export function createJob(payload: jb.TCreateAgentJob): Promise<jb.TAgentJobResponse> {
+  return request.post(endpoints.jobs(), payload);
+}
+
+export function cancelJob(id: string): Promise<jb.TAgentJobResponse> {
+  return request.post(endpoints.cancelJob(id), {});
+}
+
 export function listSkillFiles(skillId: string): Promise<sk.TListSkillFilesResponse> {
   return request.get(endpoints.skillFiles(skillId));
 }
@@ -992,9 +1013,7 @@ export function previewSkillFile(fileId: string): Promise<sk.TSkillFilePreviewRe
 }
 
 /** Create a skill from a generated conversation file (the `.md` the model produced). */
-export function createSkillFromFile(
-  payload: sk.TCreateSkillFromFilePayload,
-): Promise<sk.TSkill> {
+export function createSkillFromFile(payload: sk.TCreateSkillFromFilePayload): Promise<sk.TSkill> {
   return request.post(endpoints.skillFromFile(), payload);
 }
 

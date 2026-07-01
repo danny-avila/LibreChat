@@ -84,6 +84,9 @@ export enum QueryKeys {
   skillStates = 'skillStates',
   /* Scheduled skill runs */
   skillSchedules = 'skillSchedules',
+  /* Long-horizon agent jobs */
+  jobs = 'jobs',
+  job = 'job',
   /* General user favorites */
   favorites = 'favorites',
 }
