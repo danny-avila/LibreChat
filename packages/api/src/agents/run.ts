@@ -39,6 +39,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
@@ -1214,7 +1215,16 @@ export async function createRun({
     calibrationRatio,
     indexTokenCountMap,
     subagentUsageSink,
-    eagerEventToolExecution: { enabled: true },
+    // Exclude side-effecting host file-authoring tools from eager execution:
+    // a speculative write can land before the turn commits, and its
+    // incrementally-streamed args can diverge from the final tool call and trip
+    // the SDK's "changed after eager execution" guard. `excludeToolNames`
+    // requires @librechat/agents with the eager-exclusion support (agents#281);
+    // older versions ignore the field.
+    eagerEventToolExecution: {
+      enabled: true,
+      excludeToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
+    },
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
