@@ -1215,15 +1215,23 @@ export async function createRun({
     calibrationRatio,
     indexTokenCountMap,
     subagentUsageSink,
-    // Exclude side-effecting host file-authoring tools from eager execution:
-    // a speculative write can land before the turn commits, and its
-    // incrementally-streamed args can diverge from the final tool call and trip
-    // the SDK's "changed after eager execution" guard. `excludeToolNames`
-    // requires @librechat/agents with the eager-exclusion support (agents#281);
-    // older versions ignore the field.
+    // Exclude side-effecting / large-free-form-arg tools from eager execution.
+    // Eager speculatively runs a tool mid-stream; for a big streamed arg (a
+    // file body, a bash heredoc, a code block) the accumulated args can diverge
+    // from the final tool call and trip the SDK's "changed after eager
+    // execution" guard, and a speculative write/exec can land before the turn
+    // commits. create_file/edit_file write files; execute_code/bash_tool run
+    // code with large `code`/`command` args. `excludeToolNames` requires
+    // @librechat/agents with the eager-exclusion support (agents#281); older
+    // versions ignore the field.
     eagerEventToolExecution: {
       enabled: true,
-      excludeToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
+      excludeToolNames: [
+        CREATE_FILE_TOOL_NAME,
+        EDIT_FILE_TOOL_NAME,
+        Constants.EXECUTE_CODE,
+        Constants.BASH_TOOL,
+      ],
     },
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
