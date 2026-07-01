@@ -1724,6 +1724,71 @@ describe('Message Operations', () => {
       expect(message?.isTemporary).toBe(true);
       expect(message?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
     });
+
+    it('assigns the forced deadline to a legacy message whose expiredAt is explicitly null', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+      const legacyMessageId = uuidv4();
+      await Message.create({
+        messageId: legacyMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'legacy permanent',
+        isTemporary: false,
+        expiredAt: null,
+      });
+
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), forcedExpiredAt);
+
+      const message = await Message.findOne({ messageId: legacyMessageId }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+    });
+
+    it('leaves a conversation non-conforming when a child backfill fails so a re-run retries it', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+
+      const throwingSharedLink = {
+        updateMany: jest.fn().mockRejectedValue(new Error('backfill failed')),
+      } as unknown as mongoose.Model<ISharedLink>;
+
+      const failed = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        throwingSharedLink,
+        forcedExpiredAt,
+      );
+      expect(failed).toEqual({ conversations: 0, errors: 1 });
+
+      const stillPermanent = await Conversation().findOne({ conversationId }).lean();
+      expect(stillPermanent?.isTemporary ?? null).not.toBe(true);
+      expect(stillPermanent?.expiredAt ?? null).toBeNull();
+
+      const retried = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        forcedExpiredAt,
+      );
+      expect(retried).toEqual({ conversations: 1, errors: 0 });
+
+      const converted = await Conversation().findOne({ conversationId }).lean();
+      expect(converted?.isTemporary).toBe(true);
+      expect(converted?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+    });
   });
 
   describe('Message cursor pagination', () => {
