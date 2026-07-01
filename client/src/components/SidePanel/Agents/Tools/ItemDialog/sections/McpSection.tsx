@@ -17,6 +17,7 @@ import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
 import { useAgentPanelContext } from '~/Providers';
+import { getIconForItem } from '../../items/icons';
 import MCPToolItem from '../../../MCPToolItem';
 import { Collapse } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -346,6 +347,7 @@ export default function McpSection({ item }: Props) {
         onOpenChange={setOauthOpen}
         serverName={serverName}
         oauthUrl={oauthUrl ?? getOAuthUrl(serverName) ?? ''}
+        iconUrl={getIconForItem(item).iconUrl}
       />
     </div>
   );

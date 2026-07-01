@@ -18,6 +18,8 @@ interface McpOAuthDialogProps {
   onOpenChange: (open: boolean) => void;
   serverName: string;
   oauthUrl: string;
+  /** The MCP server's icon, shown beside the title when the server provides one. */
+  iconUrl?: string;
 }
 
 /**
@@ -32,10 +34,12 @@ export default function McpOAuthDialog({
   onOpenChange,
   serverName,
   oauthUrl,
+  iconUrl,
 }: McpOAuthDialogProps) {
   const localize = useLocalize();
   const [isCopying, setIsCopying] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [iconError, setIconError] = useState(false);
   const copyUrl = useCopyToClipboard({ text: oauthUrl });
 
   if (!oauthUrl) {
@@ -45,9 +49,25 @@ export default function McpOAuthDialog({
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogContent className="w-11/12 max-w-md overflow-hidden rounded-2xl">
-        <OGDialogTitle className="text-base font-semibold text-text-primary">
-          {localize('com_nav_mcp_connect_server', { 0: serverName })}
-        </OGDialogTitle>
+        <div className="flex items-center gap-2">
+          {iconUrl && !iconError && (
+            <span
+              className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white"
+              aria-hidden="true"
+            >
+              <img
+                src={iconUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                loading="lazy"
+                onError={() => setIconError(true)}
+              />
+            </span>
+          )}
+          <OGDialogTitle className="text-base font-semibold text-text-primary">
+            {localize('com_nav_mcp_connect_server', { 0: serverName })}
+          </OGDialogTitle>
+        </div>
         <OGDialogDescription className="text-sm text-text-secondary">
           {localize('com_ui_mcp_oauth_description')}
         </OGDialogDescription>
