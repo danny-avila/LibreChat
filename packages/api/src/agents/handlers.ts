@@ -21,9 +21,9 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { logAxiosError, runOutsideTracing } from '~/utils';
 import { parseFrontmatter } from '../skills/import';
-import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
 
@@ -260,7 +260,6 @@ const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
-const SKILL_FILE_PREFIX = 'skills/';
 const SKILL_MD = 'SKILL.md';
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -2275,7 +2274,12 @@ async function handleCreateFileCall(
     return errorResult(tc, 'path is required');
   }
   if (typeof args.content !== 'string') {
-    return errorResult(tc, 'content is required');
+    return errorResult(
+      tc,
+      'content is required. If the file is large, your response may have been cut off at the ' +
+        'output token limit before content finished. Keep the main file lean and move bulky ' +
+        'sections (templates, schemas, long docs) into separate files written in their own calls.',
+    );
   }
   if (Buffer.byteLength(args.content, 'utf8') > MAX_AUTHORING_BYTES) {
     return errorResult(tc, `content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
@@ -2767,6 +2771,14 @@ async function handleReadFileCall(
     };
   }
 
+  /* Bundled skill files are primed into the sandbox under the `skills/`
+   * namespace (see `primeSkillFiles`), so the on-disk path is always
+   * `/mnt/data/skills/{skillName}/{relativePath}` regardless of whether the
+   * model addressed the file with or without the explicit prefix. Use this
+   * canonical path in the bash-fallback hints below so they never echo a
+   * prefix-less `args.path` that points nowhere on disk. */
+  const sandboxFilePath = `/mnt/data/${SKILL_FILE_PREFIX}${skillName}/${relativePath}`;
+
   if (!getSkillFileByPath) {
     return {
       toolCallId: tc.id,
@@ -2794,7 +2806,7 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.path}`,
+        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: ${sandboxFilePath}`,
       };
     }
   }
@@ -2814,14 +2826,14 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File "${args.path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at /mnt/data/${args.path}.`,
+      content: `File "${args.path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at ${sandboxFilePath}.`,
     };
   }
   if (isImage && file.bytes > MAX_BINARY_BYTES) {
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: /mnt/data/${args.path}`,
+      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: ${sandboxFilePath}`,
     };
   }
 
@@ -2865,7 +2877,7 @@ async function handleReadFileCall(
         return {
           toolCallId: tc.id,
           status: 'success',
-          content: `File "${args.path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at /mnt/data/${args.path}.`,
+          content: `File "${args.path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at ${sandboxFilePath}.`,
         };
       }
       chunks.push(chunk);
@@ -2919,7 +2931,7 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: /mnt/data/${args.path}`,
+        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: ${sandboxFilePath}`,
       };
     }
 
@@ -2941,7 +2953,7 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.path}`,
+        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat ${sandboxFilePath}`,
       };
     }
 

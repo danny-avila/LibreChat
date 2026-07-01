@@ -76,6 +76,9 @@ export class MCPServerInspector {
       this.config.startup !== false &&
       !this.config.requiresOAuth &&
       !hasCustomUserVars(this.config) &&
+      // user-provided API key is supplied per-user at connect time; an unauthenticated
+      // probe here would 401 against a bearer server and fail inspection
+      this.config.apiKey?.source !== 'user' &&
       !hasRuntimeContextPlaceholders(this.config) &&
       !this.config.obo
     ) {
@@ -126,8 +129,11 @@ export class MCPServerInspector {
       return;
     }
 
-    // Admin-provided API key means no OAuth flow is needed
-    if (this.config.apiKey?.source === 'admin') {
+    // API key auth (admin- or user-provided) is API-key, not OAuth. A credential-less
+    // probe of a bearer server returns the same 401 challenge as an OAuth server, so
+    // detection would misclassify it; trust the configured auth method. An explicit
+    // `oauth` block still wins if both are somehow set.
+    if (this.config.apiKey != null && this.config.oauth == null) {
       this.config.requiresOAuth = false;
       return;
     }

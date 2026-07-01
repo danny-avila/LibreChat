@@ -329,6 +329,7 @@ export const defaultAgentFormValues = {
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
   [Tools.web_search]: false,
+  [Tools.memory]: false,
   category: 'general',
   support_contact: {
     name: '',
@@ -547,6 +548,10 @@ export const anthropicSettings = {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
+      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
+        return ANTHROPIC_MAX_OUTPUT;
+      }
+
       if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName)) {
         return CLAUDE_4_64K_MAX_OUTPUT;
       }
@@ -570,6 +575,13 @@ export const anthropicSettings = {
       }
 
       if (/claude-opus[-.]?(?:4[-.]?(?:[6-9]|\d{2,})|[5-9]|\d{2,})/.test(modelName)) {
+        if (value > ANTHROPIC_MAX_OUTPUT) {
+          return ANTHROPIC_MAX_OUTPUT;
+        }
+        return value;
+      }
+
+      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
         if (value > ANTHROPIC_MAX_OUTPUT) {
           return ANTHROPIC_MAX_OUTPUT;
         }

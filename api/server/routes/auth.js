@@ -80,6 +80,7 @@ router.post(
 );
 router.post(
   '/resetPassword',
+  middleware.resetPasswordSubmissionLimiter,
   middleware.checkBan,
   middleware.validatePasswordReset,
   resetPasswordController,

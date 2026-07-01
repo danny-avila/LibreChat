@@ -27,6 +27,11 @@ export const EMPTY_USAGE: BranchUsage = {
 
 export interface TokenEntry {
   tokenCount: number;
+  /** Char/4 token estimate used in place of `tokenCount`: count-less (imported /
+   *  pre-feature) message bodies, plus quoted user turns (recounted from merged
+   *  text+quotes, since the send path ignores their stored count). Includes
+   *  tool-call name/args/output. Mutually exclusive with a counted `tokenCount`. */
+  estTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
   /** Per-response provider usage from `metadata.usage` (response messages only) */
@@ -46,6 +51,13 @@ export interface BranchTotals {
   counted: number;
   /** Total messages on the branch */
   total: number;
+  /** Uncalibrated estimate sum for count-less branch messages (imports /
+   *  pre-feature). Kept separate so known counts aren't re-estimated. */
+  estTokens: number;
+  /** The tail (latest) message's own `estTokens`. When a stream is live the tail
+   *  is the in-flight response, already covered by `liveTokens`, so the estimate
+   *  path excludes this to avoid double-counting a resumed/partial response. */
+  tailEstTokens: number;
   tailId: string | null;
   /** Whether the latest run's anchor message is on this branch */
   containsAnchor: boolean;
@@ -63,6 +75,8 @@ export const EMPTY_BRANCH: BranchTotals = {
   output: 0,
   counted: 0,
   total: 0,
+  estTokens: 0,
+  tailEstTokens: 0,
   tailId: null,
   containsAnchor: false,
   usage: EMPTY_USAGE,
@@ -137,11 +151,101 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
   }
 }
 
+/** Chars of a content part's text, handling both the string and `{ value }` forms.
+ *  Reasoning (`think`) and error parts are excluded — the send path strips them
+ *  before counting, so they aren't part of the next call's context. */
+function partTextChars(part: unknown): number {
+  if (part == null || typeof part !== 'object') {
+    return 0;
+  }
+  const type = (part as { type?: unknown }).type;
+  if (type === 'think' || type === 'error') {
+    return 0;
+  }
+  if (type === 'tool_call') {
+    const call = (part as { tool_call?: { name?: unknown; args?: unknown; output?: unknown } })
+      .tool_call;
+    if (call == null) {
+      return 0;
+    }
+    let chars = typeof call.name === 'string' ? call.name.length : 0;
+    if (typeof call.args === 'string') {
+      chars += call.args.length;
+    } else if (call.args != null) {
+      chars += JSON.stringify(call.args).length;
+    }
+    if (typeof call.output === 'string') {
+      chars += call.output.length;
+    }
+    return chars;
+  }
+  const text = (part as { text?: unknown }).text;
+  if (typeof text === 'string') {
+    return text.length;
+  }
+  if (
+    text != null &&
+    typeof text === 'object' &&
+    typeof (text as { value?: unknown }).value === 'string'
+  ) {
+    return (text as { value: string }).value.length;
+  }
+  return 0;
+}
+
+/** Char length of a message's rendered text, for estimating count-less messages.
+ *  Prefer structured `content` when present — the send path formats from it (incl.
+ *  tool calls), so a message carrying both `text` and `content` (e.g. a stopped
+ *  agent response) would otherwise drop its content/tool-call tokens. */
+function messageChars(message: Partial<TMessage>): number {
+  if (Array.isArray(message.content) && message.content.length > 0) {
+    let chars = 0;
+    for (const part of message.content) {
+      chars += partTextChars(part);
+    }
+    return chars;
+  }
+  if (typeof message.text === 'string') {
+    return message.text.length;
+  }
+  return 0;
+}
+
+/** Quoted excerpts the send path merges into a user message's prompt. */
+function quoteChars(message: Partial<TMessage>): number {
+  if (!Array.isArray(message.quotes)) {
+    return 0;
+  }
+  let chars = 0;
+  for (const quote of message.quotes) {
+    if (typeof quote === 'string') {
+      chars += quote.length;
+    }
+  }
+  return chars;
+}
+
 function toEntry(message: Partial<TMessage>): TokenEntry {
   const summaryUsedTokens = message.metadata?.summaryUsedTokens;
+  const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
+  const isCreatedByUser = message.isCreatedByUser === true;
+  const quoted = isCreatedByUser && Array.isArray(message.quotes) && message.quotes.length > 0;
+  /** A quoted user turn's stored `tokenCount` is unreliable: a text-only Save edit
+   *  recomputes it from `text` alone, and the send path recounts the quote-merged
+   *  prompt every turn regardless (`needsCanonicalTokenCount` in agents/client.js).
+   *  So mirror the server — estimate quoted turns from the merged text+quotes and
+   *  ignore the stored count. Other count-less imports / pre-feature messages
+   *  estimate from text. */
+  let estTokens = 0;
+  if (quoted) {
+    estTokens = Math.round((messageChars(message) + quoteChars(message)) / 4);
+  } else if (tokenCount === 0) {
+    estTokens = Math.round(messageChars(message) / 4);
+  }
   return {
-    tokenCount: typeof message.tokenCount === 'number' ? message.tokenCount : 0,
-    isCreatedByUser: message.isCreatedByUser === true,
+    tokenCount: quoted ? 0 : tokenCount,
+    estTokens,
+    isCreatedByUser,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
     summaryUsedTokens:
@@ -231,7 +335,10 @@ export function sumBranch(
     return EMPTY_BRANCH;
   }
 
-  const totals = { input: 0, output: 0, counted: 0, total: 0, containsAnchor: false };
+  const totals = { input: 0, output: 0, counted: 0, total: 0, estTokens: 0, containsAnchor: false };
+  /** The in-flight response, when streaming, is the branch tail and is covered by
+   *  `liveTokens`; expose its estimate so the estimate path can drop it. */
+  const tailEstTokens = index.get(tailId)?.estTokens ?? 0;
   const usage: BranchUsage = { ...EMPTY_USAGE };
   let summaryBaseline = 0;
   /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
@@ -262,6 +369,8 @@ export function sumBranch(
       } else {
         totals.output += entry.tokenCount;
       }
+    } else if (!contextCapped && entry.estTokens > 0) {
+      totals.estTokens += entry.estTokens;
     }
     /** Cost/usage is cumulative spend — never truncated at the summary boundary. */
     addUsage(usage, entry.usage);
@@ -275,7 +384,60 @@ export function sumBranch(
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailId, usage, summaryBaseline };
+  return { ...totals, tailEstTokens, tailId, usage, summaryBaseline };
+}
+
+/**
+ * Message tokens that would actually be sent for an over-window branch. The send
+ * path prunes oldest-first to fit (`getMessagesWithinTokenLimit`), so walk the
+ * branch newest→oldest and stop once the next message would exceed `budget`,
+ * mirroring its "newest-that-fits" behavior for the gauge. Approximation: it omits
+ * the instruction/tool-schema overhead and tool-call pairing the real pruner also
+ * accounts for, which the client can't know for a snapshot-less branch — close
+ * enough for an estimate, and superseded by an exact snapshot once generated.
+ * `budget` is the message window (max minus the always-sent summary baseline);
+ * when `excludeTail`, the in-flight tail response is skipped (it rides on
+ * `liveTokens`). Per-message contribution matches `sumBranch`: stored `tokenCount`
+ * when counted, else the char-based `estTokens`.
+ */
+export function prunedBranchTokens(
+  conversationId: string,
+  tailId: string | null | undefined,
+  budget: number,
+  excludeTail: boolean,
+): number {
+  const index = registry.get(conversationId);
+  if (!index || !tailId || budget <= 0) {
+    return 0;
+  }
+
+  let total = 0;
+  let currentId: string | null = tailId;
+  let guard = index.size;
+  let isTail = true;
+
+  while (currentId && currentId !== Constants.NO_PARENT && guard-- > 0) {
+    const entry: TokenEntry | undefined = index.get(currentId);
+    if (!entry) {
+      break;
+    }
+    const skip = isTail && excludeTail;
+    isTail = false;
+    if (!skip) {
+      const contribution = entry.tokenCount > 0 ? entry.tokenCount : entry.estTokens;
+      if (total + contribution > budget) {
+        break;
+      }
+      total += contribution;
+    }
+    /** Pre-summary turns are subsumed by the baseline the caller already reserved,
+     *  so stop after counting the summarizing turn — mirrors `sumBranch`. */
+    if (entry.summaryUsedTokens != null && entry.summaryUsedTokens > 0) {
+      break;
+    }
+    currentId = entry.parentMessageId;
+  }
+  return total;
 }
 
 /**

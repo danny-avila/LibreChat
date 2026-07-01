@@ -53,3 +53,45 @@ also register this LibreChat callback URL with your identity provider:
 ```text
 https://<librechat-domain>/api/admin/oauth/openid/callback
 ```
+
+## Langfuse Fanout
+
+The chart can optionally deploy a Langfuse fanout gateway with an internal
+OpenTelemetry Collector sidecar. The gateway handles Langfuse media fanout and
+proxies traces to the collector; the collector forwards tenant-scoped Langfuse
+traces to both a central Langfuse project and the tenant Langfuse project. It is
+disabled by default.
+
+When enabled, the chart also sets `LANGFUSE_FANOUT_ENABLED` and
+`LANGFUSE_FANOUT_COLLECTOR_URL` for the LibreChat app unless those values are
+already provided in `librechat.configEnv`.
+
+Set `librechat.configEnv.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=true` to keep
+central trace export flowing through the fanout gateway while disabling tenant trace
+and score export. When omitted, false, or blank, tenant export remains available
+if tenant keys and a known destination are configured.
+
+Langfuse tenant base URLs are selected from the startup-configured destination
+map rendered into LibreChat and the fanout gateway. Tenant API keys can still be added
+through tenant app configuration at runtime without restarting either component.
+The internal collector provides trace memory limiting, batching, tenant routing,
+and removal of LibreChat-only routing attributes before export.
+
+The fanout gateway stores one-time media upload plans in Redis so media create
+and byte-upload requests can land on different gateway replicas. Set
+`langfuseFanout.redis.uri` for an external Redis service, or enable the bundled
+Redis chart with `redis.enabled=true` and let the chart derive the internal URI.
+Scale the gateway manually with `langfuseFanout.replicaCount`; the chart does
+not create a fanout HPA.
+The internal collector receiver is bound to `127.0.0.1:4319` by default because
+only the gateway sidecar should send traces to it.
+
+The gateway exposes Prometheus metrics at `/metrics`. Configure
+`langfuseFanout.metrics.secret.name` and `.key` to pass a bearer token secret to
+the gateway; if omitted, `/metrics` returns 401. Use
+`langfuseFanout.service.annotations` for scrape annotations when your cluster
+uses annotation-based discovery. The gateway container also has configurable
+`/healthz` liveness and readiness probes under `langfuseFanout`.
+
+See [`otel/langfuse-fanout/README.md`](../../otel/langfuse-fanout/README.md)
+for the central Langfuse secret and values example.
