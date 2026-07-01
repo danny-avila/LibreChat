@@ -1,7 +1,10 @@
+const { randomUUID } = require('crypto');
 const { Keyv } = require('keyv');
 const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const {
+  math,
   logFile,
+  ioredisClient,
   keyvMongo,
   cacheConfig,
   sessionCache,
@@ -9,6 +12,43 @@ const {
   violationCache,
   registerShutdownTask,
 } = require('@librechat/api');
+
+const userPrincipalsCacheTtl = math(process.env.USER_PRINCIPALS_CACHE_TTL_MS, Time.ONE_MINUTE * 5);
+const userPrincipalsLockTtl = math(process.env.USER_PRINCIPALS_LOCK_TTL_MS, 5000);
+const userPrincipalsLockWait = math(
+  process.env.USER_PRINCIPALS_LOCK_WAIT_MS,
+  userPrincipalsLockTtl,
+);
+const disabledCache = {
+  get: async () => undefined,
+  set: async () => undefined,
+  delete: async () => true,
+};
+
+const releaseLockScript = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+
+function userPrincipalsCache() {
+  const cache = standardCache(CacheKeys.USER_PRINCIPALS, userPrincipalsCacheTtl);
+  if (!cacheConfig.USE_REDIS || !ioredisClient || userPrincipalsLockTtl <= 0) {
+    return cache;
+  }
+  return Object.assign(cache, {
+    lockWaitMs: userPrincipalsLockWait,
+    acquireLock: async (key) => {
+      const token = randomUUID();
+      const result = await ioredisClient.set(key, token, 'PX', userPrincipalsLockTtl, 'NX');
+      return result === 'OK' ? token : null;
+    },
+    releaseLock: async (key, token) => {
+      await ioredisClient.eval(releaseLockScript, 1, key, token);
+    },
+  });
+}
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -36,6 +76,7 @@ const namespaces = {
   [CacheKeys.SAML_SESSION]: sessionCache(CacheKeys.SAML_SESSION),
 
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
+  [CacheKeys.USER_PRINCIPALS]: userPrincipalsCacheTtl > 0 ? userPrincipalsCache() : disabledCache,
   [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
   [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),

@@ -2250,6 +2250,10 @@ export enum CacheKeys {
    */
   ROLES = 'ROLES',
   /**
+   * Key for resolved ACL user principals.
+   */
+  USER_PRINCIPALS = 'USER_PRINCIPALS',
+  /**
    * Key for the title generation cache.
    */
   GEN_TITLE = 'GEN_TITLE',

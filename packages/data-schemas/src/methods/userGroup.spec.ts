@@ -382,6 +382,107 @@ describe('userGroup methods', () => {
       const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
       expect(rolePrincipal).toBeUndefined();
     });
+
+    it('deduplicates concurrent cache builds for the same user principals key', async () => {
+      const user = await createTestUser({ role: SystemRoles.ADMIN });
+      const cache = {
+        get: jest.fn(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return undefined;
+        }),
+        set: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => cache),
+      });
+
+      const [first, second, third] = await Promise.all([
+        cachedMethods.getUserPrincipals({ userId: user._id.toString() }),
+        cachedMethods.getUserPrincipals({ userId: user._id.toString() }),
+        cachedMethods.getUserPrincipals({ userId: user._id.toString() }),
+      ]);
+
+      expect(first).toEqual(second);
+      expect(second).toEqual(third);
+      expect(cache.get).toHaveBeenCalledTimes(3);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for a Redis-locked principal cache build from another process', async () => {
+      const user = await createTestUser({ role: SystemRoles.ADMIN });
+      const cachedPrincipals = [
+        { principalType: PrincipalType.USER, principalId: user._id.toString() },
+        { principalType: PrincipalType.ROLE, principalId: SystemRoles.ADMIN },
+        { principalType: PrincipalType.PUBLIC },
+      ];
+      const cache = {
+        get: jest.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(cachedPrincipals),
+        set: jest.fn(async () => undefined),
+        acquireLock: jest.fn(async () => null),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 5000,
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => cache),
+      });
+
+      const principals = await cachedMethods.getUserPrincipals({ userId: user._id.toString() });
+
+      expect(principals).toEqual([
+        { principalType: PrincipalType.USER, principalId: user._id },
+        { principalType: PrincipalType.ROLE, principalId: SystemRoles.ADMIN },
+        { principalType: PrincipalType.PUBLIC },
+      ]);
+      expect(cache.acquireLock).toHaveBeenCalledTimes(1);
+      expect(cache.set).not.toHaveBeenCalled();
+      expect(cache.releaseLock).not.toHaveBeenCalled();
+    });
+
+    it('builds principals immediately when Redis lock acquisition fails', async () => {
+      const user = await createTestUser({ role: SystemRoles.ADMIN });
+      const cache = {
+        get: jest.fn(async () => undefined),
+        set: jest.fn(async () => undefined),
+        acquireLock: jest.fn(async () => {
+          throw new Error('redis unavailable');
+        }),
+        releaseLock: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => cache),
+      });
+
+      const principals = await cachedMethods.getUserPrincipals({ userId: user._id.toString() });
+
+      expect(principals).toContainEqual({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.ADMIN,
+      });
+      expect(cache.get).toHaveBeenCalledTimes(1);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+      expect(cache.releaseLock).not.toHaveBeenCalled();
+    });
+
+    it('ignores cached non-role principals with invalid ObjectId strings', async () => {
+      const user = await createTestUser({ role: SystemRoles.ADMIN });
+      const cache = {
+        get: jest.fn(async () => [
+          { principalType: PrincipalType.GROUP, principalId: 'not-an-object-id' },
+        ]),
+        set: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => cache),
+      });
+
+      const principals = await cachedMethods.getUserPrincipals({ userId: user._id.toString() });
+
+      expect(principals).toContainEqual({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.ADMIN,
+      });
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('syncUserEntraGroups', () => {

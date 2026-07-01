@@ -1,11 +1,72 @@
 import { Types } from 'mongoose';
-import { PrincipalType } from 'librechat-data-provider';
+import { CacheKeys, PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
+import { getTenantId } from '~/config/tenantContext';
 import { escapeRegExp } from '~/utils/string';
 
-export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
+type Principal = { principalType: PrincipalType; principalId?: string | Types.ObjectId };
+type CachedPrincipal = { principalType: PrincipalType; principalId?: string };
+type CacheStore = {
+  get: (key: string) => Promise<unknown>;
+  set: (key: string, value: unknown) => Promise<void>;
+  acquireLock?: (key: string) => Promise<string | null>;
+  releaseLock?: (key: string, token: string) => Promise<void>;
+  lockWaitMs?: number;
+};
+const pendingPrincipalLookups = new Map<string, Promise<Principal[]>>();
+const USER_PRINCIPALS_LOCK_POLL_MS = 50;
+
+export interface UserGroupDeps {
+  getCache?: (key: string) => CacheStore;
+}
+
+function isCachedPrincipal(value: unknown): value is CachedPrincipal {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const principal = value as { principalType?: unknown; principalId?: unknown };
+  if (
+    typeof principal.principalType !== 'string' ||
+    !Object.values(PrincipalType).includes(principal.principalType as PrincipalType)
+  ) {
+    return false;
+  }
+  if (principal.principalType === PrincipalType.PUBLIC) {
+    return principal.principalId === undefined;
+  }
+  if (principal.principalType === PrincipalType.ROLE) {
+    return principal.principalId === undefined || typeof principal.principalId === 'string';
+  }
+  return typeof principal.principalId === 'string' && Types.ObjectId.isValid(principal.principalId);
+}
+
+function serializePrincipals(principals: Principal[]): CachedPrincipal[] {
+  return principals.map((principal) => ({
+    principalType: principal.principalType,
+    ...(principal.principalId ? { principalId: principal.principalId.toString() } : {}),
+  }));
+}
+
+function hydratePrincipals(cached: CachedPrincipal[]): Principal[] {
+  return cached.map((principal) => ({
+    principalType: principal.principalType,
+    ...(principal.principalId
+      ? {
+          principalId:
+            principal.principalType === PrincipalType.ROLE
+              ? principal.principalId
+              : new Types.ObjectId(principal.principalId),
+        }
+      : {}),
+  }));
+}
+
+export function createUserGroupMethods(
+  mongoose: typeof import('mongoose'),
+  deps: UserGroupDeps = {},
+): {
   findGroupById: (
     groupId: string | Types.ObjectId,
     projection?: Record<string, 0 | 1>,
@@ -71,7 +132,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
       role?: string | null;
     },
     session?: ClientSession,
-  ) => Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>>;
+  ) => Promise<Principal[]>;
   syncUserEntraGroups: (
     userId: string | Types.ObjectId,
     entraGroups: Array<{ id: string; name: string; description?: string; email?: string }>,
@@ -398,42 +459,132 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
       role?: string | null;
     },
     session?: ClientSession,
-  ): Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>> {
+  ): Promise<Principal[]> {
     const { userId, role } = params;
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
-    const principals: Array<{
-      principalType: PrincipalType;
-      principalId?: string | Types.ObjectId;
-    }> = [{ principalType: PrincipalType.USER, principalId: userObjectId }];
+    const cache = session ? undefined : deps.getCache?.(CacheKeys.USER_PRINCIPALS);
+    let cacheKey: string | undefined;
+    let lockToken: string | null | undefined;
 
-    // If role is not provided, query user to get it
-    let userRole = role;
-    if (userRole === undefined) {
-      const User = mongoose.models.User as Model<IUser>;
-      const query = User.findById(userId).select('role');
-      if (session) {
-        query.session(session);
+    if (cache) {
+      // Keep role modes distinct because `undefined` means "load DB role" while `null` means "skip role".
+      let roleCacheKey = role;
+      if (roleCacheKey === undefined) {
+        roleCacheKey = '__lookup__';
+      } else if (roleCacheKey === null) {
+        roleCacheKey = '__none__';
       }
-      const user = await query.lean<IUser>();
-      userRole = user?.role;
+      cacheKey = `user-principals:${getTenantId() || 'base'}:${userObjectId.toString()}:${roleCacheKey}`;
+
+      // Fast path: use a completed cache entry when it has the expected serialized shape.
+      try {
+        const cached = await cache.get(cacheKey);
+        if (Array.isArray(cached) && cached.every(isCachedPrincipal)) {
+          return hydratePrincipals(cached);
+        }
+      } catch {
+        // Cache failures should not block permission checks.
+      }
+
+      // Same-process dedup: concurrent misses in this Node process share one DB lookup.
+      const pending = pendingPrincipalLookups.get(cacheKey);
+      if (pending) {
+        return pending;
+      }
+
+      // Cross-process dedup: Redis-backed caches can wait while another container fills this key.
+      if (cache.acquireLock) {
+        let lockFailed = false;
+        try {
+          lockToken = await cache.acquireLock(`${cacheKey}:lock`);
+        } catch {
+          lockToken = undefined;
+          lockFailed = true;
+        }
+        if (!lockToken && !lockFailed) {
+          const lockWaitMs = Math.max(cache.lockWaitMs ?? 0, 0);
+          const waitUntil = Date.now() + lockWaitMs;
+          while (Date.now() < waitUntil) {
+            await new Promise((resolve) => setTimeout(resolve, USER_PRINCIPALS_LOCK_POLL_MS));
+            try {
+              const cached = await cache.get(cacheKey);
+              if (Array.isArray(cached) && cached.every(isCachedPrincipal)) {
+                return hydratePrincipals(cached);
+              }
+            } catch {
+              // Cache failures should not block permission checks.
+            }
+          }
+        }
+      }
     }
 
-    // Add role as a principal if user has one
-    if (userRole && userRole.trim()) {
-      principals.push({ principalType: PrincipalType.ROLE, principalId: userRole });
+    // Build principals from source of truth: user id, optional role, groups, and public access.
+    const lookup = (async (): Promise<Principal[]> => {
+      const principals: Principal[] = [
+        { principalType: PrincipalType.USER, principalId: userObjectId },
+      ];
+
+      // If role is not provided, query user to get it
+      let userRole = role;
+      if (userRole === undefined) {
+        const User = mongoose.models.User as Model<IUser>;
+        const query = User.findById(userId).select('role');
+        if (session) {
+          query.session(session);
+        }
+        const user = await query.lean<IUser>();
+        userRole = user?.role;
+      }
+
+      // Add role as a principal if user has one
+      if (userRole && userRole.trim()) {
+        principals.push({ principalType: PrincipalType.ROLE, principalId: userRole });
+      }
+
+      const userGroups = await getUserGroups(userId, session);
+      if (userGroups && userGroups.length > 0) {
+        userGroups.forEach((group) => {
+          principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });
+        });
+      }
+
+      principals.push({ principalType: PrincipalType.PUBLIC });
+
+      // Store a cache-safe representation; ObjectIds are serialized and hydrated on read.
+      try {
+        if (cache && cacheKey) {
+          await cache.set(cacheKey, serializePrincipals(principals));
+        }
+      } catch {
+        // Cache failures should not block permission checks.
+      }
+      return principals;
+    })();
+
+    if (!cache) {
+      return lookup;
     }
 
-    const userGroups = await getUserGroups(userId, session);
-    if (userGroups && userGroups.length > 0) {
-      userGroups.forEach((group) => {
-        principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });
-      });
+    if (!cacheKey) {
+      return lookup;
     }
 
-    principals.push({ principalType: PrincipalType.PUBLIC });
-
-    return principals;
+    // Keep the in-process pending entry alive until the DB lookup and cache write finish.
+    pendingPrincipalLookups.set(cacheKey, lookup);
+    try {
+      return await lookup;
+    } finally {
+      pendingPrincipalLookups.delete(cacheKey);
+      if (cache && lockToken) {
+        try {
+          await cache.releaseLock?.(`${cacheKey}:lock`, lockToken);
+        } catch {
+          // Lock cleanup failures expire by TTL and should not block permission checks.
+        }
+      }
+    }
   }
 
   /**
