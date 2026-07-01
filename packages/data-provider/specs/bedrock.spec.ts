@@ -644,6 +644,31 @@ describe('bedrockInputParser', () => {
       expect(amrf?.anthropic_beta).toBeUndefined();
     });
 
+    // Persisted anthropic_beta may be a bare string or a comma-delimited string,
+    // which the merge helper accepts; the non-thinking cleanup must normalize
+    // that shape before filtering out generated betas.
+    test('strips a string-form generated beta for non-thinking Claude', () => {
+      const input = {
+        model: 'claude-3-5-sonnet',
+        additionalModelRequestFields: { anthropic_beta: BEDROCK_OUTPUT_128K_BETA },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toBeUndefined();
+    });
+
+    test('strips generated betas from a comma-delimited string, keeping user betas', () => {
+      const input = {
+        model: 'claude-3-5-sonnet',
+        additionalModelRequestFields: {
+          anthropic_beta: `${BEDROCK_OUTPUT_128K_BETA}, context-1m-2025-08-07`,
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toEqual(['context-1m-2025-08-07']);
+    });
+
     test('should match anthropic.claude-haiku-6 model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-haiku-6',

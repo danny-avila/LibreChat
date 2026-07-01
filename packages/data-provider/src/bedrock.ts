@@ -250,35 +250,41 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
   return betaHeaders;
 }
 
-function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]): string[] {
-  let existingValues: unknown[] = [];
-  if (Array.isArray(existing)) {
-    existingValues = existing;
-  } else if (typeof existing === 'string') {
-    existingValues = [existing];
+/** Flatten an anthropic_beta value (array, single string, or comma-delimited
+ * string) into trimmed, non-empty header tokens. */
+function normalizeBetaHeaders(value: unknown): string[] {
+  let values: unknown[] = [];
+  if (Array.isArray(value)) {
+    values = value;
+  } else if (typeof value === 'string') {
+    values = [value];
   }
-
-  const generatedSet = new Set(generated);
-  const betaHeaders = new Set<string>();
-
-  [...existingValues, ...generated].forEach((value) => {
-    if (typeof value !== 'string') {
+  const headers: string[] = [];
+  values.forEach((entry) => {
+    if (typeof entry !== 'string') {
       return;
     }
-
-    value
+    entry
       .split(',')
       .map((header) => header.trim())
       .filter(Boolean)
-      .forEach((header) => {
-        /** Drop a generated beta carried over from a prior model that the
-         * current model does not generate (e.g. fine-grained-tool-streaming on
-         * a 3.7 profile); user opt-ins are always preserved. */
-        if (GENERATED_BEDROCK_BETAS.has(header) && !generatedSet.has(header)) {
-          return;
-        }
-        betaHeaders.add(header);
-      });
+      .forEach((header) => headers.push(header));
+  });
+  return headers;
+}
+
+function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]): string[] {
+  const generatedSet = new Set(generated);
+  const betaHeaders = new Set<string>();
+
+  [...normalizeBetaHeaders(existing), ...generated].forEach((header) => {
+    /** Drop a generated beta carried over from a prior model that the current
+     * model does not generate (e.g. fine-grained-tool-streaming on a 3.7
+     * profile); user opt-ins are always preserved. */
+    if (GENERATED_BEDROCK_BETAS.has(header) && !generatedSet.has(header)) {
+      return;
+    }
+    betaHeaders.add(header);
   });
 
   return Array.from(betaHeaders);
@@ -591,9 +597,9 @@ export const bedrockInputParser = s.tConversationSchema
           delete amrf.thinkingBudget;
           delete amrf.effort;
           delete amrf.output_config;
-          if (Array.isArray(amrf.anthropic_beta)) {
-            const kept = amrf.anthropic_beta.filter(
-              (header) => !GENERATED_BEDROCK_BETAS.has(header as string),
+          if (amrf.anthropic_beta !== undefined) {
+            const kept = normalizeBetaHeaders(amrf.anthropic_beta).filter(
+              (header) => !GENERATED_BEDROCK_BETAS.has(header),
             );
             if (kept.length > 0) {
               amrf.anthropic_beta = kept;
