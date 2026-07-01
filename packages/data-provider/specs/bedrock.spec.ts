@@ -1211,14 +1211,14 @@ describe('bedrockInputParser', () => {
   });
 
   describe('bedrockOutputParser with configureThinking', () => {
-    test('should preserve adaptive thinking config without setting default maxTokens', () => {
+    test('defaults adaptive maxTokens to the model max output when unset', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
       }) as Record<string, unknown>;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
-      expect(output.maxTokens).toBeUndefined();
+      expect(output.maxTokens).toBe(128000);
       expect(output.maxOutputTokens).toBeUndefined();
     });
 
@@ -1248,7 +1248,7 @@ describe('bedrockInputParser', () => {
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
       const amrf = output.additionalModelRequestFields as Record<string, unknown>;
       expect(amrf.thinking).toEqual({ type: 'enabled', budget_tokens: 2000 });
-      expect(output.maxTokens).toBe(8192);
+      expect(output.maxTokens).toBe(64000);
     });
 
     test('should pass output_config through for adaptive model with effort', () => {
@@ -1262,24 +1262,52 @@ describe('bedrockInputParser', () => {
       expect(amrf.output_config).toEqual({ effort: 'low' });
     });
 
-    test('should not set maxTokens for adaptive models when neither maxTokens nor maxOutputTokens are provided', () => {
+    test('defaults adaptive maxTokens to the model max when neither maxTokens nor maxOutputTokens are provided', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
       }) as Record<string, unknown>;
       parsed.maxOutputTokens = undefined;
       (parsed as Record<string, unknown>).maxTokens = undefined;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
-      expect(output.maxTokens).toBeUndefined();
+      expect(output.maxTokens).toBe(128000);
     });
 
-    test('should use enabled default maxTokens (8192) for non-adaptive thinking models', () => {
+    // Regression: a bare inference-profile adaptive model (e.g. claude-sonnet-5)
+    // with no explicit maxTokens must get the model's full output budget so
+    // reasoning + a large create_file argument does not truncate mid-stream.
+    test('defaults a bare adaptive inference-profile model to its full max output', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'claude-sonnet-5',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(output.maxTokens).toBe(128000);
+    });
+
+    // Number-first aliases (claude-4-7-sonnet, claude-5-sonnet) are gated as
+    // thinking models here but are not matched by the family-first reset()
+    // regex; they must still resolve to the real ceiling, not the 8192 fallback.
+    test.each([
+      ['anthropic.claude-4-7-sonnet', 64000],
+      ['claude-5-sonnet', 128000],
+      ['anthropic.claude-4-8-opus', 128000],
+    ])('defaults number-first adaptive alias %s to its real max output', (model, expected) => {
+      const parsed = bedrockInputParser.parse({ model }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect((amrf.thinking as { type: string }).type).toBe('adaptive');
+      expect(output.maxTokens).toBe(expected);
+    });
+
+    test('defaults non-adaptive thinking maxTokens to the model max output', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
       }) as Record<string, unknown>;
       parsed.maxOutputTokens = undefined;
       (parsed as Record<string, unknown>).maxTokens = undefined;
       const output = bedrockOutputParser(parsed as Record<string, unknown>);
-      expect(output.maxTokens).toBe(8192);
+      expect(output.maxTokens).toBe(64000);
     });
 
     test('should use default thinking budget (2000) when no custom budget is set', () => {

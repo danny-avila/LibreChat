@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import * as s from './schemas';
 
-const DEFAULT_ENABLED_MAX_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 2000;
 export const BEDROCK_OUTPUT_128K_BETA = 'output-128k-2025-02-19';
 export const BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
@@ -673,13 +672,38 @@ export const bedrockInputParser = s.tConversationSchema
  * @param data - The parsed Bedrock request options object
  * @returns The object with thinking configured appropriately
  */
+/**
+ * `anthropicSettings.maxOutputTokens.reset` only matches the canonical
+ * family-first id (`claude-sonnet-5`); Bedrock also accepts number-first
+ * aliases (`claude-5-sonnet`, `claude-4-7-sonnet`) that this file gates as
+ * thinking models. Canonicalize to family-first so those aliases resolve to the
+ * real ceiling instead of the 8192 fallback.
+ */
+function toFamilyFirstClaudeId(model: string): string {
+  return model.replace(/claude-(\d+(?:[-.]\d+)?)-(sonnet|opus|haiku)/, 'claude-$2-$1');
+}
+
+/**
+ * Thinking tokens share the `maxTokens` output budget with tool-call arguments
+ * (e.g. a `create_file` `content`), so a low default truncates large authored
+ * files mid-argument. Mirror the direct-Anthropic path and default to the
+ * model's full max output when the request does not set one explicitly.
+ */
+function resolveThinkingMaxTokens(data: AnthropicInput): number {
+  const explicit = data.maxTokens ?? data.maxOutputTokens;
+  if (typeof explicit === 'number' && explicit > 0) {
+    return explicit;
+  }
+  const model = typeof data.model === 'string' ? data.model : '';
+  return s.anthropicSettings.maxOutputTokens.reset(toFamilyFirstClaudeId(model));
+}
+
 function configureThinking(data: AnthropicInput): AnthropicInput {
   const updatedData = { ...data };
   const thinking = updatedData.additionalModelRequestFields?.thinking;
 
   if (thinking === true) {
-    updatedData.maxTokens =
-      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ENABLED_MAX_TOKENS;
+    updatedData.maxTokens = resolveThinkingMaxTokens(updatedData);
     delete updatedData.maxOutputTokens;
     const thinkingConfig: ThinkingConfig = {
       type: 'enabled',
@@ -697,9 +721,7 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
     thinking != null &&
     (thinking as { type: string }).type === 'adaptive'
   ) {
-    if (updatedData.maxTokens == null && updatedData.maxOutputTokens != null) {
-      updatedData.maxTokens = updatedData.maxOutputTokens;
-    }
+    updatedData.maxTokens = resolveThinkingMaxTokens(updatedData);
     delete updatedData.maxOutputTokens;
     delete updatedData.additionalModelRequestFields!.thinkingBudget;
   }
