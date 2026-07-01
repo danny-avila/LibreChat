@@ -1,5 +1,9 @@
+import {
+  EModelEndpoint,
+  AgentCapabilities,
+  defaultAssistantsVersion,
+} from 'librechat-data-provider';
 import type { DeepPartial, TCustomConfig } from 'librechat-data-provider';
-import { EModelEndpoint, defaultAssistantsVersion } from 'librechat-data-provider';
 import { AppService, loadSummarizationConfig } from './service';
 import logger from '~/config/winston';
 
@@ -143,6 +147,41 @@ describe('AppService assistants config', () => {
 
     expect(result.endpoints?.[EModelEndpoint.azureAssistants]?.version).toBe(
       defaultAssistantsVersion.azureAssistants,
+    );
+  });
+});
+
+describe('AppService memory capability', () => {
+  it('strips the memory capability when no memory config is present', async () => {
+    const result = await AppService({ config: {} as DeepPartial<TCustomConfig> });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+      AgentCapabilities.memory,
+    );
+  });
+
+  it('keeps the memory capability when memory is configured and enabled', async () => {
+    const config = { memory: { tokenLimit: 10000 } } as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).toContain(
+      AgentCapabilities.memory,
+    );
+  });
+
+  it('strips the memory capability when memory is explicitly disabled', async () => {
+    const config = { memory: { disabled: true } } as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+      AgentCapabilities.memory,
+    );
+  });
+
+  it('strips the memory capability even when an agents endpoint block is configured', async () => {
+    const config = {
+      endpoints: { [EModelEndpoint.agents]: { disableBuilder: true } },
+    } as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+      AgentCapabilities.memory,
     );
   });
 });

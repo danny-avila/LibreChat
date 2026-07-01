@@ -113,7 +113,7 @@
     "@azure/storage-blob": "^12.30.0",
     "@google/genai": "^2.8.0",
     "@keyv/redis": "^4.3.3",
-    "@librechat/agents": "^3.2.46",
+    "@librechat/agents": "^3.2.55",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",
@@ -163,5 +163,8 @@
     "undici": "^7.24.1",
     "yauzl": "^3.2.1",
     "zod": "^3.22.4"
+  },
+  "dependencies": {
+    "@langchain/langgraph-checkpoint-mongodb": "^1.4.0"
   }
 }
