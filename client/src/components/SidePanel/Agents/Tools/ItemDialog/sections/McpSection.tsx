@@ -18,6 +18,7 @@ import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
 import { useAgentPanelContext } from '~/Providers';
 import MCPToolItem from '../../../MCPToolItem';
+import { Collapse } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -208,7 +209,7 @@ export default function McpSection({ item }: Props) {
       </div>
 
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
+        <div className="flex min-h-7 items-center justify-between">
           <span className="text-[11px] font-medium uppercase tracking-wide text-text-secondary">
             {localize('com_ui_tools_mcp_tools_section')}
           </span>
@@ -299,39 +300,44 @@ export default function McpSection({ item }: Props) {
             </div>
           )}
         </div>
-        {hasTools && (
-          <div className="flex flex-col gap-1">
-            {tools.map((tool) => (
-              <MCPToolItem
-                key={tool.tool_id}
-                tool={tool}
-                isSelected={selectedTools.includes(tool.tool_id)}
-                isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
-                isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
-                deferredToolsEnabled={deferredToolsEnabled}
-                programmaticToolsEnabled={programmaticToolsEnabled}
-                onToggleSelect={() => toggleToolSelect(tool.tool_id)}
-                onToggleDefer={() => toggleToolDefer(tool.tool_id)}
-                onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
-              />
-            ))}
-          </div>
-        )}
-        {!hasTools && toolsLoading && (
-          <div className="flex flex-col gap-1" aria-busy="true" aria-live="polite">
-            {['w-3/5', 'w-1/2', 'w-2/5'].map((width) => (
-              <div key={width} className="flex items-center gap-2.5 rounded-lg px-2 py-2">
-                <Skeleton className="size-4 shrink-0 rounded" />
-                <Skeleton className={cn('h-4 rounded', width)} />
-              </div>
-            ))}
-          </div>
-        )}
-        {!hasTools && !toolsLoading && (
-          <p className="rounded-xl border border-dashed border-border-light p-3 text-center text-xs text-text-tertiary">
-            {localize('com_ui_tools_mcp_no_tools')}
-          </p>
-        )}
+        {/* Loading skeleton, tool list, and empty state share one slot and
+         * cross-swap via stacked collapses so their differing heights morph
+         * smoothly; the dialog's auto-height follows in a single motion. */}
+        <div>
+          <Collapse open={hasTools}>
+            <div className="flex flex-col gap-1">
+              {tools.map((tool) => (
+                <MCPToolItem
+                  key={tool.tool_id}
+                  tool={tool}
+                  isSelected={selectedTools.includes(tool.tool_id)}
+                  isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
+                  isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
+                  deferredToolsEnabled={deferredToolsEnabled}
+                  programmaticToolsEnabled={programmaticToolsEnabled}
+                  onToggleSelect={() => toggleToolSelect(tool.tool_id)}
+                  onToggleDefer={() => toggleToolDefer(tool.tool_id)}
+                  onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
+                />
+              ))}
+            </div>
+          </Collapse>
+          <Collapse open={!hasTools && toolsLoading}>
+            <div className="flex flex-col gap-1" aria-busy="true" aria-live="polite">
+              {['w-3/5', 'w-1/2', 'w-2/5'].map((width) => (
+                <div key={width} className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                  <Skeleton className="size-4 shrink-0 rounded" />
+                  <Skeleton className={cn('h-4 rounded', width)} />
+                </div>
+              ))}
+            </div>
+          </Collapse>
+          <Collapse open={!hasTools && !toolsLoading}>
+            <p className="rounded-xl border border-dashed border-border-light p-3 text-center text-xs text-text-tertiary">
+              {localize('com_ui_tools_mcp_no_tools')}
+            </p>
+          </Collapse>
+        </div>
       </div>
 
       {configDialogProps && <MCPConfigDialog {...configDialogProps} />}

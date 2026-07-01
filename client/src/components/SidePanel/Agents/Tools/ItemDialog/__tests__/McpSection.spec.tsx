@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import type { McpItem } from '../../items/types';
 import McpSection from '../sections/McpSection';
 
@@ -14,6 +15,11 @@ jest.mock('react-hook-form', () => ({
 
 jest.mock('~/Providers', () => ({
   useAgentPanelContext: () => ({ mcpServersMap: new Map() }),
+}));
+
+jest.mock('~/components/ui', () => ({
+  Collapse: ({ open, children }: { open: boolean; children: ReactNode }) =>
+    open ? children : null,
 }));
 
 jest.mock('~/hooks', () => ({
