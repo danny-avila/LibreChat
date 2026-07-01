@@ -88,6 +88,7 @@ const startServer = async () => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
   const appConfig = await getAppConfig({ baseOnly: true });
+  require('./services/Config/brand').getBrandConfig();
   initializeFileStorage(appConfig);
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);

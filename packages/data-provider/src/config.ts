@@ -1049,8 +1049,38 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+/** A single control entry within a brand's DOM contract. Core fields are typed
+ * explicitly; brand files also carry control-specific descriptive selectors (e.g.
+ * `menu_role`, `attr`, `option_row_testid`, `data_node_type`) that vary per brand.
+ * `.passthrough()` preserves those unknown keys instead of stripping them. */
+export const brandControlSchema = z
+  .object({
+    label: z.string().nullable().optional(),
+    placeholder: z.string().nullable().optional(),
+    aria: z.string().nullable().optional(),
+    testid: z.string().nullable().optional(),
+    id: z.string().nullable().optional(),
+    classes: z.string().nullable().optional(),
+    tag: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export const brandConfigSchema = z.object({
+  brand: z.string(),
+  deployment_url: z.string(),
+  deployment_subdomain: z.string().optional(),
+  placeholders: z.record(z.string(), z.string()).optional(),
+  controls: z.record(z.string(), brandControlSchema),
+});
+
+export type TBrandControl = z.infer<typeof brandControlSchema>;
+export type TBrandConfig = z.infer<typeof brandConfigSchema>;
+
 export type TStartupConfig = {
   appTitle: string;
+  /** Active brand-emulation contract, present only when the `BRAND` env var is set. */
+  brand?: TBrandConfig;
   socialLogins?: string[];
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;

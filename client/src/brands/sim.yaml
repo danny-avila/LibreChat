@@ -1,0 +1,118 @@
+# Brand DOM contract: Gemini
+# This is the selector contract SPE automation targets. Mirror the REAL platform's DOM.
+# null = real platform does not expose this identifier. TODO = needs dev to inventory.
+# Response-area selectors (response_container/content) are how sims READ output - high priority.
+brand: gemini
+deployment_subdomain: sim
+deployment_url: sim.patoexpectsspeed.com
+# Placeholders below use ${token} syntax = value injected dynamically at render time,
+# NOT a literal string to hardcode. Tokens used in this file:
+placeholders:
+  "${modelName}": The currently selected model name (updates when the user switches model)
+  "${planName}": The account's plan tier label
+  "${email}": The signed-in user's email address
+  "${username}": The signed-in user's display name
+  "${modeId}": Gemini-internal id for a model/mode option (dynamic per option)
+  "${chatTitle}": The title of the conversation the control belongs to
+
+controls:
+  model_switcher:
+    label: "${modelName}"
+    aria: "Open mode picker, currently ${modelName}"
+    testid: bard-mode-menu-button
+    id: null
+  model_search:
+    label: null
+    aria: null
+    testid: gem-mode-menu
+    id: null
+    classes: null
+    menu_container_testid: gem-mode-menu
+    option_row_testid: "bard-mode-option-${modeId}"
+    option_row_role: menuitem
+    notes: "No search input - Gemini picker is a plain menu, not searchable. Match option rows by <gem-menu-item> data-test-id=bard-mode-option-* (modeId is dynamic) or data-mode-id. id ng-menu-* is dynamic."
+  composer:
+    label: null
+    placeholder: Ask Gemini
+    aria: Enter a prompt for Gemini
+    testid: null
+    id: null
+  send_button:
+    label: null
+    aria: Send message
+    testid: send-button-container
+    id: null
+  stop_generating:
+    label: null
+    aria: Stop response
+    testid: send-button-container
+    id: null
+  voice_button:
+    label: null
+    aria: Microphone
+    testid: null
+    id: null
+  dictation_button:
+    label: null
+    aria: Microphone
+    testid: null
+    id: null
+    classes: speech-dictation-mic-button
+    tag: speech-dictation-mic-button
+    data_node_type: speech_dictation_mic_button
+    notes: "Same element as voice_button - Gemini has one mic control for dictation. Best stable handle: data-node-type=speech_dictation_mic_button or the <speech-dictation-mic-button> tag. No testid/id. Tooltip: Use microphone."
+  attach_file:
+    label: null
+    aria: Upload & tools
+    testid: null
+    id: null
+  new_chat:
+    label: New chat
+    aria: New chat
+    testid: new-chat-button
+    id: null
+  history_section:
+    label: Recents
+    aria: Toggle Recents
+    testid: chats-expandable-section
+    id: sidenav-section-content-chats
+  conversation_options:
+    label: null
+    aria: "More options for ${chatTitle}"
+    testid: actions-menu-button
+    id: null
+  regenerate:
+    label: null
+    aria: Redo
+    testid: regenerate-button
+    id: null
+  copy_response:
+    label: null
+    aria: Copy
+    testid: copy-button
+    id: null
+  account_menu:
+    label: "${username} ${planName}"
+    aria: "Google Account: ${username} ${email}"
+    testid: null
+    id: null
+  settings:
+    label: null
+    aria: Settings
+    testid: mavatar-footer-settings-button
+    id: null
+  response_container:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: ng-star-inserted
+    tag: message-content
+    notes: "id is dynamic per message (message-content-id-r_*), do not select on it; select on <message-content> tag"
+  response_content:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: "markdown markdown-main-panel"
+    notes: "stable classes markdown + markdown-main-panel; other classes (enable-*, tutor-*) are feature-flag noise; id is dynamic"

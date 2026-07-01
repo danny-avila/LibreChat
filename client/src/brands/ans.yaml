@@ -1,0 +1,113 @@
+# Brand DOM contract: Claude
+# This is the selector contract SPE automation targets. Mirror the REAL platform's DOM.
+# null = real platform does not expose this identifier. TODO = needs dev to inventory.
+# Response-area selectors (response_container/content) are how sims READ output - high priority.
+brand: claude
+deployment_subdomain: ans
+deployment_url: ans.patoexpectsspeed.com
+# Placeholders below use ${token} syntax = value injected dynamically at render time,
+# NOT a literal string to hardcode. Tokens used in this file:
+placeholders:
+  "${modelName}": The currently selected model name (updates when the user switches model)
+  "${planName}": The account's plan tier label
+  "${username}": The signed-in user's display name
+  "${chatTitle}": The title of the conversation the control belongs to
+
+controls:
+  model_switcher:
+    label: "${modelName}"
+    aria: "Model: ${modelName}"
+    testid: model-selector-dropdown
+    id: null
+  model_search:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: null
+    menu_role: menu
+    menu_attr: "data-cds=Menu"
+    option_row_role: menuitemradio
+    option_selected_attr: "aria-checked=true"
+    notes: "No search input - Claude picker is a role=menu list. Match model rows by role=menuitemradio + visible model-name text; selected row has aria-checked=true. No per-model testid. ids (base-ui-_r_*) are dynamic. There is also a data-testid=effort-menu-trigger row for the effort submenu."
+  composer:
+    label: null
+    placeholder: "Try: draft an email · summarize a doc · plan your week"
+    aria: Write your prompt to Claude
+    testid: chat-input
+    id: null
+  send_button:
+    label: null
+    aria: Send message
+    testid: null
+    id: null
+  stop_generating:
+    label: null
+    aria: Stop response
+    testid: null
+    id: null
+  voice_button:
+    label: null
+    aria: Use voice mode
+    testid: null
+    id: null
+  dictation_button:
+    label: null
+    aria: Press and hold to record
+    testid: null
+    id: null
+  attach_file:
+    label: null
+    aria: "Add files, connectors, and more"
+    testid: null
+    id: null
+  new_chat:
+    label: New chat
+    aria: New chat
+    testid: null
+    id: null
+  history_section:
+    label: Recents
+    aria: null
+    testid: null
+    id: null
+  conversation_options:
+    label: null
+    aria: "More options for ${chatTitle}"
+    testid: actions-menu-button
+    id: null
+  regenerate:
+    label: null
+    aria: Retry
+    testid: action-bar-retry
+    id: null
+  copy_response:
+    label: null
+    aria: Copy
+    testid: action-bar-copy
+    id: null
+  account_menu:
+    label: "${username} ${planName} plan"
+    aria: "${username}, Settings"
+    testid: user-menu-button
+    id: null
+  settings:
+    label: Settings
+    aria: null
+    testid: user-menu-settings
+    id: null
+  response_container:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: group
+    attr: "data-is-streaming"
+    notes: "Best handle: data-is-streaming attribute (false when done, true while generating - also usable as a done-signal). sr-only <h2> inside announces \"Claude responded: ...\". Tailwind utility classes are noise, do not select on them."
+  response_content:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: font-claude-response
+    notes: "Stable class font-claude-response; all other classes are Tailwind utilities (ignore)."

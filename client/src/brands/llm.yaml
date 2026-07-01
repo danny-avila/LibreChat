@@ -1,0 +1,111 @@
+# Brand DOM contract: Grok
+# This is the selector contract SPE automation targets. Mirror the REAL platform's DOM.
+# null = real platform does not expose this identifier. TODO = needs dev to inventory.
+# Response-area selectors (response_container/content) are how sims READ output - high priority.
+brand: grok
+deployment_subdomain: llm
+deployment_url: llm.patoexpectsspeed.com
+# Placeholders below use ${token} syntax = value injected dynamically at render time,
+# NOT a literal string to hardcode. Tokens used in this file:
+placeholders:
+  "${modelName}": The currently selected model name (updates when the user switches model)
+  "${email}": The signed-in user's email address
+  "${username}": The signed-in user's display name
+
+controls:
+  model_switcher:
+    label: "${modelName}"
+    aria: Model select
+    testid: null
+    id: model-select-trigger
+  model_search:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: null
+    menu_role: menu
+    menu_attr: "data-radix-menu-content"
+    option_row_role: menuitem
+    option_row_attr: "data-radix-collection-item"
+    notes: "No search input - Grok picker is a Radix role=menu. Match model rows by role=menuitem + data-radix-collection-item + visible model-name text. No per-model testid. ids (radix-_r_*) are dynamic. Trigger button is id=model-select-trigger."
+  composer:
+    label: null
+    placeholder: Ask Anything
+    aria: Ask Grok anything
+    testid: chat-input
+    id: null
+  send_button:
+    label: null
+    aria: Submit
+    testid: chat-submit
+    id: null
+  stop_generating:
+    label: null
+    aria: Stop model response
+    testid: null
+    id: null
+  voice_button:
+    label: null
+    aria: Enter voice mode
+    testid: null
+    id: null
+  dictation_button:
+    label: null
+    aria: Dictation
+    testid: null
+    id: null
+  attach_file:
+    label: null
+    aria: Attach
+    testid: attach-button
+    id: null
+  new_chat:
+    label: New chat
+    aria: null
+    testid: new-chat
+    id: null
+  history_section:
+    label: History
+    aria: History
+    testid: null
+    id: There
+  conversation_options:
+    label: null
+    aria: Options
+    testid: null
+    id: null
+  regenerate:
+    label: null
+    aria: Regenerate
+    testid: null
+    id: null
+  copy_response:
+    label: null
+    aria: Copy
+    testid: null
+    id: null
+  account_menu:
+    label: "${username} and ${email}"
+    aria: null
+    testid: null
+    id: null
+  settings:
+    label: Settings
+    aria: null
+    testid: null
+    id: null
+  response_container:
+    label: null
+    aria: null
+    testid: assistant-message
+    id: null
+    classes: message-bubble
+    notes: "Best handle: data-testid=assistant-message (on the message-bubble div). An outer wrapper carries id=response-<uuid> (dynamic prefix response-, do not select on full id). thinking-container div may appear inside for reasoning."
+  response_content:
+    label: null
+    aria: null
+    testid: null
+    id: null
+    classes: response-content-markdown
+    notes: "Stable class response-content-markdown (also has generic markdown class); rest are Tailwind utilities. Paragraphs render as <p> inside."
