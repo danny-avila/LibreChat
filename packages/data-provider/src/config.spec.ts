@@ -525,6 +525,39 @@ describe('webSearchSchema', () => {
     expect(result.tavilyScraperOptions?.timeout).toBe(15000);
   });
 
+  it('accepts content-processing options within bounds', () => {
+    const result = webSearchSchema.parse({
+      topResults: 10,
+      maxContentLength: 25000,
+      mainExpandBy: 300,
+      separatorExpandBy: 150,
+    });
+
+    expect(result.topResults).toBe(10);
+    expect(result.maxContentLength).toBe(25000);
+    expect(result.mainExpandBy).toBe(300);
+    expect(result.separatorExpandBy).toBe(150);
+  });
+
+  it('accepts zero for expansion options', () => {
+    const result = webSearchSchema.parse({
+      mainExpandBy: 0,
+      separatorExpandBy: 0,
+    });
+
+    expect(result.mainExpandBy).toBe(0);
+    expect(result.separatorExpandBy).toBe(0);
+  });
+
+  it('rejects out-of-range content-processing options', () => {
+    expect(() => webSearchSchema.parse({ topResults: 0 })).toThrow();
+    expect(() => webSearchSchema.parse({ topResults: 21 })).toThrow();
+    expect(() => webSearchSchema.parse({ topResults: 5.5 })).toThrow();
+    expect(() => webSearchSchema.parse({ maxContentLength: 0 })).toThrow();
+    expect(() => webSearchSchema.parse({ mainExpandBy: -1 })).toThrow();
+    expect(() => webSearchSchema.parse({ separatorExpandBy: -1 })).toThrow();
+  });
+
   it('rejects invalid Tavily search options', () => {
     expect(() =>
       webSearchSchema.parse({

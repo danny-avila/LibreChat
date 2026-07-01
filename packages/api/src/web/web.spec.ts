@@ -390,6 +390,56 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('safeSearch', SafeSearchTypes.OFF);
     });
 
+    it('should pass through content-processing options from webSearchConfig', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] = 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const configWithOptions = {
+        ...webSearchConfig,
+        topResults: 8,
+        maxContentLength: 50000,
+        mainExpandBy: 400,
+        separatorExpandBy: 200,
+      } as TWebSearchConfig;
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: configWithOptions,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult).toHaveProperty('topResults', 8);
+      expect(result.authResult).toHaveProperty('maxContentLength', 50000);
+      expect(result.authResult).toHaveProperty('mainExpandBy', 400);
+      expect(result.authResult).toHaveProperty('separatorExpandBy', 200);
+    });
+
+    it('should leave content-processing options undefined when not configured', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] = 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.topResults).toBeUndefined();
+      expect(result.authResult.maxContentLength).toBeUndefined();
+      expect(result.authResult.mainExpandBy).toBeUndefined();
+      expect(result.authResult.separatorExpandBy).toBeUndefined();
+    });
+
     it('should set the correct service types in authResult', async () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {

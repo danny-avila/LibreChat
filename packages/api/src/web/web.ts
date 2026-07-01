@@ -288,6 +288,10 @@ export async function loadWebSearchAuth({
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
+  authResult.topResults = webSearchConfig?.topResults;
+  authResult.maxContentLength = webSearchConfig?.maxContentLength;
+  authResult.mainExpandBy = webSearchConfig?.mainExpandBy;
+  authResult.separatorExpandBy = webSearchConfig?.separatorExpandBy;
 
   return {
     authTypes,
