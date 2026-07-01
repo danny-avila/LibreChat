@@ -1036,14 +1036,19 @@ export const useResendVerificationEmail = (
 };
 
 /**
- * Hook for requesting admin verification for pending accounts
+ * Hook for requesting admin verification for pending accounts.
  */
 export const useRequestVerificationMutation = (
   options?: t.MutationOptions<{ message: string }, { identifier: string }, unknown, unknown>,
 ): UseMutationResult<{ message: string }, unknown, { identifier: string }, unknown> => {
   return useMutation({
-    mutationFn: (variables: { identifier: string }) =>
-      request.post('/ajrasakha/users/verification-request', variables),
+    mutationFn: (variables: { identifier: string }) => {
+      const baseUrl = import.meta.env.VITE_VERIFICATION_SERVICE_URL;
+      if (!baseUrl) {
+        throw new Error('VITE_VERIFICATION_SERVICE_URL is not configured');
+      }
+      return dataService.requestVerification(baseUrl, variables);
+    },
     ...(options || {}),
   });
 };

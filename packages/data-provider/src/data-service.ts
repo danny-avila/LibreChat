@@ -1068,3 +1068,25 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/**
+ * Request admin verification for a pending account.
+ * Uses fetch instead of the internal Axios request module because this
+ * targets an external verification service, not the LibreChat API.
+ */
+export async function requestVerification(
+  baseUrl: string,
+  payload: { identifier: string },
+): Promise<{ message: string }> {
+  const url = endpoints.verificationRequest(baseUrl);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || 'Failed to send verification request');
+  }
+  return response.json();
+}
