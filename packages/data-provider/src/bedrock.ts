@@ -258,6 +258,7 @@ function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]
     existingValues = [existing];
   }
 
+  const generatedSet = new Set(generated);
   const betaHeaders = new Set<string>();
 
   [...existingValues, ...generated].forEach((value) => {
@@ -269,7 +270,15 @@ function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]
       .split(',')
       .map((header) => header.trim())
       .filter(Boolean)
-      .forEach((header) => betaHeaders.add(header));
+      .forEach((header) => {
+        /** Drop a generated beta carried over from a prior model that the
+         * current model does not generate (e.g. fine-grained-tool-streaming on
+         * a 3.7 profile); user opt-ins are always preserved. */
+        if (GENERATED_BEDROCK_BETAS.has(header) && !generatedSet.has(header)) {
+          return;
+        }
+        betaHeaders.add(header);
+      });
   });
 
   return Array.from(betaHeaders);
@@ -444,9 +453,12 @@ export const bedrockInputParser = s.tConversationSchema
           | Record<string, unknown>
           | undefined;
         const effort = additionalFields.effort;
-        if (effort && typeof effort === 'string' && effort !== '') {
+        if (typeof effort === 'string' && effort !== '') {
           additionalFields.output_config = { effort };
-        } else if (persistedAmrf) {
+        } else if (effort !== undefined && persistedAmrf) {
+          /** Explicit unset ('' or null) clears the persisted effort. An absent
+           * effort (agent resume, where the prior llmConfig persisted
+           * `output_config` but no top-level `effort`) preserves it. */
           delete persistedAmrf.output_config;
         }
         delete additionalFields.effort;
@@ -504,6 +516,17 @@ export const bedrockInputParser = s.tConversationSchema
         }
         delete additionalFields.effort;
         delete additionalFields.thinkingDisplay;
+
+        /** A bare non-adaptive thinking profile (e.g. `claude-3-7-sonnet`) must
+         * not inherit an adaptive/disabled thinking object or `output_config`
+         * persisted from another model; this branch's own fields are authoritative. */
+        const persistedAmrf = typedData.additionalModelRequestFields as
+          | Record<string, unknown>
+          | undefined;
+        if (persistedAmrf) {
+          delete persistedAmrf.thinking;
+          delete persistedAmrf.output_config;
+        }
       }
 
       /** Anthropic uses 'effort' via output_config, not reasoning_config */

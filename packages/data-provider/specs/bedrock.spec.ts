@@ -536,7 +536,10 @@ describe('bedrockInputParser', () => {
 
     // The persisted AMRF is spread back into the final request, so clearing only
     // the freshly-built fields leaves a stale value from a prior selection.
-    test('clears stale persisted output_config when an adaptive model is re-parsed without effort', () => {
+    // An agent resume round-trips its llmConfig back into model_parameters, so a
+    // persisted output_config with NO top-level effort must be preserved as the
+    // user's saved choice; only an explicit unset ('' / null) clears it.
+    test('preserves persisted output_config when an adaptive model is re-parsed without top-level effort', () => {
       const input = {
         model: 'claude-opus-4-8',
         additionalModelRequestFields: {
@@ -546,8 +549,62 @@ describe('bedrockInputParser', () => {
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
-      expect(amrf?.output_config).toBeUndefined();
+      expect(amrf?.output_config).toEqual({ effort: 'high' });
       expect(amrf?.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    });
+
+    test.each(['', null])(
+      'clears persisted output_config when effort is explicitly unset (%p)',
+      (effort) => {
+        const input = {
+          model: 'claude-opus-4-8',
+          effort,
+          additionalModelRequestFields: {
+            thinking: { type: 'adaptive', display: 'summarized' },
+            output_config: { effort: 'high' },
+          },
+        };
+        const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+        const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+        expect(amrf?.output_config).toBeUndefined();
+      },
+    );
+
+    // Switching a persisted adaptive/disabled conversation to a bare non-adaptive
+    // thinking profile (3.7) must not leak the prior thinking object or output_config.
+    test('clears persisted thinking + output_config when switching to a bare non-adaptive thinking model', () => {
+      const input = {
+        model: 'claude-3-7-sonnet',
+        additionalModelRequestFields: {
+          thinking: { type: 'disabled' },
+          output_config: { effort: 'high' },
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.output_config).toBeUndefined();
+      expect(amrf?.thinking).not.toEqual({ type: 'disabled' });
+    });
+
+    // Switching a bare Claude 4+/5 profile (both generated betas persisted) to a
+    // bare 3.7 profile must drop the fine-grained beta 3.7 does not generate.
+    test('drops a stale generated beta not applicable to the target thinking model', () => {
+      const input = {
+        model: 'claude-3-7-sonnet',
+        additionalModelRequestFields: {
+          anthropic_beta: [
+            BEDROCK_OUTPUT_128K_BETA,
+            BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
+            'context-1m-2025-08-07',
+          ],
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.anthropic_beta).toEqual([
+        BEDROCK_OUTPUT_128K_BETA,
+        'context-1m-2025-08-07',
+      ]);
     });
 
     test('disabling thinking on a bare adaptive model clears the persisted adaptive config', () => {
