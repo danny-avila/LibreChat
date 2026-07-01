@@ -1233,6 +1233,13 @@ export async function createRun({
         Constants.BASH_TOOL,
       ],
     },
+    // Let host file-authoring tools share the code-execution sandbox session so
+    // a file created with create_file/edit_file is visible to later
+    // execute_code/bash_tool calls (and vice versa). The SDK folds these tools'
+    // returned exec session/files into the shared code session and injects the
+    // existing session into their requests. Requires @librechat/agents with
+    // codeSessionToolNames support (agents#283); older versions ignore it.
+    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
