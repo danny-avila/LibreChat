@@ -541,9 +541,10 @@ export const bedrockInputParser = s.tConversationSchema
         delete amrf.reasoning_effort;
         /** A Claude model that does not support Bedrock thinking (e.g. a bare
          * `claude-3-5-sonnet` inference profile) must not carry stale thinking
-         * fields from a previously-selected thinking model. */
+         * fields from a previously-selected thinking model. `anthropic_beta` is
+         * left alone — it's the generic Bedrock Anthropic beta field and may
+         * hold a user opt-in (e.g. extended output on Claude 3.5). */
         if (!isThinkingModel) {
-          delete amrf.anthropic_beta;
           delete amrf.thinking;
           delete amrf.thinkingBudget;
           delete amrf.effort;

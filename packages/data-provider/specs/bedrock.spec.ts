@@ -503,23 +503,24 @@ describe('bedrockInputParser', () => {
 
     // Switching a persisted conversation to a non-thinking Claude model (bare or
     // prefixed) must strip stale thinking fields carried over in AMRF, so they
-    // aren't sent to a profile that can't accept them.
+    // aren't sent to a profile that can't accept them — but a user-configured
+    // `anthropic_beta` opt-in must be preserved.
     test.each(['claude-3-5-sonnet', 'anthropic.claude-3-5-sonnet'])(
-      'strips stale thinking fields for non-thinking Claude %s',
+      'strips stale thinking fields but keeps user anthropic_beta for non-thinking Claude %s',
       (model) => {
         const input = {
           model,
           additionalModelRequestFields: {
             thinking: { type: 'adaptive', display: 'summarized' },
-            anthropic_beta: [BEDROCK_OUTPUT_128K_BETA],
+            anthropic_beta: ['max-tokens-3-5-sonnet-2024-07-15'],
             output_config: { effort: 'high' },
           },
         };
         const result = bedrockInputParser.parse(input) as Record<string, unknown>;
         const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
         expect(amrf?.thinking).toBeUndefined();
-        expect(amrf?.anthropic_beta).toBeUndefined();
         expect(amrf?.output_config).toBeUndefined();
+        expect(amrf?.anthropic_beta).toEqual(['max-tokens-3-5-sonnet-2024-07-15']);
       },
     );
 
