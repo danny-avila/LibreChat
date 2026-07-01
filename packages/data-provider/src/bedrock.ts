@@ -202,6 +202,22 @@ export function supportsContext1m(model: string): boolean {
 }
 
 /**
+ * A Bedrock Claude model ID may be prefixed (`anthropic.claude-*`,
+ * `us.anthropic.claude-*`, `global.anthropic.claude-*`) or bare (`claude-*`,
+ * used when the LibreChat model ID maps to an application inference profile).
+ * Match on the `claude` family token so every form is recognized — requiring
+ * the literal `anthropic.` prefix silently dropped thinking config, beta
+ * headers, and sampling handling for inference-profile deployments.
+ */
+const BEDROCK_CLAUDE_4PLUS_THINKING =
+  /claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/;
+
+/** Whether a Bedrock model ID is an Anthropic Claude model (prefixed or bare). */
+function isBedrockClaudeModel(model: string): boolean {
+  return model.includes('claude');
+}
+
+/**
  * Gets the appropriate anthropic_beta headers for Bedrock Anthropic models.
  * Bedrock uses `anthropic_beta` (with underscore) in additionalModelRequestFields.
  *
@@ -213,11 +229,8 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
 
   /** Mythos-class (Fable/Mythos) is intentionally not matched: these betas are built-in/no-op for the
    * 4.7+ generation (Fable has native 128K output), so omitting them on Bedrock is lossless. */
-  const isClaude4PlusModel =
-    /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
-      model,
-    );
-  const isClaudeThinkingModel = model.includes('anthropic.claude-3-7-sonnet') || isClaude4PlusModel;
+  const isClaude4PlusModel = BEDROCK_CLAUDE_4PLUS_THINKING.test(model);
+  const isClaudeThinkingModel = model.includes('claude-3-7-sonnet') || isClaude4PlusModel;
 
   if (isClaudeThinkingModel) {
     betaHeaders.push(BEDROCK_OUTPUT_128K_BETA);
@@ -410,10 +423,8 @@ export const bedrockInputParser = s.tConversationSchema
     /** Configure thinking for Bedrock Anthropic models: 3.7 Sonnet, Claude 4+ (opus/sonnet/haiku), and Mythos-class (Fable/Mythos). */
     if (
       typeof typedData.model === 'string' &&
-      (typedData.model.includes('anthropic.claude-3-7-sonnet') ||
-        /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
-          typedData.model,
-        ) ||
+      (typedData.model.includes('claude-3-7-sonnet') ||
+        BEDROCK_CLAUDE_4PLUS_THINKING.test(typedData.model) ||
         s.isMythosClassModel(typedData.model))
     ) {
       const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
@@ -478,7 +489,7 @@ export const bedrockInputParser = s.tConversationSchema
       /** Anthropic uses 'effort' via output_config, not reasoning_config */
       delete additionalFields.reasoning_effort;
 
-      if ((typedData.model as string).includes('anthropic.')) {
+      if (isBedrockClaudeModel(typedData.model as string)) {
         const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model as string);
         if (betaHeaders.length > 0) {
           const existingBetaHeaders = (
@@ -509,7 +520,7 @@ export const bedrockInputParser = s.tConversationSchema
     }
 
     const isAnthropicModel =
-      typeof typedData.model === 'string' && typedData.model.includes('anthropic.');
+      typeof typedData.model === 'string' && isBedrockClaudeModel(typedData.model);
 
     /** Strip stale fields from previously-persisted additionalModelRequestFields */
     if (

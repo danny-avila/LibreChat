@@ -461,6 +461,46 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
+    // Bedrock application inference profiles surface a bare `claude-*` model ID
+    // (no `anthropic.` prefix). The thinking/beta config must still apply.
+    test('should configure adaptive thinking for a bare claude-sonnet-5 (inference profile) ID', () => {
+      const input = { model: 'claude-sonnet-5' };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('bare claude-* IDs match their anthropic.-prefixed equivalents', () => {
+      const thinkingFor = (model: string) => {
+        const result = bedrockInputParser.parse({ model }) as Record<string, unknown>;
+        return (result.additionalModelRequestFields as Record<string, unknown>).thinking;
+      };
+      expect(thinkingFor('claude-sonnet-5')).toEqual(thinkingFor('anthropic.claude-sonnet-5'));
+      expect(thinkingFor('claude-opus-4-8')).toEqual(thinkingFor('us.anthropic.claude-opus-4-8'));
+      expect(thinkingFor('claude-sonnet-4-6')).toEqual(thinkingFor('anthropic.claude-sonnet-4-6'));
+    });
+
+    test('should configure extended thinking for a bare claude-3-7-sonnet ID', () => {
+      const input = { model: 'claude-3-7-sonnet' };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBe(true);
+      expect(additionalFields.thinkingBudget).toBe(2000);
+      expect(additionalFields.anthropic_beta).toEqual([BEDROCK_OUTPUT_128K_BETA]);
+    });
+
+    test('should not configure thinking for non-Claude Bedrock models', () => {
+      const input = { model: 'meta.llama3-1-8b-instruct-v1:0' };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as
+        | Record<string, unknown>
+        | undefined;
+      expect(additionalFields?.thinking).toBeUndefined();
+      expect(additionalFields?.anthropic_beta).toBeUndefined();
+    });
+
     test('should match anthropic.claude-haiku-6 model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-haiku-6',
