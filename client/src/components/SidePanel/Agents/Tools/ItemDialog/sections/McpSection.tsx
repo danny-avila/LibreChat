@@ -167,31 +167,45 @@ export default function McpSection({ item }: Props) {
         <p className="text-sm leading-relaxed text-text-secondary">{item.description}</p>
       )}
 
-      <div className="flex items-center justify-between rounded-xl border border-border-light bg-surface-secondary px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn('size-2.5 rounded-full', statusDisplay.dotClass)}
-            aria-hidden="true"
-          />
-          <span className="text-sm font-medium text-text-primary">
-            {localize(statusDisplay.labelKey)}
-          </span>
+      <div className="flex flex-col">
+        <div className="flex items-center justify-between rounded-xl border border-border-light bg-surface-secondary px-3 py-2.5">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn('size-2.5 rounded-full', statusDisplay.dotClass)}
+              aria-hidden="true"
+            />
+            <span className="text-sm font-medium text-text-primary">
+              {localize(statusDisplay.labelKey)}
+            </span>
+          </div>
+          {isConnected && statusIconProps && <MCPServerStatusIcon {...statusIconProps} />}
         </div>
-        {isConnected && statusIconProps && <MCPServerStatusIcon {...statusIconProps} />}
-      </div>
 
-      {!isConnected && (
-        <Button
-          type="button"
-          variant="submit"
-          className="w-full gap-2"
-          disabled={isBusy}
-          onClick={handleConnect}
+        {/* Connect collapses smoothly once connected. Its top spacing lives inside
+         * the reveal so the parent's flex gap never leaves a hole when it's gone,
+         * and the auto-height dialog follows the grid-rows tween in one motion. */}
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows] [transition-duration:var(--resize-dur)] [transition-timing-function:var(--resize-ease)] motion-reduce:transition-none',
+            isConnected ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+          )}
         >
-          {isBusy && <Spinner className="size-4" />}
-          {localize('com_nav_mcp_connect_server', { 0: serverName })}
-        </Button>
-      )}
+          <div className="min-h-0 overflow-hidden">
+            <Button
+              type="button"
+              variant="submit"
+              className="mt-5 w-full gap-2"
+              disabled={isBusy}
+              tabIndex={isConnected ? -1 : undefined}
+              aria-hidden={isConnected || undefined}
+              onClick={handleConnect}
+            >
+              {isBusy && <Spinner className="size-4" />}
+              {localize('com_nav_mcp_connect_server', { 0: serverName })}
+            </Button>
+          </div>
+        </div>
+      </div>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
