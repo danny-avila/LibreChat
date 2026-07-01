@@ -27,9 +27,7 @@ describe('definitions.ts', () => {
 
     expect(definition.description).toBe(WebSearchToolDefinition.description);
     expect(definition.description).toMatch(/search/i);
-    expect(definition.description.length).toBeLessThanOrEqual(
-      MAX_PROVIDER_TOOL_DESCRIPTION_LENGTH,
-    );
+    expect(definition.description.length).toBeLessThanOrEqual(MAX_PROVIDER_TOOL_DESCRIPTION_LENGTH);
   });
 
   describe('loadToolDefinitions', () => {
