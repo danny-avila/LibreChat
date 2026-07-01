@@ -404,7 +404,7 @@ export default function ToolCall({
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}
-      {hasOutput &&
+      {mcpApps.length > 0 &&
         mcpApps.map((app) => <MCPAppView key={app.resourceId} app={app} args={_args} />)}
     </>
   );

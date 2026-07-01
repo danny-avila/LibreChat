@@ -316,13 +316,16 @@ export function formatToolContent(
     }
   }
 
-  // MCP Apps: if the tool declares a ui:// resourceUri but didn't include a resource
-  // content item, create a synthetic UIResource so the frontend renders AppRenderer.
+  // MCP Apps: the tool-declared ui:// resourceUri is the app the host renders for the call, so
+  // synthesize it unless the result already returned that exact resource. A secondary ui://
+  // resource in the result must not suppress the declared app.
+  const declaredAppAlreadyReturned =
+    metadata?.resourceUri != null && uiResources.some((r) => r.uri === metadata.resourceUri);
   if (
-    uiResources.length === 0 &&
     metadata?.resourceUri &&
     metadata.serverName &&
-    metadata.toolName
+    metadata.toolName &&
+    !declaredAppAlreadyReturned
   ) {
     const resourceId = deriveResourceId(
       metadata.resourceUri,

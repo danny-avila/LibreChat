@@ -977,19 +977,25 @@ Please follow these instructions when using tools from the respective MCP server
 
     const uris = new Set<string>();
     let cursor: string | undefined;
-    for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
-      const result: ListResourcesResult = await connection.client.request(
-        { method: 'resources/list', params: cursor != null ? { cursor } : {} },
-        ListResourcesResultSchema,
-        { timeout: connection.timeout },
-      );
-      for (const resource of result.resources) {
-        uris.add(resource.uri);
+    // A template-only server may not implement resources/list; treat its failure as an empty
+    // concrete list so advertised templates below are still collected and can authorize reads.
+    try {
+      for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
+        const result: ListResourcesResult = await connection.client.request(
+          { method: 'resources/list', params: cursor != null ? { cursor } : {} },
+          ListResourcesResultSchema,
+          { timeout: connection.timeout },
+        );
+        for (const resource of result.resources) {
+          uris.add(resource.uri);
+        }
+        if (result.nextCursor == null) {
+          break;
+        }
+        cursor = result.nextCursor;
       }
-      if (result.nextCursor == null) {
-        break;
-      }
-      cursor = result.nextCursor;
+    } catch (error) {
+      logger.debug(`[MCP][${cacheKey}] resources/list unavailable; using templates only.`, error);
     }
 
     const templates: RegExp[] = [];

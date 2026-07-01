@@ -1561,6 +1561,30 @@ describe('MCPManager', () => {
       const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
       expect(methods).toContain('resources/read');
     });
+
+    it('authorizes a template match when the server does not implement resources/list', async () => {
+      const request = jest.fn().mockImplementation((req: { method: string }) => {
+        if (req.method === 'resources/list') {
+          return Promise.reject(new Error('Method not found'));
+        }
+        if (req.method === 'resources/templates/list') {
+          return Promise.resolve({ resourceTemplates: [{ uriTemplate: 'db://items/{id}' }] });
+        }
+        return Promise.resolve({ contents: [] });
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+      await manager.readResource({
+        userId: 'user-123',
+        serverName: 'srv',
+        uri: 'db://items/42',
+        user: mockUser as IUser,
+      });
+
+      const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+      expect(methods).toContain('resources/read');
+    });
   });
 
   describe('getConnection', () => {

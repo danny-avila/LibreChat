@@ -357,6 +357,51 @@ describe('formatToolContent', () => {
       expect(uiResourceArtifact?.resultMeta).toBeUndefined();
     });
 
+    it('still synthesizes the tool-declared app when the result returns a different ui:// resource', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'ui://chart',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>c</p>',
+            },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+      });
+
+      const uris = (artifacts?.ui_resources?.data ?? []).map((r) => r.uri);
+      expect(uris).toContain('ui://chart');
+      expect(uris).toContain('ui://app');
+    });
+
+    it('does not double-synthesize when the returned resource is the declared app', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: 'text/html;profile=mcp-app', text: '<p>a</p>' },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+      });
+
+      const uris = (artifacts?.ui_resources?.data ?? []).map((r) => r.uri);
+      expect(uris).toEqual(['ui://app']);
+    });
+
     it('suppresses embedded ui:// resources when apps are disabled for the scope', () => {
       const result: t.MCPToolCallResponse = {
         content: [
