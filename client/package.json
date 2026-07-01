@@ -76,7 +76,7 @@
     "i18next-browser-languagedetector": "^8.0.3",
     "input-otp": "^1.4.2",
     "jotai": "^2.12.5",
-    "js-cookie": "^3.0.5",
+    "js-cookie": "^3.0.7",
     "librechat-data-provider": "*",
     "lodash": "^4.17.23",
     "lucide-react": "^0.394.0",
