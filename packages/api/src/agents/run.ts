@@ -1193,7 +1193,14 @@ export async function createRun({
   // would pause with no approval surface or resume endpoint, and the route would emit a
   // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
   // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
-  const hitl = hitlCapable ? buildHITLRunWiring(toolApprovalPolicy) : undefined;
+  const hitl = hitlCapable
+    ? buildHITLRunWiring(toolApprovalPolicy, {
+        userId: user?.id,
+        conversationId: requestBody?.conversationId,
+        tenantId: tenantId ?? user?.tenantId,
+        appConfig,
+      })
+    : undefined;
   if (hitl) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };

@@ -23,6 +23,7 @@ const {
   createStreamServices,
   initializeFileStorage,
   initializeDeploymentSkills,
+  loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
@@ -124,6 +125,16 @@ const startServer = async () => {
   await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
+  // Register any programmatic tool-approval policy hooks declared in
+  // `endpoints.agents.toolApproval.hooks`. Honor the `enabled` kill switch: when tool
+  // approval is off we pass no hooks, so a disabled endpoint imports/runs nothing (and any
+  // previously loaded batch is unregistered). Hooks are read from the BASE config only —
+  // they register once, process-wide; per-user/tenant differences belong inside the hook
+  // (via its context), not in per-override module lists.
+  const toolApproval = appConfig?.endpoints?.agents?.toolApproval;
+  await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
+    basePath: path.resolve(__dirname, '../..'),
+  });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
