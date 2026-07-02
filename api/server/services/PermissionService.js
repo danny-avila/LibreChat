@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PrincipalModel, CacheKeys } = require('librechat-data-provider');
+const getLogStores = require('~/cache/getLogStores');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
@@ -126,6 +127,33 @@ const grantPermission = async ({
 };
 
 /**
+ * Cached wrapper for db.getUserPrincipals
+ * @param {Object} params - Parameters for getting user principals
+ * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
+ * @param {string} [params.role] - Optional user role
+ * @returns {Promise<Array>} Array of principal objects
+ */
+const getCachedUserPrincipals = async ({ userId, role }) => {
+  const cacheKey = `acl:principals:${userId.toString()}:${role || 'undefined'}`;
+  const cache = getLogStores(CacheKeys.ACL_PRINCIPALS);
+
+  if (process.env.NODE_ENV !== 'test') {
+    let principals = await cache.get(cacheKey);
+    if (principals) {
+      return principals;
+    }
+  }
+
+  let principals = await db.getUserPrincipals({ userId, role });
+
+  if (process.env.NODE_ENV !== 'test') {
+    await cache.set(cacheKey, principals, 60 * 1000); // 1 minute TTL
+  }
+
+  return principals;
+};
+
+/**
  * Check if a user has specific permission bits on a resource
  * @param {Object} params - Parameters for checking permissions
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
@@ -143,7 +171,7 @@ const checkPermission = async ({ userId, role, resourceType, resourceId, require
 
     validateResourceType(resourceType);
 
-    const principals = await db.getUserPrincipals({ userId, role });
+    const principals = await getCachedUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return false;
@@ -172,7 +200,7 @@ const getEffectivePermissions = async ({ userId, role, resourceType, resourceId 
   try {
     validateResourceType(resourceType);
 
-    const principals = await db.getUserPrincipals({ userId, role });
+    const principals = await getCachedUserPrincipals({ userId, role });
 
     if (principals.length === 0) {
       return 0;
@@ -208,7 +236,7 @@ const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceI
 
   try {
     // Get user principals (user + groups + public)
-    const principals = await db.getUserPrincipals({ userId, role });
+    const principals = await getCachedUserPrincipals({ userId, role });
 
     // Use batch method from aclEntry
     const permissionsMap = await db.getEffectivePermissionsForResources(
@@ -246,7 +274,7 @@ const findAccessibleResources = async ({ userId, role, resourceType, requiredPer
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await db.getUserPrincipals({ userId, role });
+    const principalsList = await getCachedUserPrincipals({ userId, role });
 
     if (principalsList.length === 0) {
       return [];

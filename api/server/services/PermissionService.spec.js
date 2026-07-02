@@ -6,6 +6,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   PrincipalModel,
+  CacheKeys,
 } = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
@@ -19,6 +20,7 @@ const {
   ensureGroupPrincipalExists,
 } = require('./PermissionService');
 const { findRoleByIdentifier, getUserPrincipals, seedDefaultRoles } = require('~/models');
+const getLogStores = require('~/cache/getLogStores');
 
 // Mock the getTransactionSupport function for testing
 jest.mock('@librechat/data-schemas', () => ({
@@ -77,6 +79,10 @@ afterAll(async () => {
 beforeEach(async () => {
   // Clear test data but keep seeded roles
   await AclEntry.deleteMany({});
+  
+  // Clear the ACL Principals cache
+  const cache = getLogStores(CacheKeys.ACL_PRINCIPALS);
+  await cache.clear();
 });
 
 // Mock getUserPrincipals to avoid depending on the actual implementation
