@@ -192,6 +192,26 @@ function ToolCardImpl({
       </button>
       {(canFavorite || canConfigure || showInfoOnly) && (
         <div className="absolute bottom-2 right-2 flex items-center gap-1">
+          {(canConfigure || showInfoOnly) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConfigure?.(item);
+              }}
+              aria-label={
+                canConfigure ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
+              }
+              className={cn(
+                'flex size-7 items-center justify-center rounded-lg text-text-secondary',
+                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
+                'group-focus-within:opacity-100 group-hover:opacity-100',
+                'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
+              )}
+            >
+              <DetailIcon className="size-4" aria-hidden="true" />
+            </button>
+          )}
           {canFavorite && (
             <button
               type="button"
@@ -211,26 +231,6 @@ function ToolCardImpl({
               )}
             >
               <Star className={cn('size-4', isFavorited && 'fill-current')} aria-hidden="true" />
-            </button>
-          )}
-          {(canConfigure || showInfoOnly) && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onConfigure?.(item);
-              }}
-              aria-label={
-                canConfigure ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
-              }
-              className={cn(
-                'flex size-7 items-center justify-center rounded-lg text-text-secondary',
-                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
-                'group-focus-within:opacity-100 group-hover:opacity-100',
-                'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
-              )}
-            >
-              <DetailIcon className="size-4" aria-hidden="true" />
             </button>
           )}
         </div>
