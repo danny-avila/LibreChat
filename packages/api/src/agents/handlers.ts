@@ -793,14 +793,31 @@ function getAuthorInfo(req: ServerRequest): {
   };
 }
 
+/* Models often stringify nested JSON (JSON-in-JSON) instead of passing a
+   real array/object, which would otherwise fail validation and cost a retry
+   round-trip. Parse a JSON string back to its value; leave non-strings and
+   unparseable strings untouched so the explicit errors below still fire. */
+function coerceJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 function normalizeEditArgs(args: {
   old_text?: unknown;
   new_text?: unknown;
   edits?: unknown;
 }): TextEdit[] | string {
-  if (Array.isArray(args.edits) && args.edits.length > 0) {
+  const coercedEdits = coerceJsonValue(args.edits);
+  if (Array.isArray(coercedEdits) && coercedEdits.length > 0) {
     const edits: TextEdit[] = [];
-    for (const edit of args.edits) {
+    for (const rawEdit of coercedEdits) {
+      const edit = coerceJsonValue(rawEdit);
       if (!edit || typeof edit !== 'object') {
         return 'Each edit must be an object with old_text and new_text.';
       }
