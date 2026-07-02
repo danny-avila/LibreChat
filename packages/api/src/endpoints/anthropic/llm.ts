@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
   anthropicSettings,
+  omitsSamplingParameters,
   removeNullishValues,
   ThinkingDisplay,
   AuthKeys,
@@ -108,8 +109,19 @@ function getLLMConfig(
       ? ((persistedThinking as { display: string }).display as ThinkingDisplay | string)
       : undefined;
 
+  /**
+   * `thinking` may round-trip as the full Anthropic object rather than a
+   * boolean. Normalize to a flag so a persisted `{ type: 'disabled' }` (e.g. a
+   * Sonnet 5 "thinking off" config stored back into `model_parameters`) is
+   * treated as off — a truthy object would otherwise flip thinking back on.
+   */
+  const thinkingFlag =
+    typeof persistedThinking === 'object' && persistedThinking != null
+      ? (persistedThinking as { type?: string }).type !== 'disabled'
+      : (persistedThinking ?? anthropicSettings.thinking.default);
+
   const systemOptions = {
-    thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
+    thinking: thinkingFlag,
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
     thinkingBudget:
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
@@ -202,10 +214,12 @@ function getLLMConfig(
     }
   }
 
+  const shouldOmitSamplingParameters = omitsSamplingParameters(mergedOptions.model);
+
   const hasActiveThinking = requestOptions.thinking != null;
   const isThinkingModel =
     /claude-3[-.]7/.test(mergedOptions.model) || supportsAdaptiveThinking(mergedOptions.model);
-  if (!isThinkingModel || !hasActiveThinking) {
+  if (!shouldOmitSamplingParameters && (!isThinkingModel || !hasActiveThinking)) {
     requestOptions.topP = mergedOptions.topP;
     requestOptions.topK = mergedOptions.topK;
   }
@@ -291,6 +305,12 @@ function getLLMConfig(
         delete (requestOptions.invocationKwargs as Record<string, unknown>)[param];
       }
     });
+  }
+
+  if (shouldOmitSamplingParameters) {
+    delete requestOptions.temperature;
+    delete requestOptions.topP;
+    delete requestOptions.topK;
   }
 
   const tools = [];
