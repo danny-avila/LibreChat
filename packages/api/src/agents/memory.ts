@@ -11,6 +11,7 @@ import {
   EModelEndpoint,
   PermissionTypes,
   AgentCapabilities,
+  stripAgentIdSuffix,
 } from 'librechat-data-provider';
 import type {
   OpenAIClientOptions,
@@ -448,14 +449,16 @@ type InlineMemoryAgent =
   | undefined;
 
 /**
- * Resolves the memory partition an agent reads/writes: its own id when the
- * agent opted into isolated memory (`memory_scope: 'agent'`), otherwise
- * `undefined` for the shared personal pool. Ephemeral agents never carry
- * `memory_scope`, so they always resolve to the shared pool.
+ * Resolves the memory partition an agent reads/writes: its persisted id when
+ * the agent opted into isolated memory (`memory_scope: 'agent'`), otherwise
+ * `undefined` for the shared personal pool. Runtime ids carry a `____N`
+ * suffix in added-conversation paths, so the suffix is stripped to keep the
+ * partition stable across single- and multi-agent runs. Ephemeral agents
+ * never carry `memory_scope`, so they always resolve to the shared pool.
  */
 export function getMemoryAgentId(agent: InlineMemoryAgent): string | undefined {
   if (agent?.memory_scope === MemoryScope.agent && typeof agent.id === 'string' && agent.id) {
-    return agent.id;
+    return stripAgentIdSuffix(agent.id);
   }
   return undefined;
 }

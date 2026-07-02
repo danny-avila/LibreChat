@@ -742,4 +742,10 @@ describe('getMemoryAgentId', () => {
     expect(getMemoryAgentId({ memory_scope: MemoryScope.agent })).toBeUndefined();
     expect(getMemoryAgentId(null)).toBeUndefined();
   });
+
+  it('strips runtime id suffixes so added-conversation runs share the persisted partition', () => {
+    expect(getMemoryAgentId({ id: 'agent_a____1', memory_scope: MemoryScope.agent })).toBe(
+      'agent_a',
+    );
+  });
 });

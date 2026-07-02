@@ -108,19 +108,31 @@ export default function MemoryPanel() {
     ];
   }, [memories, localize]);
 
+  /** Falls back to "all" when the selected partition no longer exists
+   *  (e.g. the last memory of that agent was deleted), so the panel never
+   *  gets stuck filtering on a removed partition. */
+  const activePartition = useMemo(() => {
+    if (partitionFilter === PARTITION_ALL || partitionFilter === PARTITION_PERSONAL) {
+      return partitionFilter;
+    }
+    return partitionOptions?.some((option) => option.value === partitionFilter)
+      ? partitionFilter
+      : PARTITION_ALL;
+  }, [partitionOptions, partitionFilter]);
+
   const filteredMemories = useMemo(() => {
     const partitionMemories =
-      partitionFilter === PARTITION_ALL
+      activePartition === PARTITION_ALL
         ? memories
         : memories.filter((memory) =>
-            partitionFilter === PARTITION_PERSONAL
+            activePartition === PARTITION_PERSONAL
               ? memory.agentId == null
-              : memory.agentId === partitionFilter,
+              : memory.agentId === activePartition,
           );
     return matchSorter(partitionMemories, searchQuery, {
       keys: ['key', 'value'],
     });
-  }, [memories, searchQuery, partitionFilter]);
+  }, [memories, searchQuery, activePartition]);
 
   const currentRows = useMemo(() => {
     return filteredMemories.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
@@ -129,7 +141,7 @@ export default function MemoryPanel() {
   // Reset page when search or partition changes
   useEffect(() => {
     setPageIndex(0);
-  }, [searchQuery, partitionFilter]);
+  }, [searchQuery, activePartition]);
 
   if (isLoading) {
     return (
@@ -189,7 +201,7 @@ export default function MemoryPanel() {
         {/* Partition filter (only when agent-scoped memories exist) */}
         {partitionOptions && (
           <Dropdown
-            value={partitionFilter}
+            value={activePartition}
             onChange={setPartitionFilter}
             options={partitionOptions}
             className="w-full"

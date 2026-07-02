@@ -1,6 +1,12 @@
 const express = require('express');
 const { Tokenizer, generateCheckAccess } = require('@librechat/api');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const {
+  PermissionTypes,
+  PermissionBits,
+  ResourceType,
+  Permissions,
+} = require('librechat-data-provider');
+const { findAccessibleResources } = require('~/server/services/PermissionService');
 const {
   getAllUserMemories,
   getUserMemories,
@@ -49,14 +55,22 @@ router.use(requireJwtAuth);
 const getAgentIdParam = (value) =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 
-/** Resolves agent display names for agent-partitioned memories */
-const withAgentNames = async (memories) => {
+/** Resolves agent display names for agent-partitioned memories, restricted
+ *  to agents the requester can VIEW — `agentId` is caller-supplied on write,
+ *  so an unrestricted lookup would leak private agents' names. */
+const withAgentNames = async (memories, user) => {
   const agentIds = [...new Set(memories.map((m) => m.agentId).filter(Boolean))];
   if (agentIds.length === 0) {
     return memories;
   }
   try {
-    const agents = await getAgents({ id: { $in: agentIds } });
+    const accessibleIds = await findAccessibleResources({
+      userId: user.id,
+      role: user.role,
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    const agents = await getAgents({ id: { $in: agentIds }, _id: { $in: accessibleIds } });
     const namesById = new Map(agents.map((agent) => [agent.id, agent.name]));
     return memories.map((memory) =>
       memory.agentId
@@ -77,7 +91,7 @@ router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
   try {
     const memories = await getAllUserMemories(req.user.id);
 
-    const sortedMemories = (await withAgentNames(memories)).sort(
+    const sortedMemories = (await withAgentNames(memories, req.user)).sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
 
