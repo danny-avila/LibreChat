@@ -177,6 +177,19 @@ export function getMissingRuntimeBodyPlaceholderFields(
 }
 
 /**
+ * Checks whether an error message indicates a connection attempt failed because
+ * required `{{LIBRECHAT_BODY_*}}` placeholder fields were missing from the request
+ * (thrown by `UserConnectionManager#getUserConnection`). This happens whenever a
+ * server using body placeholders is contacted outside of an active chat turn
+ * (e.g. Reinitialize, tool discovery, or admin-panel operations), where there is
+ * no request body to resolve `conversationId`/`parentMessageId`/`messageId` from.
+ * Distinct from other `InvalidRequest` errors the same call can throw.
+ */
+export function isMissingRuntimeBodyPlaceholderMessage(message: string): boolean {
+  return message.includes('Request body field(s) required to resolve runtime MCP placeholders');
+}
+
+/**
  * `BODY` placeholders vary by chat request, so the normal userId:serverName
  * cache would reuse a connection built with stale request context.
  *

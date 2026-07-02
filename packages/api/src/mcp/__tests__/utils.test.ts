@@ -14,6 +14,7 @@ import {
   hasRuntimeContextPlaceholders,
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
+  isMissingRuntimeBodyPlaceholderMessage,
   isUserSourced,
   requiresEphemeralUserConnection,
 } from '~/mcp/utils';
@@ -682,6 +683,22 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('isMissingRuntimeBodyPlaceholderMessage', () => {
+  it('matches the error UserConnectionManager#getUserConnection throws for missing BODY fields', () => {
+    const message =
+      '[MCP][User: user-123][Thingy] Request body field(s) required to resolve runtime MCP placeholders: conversationId, parentMessageId.';
+    expect(isMissingRuntimeBodyPlaceholderMessage(message)).toBe(true);
+  });
+
+  it('does not match unrelated InvalidRequest errors', () => {
+    expect(isMissingRuntimeBodyPlaceholderMessage('[MCP] User object missing id property')).toBe(
+      false,
+    );
+    expect(isMissingRuntimeBodyPlaceholderMessage('OAuth authentication required')).toBe(false);
+    expect(isMissingRuntimeBodyPlaceholderMessage('')).toBe(false);
   });
 });
 
