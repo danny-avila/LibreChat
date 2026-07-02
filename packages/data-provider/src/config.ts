@@ -10,13 +10,16 @@ import {
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { REFILL_INTERVAL_UNITS } from './balance';
+export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
+
+export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -63,6 +66,7 @@ export const excludedKeys = new Set([
   'files',
   'spec',
   'disableParams',
+  'chatProjectId',
 ]);
 
 export enum SettingsViews {
@@ -242,6 +246,192 @@ export const cloudfrontConfigSchema = z
 
 export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
 
+const skillSyncIdentifierSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/, {
+    message:
+      'must start with a letter or digit and contain only letters, digits, underscores, or hyphens',
+  });
+
+export const SKILL_SYNC_MIN_INTERVAL_MINUTES = 5;
+export const SKILL_SYNC_MAX_INTERVAL_MINUTES = Math.floor(2147483647 / 60_000);
+export const SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH = 2;
+export const SKILL_SYNC_MAX_DISCOVERY_DEPTH = 10;
+
+const skillSyncGitHubOwnerSchema = z
+  .string()
+  .min(1)
+  .max(39)
+  .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/, {
+    message: 'must be a valid GitHub owner name',
+  });
+
+const skillSyncGitHubRepoSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-zA-Z0-9._-]+$/, {
+    message: 'must be a valid GitHub repository name',
+  });
+
+const invalidGitRefChars = new Set(['~', '^', ':', '?', '*', '[']);
+
+function hasInvalidGitRefCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 32 || code === 127 || invalidGitRefChars.has(char)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const skillSyncGitHubRefSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.startsWith('/') && !value.endsWith('/'), {
+    message: 'must not start or end with a slash',
+  })
+  .refine((value) => !value.includes('..') && !value.includes('//') && !value.includes('\\'), {
+    message: 'must not contain traversal segments, empty path segments, or backslashes',
+  })
+  .refine((value) => !value.includes('@{') && value !== '@', {
+    message: 'must not contain invalid Git ref syntax',
+  })
+  .refine((value) => !value.endsWith('.'), {
+    message: 'must not end with a dot',
+  })
+  .refine((value) => !hasInvalidGitRefCharacter(value), {
+    message: 'must not contain invalid Git ref characters',
+  })
+  .refine(
+    (value) =>
+      value
+        .split('/')
+        .every((segment) => segment && !segment.startsWith('.') && !segment.endsWith('.lock')),
+    {
+      message: 'must contain valid Git ref path segments',
+    },
+  );
+
+const skillSyncPathSchema = z
+  .string()
+  .max(500)
+  .refine((value) => value.trim().length > 0, { message: 'must not be empty' })
+  .transform((value) => {
+    const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+    return trimmed === '.' ? '' : trimmed;
+  })
+  .refine((value) => !value.includes('\\') && !value.includes('..'), {
+    message: 'must not contain traversal segments or backslashes',
+  })
+  .refine((value) => value === '' || /^[a-zA-Z0-9._\-/]+$/.test(value), {
+    message: 'must contain only letters, digits, dots, underscores, hyphens, and slashes',
+  })
+  .refine(
+    (value) =>
+      value === '' || value.split('/').every((segment) => segment.length > 0 && segment !== '.'),
+    {
+      message: 'must not contain empty or dot path segments',
+    },
+  );
+
+const skillSyncTokenReferenceSchema = z
+  .string()
+  .trim()
+  .regex(/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/, {
+    message: 'must be an environment variable reference like ${GITHUB_SKILLS_TOKEN}',
+  });
+
+/**
+ * Tenant that owns the skills mirrored from a source. When set, the sync runner
+ * executes that source's database writes inside the tenant's async context so
+ * synced skills are created, listed, and shared within the tenant under strict
+ * tenant isolation. Mirrors the request tenant-id contract: no reserved system id.
+ */
+const skillSyncTenantIdSchema = z
+  .string()
+  .max(128)
+  .refine((value) => /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value), {
+    message: 'must be a valid tenant id',
+  })
+  .refine((value) => value !== '__SYSTEM__', {
+    message: 'must not be the reserved system tenant id',
+  });
+
+export const skillSyncGitHubSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    owner: skillSyncGitHubOwnerSchema,
+    repo: skillSyncGitHubRepoSchema,
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
+
+export const skillSyncConfigSchema = z
+  .object({
+    github: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncGitHubSourceSchema).default([]),
+      })
+      .superRefine((github, ctx) => {
+        if (github.enabled && github.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one GitHub source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of github.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['sources'],
+              message: `Duplicate GitHub skill sync source id "${source.id}"`,
+            });
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
+  })
+  .optional();
+
+export type SkillSyncConfig = z.infer<typeof skillSyncConfigSchema>;
+export type SkillSyncGitHubSourceConfig = z.infer<typeof skillSyncGitHubSourceSchema>;
+
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
 
@@ -382,6 +572,7 @@ export enum AgentCapabilities {
   actions = 'actions',
   context = 'context',
   skills = 'skills',
+  memory = 'memory',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -395,6 +586,15 @@ export const defaultAssistantsVersion = {
 export const baseEndpointSchema = z.object({
   streamRate: z.number().optional(),
   baseURL: z.string().optional(),
+  /**
+   * Custom request headers forwarded to the provider on every request. Values
+   * support the same placeholder resolution as custom endpoints — env vars
+   * (`${VAR}`), user fields (`{{LIBRECHAT_USER_*}}`), and request-body fields
+   * (`{{LIBRECHAT_BODY_CONVERSATIONID}}`). Primarily for routing built-in
+   * providers through an AI gateway / reverse proxy that consumes metadata
+   * headers (provider-native request shaping is preserved).
+   */
+  headers: z.record(z.string()).optional(),
   titlePrompt: z.string().optional(),
   titleModel: z.string().optional(),
   titleConvo: z.boolean().optional(),
@@ -488,6 +688,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.actions,
   AgentCapabilities.context,
   AgentCapabilities.skills,
+  AgentCapabilities.memory,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -555,6 +756,90 @@ const remoteApiSchema = z.object({
   auth: remoteApiAuthSchema.optional(),
 });
 
+/**
+ * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s
+ * `ToolPolicyMode` 1:1.
+ *
+ * - `default`: ask the user about anything not explicitly allowed (default-on).
+ * - `dontAsk`: deny anything not explicitly allowed (headless / API-key flows).
+ * - `bypass`: auto-approve everything that isn't explicitly denied
+ *   (the user-facing "stop asking me" toggle).
+ *
+ * Subagents inherit the parent's mode; this is enforced by the SDK and not
+ * overridable per-subagent.
+ */
+export const toolApprovalModeSchema = z.enum(['default', 'dontAsk', 'bypass']);
+export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
+
+/**
+ * Per-endpoint tool-approval policy.
+ *
+ * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
+ * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
+ * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * just describes the surface.
+ *
+ * Conventions:
+ * - All list entries are matched as globs (`*`). Use `mcp:server:*` to scope
+ *   a rule to every tool from a single MCP server.
+ * - `deny` always wins, including under `bypass`.
+ * - `enabled: false` is a LibreChat-only kill switch that disables the entire
+ *   HITL machinery for this endpoint (no checkpointer, no hooks, no prompts).
+ *   This is admin-level; users toggle prompting via `mode: 'bypass'` instead.
+ */
+export const toolApprovalPolicySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    mode: toolApprovalModeSchema.optional(),
+    allow: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+    ask: z.array(z.string()).optional(),
+    /** Optional reason template surfaced in the prompt; `{tool}` is interpolated. */
+    reason: z.string().optional(),
+  })
+  .optional();
+
+export type TToolApprovalPolicy = z.infer<typeof toolApprovalPolicySchema>;
+
+/**
+ * Durable checkpointer backing human-in-the-loop resume.
+ *
+ * When `toolApproval.enabled` is true, a run that pauses for review suspends its
+ * LangGraph state to a checkpoint; resuming rebuilds that state on a *fresh* `Run`
+ * — possibly on a different replica, or the same worker after a restart. That only
+ * works if the checkpoint outlives the original request, so HITL needs a durable
+ * saver, not the SDK's process-local `MemorySaver` fallback.
+ *
+ * Defaults are zero-config: with `toolApproval.enabled` on and no `checkpointer`
+ * block, LibreChat persists checkpoints to its primary MongoDB, so resume works
+ * across replicas out of the box.
+ *
+ * - `type: 'mongo'` (default) — persist to the app database; survives restarts and
+ *   resolves on any replica. A TTL index reclaims runs that are never resolved.
+ * - `type: 'memory'` — process-local only. Paused runs do NOT survive a restart and
+ *   can only be resolved on the originating worker. Single-process / dev only.
+ */
+export const checkpointerTypeSchema = z.enum(['mongo', 'memory']);
+export type TCheckpointerType = z.infer<typeof checkpointerTypeSchema>;
+
+export const checkpointerSchema = z
+  .object({
+    type: checkpointerTypeSchema.optional(),
+    /**
+     * Approval window, in seconds: how long a paused run waits for a decision
+     * before it is reclaimed. Drives both the Mongo TTL index on checkpoints and
+     * the pending-action expiry, keeping the two layers in lockstep. Defaults to
+     * 86400 (24h). Raise it for longer review windows.
+     */
+    ttl: z.number().int().positive().optional(),
+    /** Advanced: override the Mongo collection names used for checkpoints. */
+    checkpointCollectionName: z.string().optional(),
+    checkpointWritesCollectionName: z.string().optional(),
+  })
+  .optional();
+
+export type TCheckpointerConfig = z.infer<typeof checkpointerSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -571,7 +856,17 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      skills: z
+        .object({
+          maxCatalogSkills: z.number().int().min(1).max(100).optional(),
+        })
+        .optional(),
       remoteApi: remoteApiSchema.optional(),
+      /** Human-in-the-loop tool approval policy. Off by default. */
+      toolApproval: toolApprovalPolicySchema,
+      /** Durable checkpointer backing HITL resume. Defaults to the app's MongoDB
+       *  when `toolApproval.enabled` is set; ignored otherwise. */
+      checkpointer: checkpointerSchema,
     }),
   )
   .default({
@@ -637,6 +932,14 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
+    /**
+     * Forces the endpoint to use a provider's native client / request format
+     * instead of the default OpenAI-compatible client. Currently supports
+     * `anthropic`, for endpoints that speak the Anthropic `/v1/messages` API
+     * (Anthropic itself or Anthropic-compatible gateways). Omit for
+     * OpenAI-compatible endpoints.
+     */
+    provider: z.literal(EModelEndpoint.anthropic).optional(),
     headers: z.record(z.string()).optional(),
     addParams: addParamsSchema.optional(),
     dropParams: z.array(z.string()).optional(),
@@ -645,12 +948,28 @@ export const endpointSchema = baseEndpointSchema.merge(
         defaultParamsEndpoint: z.string().default('custom'),
         reasoningFormat: eReasoningParameterFormatSchema.optional(),
         reasoningKey: eReasoningResponseKeySchema.optional(),
+        /** Replays `reasoning_content` within a run's tool-call turns (e.g. Xiaomi MiMo, Kimi). */
+        includeReasoningContent: z.boolean().optional(),
+        /** Also reconstructs `reasoning_content` from persisted history across turns (implies `includeReasoningContent`). */
+        includeReasoningHistory: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
       .optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
+    /** Static per-model token config: context window and per-million-token rates */
+    tokenConfig: z
+      .record(
+        z.object({
+          prompt: z.number(),
+          completion: z.number(),
+          context: z.number(),
+          cacheRead: z.number().optional(),
+          cacheWrite: z.number().optional(),
+        }),
+      )
+      .optional(),
   }),
 );
 
@@ -972,6 +1291,14 @@ export const interfaceSchema = z
     retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    contextUsage: z.boolean().optional(),
+    contextCost: z.boolean().optional(),
+    currency: z
+      .object({
+        code: z.string(),
+        rate: z.number().positive(),
+      })
+      .optional(),
     peoplePicker: z
       .object({
         users: z.boolean().optional(),
@@ -986,6 +1313,8 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
+    defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),
     remoteAgents: z
       .object({
@@ -1004,6 +1333,17 @@ export const interfaceSchema = z
           share: z.boolean().optional(),
           public: z.boolean().optional(),
           defaultActiveOnShare: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
+    sharedLinks: z
+      .union([
+        z.boolean(),
+        z.object({
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+          snapshotFiles: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -1031,6 +1371,8 @@ export const interfaceSchema = z
     autoSubmitFromUrl: true,
     runCode: true,
     webSearch: true,
+    contextUsage: true,
+    contextCost: false,
     peoplePicker: {
       users: true,
       groups: true,
@@ -1060,6 +1402,12 @@ export const interfaceSchema = z
       share: false,
       public: false,
       defaultActiveOnShare: false,
+    },
+    sharedLinks: {
+      create: true,
+      share: true,
+      public: true,
+      snapshotFiles: true,
     },
   });
 
@@ -1140,6 +1488,8 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Whether shared links snapshot conversation files (gates the per-link "share files" checkbox). */
+  sharedLinksSnapshotFilesEnabled?: boolean;
   /** Effective default timing for when conversation titles become fetchable.
    * `immediate` = fetch in parallel with the active stream (default);
    * `final` = fetch only after the stream completes (legacy). */
@@ -1191,6 +1541,19 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
 };
+
+export type TSharedLinkStartupInterface = Pick<
+  Partial<TInterfaceConfig>,
+  'privacyPolicy' | 'termsOfService'
+>;
+
+export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &
+  Pick<
+    Partial<TStartupConfig>,
+    'analyticsGtmId' | 'bundlerURL' | 'customFooter' | 'staticBundlerURL'
+  > & {
+    interface?: TSharedLinkStartupInterface;
+  };
 
 export enum OCRStrategy {
   MISTRAL_OCR = 'mistral_ocr',
@@ -1332,11 +1695,14 @@ export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
 });
 
+export const DEFAULT_MEMORY_MAX_INPUT_TOKENS = 12000;
+
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
   charLimit: z.number().optional().default(10000),
+  maxInputTokens: z.number().int().positive().optional().default(DEFAULT_MEMORY_MAX_INPUT_TOKENS),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
   agent: z
@@ -1398,13 +1764,62 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+const messageFilterPiiCustomPatternSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  regex: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => {
+        try {
+          new RegExp(value, 'g');
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Invalid regex' },
+    ),
+});
+
+export const messageFilterPiiSchema = z.object({
+  starterPatterns: z.array(z.string()).optional(),
+  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
+});
+
+export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
+
+export const messageFilterSchema = z.object({
+  pii: messageFilterPiiSchema.optional(),
+});
+
+export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
+
+export const langfuseConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  publicKey: z.string().optional(),
+  secretKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+  fanout: z
+    .object({
+      enabled: z.boolean().optional(),
+      collectorUrl: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
+  langfuse: langfuseConfigSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
+  skillSync: skillSyncConfigSchema,
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -1445,6 +1860,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
@@ -1553,45 +1969,34 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.5',
+  'gpt-5.5-pro',
+  'chat-latest',
   'gpt-5.4',
-  // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
-  'gpt-5.4-thinking',
   'gpt-5.4-pro',
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'gpt-5.3-codex',
+  'gpt-5.2',
   'gpt-5.1',
-  'gpt-5.1-chat-latest',
   'gpt-5.1-codex',
+  'gpt-5.1-codex-max',
   'gpt-5.1-codex-mini',
   'gpt-5',
   'gpt-5-mini',
   'gpt-5-nano',
-  'gpt-5-chat-latest',
   'gpt-4.1',
   'gpt-4.1-mini',
   'gpt-4.1-nano',
   'gpt-4o-mini',
   'gpt-4o',
-  'gpt-4.5-preview',
-  'gpt-4.5-preview-2025-02-27',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0125',
-  'gpt-4-turbo',
-  'gpt-4-turbo-2024-04-09',
-  'gpt-4-0125-preview',
-  'gpt-4-turbo-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-  'gpt-3.5-turbo-16k-0613',
-  'gpt-3.5-turbo-16k',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k-0314',
-  'gpt-4-0613',
-  'gpt-3.5-turbo-0613',
 ];
 
 const sharedAnthropicModels = [
+  'claude-fable-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
+  'claude-sonnet-5',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
   'claude-sonnet-4-5',
@@ -1614,8 +2019,10 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-fable-5',
   'anthropic.claude-opus-4-8',
   'anthropic.claude-opus-4-7',
+  'anthropic.claude-sonnet-5',
   'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -2213,7 +2620,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.12',
+  CONFIG_VERSION = '1.3.13',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -2266,9 +2673,6 @@ export enum Constants {
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
 }
-
-/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
-export const MAX_SUBAGENTS = 10;
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;
@@ -2324,6 +2728,8 @@ export enum LocalStorageKeys {
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
   /** Last checked toggle for Skills per conversation ID */
   LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
+  /** Last checked toggle for Memory per conversation ID */
+  LAST_MEMORY_TOGGLE_ = 'LAST_MEMORY_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

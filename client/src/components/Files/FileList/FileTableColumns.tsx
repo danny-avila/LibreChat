@@ -3,10 +3,13 @@ import { PlusIcon } from 'lucide-react';
 import { Button, Checkbox, DotsIcon, FileIcon } from '@librechat/client';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
+import type { TVectorStore } from '~/common';
 import { formatDate, getFileType } from '~/utils';
 import { useLocalize } from '~/hooks';
 
-export const fileTableColumns: ColumnDef<TFile>[] = [
+type TFileWithVectors = TFile & { vectorsAttached?: TVectorStore[] };
+
+export const fileTableColumns: ColumnDef<TFileWithVectors>[] = [
   {
     id: 'select',
     header: ({ table }) => {
@@ -53,7 +56,7 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
       size: '150px',
     },
     accessorKey: 'filename',
-    header: ({ column }) => {
+    header: () => {
       const localize = useLocalize();
       return <>{localize('com_ui_name')}</>;
     },
@@ -68,7 +71,8 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
       return 'Vector Stores';
     },
     cell: ({ row }) => {
-      const { vectorsAttached: attachedVectorStores } = row.original;
+      const localize = useLocalize();
+      const { vectorsAttached: attachedVectorStores = [] } = row.original;
       return (
         <>
           {attachedVectorStores.map((vectorStore, index) => {
@@ -80,7 +84,7 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
                 >
                   <PlusIcon className="h-3 w-3" />
                   &nbsp;
-                  {attachedVectorStores.length - index} more
+                  {localize('com_ui_more_count', { 0: attachedVectorStores.length - index })}
                 </span>
               );
             }
@@ -100,17 +104,19 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
   {
     accessorKey: 'updatedAt',
     header: () => {
-      const localize = useLocalize();
       return 'Modified';
     },
-    cell: ({ row }) => formatDate(row.original.updatedAt),
+    cell: ({ row }) => {
+      const { updatedAt } = row.original;
+      return formatDate(updatedAt instanceof Date ? updatedAt.toISOString() : (updatedAt ?? ''));
+    },
   },
   {
     accessorKey: 'actions',
     header: () => {
       return 'Actions';
     },
-    cell: ({ row }) => {
+    cell: () => {
       return (
         <>
           <Button className="w-min content-center bg-transparent text-gray-500 hover:bg-slate-200">

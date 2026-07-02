@@ -1,16 +1,23 @@
 import { z } from 'zod';
 import * as s from './schemas';
 
-const DEFAULT_ENABLED_MAX_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 2000;
 export const BEDROCK_OUTPUT_128K_BETA = 'output-128k-2025-02-19';
 export const BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
+
+/** Betas LibreChat injects itself, safe to strip from persisted AMRF when a
+ * model no longer supports them; anything else in `anthropic_beta` is a user opt-in. */
+const GENERATED_BEDROCK_BETAS = new Set<string>([
+  BEDROCK_OUTPUT_128K_BETA,
+  BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
+]);
 
 const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
 
 type ThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
-  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue };
+  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue }
+  | { type: 'disabled' };
 
 /**
  * Resolves the final `thinking.display` value for an adaptive-thinking request.
@@ -105,7 +112,13 @@ function parseSonnetVersion(model: string): { major: number; minor: number } | n
   return null;
 }
 
-/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6+) */
+/**
+ * Mythos-class detection (Claude Fable / Mythos) lives in `schemas.ts` as
+ * `isMythosClassModel` — the single source of truth for the family names.
+ * The helpers below OR it in alongside the `opus`/`sonnet` version parsers.
+ */
+
+/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6+, Fable/Mythos) */
 export function supportsAdaptiveThinking(model: string): boolean {
   const opus = parseOpusVersion(model);
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
@@ -113,6 +126,9 @@ export function supportsAdaptiveThinking(model: string): boolean {
   }
   const sonnet = parseSonnetVersion(model);
   if (sonnet != null && (sonnet.major > 4 || (sonnet.major === 4 && sonnet.minor >= 6))) {
+    return true;
+  }
+  if (s.isMythosClassModel(model)) {
     return true;
   }
   return false;
@@ -133,6 +149,13 @@ export function omitsThinkingByDefault(model: string): boolean {
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
     return true;
   }
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet.major >= 5) {
+    return true;
+  }
+  if (s.isMythosClassModel(model)) {
+    return true;
+  }
   return false;
 }
 
@@ -141,10 +164,34 @@ export function omitsSamplingParameters(model: string): boolean {
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
     return true;
   }
+  const sonnet = parseSonnetVersion(model);
+  if (sonnet != null && sonnet.major >= 5) {
+    return true;
+  }
+  if (s.isMythosClassModel(model)) {
+    return true;
+  }
   return false;
 }
 
-/** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+) */
+/**
+ * Whether disabling thinking requires sending an explicit `{ type: 'disabled' }`
+ * config rather than simply omitting the `thinking` field.
+ *
+ * Sonnet 5 treats an omitted `thinking` field as adaptive thinking ON by
+ * default, so honoring a user who turns thinking off means sending the disabled
+ * config explicitly. Opus 4.7+ run without thinking when the field is omitted,
+ * and Fable/Mythos reject an explicit disabled config (400, thinking always
+ * on), so both are excluded.
+ *
+ * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-sonnet-5
+ */
+export function requiresExplicitThinkingDisabled(model: string): boolean {
+  const sonnet = parseSonnetVersion(model);
+  return sonnet != null && sonnet.major >= 5;
+}
+
+/** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+, Fable/Mythos) */
 export function supportsContext1m(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
   if (sonnet != null && (sonnet.major > 4 || (sonnet.major === 4 && sonnet.minor >= 6))) {
@@ -154,7 +201,26 @@ export function supportsContext1m(model: string): boolean {
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
     return true;
   }
+  if (s.isMythosClassModel(model)) {
+    return true;
+  }
   return false;
+}
+
+/**
+ * A Bedrock Claude model ID may be prefixed (`anthropic.claude-*`,
+ * `us.anthropic.claude-*`, `global.anthropic.claude-*`) or bare (`claude-*`,
+ * used when the LibreChat model ID maps to an application inference profile).
+ * Match on the `claude` family token so every form is recognized — requiring
+ * the literal `anthropic.` prefix silently dropped thinking config, beta
+ * headers, and sampling handling for inference-profile deployments.
+ */
+const BEDROCK_CLAUDE_4PLUS_THINKING =
+  /claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/;
+
+/** Whether a Bedrock model ID is an Anthropic Claude model (prefixed or bare). */
+function isBedrockClaudeModel(model: string): boolean {
+  return model.includes('claude');
 }
 
 /**
@@ -167,11 +233,10 @@ export function supportsContext1m(model: string): boolean {
 function getBedrockAnthropicBetaHeaders(model: string): string[] {
   const betaHeaders: string[] = [];
 
-  const isClaude4PlusModel =
-    /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
-      model,
-    );
-  const isClaudeThinkingModel = model.includes('anthropic.claude-3-7-sonnet') || isClaude4PlusModel;
+  /** Mythos-class (Fable/Mythos) is intentionally not matched: these betas are built-in/no-op for the
+   * 4.7+ generation (Fable has native 128K output), so omitting them on Bedrock is lossless. */
+  const isClaude4PlusModel = BEDROCK_CLAUDE_4PLUS_THINKING.test(model);
+  const isClaudeThinkingModel = model.includes('claude-3-7-sonnet') || isClaude4PlusModel;
 
   if (isClaudeThinkingModel) {
     betaHeaders.push(BEDROCK_OUTPUT_128K_BETA);
@@ -184,26 +249,41 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
   return betaHeaders;
 }
 
-function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]): string[] {
-  let existingValues: unknown[] = [];
-  if (Array.isArray(existing)) {
-    existingValues = existing;
-  } else if (typeof existing === 'string') {
-    existingValues = [existing];
+/** Flatten an anthropic_beta value (array, single string, or comma-delimited
+ * string) into trimmed, non-empty header tokens. */
+function normalizeBetaHeaders(value: unknown): string[] {
+  let values: unknown[] = [];
+  if (Array.isArray(value)) {
+    values = value;
+  } else if (typeof value === 'string') {
+    values = [value];
   }
-
-  const betaHeaders = new Set<string>();
-
-  [...existingValues, ...generated].forEach((value) => {
-    if (typeof value !== 'string') {
+  const headers: string[] = [];
+  values.forEach((entry) => {
+    if (typeof entry !== 'string') {
       return;
     }
-
-    value
+    entry
       .split(',')
       .map((header) => header.trim())
       .filter(Boolean)
-      .forEach((header) => betaHeaders.add(header));
+      .forEach((header) => headers.push(header));
+  });
+  return headers;
+}
+
+function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]): string[] {
+  const generatedSet = new Set(generated);
+  const betaHeaders = new Set<string>();
+
+  [...normalizeBetaHeaders(existing), ...generated].forEach((header) => {
+    /** Drop a generated beta carried over from a prior model that the current
+     * model does not generate (e.g. fine-grained-tool-streaming on a 3.7
+     * profile); user opt-ins are always preserved. */
+    if (GENERATED_BEDROCK_BETAS.has(header) && !generatedSet.has(header)) {
+      return;
+    }
+    betaHeaders.add(header);
   });
 
   return Array.from(betaHeaders);
@@ -212,6 +292,7 @@ function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]
 export const bedrockInputSchema = s.tConversationSchema
   .pick({
     /* LibreChat params; optionType: 'conversation' */
+    chatProjectId: true,
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,
@@ -235,6 +316,7 @@ export const bedrockInputSchema = s.tConversationSchema
     thinkingDisplay: true,
     reasoning_effort: true,
     promptCache: true,
+    promptCacheTtl: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -243,7 +325,11 @@ export const bedrockInputSchema = s.tConversationSchema
     if ((obj as AnthropicInput).additionalModelRequestFields?.thinking != null) {
       const _obj = obj as AnthropicInput;
       const thinking = _obj.additionalModelRequestFields.thinking;
-      obj.thinking = !!thinking;
+      const isDisabled =
+        typeof thinking === 'object' &&
+        thinking !== null &&
+        (thinking as { type?: string }).type === 'disabled';
+      obj.thinking = isDisabled ? false : !!thinking;
       obj.thinkingBudget =
         typeof thinking === 'object' && 'budget_tokens' in thinking
           ? thinking.budget_tokens
@@ -268,6 +354,7 @@ export type BedrockConverseInput = z.infer<typeof bedrockInputSchema>;
 export const bedrockInputParser = s.tConversationSchema
   .pick({
     /* LibreChat params; optionType: 'conversation' */
+    chatProjectId: true,
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,
@@ -290,6 +377,7 @@ export const bedrockInputParser = s.tConversationSchema
     thinkingDisplay: true,
     reasoning_effort: true,
     promptCache: true,
+    promptCacheTtl: true,
     /* Catch-all fields */
     topK: true,
     additionalModelRequestFields: true,
@@ -297,6 +385,7 @@ export const bedrockInputParser = s.tConversationSchema
   .catchall(z.any())
   .transform((data) => {
     const knownKeys = [
+      'chatProjectId',
       'modelLabel',
       'promptPrefix',
       'resendFiles',
@@ -313,6 +402,7 @@ export const bedrockInputParser = s.tConversationSchema
       'topP',
       'stop',
       'promptCache',
+      'promptCacheTtl',
     ];
 
     const additionalFields: Record<string, unknown> = {};
@@ -331,27 +421,66 @@ export const bedrockInputParser = s.tConversationSchema
       }
     });
 
-    /** Default thinking and thinkingBudget for 'anthropic.claude-3-7-sonnet' models, if not defined */
+    /**
+     * Persisted `model_parameters` can carry a prior "thinking off" only inside
+     * `additionalModelRequestFields.thinking = { type: 'disabled' }` (a known
+     * key that isn't spread into `additionalFields`). `initializeBedrock` feeds
+     * those params straight through this parser, so surface that as
+     * `thinking: false` — otherwise the disabled branch is skipped and the
+     * config rebuilds adaptive, flipping a user's Sonnet 5 setting back on.
+     */
+    const persistedThinking = (
+      typedData.additionalModelRequestFields as { thinking?: unknown } | undefined
+    )?.thinking;
     if (
-      typeof typedData.model === 'string' &&
-      (typedData.model.includes('anthropic.claude-3-7-sonnet') ||
-        /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
-          typedData.model,
-        ))
+      additionalFields.thinking === undefined &&
+      typeof persistedThinking === 'object' &&
+      persistedThinking !== null &&
+      (persistedThinking as { type?: string }).type === 'disabled'
     ) {
+      additionalFields.thinking = false;
+    }
+
+    /** Bedrock thinking-capable Claude models: 3.7 Sonnet, Claude 4+ (opus/sonnet/haiku), and Mythos-class (Fable/Mythos). */
+    const isThinkingModel =
+      typeof typedData.model === 'string' &&
+      (typedData.model.includes('claude-3-7-sonnet') ||
+        BEDROCK_CLAUDE_4PLUS_THINKING.test(typedData.model) ||
+        s.isMythosClassModel(typedData.model));
+
+    if (isThinkingModel) {
       const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
 
       if (isAdaptive) {
+        /** Persisted AMRF is spread into the final request, so clearing only
+         * `additionalFields` leaves a stale value from a prior selection. */
+        const persistedAmrf = typedData.additionalModelRequestFields as
+          | Record<string, unknown>
+          | undefined;
         const effort = additionalFields.effort;
-        if (effort && typeof effort === 'string' && effort !== '') {
+        if (typeof effort === 'string' && effort !== '') {
           additionalFields.output_config = { effort };
+        } else if (effort !== undefined && persistedAmrf) {
+          /** Explicit unset ('' or null) clears the persisted effort. An absent
+           * effort (agent resume, where the prior llmConfig persisted
+           * `output_config` but no top-level `effort`) preserves it. */
+          delete persistedAmrf.output_config;
         }
         delete additionalFields.effort;
 
         if (additionalFields.thinking === false) {
-          delete additionalFields.thinking;
           delete additionalFields.thinkingBudget;
           delete additionalFields.thinkingDisplay;
+          if (requiresExplicitThinkingDisabled(typedData.model as string)) {
+            additionalFields.thinking = { type: 'disabled' };
+          } else {
+            delete additionalFields.thinking;
+            /** Disable-by-omission models (Opus 4.7+): drop the persisted
+             * adaptive config so turning thinking off actually disables it. */
+            if (persistedAmrf) {
+              delete persistedAmrf.thinking;
+            }
+          }
         } else {
           /**
            * Persisted agent `model_parameters` round-trip back through this
@@ -392,12 +521,23 @@ export const bedrockInputParser = s.tConversationSchema
         }
         delete additionalFields.effort;
         delete additionalFields.thinkingDisplay;
+
+        /** A bare non-adaptive thinking profile (e.g. `claude-3-7-sonnet`) must
+         * not inherit an adaptive/disabled thinking object or `output_config`
+         * persisted from another model; this branch's own fields are authoritative. */
+        const persistedAmrf = typedData.additionalModelRequestFields as
+          | Record<string, unknown>
+          | undefined;
+        if (persistedAmrf) {
+          delete persistedAmrf.thinking;
+          delete persistedAmrf.output_config;
+        }
       }
 
       /** Anthropic uses 'effort' via output_config, not reasoning_config */
       delete additionalFields.reasoning_effort;
 
-      if ((typedData.model as string).includes('anthropic.')) {
+      if (isBedrockClaudeModel(typedData.model as string)) {
         const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model as string);
         if (betaHeaders.length > 0) {
           const existingBetaHeaders = (
@@ -428,7 +568,7 @@ export const bedrockInputParser = s.tConversationSchema
     }
 
     const isAnthropicModel =
-      typeof typedData.model === 'string' && typedData.model.includes('anthropic.');
+      typeof typedData.model === 'string' && isBedrockClaudeModel(typedData.model);
 
     /** Strip stale fields from previously-persisted additionalModelRequestFields */
     if (
@@ -446,6 +586,27 @@ export const bedrockInputParser = s.tConversationSchema
       } else {
         delete amrf.reasoning_config;
         delete amrf.reasoning_effort;
+        /** A Claude model that does not support Bedrock thinking (e.g. a bare
+         * `claude-3-5-sonnet` inference profile) must not carry stale thinking
+         * fields from a previously-selected thinking model. Drop only the
+         * LibreChat-generated betas (output-128k, fine-grained tool streaming);
+         * user opt-ins in `anthropic_beta` are preserved. */
+        if (!isThinkingModel) {
+          delete amrf.thinking;
+          delete amrf.thinkingBudget;
+          delete amrf.effort;
+          delete amrf.output_config;
+          if (amrf.anthropic_beta !== undefined) {
+            const kept = normalizeBetaHeaders(amrf.anthropic_beta).filter(
+              (header) => !GENERATED_BEDROCK_BETAS.has(header),
+            );
+            if (kept.length > 0) {
+              amrf.anthropic_beta = kept;
+            } else {
+              delete amrf.anthropic_beta;
+            }
+          }
+        }
       }
 
       if (shouldOmitSamplingParameters) {
@@ -479,6 +640,15 @@ export const bedrockInputParser = s.tConversationSchema
       typedData.promptCache = undefined;
     }
 
+    /**
+     * A cache TTL is meaningless without caching — tie it to promptCache. When
+     * caching is off or unsupported for the model (cleared above), drop the TTL
+     * so an unsupported `1h` is never sent on a non-caching Bedrock request.
+     */
+    if (typedData.promptCache !== true) {
+      typedData.promptCacheTtl = undefined;
+    }
+
     if (Object.keys(additionalFields).length > 0) {
       typedData.additionalModelRequestFields = {
         ...((typedData.additionalModelRequestFields as Record<string, unknown> | undefined) || {}),
@@ -502,13 +672,38 @@ export const bedrockInputParser = s.tConversationSchema
  * @param data - The parsed Bedrock request options object
  * @returns The object with thinking configured appropriately
  */
+/**
+ * `anthropicSettings.maxOutputTokens.reset` only matches the canonical
+ * family-first id (`claude-sonnet-5`); Bedrock also accepts number-first
+ * aliases (`claude-5-sonnet`, `claude-4-7-sonnet`) that this file gates as
+ * thinking models. Canonicalize to family-first so those aliases resolve to the
+ * real ceiling instead of the 8192 fallback.
+ */
+function toFamilyFirstClaudeId(model: string): string {
+  return model.replace(/claude-(\d+(?:[-.]\d+)?)-(sonnet|opus|haiku)/, 'claude-$2-$1');
+}
+
+/**
+ * Thinking tokens share the `maxTokens` output budget with tool-call arguments
+ * (e.g. a `create_file` `content`), so a low default truncates large authored
+ * files mid-argument. Mirror the direct-Anthropic path and default to the
+ * model's full max output when the request does not set one explicitly.
+ */
+function resolveThinkingMaxTokens(data: AnthropicInput): number {
+  const explicit = data.maxTokens ?? data.maxOutputTokens;
+  if (typeof explicit === 'number' && explicit > 0) {
+    return explicit;
+  }
+  const model = typeof data.model === 'string' ? data.model : '';
+  return s.anthropicSettings.maxOutputTokens.reset(toFamilyFirstClaudeId(model));
+}
+
 function configureThinking(data: AnthropicInput): AnthropicInput {
   const updatedData = { ...data };
   const thinking = updatedData.additionalModelRequestFields?.thinking;
 
   if (thinking === true) {
-    updatedData.maxTokens =
-      updatedData.maxTokens ?? updatedData.maxOutputTokens ?? DEFAULT_ENABLED_MAX_TOKENS;
+    updatedData.maxTokens = resolveThinkingMaxTokens(updatedData);
     delete updatedData.maxOutputTokens;
     const thinkingConfig: ThinkingConfig = {
       type: 'enabled',
@@ -526,9 +721,7 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
     thinking != null &&
     (thinking as { type: string }).type === 'adaptive'
   ) {
-    if (updatedData.maxTokens == null && updatedData.maxOutputTokens != null) {
-      updatedData.maxTokens = updatedData.maxOutputTokens;
-    }
+    updatedData.maxTokens = resolveThinkingMaxTokens(updatedData);
     delete updatedData.maxOutputTokens;
     delete updatedData.additionalModelRequestFields!.thinkingBudget;
   }

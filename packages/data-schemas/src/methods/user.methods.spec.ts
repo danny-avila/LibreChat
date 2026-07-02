@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
+import balanceSchema from '~/schema/balance';
 import { createUserMethods } from './user';
 import userSchema from '~/schema/user';
-import balanceSchema from '~/schema/balance';
 
 /** Mocking crypto for generateToken */
 jest.mock('~/crypto', () => ({
@@ -366,6 +366,63 @@ describe('User Methods - Database Tests', () => {
       const found = await methods.getUserById(fakeId.toString());
 
       expect(found).toBeNull();
+    });
+  });
+
+  describe('acceptTerms', () => {
+    test('sets termsAccepted and stamps termsAcceptedAt on first acceptance', async () => {
+      const user = await User.create({
+        name: 'Terms User',
+        email: 'terms@example.com',
+        provider: 'local',
+      });
+
+      const before = Date.now();
+      const updated = await methods.acceptTerms(user._id?.toString() ?? '');
+      const after = Date.now();
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect(updated?.termsAcceptedAt).toBeInstanceOf(Date);
+      const stamped = (updated?.termsAcceptedAt as Date).getTime();
+      expect(stamped).toBeGreaterThanOrEqual(before - 1000);
+      expect(stamped).toBeLessThanOrEqual(after + 1000);
+    });
+
+    test('preserves the original termsAcceptedAt on repeat acceptance', async () => {
+      const originalAcceptedAt = new Date('2026-01-01T00:00:00.000Z');
+      const user = await User.create({
+        name: 'Repeat User',
+        email: 'repeat@example.com',
+        provider: 'local',
+        termsAccepted: true,
+        termsAcceptedAt: originalAcceptedAt,
+      });
+
+      const updated = await methods.acceptTerms(user._id?.toString() ?? '');
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect((updated?.termsAcceptedAt as Date).getTime()).toBe(originalAcceptedAt.getTime());
+    });
+
+    test('backfills termsAcceptedAt for a legacy accepted user without a timestamp', async () => {
+      const user = await User.create({
+        name: 'Legacy User',
+        email: 'legacy@example.com',
+        provider: 'local',
+        termsAccepted: true,
+      });
+
+      const updated = await methods.acceptTerms(user._id?.toString() ?? '');
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect(updated?.termsAcceptedAt).toBeInstanceOf(Date);
+    });
+
+    test('returns null for non-existent user', async () => {
+      const fakeId = new mongoose.Types.ObjectId();
+      const result = await methods.acceptTerms(fakeId.toString());
+
+      expect(result).toBeNull();
     });
   });
 

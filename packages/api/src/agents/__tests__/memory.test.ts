@@ -410,6 +410,7 @@ describe('processMemory - GPT-5+ handling', () => {
           llmConfig: expect.objectContaining({
             model: 'gpt-4.1-mini',
             temperature: 0.4, // Default temperature should remain
+            maxRetries: 0,
           }),
         }),
       }),

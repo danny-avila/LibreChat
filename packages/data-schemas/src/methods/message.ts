@@ -1,13 +1,18 @@
-import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
-import logger from '~/config/winston';
+import type { DeleteResult, FilterQuery, Model } from 'mongoose';
+import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
-import type { AppConfig, IMessage } from '~/types';
+import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface MessageQueryOptions {
+  limit?: number;
+  sort?: Record<string, 1 | -1> | false;
+}
 
 export interface MessageMethods {
   saveMessage(
@@ -37,7 +42,11 @@ export interface MessageMethods {
     userId: string,
     params: { messageId: string; conversationId: string },
   ): Promise<DeleteResult>;
-  getMessages(filter: FilterQuery<IMessage>, select?: string): Promise<IMessage[]>;
+  getMessages(
+    filter: FilterQuery<IMessage>,
+    select?: string,
+    options?: MessageQueryOptions,
+  ): Promise<IMessage[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
@@ -79,9 +88,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
     const conversationId = params.conversationId as string | undefined;
     if (!conversationId || !UUID_REGEX.test(conversationId)) {
-      logger.warn(`Invalid conversation ID: ${conversationId}`);
-      logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-      logger.info(`---Invalid conversation ID Params: ${JSON.stringify(params, null, 2)}`);
+      logger.warn(
+        `Invalid conversation ID: ${conversationId} (context: ${metadata?.context ?? 'n/a'})`,
+      );
       return;
     }
 
@@ -285,6 +294,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         isCreatedByUser: updatedMessage.isCreatedByUser,
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
+        endpoint: updatedMessage.endpoint,
       };
     } catch (err) {
       logger.error('Error updating message:', err);
@@ -322,14 +332,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   /**
    * Retrieves messages from the database.
    */
-  async function getMessages(filter: FilterQuery<IMessage>, select?: string) {
+  async function getMessages(
+    filter: FilterQuery<IMessage>,
+    select?: string,
+    options: MessageQueryOptions = {},
+  ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const query = Message.find(filter);
       if (select) {
-        return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean<IMessage[]>();
+        query.select(select);
+      }
+      if (options.sort !== false) {
+        query.sort(options.sort ?? { createdAt: 1 });
+      }
+      if (options.limit != null && options.limit > 0) {
+        query.limit(options.limit);
       }
 
-      return await Message.find(filter).sort({ createdAt: 1 }).lean<IMessage[]>();
+      return await query.lean<IMessage[]>();
     } catch (err) {
       logger.error('Error getting messages:', err);
       throw err;

@@ -10,7 +10,7 @@ describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
     const { reset } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet models', () => {
+    describe('Claude Sonnet 4.x models (64K limit)', () => {
       it('should return 64K for claude-sonnet-4', () => {
         expect(reset('claude-sonnet-4')).toBe(64000);
       });
@@ -19,12 +19,22 @@ describe('anthropicSettings', () => {
         expect(reset('claude-sonnet-4-5')).toBe(64000);
       });
 
-      it('should return 64K for claude-sonnet-5', () => {
-        expect(reset('claude-sonnet-5')).toBe(64000);
+      it('should return 64K for claude-sonnet-4-6', () => {
+        expect(reset('claude-sonnet-4-6')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 5+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-5', () => {
+        expect(reset('claude-sonnet-5')).toBe(128000);
       });
 
-      it('should return 64K for future versions like claude-sonnet-9', () => {
-        expect(reset('claude-sonnet-9')).toBe(64000);
+      it('should return 128K for future versions like claude-sonnet-9', () => {
+        expect(reset('claude-sonnet-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit minor versions like claude-sonnet-5-10', () => {
+        expect(reset('claude-sonnet-5-10')).toBe(128000);
       });
     });
 
@@ -265,6 +275,20 @@ describe('anthropicSettings', () => {
       });
     });
 
+    describe('Claude Sonnet 5+ models (128K cap)', () => {
+      it('should allow 100K for claude-sonnet-5', () => {
+        expect(set(100000, 'claude-sonnet-5')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-5 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should cap at 128K for future versions like claude-sonnet-9', () => {
+        expect(set(150000, 'claude-sonnet-9')).toBe(128000);
+      });
+    });
+
     describe('Claude Opus 4.5+ models (64K cap)', () => {
       it('should cap at 64K for claude-opus-4-5 when value exceeds', () => {
         expect(set(100000, 'claude-opus-4-5')).toBe(64000);
@@ -462,6 +486,14 @@ describe('googleSettings', () => {
         maxOutputTokens: 8192,
       });
       expect(result.maxOutputTokens).toBeUndefined();
+    });
+
+    it('preserves chat project membership metadata', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        chatProjectId: 'project-1',
+      });
+      expect(result.chatProjectId).toBe('project-1');
     });
   });
 });

@@ -21,18 +21,17 @@ import type {
   TUser,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
+import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
-import type { IMongoFile } from '@librechat/data-schemas';
-import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
-import {
-  optionalChainWithEmptyCheck,
-  extractLibreChatParams,
-  getModelMaxTokens,
-  getThreadData,
-} from '~/utils';
-import { filterFilesByEndpointConfig } from '~/files';
-import { generateArtifactsPrompt } from '~/prompts';
-import { getProviderConfig } from '~/endpoints';
+import type {
+  ServerRequest,
+  EndpointDbMethods,
+  EndpointTokenConfig,
+  InitializeResultBase,
+} from '~/types';
+import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
+import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
+import type { TFilterFilesByAgentAccess } from './resources';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -40,10 +39,22 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
-import { registerCodeExecutionTools } from './tools';
+import {
+  optionalChainWithEmptyCheck,
+  extractLibreChatParams,
+  getModelMaxTokens,
+  getThreadData,
+} from '~/utils';
+import {
+  registerCodeExecutionTools,
+  registerFileAuthoringTools,
+  isFileAuthoringToolDefinition,
+} from './tools';
+import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { filterFilesByEndpointConfig } from '~/files';
+import { generateArtifactsPrompt } from '~/prompts';
+import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
-import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
-import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
  * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
@@ -52,6 +63,15 @@ import type { TFilterFilesByAgentAccess } from './resources';
  */
 const DEFAULT_RESERVE_RATIO = 0.05;
 const temporalSpecialVarRegex = /{{\s*(current_date|current_datetime|iso_datetime)\s*}}/i;
+const geminiModelVersionRegex = /^gemini-(\d+)(?:\.(\d+))?(?:-|$)/;
+const googleToolCombinationTextModels = [
+  'gemini-3-flash-preview',
+  'gemini-3-pro-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-pro-preview',
+];
+const googleToolCombinationExcludedModalityRegex =
+  /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
 
 function hasTemporalSpecialVars(text: string): boolean {
   return temporalSpecialVarRegex.test(text);
@@ -64,6 +84,13 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
   agent.additional_instructions = [agent.additional_instructions ?? '', text]
     .filter(Boolean)
     .join('\n\n');
+}
+
+function getMaxCatalogSkills(req: ServerRequest): number | undefined {
+  const endpoints = req.config?.endpoints as
+    | Record<string, { skills?: { maxCatalogSkills?: number } } | undefined>
+    | undefined;
+  return endpoints?.[EModelEndpoint.agents]?.skills?.maxCatalogSkills;
 }
 
 function getToolName(tool: unknown): string | undefined {
@@ -85,12 +112,71 @@ function hasGoogleSearchTool(tool: unknown): boolean {
   return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
 }
 
+function normalizeGoogleModelName(model: string): string {
+  const normalized = model.trim().toLowerCase();
+  return normalized.split('/').pop() ?? normalized;
+}
+
+function isKnownGoogleToolCombinationTextModel(model: string): boolean {
+  return googleToolCombinationTextModels.some(
+    (knownModel) => model === knownModel || model.startsWith(`${knownModel}-`),
+  );
+}
+
+function isGemini35OrLater(model: string): boolean {
+  const match = geminiModelVersionRegex.exec(model);
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? '0');
+  return major > 3 || (major === 3 && minor >= 5);
+}
+
 function supportsGoogleToolCombination(model: unknown): boolean {
   if (typeof model !== 'string') {
     return false;
   }
-  const normalized = model.toLowerCase().split('/').pop() ?? model.toLowerCase();
-  return normalized.startsWith('gemini-3');
+  const normalized = normalizeGoogleModelName(model);
+  if (googleToolCombinationExcludedModalityRegex.test(normalized)) {
+    return false;
+  }
+  return isKnownGoogleToolCombinationTextModel(normalized) || isGemini35OrLater(normalized);
+}
+
+function isGoogleToolCombinationProvider(provider?: string): boolean {
+  return provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
+}
+
+function shouldIncludeGoogleServerSideToolInvocations({
+  provider,
+  hasProviderTools,
+  hasAgentTools,
+}: {
+  provider?: string;
+  hasProviderTools: boolean;
+  hasAgentTools: boolean;
+}): boolean {
+  return isGoogleToolCombinationProvider(provider) && hasProviderTools && hasAgentTools;
+}
+
+function assertGoogleToolCombinationSupport(model: unknown): void {
+  if (!supportsGoogleToolCombination(model)) {
+    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  }
+}
+
+function enableGoogleServerSideToolInvocations({
+  agent,
+  llmConfig,
+}: {
+  agent: Agent;
+  llmConfig: Record<string, unknown>;
+}): void {
+  llmConfig.includeServerSideToolInvocations = true;
+  if (agent.model_parameters) {
+    (agent.model_parameters as Record<string, unknown>).includeServerSideToolInvocations = true;
+  }
 }
 
 function resolveProviderToolConflicts({
@@ -162,16 +248,28 @@ export type InitializedAgent = Agent & {
   toolMap?: ToolMap;
   /** Tool registry for PTC and tool search (only present when MCP tools with env classification exist) */
   toolRegistry?: LCToolRegistry;
+  /** Run-scoped MCP tool definitions for request-scoped servers. */
+  mcpAvailableTools?: Record<string, LCAvailableTools>;
+  /** Run-scoped MCP connections for request-scoped servers. */
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
   /** Serializable tool definitions for event-driven execution */
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
+  /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
+   *  registered for this agent. Authoritative LibreChat-only signal of the
+   *  inline memory opt-in for the execution path, since some contexts hold the
+   *  initialized config (the `memory` marker already expanded out of `tools`)
+   *  rather than the raw agent document. */
+  memoryToolsRegistered?: boolean;
   /** Whether the actions capability is enabled (resolved during tool loading) */
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
   reasoningKey?: ReasoningResponseKey;
+  /** Whether to reconstruct `reasoning_content` from persisted history across turns (custom endpoint opt-in). */
+  includeReasoningHistory?: boolean;
   /**
    * Whether the code-execution environment is available *for this agent*.
    * Narrower than the incoming `params.codeEnvAvailable` admin flag — this
@@ -184,6 +282,10 @@ export type InitializedAgent = Agent & {
    * (`packages/api/src/agents/added.ts`), so the check is uniform.
    */
   codeEnvAvailable: boolean;
+  /** Whether host-side skill file authoring is available for this agent/run. */
+  skillAuthoringAvailable: boolean;
+  /** Host-side file authoring tool names registered for this run. */
+  fileAuthoringToolNames?: Set<string>;
   /** Accessible skill IDs for ACL checking at execute time */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
   /**
@@ -223,6 +325,13 @@ export type InitializedAgent = Agent & {
    * call #1 the sandbox can't see the files at all.
    */
   primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
+  /**
+   * Resolved token/pricing config for this agent's endpoint (admin static
+   * `tokenConfig` and/or fetched custom-endpoint config). Surfaced from the
+   * provider `getOptions` result so the AgentClient bills, prices, and resolves
+   * context limits with the same numbers the UI shows — not default rates.
+   */
+  endpointTokenConfig?: EndpointTokenConfig;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -261,6 +370,8 @@ export interface InitializeAgentParams {
     dynamicToolContextMap?: Record<string, unknown>;
     userMCPAuthMap?: Record<string, Record<string, string>>;
     toolRegistry?: LCToolRegistry;
+    mcpAvailableTools?: Record<string, LCAvailableTools>;
+    requestScopedConnections?: RequestScopedMCPConnectionStore;
     /** Serializable tool definitions for event-driven mode */
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
@@ -282,8 +393,14 @@ export interface InitializeAgentParams {
   isInitialAgent?: boolean;
   /** Accessible skill IDs for this user (pre-computed by the caller via ACL query) */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /** Whether skill file authoring should be exposed even before a user has viewable skills. */
+  skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /** Whether inline memory tools are available (memory capability enabled, memory
+   *  configured, and the user permitted). When true and the agent lists the `memory`
+   *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
+  memoryAvailable?: boolean;
   /** Per-user skill active/inactive overrides for filtering the skill catalog. */
   skillStates?: Record<string, boolean>;
   /** Admin-configured default for shared skills (`true` = shared skills auto-activate). */
@@ -304,21 +421,33 @@ export interface InitializeAgentParams {
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
   /** Update usage tracking for multiple files */
-  updateFilesUsage: (files: Array<{ file_id: string }>, fileIds?: string[]) => Promise<unknown[]>;
+  updateFilesUsage: (
+    files: Array<{ file_id: string }>,
+    fileIds?: string[],
+    options?: { user?: string; tenantId?: string | null },
+  ) => Promise<unknown[]>;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
   /** Filter files by agent access permissions (ownership or agent attachment) */
   filterFilesByAgentAccess?: TFilterFilesByAgentAccess;
   /** Get tool files by IDs (user-uploaded files only, code files handled separately) */
-  getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
+  getToolFilesByIds: (
+    fileIds: string[],
+    toolSet: Set<EToolResources>,
+    ownerScope?: FileOwnerScope,
+  ) => Promise<unknown[]>;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
   /** Get code-generated files by conversation ID and the file_ids
    *  referenced from messages in the current thread (collected via
    *  `messages.files[].file_id` during thread walk). */
-  getCodeGeneratedFiles?: (conversationId: string, threadFileIds?: string[]) => Promise<unknown[]>;
+  getCodeGeneratedFiles?: (
+    conversationId: string,
+    threadFileIds?: string[],
+    ownerScope?: FileOwnerScope,
+  ) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
-  getUserCodeFiles?: (fileIds: string[]) => Promise<unknown[]>;
+  getUserCodeFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
   getMessages?: (
     filter: { conversationId: string },
@@ -350,6 +479,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
        * by the manual-invocation resolver. Defaults to `true`.
        */
       userInvocable?: boolean;
+      /** True for deployment-directory skills that are loaded in memory. */
+      deployment?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -395,6 +526,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
      * caller can't bypass the popover-side filter.
      */
     userInvocable?: boolean;
+    /** True for deployment-directory skills that are loaded in memory. */
+    deployment?: boolean;
   } | null>;
   /**
    * Load accessible skills with `alwaysApply: true`, eagerly including
@@ -414,6 +547,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       body: string;
       author: import('mongoose').Types.ObjectId;
       allowedTools?: string[];
+      /** True for deployment-directory skills that are loaded in memory. */
+      deployment?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -448,6 +583,10 @@ export async function initializeAgent(
     allowedProviders,
     isInitialAgent = false,
   } = params;
+  const requestFileOwnerId = req.user?.id;
+  const requestFileOwnerScope: FileOwnerScope | undefined = requestFileOwnerId
+    ? { userId: requestFileOwnerId, tenantId: req.user?.tenantId }
+    : undefined;
 
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
@@ -495,7 +634,13 @@ export async function initializeAgent(
       }
     }
 
-    const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
+    const toolFiles = requestFileOwnerScope
+      ? ((await db.getToolFilesByIds(
+          fileIds,
+          toolResourceSet,
+          requestFileOwnerScope,
+        )) as IMongoFile[])
+      : [];
 
     /**
      * Retrieve execute_code files filtered to the current thread.
@@ -536,23 +681,57 @@ export async function initializeAgent(
        *  which sibling first generated them — see `getCodeGeneratedFiles`
        *  for the branched-conversation rationale. */
       if (db.getCodeGeneratedFiles) {
-        codeGeneratedFiles = (await db.getCodeGeneratedFiles(
-          conversationId,
-          threadFileIds,
-        )) as IMongoFile[];
+        codeGeneratedFiles = requestFileOwnerScope
+          ? ((await db.getCodeGeneratedFiles(
+              conversationId,
+              threadFileIds,
+              requestFileOwnerScope,
+            )) as IMongoFile[])
+          : [];
       }
 
-      if (db.getUserCodeFiles && threadFileIds && threadFileIds.length > 0) {
-        userCodeFiles = (await db.getUserCodeFiles(threadFileIds)) as IMongoFile[];
+      if (
+        db.getUserCodeFiles &&
+        requestFileOwnerScope &&
+        threadFileIds &&
+        threadFileIds.length > 0
+      ) {
+        userCodeFiles = (await db.getUserCodeFiles(
+          threadFileIds,
+          requestFileOwnerScope,
+        )) as IMongoFile[];
       }
     }
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
-      currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
+      const requestUsageFiles =
+        requestFiles.length && requestFileOwnerId
+          ? ((await db.updateFilesUsage(requestFiles, undefined, {
+              user: requestFileOwnerId,
+              tenantId: req.user?.tenantId,
+            })) as IMongoFile[])
+          : [];
+      const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+      const trustedToolFiles = allToolFiles.filter(
+        (file) => !requestUsageFileIds.has(file.file_id),
+      );
+      let toolUsageFiles: IMongoFile[] = [];
+      if (trustedToolFiles.length > 0 && requestFileOwnerId) {
+        toolUsageFiles = (await db.updateFilesUsage(trustedToolFiles, undefined, {
+          user: requestFileOwnerId,
+          tenantId: req.user?.tenantId,
+        })) as IMongoFile[];
+      }
+      currentFiles = requestUsageFiles.concat(toolUsageFiles);
     }
   } else if (requestFiles.length) {
-    currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
+    currentFiles = requestFileOwnerId
+      ? ((await db.updateFilesUsage(requestFiles, undefined, {
+          user: requestFileOwnerId,
+          tenantId: req.user?.tenantId,
+        })) as IMongoFile[])
+      : [];
   }
 
   if (currentFiles && currentFiles.length) {
@@ -607,7 +786,8 @@ export async function initializeAgent(
    * go first so their names win on dedup (primes earlier in the list
    * contribute before the same name gets deduped on a later prime).
    */
-  const hasSkillAccess = params.accessibleSkillIds && params.accessibleSkillIds.length > 0;
+  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
+  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
   let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
   let extraAllowedToolNames: string[] = [];
@@ -761,6 +941,8 @@ export async function initializeAgent(
     dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions: loadedToolDefinitions,
+    mcpAvailableTools,
+    requestScopedConnections,
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
@@ -771,6 +953,8 @@ export async function initializeAgent(
     dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
+    mcpAvailableTools: undefined,
+    requestScopedConnections: undefined,
     toolDefinitions: [],
     hasDeferredTools: false,
     actionsEnabled: undefined,
@@ -908,6 +1092,49 @@ export async function initializeAgent(
     );
   }
 
+  /**
+   * Expand the `memory` capability marker into the inline `set_memory` +
+   * `delete_memory` tool pair, mirroring the `execute_code` expansion above.
+   * `params.memoryAvailable` is the full run-level gate (capability enabled,
+   * memory configured, user permitted); the marker on `agent.tools` is the
+   * per-agent opt-in. The runtime instances are created in the tool service.
+   */
+  const agentRequestsMemory = (agent.tools ?? []).includes(Tools.memory);
+  const inlineMemoryRegistered = params.memoryAvailable === true && agentRequestsMemory;
+  if (inlineMemoryRegistered) {
+    const memoryResult = registerMemoryTools({
+      toolRegistry,
+      toolDefinitions,
+      validKeys: req.config?.memory?.validKeys,
+    });
+    toolDefinitions = memoryResult.toolDefinitions;
+    appendAdditionalInstructions(agent, memoryToolUsageGuard);
+  } else if (agentRequestsMemory) {
+    logger.debug(
+      `[initializeAgent] Agent "${agent.id}" requests memory but memoryAvailable=${String(params.memoryAvailable)}; skipping set_memory + delete_memory registration.`,
+    );
+  }
+
+  if (skillAuthoringAvailable) {
+    const skillReadResult = registerCodeExecutionTools({
+      toolRegistry,
+      toolDefinitions,
+      includeBash: false,
+      includeSkillFileInstructions: true,
+      enableToolOutputReferences: effectiveCodeEnvAvailable,
+    });
+    toolDefinitions = skillReadResult.toolDefinitions;
+  }
+
+  if (effectiveCodeEnvAvailable || skillAuthoringAvailable) {
+    const fileAuthoringResult = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions,
+      includeSkillFileInstructions: skillAuthoringAvailable,
+    });
+    toolDefinitions = fileAuthoringResult.toolDefinitions;
+  }
+
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
   const providerTools = resolveProviderToolConflicts({
@@ -921,13 +1148,16 @@ export async function initializeAgent(
     ? (providerTools as GenericTool[])
     : (structuredTools ?? []);
 
-  if (
-    (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
-    hasProviderTools &&
-    hasAgentTools
-  ) {
-    if (!supportsGoogleToolCombination(llmConfig.model)) {
-      throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasAgentTools) {
+    assertGoogleToolCombinationSupport(llmConfig.model);
+    if (
+      shouldIncludeGoogleServerSideToolInvocations({
+        provider: agent.provider,
+        hasProviderTools,
+        hasAgentTools,
+      })
+    ) {
+      enableGoogleServerSideToolInvocations({ agent, llmConfig });
     }
     if (structuredTools?.length) {
       tools = structuredTools.concat(providerTools as GenericTool[]);
@@ -952,6 +1182,7 @@ export async function initializeAgent(
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
       now: req.conversationCreatedAt,
+      timezone: req.body?.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
       agent.instructions = undefined;
@@ -991,11 +1222,27 @@ export async function initializeAgent(
       userId: req.user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
+      maxCatalogSkills: getMaxCatalogSkills(req),
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
     activeSkillNames = skillResult.activeSkillNames;
+  }
+
+  const hasFinalAgentTools =
+    (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
+  if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasFinalAgentTools) {
+    assertGoogleToolCombinationSupport(llmConfig.model);
+    if (
+      shouldIncludeGoogleServerSideToolInvocations({
+        provider: agent.provider,
+        hasProviderTools,
+        hasAgentTools: hasFinalAgentTools,
+      })
+    ) {
+      enableGoogleServerSideToolInvocations({ agent, llmConfig });
+    }
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;
@@ -1026,19 +1273,30 @@ export async function initializeAgent(
       : undefined;
   const maxToolResultCharsResolved =
     providerMaxToolResultChars ?? endpointConfigs?.all?.maxToolResultChars;
+  const fileAuthoringToolNames = new Set(
+    (toolDefinitions ?? [])
+      .filter((toolDefinition) => isFileAuthoringToolDefinition(toolDefinition))
+      .map((toolDefinition) => toolDefinition.name),
+  );
 
   const initializedAgent: InitializedAgent = {
     ...agent,
     resendFiles,
     toolRegistry,
+    mcpAvailableTools,
+    requestScopedConnections,
     tool_resources,
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
     actionsEnabled,
     baseContextTokens,
+    memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
+    includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
+    skillAuthoringAvailable,
+    fileAuthoringToolNames: fileAuthoringToolNames.size > 0 ? fileAuthoringToolNames : undefined,
     skillCount,
     accessibleSkillIds: executableSkillIds,
     activeSkillNames,
@@ -1057,6 +1315,7 @@ export async function initializeAgent(
         ? maxContextTokens
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
     primedCodeFiles,
+    endpointTokenConfig: options.endpointTokenConfig,
   };
 
   return initializedAgent;

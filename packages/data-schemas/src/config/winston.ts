@@ -1,6 +1,12 @@
 import winston from 'winston';
 import 'winston-daily-rotate-file';
-import { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } from './parsers';
+import {
+  redactFormat,
+  redactMessage,
+  debugTraverse,
+  jsonTruncateFormat,
+  stripHeavyErrorFields,
+} from './parsers';
 import { getTenantId, getUserId, getRequestId, SYSTEM_TENANT_ID } from './tenantContext';
 import { getLogDirectory } from './utils';
 
@@ -84,6 +90,7 @@ const fileFormat = winston.format.combine(
   redactFormat(),
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.errors({ stack: true }),
+  stripHeavyErrorFields(),
   winston.format.splat(),
   requestContextFormat(),
 );
@@ -164,7 +171,7 @@ if (useDebugConsole) {
 }
 
 // Create logger
-const logger = winston.createLogger({
+const logger: winston.Logger = winston.createLogger({
   level: level(),
   levels,
   transports,

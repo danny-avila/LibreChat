@@ -49,10 +49,14 @@ function createHandlers(overrides = {}) {
     patchConfigFields: jest
       .fn()
       .mockResolvedValue({ _id: 'c1', overrides: { registration: { enabled: false } } }),
+    tombstoneConfigField: jest
+      .fn()
+      .mockResolvedValue({ _id: 'c1', tombstones: ['mcpServers.github'] }),
     unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
+    hasCapability: jest.fn().mockResolvedValue(true),
 
     getAppConfig: jest.fn().mockResolvedValue({ interface: { modelSelect: true } }),
     ...overrides,
@@ -188,6 +192,29 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.interface).toEqual({ modelSelect: false });
+    });
+
+    it('preserves skillSync sections in admin overrides', async () => {
+      const { handlers, deps } = createHandlers({
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            skillSync: { github: { enabled: true } },
+            interface: { modelSelect: false },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.skillSync).toEqual({ github: { enabled: true } });
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
     });
 
@@ -335,6 +362,24 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).not.toHaveBeenCalled();
     });
 
+    it('allows deleting skillSync field paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        query: { fieldPath: 'skillSync.github.enabled' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'skillSync.github.enabled',
+      );
+    });
+
     it('allows deleting interface UI field paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -377,6 +422,78 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
+  describe('tombstoneConfigField', () => {
+    it('writes an explicit tombstone for a valid field path', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'mcpServers.github' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'mcpServers.github',
+        10,
+      );
+    });
+
+    it('uses the existing config priority when priority is omitted', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', priority: 42 }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'mcpServers.github' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'mcpServers.github',
+        42,
+      );
+    });
+
+    it('blocks interface permission paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'interface.mcpServers.use' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.message).toBeDefined();
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+
+    it('rejects unsafe field paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: '__proto__.polluted' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+  });
+
   describe('patchConfigField', () => {
     it('returns 403 when user lacks capability for section', async () => {
       const { handlers } = createHandlers({
@@ -412,6 +529,27 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['interface.modelSelect']).toBe(false);
       expect(patchedFields['interface.prompts']).toBeUndefined();
+    });
+
+    it('preserves skillSync field entries in patches', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            { fieldPath: 'skillSync.github.enabled', value: true },
+            { fieldPath: 'interface.modelSelect', value: false },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields['skillSync.github.enabled']).toBe(true);
+      expect(patchedFields['interface.modelSelect']).toBe(false);
     });
 
     it('blocks peoplePicker permission sub-key paths', async () => {
@@ -510,10 +648,179 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
+  describe('patchConfigField: section-scoped priority preservation', () => {
+    it('ignores request-supplied priority when caller lacks broad manage:configs', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'memory.context', value: 'updated' }],
+          priority: 999,
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
+      expect(priorityArg).toBe(7);
+    });
+
+    it('falls back to default priority when no existing doc and caller lacks broad manage', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
+        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'memory.context', value: 'updated' }],
+          priority: 999,
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
+      expect(priorityArg).toBe(10);
+    });
+
+    it('honors request-supplied priority when caller holds broad manage:configs', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'memory.context', value: 'updated' }],
+          priority: 999,
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
+      expect(priorityArg).toBe(999);
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('preserves priority 0 when broad caller supplies it', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'memory.context', value: 'updated' }],
+          priority: 0,
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
+      expect(priorityArg).toBe(0);
+    });
+
+    it('preserves existing priority 0 for section-scoped callers', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue({ _id: 'c1', priority: 0, overrides: {} }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'memory.context', value: 'updated' }],
+          priority: 999,
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
+      expect(priorityArg).toBe(0);
+    });
+  });
+
+  describe('tombstoneConfigField: section-scoped priority preservation', () => {
+    it('ignores request-supplied priority when caller lacks broad manage:configs', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'memory.context', priority: 999 },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.tombstoneConfigField.mock.calls[0];
+      expect(priorityArg).toBe(7);
+    });
+
+    it('falls back to default priority when no existing doc and caller lacks broad manage', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
+        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'memory.context', priority: 999 },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.tombstoneConfigField.mock.calls[0];
+      expect(priorityArg).toBe(10);
+    });
+
+    it('honors request-supplied priority when caller holds broad manage:configs', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'memory.context', priority: 999 },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const [, , , , priorityArg] = deps.tombstoneConfigField.mock.calls[0];
+      expect(priorityArg).toBe(999);
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    });
+  });
+
   describe('upsertConfigOverrides — Bug 2 regression', () => {
     it('returns 403 for empty overrides when user lacks MANAGE_CONFIGS', async () => {
       const { handlers } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -548,7 +855,15 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(201);
       expect(res.body).toHaveProperty('config');
       expect(res.body?.config).toHaveProperty('_id', 'c1');
-      expect(upsertConfig).toHaveBeenCalledWith('role', 'admin', expect.anything(), {}, 5);
+      expect(upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        5,
+        undefined,
+        expect.objectContaining({ expectEmpty: expect.any(Boolean) }),
+      );
     });
 
     it('returns no-op message when overrides is empty and no priority is provided', async () => {
@@ -587,6 +902,7 @@ describe('createAdminConfigHandlers', () => {
     it('returns 403 for empty overrides with priority when user lacks MANAGE_CONFIGS', async () => {
       const { handlers } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -642,6 +958,13 @@ describe('createAdminConfigHandlers', () => {
       },
     },
     {
+      name: 'tombstoneConfigField',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'mcpServers.github' },
+      },
+    },
+    {
       name: 'deleteConfigOverrides',
       reqOverrides: {
         params: { principalType: 'role', principalId: 'admin' },
@@ -655,6 +978,464 @@ describe('createAdminConfigHandlers', () => {
       },
     },
   ];
+
+  describe('upsertConfigOverrides: scope-lifecycle auth (ASSIGN_CONFIGS)', () => {
+    it('allows empty-overrides scope creation when caller has ASSIGN_CONFIGS only', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        10,
+        undefined,
+        { expectEmpty: true, preservePriority: true },
+      );
+    });
+
+    it('requests atomic priority preservation for ASSIGN_CONFIGS-only empty-overrides upsert', async () => {
+      const findConfigByPrincipal = jest
+        .fn()
+        .mockResolvedValue({ _id: 'c1', priority: 7, overrides: {} });
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal,
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 999 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        10,
+        undefined,
+        { expectEmpty: true, preservePriority: true },
+      );
+      expect(findConfigByPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-empty overrides for ASSIGN_CONFIGS-only caller', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: { memory: { enabled: true } } },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty-overrides scope creation when caller has neither grant', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(false),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteConfigOverrides: accepts ASSIGN_CONFIGS', () => {
+    it('allows delete when caller has ASSIGN_CONFIGS only', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.deleteConfig).toHaveBeenCalled();
+    });
+
+    it('rejects delete when caller has neither broad manage nor ASSIGN_CONFIGS', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(false),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.deleteConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('toggleConfig: accepts ASSIGN_CONFIGS', () => {
+    it('allows toggle when caller has ASSIGN_CONFIGS only', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.toggleConfigActive).toHaveBeenCalled();
+    });
+
+    it('rejects toggle when caller has neither broad manage nor ASSIGN_CONFIGS', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(false),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('scope-lifecycle: parameterized assign:configs check', () => {
+    it('allows upsert when caller holds assign:configs:<principalType>', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn(async (_user, cap) => cap === 'assign:configs:role'),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        10,
+        undefined,
+        { expectEmpty: true, preservePriority: true },
+      );
+    });
+
+    it('rejects upsert when parameterized grant targets a different principalType', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn(async (_user, cap) => cap === 'assign:configs:user'),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('queries hasCapability with the principalType-parameterized form', async () => {
+      const hasCap = jest.fn().mockResolvedValue(true);
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: hasCap,
+      });
+      const req = mockReq({
+        params: { principalType: 'group', principalId: 'engineers' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      const queriedCapabilities = hasCap.mock.calls.map((call) => call[1]);
+      expect(queriedCapabilities).toContain('assign:configs:group');
+    });
+  });
+
+  describe('scope-lifecycle: __base__ short-circuit', () => {
+    it('upsert against __base__ returns 403 for assign-only caller', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('delete against __base__ returns 403 for assign-only caller', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.deleteConfig).not.toHaveBeenCalled();
+    });
+
+    it('toggle against __base__ returns 403 for assign-only caller', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+    });
+
+    it('upsert against __base__ succeeds for broad-manage caller', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertConfig).toHaveBeenCalled();
+    });
+  });
+
+  describe('scope-lifecycle: atomic empty-state guard for assign-only callers', () => {
+    it('empty-overrides upsert is rejected when atomic filter mismatches (existing doc not empty)', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        upsertConfig: jest.fn(async (_pt, _pi, _pm, _o, _p, _session, opts) => {
+          return opts?.expectEmpty ? null : { _id: 'c1', configVersion: 1 };
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true, preservePriority: true },
+      );
+    });
+
+    it('delete is rejected with 403 when atomic filter mismatches and doc still exists', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn(async (_pt, _pi, _session, opts) => {
+          return opts?.expectEmpty ? null : { _id: 'c1' };
+        }),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { endpoints: { custom: true } },
+        }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true },
+      );
+    });
+
+    it('toggle is rejected with 403 when atomic filter mismatches and doc still exists', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        toggleConfigActive: jest.fn(async (_pt, _pi, _isActive, _session, opts) => {
+          return opts?.expectEmpty ? null : { _id: 'c1', isActive: false };
+        }),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          tombstones: ['endpoints.openai.apiKey'],
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.toggleConfigActive).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true },
+      );
+    });
+
+    it('delete returns 404 when atomic filter mismatches and doc does not exist', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn().mockResolvedValue(null),
+        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(404);
+      expect(deps.findConfigByPrincipal).toHaveBeenCalled();
+    });
+
+    it('delete succeeds for assign-only caller when atomic filter matches', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true },
+      );
+    });
+
+    it('broad-manage caller calls destructive op without expectEmpty option', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { endpoints: { custom: true } },
+        }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: false },
+      );
+    });
+  });
+
+  describe('AdminConfigDeps.hasCapability is optional', () => {
+    it('factory accepts deps without hasCapability and falls back to broad-manage-only auth', async () => {
+      const deps = {
+        listAllConfigs: jest.fn().mockResolvedValue([]),
+        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
+        patchConfigFields: jest.fn(),
+        tombstoneConfigField: jest.fn(),
+        unsetConfigField: jest.fn(),
+        deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
+        toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+      };
+      const handlers = createAdminConfigHandlers(deps);
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+  });
 
   describe('invariant: all mutation handlers return 401 without auth', () => {
     for (const { name, reqOverrides } of MUTATION_HANDLERS) {
@@ -678,6 +1459,7 @@ describe('createAdminConfigHandlers', () => {
       it(`${name} returns 403 when user lacks capability`, async () => {
         const { handlers } = createHandlers({
           hasConfigCapability: jest.fn().mockResolvedValue(false),
+          hasCapability: jest.fn().mockResolvedValue(false),
         });
         const req = mockReq(reqOverrides);
         const res = mockRes();

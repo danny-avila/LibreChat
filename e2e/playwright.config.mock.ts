@@ -5,15 +5,16 @@ import { getLocalE2EEnv, getE2EBaseURL } from './setup/env';
 
 const rootPath = path.resolve(__dirname, '..');
 const serverPath = path.resolve(rootPath, 'e2e/setup/start-server.js');
-const mockLlmPath = path.resolve(rootPath, 'e2e/setup/mock-llm-server.js');
+const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server.js');
+/** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
+const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
+const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
 const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
+const deploymentSkillsPath = path.resolve(rootPath, 'e2e/fixtures/deployment-skills');
 
 const baseURL = getE2EBaseURL();
-const mockLlmPort = getMockLlmPort();
-const defaultMockLlmBaseURL = 'http://127.0.0.1:8889/v1';
-const mockLlmBaseURL = `http://127.0.0.1:${mockLlmPort}/v1`;
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 
 const vanillaOverrides = {
@@ -30,7 +31,9 @@ const vanillaOverrides = {
 const baseEnv = {
   ...getLocalE2EEnv(),
   CONFIG_PATH: configPath,
-  MOCK_LLM_PORT: mockLlmPort,
+  DEPLOYMENT_SKILLS_DIR: deploymentSkillsPath,
+  /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
+  LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
   ...vanillaOverrides,
 };
 
@@ -41,23 +44,19 @@ const preservedCredentialEnvKeys = new Set([
   'E2E_USER_B_PASSWORD',
 ]);
 
-function getMockLlmPort() {
-  const port = process.env.MOCK_LLM_PORT ?? '8889';
-  if (!/^\d+$/.test(port)) {
-    throw new Error('MOCK_LLM_PORT must be a numeric port');
-  }
-  return port;
-}
-
+/**
+ * The custom endpoints in the template point at an unreachable baseURL; the fake
+ * model injected via `LIBRECHAT_TEST_RUN_HOOK` overrides the run before any
+ * request is made, so no real (or mock HTTP) provider is contacted.
+ */
 function writeRuntimeMockConfig() {
   const template = fs.readFileSync(configTemplatePath, 'utf8');
-
-  if (!template.includes(defaultMockLlmBaseURL)) {
-    throw new Error(`Expected mock config template to include ${defaultMockLlmBaseURL}`);
-  }
-
+  const config =
+    process.env.E2E_MODEL_SPECS_ENFORCE === 'true'
+      ? template.replace('\n  enforce: false\n', '\n  enforce: true\n')
+      : template;
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, template.replaceAll(defaultMockLlmBaseURL, mockLlmBaseURL));
+  fs.writeFileSync(configPath, config);
 }
 
 function neutralizeCredentialEnv(env: NodeJS.ProcessEnv, keep: Set<string>) {
@@ -129,20 +128,22 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `node ${mockLlmPath}`,
-      cwd: rootPath,
-      url: `http://127.0.0.1:${mockLlmPort}/health`,
-      stdout: 'pipe',
-      timeout: 30_000,
-      reuseExistingServer: false,
-    },
-    {
       command: `node ${serverPath}`,
       cwd: rootPath,
       url: baseURL,
       stdout: 'pipe',
       ignoreHTTPSErrors: true,
       timeout: 120_000,
+      reuseExistingServer: false,
+    },
+    {
+      // URL-based MCP fixture for the allowlist-override spec (its health route is GET /).
+      command: `node ${mcpHttpServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_MCP_HTTP_PORT: MCP_HTTP_PORT },
+      url: `http://127.0.0.1:${MCP_HTTP_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
       reuseExistingServer: false,
     },
   ],

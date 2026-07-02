@@ -28,6 +28,7 @@ jest.mock('@librechat/api', () => ({
   getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
   normalizeOpenIdIssuer: jest.requireActual('@librechat/api').normalizeOpenIdIssuer,
+  getHttpsProxyAgent: jest.fn(() => undefined),
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
@@ -344,6 +345,51 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBe('the-access-token');
     expect(user.federatedTokens.id_token).toBe('the-id-token');
     expect(user.federatedTokens.access_token).not.toBe(user.federatedTokens.id_token);
+  });
+});
+
+describe('openIdJwtStrategy – idOnTheSource boundary coercion', () => {
+  const payload = {
+    sub: 'oidc-123',
+    email: 'test@example.com',
+    iss: 'https://issuer.example.com',
+    exp: 9999999999,
+  };
+  const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    updateUser.mockResolvedValue({});
+    openIdJwtLogin(mockOpenIdConfig);
+  });
+
+  it('coerces missing idOnTheSource to null', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: { _id: { toString: () => 'user-abc' }, role: SystemRoles.USER, provider: 'openid' },
+      error: null,
+      migration: false,
+    });
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.idOnTheSource).toBeNull();
+  });
+
+  it('preserves a stored idOnTheSource', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: {
+        _id: { toString: () => 'user-abc' },
+        role: SystemRoles.USER,
+        provider: 'openid',
+        idOnTheSource: 'entra-oid-123',
+      },
+      error: null,
+      migration: false,
+    });
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.idOnTheSource).toBe('entra-oid-123');
   });
 });
 

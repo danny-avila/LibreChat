@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { logger, createModels } from '..';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   SystemRoles,
@@ -7,7 +8,6 @@ import {
   PrincipalType,
   PermissionBits,
 } from 'librechat-data-provider';
-import { createAclEntryMethods } from './aclEntry';
 import {
   validateSkillName,
   validateSkillDescription,
@@ -15,9 +15,10 @@ import {
   validateAlwaysApply,
   validateRelativePath,
   inferSkillFileCategory,
+  filterExistingSkillIds,
   deriveStructuredFrontmatterFields,
 } from './skill';
-import { logger, createModels } from '..';
+import { createAclEntryMethods } from './aclEntry';
 import { createMethods } from './index';
 
 logger.silent = true;
@@ -107,7 +108,21 @@ afterEach(async () => {
   await Skill.deleteMany({});
   await SkillFile.deleteMany({});
   await AclEntry.deleteMany({});
+  await mongoose.models.Agent.deleteMany({});
 });
+
+function makeAgentDoc(skillIds: string[], overrides: Record<string, unknown> = {}) {
+  return {
+    id: `agent_${new mongoose.Types.ObjectId().toString()}`,
+    name: 'Allowlist Agent',
+    provider: 'openai',
+    model: 'gpt-4',
+    author: owner._id,
+    skills: skillIds,
+    skills_enabled: true,
+    ...overrides,
+  };
+}
 
 async function grantOwner(resourceId: mongoose.Types.ObjectId | string) {
   const role = (await AccessRole.findOne({ accessRoleId: AccessRoleIds.SKILL_OWNER }).lean()) as {
@@ -138,6 +153,23 @@ function makeSkillInput(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('Skill schema indexes', () => {
+  it('supports GitHub sync source metadata lookups', () => {
+    const indexSpecs = Skill.schema.indexes().map(([fields]) => fields);
+
+    expect(indexSpecs).toContainEqual({
+      source: 1,
+      'sourceMetadata.upstreamId': 1,
+      tenantId: 1,
+    });
+    expect(indexSpecs).toContainEqual({
+      source: 1,
+      'sourceMetadata.sourceId': 1,
+      tenantId: 1,
+    });
+  });
+});
 
 describe('skill validation helpers', () => {
   it('rejects names starting with reserved brand prefixes', () => {
@@ -253,7 +285,9 @@ describe('skill validation helpers', () => {
           'user-invocable': true,
           effort: 5,
           version: '1.0.0',
+          license: 'MIT',
           hooks: { 'pre-run': 'echo hi' },
+          metadata: { owner: 'data-team' },
         }),
       ).toEqual([]);
     });
@@ -281,6 +315,8 @@ describe('skill validation helpers', () => {
     it('accepts always-apply as a boolean', () => {
       expect(validateSkillFrontmatter({ 'always-apply': true })).toEqual([]);
       expect(validateSkillFrontmatter({ 'always-apply': false })).toEqual([]);
+      expect(validateSkillFrontmatter({ alwaysApply: true })).toEqual([]);
+      expect(validateSkillFrontmatter({ alwaysApply: false })).toEqual([]);
     });
 
     it('rejects always-apply with non-boolean values', () => {
@@ -291,6 +327,11 @@ describe('skill validation helpers', () => {
       ).toBe(true);
       expect(
         validateSkillFrontmatter({ 'always-apply': 1 }).some((i) => i.code === 'INVALID_TYPE'),
+      ).toBe(true);
+      expect(
+        validateSkillFrontmatter({ alwaysApply: 'yes' }).some(
+          (i) => i.code === 'INVALID_TYPE' && i.field === 'frontmatter.alwaysApply',
+        ),
       ).toBe(true);
     });
   });
@@ -507,6 +548,121 @@ describe('Skill CRUD methods', () => {
     expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(0);
   });
 
+  it('filterExistingSkillIds matches uppercase-hex candidates and returns canonical ids', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'case-skill' }));
+    const canonical = skill._id.toString();
+
+    const filtered = await filterExistingSkillIds(mongoose, [canonical.toUpperCase()]);
+    expect(filtered).toEqual([canonical]);
+  });
+
+  it('deleteSkill prunes agent allowlists even when skill file cleanup fails', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'flaky-files' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
+
+    const deleteManySpy = jest
+      .spyOn(SkillFile, 'deleteMany')
+      .mockRejectedValueOnce(new Error('transient storage failure'));
+    try {
+      await expect(methods.deleteSkill(skill._id.toString())).rejects.toThrow(
+        'transient storage failure',
+      );
+    } finally {
+      deleteManySpy.mockRestore();
+    }
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+  });
+
+  it('deleteSkill disables skills when the deleted id was the entire allowlist', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
+
+    const res = await methods.deleteSkill(skill._id.toString().toUpperCase());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+  });
+
+  it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {
+    const { skill: doomed } = await methods.createSkill(makeSkillInput({ name: 'doomed-skill' }));
+    const { skill: kept } = await methods.createSkill(makeSkillInput({ name: 'kept-skill' }));
+    const Agent = mongoose.models.Agent;
+    const scoped = await Agent.create(makeAgentDoc([doomed._id.toString(), kept._id.toString()]));
+    const untouched = await Agent.create(
+      makeAgentDoc([kept._id.toString()], { name: 'Untouched Agent' }),
+    );
+
+    const res = await methods.deleteSkill(doomed._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const scopedAfter = (await Agent.findById(scoped._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(scopedAfter?.skills).toEqual([kept._id.toString()]);
+    expect(scopedAfter?.skills_enabled).toBe(true);
+
+    const untouchedAfter = (await Agent.findById(untouched._id).lean()) as {
+      skills?: string[];
+    } | null;
+    expect(untouchedAfter?.skills).toEqual([kept._id.toString()]);
+  });
+
+  it('findSkillBySourceIdentity searches only the requested tenant bucket', async () => {
+    const upstreamId = 'librechat-skills:skills/research';
+    const sourceMetadata = {
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      upstreamId,
+    };
+    const author = new mongoose.Types.ObjectId();
+    const tenantSkill = await Skill.create({
+      name: 'research',
+      description: 'A tenant-scoped GitHub skill mirror.',
+      body: 'tenant body',
+      author,
+      authorName: 'GitHub Sync',
+      tenantId: 'tenant-a',
+      source: 'github',
+      sourceMetadata,
+    });
+    const ambientSkill = await Skill.create({
+      name: 'research',
+      description: 'An ambient GitHub skill mirror.',
+      body: 'ambient body',
+      author,
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata,
+    });
+
+    const ambientResult = await methods.findSkillBySourceIdentity({
+      source: 'github',
+      upstreamId,
+    });
+    const tenantResult = await methods.findSkillBySourceIdentity({
+      source: 'github',
+      upstreamId,
+      tenantId: 'tenant-a',
+    });
+
+    expect(ambientResult?._id.toString()).toBe(ambientSkill._id.toString());
+    expect(tenantResult?._id.toString()).toBe(tenantSkill._id.toString());
+  });
+
   it('listSkillsByAccess returns only accessible skills and paginates by cursor', async () => {
     const ids: mongoose.Types.ObjectId[] = [];
     for (let i = 0; i < 3; i++) {
@@ -643,6 +799,55 @@ describe('Skill CRUD methods', () => {
     expect(fetched?.disableModelInvocation).toBe(true);
     expect(fetched?.userInvocable).toBe(false);
     expect(fetched?.allowedTools).toEqual(['execute_code']);
+  });
+
+  it('getAuthorSkillByName resolves only the matching author and tenant', async () => {
+    const sharedName = 'author-owned-lookup';
+    const ownerSkill = await Skill.create({
+      name: sharedName,
+      description: 'Owner tenant skill.',
+      body: 'owner body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      tenantId: 'tenant-a',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.create({
+      name: sharedName,
+      description: 'Other author skill.',
+      body: 'other body',
+      frontmatter: {},
+      author: other._id,
+      authorName: other.name ?? 'Other',
+      tenantId: 'tenant-a',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.create({
+      name: sharedName,
+      description: 'Owner different tenant skill.',
+      body: 'tenant b body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      tenantId: 'tenant-b',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+
+    const fetched = await methods.getAuthorSkillByName({
+      name: sharedName,
+      author: owner._id,
+      tenantId: 'tenant-a',
+    });
+
+    expect(fetched?._id.toString()).toBe(ownerSkill._id.toString());
+    expect(fetched?.body).toBe('owner body');
   });
 
   it('preferModelInvocable picks the model-invocable doc on same-name collision (does NOT filter on userInvocable)', async () => {
@@ -1025,6 +1230,35 @@ describe('Skill CRUD methods', () => {
     expect(skill.alwaysApply).toBe(true);
   });
 
+  it('createSkill derives alwaysApply from the camel-case frontmatter alias', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'frontmatter-alias-on',
+        frontmatter: {
+          name: 'frontmatter-alias-on',
+          description: 'A small demo skill used in tests.',
+          alwaysApply: true,
+        },
+      }),
+    );
+    expect(skill.alwaysApply).toBe(true);
+  });
+
+  it('createSkill lets always-apply win when both frontmatter spellings are present', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'frontmatter-canonical-wins',
+        frontmatter: {
+          name: 'frontmatter-canonical-wins',
+          description: 'A small demo skill used in tests.',
+          'always-apply': false,
+          alwaysApply: true,
+        },
+      }),
+    );
+    expect(skill.alwaysApply).toBe(false);
+  });
+
   it('createSkill prefers explicit top-level alwaysApply over frontmatter', async () => {
     const { skill } = await methods.createSkill(
       makeSkillInput({
@@ -1051,6 +1285,26 @@ describe('Skill CRUD methods', () => {
           name: 'sync-test',
           description: 'A small demo skill used in tests.',
           'always-apply': true,
+        },
+      },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill syncs alwaysApply column from the camel-case frontmatter alias', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'sync-alias-test' }));
+    expect(skill.alwaysApply).toBe(false);
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: {
+        frontmatter: {
+          name: 'sync-alias-test',
+          description: 'A small demo skill used in tests.',
+          alwaysApply: true,
         },
       },
     });
@@ -1118,6 +1372,21 @@ describe('Skill CRUD methods', () => {
     const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-enable' }));
     expect(skill.alwaysApply).toBe(false);
     const newBody = `---\nname: body-enable\ndescription: now opting in.\nalways-apply: true\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: newBody },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill derives alwaysApply=true from a body edit that adds `alwaysApply: true` inline', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-enable-alias' }));
+    expect(skill.alwaysApply).toBe(false);
+    const newBody = `---\nname: body-enable-alias\ndescription: now opting in.\nalwaysApply: true\n---\n\n# Body`;
     const result = await methods.updateSkill({
       id: skill._id.toString(),
       expectedVersion: skill.version,
@@ -1337,6 +1606,40 @@ describe('SkillFile methods', () => {
     const files = await methods.listSkillFiles(skill._id);
     expect(files[0].storageKey).toBe('r/us-east-2/uploads/user123/parse.sh');
     expect(files[0].storageRegion).toBe('us-east-2');
+  });
+
+  it('throws an explicit error when the upsert returns no saved file row', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const missingUpsert = {
+      lean: jest.fn().mockResolvedValue({
+        value: null,
+        lastErrorObject: { updatedExisting: false },
+      }),
+    } as unknown as ReturnType<typeof SkillFile.findOneAndUpdate>;
+    const findOneAndUpdateSpy = jest
+      .spyOn(SkillFile, 'findOneAndUpdate')
+      .mockReturnValueOnce(missingUpsert);
+    const bumpSpy = jest.spyOn(Skill, 'findByIdAndUpdate');
+
+    try {
+      await expect(
+        methods.upsertSkillFile({
+          skillId: skill._id,
+          relativePath: 'scripts/parse.sh',
+          file_id: 'file-1',
+          filename: 'parse.sh',
+          filepath: '/tmp/v1',
+          source: 'local',
+          mimeType: 'text/plain',
+          bytes: 10,
+          author: owner._id,
+        }),
+      ).rejects.toMatchObject({ code: 'SKILL_FILE_UPSERT_NOT_FOUND' });
+      expect(bumpSpy).not.toHaveBeenCalled();
+    } finally {
+      findOneAndUpdateSpy.mockRestore();
+      bumpSpy.mockRestore();
+    }
   });
 
   it('clears codeEnvRef when a skill file is upserted (replacement)', async () => {
@@ -1576,5 +1879,22 @@ describe('deleteUserSkills', () => {
     expect(deleted).toBe(1);
     expect(await Skill.countDocuments()).toBe(1);
     expect(await Skill.countDocuments({ _id: sharedId })).toBe(1);
+  });
+
+  it('prunes deleted sole-owned skill ids from agent allowlists', async () => {
+    const { skill: mine } = await methods.createSkill(makeSkillInput({ name: 'mine' }));
+    await grantOwner(mine._id);
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([mine._id.toString()]));
+
+    const deleted = await methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId);
+    expect(deleted).toBe(1);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
   });
 });

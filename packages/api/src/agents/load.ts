@@ -1,5 +1,4 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
@@ -13,6 +12,8 @@ import type {
   TModelSpec,
   Agent,
 } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -72,6 +73,9 @@ export async function loadEphemeralAgent(
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
+  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+    tools.push(Tools.memory);
+  }
 
   const addedServers = new Set<string>();
   if (mcpServers.size > 0) {
@@ -79,7 +83,13 @@ export async function loadEphemeralAgent(
       if (addedServers.has(mcpServer)) {
         continue;
       }
-      const serverTools = await deps.getMCPServerTools(userId, mcpServer);
+      /** Request-tier overlays are invisible to the cache service's registry
+       *  resolver — overlay-scoped servers expand fresh via `mcp_all` instead */
+      const overlayConfig = req.config?.mcpConfig?.[mcpServer];
+      const serverTools =
+        overlayConfig && requiresEphemeralUserConnection(overlayConfig)
+          ? null
+          : await deps.getMCPServerTools(userId, mcpServer);
       if (!serverTools) {
         tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
         addedServers.add(mcpServer);
@@ -134,6 +144,20 @@ export async function loadEphemeralAgent(
 
   if (ephemeralAgent?.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
+  }
+  if (modelSpec?.subagents) {
+    result.subagents = modelSpec.subagents;
+  }
+  if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+    if (modelSpec.skills === true) {
+      result.skills_enabled = true;
+    } else if (modelSpec.skills === false) {
+      result.skills_enabled = false;
+      result.skills = [];
+    } else if (Array.isArray(modelSpec.skills)) {
+      result.skills_enabled = true;
+      result.skills = [];
+    }
   }
   return result as Agent;
 }

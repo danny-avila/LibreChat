@@ -209,6 +209,11 @@ export type SupportContact = {
   email?: string;
 };
 
+export type AgentOwnerContact = {
+  name?: string;
+  email?: string;
+};
+
 /**
  * Specifies who can invoke a tool.
  * - 'direct': LLM can call directly
@@ -286,6 +291,7 @@ export type Agent = {
   version?: number;
   category?: string;
   support_contact?: SupportContact;
+  owner_contact?: AgentOwnerContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
   /** Optional allowlist of skill ObjectIds. Only applies when `skills_enabled`. */

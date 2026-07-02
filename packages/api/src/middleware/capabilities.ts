@@ -14,7 +14,11 @@ import type { ServerRequest } from '~/types/http';
 
 interface CapabilityDeps {
   getUserPrincipals: (
-    params: { userId: string | Types.ObjectId; role?: string | null },
+    params: {
+      userId: string | Types.ObjectId;
+      role?: string | null;
+      idOnTheSource?: string | null;
+    },
     session?: ClientSession,
   ) => Promise<ResolvedPrincipal[]>;
   hasCapabilityForPrincipals: (params: {
@@ -28,6 +32,8 @@ export interface CapabilityUser {
   id: string;
   role: string;
   tenantId?: string;
+  /** External member id; pass `null` for local users to skip the fallback lookup. */
+  idOnTheSource?: string | null;
 }
 
 interface CapabilityStore {
@@ -62,7 +68,8 @@ export type HasConfigCapabilityFn = (
  * Outside a request context (background jobs, tests), the store is undefined
  * and every check falls through to the database — correct behavior.
  */
-export const capabilityStore = new AsyncLocalStorage<CapabilityStore>();
+export const capabilityStore: AsyncLocalStorage<CapabilityStore> =
+  new AsyncLocalStorage<CapabilityStore>();
 
 export function capabilityContextMiddleware(
   _req: ServerRequest,
@@ -152,7 +159,11 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     if (cachedPrincipals) {
       principals = cachedPrincipals;
     } else {
-      principals = await getUserPrincipals({ userId: user.id, role: user.role });
+      principals = await getUserPrincipals({
+        userId: user.id,
+        role: user.role,
+        idOnTheSource: user.idOnTheSource,
+      });
       store?.principals.set(principalKey, principals);
     }
 
@@ -206,6 +217,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
           id,
           role: req.user.role ?? '',
           tenantId: (req.user as CapabilityUser).tenantId,
+          idOnTheSource: req.user.idOnTheSource ?? null,
         };
 
         if (await hasCapability(user, capability)) {
