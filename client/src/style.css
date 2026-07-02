@@ -2663,7 +2663,7 @@ html {
 }
 
 .tooltip {
-  z-index: 900;
+  z-index: 150;
   cursor: pointer;
   border-radius: 0.275rem;
   background-color: var(--surface-primary);
@@ -2695,16 +2695,6 @@ html {
 .dark :focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
-}
-
-/* Shared Input/Textarea (.lc-field): show the focus ring for keyboard users
-   only. Text inputs match :focus-visible on pointer focus too (a UA heuristic
-   CSS cannot distinguish), so the ring is gated on the tracked input modality. */
-html[data-input-modality='pointer'] .lc-field:focus,
-html[data-input-modality='pointer'] .lc-field:focus-visible {
-  border-color: var(--border-light);
-  box-shadow: none;
-  outline: none;
 }
 
 .popover-ui {

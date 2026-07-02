@@ -2,6 +2,7 @@
 import * as React from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { cn } from '~/utils';
+import './Field.css';
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
