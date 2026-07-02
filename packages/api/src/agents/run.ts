@@ -848,6 +848,7 @@ function buildSubagentConfigs(
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
+      allowNested: true,
     });
   }
 
@@ -1136,6 +1137,7 @@ export async function createRun({
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
+      agentInput.maxSubagentDepth = MAX_SUBAGENT_DEPTH;
     }
     agentInputs.push(agentInput);
   }

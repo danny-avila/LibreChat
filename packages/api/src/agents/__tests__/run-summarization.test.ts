@@ -1075,6 +1075,37 @@ describe('subagentConfigs', () => {
     expect(childInputs.discoveredTools).toBeUndefined();
   });
 
+  it('marks explicit subagent configs as `allowNested` and seeds the SDK depth countdown', async () => {
+    const grandchild = makeAgent({ id: 'agent_grandchild', name: 'Grandchild' });
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Child',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_grandchild'] },
+    }) as TestRunAgent;
+    child.subagentAgentConfigs = [grandchild as TestRunAgent];
+
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+
+    expect(agents[0].maxSubagentDepth).toBe(MAX_SUBAGENT_DEPTH);
+
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    expect(configs[0].allowNested).toBe(true);
+
+    const childInputs = configs[0].agentInputs as Record<string, unknown>;
+    const grandchildConfigs = childInputs.subagentConfigs as Array<Record<string, unknown>>;
+    expect(grandchildConfigs).toHaveLength(1);
+    expect(grandchildConfigs[0].type).toBe('agent_grandchild');
+    expect(grandchildConfigs[0].allowNested).toBe(true);
+  });
+
   it('rejects subagent graphs deeper than MAX_SUBAGENT_DEPTH before Run.create', async () => {
     await expect(
       createRun({
