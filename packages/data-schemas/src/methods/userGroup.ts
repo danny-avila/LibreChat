@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { AsyncLocalStorage } from 'async_hooks';
 import { CacheKeys, PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
@@ -19,6 +20,8 @@ const pendingGroupLookups = new Map<string, PendingGroupLookup>();
 const GROUP_LOCK_POLL_MS = 50;
 /** Above this many member keys, invalidation clears the namespace instead of fanning out deletes. */
 const INVALIDATION_CLEAR_THRESHOLD = 1000;
+/** Margin added to the lock wait when scheduling the delayed second invalidation pass. */
+const STALE_WRITE_GRACE_MS = 500;
 
 const isCachedGroupId = (value: unknown): value is string =>
   typeof value === 'string' && isValidObjectIdString(value);
@@ -34,8 +37,11 @@ function runAfterTransaction(
   invalidate: () => Promise<void>,
 ): Promise<void> {
   if (session?.inTransaction()) {
+    /** The `ended` listener runs in the emitter's context; snapshot the caller's ALS
+     * (tenant scoping) so the deferred invalidation still derives tenant-scoped keys. */
+    const runInCallerContext = AsyncLocalStorage.snapshot();
     session.once('ended', () => {
-      invalidate().catch(() => undefined);
+      runInCallerContext(invalidate).catch(() => undefined);
     });
     return Promise.resolve();
   }
@@ -346,6 +352,38 @@ export function createUserGroupMethods(
     }
   }
 
+  async function dropMemberKeys(cache: CacheStore, cacheKeys: Set<string>): Promise<void> {
+    for (const cacheKey of cacheKeys) {
+      const pending = pendingGroupLookups.get(cacheKey);
+      if (pending) {
+        pending.markStale();
+        pendingGroupLookups.delete(cacheKey);
+      }
+    }
+    try {
+      await Promise.all([...cacheKeys].map((cacheKey) => cache.delete?.(cacheKey)));
+    } catch {
+      /** Cache failures must not block membership updates. */
+    }
+  }
+
+  /**
+   * Cross-process builds cannot see this process's stale flags, so a build in another
+   * container that read pre-mutation state can re-cache it after the first delete.
+   * A delayed second pass (bounded by the lock wait plus one query round-trip) evicts
+   * such rewrites; only Redis-backed stores (lock-capable) share data across processes.
+   */
+  function scheduleSecondInvalidation(cache: CacheStore, secondPass: () => Promise<void>): void {
+    if (!cache.acquireLock) {
+      return;
+    }
+    const graceMs = Math.max(cache.lockWaitMs ?? 0, 0) + STALE_WRITE_GRACE_MS;
+    const timer = setTimeout(() => {
+      secondPass().catch(() => undefined);
+    }, graceMs);
+    timer.unref?.();
+  }
+
   /**
    * Drops cached group memberships for the given member keys (both base and
    * tenant-scoped variants) after a membership mutation. In-flight builds are
@@ -376,18 +414,8 @@ export function createUserGroupMethods(
     if (cacheKeys.size > INVALIDATION_CLEAR_THRESHOLD && cache.clear) {
       return clearMemberGroupsCache();
     }
-    for (const cacheKey of cacheKeys) {
-      const pending = pendingGroupLookups.get(cacheKey);
-      if (pending) {
-        pending.markStale();
-        pendingGroupLookups.delete(cacheKey);
-      }
-    }
-    try {
-      await Promise.all([...cacheKeys].map((cacheKey) => cache.delete?.(cacheKey)));
-    } catch {
-      /** Cache failures must not block membership updates. */
-    }
+    await dropMemberKeys(cache, cacheKeys);
+    scheduleSecondInvalidation(cache, () => dropMemberKeys(cache, cacheKeys));
   }
 
   /** Clears the whole membership cache when affected members cannot be enumerated. */
@@ -396,15 +424,19 @@ export function createUserGroupMethods(
     if (!cache?.clear) {
       return;
     }
-    for (const pending of pendingGroupLookups.values()) {
-      pending.markStale();
-    }
-    pendingGroupLookups.clear();
-    try {
-      await cache.clear();
-    } catch {
-      /** Cache failures must not block membership updates. */
-    }
+    const clearAll = async (): Promise<void> => {
+      for (const pending of pendingGroupLookups.values()) {
+        pending.markStale();
+      }
+      pendingGroupLookups.clear();
+      try {
+        await cache.clear?.();
+      } catch {
+        /** Cache failures must not block membership updates. */
+      }
+    };
+    await clearAll();
+    scheduleSecondInvalidation(cache, clearAll);
   }
 
   /**

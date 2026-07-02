@@ -2,6 +2,7 @@ import mongoose, { Types } from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type * as t from '~/types';
+import { tenantStorage } from '~/config/tenantContext';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
 import userSchema from '~/schema/user';
@@ -987,6 +988,101 @@ describe('userGroup methods', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(cache.delete).toHaveBeenCalledWith('txn-ext-1');
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
+        group._id.toString(),
+      ]);
+    });
+
+    it('caches and invalidates under tenant-scoped keys within a tenant context', async () => {
+      const user = await createTestUser({ idOnTheSource: 'tenant-ext-1' });
+      const group = await Group.create({
+        name: 'Tenant Team',
+        source: 'entra',
+        idOnTheSource: 'tenant-grp-1',
+        memberIds: ['tenant-ext-1'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'tenant-ext-1',
+      };
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
+          group._id.toString(),
+        ]);
+      });
+      expect(cache.store.has('tenant-ext-1:tenant-a')).toBe(true);
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await cachedMethods.removeUserFromGroup(user._id, group._id);
+      });
+      expect(cache.store.has('tenant-ext-1:tenant-a')).toBe(false);
+      expect(cache.delete).toHaveBeenCalledWith('tenant-ext-1:tenant-a');
+      expect(cache.delete).toHaveBeenCalledWith('tenant-ext-1');
+    });
+
+    it('keeps tenant scoping for invalidations deferred past the transaction', async () => {
+      const user = await createTestUser({ idOnTheSource: 'txn-tenant-ext-1' });
+      const group = await Group.create({
+        name: 'Tenant Transactional Team',
+        source: 'entra',
+        idOnTheSource: 'txn-tenant-grp-1',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+
+      let session!: mongoose.ClientSession;
+      await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+        session = await mongoose.startSession();
+        session.startTransaction();
+        await cachedMethods.addUserToGroup(user._id, group._id, session);
+      });
+      expect(cache.delete).not.toHaveBeenCalled();
+
+      /** Session ends outside the tenant context; the snapshot must preserve it */
+      await session.commitTransaction();
+      await session.endSession();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1:tenant-b');
+      expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1');
+    });
+
+    it('runs a delayed second invalidation to evict cross-process stale rewrites', async () => {
+      const user = await createTestUser({ idOnTheSource: 'second-ext-1' });
+      const group = await Group.create({
+        name: 'Second Pass Team',
+        source: 'entra',
+        idOnTheSource: 'second-grp-1',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      const lockedCache = Object.assign(cache, {
+        acquireLock: jest.fn(async () => 'lock-token'),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 0,
+      });
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => lockedCache),
+      });
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'second-ext-1',
+      };
+
+      await cachedMethods.addUserToGroup(user._id, group._id);
+      expect(cache.delete).toHaveBeenCalledTimes(1);
+
+      /** Another container re-caches pre-mutation memberships after the first delete */
+      cache.store.set('second-ext-1', []);
+      await new Promise((resolve) => setTimeout(resolve, 700));
+
+      expect(cache.store.has('second-ext-1')).toBe(false);
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
         group._id.toString(),
       ]);
