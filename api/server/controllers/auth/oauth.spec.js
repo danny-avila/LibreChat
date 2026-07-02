@@ -148,4 +148,69 @@ describe('createOAuthHandler', () => {
     expect(mockSetAuthTokens).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('forwards the refresh token from req.authInfo for non-openid admin providers', async () => {
+    const handler = createOAuthHandler('http://admin.example.com/auth/google/callback');
+    const req = buildReq({
+      user: { _id: 'user-9', email: 'g@example.com', provider: 'google' },
+      authInfo: { refreshToken: 'google-refresh-token' },
+    });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockGenerateAdminExchangeCode).toHaveBeenCalledWith(
+      {},
+      req.user,
+      'jwt-token',
+      'google-refresh-token',
+      'http://admin.example.com',
+      'pkce-challenge',
+      expect.any(Number),
+    );
+  });
+
+  it('omits the refresh token when a non-openid admin login has no authInfo', async () => {
+    const handler = createOAuthHandler('http://admin.example.com/auth/google/callback');
+    const req = buildReq({
+      user: { _id: 'user-9', email: 'g@example.com', provider: 'google' },
+    });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockGenerateAdminExchangeCode).toHaveBeenCalledWith(
+      {},
+      req.user,
+      'jwt-token',
+      undefined,
+      'http://admin.example.com',
+      'pkce-challenge',
+      expect.any(Number),
+    );
+  });
+
+  it('does not forward refresh tokens for admin providers other than google or openid', async () => {
+    const handler = createOAuthHandler('http://admin.example.com/auth/discord/callback');
+    const req = buildReq({
+      user: { _id: 'user-9', email: 'd@example.com', provider: 'discord' },
+      authInfo: { refreshToken: 'discord-refresh-token' },
+    });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockGenerateAdminExchangeCode).toHaveBeenCalledWith(
+      {},
+      req.user,
+      'jwt-token',
+      undefined,
+      'http://admin.example.com',
+      'pkce-challenge',
+      expect.any(Number),
+    );
+  });
 });
