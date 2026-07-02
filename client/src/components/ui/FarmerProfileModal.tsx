@@ -1,6 +1,7 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Cookies from 'js-cookie';
 import { useRecoilState } from 'recoil';
+import { useQuery } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import useGeolocation from '~/hooks/useGeolocation';
 import { SearchableSelect, SearchableMultiSelect } from '~/components/ui';
@@ -19,7 +20,7 @@ import { useSaveFarmerProfileMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { STATES, DISTRICTS, BLOCKS, VILLAGES, CROPS, KVKS } from '~/utils/metaData';
+import { CROPS, KVKS } from '~/utils/metaData';
 
 // ── Form Types ───────────────────────────────────────────────────────────────
 
@@ -140,18 +141,70 @@ const FarmerProfileModal = ({
     setValue('villageName', '', { shouldValidate: false });
   };
 
-  const districtOptions = selectedState
-    ? [...(DISTRICTS[selectedState] ?? []), otherOption]
+  const { data: statesList = [] } = useQuery<{ code: number | string; name: string }[]>({
+    queryKey: ['states'],
+    queryFn: async () => {
+      const res = await fetch('/api/locations/states');
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: open,
+    staleTime: Infinity,
+  });
+
+  const stateObj = statesList.find((s) => s.name === selectedState);
+  const { data: districtsList = [] } = useQuery<{ code: number | string; name: string }[]>({
+    queryKey: ['districts', stateObj?.code],
+    queryFn: async () => {
+      const res = await fetch(`/api/locations/districts?stateCode=${stateObj?.code}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!stateObj && selectedState !== otherOption,
+    staleTime: Infinity,
+  });
+
+  const distObj = districtsList.find((d) => d.name === selectedDistrict);
+  const { data: blocksList = [] } = useQuery<{ code: number | string; name: string }[]>({
+    queryKey: ['subdistricts', distObj?.code],
+    queryFn: async () => {
+      const res = await fetch(`/api/locations/subdistricts?districtCode=${distObj?.code}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!distObj && selectedDistrict !== otherOption,
+    staleTime: Infinity,
+  });
+
+  const blockObj = blocksList.find((b) => b.name === selectedBlock);
+  const { data: villagesList = [] } = useQuery<{ code: number | string; name: string }[]>({
+    queryKey: ['villages', blockObj?.code],
+    queryFn: async () => {
+      const res = await fetch(`/api/locations/villages?subdistrictCode=${blockObj?.code}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!blockObj && selectedBlock !== otherOption,
+    staleTime: Infinity,
+  });
+
+  const stateOptions = statesList.length > 0 
+    ? [...statesList.map((s) => s.name), otherOption] 
     : [otherOption];
+
+  const districtOptions =
+    selectedState && selectedState !== otherOption
+      ? [...districtsList.map((d) => d.name), otherOption]
+      : [otherOption];
 
   const blockOptions =
     selectedDistrict && selectedDistrict !== otherOption
-      ? [...(BLOCKS[selectedDistrict] ?? []), otherOption]
+      ? [...blocksList.map((b) => b.name), otherOption]
       : [otherOption];
 
   const villageOptions =
-    selectedDistrict && selectedDistrict !== otherOption
-      ? [...(VILLAGES[selectedDistrict] ?? []), otherOption]
+    selectedBlock && selectedBlock !== otherOption
+      ? [...villagesList.map((v) => v.name), otherOption]
       : [otherOption];
 
   const kvkOptions =
@@ -880,7 +933,7 @@ const FarmerProfileModal = ({
                   rules={{ required: localize('com_farmer_validation_state_required') }}
                   render={({ field }) => (
                     <SearchableSelect
-                      options={STATES}
+                      options={stateOptions}
                       value={field.value ?? ''}
                       onChange={handleStateChange}
                       placeholder={localize('com_farmer_placeholder_select_state')}
@@ -981,11 +1034,11 @@ const FarmerProfileModal = ({
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       placeholder={
-                        selectedDistrict
+                        selectedBlock
                           ? localize('com_farmer_placeholder_select_village')
                           : localize('com_farmer_placeholder_select_district_first')
                       }
-                      disabled={!selectedDistrict}
+                      disabled={!selectedBlock}
                     />
                   )}
                 />

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useForm, Controller } from 'react-hook-form';
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   OGDialog,
   OGDialogContent,
@@ -13,7 +14,7 @@ import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import useGeolocation from '~/hooks/useGeolocation';
 import { useLocalize } from '~/hooks';
-import { STATES, DISTRICTS, INDIAN_LANGUAGES, CROPS, KVKS } from '~/utils/metaData';
+import { INDIAN_LANGUAGES, CROPS, KVKS } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
 import SearchableMultiSelect from './SearchableMultiSelect';
 
@@ -122,12 +123,35 @@ const FarmerLocationModal = ({
     updateCropsCultivated(selectedCropsList.filter((crop) => crop !== cropToRemove));
   };
 
-  const matchedStateKey = selectedState
-    ? Object.keys(DISTRICTS).find((k) => k.toLowerCase() === selectedState.toLowerCase())
-    : undefined;
+  const { data: statesList = [] } = useQuery<{ code: number | string; name: string }[]>({
+    queryKey: ['states'],
+    queryFn: async () => {
+      const res = await fetch('/api/locations/states');
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: open,
+    staleTime: Infinity,
+  });
 
-  const districtOptions = matchedStateKey
-    ? [...(DISTRICTS[matchedStateKey] ?? []), localize('com_farmer_option_other')]
+  const stateOptions = statesList.length > 0
+    ? [...statesList.map((s) => s.name), localize('com_farmer_option_other')]
+    : [localize('com_farmer_option_other')];
+
+  const stateObj = statesList.find((s) => s.name === selectedState);
+  const { data: districtsList = [] } = useQuery<{ code: number | string; name: string }[]>({
+    queryKey: ['districts', stateObj?.code],
+    queryFn: async () => {
+      const res = await fetch(`/api/locations/districts?stateCode=${stateObj?.code}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!stateObj && selectedState !== localize('com_farmer_option_other'),
+    staleTime: Infinity,
+  });
+
+  const districtOptions = districtsList.length > 0
+    ? [...districtsList.map((d) => d.name), localize('com_farmer_option_other')]
     : [localize('com_farmer_option_other')];
 
   const kvkOptions = useMemo(() => {
@@ -285,7 +309,7 @@ const FarmerLocationModal = ({
     state: {
       label: localize('com_farmer_label_state'),
       type: 'searchable-select',
-      options: STATES,
+      options: stateOptions,
       selectPlaceholder: localize('com_farmer_placeholder_select_state'),
     },
     district: {
