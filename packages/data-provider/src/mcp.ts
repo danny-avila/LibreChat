@@ -319,6 +319,12 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
    * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
    */
   obo: OboOptionsSchema.optional(),
+  /**
+   * Keys in `headers` whose values are encrypted at rest for DB-stored server configs
+   * (and masked in API responses); YAML-defined configs remain plaintext on disk and
+   * are not exposed via API responses.
+   */
+  secretHeaderKeys: z.array(z.string()).optional(),
   /** Optional outbound proxy URL for this remote MCP transport */
   proxy: ProxyUrlSchema.optional(),
   url: z
@@ -347,6 +353,12 @@ export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
    * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
    */
   obo: OboOptionsSchema.optional(),
+  /**
+   * Keys in `headers` whose values are encrypted at rest for DB-stored server configs
+   * (and masked in API responses); YAML-defined configs remain plaintext on disk and
+   * are not exposed via API responses.
+   */
+  secretHeaderKeys: z.array(z.string()).optional(),
   /** Optional outbound proxy URL for this remote MCP transport */
   proxy: ProxyUrlSchema.optional(),
   url: z
@@ -384,10 +396,6 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     timeout: true,
     sseReadTimeout: true,
     initTimeout: true,
-    chatMenu: true,
-    serverInstructions: true,
-    requiresOAuth: true,
-    customUserVars: true,
     oauth_headers: true,
   });
 
@@ -414,9 +422,9 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
 
 /**
  * MCP Server configuration that comes from UI/API input only.
- * Omits server-managed fields like startup, timeout, customUserVars, etc.
- * Allows: title, description, url, iconPath, oauth (user credentials).
- * Admin-only OAuth audience fields are rejected for user-managed servers.
+ * Omits server-managed fields like startup, timeout, oauth_headers, etc.
+ * Allows user-controlled fields such as: title, description, url, iconPath, headers,
+ * customUserVars, oauth (user credentials), chatMenu, serverInstructions, secretHeaderKeys.
  *
  * SECURITY: Stdio transport is intentionally excluded from user input.
  * Stdio allows arbitrary command execution and should only be configured
@@ -429,7 +437,33 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
  * Protocol checks use positive allowlists (http(s) / ws(s)) to block
  * file://, ftp://, javascript:, and other non-network schemes.
  */
-export const MCPServerUserInputSchema = z.union([
+// Helper to validate secretHeaderKeys is subset of headers
+// Uses 'unknown' to work with Zod's omit/extend type transformations
+const validateSecretHeaderKeys = (data: unknown) => {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    'secretHeaderKeys' in data &&
+    Array.isArray(data.secretHeaderKeys) &&
+    data.secretHeaderKeys.length > 0
+  ) {
+    if (
+      !('headers' in data) ||
+      typeof data.headers !== 'object' ||
+      data.headers === null ||
+      Object.keys(data.headers).length === 0
+    ) {
+      return false;
+    }
+    const headerKeys = new Set(Object.keys(data.headers));
+    return data.secretHeaderKeys.every((key: unknown) => {
+      return typeof key === 'string' && headerKeys.has(key);
+    });
+  }
+  return true;
+};
+
+const MCPServerUserInputUnionSchema = z.union([
   userManagedServerFields(WebSocketOptionsSchema).extend({
     url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
   }),
@@ -442,6 +476,13 @@ export const MCPServerUserInputSchema = z.union([
     url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
   }),
 ]);
+
+export const MCPServerUserInputSchema = MCPServerUserInputUnionSchema.refine(
+  validateSecretHeaderKeys,
+  {
+    message: 'secretHeaderKeys must be a subset of header keys',
+  },
+);
 
 export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;
 
@@ -461,7 +502,7 @@ export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;
  */
 export const MCP_USER_INPUT_FIELDS: ReadonlySet<string> = (() => {
   const fields = new Set<string>();
-  for (const variant of MCPServerUserInputSchema.options) {
+  for (const variant of MCPServerUserInputUnionSchema.options) {
     const shape = (variant as unknown as { shape: Record<string, unknown> }).shape;
     for (const key of Object.keys(shape)) {
       fields.add(key);

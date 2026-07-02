@@ -180,7 +180,7 @@ export function getMissingRuntimeBodyPlaceholderFields(
  * `BODY` placeholders vary by chat request, so the normal userId:serverName
  * cache would reuse a connection built with stale request context.
  *
- * Ephemeral connections are created and torn down per tool call — configs using
+ * Ephemeral connections are created and torn down per tool call - configs using
  * these placeholders pay a full connect + initialize on every invocation.
  *
  * User/OpenID/Graph placeholders still require user-scoped connections, but they
@@ -274,7 +274,6 @@ export function redactServerSecrets(
     initDuration: config.initDuration,
     updatedAt: config.updatedAt,
     dbId: config.dbId,
-    /** Trust tier (yaml/config/user) — safe to expose; used by the UI for display purposes. */
     source: config.source,
     consumeOnly: config.consumeOnly,
     inspectionFailed: config.inspectionFailed,
@@ -299,13 +298,38 @@ export function redactServerSecrets(
     safe.obo = config.obo;
   }
 
+  // Only DB-backed configs should have headers round-trip through the API. YAML configs
+  // are excluded to prevent exposing env-resolved header values in API responses.
+  const rawHeaders = (config as ParsedServerConfig & { headers?: Record<string, string> }).headers;
+  const hasHeaders = !!rawHeaders && Object.keys(rawHeaders).length > 0;
+  const isDbBacked = config.dbId !== undefined;
+  const isLegacyDbHeaders = isDbBacked && hasHeaders && config.secretHeaderKeys === undefined;
+  const isUiManaged = isDbBacked && (config.secretHeaderKeys !== undefined || hasHeaders);
+
+  if (isUiManaged && rawHeaders) {
+    const maskedHeaders: Record<string, string> = {};
+    if (isLegacyDbHeaders) {
+      for (const key of Object.keys(rawHeaders)) {
+        maskedHeaders[key] = '';
+      }
+      (safe as ParsedServerConfig & { headers?: Record<string, string> }).headers = maskedHeaders;
+    } else {
+      const secretKeys = new Set(config.secretHeaderKeys ?? []);
+      for (const [key, value] of Object.entries(rawHeaders)) {
+        maskedHeaders[key] = secretKeys.has(key) ? '' : value;
+      }
+      (safe as ParsedServerConfig & { headers?: Record<string, string> }).headers = maskedHeaders;
+      safe.secretHeaderKeys = config.secretHeaderKeys ?? [];
+    }
+  }
+
   if (!options?.canEdit) {
     delete safe.url;
     if (safe.oauth) {
       const {
-        authorization_url: _au,
-        token_url: _tu,
-        revocation_endpoint: _re,
+        authorization_url: _authorizationURL,
+        token_url: _tokenURL,
+        revocation_endpoint: _revocationEndpoint,
         ...restOAuth
       } = safe.oauth;
       safe.oauth = restOAuth;
@@ -313,7 +337,7 @@ export function redactServerSecrets(
   }
 
   return Object.fromEntries(
-    Object.entries(safe).filter(([, v]) => v !== undefined),
+    Object.entries(safe).filter(([, value]) => value !== undefined),
   ) as Partial<ParsedServerConfig>;
 }
 
