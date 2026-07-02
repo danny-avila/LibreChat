@@ -328,6 +328,10 @@ class GenerationJobManagerClass {
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
     const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);
 
+    // Allocate this generation's epoch before any chunk is published so a reused streamId's
+    // new turn is delivered rather than dropped against a stale consumer nextSeq.
+    await this.eventTransport.beginGeneration?.(streamId);
+
     /**
      * Create runtime state with readyPromise.
      *

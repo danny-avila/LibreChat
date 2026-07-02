@@ -1,14 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import type { Redis, Cluster } from 'ioredis';
-import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
-import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
-import { createStreamServices } from '~/stream/createStreamServices';
-import { createMockPublisher } from './helpers/publisher';
 import {
   ioredisClient as staticRedisClient,
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
+import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
+import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
+import { createStreamServices } from '~/stream/createStreamServices';
+import { createMockPublisher } from './helpers/publisher';
 
 logger.silent = true;
 
@@ -285,6 +285,218 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
       messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 0, data: { index: 0 } }));
 
       expect(secondRunChunks.map((c) => (c as { index: number }).index)).toEqual([0]);
+
+      transport.destroy();
+    });
+
+    test('realigns the reorder buffer when a newer generation epoch arrives on a reused streamId', () => {
+      /**
+       * A reused streamId (regenerate or next turn) restarts the sequence counter, so the
+       * new generation's chunks arrive at seq 0 while a lingering subscriber still holds the
+       * prior generation's high nextSeq. The higher generation epoch realigns the buffer, so
+       * the chunks are delivered rather than dropped as seq < nextSeq.
+       */
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'reorder-epoch-realign-test';
+      const channel = `stream:{${streamId}}:events`;
+
+      // A subscriber attaches and never unsubscribes, so its count stays above 0.
+      const chunks: unknown[] = [];
+      transport.subscribe(streamId, { onChunk: (event) => chunks.push(event) });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+
+      // Generation 1 (epoch 1): seq 0..4 advance nextSeq to 5.
+      for (let i = 0; i < 5; i++) {
+        messageHandler(
+          channel,
+          JSON.stringify({ type: 'chunk', seq: i, epoch: 1, data: { index: i } }),
+        );
+      }
+      expect(chunks.map((c) => (c as { index: number }).index)).toEqual([0, 1, 2, 3, 4]);
+
+      // Generation 2 (epoch 2): counter restarted, chunks arrive from seq 0.
+      for (let i = 0; i < 3; i++) {
+        messageHandler(
+          channel,
+          JSON.stringify({ type: 'chunk', seq: i, epoch: 2, data: { index: 100 + i } }),
+        );
+      }
+      expect(chunks.map((c) => (c as { index: number }).index)).toEqual([
+        0, 1, 2, 3, 4, 100, 101, 102,
+      ]);
+
+      transport.destroy();
+    });
+
+    test('ignores stragglers from a prior generation epoch', () => {
+      /**
+       * After advancing to a newer generation, a late message carrying a lower epoch is a
+       * straggler from the prior generation and must be ignored, not delivered.
+       */
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'reorder-epoch-straggler-test';
+      const channel = `stream:{${streamId}}:events`;
+      const chunks: unknown[] = [];
+      transport.subscribe(streamId, { onChunk: (event) => chunks.push(event) });
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+
+      // Generation 2 is active; a late generation-1 chunk arrives afterward.
+      messageHandler(
+        channel,
+        JSON.stringify({ type: 'chunk', seq: 0, epoch: 2, data: { index: 200 } }),
+      );
+      messageHandler(
+        channel,
+        JSON.stringify({ type: 'chunk', seq: 9, epoch: 1, data: { index: 999 } }),
+      );
+
+      expect(chunks.map((c) => (c as { index: number }).index)).toEqual([200]);
+
+      transport.destroy();
+    });
+
+    test('cleanup deletes the sequence key but preserves the epoch key', async () => {
+      /**
+       * The epoch must keep incrementing across generations of a reused streamId, so cleanup
+       * has to delete the sequence key (restart ordering) while keeping the epoch key. If the
+       * epoch key were also deleted, the next generation would restart at epoch 1, collide with
+       * the prior generation's epoch, and its chunks would be dropped again.
+       */
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = 'cleanup-epoch-key-test';
+      const seqKey = `stream:{${streamId}}:seq`;
+      const epochKey = `stream:{${streamId}}:epoch`;
+
+      transport.subscribe(streamId, { onChunk: () => {} });
+      await transport.beginGeneration(streamId);
+      await transport.emitChunk(streamId, { index: 0 });
+
+      expect(await mockPublisher.get(seqKey)).not.toBeNull();
+      expect(await mockPublisher.get(epochKey)).not.toBeNull();
+
+      transport.cleanup(streamId);
+
+      expect(await mockPublisher.get(seqKey)).toBeNull();
+      expect(await mockPublisher.get(epochKey)).not.toBeNull();
+
+      transport.destroy();
+    });
+
+    test('beginGeneration allocates a distinct, persisted epoch per generation and stamps it on emits', async () => {
+      /**
+       * Allocating the epoch once at generation start (not on the seq===0 emit) means every
+       * chunk of a generation carries the same epoch regardless of emit ordering, and the
+       * epoch key is persisted so a reused streamId's next generation is strictly higher.
+       */
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+      const streamId = 'epoch-alloc-test';
+
+      const epochOf = () => {
+        const calls = mockPublisher.publish.mock.calls;
+        return (JSON.parse(calls[calls.length - 1][1] as string) as { epoch?: number }).epoch;
+      };
+
+      await transport.beginGeneration(streamId);
+      await transport.emitChunk(streamId, { index: 0 });
+      await transport.emitChunk(streamId, { index: 1 });
+      const gen1Epoch = epochOf();
+      // Every chunk of the generation carries the same epoch, including seq > 0.
+      await transport.emitChunk(streamId, { index: 2 });
+      expect(epochOf()).toBe(gen1Epoch);
+
+      // Reused streamId (cleanup deleted only :seq): next generation gets a higher epoch.
+      transport.cleanup(streamId);
+      await transport.beginGeneration(streamId);
+      await transport.emitChunk(streamId, { index: 0 });
+      expect(epochOf()).toBeGreaterThan(gen1Epoch as number);
+
+      transport.destroy();
+    });
+
+    test('realigns when the first epoch-tagged message follows untagged traffic', () => {
+      /**
+       * Rolling-upgrade transition: a consumer advanced nextSeq on untagged (pre-upgrade)
+       * messages, then the reused streamId's new generation arrives epoch-tagged from seq 0.
+       * The first epoch-tagged message must realign rather than drop the new generation.
+       */
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+      const streamId = 'epoch-transition-test';
+      const channel = `stream:{${streamId}}:events`;
+      const chunks: unknown[] = [];
+      transport.subscribe(streamId, { onChunk: (event) => chunks.push(event) });
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+
+      // Untagged (no epoch) traffic advances nextSeq to 3.
+      for (let i = 0; i < 3; i++) {
+        messageHandler(channel, JSON.stringify({ type: 'chunk', seq: i, data: { index: i } }));
+      }
+      expect(chunks.map((c) => (c as { index: number }).index)).toEqual([0, 1, 2]);
+
+      // New generation, now epoch-tagged, restarts at seq 0 while nextSeq is still 3.
+      messageHandler(
+        channel,
+        JSON.stringify({ type: 'chunk', seq: 0, epoch: 1, data: { index: 100 } }),
+      );
+      expect(chunks.map((c) => (c as { index: number }).index)).toEqual([0, 1, 2, 100]);
 
       transport.destroy();
     });
@@ -676,6 +888,75 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
       }
 
       await manager.destroy();
+    });
+
+    /**
+     * Two managers sharing one Redis model two replicas with no session affinity.
+     * A subscriber on the consumer replica never disconnects (count stays > 0), so its
+     * reorder buffer is never reset. A new generation reuses the streamId after the
+     * shared sequence counter has been deleted, so it republishes from seq 0. The
+     * regenerated turn must still reach the client through the real subscribe() path.
+     */
+    test('regenerated turn reaches a lingering cross-replica subscriber after a counter reset', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const producer = new GenerationJobManagerClass();
+      producer.configure(createStreamServices({ useRedis: true, redisClient: ioredisClient }));
+      producer.initialize();
+
+      const consumer = new GenerationJobManagerClass();
+      consumer.configure(createStreamServices({ useRedis: true, redisClient: ioredisClient }));
+      consumer.initialize();
+
+      const streamId = `xrep-regen-${Date.now()}`;
+      const seqKey = `stream:{${streamId}}:seq`;
+
+      await producer.createJob(streamId, 'user-1');
+
+      // Generation 1: the client streams on the consumer replica and never unsubscribes.
+      const gen1: unknown[] = [];
+      const lingering = await consumer.subscribe(streamId, (e) => gen1.push(e));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      for (let i = 0; i < 10; i++) {
+        await producer.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { gen: 1, index: i },
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(gen1.filter((e) => JSON.stringify(e).includes('"gen":1')).length).toBe(10);
+
+      // Generation 1 completes on the producer; the consumer's subscriber lingers (count > 0).
+      await producer.completeJob(streamId);
+
+      // A new generation reuses the streamId; another replica's cleanup deleted the seq key,
+      // so the shared counter restarts at 0.
+      await ioredisClient.del(seqKey);
+      await producer.createJob(streamId, 'user-1');
+
+      // The client opens the regenerated stream on the same consumer replica (count now > 1).
+      const gen2: unknown[] = [];
+      const regen = await consumer.subscribe(streamId, (e) => gen2.push(e));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      for (let i = 0; i < 5; i++) {
+        await producer.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { gen: 2, index: i },
+        });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      // The regenerated turn must reach the client, not be dropped as stale.
+      const gen2Seen = gen2.filter((e) => JSON.stringify(e).includes('"gen":2')).length;
+      expect(gen2Seen).toBeGreaterThan(0);
+
+      lingering!.unsubscribe();
+      regen!.unsubscribe();
+      await producer.destroy();
+      await consumer.destroy();
     });
   });
 });
