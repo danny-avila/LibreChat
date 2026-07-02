@@ -1,5 +1,5 @@
 import mongoose, { Types } from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { createUserGroupMethods } from './userGroup';
@@ -13,14 +13,15 @@ jest.mock('~/config/winston', () => ({
   debug: jest.fn(),
 }));
 
-let mongoServer: MongoMemoryServer;
+let mongoServer: MongoMemoryReplSet;
 let Group: mongoose.Model<t.IGroup>;
 let User: mongoose.Model<t.IUser>;
 let Role: mongoose.Model<t.IRole>;
 let methods: ReturnType<typeof createUserGroupMethods>;
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
+  /** Single-node replica set so transactional invalidation deferral is tested for real */
+  mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   Group = mongoose.models.Group || mongoose.model<t.IGroup>('Group', groupSchema);
   User = mongoose.models.User || mongoose.model<t.IUser>('User', userSchema);
   Role = mongoose.models.Role || mongoose.model<t.IRole>('Role', roleSchema);
@@ -953,6 +954,61 @@ describe('userGroup methods', () => {
 
       openReleaseGate!();
       expect(groupPrincipalIds(await parkedRead)).toEqual([]);
+    });
+
+    it('defers invalidation for transactional writes until the session ends', async () => {
+      const user = await createTestUser({ idOnTheSource: 'txn-ext-1' });
+      const group = await Group.create({
+        name: 'Transactional Team',
+        source: 'entra',
+        idOnTheSource: 'txn-grp-1',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'txn-ext-1',
+      };
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      await cachedMethods.addUserToGroup(user._id, group._id, session);
+
+      /** Mid-transaction: no invalidation, reads keep the pre-commit membership */
+      expect(cache.delete).not.toHaveBeenCalled();
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+
+      await session.commitTransaction();
+      await session.endSession();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(cache.delete).toHaveBeenCalledWith('txn-ext-1');
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
+        group._id.toString(),
+      ]);
+    });
+
+    it('skips the namespace clear for no-op bulk membership replacements', async () => {
+      await Group.create({
+        name: 'Noop Team',
+        source: 'entra',
+        idOnTheSource: 'noop-grp-1',
+        memberIds: ['noop-ext-1'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+
+      await cachedMethods.bulkUpdateGroups(
+        { _id: new Types.ObjectId() },
+        { $set: { memberIds: ['noop-ext-2'] } },
+      );
+
+      expect(cache.clear).not.toHaveBeenCalled();
+      expect(cache.delete).not.toHaveBeenCalled();
     });
   });
 

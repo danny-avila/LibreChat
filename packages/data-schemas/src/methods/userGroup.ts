@@ -23,6 +23,25 @@ const INVALIDATION_CLEAR_THRESHOLD = 1000;
 const isCachedGroupId = (value: unknown): value is string =>
   typeof value === 'string' && isValidObjectIdString(value);
 
+/**
+ * Runs cache invalidation immediately, or defers it to session end for transactional
+ * writes. Mid-transaction invalidation would let concurrent readers re-cache pre-commit
+ * state with no later correction; deferring keeps the existing entry serving the
+ * still-committed old memberships until the transaction commits or aborts.
+ */
+function runAfterTransaction(
+  session: ClientSession | undefined,
+  invalidate: () => Promise<void>,
+): Promise<void> {
+  if (session?.inTransaction()) {
+    session.once('ended', () => {
+      invalidate().catch(() => undefined);
+    });
+    return Promise.resolve();
+  }
+  return invalidate();
+}
+
 /** Extracts member ids referenced by a group update; indeterminate when they cannot be enumerated. */
 function collectMemberIdsFromGroupUpdate(update: Record<string, unknown>): {
   memberIds: string[];
@@ -526,7 +545,9 @@ export function createUserGroupMethods(
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = session ? { session } : {};
     const group = await Group.create([groupData], options).then((groups) => groups[0]);
-    await invalidateMemberGroupsCache(groupData.memberIds ?? []);
+    await runAfterTransaction(session, () =>
+      invalidateMemberGroupsCache(groupData.memberIds ?? []),
+    );
     return group;
   }
 
@@ -560,10 +581,12 @@ export function createUserGroupMethods(
       { $set: updateData },
       { ...options, new: false },
     ).lean<IGroup>();
-    await invalidateMemberGroupsCache([
-      ...(previous?.memberIds ?? []),
-      ...(updateData.memberIds ?? []),
-    ]);
+    await runAfterTransaction(session, () =>
+      invalidateMemberGroupsCache([
+        ...(previous?.memberIds ?? []),
+        ...(updateData.memberIds ?? []),
+      ]),
+    );
     return await findGroupByExternalId(idOnTheSource, source, {}, session);
   }
 
@@ -601,7 +624,7 @@ export function createUserGroupMethods(
       { $addToSet: { memberIds: userIdOnTheSource } },
       options,
     ).lean<IGroup>();
-    await invalidateMemberGroupsCache([userIdOnTheSource]);
+    await runAfterTransaction(session, () => invalidateMemberGroupsCache([userIdOnTheSource]));
 
     return { user: user as IUser, group: updatedGroup };
   }
@@ -640,7 +663,7 @@ export function createUserGroupMethods(
       { $pullAll: { memberIds: [userIdOnTheSource] } },
       options,
     ).lean<IGroup>();
-    await invalidateMemberGroupsCache([userIdOnTheSource]);
+    await runAfterTransaction(session, () => invalidateMemberGroupsCache([userIdOnTheSource]));
 
     return { user: user as IUser, group: updatedGroup };
   }
@@ -1102,7 +1125,9 @@ export function createUserGroupMethods(
             typeof memberId === 'string' || memberId instanceof Types.ObjectId,
         )
       : [];
-    await invalidateMemberGroupsCache([...(previous?.memberIds ?? []), ...nextMemberIds]);
+    await runAfterTransaction(session, () =>
+      invalidateMemberGroupsCache([...(previous?.memberIds ?? []), ...nextMemberIds]),
+    );
     return previous ? await findGroupById(groupId, {}, session) : null;
   }
 
@@ -1119,11 +1144,14 @@ export function createUserGroupMethods(
   ): Promise<import('mongoose').UpdateWriteOpResult> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const result = await Group.updateMany(filter, update, options || {});
+    if (result.modifiedCount === 0 && result.upsertedCount === 0) {
+      return result;
+    }
     const { memberIds, indeterminate } = collectMemberIdsFromGroupUpdate(update);
     if (indeterminate) {
-      await clearMemberGroupsCache();
-    } else if (memberIds.length > 0 && (result.modifiedCount > 0 || result.upsertedCount > 0)) {
-      await invalidateMemberGroupsCache(memberIds);
+      await runAfterTransaction(options?.session, () => clearMemberGroupsCache());
+    } else if (memberIds.length > 0) {
+      await runAfterTransaction(options?.session, () => invalidateMemberGroupsCache(memberIds));
     }
     return result;
   }
@@ -1196,7 +1224,7 @@ export function createUserGroupMethods(
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = session ? { session } : {};
     const group = await Group.findByIdAndDelete(groupId, options).lean<IGroup>();
-    await invalidateMemberGroupsCache(group?.memberIds ?? []);
+    await runAfterTransaction(session, () => invalidateMemberGroupsCache(group?.memberIds ?? []));
     return group;
   }
 
@@ -1219,7 +1247,7 @@ export function createUserGroupMethods(
       { $pull: { memberIds: memberId } },
       options,
     ).lean<IGroup>();
-    await invalidateMemberGroupsCache([memberId]);
+    await runAfterTransaction(session, () => invalidateMemberGroupsCache([memberId]));
     return group;
   }
 
