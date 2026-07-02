@@ -54,14 +54,6 @@ type ChatHelpers = Pick<
   'setMessages' | 'getMessages' | 'setConversation' | 'setIsSubmitting' | 'newConversation'
 >;
 
-const getStreamStartFailureData = (errorData?: Record<string, unknown>): TResData =>
-  ({
-    text: errorData
-      ? JSON.stringify(errorData)
-      : 'Error connecting to server, try refreshing the page.',
-    metadata: markStreamStartFailedMetadata(),
-  }) as unknown as TResData;
-
 const MAX_RETRIES = 5;
 const START_GENERATION_NETWORK_RETRIES = 3;
 const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
@@ -71,15 +63,89 @@ type StartGenerationError = {
   code?: string;
   response?: {
     status?: number;
-    data?: {
-      code?: string;
-    };
+    data?: unknown;
     headers?: Record<string, string | number | string[] | undefined>;
   };
 };
 
 const toStartGenerationError = (error: unknown): StartGenerationError | undefined =>
   error != null && typeof error === 'object' ? (error as StartGenerationError) : undefined;
+
+const getStartGenerationStreamId = (data: unknown): string | null => {
+  if (data == null || typeof data !== 'object' || !('streamId' in data)) {
+    return null;
+  }
+
+  const streamId = (data as { streamId?: unknown }).streamId;
+  return typeof streamId === 'string' && streamId.length > 0 ? streamId : null;
+};
+
+const parseSSEErrorData = (body: string): unknown | null => {
+  const blocks = body.split(/\r?\n\r?\n/);
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    const event = lines
+      .find((line) => line.startsWith('event:'))
+      ?.slice('event:'.length)
+      .trim();
+    if (event !== 'error') {
+      continue;
+    }
+
+    const data = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice('data:'.length).trimStart())
+      .join('\n')
+      .trim();
+
+    if (!data) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(data);
+    } catch {
+      return data;
+    }
+  }
+
+  return null;
+};
+
+const getSSEErrorText = (payload: unknown): string | null => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload == null || typeof payload !== 'object') {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const text = record.text ?? record.message ?? record.error;
+  return typeof text === 'string' && text.length > 0 ? text : null;
+};
+
+const getStreamStartFailureText = (errorData?: unknown): string => {
+  if (typeof errorData === 'string') {
+    const sseErrorData = parseSSEErrorData(errorData);
+    if (sseErrorData != null) {
+      return getSSEErrorText(sseErrorData) ?? JSON.stringify(sseErrorData);
+    }
+
+    return errorData || 'Error connecting to server, try refreshing the page.';
+  }
+
+  return errorData
+    ? JSON.stringify(errorData)
+    : 'Error connecting to server, try refreshing the page.';
+};
+
+const getStreamStartFailureData = (errorData?: unknown): TResData =>
+  ({
+    text: getStreamStartFailureText(errorData),
+    metadata: markStreamStartFailedMetadata(),
+  }) as unknown as TResData;
 
 const isRetryableNetworkError = (error: unknown) => {
   if (!(error instanceof Error)) {
@@ -92,9 +158,12 @@ const isRetryableNetworkError = (error: unknown) => {
 
 const isServerNotReadyError = (error: unknown) => {
   const candidate = toStartGenerationError(error);
-  return (
-    candidate?.response?.status === 503 && candidate.response?.data?.code === SERVER_NOT_READY_CODE
-  );
+  const data = candidate?.response?.data;
+  const code =
+    data != null && typeof data === 'object' && 'code' in data
+      ? (data as { code?: unknown }).code
+      : undefined;
+  return candidate?.response?.status === 503 && code === SERVER_NOT_READY_CODE;
 };
 
 const getRetryAfterDelay = (error: unknown, fallbackDelay: number) => {
@@ -1216,12 +1285,18 @@ export default function useResumableSSE(
         requestAttempts += 1;
         try {
           // Use request.post which handles auth token refresh via axios interceptors
-          const data = (await request.post(url, payload)) as { streamId: string };
+          const data = await request.post(url, payload);
           if (signal?.aborted) {
             return null;
           }
-          logger.log('ResumableSSE', 'Generation started:', { streamId: data.streamId });
-          return data.streamId;
+          const streamId = getStartGenerationStreamId(data);
+          if (streamId) {
+            logger.log('ResumableSSE', 'Generation started:', { streamId });
+            return streamId;
+          }
+
+          lastError = { response: { data } };
+          break;
         } catch (error) {
           if (signal?.aborted) {
             return null;
@@ -1269,8 +1344,7 @@ export default function useResumableSSE(
 
       logger.error('ResumableSSE', 'Error starting generation:', lastError);
 
-      const axiosError = lastError as { response?: { data?: Record<string, unknown> } };
-      const errorData = axiosError?.response?.data;
+      const errorData = toStartGenerationError(lastError)?.response?.data;
       errorHandler({
         data: getStreamStartFailureData(errorData),
         submission: currentSubmission as EventSubmission,

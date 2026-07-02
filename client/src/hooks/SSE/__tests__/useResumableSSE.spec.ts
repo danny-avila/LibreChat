@@ -999,6 +999,92 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('surfaces SSE error bodies returned while starting generation', async () => {
+    (request.post as jest.Mock).mockResolvedValueOnce(
+      'event: error\ndata: {"text":"No model spec selected"}\n\n',
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: 'No model spec selected',
+          metadata: { streamStartFailed: true },
+        },
+        submission,
+      }),
+    );
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+    expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('surfaces CRLF SSE error bodies returned while starting generation', async () => {
+    (request.post as jest.Mock).mockResolvedValueOnce(
+      'event: error\r\ndata: {"text":"No model spec selected"}\r\n\r\n',
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: 'No model spec selected',
+          metadata: { streamStartFailed: true },
+        },
+        submission,
+      }),
+    );
+    unmount();
+  });
+
+  it('uses only the error event data from multi-event SSE start failures', async () => {
+    (request.post as jest.Mock).mockResolvedValueOnce(
+      [
+        'event: message',
+        'data: {"created":true,"message":{"messageId":"msg-1"}}',
+        '',
+        'event: error',
+        'data: {"text":"Request was blocked"}',
+        '',
+        '',
+      ].join('\n'),
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: 'Request was blocked',
+          metadata: { streamStartFailed: true },
+        },
+        submission,
+      }),
+    );
+    unmount();
+  });
+
   it('replays title events from resume state sync', async () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
