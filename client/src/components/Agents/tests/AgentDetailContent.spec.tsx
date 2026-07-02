@@ -76,6 +76,11 @@ jest.mock('~/utils', () => ({
   renderAgentAvatar: () => <div data-testid="agent-avatar" />,
 }));
 
+// NJ: Mock so the tests can pass through our agent duplication work
+jest.mock('~/data-provider', () => ({
+  useDuplicateAgentMutation: () => jest.fn((_value) => 'duplicated_agent_id'),
+}));
+
 const renderWithClient = (children: React.ReactNode) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
