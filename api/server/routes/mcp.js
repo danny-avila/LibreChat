@@ -32,6 +32,16 @@ const {
   getMCPTools,
 } = require('~/server/controllers/mcp');
 const {
+  readMCPResource,
+  listMCPResources,
+  listMCPResourceTemplates,
+  appToolCall,
+  serveMCPSandbox,
+  requireMCPAppsEnabled,
+} = require('~/server/controllers/mcpApps');
+const mcpAppToolCallLimiter = require('~/server/middleware/limiters/mcpAppToolCallLimiter');
+const mcpAppResourceLimiter = require('~/server/middleware/limiters/mcpAppResourceLimiter');
+const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
   getFlowStateManager,
@@ -977,5 +987,65 @@ router.delete(
   }),
   deleteMCPServerController,
 );
+
+// --- MCP Apps Support ---
+
+/**
+ * Read a UI resource from an MCP server
+ * @route POST /api/mcp/resources/read
+ */
+router.post(
+  '/resources/read',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  requireMCPAppsEnabled,
+  mcpAppResourceLimiter,
+  readMCPResource,
+);
+
+/**
+ * List resources available on an MCP server
+ * @route POST /api/mcp/resources/list
+ */
+router.post(
+  '/resources/list',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  requireMCPAppsEnabled,
+  mcpAppResourceLimiter,
+  listMCPResources,
+);
+
+/**
+ * List resource templates available on an MCP server
+ * @route POST /api/mcp/resources/templates/list
+ */
+router.post(
+  '/resources/templates/list',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  requireMCPAppsEnabled,
+  mcpAppResourceLimiter,
+  listMCPResourceTemplates,
+);
+
+/**
+ * Proxy tool calls from MCP App iframe to MCP server
+ * @route POST /api/mcp/app-tool-call
+ */
+router.post(
+  '/app-tool-call',
+  requireJwtAuth,
+  checkMCPUsePermissions,
+  requireMCPAppsEnabled,
+  mcpAppToolCallLimiter,
+  appToolCall,
+);
+
+/**
+ * Serve the sandbox proxy HTML for MCP Apps
+ * @route GET /api/mcp/sandbox
+ */
+router.get('/sandbox', serveMCPSandbox);
 
 module.exports = router;

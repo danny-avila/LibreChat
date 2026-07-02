@@ -6,6 +6,7 @@ const esModules = [
   '@langchain/langgraph-checkpoint',
   '@langchain/langgraph-sdk',
   '@mistralai/mistralai',
+  '@modelcontextprotocol/ext-apps',
   'uuid',
 ].join('|');
 

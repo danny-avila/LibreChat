@@ -181,6 +181,15 @@ export class MCPServerInspector {
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
+      const uiMeta = (tool._meta as Record<string, unknown>)?.ui as
+        | Record<string, unknown>
+        | undefined;
+      const visibility = uiMeta?.visibility as string[] | undefined;
+      // An explicit visibility array that omits 'model' hides the tool from the agent (an absent
+      // field defaults to both scopes).
+      if (Array.isArray(visibility) && !visibility.includes('model')) {
+        return;
+      }
       const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
       toolFunctions[name] = {
         type: 'function',

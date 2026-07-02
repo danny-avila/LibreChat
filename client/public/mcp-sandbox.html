@@ -1,0 +1,259 @@
+<!doctype html>
+<html style="height: 100%; margin: 0">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP App Sandbox</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      'use strict';
+
+      let innerFrame = null;
+      let innerFrameBlobUrl = null;
+      let innerFrameNavigated = false;
+      let readyInterval = null;
+      const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
+
+      // Default to same-origin. When the sandbox is served from a dedicated origin, the parent
+      // passes its origin via the parentOrigin query param so the handshake targets LibreChat
+      // rather than the sandbox's own origin.
+      const trustedOrigin = (function () {
+        try {
+          const param = new URLSearchParams(window.location.search).get('parentOrigin');
+          if (param) {
+            return new URL(param).origin;
+          }
+        } catch (e) {}
+        return window.location.origin;
+      })();
+
+      // A dedicated sandbox origin (parentOrigin differs from ours) isolates the inner frame from
+      // the host origin, so allow-same-origin can be granted; same-origin deployments cannot.
+      const dedicatedOrigin = window.location.origin !== trustedOrigin;
+      // Opt-in stricter CSP that drops unsafe-eval/wasm/blob/data from script-src for deployments
+      // that do not need them.
+      const strictCsp = new URLSearchParams(window.location.search).get('strictCsp') === '1';
+
+      function notifyReady() {
+        window.parent.postMessage(
+          { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
+          trustedOrigin,
+        );
+        if (!readyInterval) {
+          readyInterval = setInterval(() => {
+            if (!innerFrame) {
+              window.parent.postMessage(
+                { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
+                trustedOrigin,
+              );
+            }
+          }, 500);
+        }
+      }
+
+      window.addEventListener('message', (event) => {
+        let msg;
+        try {
+          msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        } catch {
+          return;
+        }
+        if (!msg || msg.jsonrpc !== '2.0') return;
+
+        if (event.source === window.parent) {
+          if (event.origin !== trustedOrigin) {
+            return;
+          }
+
+          if (msg.method === 'ui/notifications/sandbox-resource-ready') {
+            clearInterval(readyInterval);
+            readyInterval = null;
+            createInnerFrame(msg.params);
+            return;
+          }
+          if (innerFrame && innerFrame.contentWindow && !innerFrameNavigated) {
+            innerFrame.contentWindow.postMessage(msg, '*');
+          }
+          return;
+        }
+
+        if (innerFrame && !innerFrameNavigated && event.source === innerFrame.contentWindow) {
+          if (msg.method && msg.method.startsWith(SANDBOX_PREFIX)) {
+            return;
+          }
+          window.parent.postMessage(msg, trustedOrigin);
+        }
+      });
+
+      function createInnerFrame(params) {
+        const { html, csp, permissions } = params;
+
+        if (innerFrameBlobUrl) {
+          URL.revokeObjectURL(innerFrameBlobUrl);
+          innerFrameBlobUrl = null;
+        }
+        if (innerFrame) {
+          innerFrame.remove();
+        }
+
+        innerFrame = document.createElement('iframe');
+
+        // The first load is the blob document we created. A `allow-scripts` app can navigate its own
+        // frame; any further load means it left our document, so stop proxying and tear it down
+        // rather than forward host responses (proxied MCP data) to the navigated page.
+        innerFrameNavigated = false;
+        let frameLoads = 0;
+        innerFrame.addEventListener('load', () => {
+          frameLoads += 1;
+          if (frameLoads <= 1) {
+            return;
+          }
+          innerFrameNavigated = true;
+          if (innerFrameBlobUrl) {
+            URL.revokeObjectURL(innerFrameBlobUrl);
+            innerFrameBlobUrl = null;
+          }
+          innerFrame.remove();
+          innerFrame = null;
+        });
+
+        // On a dedicated sandbox origin, grant allow-same-origin so storage-backed apps work
+        // (the spec's dedicated-origin model); the distinct origin keeps it away from the host.
+        // When the sandbox runs same-origin as the host, allow-same-origin would expose the host
+        // origin, so it is stripped regardless of what the host requested.
+        const sandboxTokens = new Set(
+          (params.sandbox || 'allow-scripts allow-forms').split(/\s+/).filter(Boolean),
+        );
+        if (dedicatedOrigin) {
+          sandboxTokens.add('allow-same-origin');
+        } else {
+          sandboxTokens.delete('allow-same-origin');
+        }
+        innerFrame.sandbox = Array.from(sandboxTokens).join(' ') || 'allow-scripts';
+
+        const allowParts = [];
+        if (permissions && typeof permissions === 'object') {
+          if (permissions.clipboardWrite) allowParts.push('clipboard-write');
+          if (permissions.camera) allowParts.push('camera');
+          if (permissions.microphone) allowParts.push('microphone');
+          if (permissions.geolocation) allowParts.push('geolocation');
+        }
+        if (allowParts.length > 0) {
+          innerFrame.allow = allowParts.join('; ');
+        }
+
+        const cspMeta = buildCspMeta(csp);
+        const fullHtml = cspMeta ? injectIntoHead(html, cspMeta) : html;
+
+        const blob = new Blob([fullHtml], { type: 'text/html' });
+        innerFrameBlobUrl = URL.createObjectURL(blob);
+        innerFrame.src = innerFrameBlobUrl;
+        innerFrame.style.cssText = 'width:100%;height:100%;border:none;display:block';
+
+        document.body.appendChild(innerFrame);
+      }
+
+      window.addEventListener('beforeunload', () => {
+        if (innerFrameBlobUrl) {
+          URL.revokeObjectURL(innerFrameBlobUrl);
+        }
+      });
+
+      function injectIntoHead(html, injection) {
+        // A meta CSP only governs what is parsed after it, so it must come before any untrusted
+        // markup. If nothing but a doctype/<html> tag precedes <head>, insert the policy as the
+        // first head child and keep the document's structure. Otherwise (markup before <head>, or
+        // no <head>) wrap the document so no untrusted bytes are parsed ahead of the policy.
+        const headMatch = html.match(/<head[^>]*>/i);
+        if (headMatch) {
+          const beforeHead = html
+            .slice(0, headMatch.index)
+            .replace(/<!doctype[^>]*>/i, '')
+            .replace(/<html[^>]*>/i, '');
+          if (!/\S/.test(beforeHead)) {
+            return html.replace(/<head([^>]*)>/i, '<head$1>' + injection);
+          }
+        }
+        return (
+          '<!DOCTYPE html><html><head>' + injection + '</head><body>' + html + '</body></html>'
+        );
+      }
+
+      function buildCspMeta(csp) {
+        // Use an empty object as default so omitted csp still produces a restrictive policy.
+        const effective = csp && typeof csp === 'object' ? csp : {};
+        const policy = buildCspPolicy(effective);
+        if (!policy) return '';
+        return '<meta http-equiv="Content-Security-Policy" content="' + escapeAttr(policy) + '">';
+      }
+
+      function buildCspPolicy(csp) {
+        const resourceDomains = toDomainList(csp.resourceDomains);
+        const connectDomains = toDomainList(csp.connectDomains) || "'none'";
+        const frameDomains = toDomainList(csp.frameDomains) || "'none'";
+
+        const scriptSrc = strictCsp
+          ? "script-src 'unsafe-inline' " + resourceDomains
+          : "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: " +
+            resourceDomains;
+
+        return [
+          "default-src 'none'",
+          scriptSrc.trim(),
+          ("style-src 'unsafe-inline' " + resourceDomains).trim(),
+          'connect-src ' + connectDomains,
+          // form-action does not fall back to default-src, so with allow-forms a form could post to
+          // any origin; bound it to the declared egress allowlist ('none' when none is declared).
+          'form-action ' + connectDomains,
+          ('img-src data: blob: ' + resourceDomains).trim(),
+          ('media-src ' + (resourceDomains || "'none'")).trim(),
+          ('font-src ' + (resourceDomains || "'none'")).trim(),
+          'frame-src ' + frameDomains,
+          "object-src 'none'",
+          'base-uri ' + (toDomainList(csp.baseUriDomains) || "'self'"),
+        ].join('; ');
+      }
+
+      // Only permit host patterns: optional http(s)/ws(s) scheme, optional wildcard subdomain
+      // prefix, hostname characters, optional port. Rejects CSP keywords and injection attempts.
+      const SAFE_HOST_RE =
+        /^(?:(?:https?|wss?):\/\/)?(?:\*\.)?[a-zA-Z0-9][a-zA-Z0-9\-.]*(?::\d{1,5})?$/;
+
+      function toDomainList(value) {
+        if (!Array.isArray(value)) return '';
+        return value.filter((d) => typeof d === 'string' && SAFE_HOST_RE.test(d.trim())).join(' ');
+      }
+
+      function escapeAttr(str) {
+        return str
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      notifyReady();
+    </script>
+  </body>
+</html>

@@ -1,19 +1,126 @@
 import React, { useState } from 'react';
-import { UIResourceRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
-import { useOptionalMessagesOperations } from '~/Providers';
-import { handleUIAction } from '~/utils';
+import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
+import { useIsMessagesViewReadOnly } from '~/Providers';
+import { useAppBridge } from '~/hooks/MCP';
+import { useLocalize } from '~/hooks';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];
+}
+
+const SPINNER_TIMEOUT_MS = 10_000;
+
+function MCPAppCard({
+  resource,
+  onHeightChange,
+}: {
+  resource: UIResource;
+  onHeightChange?: (height: number) => void;
+}) {
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const localize = useLocalize();
+  const readOnly = useIsMessagesViewReadOnly();
+  const [loaded, setLoaded] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const [tornDown, setTornDown] = useState(false);
+  const sandboxUrl = React.useMemo(() => getMCPSandboxUrl(), []);
+
+  React.useEffect(() => {
+    if (loaded) {
+      return;
+    }
+    const timer = setTimeout(() => setTimedOut(true), SPINNER_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loaded]);
+
+  const toolResult = React.useMemo(() => buildAppToolResult(resource), [resource]);
+
+  const handleSizeChanged = React.useCallback(
+    (params: { height?: number; width?: number }) => {
+      if (params.height && params.height > 0) {
+        setLoaded(true);
+        onHeightChange?.(params.height);
+      }
+    },
+    [onHeightChange],
+  );
+
+  useAppBridge(
+    iframeRef,
+    resource,
+    resource.toolArgs as Record<string, unknown> | undefined,
+    toolResult,
+    handleSizeChanged,
+    () => setLoaded(true),
+    () => setTornDown(true),
+  );
+
+  if (tornDown) {
+    return null;
+  }
+
+  if (isMcpAppResource(resource) && !resource.text && readOnly) {
+    return (
+      <div className="flex h-full w-full items-center justify-center rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-center text-sm text-text-secondary">
+        {localize('com_ui_mcp_app_shared_unavailable')}
+      </div>
+    );
+  }
+
+  if (isMcpAppResource(resource)) {
+    return (
+      <>
+        {!loaded && !timedOut && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
+            {localize('com_ui_loading_interactive_view')}
+          </div>
+        )}
+        {timedOut && !loaded && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
+            {localize('com_ui_mcp_app_failed_to_load')}
+          </div>
+        )}
+        <iframe
+          ref={iframeRef}
+          data-sandbox-url={sandboxUrl}
+          sandbox="allow-scripts allow-forms"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            opacity: loaded ? 1 : 0,
+          }}
+          title={`MCP App: ${resource.toolName ?? ''}`}
+        />
+      </>
+    );
+  }
+
+  if (resource.text) {
+    return (
+      <iframe
+        srcDoc={resource.text}
+        sandbox=""
+        style={{ width: '100%', height: '100%', border: 'none' }}
+        title={resource.uri}
+      />
+    );
+  }
+
+  return null;
 }
 
 const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiResources }) => {
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
+  const [cardHeights, setCardHeights] = useState<Record<number, number>>({});
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
-  const { ask } = useOptionalMessagesOperations();
+
+  const handleCardHeightChange = React.useCallback((index: number, newHeight: number) => {
+    setCardHeights((prev) => ({ ...prev, [index]: newHeight }));
+  }, []);
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -94,7 +201,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
         className="hide-scrollbar flex gap-4 overflow-x-auto scroll-smooth"
       >
         {uiResources.map((uiResource, index) => {
-          const height = 360;
+          const cardHeight = cardHeights[index] ?? 360;
           const width = 230;
 
           return (
@@ -103,17 +210,14 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
               className="flex-shrink-0 transform-gpu transition-all duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-5"
               style={{
                 width: `${width}px`,
-                minHeight: `${height}px`,
+                height: `${cardHeight}px`,
                 animationDelay: `${index * 100}ms`,
               }}
             >
-              <div className="flex h-full flex-col">
-                <UIResourceRenderer
+              <div className="relative flex h-full flex-col">
+                <MCPAppCard
                   resource={uiResource}
-                  onUIAction={async (result) => handleUIAction(result, ask)}
-                  htmlProps={{
-                    autoResizeIframe: { width: true, height: true },
-                  }}
+                  onHeightChange={(h) => handleCardHeightChange(index, h)}
                 />
               </div>
             </div>

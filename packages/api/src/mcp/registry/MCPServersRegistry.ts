@@ -94,9 +94,12 @@ export interface MCPAllowlistContext {
  * dependency. Reads the ALS tenant context internally; pass the acting user to also pick up
  * user/role-scoped overrides.
  */
-export type MCPAllowlistResolver = (
-  ctx?: MCPAllowlistContext,
-) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+export type MCPAllowlistResolver = (ctx?: MCPAllowlistContext) => Promise<{
+  allowedDomains?: string[] | null;
+  allowedAddresses?: string[] | null;
+  /** Per-request `mcpSettings.apps`. Omit to inherit the YAML base; `false` disables apps. */
+  appsEnabled?: boolean;
+}>;
 
 /** Effective allowlists resolved for a request. */
 interface ResolvedMCPAllowlists {
@@ -124,6 +127,7 @@ export class MCPServersRegistry {
   /** YAML-derived base allowlists; used at boot and as the fallback when no resolver is set. */
   private readonly allowedDomains?: string[] | null;
   private readonly allowedAddresses?: string[] | null;
+  private readonly appsEnabled?: boolean;
   /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
   private readonly allowlistResolver?: MCPAllowlistResolver;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
@@ -148,6 +152,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
+    appsEnabled?: boolean,
   ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
@@ -155,6 +160,7 @@ export class MCPServersRegistry {
     this.allowedDomains = allowedDomains;
     this.allowedAddresses = allowedAddresses;
     this.allowlistResolver = allowlistResolver;
+    this.appsEnabled = appsEnabled;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -175,6 +181,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
+    appsEnabled?: boolean,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -192,6 +199,7 @@ export class MCPServersRegistry {
       allowedDomains,
       allowedAddresses,
       allowlistResolver,
+      appsEnabled,
     );
     return MCPServersRegistry.instance;
   }
@@ -214,6 +222,11 @@ export class MCPServersRegistry {
     return this.allowedAddresses;
   }
 
+  /** YAML base apps-enabled flag (boot/fallback). MCP Apps are enabled unless explicitly disabled. */
+  public getAppsEnabled(): boolean {
+    return this.appsEnabled !== false;
+  }
+
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
   public shouldEnableSSRFProtection(): boolean {
     return !Array.isArray(this.allowedDomains) || this.allowedDomains.length === 0;
@@ -234,14 +247,21 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null;
     allowedAddresses?: string[] | null;
     useSSRFProtection: boolean;
+    appsEnabled: boolean;
   }> {
     let allowedDomains = this.allowedDomains;
     let allowedAddresses = this.allowedAddresses;
+    // Apps are tenant/principal-scoped, so honor a per-request override of `mcpSettings.apps`,
+    // falling back to the YAML base when the resolver omits it, is absent, or fails.
+    let appsEnabled = this.getAppsEnabled();
     if (this.allowlistResolver) {
       try {
         const resolved = await this.allowlistResolver(ctx);
         allowedDomains = resolved.allowedDomains;
         allowedAddresses = resolved.allowedAddresses;
+        if (resolved.appsEnabled !== undefined) {
+          appsEnabled = resolved.appsEnabled !== false;
+        }
       } catch (error) {
         logger.warn(
           '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
@@ -253,6 +273,7 @@ export class MCPServersRegistry {
       allowedDomains,
       allowedAddresses,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+      appsEnabled,
     };
   }
 

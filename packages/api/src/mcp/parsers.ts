@@ -9,6 +9,32 @@ function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
 }
 
+/**
+ * Derives a UI resource ID that is unique per result snapshot. The frontend indexes conversation
+ * resources by ID, so two calls that share a base (resourceUri/text) and args but differ in
+ * structuredContent, text content, _meta, or error state must not collide and overwrite each other.
+ */
+function deriveResourceId(
+  base: string,
+  result: t.MCPToolCallResponse,
+  toolArgs: unknown,
+  serverName?: string,
+  toolName?: string,
+): string {
+  const meta = (result as { _meta?: unknown } | undefined)?._meta;
+  const parts = [
+    serverName ?? '',
+    toolName ?? '',
+    base,
+    result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '',
+    result?.content != null ? JSON.stringify(result.content) : '',
+    meta != null ? JSON.stringify(meta) : '',
+    result?.isError === true ? '1' : '',
+    toolArgs != null ? JSON.stringify(toolArgs) : '',
+  ];
+  return generateResourceId(parts.join('\x00'));
+}
+
 function getMCPImageDataMaxBytes(): number {
   const raw = process.env.MCP_IMAGE_DATA_MAX_BYTES;
   if (!raw) {
@@ -130,6 +156,32 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 }
 
 /**
+ * MCP Apps renders only `ui://` resources whose mime type is HTML (mime omitted defaults to HTML),
+ * the single renderable resource type the spec defines. Used both when attaching a result resource
+ * and when deciding whether a result carries an app the apps toggle must gate.
+ */
+export function isRenderableUiResource(item: t.ToolContentPart): boolean {
+  if (item.type !== 'resource') {
+    return false;
+  }
+  const uri = item.resource?.uri;
+  if (typeof uri !== 'string' || !uri.startsWith('ui://')) {
+    return false;
+  }
+  const mimeType =
+    typeof item.resource.mimeType === 'string' ? item.resource.mimeType : 'text/html';
+  return mimeType.includes('html');
+}
+
+export function resultHasRenderableUiResource(result: t.MCPToolCallResponse): boolean {
+  const content = result?.content;
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  return content.some((item) => isRenderableUiResource(item as t.ToolContentPart));
+}
+
+/**
  * Converts MCPToolCallResponse content into a plain-text string plus optional artifacts
  * (images, UI resources). All providers receive string content; images are separated into
  * artifacts and merged back by the agents package via formatArtifactPayload / formatAnthropicArtifactContent.
@@ -141,13 +193,24 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
+  metadata?: {
+    serverName?: string;
+    toolName?: string;
+    resourceUri?: string;
+    csp?: UIResource['csp'];
+    permissions?: UIResource['permissions'];
+    toolArgs?: Record<string, unknown>;
+    enableApps?: boolean;
+  },
 ): t.FormattedContentResult {
   if (!RECOGNIZED_PROVIDERS.has(provider)) {
     return [parseAsString(result), undefined];
   }
 
   const content = result?.content ?? [];
-  if (!content.length) {
+  const hasSyntheticApp =
+    metadata?.resourceUri != null && metadata.serverName != null && metadata.toolName != null;
+  if (!content.length && !hasSyntheticApp) {
     return ['(No response)', undefined];
   }
 
@@ -180,18 +243,48 @@ export function formatToolContent(
     },
 
     resource: (item) => {
-      const isUiResource = item.resource.uri.startsWith('ui://');
+      // ui:// resources that are not renderable apps (other mime types) or that arrive for a
+      // scope with apps disabled fall through to plain resource text rather than an unrenderable
+      // or admin-suppressed app marker.
+      const isUiResource = metadata?.enableApps !== false && isRenderableUiResource(item);
       const resourceText: string[] = [];
 
       if (isUiResource) {
-        const contentToHash =
+        const baseHash =
           'text' in item.resource && item.resource.text && typeof item.resource.text === 'string'
             ? item.resource.text
             : item.resource.uri;
-        const resourceId = generateResourceId(contentToHash);
+        const resourceId = deriveResourceId(
+          baseHash,
+          result,
+          metadata?.toolArgs,
+          metadata?.serverName,
+          metadata?.toolName,
+        );
+        const itemUi = (item.resource._meta as { ui?: Record<string, unknown> } | undefined)?.ui as
+          | { csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
+          | undefined;
+        // Only the text/html;profile=mcp-app profile runs the App Bridge on the client
+        // (isMcpAppResource); a plain text/html ui:// resource renders as a static srcDoc, so the
+        // tool result/context fields would be dead, misleading metadata on it. Classify the same
+        // way on both sides and attach the bridge payload only for the app profile.
+        const isAppBacked = (item.resource.mimeType ?? '').includes('profile=mcp-app');
         const uiResource: UIResource = {
           ...item.resource,
           resourceId,
+          csp: itemUi?.csp ?? metadata?.csp,
+          permissions: itemUi?.permissions ?? metadata?.permissions,
+          ...(isAppBacked
+            ? {
+                serverName: metadata?.serverName,
+                toolName: metadata?.toolName,
+                structuredContent: result?.structuredContent,
+                content: result?.content,
+                isError: result?.isError,
+                resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
+                toolArgs: metadata?.toolArgs,
+              }
+            : {}),
         };
         uiResources.push(uiResource);
         resourceText.push(`UI Resource ID: ${resourceId}`);
@@ -221,6 +314,43 @@ export function formatToolContent(
       const stringified = JSON.stringify(item, null, 2);
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + stringified;
     }
+  }
+
+  // MCP Apps: the tool-declared ui:// resourceUri is the app the host renders for the call, so
+  // synthesize it unless the result already returned that exact resource. A secondary ui://
+  // resource in the result must not suppress the declared app.
+  const declaredAppAlreadyReturned =
+    metadata?.resourceUri != null && uiResources.some((r) => r.uri === metadata.resourceUri);
+  if (
+    metadata?.resourceUri &&
+    metadata.serverName &&
+    metadata.toolName &&
+    !declaredAppAlreadyReturned
+  ) {
+    const resourceId = deriveResourceId(
+      metadata.resourceUri,
+      result,
+      metadata.toolArgs,
+      metadata.serverName,
+      metadata.toolName,
+    );
+    uiResources.push({
+      resourceId,
+      uri: metadata.resourceUri,
+      mimeType: 'text/html;profile=mcp-app',
+      serverName: metadata.serverName,
+      toolName: metadata.toolName,
+      structuredContent: result?.structuredContent,
+      content: result?.content,
+      csp: metadata.csp,
+      permissions: metadata.permissions,
+      toolArgs: metadata.toolArgs,
+      isError: result?.isError,
+      resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
+    });
+    currentTextBlock +=
+      (currentTextBlock ? '\n\n' : '') +
+      `UI Resource ID: ${resourceId}\nUI Resource Marker: \\ui{${resourceId}}`;
   }
 
   if (uiResources.length > 0) {

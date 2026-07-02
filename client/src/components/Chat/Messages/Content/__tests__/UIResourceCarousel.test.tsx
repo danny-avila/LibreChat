@@ -2,65 +2,52 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { UIResource } from 'librechat-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
-import { handleUIAction } from '~/utils';
+import { useIsMessagesViewReadOnly } from '~/Providers';
 
-// Mock the UIResourceRenderer component
-jest.mock('@mcp-ui/client', () => ({
-  UIResourceRenderer: ({ resource, onUIAction }: any) => (
-    <div data-testid="ui-resource-renderer" onClick={() => onUIAction({ action: 'test' })}>
-      {resource.text || 'UI Resource'}
-    </div>
-  ),
+jest.mock('~/hooks/MCP', () => ({
+  useAppBridge: jest.fn(),
 }));
 
-// Mock useOptionalMessagesOperations hook
-const mockAsk = jest.fn();
 jest.mock('~/Providers', () => ({
-  useOptionalMessagesOperations: () => ({
-    ask: mockAsk,
-  }),
+  useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
 
-// Mock handleUIAction utility
-jest.mock('~/utils', () => ({
-  handleUIAction: jest.fn(),
+jest.mock('~/utils/mcpApps', () => ({
+  isMcpAppResource: (r) =>
+    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
+  buildAppToolResult: jest.fn(),
+  getMCPSandboxUrl: () => 'http://localhost/sandbox',
+  callMCPAppTool: jest.fn(),
+  readMCPResource: jest.fn(),
+  fetchMCPResourceHtml: jest.fn(),
 }));
 
-// Mock scrollTo
 const mockScrollTo = jest.fn();
 Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
   configurable: true,
   value: mockScrollTo,
 });
 
-describe('UIResourceCarousel', () => {
-  const mockUIResources: UIResource[] = [
-    { resourceId: 'resource1', uri: 'resource1', mimeType: 'text/html', text: 'Resource 1' },
-    { resourceId: 'resource2', uri: 'resource2', mimeType: 'text/html', text: 'Resource 2' },
-    { resourceId: 'resource3', uri: 'resource3', mimeType: 'text/html', text: 'Resource 3' },
-    { resourceId: 'resource4', uri: 'resource4', mimeType: 'text/html', text: 'Resource 4' },
-    { resourceId: 'resource5', uri: 'resource5', mimeType: 'text/html', text: 'Resource 5' },
-  ];
+const makeResource = (n: number): UIResource => ({
+  uri: `resource${n}`,
+  mimeType: 'text/html;profile=mcp-app',
+  resourceId: `r${n}`,
+  toolName: 'test-tool',
+  serverName: 'test-server',
+});
 
-  const mockHandleUIAction = handleUIAction as jest.MockedFunction<typeof handleUIAction>;
+describe('UIResourceCarousel', () => {
+  const mockUIResources: UIResource[] = [1, 2, 3, 4, 5].map(makeResource);
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAsk.mockClear();
-    mockHandleUIAction.mockClear();
-    // Reset scroll properties
-    Object.defineProperty(HTMLElement.prototype, 'scrollLeft', {
-      configurable: true,
-      value: 0,
-    });
+    (useIsMessagesViewReadOnly as jest.Mock).mockReturnValue(false);
+    Object.defineProperty(HTMLElement.prototype, 'scrollLeft', { configurable: true, value: 0 });
     Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
       configurable: true,
       value: 1000,
     });
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-      configurable: true,
-      value: 500,
-    });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 500 });
   });
 
   it('renders nothing when no resources provided', () => {
@@ -69,87 +56,90 @@ describe('UIResourceCarousel', () => {
   });
 
   it('renders all UI resources', () => {
-    render(<UIResourceCarousel uiResources={mockUIResources} />);
-    const renderers = screen.getAllByTestId('ui-resource-renderer');
-    expect(renderers).toHaveLength(5);
-    expect(screen.getByText('Resource 1')).toBeInTheDocument();
-    expect(screen.getByText('Resource 5')).toBeInTheDocument();
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
+    expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(5);
+  });
+
+  it('renders bridge iframe for each bound resource', () => {
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
+    const iframes = container.querySelectorAll('iframe[data-sandbox-url]');
+    expect(iframes).toHaveLength(2);
+    iframes.forEach((iframe) => {
+      expect(iframe).toHaveAttribute('data-sandbox-url', 'http://localhost/sandbox');
+    });
+  });
+
+  it('renders a placeholder instead of bridge iframes in read-only (shared) views', () => {
+    (useIsMessagesViewReadOnly as jest.Mock).mockReturnValue(true);
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
+    expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(0);
+    expect(screen.getAllByText(/aren't viewable in shared conversations/i).length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it('falls back to iframe for inline resources without toolName', () => {
+    const inlineResource: UIResource = {
+      uri: 'inline://1',
+      mimeType: 'text/html',
+      text: '<p>Hello</p>',
+      resourceId: 'inline-r1',
+    };
+    render(<UIResourceCarousel uiResources={[inlineResource]} />);
+    const iframe = document.querySelector('iframe');
+    expect(iframe).toBeInTheDocument();
+    // Non-app inline HTML renders inert (no allow-scripts); scripts run only via the sandbox proxy.
+    expect(iframe?.getAttribute('sandbox')).toBe('');
+  });
+
+  it('inline iframe does not have allow-same-origin', () => {
+    const inlineResource: UIResource = {
+      uri: 'inline://1',
+      mimeType: 'text/html',
+      text: '<p>Hello</p>',
+      resourceId: 'inline-r1',
+    };
+    render(<UIResourceCarousel uiResources={[inlineResource]} />);
+    const iframe = document.querySelector('iframe');
+    expect(iframe?.getAttribute('sandbox')).not.toContain('allow-same-origin');
   });
 
   it('shows/hides navigation arrows on hover', async () => {
     const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
     const carouselContainer = container.querySelector('.relative.mb-4.pt-3');
+    const rightArrow = screen.getByLabelText('Scroll right');
 
-    // Initially arrows should be hidden (opacity-0)
-    const leftArrow = screen.queryByLabelText('Scroll left');
-    const rightArrow = screen.queryByLabelText('Scroll right');
-
-    // Right arrow should exist but left should not (at start)
-    expect(leftArrow).not.toBeInTheDocument();
-    expect(rightArrow).toBeInTheDocument();
     expect(rightArrow).toHaveClass('opacity-0');
-
-    // Hover over container
     fireEvent.mouseEnter(carouselContainer!);
-    await waitFor(() => {
-      expect(rightArrow).toHaveClass('opacity-100');
-    });
-
-    // Leave hover
+    await waitFor(() => expect(rightArrow).toHaveClass('opacity-100'));
     fireEvent.mouseLeave(carouselContainer!);
-    await waitFor(() => {
-      expect(rightArrow).toHaveClass('opacity-0');
-    });
+    await waitFor(() => expect(rightArrow).toHaveClass('opacity-0'));
   });
 
   it('handles scroll navigation', async () => {
     const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
     const scrollContainer = container.querySelector('.hide-scrollbar');
 
-    // Simulate being scrolled to show left arrow
-    Object.defineProperty(scrollContainer, 'scrollLeft', {
-      configurable: true,
-      value: 200,
-    });
-
-    // Trigger scroll event
+    Object.defineProperty(scrollContainer, 'scrollLeft', { configurable: true, value: 200 });
     fireEvent.scroll(scrollContainer!);
 
-    // Both arrows should now be visible
-    await waitFor(() => {
-      expect(screen.getByLabelText('Scroll left')).toBeInTheDocument();
-      expect(screen.getByLabelText('Scroll right')).toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.getByLabelText('Scroll left')).toBeInTheDocument());
 
-    // Hover to make arrows interactive
     const carouselContainer = container.querySelector('.relative.mb-4.pt-3');
     fireEvent.mouseEnter(carouselContainer!);
 
-    // Click right arrow
     fireEvent.click(screen.getByLabelText('Scroll right'));
-    expect(mockScrollTo).toHaveBeenCalledWith({
-      left: 650, // 200 + (500 * 0.9)
-      behavior: 'smooth',
-    });
+    expect(mockScrollTo).toHaveBeenCalledWith({ left: 650, behavior: 'smooth' });
 
-    // Click left arrow
     fireEvent.click(screen.getByLabelText('Scroll left'));
-    expect(mockScrollTo).toHaveBeenCalledWith({
-      left: -250, // 200 - (500 * 0.9)
-      behavior: 'smooth',
-    });
+    expect(mockScrollTo).toHaveBeenCalledWith({ left: -250, behavior: 'smooth' });
   });
 
   it('hides right arrow when scrolled to end', async () => {
     const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
     const scrollContainer = container.querySelector('.hide-scrollbar');
 
-    // Simulate scrolled to end
-    Object.defineProperty(scrollContainer, 'scrollLeft', {
-      configurable: true,
-      value: 490, // scrollWidth - clientWidth - 10
-    });
-
+    Object.defineProperty(scrollContainer, 'scrollLeft', { configurable: true, value: 490 });
     fireEvent.scroll(scrollContainer!);
 
     await waitFor(() => {
@@ -158,109 +148,23 @@ describe('UIResourceCarousel', () => {
     });
   });
 
-  it('handles UIResource actions using handleUIAction', async () => {
-    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 1)} />);
-
-    const renderer = screen.getByTestId('ui-resource-renderer');
-    fireEvent.click(renderer);
-
-    await waitFor(() => {
-      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
-    });
-  });
-
-  it('calls handleUIAction with correct parameters for multiple resources', async () => {
-    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 3)} />);
-
-    const renderers = screen.getAllByTestId('ui-resource-renderer');
-
-    // Click the second renderer
-    fireEvent.click(renderers[1]);
-
-    await waitFor(() => {
-      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
-      expect(mockHandleUIAction).toHaveBeenCalledTimes(1);
-    });
-
-    // Click the third renderer
-    fireEvent.click(renderers[2]);
-
-    await waitFor(() => {
-      expect(mockHandleUIAction).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it('passes correct ask function to handleUIAction', async () => {
-    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 1)} />);
-
-    const renderer = screen.getByTestId('ui-resource-renderer');
-    fireEvent.click(renderer);
-
-    await waitFor(() => {
-      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAsk);
-      expect(mockHandleUIAction).toHaveBeenCalledTimes(1);
-    });
-  });
-
   it('applies correct dimensions to resource containers', () => {
-    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
-    const containers = screen
-      .getAllByTestId('ui-resource-renderer')
-      .map((el) => el.parentElement?.parentElement);
-
-    containers.forEach((container, index) => {
-      expect(container).toHaveStyle({
+    const { container } = render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
+    const iframes = container.querySelectorAll('iframe[data-sandbox-url]');
+    iframes.forEach((iframe) => {
+      const card = iframe.parentElement?.parentElement;
+      expect(card).toHaveStyle({
         width: '230px',
-        minHeight: '360px',
-        animationDelay: `${index * 100}ms`,
+        height: '360px',
       });
     });
-  });
-
-  it('shows correct gradient overlays based on scroll position', () => {
-    const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
-
-    // At start, left gradient should be hidden, right should be visible
-    const leftGradient = container.querySelector('.bg-gradient-to-r');
-    const rightGradient = container.querySelector('.bg-gradient-to-l');
-
-    expect(leftGradient).toHaveClass('opacity-0');
-    expect(rightGradient).toHaveClass('opacity-100');
   });
 
   it('cleans up event listeners on unmount', () => {
     const { container, unmount } = render(<UIResourceCarousel uiResources={mockUIResources} />);
     const scrollContainer = container.querySelector('.hide-scrollbar');
-
-    const removeEventListenerSpy = jest.spyOn(scrollContainer!, 'removeEventListener');
-
+    const spy = jest.spyOn(scrollContainer!, 'removeEventListener');
     unmount();
-
-    expect(removeEventListenerSpy).toHaveBeenCalledWith('scroll', expect.any(Function));
-  });
-
-  it('renders with animation delays for each resource', () => {
-    render(<UIResourceCarousel uiResources={mockUIResources.slice(0, 3)} />);
-    const resourceContainers = screen
-      .getAllByTestId('ui-resource-renderer')
-      .map((el) => el.parentElement?.parentElement);
-
-    resourceContainers.forEach((container, index) => {
-      expect(container).toHaveStyle({
-        animationDelay: `${index * 100}ms`,
-      });
-    });
-  });
-
-  it('memoizes component properly', () => {
-    const { rerender } = render(<UIResourceCarousel uiResources={mockUIResources} />);
-    const firstRender = screen.getAllByTestId('ui-resource-renderer');
-
-    // Re-render with same props
-    rerender(<UIResourceCarousel uiResources={mockUIResources} />);
-    const secondRender = screen.getAllByTestId('ui-resource-renderer');
-
-    // Component should not re-render with same props (React.memo)
-    expect(firstRender.length).toBe(secondRender.length);
+    expect(spy).toHaveBeenCalledWith('scroll', expect.any(Function));
   });
 });

@@ -35,6 +35,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/hooks/MCP', () => ({
   useMCPIconMap: () => new Map(),
+  useAppBridge: jest.fn(),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
@@ -115,8 +116,8 @@ describe('ToolCall', () => {
     jest.clearAllMocks();
   });
 
-  describe('attachments prop passing', () => {
-    it('should pass attachments to ToolCallInfo when provided', () => {
+  describe('attachments rendering', () => {
+    it('should render ToolCallInfo and AttachmentGroup when attachments are provided', () => {
       const attachments = [
         {
           type: Tools.ui_resources,
@@ -131,26 +132,24 @@ describe('ToolCall', () => {
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
 
+      expect(screen.getByTestId('attachment-group')).toBeInTheDocument();
+
       fireEvent.click(screen.getByTestId('progress-text'));
 
-      const toolCallInfo = screen.getByTestId('tool-call-info');
-      expect(toolCallInfo).toBeInTheDocument();
-
-      const attachmentsData = toolCallInfo.getAttribute('data-attachments');
-      expect(attachmentsData).toBe(JSON.stringify(attachments));
+      expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
     });
 
-    it('should pass empty array when no attachments', () => {
+    it('should render ToolCallInfo without attachment-group when no attachments', () => {
       renderWithRecoil(<ToolCall {...mockProps} />);
 
+      expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+
       fireEvent.click(screen.getByTestId('progress-text'));
 
-      const toolCallInfo = screen.getByTestId('tool-call-info');
-      const attachmentsData = toolCallInfo.getAttribute('data-attachments');
-      expect(attachmentsData).toBeNull(); // JSON.stringify(undefined) returns undefined, so attribute is not set
+      expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
     });
 
-    it('should pass multiple attachments of different types', () => {
+    it('should render AttachmentGroup with all attachments of mixed types', () => {
       const attachments = [
         {
           type: Tools.ui_resources,
@@ -174,11 +173,38 @@ describe('ToolCall', () => {
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={attachments as any} />);
 
-      fireEvent.click(screen.getByTestId('progress-text'));
+      const attachmentGroup = screen.getByTestId('attachment-group');
+      expect(JSON.parse(attachmentGroup.textContent!)).toEqual(attachments);
+    });
 
-      const toolCallInfo = screen.getByTestId('tool-call-info');
-      const attachmentsData = toolCallInfo.getAttribute('data-attachments');
-      expect(JSON.parse(attachmentsData!)).toEqual(attachments);
+    it('renders an iframe for an inline ui:// text resource attached to the tool call', () => {
+      const attachments = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg1',
+          toolCallId: 'tool1',
+          conversationId: 'conv1',
+          [Tools.ui_resources]: [
+            {
+              uri: 'ui://test-server/inline.html',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>inline resource</p>',
+              resourceId: 'inline-1',
+              toolName: 'test-tool',
+              serverName: 'test-server',
+            },
+          ],
+        },
+      ];
+
+      const { container } = renderWithRecoil(
+        <ToolCall {...mockProps} attachments={attachments as any} />,
+      );
+
+      // A server-bound inline resource renders through the sandbox bridge (not bare srcDoc),
+      // so its App.connect handshake receives tool input/results.
+      const iframe = container.querySelector('iframe[data-sandbox-url]');
+      expect(iframe).toBeInTheDocument();
     });
   });
 
@@ -358,7 +384,7 @@ describe('ToolCall', () => {
       expect(toolCallInfo).toBeInTheDocument();
     });
 
-    it('should handle complex nested attachments', () => {
+    it('should render AttachmentGroup with complex nested attachments', () => {
       const complexAttachments = [
         {
           type: Tools.ui_resources,
@@ -381,12 +407,6 @@ describe('ToolCall', () => {
       ];
 
       renderWithRecoil(<ToolCall {...mockProps} attachments={complexAttachments as any} />);
-
-      fireEvent.click(screen.getByTestId('progress-text'));
-
-      const toolCallInfo = screen.getByTestId('tool-call-info');
-      const attachmentsData = toolCallInfo.getAttribute('data-attachments');
-      expect(JSON.parse(attachmentsData!)).toEqual(complexAttachments);
 
       const attachmentGroup = screen.getByTestId('attachment-group');
       expect(JSON.parse(attachmentGroup.textContent!)).toEqual(complexAttachments);
