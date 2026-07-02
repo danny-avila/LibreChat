@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { getRefillEligibilityDate, ViolationTypes } from 'librechat-data-provider';
+import {
+  getRefillEligibilityDate,
+  getNextRefillDate,
+  ViolationTypes,
+} from 'librechat-data-provider';
 import type { BalanceConfig, IBalanceUpdate } from '@librechat/data-schemas';
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Response } from 'express';
@@ -22,8 +26,17 @@ interface RefillInfo {
   refillEligibilityDate: Date;
 }
 
+type RefillFields = Pick<
+  BalanceRecord,
+  'autoRefillEnabled' | 'refillAmount' | 'refillIntervalValue' | 'refillIntervalUnit'
+>;
+
 /** Builds auto-refill details for an insufficient balance, or undefined when auto-refill is inactive. */
-function buildRefillInfo(record: BalanceRecord, lastRefill: Date): RefillInfo | undefined {
+function buildRefillInfo(
+  record: RefillFields,
+  lastRefill: Date,
+  now: Date,
+): RefillInfo | undefined {
   if (!record.autoRefillEnabled || !record.refillAmount || record.refillAmount <= 0) {
     return undefined;
   }
@@ -34,7 +47,7 @@ function buildRefillInfo(record: BalanceRecord, lastRefill: Date): RefillInfo | 
     intervalValue,
     intervalUnit,
     lastRefill,
-    refillEligibilityDate: getRefillEligibilityDate(lastRefill, intervalValue, intervalUnit),
+    refillEligibilityDate: getNextRefillDate(lastRefill, intervalValue, intervalUnit, now),
   };
 }
 
@@ -82,6 +95,7 @@ async function checkBalanceRecord(
     endpointTokenConfig,
   });
   const tokenCost = amount * multiplier;
+  const now = new Date();
 
   const record = await deps.findBalanceByUser(user);
   if (!record) {
@@ -106,11 +120,17 @@ async function checkBalanceRecord(
           fields.refillIntervalValue = config.refillIntervalValue;
           fields.refillIntervalUnit = config.refillIntervalUnit;
           fields.refillAmount = config.refillAmount;
-          fields.lastRefill = new Date();
+          fields.lastRefill = now;
         }
         const created = await deps.upsertBalanceFields(user, fields);
         const balance = created?.tokenCredits ?? deps.balanceConfig.startBalance;
-        return { canSpend: balance >= tokenCost, balance, tokenCost };
+        const canSpend = balance >= tokenCost;
+        return {
+          canSpend,
+          balance,
+          tokenCost,
+          refill: canSpend ? undefined : buildRefillInfo(fields, fields.lastRefill ?? now, now),
+        };
       } catch (error) {
         logger.error('[Balance.check] Failed to lazy-initialize balance record', { user, error });
         return { canSpend: false, balance: 0, tokenCost };
@@ -140,7 +160,6 @@ async function checkBalanceRecord(
     record.refillAmount &&
     record.refillAmount > 0
   ) {
-    const now = new Date();
     if (
       isNaN(lastRefillDate.getTime()) ||
       now >=
@@ -173,7 +192,7 @@ async function checkBalanceRecord(
     canSpend,
     balance,
     tokenCost,
-    refill: canSpend ? undefined : buildRefillInfo(record, lastRefillDate),
+    refill: canSpend ? undefined : buildRefillInfo(record, lastRefillDate, now),
   };
 }
 
