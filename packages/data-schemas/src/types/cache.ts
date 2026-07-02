@@ -1,0 +1,16 @@
+/**
+ * Cache store contract injected into database methods from the api layer
+ * (e.g. getLogStores). Lock members are only present when the store is
+ * Redis-backed and cross-process build deduplication is enabled.
+ */
+export interface CacheStore {
+  get: (key: string) => Promise<unknown>;
+  set: (key: string, value: unknown) => Promise<unknown>;
+  delete?: (key: string) => Promise<unknown>;
+  clear?: () => Promise<unknown>;
+  /** Acquires a cross-process build lock; resolves a release token, or null when already held. */
+  acquireLock?: (key: string) => Promise<string | null>;
+  releaseLock?: (key: string, token: string) => Promise<unknown>;
+  /** Max time to wait for another process holding the build lock to fill the cache. */
+  lockWaitMs?: number;
+}

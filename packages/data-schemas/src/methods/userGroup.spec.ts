@@ -481,6 +481,481 @@ describe('userGroup methods', () => {
     });
   });
 
+  describe('getUserPrincipals caching', () => {
+    function createFakeCache() {
+      const store = new Map<string, unknown>();
+      return {
+        store,
+        get: jest.fn(async (key: string) => store.get(key)),
+        set: jest.fn(async (key: string, value: unknown) => {
+          store.set(key, value);
+        }),
+        delete: jest.fn(async (key: string) => store.delete(key)),
+        clear: jest.fn(async () => store.clear()),
+      };
+    }
+
+    function createCachedMethods(cache: ReturnType<typeof createFakeCache>) {
+      return createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+    }
+
+    const groupPrincipalIds = (
+      principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>,
+    ) =>
+      principals
+        .filter((p) => p.principalType === PrincipalType.GROUP)
+        .map((p) => p.principalId!.toString())
+        .sort();
+
+    it('serves repeat lookups from the cache without re-querying groups', async () => {
+      const user = await createTestUser({ idOnTheSource: 'cache-ext-1' });
+      const group = await Group.create({
+        name: 'Cached Team',
+        source: 'entra',
+        idOnTheSource: 'cache-grp-1',
+        memberIds: ['cache-ext-1'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'cache-ext-1',
+      };
+
+      const first = await cachedMethods.getUserPrincipals(params);
+      const findSpy = jest.spyOn(Group, 'find');
+      const second = await cachedMethods.getUserPrincipals(params);
+      expect(findSpy).not.toHaveBeenCalled();
+      findSpy.mockRestore();
+
+      expect(first).toEqual(second);
+      expect(groupPrincipalIds(second)).toEqual([group._id.toString()]);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+      expect(cache.set).toHaveBeenCalledWith('cache-ext-1', [group._id.toString()]);
+    });
+
+    it('caches empty memberships and hydrates group ids as ObjectIds', async () => {
+      const user = await createTestUser({ idOnTheSource: 'cache-ext-empty' });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'cache-ext-empty',
+      };
+
+      await cachedMethods.getUserPrincipals(params);
+      expect(cache.store.get('cache-ext-empty')).toEqual([]);
+
+      const group = await Group.create({
+        name: 'Late Team',
+        source: 'entra',
+        idOnTheSource: 'cache-grp-late',
+        memberIds: ['cache-ext-empty'],
+      });
+      /** Still served from the cached empty entry until invalidation or expiry */
+      const cached = await cachedMethods.getUserPrincipals(params);
+      expect(groupPrincipalIds(cached)).toEqual([]);
+
+      cache.store.set('cache-ext-empty', [group._id.toString()]);
+      const hydrated = await cachedMethods.getUserPrincipals(params);
+      const groupPrincipal = hydrated.find((p) => p.principalType === PrincipalType.GROUP);
+      expect(groupPrincipal!.principalId).toBeInstanceOf(Types.ObjectId);
+    });
+
+    it('never caches role resolution', async () => {
+      const user = await createTestUser({ role: SystemRoles.USER });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = { userId: user._id.toString(), idOnTheSource: null };
+
+      const before = await cachedMethods.getUserPrincipals(params);
+      expect(before).toContainEqual({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.USER,
+      });
+
+      await User.updateOne({ _id: user._id }, { $set: { role: SystemRoles.ADMIN } });
+      const after = await cachedMethods.getUserPrincipals(params);
+      expect(after).toContainEqual({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.ADMIN,
+      });
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('bypasses the cache for session-scoped reads', async () => {
+      const user = await createTestUser({ idOnTheSource: 'cache-ext-session' });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const session = await mongoose.startSession();
+
+      try {
+        await cachedMethods.getUserPrincipals(
+          { userId: user._id.toString(), role: SystemRoles.USER, idOnTheSource: null },
+          session,
+        );
+      } finally {
+        await session.endSession();
+      }
+
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(cache.set).not.toHaveBeenCalled();
+    });
+
+    it('reflects membership changes immediately via invalidation', async () => {
+      const user = await createTestUser({ idOnTheSource: 'inv-ext-1' });
+      const group = await Group.create({
+        name: 'Invalidation Team',
+        source: 'entra',
+        idOnTheSource: 'inv-grp-1',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'inv-ext-1',
+      };
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+
+      await cachedMethods.addUserToGroup(user._id, group._id);
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
+        group._id.toString(),
+      ]);
+
+      await cachedMethods.removeUserFromGroup(user._id, group._id);
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+    });
+
+    it('invalidates members when a group is created with members or deleted', async () => {
+      const user = await createTestUser({ idOnTheSource: 'inv-ext-2' });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'inv-ext-2',
+      };
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+
+      const group = await cachedMethods.createGroup({
+        name: 'Created Team',
+        source: 'entra',
+        idOnTheSource: 'inv-grp-2',
+        memberIds: ['inv-ext-2'],
+      });
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
+        group._id.toString(),
+      ]);
+
+      await cachedMethods.deleteGroup(group._id);
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+    });
+
+    it('invalidates member keys extracted from bulk membership updates', async () => {
+      const user = await createTestUser({ idOnTheSource: 'bulk-ext-1' });
+      const group = await Group.create({
+        name: 'Bulk Team',
+        source: 'entra',
+        idOnTheSource: 'bulk-grp-1',
+        memberIds: ['bulk-ext-1'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'bulk-ext-1',
+      };
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
+        group._id.toString(),
+      ]);
+
+      await cachedMethods.bulkUpdateGroups(
+        { _id: group._id },
+        { $pullAll: { memberIds: ['bulk-ext-1'] } },
+      );
+
+      expect(cache.delete).toHaveBeenCalledWith('bulk-ext-1');
+      expect(cache.clear).not.toHaveBeenCalled();
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+    });
+
+    it('clears the cache when a bulk update replaces memberIds wholesale', async () => {
+      const group = await Group.create({
+        name: 'Wholesale Team',
+        source: 'entra',
+        idOnTheSource: 'bulk-grp-2',
+        memberIds: ['bulk-ext-old'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+
+      await cachedMethods.bulkUpdateGroups(
+        { _id: group._id },
+        { $set: { memberIds: ['bulk-ext-new'] } },
+      );
+
+      expect(cache.clear).toHaveBeenCalledTimes(1);
+    });
+
+    it('invalidates previous and new members when memberIds are replaced by id', async () => {
+      const user = await createTestUser({ idOnTheSource: 'upd-ext-old' });
+      const group = await Group.create({
+        name: 'Update Team',
+        source: 'entra',
+        idOnTheSource: 'upd-grp-1',
+        memberIds: ['upd-ext-old'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'upd-ext-old',
+      };
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
+        group._id.toString(),
+      ]);
+
+      await cachedMethods.updateGroupById(group._id, { memberIds: ['upd-ext-new'] });
+
+      expect(cache.delete).toHaveBeenCalledWith('upd-ext-old');
+      expect(cache.delete).toHaveBeenCalledWith('upd-ext-new');
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+    });
+
+    it('ignores cached entries with invalid shapes and rebuilds them', async () => {
+      const user = await createTestUser({ idOnTheSource: 'shape-ext-1' });
+      const group = await Group.create({
+        name: 'Shape Team',
+        source: 'entra',
+        idOnTheSource: 'shape-grp-1',
+        memberIds: ['shape-ext-1'],
+      });
+      const cache = createFakeCache();
+      cache.store.set('shape-ext-1', ['not-an-object-id']);
+      const cachedMethods = createCachedMethods(cache);
+
+      const principals = await cachedMethods.getUserPrincipals({
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'shape-ext-1',
+      });
+
+      expect(groupPrincipalIds(principals)).toEqual([group._id.toString()]);
+      expect(cache.set).toHaveBeenCalledWith('shape-ext-1', [group._id.toString()]);
+    });
+
+    it('deduplicates concurrent cache builds for the same member key', async () => {
+      const user = await createTestUser({ idOnTheSource: 'dedup-ext-1' });
+      const cache = {
+        get: jest.fn(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return undefined;
+        }),
+        set: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'dedup-ext-1',
+      };
+
+      const [first, second, third] = await Promise.all([
+        cachedMethods.getUserPrincipals(params),
+        cachedMethods.getUserPrincipals(params),
+        cachedMethods.getUserPrincipals(params),
+      ]);
+
+      expect(first).toEqual(second);
+      expect(second).toEqual(third);
+      expect(cache.get).toHaveBeenCalledTimes(3);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('shares one lock and DB build across concurrent same-process callers', async () => {
+      const user = await createTestUser({ idOnTheSource: 'lock-ext-1' });
+      const cache = {
+        get: jest.fn(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return undefined;
+        }),
+        set: jest.fn(async () => undefined),
+        acquireLock: jest.fn(async () => 'lock-token'),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 5000,
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'lock-ext-1',
+      };
+
+      const [first, second, third] = await Promise.all([
+        cachedMethods.getUserPrincipals(params),
+        cachedMethods.getUserPrincipals(params),
+        cachedMethods.getUserPrincipals(params),
+      ]);
+
+      expect(first).toEqual(second);
+      expect(second).toEqual(third);
+      expect(cache.acquireLock).toHaveBeenCalledTimes(1);
+      expect(cache.acquireLock).toHaveBeenCalledWith('USER_PRINCIPALS_LOCK:lock-ext-1');
+      expect(cache.set).toHaveBeenCalledTimes(1);
+      expect(cache.releaseLock).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for a locked build from another process instead of querying', async () => {
+      const user = await createTestUser({ idOnTheSource: 'wait-ext-1' });
+      const groupId = new Types.ObjectId();
+      const cache = {
+        get: jest.fn().mockResolvedValueOnce(undefined).mockResolvedValue([groupId.toString()]),
+        set: jest.fn(async () => undefined),
+        acquireLock: jest.fn(async () => null),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 5000,
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+
+      const principals = await cachedMethods.getUserPrincipals({
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'wait-ext-1',
+      });
+
+      expect(groupPrincipalIds(principals)).toEqual([groupId.toString()]);
+      expect(cache.acquireLock).toHaveBeenCalledTimes(1);
+      expect(cache.set).not.toHaveBeenCalled();
+      expect(cache.releaseLock).not.toHaveBeenCalled();
+    });
+
+    it('builds immediately when lock acquisition fails', async () => {
+      const user = await createTestUser({ idOnTheSource: 'fail-ext-1' });
+      const cache = {
+        get: jest.fn(async () => undefined),
+        set: jest.fn(async () => undefined),
+        acquireLock: jest.fn(async () => {
+          throw new Error('redis unavailable');
+        }),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 5000,
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+
+      const principals = await cachedMethods.getUserPrincipals({
+        userId: user._id.toString(),
+        idOnTheSource: 'fail-ext-1',
+      });
+
+      expect(principals).toContainEqual({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.USER,
+      });
+      expect(cache.set).toHaveBeenCalledTimes(1);
+      expect(cache.releaseLock).not.toHaveBeenCalled();
+    });
+
+    it('skips the cache write when the entry is invalidated mid-build', async () => {
+      const user = await createTestUser({ idOnTheSource: 'stale-ext-1' });
+      const group = await Group.create({
+        name: 'Stale Team',
+        source: 'entra',
+        idOnTheSource: 'stale-grp-1',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      let openLockGate: (() => void) | undefined;
+      const lockGate = new Promise<void>((resolve) => {
+        openLockGate = resolve;
+      });
+      const lockedCache = Object.assign(cache, {
+        acquireLock: jest.fn(async () => {
+          await lockGate;
+          return 'lock-token';
+        }),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 1000,
+      });
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => lockedCache),
+      });
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'stale-ext-1',
+      };
+
+      const pendingRead = cachedMethods.getUserPrincipals(params);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      /** Mutation lands while the pending build is parked on the lock */
+      await cachedMethods.addUserToGroup(user._id, group._id);
+      openLockGate!();
+      const principals = await pendingRead;
+
+      expect(groupPrincipalIds(principals)).toEqual([group._id.toString()]);
+      expect(cache.set).not.toHaveBeenCalled();
+      expect(cache.store.has('stale-ext-1')).toBe(false);
+
+      const fresh = await cachedMethods.getUserPrincipals(params);
+      expect(groupPrincipalIds(fresh)).toEqual([group._id.toString()]);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts a fresh build for reads after invalidation instead of joining a stale one', async () => {
+      const user = await createTestUser({ idOnTheSource: 'rejoin-ext-1' });
+      const group = await Group.create({
+        name: 'Rejoin Team',
+        source: 'entra',
+        idOnTheSource: 'rejoin-grp-1',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      let openReleaseGate: (() => void) | undefined;
+      const releaseGate = new Promise<void>((resolve) => {
+        openReleaseGate = resolve;
+      });
+      const lockedCache = Object.assign(cache, {
+        acquireLock: jest.fn(async () => 'lock-token'),
+        releaseLock: jest
+          .fn(async () => undefined)
+          .mockImplementationOnce(async () => {
+            await releaseGate;
+          }),
+        lockWaitMs: 1000,
+      });
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => lockedCache),
+      });
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'rejoin-ext-1',
+      };
+
+      /** First read finishes its DB work but stays unsettled, parked on releaseLock */
+      const parkedRead = cachedMethods.getUserPrincipals(params);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await cachedMethods.addUserToGroup(user._id, group._id);
+
+      /** A read issued after the mutation must not join the parked pre-mutation build */
+      const freshRead = await cachedMethods.getUserPrincipals(params);
+      expect(groupPrincipalIds(freshRead)).toEqual([group._id.toString()]);
+
+      openReleaseGate!();
+      expect(groupPrincipalIds(await parkedRead)).toEqual([]);
+    });
+  });
+
   describe('syncUserEntraGroups', () => {
     it('creates new groups and adds user as member', async () => {
       const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
