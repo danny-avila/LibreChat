@@ -212,6 +212,8 @@ export interface MCPServerInfo {
   isConfigured: boolean;
   isConnected: boolean;
   consumeOnly?: boolean;
+  /** Server-level default: when true, this server's tools defer by default */
+  deferLoading?: boolean;
   metadata: t.TPlugin;
 }
 
