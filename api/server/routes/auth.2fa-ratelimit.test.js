@@ -62,6 +62,7 @@ jest.mock('~/server/middleware', () => {
     checkInviteUser: pass,
     validateRegistration: pass,
     resetPasswordLimiter: pass,
+    resetPasswordSubmissionLimiter: pass,
     validatePasswordReset: pass,
     requireJwtAuth: pass,
   };

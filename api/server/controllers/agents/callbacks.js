@@ -728,6 +728,28 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       );
     }
 
+    if (output.artifact[Tools.memory]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.memory,
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+            [Tools.memory]: output.artifact[Tools.memory],
+          };
+          if (!streamId && !res.headersSent) {
+            return attachment;
+          }
+          writeAttachment(res, streamId, attachment);
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing memory artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
     if (output.artifact.content) {
       /** @type {FormattedContent[]} */
       const content = output.artifact.content;

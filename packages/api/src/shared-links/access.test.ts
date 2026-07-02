@@ -5,7 +5,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 import mongoose, { Types, Model } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels, createMethods } from '@librechat/data-schemas';
+import { createModels, createMethods, tenantStorage } from '@librechat/data-schemas';
 import { ResourceType, PrincipalType, AccessRoleIds } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 import type { IAclEntry, ISharedLink } from '@librechat/data-schemas';
@@ -237,6 +237,36 @@ describe('canAccessSharedLink', () => {
 
       expect(next).toHaveBeenCalled();
       expect((req as unknown as Record<string, unknown>).shareResourceId).toBe(link._id.toString());
+    });
+  });
+
+  describe('cross-tenant lookup', () => {
+    test('resolves a share owned by another tenant via system fallback, then enforces the ACL', async () => {
+      // Share created under tenant-a; an authenticated viewer from tenant-b would
+      // miss the tenant-scoped lookup and previously get a 404 before access could
+      // be evaluated. The system fallback now resolves the share, and the ACL check
+      // (run under the share's own tenant) denies the viewer who has no grant. A 403
+      // rather than a 404 confirms the share was found cross-tenant but not authorized
+      // — the fallback broadens the lookup, never the authorization.
+      const link = await tenantStorage.run({ tenantId: 'tenant-a' }, () => createTestLink());
+      const viewer = new Types.ObjectId();
+      mockGetUserPrincipals.mockResolvedValue([
+        { principalType: PrincipalType.USER, principalId: viewer },
+      ]);
+
+      const req = createReq({
+        params: { shareId: link.shareId },
+        user: { id: viewer.toString(), _id: viewer, role: 'USER' },
+      });
+      const res = createRes();
+      const next = jest.fn();
+      await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+        canAccessSharedLink(req, res, next as unknown as NextFunction),
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res._status).toBe(403);
+      expect(res._status).not.toBe(404);
     });
   });
 

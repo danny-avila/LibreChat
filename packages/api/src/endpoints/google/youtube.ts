@@ -60,37 +60,84 @@ export function resolveYouTubeInjectionConfig(params: { provider?: string; model
   return { max: isGemini25OrLater(params.model) ? DEFAULT_MAX_YOUTUBE_PARTS : 1 };
 }
 
+/** 11-char video id. */
+const ID = '[A-Za-z0-9_-]{11}';
 /**
- * Host + path alternation shared by the detection and strip regexes. Accepts any YouTube
- * subdomain (`www.`, `m.`, `music.`, ...) for youtube.com plus youtu.be and youtube-nocookie
- * embed links. The capture group is always the 11-char video id.
+ * Allowlist of characters that occur in a YouTube URL path/query; anything else ends the match.
+ * The detection tail excludes `:` — it never appears in a real YouTube path/query, but `://` of a
+ * *nested* URL does, so excluding it lets the scan stop and find e.g.
+ * `watch?url=https://youtu.be/<id>`. The strip tail re-adds `:` so the whole URL token (including a
+ * trailing URL-valued param like `&next=https://example.com`) is consumed and nothing is orphaned.
  */
-const YOUTUBE_HOST_PATH =
-  '(?:(?:[a-z0-9-]+\\.)*youtube\\.com\\/(?:watch\\?(?:\\S*?&)?v=|shorts\\/|live\\/|embed\\/|v\\/)' +
-  '|(?:www\\.)?youtube-nocookie\\.com\\/embed\\/' +
-  '|youtu\\.be\\/)';
+const DETECT_TAIL = '[A-Za-z0-9\\-._~%/?&=#@+]*';
+const STRIP_TAIL = '[A-Za-z0-9\\-._~%/?&=#@+:]*';
 
 /**
- * Matches YouTube watch/share/shorts/live/embed (incl. youtube-nocookie) URLs and captures the
- * 11-char video id. The leading lookbehind rejects hosts embedded in a longer domain (e.g.
- * `notyoutube.com`, `evil-youtube.com`); the trailing lookahead rejects ids inside a longer token.
+ * Builds the linear YouTube URL matcher (restricted to recognized single-video forms):
+ *   - `youtu.be/<id>`                                      (group 1 = id)
+ *   - `youtube[-nocookie].com/(shorts|live|embed|v)/<id>`  (group 2 = id)
+ *   - `youtube[-nocookie].com/watch?<query>`               (group 3 = query, `v=` parsed afterwards)
+ *
+ * Properties that matter:
+ *   - Linear (no ReDoS): each branch consumes its match in a single greedy pass, the `v=` location
+ *     is parsed from the captured query (not re-scanned per occurrence), and the subdomain
+ *     repetition is bounded (`{1,63}` label x `{0,10}` labels). Needs no scan caps.
+ *   - Restricting to recognized routes means an UNrecognized YouTube URL (e.g. `/redirect?q=...`)
+ *     does not match, so the global scan continues and still finds a nested `youtu.be/<id>`.
+ *   - The path/query allowlist ends the match at prose delimiters, so adjacent links in one token
+ *     (comma/semicolon/pipe-separated, markdown `](url1)](url2)`) are matched separately.
+ *   - The leading lookbehind rejects hosts embedded in a longer domain (`notyoutube.com`,
+ *     `evil-youtube.com`).
  */
-const YOUTUBE_URL_REGEX = new RegExp(
-  `(?<![\\w.-])(?:https?:\\/\\/)?${YOUTUBE_HOST_PATH}([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])`,
-  'gi',
-);
+function createYouTubeRegex(tail: string): RegExp {
+  return new RegExp(
+    '(?<![\\w.-])(?:https?:\\/\\/)?(?:' +
+      `youtu\\.be\\/(${ID})(?![A-Za-z0-9_-])${tail}` +
+      '|(?:(?:[a-z0-9-]{1,63}\\.){0,10}youtube\\.com|(?:www\\.)?youtube-nocookie\\.com)\\/(?:' +
+      `(?:shorts|live|embed|v)\\/(${ID})(?![A-Za-z0-9_-])${tail}` +
+      `|watch\\?(${tail})` +
+      '))',
+    'gi',
+  );
+}
 
-/**
- * Like {@link YOUTUBE_URL_REGEX} but also captures the full trailing URL token (query/fragment),
- * so a matched link can be removed from the prompt text. Group 1 = video id, group 2 = trailing.
- */
-const YOUTUBE_URL_STRIP_REGEX = new RegExp(
-  `(?<![\\w.-])(?:https?:\\/\\/)?${YOUTUBE_HOST_PATH}([A-Za-z0-9_-]{11})(\\S*)`,
-  'gi',
-);
+/** Detection matcher: `:`-excluded tail so nested video URLs are discoverable. */
+const YOUTUBE_URL_REGEX = createYouTubeRegex(DETECT_TAIL);
+/** Strip matcher: `:`-inclusive tail so a matched URL is removed whole (no orphaned `://...`). */
+const YOUTUBE_STRIP_REGEX = createYouTubeRegex(STRIP_TAIL);
 
+/** Matches an 11-char video id at the start of a string, rejecting longer id-like tokens. */
+const VIDEO_ID_REGEX = /^([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])/;
+/** Iterates every `v` query parameter value (global; values length-bounded — an id is 11 chars). */
+const V_PARAM_REGEX = /(?:^|&)v=([A-Za-z0-9_-]{1,64})/gi;
 /** A YouTube link carries a user-selected moment (e.g. `?t=90`, `&start=90`, before or after `v=`). */
-const YOUTUBE_TIMESTAMP_REGEX = /[?&](t|start)=/i;
+const YOUTUBE_TIMESTAMP_REGEX = /[?&](?:t|start)=/i;
+
+/**
+ * Resolves the 11-char video id from the matcher's capture groups. The path-based ids (groups 1
+ * and 2) are already validated by the regex; the watch query (group 3) is scanned for the first
+ * `v=` whose value is a valid id, so a malformed earlier `v=` does not shadow a later valid one.
+ */
+function videoIdFromGroups(
+  youtuBeId?: string,
+  pathId?: string,
+  watchQuery?: string,
+): string | null {
+  const directId = youtuBeId ?? pathId;
+  if (directId != null) {
+    return directId;
+  }
+  if (watchQuery == null) {
+    return null;
+  }
+  for (const paramMatch of watchQuery.matchAll(V_PARAM_REGEX)) {
+    const id = VIDEO_ID_REGEX.exec(paramMatch[1])?.[1];
+    if (id != null) {
+      return id;
+    }
+  }
+  return null;
+}
 
 /**
  * Removes from text only the YouTube URL tokens whose video id was injected as a video part and
@@ -98,17 +145,23 @@ const YOUTUBE_TIMESTAMP_REGEX = /[?&](t|start)=/i;
  * the model can still see/reason about them. Tidies leftover horizontal whitespace when changed.
  */
 function stripYouTubeUrls(text: string, injectedIds: Set<string>): string {
-  const replaced = text.replace(YOUTUBE_URL_STRIP_REGEX, (match, videoId) => {
-    if (!injectedIds.has(videoId)) {
+  if (text.length === 0) {
+    return text;
+  }
+  let changed = false;
+  const replaced = text.replace(YOUTUBE_STRIP_REGEX, (match, youtuBeId, pathId, watchQuery) => {
+    const id = videoIdFromGroups(youtuBeId, pathId, watchQuery);
+    if (id == null || !injectedIds.has(id)) {
       return match;
     }
     /** Test the whole URL: the timestamp can precede `v=` (e.g. `watch?t=90&v=<id>`). */
     if (YOUTUBE_TIMESTAMP_REGEX.test(match)) {
       return match;
     }
+    changed = true;
     return '';
   });
-  if (replaced === text) {
+  if (!changed) {
     return text;
   }
   return replaced
@@ -139,8 +192,8 @@ export function extractYouTubeUrls(text?: string | null, max?: number): string[]
   YOUTUBE_URL_REGEX.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = YOUTUBE_URL_REGEX.exec(text)) !== null) {
-    const videoId = match[1];
-    if (seen.has(videoId)) {
+    const videoId = videoIdFromGroups(match[1], match[2], match[3]);
+    if (videoId == null || seen.has(videoId)) {
       continue;
     }
     seen.add(videoId);

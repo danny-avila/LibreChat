@@ -36,9 +36,13 @@ import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { buildHITLRunWiring } from '~/agents/hitl/runtime';
+import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
@@ -849,17 +853,6 @@ function buildSubagentConfigs(
   return configs;
 }
 
-function buildLangfuseConfig(tenantIdInput?: unknown) {
-  const tenantId = typeof tenantIdInput === 'string' ? tenantIdInput.trim() : '';
-  return {
-    deterministicTraceId: true,
-    ...(tenantId !== '' && {
-      metadata: { 'librechat.tenant.id': tenantId },
-      tags: [`tenant:${tenantId}`],
-    }),
-  };
-}
-
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -880,6 +873,7 @@ export async function createRun({
   signal,
   agents,
   messages,
+  discoveredToolNames,
   requestBody,
   user,
   tenantId,
@@ -892,6 +886,7 @@ export async function createRun({
   calibrationRatio,
   appConfig,
   subagentUsageSink,
+  hitlCapable = false,
   streaming = true,
   streamUsage = true,
 }: {
@@ -905,6 +900,16 @@ export async function createRun({
   tenantId?: string;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
+  /**
+   * Pre-discovered deferred-tool names to force-load directly, bypassing message
+   * extraction. The HITL resume path rebuilds the graph with `messages: []` (state
+   * comes from the durable checkpoint), so the in-turn `tool_search` results that
+   * would normally mark a deferred tool discovered aren't present — without this the
+   * paused tool would be absent from the rebuilt schema-only toolMap and resume would
+   * fail with "unknown tool". Captured at pause via `extractDiscoveredToolsFromHistory`
+   * and replayed here. Merged with (not replacing) any names extracted from `messages`.
+   */
+  discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
@@ -924,6 +929,15 @@ export async function createRun({
    * Switch to the `RunConfig` pick once the dependency is bumped.
    */
   subagentUsageSink?: (event: SubagentUsageEvent) => void;
+  /**
+   * Whether the caller implements the HITL pause/resume lifecycle (inspects
+   * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
+   * tool-approval wiring: only AgentClient (chat + resume) sets this. The OpenAI-compatible
+   * and Responses controllers leave it false, so an approval-gated tool can't pause on a
+   * route that has no approval surface or resume endpoint (it would otherwise emit a normal
+   * final response / `[DONE]` with the tool call left unresolved).
+   */
+  hitlCapable?: boolean;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -938,10 +952,22 @@ export async function createRun({
    */
   const hasAnyDeferredTools = agents.some((agent) => agent.hasDeferredTools === true);
 
-  const discoveredTools =
-    hasAnyDeferredTools && messages?.length
-      ? extractDiscoveredToolsFromHistory(messages)
-      : new Set<string>();
+  const discoveredTools = new Set<string>();
+  if (hasAnyDeferredTools) {
+    // Normal path: extract from this run's message history (tool_search results).
+    if (messages?.length) {
+      for (const name of extractDiscoveredToolsFromHistory(messages)) {
+        discoveredTools.add(name);
+      }
+    }
+    // Resume path: replay names captured at pause, since `messages` is empty (the
+    // paused run's tool_search results live only in the checkpoint, not here).
+    if (discoveredToolNames?.length) {
+      for (const name of discoveredToolNames) {
+        discoveredTools.add(name);
+      }
+    }
+  }
 
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     const isSubagent = opts.isSubagent === true;
@@ -1145,6 +1171,34 @@ export async function createRun({
   const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
 
   /**
+   * Human-in-the-loop tool approval — OFF by default. When the agents endpoint
+   * opts in (`toolApproval.enabled`), attach the `PreToolUse` policy hook + the
+   * `humanInTheLoop` switch, and bind a durable checkpointer so a run that pauses
+   * for review can be rebuilt and resumed on any worker (see `agents/checkpointer.ts`
+   * and the resume route). When disabled, nothing attaches and the run is identical
+   * to before this feature shipped.
+   */
+  const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+  // Resolve the effective policy through the single seam so per-agent / per-skill
+  // sources can layer in later without touching this call site (see
+  // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
+  // is identical to reading `toolApproval` directly.
+  const toolApprovalPolicy = resolveToolApprovalPolicy({
+    endpoint: agentsEndpointConfig?.toolApproval,
+  });
+  // Gate HITL to callers that actually implement the pause/resume lifecycle. The
+  // OpenAI-compatible + Responses controllers also call createRun/processStream but never
+  // inspect `run.getInterrupt()` or persist a pending action — so an approval-gated tool
+  // would pause with no approval surface or resume endpoint, and the route would emit a
+  // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
+  // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
+  const hitl = hitlCapable ? buildHITLRunWiring(toolApprovalPolicy) : undefined;
+  if (hitl) {
+    const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
+    graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
+  }
+
+  /**
    * Built as a variable (not an inline literal) so the extra
    * `subagentUsageSink` field passes assignability against SDK versions
    * whose `RunConfig` predates it (<= 3.2.33, where it is ignored at
@@ -1165,10 +1219,14 @@ export async function createRun({
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
-    langfuse: buildLangfuseConfig(tenantId ?? user?.tenantId),
+    langfuse: buildLangfuseConfig({ appConfig, tenantId: tenantId ?? user?.tenantId }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
+    // HITL opt-in: the `humanInTheLoop` switch + the PreToolUse policy hook. Spread
+    // here (not just `compileOptions.checkpointer` above) so an `ask` decision raises
+    // a real interrupt — without these the run would never pause. Absent when disabled.
+    ...(hitl && { humanInTheLoop: hitl.humanInTheLoop, hooks: hitl.hooks }),
   };
   const run = await Run.create(runConfig);
 

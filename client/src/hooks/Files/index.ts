@@ -5,6 +5,8 @@ export { default as useFileHandling, useFileHandlingNoChatContext } from './useF
 export { default as useFileDeletion } from './useFileDeletion';
 export { default as useUpdateFiles } from './useUpdateFiles';
 export { default as useDragHelpers } from './useDragHelpers';
+export { default as useUploadOptions } from './useUploadOptions';
+export { default as useFileUploadRouter } from './useFileUploadRouter';
 export { default as useFileMap } from './useFileMap';
 export { default as useSharePointPicker } from './useSharePointPicker';
 export { default as useSharePointDownload } from './useSharePointDownload';

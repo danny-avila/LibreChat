@@ -572,6 +572,7 @@ export enum AgentCapabilities {
   actions = 'actions',
   context = 'context',
   skills = 'skills',
+  memory = 'memory',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -687,6 +688,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.actions,
   AgentCapabilities.context,
   AgentCapabilities.skills,
+  AgentCapabilities.memory,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -754,6 +756,90 @@ const remoteApiSchema = z.object({
   auth: remoteApiAuthSchema.optional(),
 });
 
+/**
+ * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s
+ * `ToolPolicyMode` 1:1.
+ *
+ * - `default`: ask the user about anything not explicitly allowed (default-on).
+ * - `dontAsk`: deny anything not explicitly allowed (headless / API-key flows).
+ * - `bypass`: auto-approve everything that isn't explicitly denied
+ *   (the user-facing "stop asking me" toggle).
+ *
+ * Subagents inherit the parent's mode; this is enforced by the SDK and not
+ * overridable per-subagent.
+ */
+export const toolApprovalModeSchema = z.enum(['default', 'dontAsk', 'bypass']);
+export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
+
+/**
+ * Per-endpoint tool-approval policy.
+ *
+ * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
+ * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
+ * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * just describes the surface.
+ *
+ * Conventions:
+ * - All list entries are matched as globs (`*`). Use `mcp:server:*` to scope
+ *   a rule to every tool from a single MCP server.
+ * - `deny` always wins, including under `bypass`.
+ * - `enabled: false` is a LibreChat-only kill switch that disables the entire
+ *   HITL machinery for this endpoint (no checkpointer, no hooks, no prompts).
+ *   This is admin-level; users toggle prompting via `mode: 'bypass'` instead.
+ */
+export const toolApprovalPolicySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    mode: toolApprovalModeSchema.optional(),
+    allow: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+    ask: z.array(z.string()).optional(),
+    /** Optional reason template surfaced in the prompt; `{tool}` is interpolated. */
+    reason: z.string().optional(),
+  })
+  .optional();
+
+export type TToolApprovalPolicy = z.infer<typeof toolApprovalPolicySchema>;
+
+/**
+ * Durable checkpointer backing human-in-the-loop resume.
+ *
+ * When `toolApproval.enabled` is true, a run that pauses for review suspends its
+ * LangGraph state to a checkpoint; resuming rebuilds that state on a *fresh* `Run`
+ * — possibly on a different replica, or the same worker after a restart. That only
+ * works if the checkpoint outlives the original request, so HITL needs a durable
+ * saver, not the SDK's process-local `MemorySaver` fallback.
+ *
+ * Defaults are zero-config: with `toolApproval.enabled` on and no `checkpointer`
+ * block, LibreChat persists checkpoints to its primary MongoDB, so resume works
+ * across replicas out of the box.
+ *
+ * - `type: 'mongo'` (default) — persist to the app database; survives restarts and
+ *   resolves on any replica. A TTL index reclaims runs that are never resolved.
+ * - `type: 'memory'` — process-local only. Paused runs do NOT survive a restart and
+ *   can only be resolved on the originating worker. Single-process / dev only.
+ */
+export const checkpointerTypeSchema = z.enum(['mongo', 'memory']);
+export type TCheckpointerType = z.infer<typeof checkpointerTypeSchema>;
+
+export const checkpointerSchema = z
+  .object({
+    type: checkpointerTypeSchema.optional(),
+    /**
+     * Approval window, in seconds: how long a paused run waits for a decision
+     * before it is reclaimed. Drives both the Mongo TTL index on checkpoints and
+     * the pending-action expiry, keeping the two layers in lockstep. Defaults to
+     * 86400 (24h). Raise it for longer review windows.
+     */
+    ttl: z.number().int().positive().optional(),
+    /** Advanced: override the Mongo collection names used for checkpoints. */
+    checkpointCollectionName: z.string().optional(),
+    checkpointWritesCollectionName: z.string().optional(),
+  })
+  .optional();
+
+export type TCheckpointerConfig = z.infer<typeof checkpointerSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -776,6 +862,11 @@ export const agentsEndpointSchema = baseEndpointSchema
         })
         .optional(),
       remoteApi: remoteApiSchema.optional(),
+      /** Human-in-the-loop tool approval policy. Off by default. */
+      toolApproval: toolApprovalPolicySchema,
+      /** Durable checkpointer backing HITL resume. Defaults to the app's MongoDB
+       *  when `toolApproval.enabled` is set; ignored otherwise. */
+      checkpointer: checkpointerSchema,
     }),
   )
   .default({
@@ -1705,11 +1796,27 @@ export const messageFilterSchema = z.object({
 
 export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
 
+export const langfuseConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  publicKey: z.string().optional(),
+  secretKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+  fanout: z
+    .object({
+      enabled: z.boolean().optional(),
+      collectorUrl: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
+  langfuse: langfuseConfigSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
   skillSync: skillSyncConfigSchema,
@@ -1889,6 +1996,7 @@ const sharedAnthropicModels = [
   'claude-fable-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
+  'claude-sonnet-5',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
   'claude-sonnet-4-5',
@@ -1914,6 +2022,7 @@ export const bedrockModels = [
   'anthropic.claude-fable-5',
   'anthropic.claude-opus-4-8',
   'anthropic.claude-opus-4-7',
+  'anthropic.claude-sonnet-5',
   'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -2619,6 +2728,8 @@ export enum LocalStorageKeys {
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
   /** Last checked toggle for Skills per conversation ID */
   LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
+  /** Last checked toggle for Memory per conversation ID */
+  LAST_MEMORY_TOGGLE_ = 'LAST_MEMORY_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

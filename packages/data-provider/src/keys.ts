@@ -14,7 +14,6 @@ export enum QueryKeys {
   balance = 'balance',
   endpoints = 'endpoints',
   tokenConfig = 'tokenConfig',
-  contextProjection = 'contextProjection',
   presets = 'presets',
   searchResults = 'searchResults',
   tokenCount = 'tokenCount',

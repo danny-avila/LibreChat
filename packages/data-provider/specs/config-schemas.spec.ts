@@ -1178,3 +1178,32 @@ describe('specsConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('configSchema langfuse', () => {
+  it('accepts tenant Langfuse fanout config', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        publicKey: 'pk-lf-tenant',
+        secretKey: 'sk-lf-tenant',
+        fanout: {
+          enabled: true,
+          collectorUrl: 'http://langfuse-fanout-collector:4318',
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an explicit tenant Langfuse opt-out', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: false,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+});

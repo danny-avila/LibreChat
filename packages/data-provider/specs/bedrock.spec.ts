@@ -4,6 +4,7 @@ import {
   supportsAdaptiveThinking,
   omitsSamplingParameters,
   omitsThinkingByDefault,
+  requiresExplicitThinkingDisabled,
   resolveThinkingDisplay,
   bedrockOutputParser,
   bedrockInputParser,
@@ -288,8 +289,15 @@ describe('omitsThinkingByDefault', () => {
     expect(omitsThinkingByDefault('claude-sonnet-4-6')).toBe(false);
   });
 
-  test('returns false for claude-sonnet-4-7 (Sonnet is not affected by the Opus 4.7 default)', () => {
+  test('returns false for claude-sonnet-4-7 (pre-5 Sonnet keeps summarized default)', () => {
     expect(omitsThinkingByDefault('claude-sonnet-4-7')).toBe(false);
+  });
+
+  test('returns true for Sonnet 5+ (omits thinking display by default)', () => {
+    expect(omitsThinkingByDefault('claude-sonnet-5')).toBe(true);
+    expect(omitsThinkingByDefault('claude-sonnet-5-20260101')).toBe(true);
+    expect(omitsThinkingByDefault('anthropic.claude-sonnet-5')).toBe(true);
+    expect(omitsThinkingByDefault('claude-sonnet-9')).toBe(true);
   });
 
   test('returns false for claude-haiku-4-5', () => {
@@ -334,18 +342,51 @@ describe('omitsSamplingParameters', () => {
     });
   });
 
-  test('returns false for older Opus and non-Opus models', () => {
+  test('returns true for Sonnet 5+ models (non-default sampling params rejected)', () => {
+    const models = [
+      'claude-sonnet-5',
+      'claude-sonnet-5-20260101',
+      'anthropic.claude-sonnet-5',
+      'us.anthropic.claude-sonnet-5',
+      'claude-sonnet-9',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(true);
+    });
+  });
+
+  test('returns false for older Opus and pre-5 Sonnet models', () => {
     const models = [
       'claude-opus-4-20250514',
       'anthropic.claude-opus-4-20250514-v1:0',
       'claude-opus-4-1-20250805',
       'claude-opus-4-6',
+      'claude-sonnet-4-6',
       'claude-sonnet-4-7',
     ];
 
     models.forEach((model) => {
       expect(omitsSamplingParameters(model)).toBe(false);
     });
+  });
+});
+
+describe('requiresExplicitThinkingDisabled', () => {
+  test('returns true for Sonnet 5+ (omitted thinking runs adaptive by default)', () => {
+    expect(requiresExplicitThinkingDisabled('claude-sonnet-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('claude-sonnet-5-20260101')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('anthropic.claude-sonnet-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('claude-sonnet-9')).toBe(true);
+  });
+
+  test('returns false for pre-5 Sonnet, Opus, and Mythos-class models', () => {
+    // Opus 4.7+ omit -> off; Fable/Mythos reject an explicit disabled config (400)
+    expect(requiresExplicitThinkingDisabled('claude-sonnet-4-6')).toBe(false);
+    expect(requiresExplicitThinkingDisabled('claude-opus-4-8')).toBe(false);
+    expect(requiresExplicitThinkingDisabled('claude-fable-5')).toBe(false);
+    expect(requiresExplicitThinkingDisabled('claude-mythos-5')).toBe(false);
+    expect(requiresExplicitThinkingDisabled('gpt-4o')).toBe(false);
   });
 });
 
@@ -537,6 +578,29 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.thinking).toBeUndefined();
       expect(additionalFields.thinkingBudget).toBeUndefined();
       expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should send explicit disabled thinking for Bedrock Sonnet 5 when thinking is off', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-5',
+        thinking: false,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+    });
+
+    test('should keep Bedrock Sonnet 5 thinking off when only the persisted AMRF disabled config remains', () => {
+      // initializeBedrock feeds persisted model_parameters straight through this
+      // parser. A prior "thinking off" survives only as AMRF.thinking; it must
+      // not be rebuilt as adaptive on reload.
+      const input = {
+        model: 'anthropic.claude-sonnet-5',
+        additionalModelRequestFields: { thinking: { type: 'disabled' } },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
     });
 
     test('should respect custom thinking budget', () => {
@@ -802,6 +866,18 @@ describe('bedrockInputParser', () => {
         },
       }) as Record<string, unknown>;
       expect(persisted.thinkingDisplay).toBe('summarized');
+    });
+
+    test('coerces a persisted disabled AMRF.thinking back to thinking=false (Sonnet 5)', () => {
+      /** A persisted Sonnet 5 "thinking off" carries AMRF.thinking =
+       * { type: 'disabled' }. The schema must coerce that to top-level
+       * thinking=false (not the truthy-object default of true), so the parser
+       * re-emits the disabled config instead of flipping back to adaptive. */
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-sonnet-5',
+        additionalModelRequestFields: { thinking: { type: 'disabled' } },
+      }) as Record<string, unknown>;
+      expect(persisted.thinking).toBe(false);
     });
 
     test('ignores unknown display values during round-trip extraction', () => {

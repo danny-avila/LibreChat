@@ -26,11 +26,17 @@ import {
   cn,
   createProviderOption,
 } from '~/utils';
+import {
+  useLocalize,
+  useVisibleTools,
+  useHasAccess,
+  useHasMemoryAccess,
+  useAuthContext,
+} from '~/hooks';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
-import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
 import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import FileContext from '~/nj/components/Agents/FileContext';
 import AgentCategorySelector from './AgentCategorySelector';
@@ -46,6 +52,7 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
+import Memory from './Memory';
 import store from '~/store';
 
 /** A skill lookup only counts as a confirmed miss on 404/403 — deleted or no
@@ -109,6 +116,7 @@ export default function AgentConfig() {
   const {
     codeEnabled,
     toolsEnabled,
+    memoryEnabled,
     contextEnabled,
     actionsEnabled,
     skillsEnabled,
@@ -121,6 +129,12 @@ export default function AgentConfig() {
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
+  const { user } = useAuthContext();
+  const hasMemoryAccess = useHasMemoryAccess();
+  /** Mirror the chat memory badge's opt-out gate: a user who disabled memory in
+   *  personalization can't use the inline tools, so the builder toggle is inert
+   *  for them and must be hidden too. */
+  const showMemory = hasMemoryAccess && memoryEnabled && user?.personalization?.memories !== false;
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
   const skillsMap = useMemo(() => {
@@ -496,6 +510,7 @@ export default function AgentConfig() {
           fileSearchEnabled ||
           artifactsEnabled ||
           contextEnabled ||
+          showMemory ||
           webSearchEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block text-sm font-medium">
@@ -511,6 +526,8 @@ export default function AgentConfig() {
             {artifactsEnabled && <Artifacts />}
             {/* File Search */}
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {/* Memory */}
+            {showMemory && <Memory />}
           </div>
         )}
         {/* MCP Section */}

@@ -19,18 +19,10 @@ import { clearMessagesCache, renderAgentAvatar } from '~/utils';
 import { logAgentDuplication } from '~/nj/analytics/logHelpers';
 import { useDuplicateAgentMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers';
-
-interface SupportContact {
-  name?: string;
-  email?: string;
-}
-
-interface AgentWithSupport extends t.Agent {
-  support_contact?: SupportContact;
-}
+import AgentContact from './AgentContact';
 
 interface AgentDetailContentProps {
-  agent: AgentWithSupport;
+  agent: t.Agent;
 }
 
 /**
@@ -132,37 +124,6 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
       });
   };
 
-  /**
-   * Format contact information with mailto links when appropriate
-   */
-  const formatContact = () => {
-    if (!agent?.support_contact) return null;
-
-    const { name, email } = agent.support_contact;
-
-    if (name && email) {
-      return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
-          {name}
-        </a>
-      );
-    }
-
-    if (email) {
-      return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
-          {email}
-        </a>
-      );
-    }
-
-    if (name) {
-      return <span>{name}</span>;
-    }
-
-    return null;
-  };
-
   return (
     <OGDialogContent className="max-h-[90vh] w-11/12 max-w-lg overflow-y-auto">
       {/* Agent avatar */}
@@ -175,12 +136,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
         </h2>
       </div>
 
-      {/* Contact info */}
-      {agent?.support_contact && formatContact() && (
-        <div className="mt-1 text-center text-sm text-text-secondary">
-          {localize('com_agents_contact')}: {formatContact()}
-        </div>
-      )}
+      <AgentContact agent={agent} className="mt-1 justify-center text-center text-sm" />
 
       {/* Agent description */}
       <div className="mt-4 whitespace-pre-wrap px-6 text-center text-base text-text-primary">
