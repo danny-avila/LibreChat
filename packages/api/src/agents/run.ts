@@ -47,6 +47,7 @@ import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
+import { createResponseMetadataCallback } from './metadata';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -1209,6 +1210,7 @@ export async function createRun({
   const runConfig = {
     runId,
     graphConfig,
+    callbacks: [createResponseMetadataCallback()],
     tokenCounter,
     customHandlers,
     initialSessions,
