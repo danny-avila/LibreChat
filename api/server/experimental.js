@@ -20,6 +20,7 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
+  loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
 } = require('@librechat/api');
@@ -300,6 +301,12 @@ if (cluster.isMaster) {
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
     initializeGitHubSkillSync(appConfig);
+    // Register configured tool-approval policy hooks (mirrors the standard startup path).
+    // Honors the `enabled` kill switch; hooks are base-config-only, registered process-wide.
+    const toolApproval = appConfig?.endpoints?.agents?.toolApproval;
+    await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
+      basePath: path.resolve(__dirname, '../..'),
+    });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);

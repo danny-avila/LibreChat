@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { logger } from '@librechat/data-schemas';
 import type { TToolApprovalHookConfig } from 'librechat-data-provider';
@@ -28,17 +29,26 @@ export interface LoadToolApprovalHooksOptions {
 let loadedUnregisters: Array<() => void> = [];
 
 /**
- * Turn a config `module` string into an importable specifier. A bare package name imports
- * as-is; a path (relative or absolute) resolves against `basePath` and becomes a `file://`
- * URL so `import()` accepts it on every platform.
+ * Turn a config `module` string into an importable specifier. Explicit paths (absolute, or
+ * `./`-relative) resolve against `basePath` and become a `file://` URL so `import()` accepts
+ * them on every platform. A bare specifier prefers a real FILE under `basePath` (so
+ * `config/hooks/workspace.js` works without a leading `./`), falling back to a package
+ * specifier when no such file exists; scoped names (`@scope/pkg`) are always packages.
  */
 function resolveModuleSpecifier(spec: string, basePath: string): string {
-  const isPath = spec.startsWith('.') || spec.startsWith('/') || path.isAbsolute(spec);
-  if (!isPath) {
-    return spec;
+  if (path.isAbsolute(spec)) {
+    return pathToFileURL(spec).href;
   }
-  const absolute = path.isAbsolute(spec) ? spec : path.resolve(basePath, spec);
-  return pathToFileURL(absolute).href;
+  if (spec.startsWith('.')) {
+    return pathToFileURL(path.resolve(basePath, spec)).href;
+  }
+  if (!spec.startsWith('@')) {
+    const candidate = path.resolve(basePath, spec);
+    if (existsSync(candidate)) {
+      return pathToFileURL(candidate).href;
+    }
+  }
+  return spec;
 }
 
 /**
@@ -74,11 +84,35 @@ export async function loadToolApprovalHooks(
   let registered = 0;
   for (const entry of hooks) {
     try {
+      // Validate the matcher regex up front: the SDK compiles it with `new RegExp` at
+      // run-build time, where a bad pattern would throw out of buildHITLRunWiring and break
+      // EVERY HITL run — here it's skipped like any other bad entry.
+      if (entry.matcher != null) {
+        try {
+          void new RegExp(entry.matcher);
+        } catch (regexErr) {
+          logger.error(
+            `[toolApprovalHooks] Invalid matcher regex ${JSON.stringify(entry.matcher)} for module "${entry.module}"; skipping`,
+            regexErr,
+          );
+          continue;
+        }
+      }
+
       const specifier = resolveModuleSpecifier(entry.module, basePath);
       const mod = (await importModule(specifier)) as { default?: unknown };
-      const builder = (
-        mod && typeof mod === 'object' && 'default' in mod ? mod.default : mod
-      ) as unknown;
+      let builder: unknown = mod && typeof mod === 'object' && 'default' in mod ? mod.default : mod;
+      // CJS/transpiled interop: TypeScript/Babel `exports.default = fn` (esModuleInterop)
+      // surfaces through import() as `{ default: { default: fn } }`, so unwrap one more level
+      // before rejecting — otherwise documented "default export" hook modules fail to load.
+      if (
+        builder != null &&
+        typeof builder === 'object' &&
+        'default' in builder &&
+        typeof (builder as { default: unknown }).default === 'function'
+      ) {
+        builder = (builder as { default: unknown }).default;
+      }
       if (typeof builder !== 'function') {
         logger.error(
           `[toolApprovalHooks] Module "${entry.module}" did not export a hook-builder function; skipping`,

@@ -89,4 +89,65 @@ describe('loadToolApprovalHooks', () => {
     await loadToolApprovalHooks([{ module: './a.js' }], { importModule });
     expect(getRegisteredToolApprovalHookCount()).toBe(1);
   });
+
+  test('unwraps a nested default (CJS/transpiled `exports.default = fn` interop)', async () => {
+    // import() of TS/Babel CJS output surfaces as { default: { default: builder } }.
+    const importModule = jest.fn(async () => ({ default: { default: goodModule } }));
+    expect(await loadToolApprovalHooks([{ module: './cjs.js' }], { importModule })).toBe(1);
+    expect(getRegisteredToolApprovalHookCount()).toBe(1);
+  });
+
+  test('skips an entry with an invalid matcher regex (does not register a throwing pattern)', async () => {
+    const importModule = jest.fn(async () => ({ default: goodModule }));
+    expect(
+      await loadToolApprovalHooks([{ module: './h.js', matcher: '[' }], { importModule }),
+    ).toBe(0);
+    expect(getRegisteredToolApprovalHookCount()).toBe(0);
+    expect(importModule).not.toHaveBeenCalled(); // rejected before import
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  test('loads valid hooks even when a sibling entry has a bad matcher', async () => {
+    const importModule = jest.fn(async () => ({ default: goodModule }));
+    const n = await loadToolApprovalHooks(
+      [
+        { module: './bad.js', matcher: '(' },
+        { module: './good.js', matcher: 'write_.*' },
+      ],
+      { importModule },
+    );
+    expect(n).toBe(1);
+  });
+
+  describe('module specifier resolution', () => {
+    test('resolves an app-root-relative FILE without a leading dot to a file:// URL', async () => {
+      const importModule = jest.fn(async () => ({ default: goodModule }));
+      // `hookLoader.ts` exists next to this spec — a bare-looking path that is a real file.
+      await loadToolApprovalHooks([{ module: 'hookLoader.ts' }], {
+        importModule,
+        basePath: __dirname,
+      });
+      expect(importModule).toHaveBeenCalledWith(
+        expect.stringMatching(/^file:\/\/.*hookLoader\.ts$/),
+      );
+    });
+
+    test('leaves a bare package specifier untouched when no such file exists', async () => {
+      const importModule = jest.fn(async () => ({ default: goodModule }));
+      await loadToolApprovalHooks([{ module: 'some-approval-hooks-pkg' }], {
+        importModule,
+        basePath: __dirname,
+      });
+      expect(importModule).toHaveBeenCalledWith('some-approval-hooks-pkg');
+    });
+
+    test('resolves a ./ relative path to a file:// URL', async () => {
+      const importModule = jest.fn(async () => ({ default: goodModule }));
+      await loadToolApprovalHooks([{ module: './hooks/x.js' }], {
+        importModule,
+        basePath: '/srv/app',
+      });
+      expect(importModule).toHaveBeenCalledWith('file:///srv/app/hooks/x.js');
+    });
+  });
 });

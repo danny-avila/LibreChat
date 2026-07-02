@@ -823,6 +823,11 @@ export const toolApprovalPolicySchema = z
      * Programmatic policy hooks loaded from modules at startup. They layer on top of the
      * static lists above for dynamic, context-aware decisions the lists can't express
      * (per-args, per-agent, per-user). See {@link toolApprovalHookConfigSchema}.
+     *
+     * BASE-CONFIG ONLY: hooks are imported + registered once, process-wide, at server
+     * startup — they are NOT reloaded from per-role/user/tenant admin overrides. Encode
+     * per-user/tenant behavior INSIDE the hook (via its runtime context), not by varying the
+     * module list per override. Honored only when `enabled` is true.
      */
     hooks: z.array(toolApprovalHookConfigSchema).optional(),
   })
