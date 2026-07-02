@@ -295,6 +295,7 @@ export function createResponseContext(
     createdAt: Math.floor(Date.now() / 1000),
     previousResponseId: request.previous_response_id,
     instructions: request.instructions,
+    store: request.store ?? false,
   };
 }
 
@@ -738,7 +739,7 @@ export function buildAggregatedResponse(
     },
     max_output_tokens: null,
     max_tool_calls: null,
-    store: false,
+    store: context.store ?? false,
     background: false,
     service_tier: 'default',
     metadata: {},

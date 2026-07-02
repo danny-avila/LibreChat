@@ -167,7 +167,11 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
       await db.saveMessage(
-        req,
+        {
+          userId: req.user.id,
+          isTemporary: req.body?.isTemporary,
+          interfaceConfig: req?.config?.interfaceConfig,
+        },
         {
           messageId: msg.messageId || nanoid(),
           conversationId,
@@ -208,7 +212,11 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
 
   // Save the assistant message
   await db.saveMessage(
-    req,
+    {
+      userId: req.user.id,
+      isTemporary: req.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     {
       messageId: responseId,
       conversationId,
@@ -229,11 +237,12 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
  * Save or update conversation
  * @param {import('express').Request} req
  * @param {string} conversationId
+ * @param {string} responseId
  * @param {string} agentId
  * @param {object} agent
  * @returns {Promise<void>}
  */
-async function saveConversation(req, conversationId, agentId, agent) {
+async function saveConversation(req, conversationId, responseId, agentId, agent) {
   await db.saveConvo(
     {
       userId: req?.user?.id,
@@ -242,6 +251,7 @@ async function saveConversation(req, conversationId, agentId, agent) {
     },
     {
       conversationId,
+      responseId,
       endpoint: EModelEndpoint.agents,
       agentId,
       title: agent?.name || 'Open Responses Conversation',
@@ -335,6 +345,7 @@ const createResponse = async (req, res) => {
     }
   });
 
+  let conversationId;
   try {
     if (request.previous_response_id != null) {
       if (typeof request.previous_response_id !== 'string') {
@@ -345,12 +356,15 @@ const createResponse = async (req, res) => {
           'invalid_request',
         );
       }
-      if (!(await db.getConvo(req.user?.id, request.previous_response_id))) {
+      const convo = await db.getConvoByResponseId(req.user.id, request.previous_response_id);
+      if (!convo) {
         return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
       }
+      conversationId = convo.conversationId;
+    } else {
+      conversationId = uuidv4();
     }
 
-    const conversationId = request.previous_response_id ?? uuidv4();
     const parentMessageId = null;
 
     // Build allowed providers set
@@ -598,7 +612,7 @@ const createResponse = async (req, res) => {
     let previousMessages = [];
     if (request.previous_response_id) {
       const userId = req.user?.id ?? 'api-user';
-      previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
+      previousMessages = await loadPreviousMessages(conversationId, userId);
     }
 
     // Convert input to internal messages
@@ -849,7 +863,7 @@ const createResponse = async (req, res) => {
       if (request.store === true) {
         try {
           // Save conversation
-          await saveConversation(req, conversationId, agentId, agent);
+          await saveConversation(req, conversationId, responseId, agentId, agent);
 
           // Save input messages
           await saveInputMessages(req, conversationId, inputMessages, agentId);
@@ -1027,7 +1041,7 @@ const createResponse = async (req, res) => {
 
       if (request.store === true) {
         try {
-          await saveConversation(req, conversationId, agentId, agent);
+          await saveConversation(req, conversationId, responseId, agentId, agent);
 
           await saveInputMessages(req, conversationId, inputMessages, agentId);
 
