@@ -1615,6 +1615,10 @@ class AgentClient extends BaseClient {
         // conversation (one that expired or was aborted while paused) so this fresh
         // turn starts clean instead of rehydrating a stale interrupt — thread_id is
         // the stable conversationId. No-op when HITL is off or nothing is orphaned.
+        // Deliberately UNCONDITIONAL per HITL turn: any cheaper gate (job metadata,
+        // a Redis flag) can go stale across replicas/restarts and skip the prune
+        // exactly when an orphan exists, while these are two indexed, usually-empty
+        // deleteMany ops — correctness over a micro-optimization.
         if (streamId && isHITLEnabled(agentsEConfig?.toolApproval)) {
           await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
         }
@@ -1744,7 +1748,7 @@ class AgentClient extends BaseClient {
       }
 
       // HITL: a non-paused turn deliberately prunes nothing here. The lazy checkpointer
-      // (InterruptOnlyMongoSaver) never persists a clean-exit checkpoint, so there is
+      // (LazyMongoSaver) never persists a clean-exit checkpoint, so there is
       // nothing this turn left to delete. A checkpoint orphaned by a PRIOR abandoned pause
       // is cleared by the pre-run prune (before processStream) on the next turn, with the
       // Mongo TTL as the backstop. Dropping this post-completion prune also removes its

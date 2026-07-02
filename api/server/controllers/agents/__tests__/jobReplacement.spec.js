@@ -341,7 +341,7 @@ describe('HITL Terminal-Side-Effect Guards', () => {
   // guard no longer exist. The lazy checkpointer never writes a clean-exit checkpoint, so
   // there is nothing to prune after a non-paused turn; the pre-run prune (before
   // processStream) clears any orphaned interrupt checkpoint instead. See
-  // checkpointer.ts InterruptOnlyMongoSaver and client.js chatCompletion.)
+  // checkpointer.ts LazyMongoSaver and client.js chatCompletion.)
 
   describe('F24 — resume catch-path terminal writes are skipped when replaced', () => {
     // Mirrors resume.js: stillLive gate around emitError/completeJob/deleteAgentCheckpoint.

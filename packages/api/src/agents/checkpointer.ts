@@ -131,12 +131,26 @@ export class LazyMongoSaver extends MongoDBSaver {
     }
     // Anchor the checkpoint so its `put` persists it: an interrupt (a HITL pause), or a real
     // state/delta channel a later checkpoint depends on. Keyed on the globally-unique checkpoint
-    // id so concurrent runs on the same `thread_id` can't cross-consume anchors.
+    // id so concurrent runs on the same `thread_id` can't cross-consume anchors. The anchor is
+    // recorded BEFORE the awaited super call on purpose: LangGraph dispatches the matching `put`
+    // concurrently with `putWrites` (probe-confirmed), so recording after the await could let a
+    // slow-I/O interrupt `put` miss its anchor and be wrongly discarded.
     const checkpointId = config.configurable?.checkpoint_id as string | undefined;
     if (checkpointId) {
       this.recordWriteAnchor(checkpointId);
     }
-    return super.putWrites(config, writes, taskId);
+    try {
+      return await super.putWrites(config, writes, taskId);
+    } catch (err) {
+      // The write batch never landed — best-effort un-anchor so the concurrent `put` doesn't
+      // persist a checkpoint whose pending writes are missing (an unresumable phantom pause).
+      // If `put` already consumed the anchor, the thrown error still fails the run and the
+      // pre-run prune / Mongo TTL reclaim the orphan.
+      if (checkpointId) {
+        this.writeAnchorIds.delete(checkpointId);
+      }
+      throw err;
+    }
   }
 
   override async put(

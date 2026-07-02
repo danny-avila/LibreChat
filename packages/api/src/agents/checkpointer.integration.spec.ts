@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
 import { emptyCheckpoint, ERROR, INTERRUPT } from '@langchain/langgraph-checkpoint';
-import type { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
 import {
   getAgentCheckpointer,
   deleteAgentCheckpoint,
@@ -180,6 +180,42 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     expect(
       await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
     ).toBe(0);
+  });
+
+  it('un-anchors a checkpoint whose putWrites failed (no phantom pause persisted)', async () => {
+    // A transient Mongo failure while writing the interrupt batch must not leave a persisted
+    // checkpoint with MISSING pending writes: LangGraph dispatches the matching `put`
+    // concurrently with `putWrites` (probe-confirmed), so the failed batch's anchor is removed
+    // on rejection and that `put` discards the checkpoint instead of saving a phantom pause.
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const { config, checkpoint, metadata } = putArgs(threadId);
+
+    const spy = jest
+      .spyOn(MongoDBSaver.prototype, 'putWrites')
+      .mockRejectedValueOnce(new Error('transient mongo failure'));
+    try {
+      await expect(
+        saver!.putWrites(
+          {
+            configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id },
+          },
+          [[INTERRUPT, 'approve?']],
+          'task-1',
+        ),
+      ).rejects.toThrow('transient mongo failure');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The `put` LangGraph issues for that checkpoint finds no anchor → discarded.
+    await saver!.put(config, checkpoint, metadata);
+
+    expect(await saver!.getTuple(readConfig(threadId))).toBeUndefined();
+    const count = await mongoose.connection
+      .db!.collection('agent_checkpoints')
+      .countDocuments({ thread_id: threadId });
+    expect(count).toBe(0);
   });
 
   it('persists an interrupt checkpoint and carries its __interrupt__ pending write', async () => {
