@@ -391,6 +391,95 @@ export const skillSyncGitHubSourceSchema = z
     }
   });
 
+export const skillSyncGitLabSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    projectId: z.string().min(1).max(255),
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+    baseUrl: z.string().url().optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
+
+export const skillSyncBitbucketSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    workspace: z.string().min(1).max(128),
+    repository: z.string().min(1).max(128),
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
+
+export const skillSyncAzureDevOpsSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    organization: z.string().min(1).max(128),
+    project: z.string().min(1).max(128),
+    repository: z.string().min(1).max(128),
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+    baseUrl: z.string().url().optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
+
 export const skillSyncConfigSchema = z
   .object({
     github: z
@@ -426,11 +515,113 @@ export const skillSyncConfigSchema = z
         }
       })
       .optional(),
+    gitlab: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncGitLabSourceSchema).default([]),
+      })
+      .superRefine((gitlab, ctx) => {
+        if (gitlab.enabled && gitlab.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one GitLab source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of gitlab.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['sources'],
+              message: `Duplicate GitLab skill sync source id "${source.id}"`,
+            });
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
+    bitbucket: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncBitbucketSourceSchema).default([]),
+      })
+      .superRefine((bitbucket, ctx) => {
+        if (bitbucket.enabled && bitbucket.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one Bitbucket source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of bitbucket.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['sources'],
+              message: `Duplicate Bitbucket skill sync source id "${source.id}"`,
+            });
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
+    azuredevops: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncAzureDevOpsSourceSchema).default([]),
+      })
+      .superRefine((azuredevops, ctx) => {
+        if (azuredevops.enabled && azuredevops.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one Azure DevOps source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of azuredevops.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['sources'],
+              message: `Duplicate Azure DevOps skill sync source id "${source.id}"`,
+            });
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
   })
   .optional();
 
 export type SkillSyncConfig = z.infer<typeof skillSyncConfigSchema>;
 export type SkillSyncGitHubSourceConfig = z.infer<typeof skillSyncGitHubSourceSchema>;
+export type SkillSyncGitLabSourceConfig = z.infer<typeof skillSyncGitLabSourceSchema>;
+export type SkillSyncBitbucketSourceConfig = z.infer<typeof skillSyncBitbucketSourceSchema>;
+export type SkillSyncAzureDevOpsSourceConfig = z.infer<typeof skillSyncAzureDevOpsSourceSchema>;
 
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
