@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Clock, Code2 } from 'lucide-react';
-import { Constants } from 'librechat-data-provider';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Button, Spinner, Checkbox, Skeleton, TooltipAnchor } from '@librechat/client';
 import type { MouseEvent } from 'react';
@@ -16,6 +15,7 @@ import {
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
+import { mcpServerToken } from '../../items/selectors';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
 import MCPToolItem from '../../../MCPToolItem';
@@ -66,6 +66,7 @@ export default function McpSection({ item }: Props) {
   const [oauthOpen, setOauthOpen] = useState(false);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [prevConnected, setPrevConnected] = useState(false);
+  const [autoSelectPending, setAutoSelectPending] = useState(false);
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
   const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(
@@ -83,11 +84,11 @@ export default function McpSection({ item }: Props) {
   } = useMCPToolOptions();
 
   const serverName = item.server.serverName;
-  const serverToken = `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`;
+  const serverToken = mcpServerToken(serverName);
   /** Live server data — `item.server` is a snapshot from card click and goes stale once
    * the MCP query refetches (e.g., after a server connects), so read from the live map. */
   const liveServer = mcpServersMap.get(serverName) ?? item.server;
-  const tools = liveServer.tools ?? [];
+  const tools = useMemo(() => liveServer.tools ?? [], [liveServer.tools]);
   const hasTools = tools.length > 0;
 
   /** Subscribe to the tools field so selection toggles re-render this section.
@@ -97,15 +98,19 @@ export default function McpSection({ item }: Props) {
   const getSelectedTools = (): string[] =>
     tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
 
-  /** Replace this server's selection. Strips every tool_id AND the server-level
-   * placeholder token, so passing `[]` fully detaches the server. */
-  const updateFormTools = (next: string[]) => {
-    const current = (getValues('tools') ?? []) as string[];
-    const otherTools = current.filter(
-      (t) => t !== serverToken && !tools.some((st) => st.tool_id === t),
-    );
-    setValue('tools', [...otherTools, ...next], { shouldDirty: true });
-  };
+  /** Replace this server's tool selection while keeping the server attached: the
+   * placeholder token is always rewritten, so deselect-all leaves the server
+   * pinned with zero tools; only an explicit remove detaches it. */
+  const updateFormTools = useCallback(
+    (next: string[]) => {
+      const current = (getValues('tools') ?? []) as string[];
+      const otherTools = current.filter(
+        (t) => t !== serverToken && !tools.some((st) => st.tool_id === t),
+      );
+      setValue('tools', [...otherTools, serverToken, ...next], { shouldDirty: true });
+    },
+    [getValues, setValue, serverToken, tools],
+  );
 
   const toggleToolSelect = (toolId: string) => {
     const selected = getSelectedTools();
@@ -147,19 +152,40 @@ export default function McpSection({ item }: Props) {
     }
   }
 
+  /** Connecting from this dialog implies the user wants the server's tools:
+   * once the connection settles and the tools arrive (query refetch for direct
+   * connects, polling for OAuth), select them all — an effect because both
+   * signals come from external systems, not from anything rendered here. */
+  useEffect(() => {
+    if (!autoSelectPending || !isConnected || !hasTools) {
+      return;
+    }
+    setAutoSelectPending(false);
+    updateFormTools(tools.map((t) => t.tool_id));
+  }, [autoSelectPending, isConnected, hasTools, tools, updateFormTools]);
+
   /** Connect inline from this first dialog. Servers with custom user variables are
    * routed to the config dialog (which sets the vars and initializes); others
    * connect directly. `autoOpenOAuth=false` surfaces the URL in our OAuth dialog
    * (continue / copy / QR) instead of the browser silently opening a tab. */
   const handleConnect = async (e: MouseEvent) => {
+    setAutoSelectPending(true);
     if (statusIconProps != null && statusIconProps.hasCustomUserVars) {
       statusIconProps.onConfigClick(e);
       return;
     }
-    const res = await initializeServer(serverName, false);
-    if (res?.oauthRequired && res.oauthUrl) {
-      setOauthUrl(res.oauthUrl);
-      setOauthOpen(true);
+    try {
+      const res = await initializeServer(serverName, false);
+      if (res == null || !res.success) {
+        setAutoSelectPending(false);
+        return;
+      }
+      if (res.oauthRequired && res.oauthUrl) {
+        setOauthUrl(res.oauthUrl);
+        setOauthOpen(true);
+      }
+    } catch {
+      setAutoSelectPending(false);
     }
   };
 

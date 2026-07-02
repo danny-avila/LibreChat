@@ -54,25 +54,24 @@ function isToolSelected(item: AgentItem, form: FormSelection): boolean {
 
 /**
  * Server-level placeholder token (`sys__server__sys_mcp_<serverName>`). It pins
- * a server with zero tools selected. Per the McpSection detach contract,
- * deselect-all strips every token (passing `[]`), so a server represented by
- * this token alone counts as detached — not selected.
+ * the server's attachment independently of tool selection, so a server stays
+ * attached even with zero tools selected (deselect-all keeps the token); only
+ * an explicit remove strips it.
  */
-function mcpServerToken(serverName: string): string {
+export function mcpServerToken(serverName: string): string {
   return `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`;
 }
 
 function isMcpSelected(item: AgentItem, form: FormSelection): boolean {
   if (item.kind !== 'mcp') return false;
   const prefixed = `${MCP_PREFIX}${item.id}`;
-  const serverToken = mcpServerToken(item.id);
   return form.tools.some(
     (t) =>
-      t !== serverToken &&
-      (t === item.id ||
-        t === prefixed ||
-        t.startsWith(`${prefixed}_`) ||
-        t.endsWith(`_${prefixed}`)),
+      t === mcpServerToken(item.id) ||
+      t === item.id ||
+      t === prefixed ||
+      t.startsWith(`${prefixed}_`) ||
+      t.endsWith(`_${prefixed}`),
   );
 }
 

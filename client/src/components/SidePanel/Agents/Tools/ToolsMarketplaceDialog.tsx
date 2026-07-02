@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search } from 'lucide-react';
-import { useFormContext, useWatch } from 'react-hook-form';
-import { Constants, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useFormContext } from 'react-hook-form';
 import {
   Input,
   OGDialog,
@@ -10,25 +9,18 @@ import {
   OGDialogDescription,
 } from '@librechat/client';
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
-import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm } from '~/common';
-import {
-  useBuiltinAuthMap,
-  useShowMemory,
-  useWebSearchUserProvided,
-  useUninstallToolCredentials,
-} from './hooks';
+import { useAgentItems, useUninstallToolCredentials } from './hooks';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
-import { deriveSelectedItems, itemKey } from './items/selectors';
+import { itemKey, mcpServerToken } from './items/selectors';
 import { computeToggleAction } from './items/mutations';
 import { useGetFavoritesQuery } from '~/data-provider';
 import MarketplaceSidebar from './MarketplaceSidebar';
 import MarketplaceCatalog from './MarketplaceCatalog';
-import { useLocalize, useHasAccess } from '~/hooks';
-import { useAgentPanelContext } from '~/Providers';
 import ItemDialog from './ItemDialog/ItemDialog';
 import { applyFilter } from './items/filtering';
-import { buildCatalog } from './items/catalog';
+import { NEW_ACTION_ID } from './items/types';
+import { useLocalize } from '~/hooks';
 
 interface ToolsMarketplaceDialogProps {
   open: boolean;
@@ -39,29 +31,25 @@ interface ToolsMarketplaceDialogProps {
 type View = NonNullable<ItemFilter['view']>;
 type Kind = AgentItemKind | 'all';
 
-/** Sentinel id marking the ItemDialog as a create-new-action flow (see CREATE_ACTION contract). */
-const NEW_ACTION_ID = '__new_action__';
-
 export default function ToolsMarketplaceDialog({
   open,
   onOpenChange,
   agentId,
 }: ToolsMarketplaceDialogProps) {
   const localize = useLocalize();
-  const { control, getValues, setValue } = useFormContext<AgentForm>();
-  const { agentsConfig, regularTools, mcpServersMap, actions } = useAgentPanelContext();
-
-  const hasMcpAccess = useHasAccess({
-    permissionType: PermissionTypes.MCP_SERVERS,
-    permission: Permissions.USE,
-  });
-  const builtinAuthMap = useBuiltinAuthMap();
-  const showMemory = useShowMemory();
-  const webSearchUserProvided = useWebSearchUserProvided();
+  const { getValues, setValue } = useFormContext<AgentForm>();
   const uninstallToolCredentials = useUninstallToolCredentials();
+
+  /** Skills are excluded here — they have their own picker (`SkillsDialog`). */
+  const { catalog, selected: selectedItems } = useAgentItems({ agentId });
 
   const { data: favorites } = useGetFavoritesQuery();
 
+  /** Phase 2 (favorites backend): the favorites API only stores agent favorites
+   * today, so nothing here ever matches a catalog item id and the sidebar's
+   * "Favorites" view stays empty — same for "Made by you", which only skills
+   * populate (and this dialog excludes skills). Both views are kept visible as
+   * scaffolding until tool favoriting/ownership lands server-side. */
   const favoritedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const favorite of favorites ?? []) {
@@ -70,17 +58,6 @@ export default function ToolsMarketplaceDialog({
     }
     return ids;
   }, [favorites]);
-
-  const tools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
-  const executeCode = (useWatch({ control, name: 'execute_code' }) ?? false) as boolean;
-  const webSearch = (useWatch({ control, name: 'web_search' }) ?? false) as boolean;
-  const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
-  const memory = (useWatch({ control, name: 'memory' }) ?? false) as boolean;
-  const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
-  const agent = useWatch({ control, name: 'agent' });
-  const contextFiles = (agent?.context_files ?? []) as Array<[string, unknown]>;
-  const knowledgeFiles = (agent?.knowledge_files ?? []) as Array<[string, unknown]>;
-  const codeFiles = (agent?.code_files ?? []) as Array<[string, unknown]>;
 
   const [view, setView] = useState<View>('marketplace');
   const [kind, setKind] = useState<Kind>('all');
@@ -97,7 +74,7 @@ export default function ToolsMarketplaceDialog({
       setDetailItem({
         kind: 'action',
         id: NEW_ACTION_ID,
-        name: localize('com_ui_new_action' as TranslationKeys),
+        name: localize('com_ui_new_action'),
         description: '',
         iconKey: 'action',
         endpointCount: 0,
@@ -106,68 +83,6 @@ export default function ToolsMarketplaceDialog({
     [localize],
   );
 
-  const agentActions = useMemo(
-    () => (actions ?? []).filter((a) => a.agent_id === agentId),
-    [actions, agentId],
-  );
-
-  const catalog = useMemo(
-    () =>
-      buildCatalog({
-        agentsConfig: { capabilities: agentsConfig?.capabilities ?? [] },
-        regularTools: regularTools ?? [],
-        mcpServersMap: mcpServersMap ?? new Map(),
-        skills: [],
-        actions: agentActions,
-        permissions: { mcp: hasMcpAccess, skills: false },
-        showMemory,
-        webSearchUserProvided,
-        builtinAuthMap,
-      }),
-    [
-      agentsConfig,
-      regularTools,
-      mcpServersMap,
-      agentActions,
-      hasMcpAccess,
-      showMemory,
-      webSearchUserProvided,
-      builtinAuthMap,
-    ],
-  );
-
-  const selectedItems = useMemo(
-    () =>
-      deriveSelectedItems(
-        {
-          execute_code: executeCode,
-          web_search: webSearch,
-          file_search: fileSearch,
-          memory,
-          artifacts,
-          tools,
-          skills: [],
-          context_files: contextFiles,
-          knowledge_files: knowledgeFiles,
-          code_files: codeFiles,
-        },
-        catalog,
-        agentActions,
-      ),
-    [
-      executeCode,
-      webSearch,
-      fileSearch,
-      memory,
-      artifacts,
-      tools,
-      contextFiles,
-      knowledgeFiles,
-      codeFiles,
-      catalog,
-      agentActions,
-    ],
-  );
   const selectedIds = useMemo(() => new Set(selectedItems.map(itemKey)), [selectedItems]);
 
   const counts = useMemo(
@@ -212,13 +127,17 @@ export default function ToolsMarketplaceDialog({
           if (item.kind !== 'mcp') break;
           const toolIds = (item.server.tools ?? []).map((t) => t.tool_id);
           const current = (getValues('tools') ?? []) as string[];
-          setValue('tools', Array.from(new Set([...current, ...toolIds])), { shouldDirty: true });
+          setValue(
+            'tools',
+            Array.from(new Set([...current, mcpServerToken(item.id), ...toolIds])),
+            { shouldDirty: true },
+          );
           break;
         }
         case 'mcp-remove': {
           if (item.kind !== 'mcp') break;
           const toolIds = new Set((item.server.tools ?? []).map((t) => t.tool_id));
-          const serverToken = `${Constants.mcp_server}${Constants.mcp_delimiter}${item.id}`;
+          const serverToken = mcpServerToken(item.id);
           const current = (getValues('tools') ?? []) as string[];
           setValue(
             'tools',
@@ -270,7 +189,7 @@ export default function ToolsMarketplaceDialog({
       <OGDialogContent className="w-11/12 max-w-[1200px] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
         <OGDialogTitle className="sr-only">{localize('com_ui_tools_marketplace')}</OGDialogTitle>
         <OGDialogDescription className="sr-only">
-          {localize('com_ui_tools_marketplace_description' as TranslationKeys)}
+          {localize('com_ui_tools_marketplace_description')}
         </OGDialogDescription>
         <div className="flex h-[88vh] max-h-[840px]">
           <MarketplaceSidebar

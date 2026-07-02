@@ -130,6 +130,11 @@ export function buildCatalog(inputs: BuildCatalogInputs): AgentItem[] {
 
   if (inputs.permissions.mcp) {
     for (const [name, server] of inputs.mcpServersMap) {
+      /** Consume-only servers are provided to chat by the deployment and can't
+       * be attached to an agent, so they never belong in the catalog. */
+      if (server.consumeOnly === true) {
+        continue;
+      }
       items.push({
         kind: 'mcp',
         id: name,

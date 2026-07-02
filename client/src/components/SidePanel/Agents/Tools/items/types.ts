@@ -16,7 +16,7 @@ export type BuiltinId =
   | `${AgentCapabilities.memory}`
   | `${AgentCapabilities.context}`;
 
-export type AgentItemStatus = 'ready' | 'needs_setup' | 'disabled';
+export type AgentItemStatus = 'needs_setup';
 
 interface ItemBase {
   id: string;
@@ -77,5 +77,12 @@ export type ItemFilter = {
   search?: string;
   kind?: AgentItemKind | 'all';
   category?: string | 'all';
-  view?: 'marketplace' | 'installed' | 'favorites' | 'mine';
+  view?: 'marketplace' | 'favorites' | 'mine';
 };
+
+/**
+ * Sentinel `ActionItem.id` marking the ItemDialog as a create-new-action flow:
+ * the marketplace opens the dialog with this id and no `action`, and
+ * `ActionSection` renders an empty editor for it.
+ */
+export const NEW_ACTION_ID = '__new_action__';

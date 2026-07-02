@@ -140,12 +140,12 @@ describe('McpSection', () => {
     expect(screen.getByTestId('tool-mcp:srv:b')).toBeInTheDocument();
   });
 
-  test('toggling a tool writes its id into agent.tools', () => {
+  test('toggling a tool writes its id plus the server token into agent.tools', () => {
     render(<McpSection item={item} />);
     fireEvent.click(screen.getByTestId('tool-mcp:srv:a'));
     expect(mockSetValue).toHaveBeenCalledWith(
       'tools',
-      ['mcp:srv:a'],
+      ['sys__server__sys_mcp_srv', 'mcp:srv:a'],
       expect.objectContaining({ shouldDirty: true }),
     );
   });
@@ -160,13 +160,13 @@ describe('McpSection', () => {
     );
   });
 
-  test('deselect-all detaches the server by stripping every token', () => {
+  test('deselect-all strips every tool id but keeps the server attached via its token', () => {
     mockGetValues.mockReturnValue(['mcp:srv:a', 'mcp:srv:b', 'sys__server__sys_mcp_srv']);
     render(<McpSection item={item} />);
     fireEvent.click(screen.getByLabelText('com_ui_tools_mcp_deselect_all'));
     expect(mockSetValue).toHaveBeenCalledWith(
       'tools',
-      [],
+      ['sys__server__sys_mcp_srv'],
       expect.objectContaining({ shouldDirty: true }),
     );
   });

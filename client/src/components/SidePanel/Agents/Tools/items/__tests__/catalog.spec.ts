@@ -79,6 +79,19 @@ describe('buildCatalog', () => {
     }
   });
 
+  test('excludes consume-only MCP servers from the catalog', () => {
+    const map = new Map();
+    map.set('attachable', { serverName: 'attachable', isConfigured: true, tools: [] });
+    map.set('chat-only', {
+      serverName: 'chat-only',
+      isConfigured: true,
+      tools: [],
+      consumeOnly: true,
+    });
+    const items = buildCatalog({ ...emptyInputs, mcpServersMap: map });
+    expect(items.filter((i) => i.kind === 'mcp').map((i) => i.id)).toEqual(['attachable']);
+  });
+
   test('emits skill items when permission granted', () => {
     const items = buildCatalog({
       ...emptyInputs,

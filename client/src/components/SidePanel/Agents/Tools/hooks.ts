@@ -1,11 +1,23 @@
 import { useMemo, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
-import { Tools, AuthType, AgentCapabilities } from 'librechat-data-provider';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import { useLocalize, useHasMemoryAccess } from '~/hooks';
+import {
+  Tools,
+  AuthType,
+  Permissions,
+  PermissionTypes,
+  AgentCapabilities,
+} from 'librechat-data-provider';
+import type { TSkillSummary } from 'librechat-data-provider';
+import type { AgentItem } from './items/types';
+import type { AgentForm } from '~/common';
+import { useLocalize, useHasAccess, useHasMemoryAccess } from '~/hooks';
 import { useVerifyAgentToolAuth } from '~/data-provider';
+import { deriveSelectedItems } from './items/selectors';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useAgentPanelContext } from '~/Providers';
+import { buildCatalog } from './items/catalog';
 
 /**
  * Maps builtin capability ids to whether they still need setup (USER_PROVIDED auth
@@ -43,12 +55,6 @@ export function useWebSearchUserProvided(): boolean {
 }
 
 /**
- * Returns a callback that revokes a tool's stored user credentials when it is
- * removed from an agent, mirroring the legacy `AgentTool` removal. Without it,
- * removing a tool only drops it from the form and leaves the saved credentials
- * orphaned server-side. Fired unconditionally — a no-op for tools without creds.
- */
-/**
  * Resolves whether the Memory capability should be offered in the builder.
  * Mirrors the legacy `AgentConfig` gate: the admin must enable the `memory`
  * capability, the user must hold the memory permission, and the user must not
@@ -66,6 +72,128 @@ export function useShowMemory(): boolean {
   }, [agentsConfig, hasMemoryAccess, user]);
 }
 
+interface UseAgentItemsOptions {
+  agentId: string;
+  /** Skills to include in the catalog; omit to exclude the skill kind entirely. */
+  skills?: TSkillSummary[];
+  skillsPermission?: boolean;
+}
+
+export interface AgentItemsResult {
+  catalog: AgentItem[];
+  selected: AgentItem[];
+  tools: string[];
+}
+
+const NO_SKILLS: TSkillSummary[] = [];
+
+/**
+ * Single catalog + selection pipeline over the agent form, shared by the
+ * selected list (`ToolsSection`) and the marketplace (`ToolsMarketplaceDialog`)
+ * so the two can never diverge on gating or selection semantics. Must be
+ * rendered inside the agent form's `FormProvider` and `AgentPanelContext`.
+ */
+export function useAgentItems({
+  agentId,
+  skills = NO_SKILLS,
+  skillsPermission = false,
+}: UseAgentItemsOptions): AgentItemsResult {
+  const { control } = useFormContext<AgentForm>();
+  const { agentsConfig, regularTools, mcpServersMap, actions } = useAgentPanelContext();
+  const hasMcpAccess = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+  const showMemory = useShowMemory();
+  const webSearchUserProvided = useWebSearchUserProvided();
+  const builtinAuthMap = useBuiltinAuthMap();
+
+  const toolsField = useWatch({ control, name: 'tools' });
+  const skillsWatch = useWatch({ control, name: 'skills' });
+  const tools = useMemo(() => (toolsField ?? []) as string[], [toolsField]);
+  const skillsField = useMemo(() => (skillsWatch ?? []) as string[], [skillsWatch]);
+  const executeCode = (useWatch({ control, name: 'execute_code' }) ?? false) as boolean;
+  const webSearch = (useWatch({ control, name: 'web_search' }) ?? false) as boolean;
+  const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
+  const memory = (useWatch({ control, name: 'memory' }) ?? false) as boolean;
+  const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
+  const agent = useWatch({ control, name: 'agent' });
+
+  const agentActions = useMemo(
+    () => (actions ?? []).filter((a) => a.agent_id === agentId),
+    [actions, agentId],
+  );
+
+  const catalog = useMemo(
+    () =>
+      buildCatalog({
+        agentsConfig: { capabilities: agentsConfig?.capabilities ?? [] },
+        regularTools: regularTools ?? [],
+        mcpServersMap: mcpServersMap ?? new Map(),
+        skills,
+        actions: agentActions,
+        permissions: { mcp: hasMcpAccess, skills: skillsPermission },
+        showMemory,
+        webSearchUserProvided,
+        builtinAuthMap,
+      }),
+    [
+      agentsConfig,
+      regularTools,
+      mcpServersMap,
+      skills,
+      agentActions,
+      hasMcpAccess,
+      skillsPermission,
+      showMemory,
+      webSearchUserProvided,
+      builtinAuthMap,
+    ],
+  );
+
+  /** Depends on the watched `agent` object rather than per-render derived file
+   * arrays, so the memo only recomputes when form state actually changes. */
+  const selected = useMemo(
+    () =>
+      deriveSelectedItems(
+        {
+          execute_code: executeCode,
+          web_search: webSearch,
+          file_search: fileSearch,
+          memory,
+          artifacts,
+          tools,
+          skills: skillsField,
+          context_files: (agent?.context_files ?? []) as Array<[string, unknown]>,
+          knowledge_files: (agent?.knowledge_files ?? []) as Array<[string, unknown]>,
+          code_files: (agent?.code_files ?? []) as Array<[string, unknown]>,
+        },
+        catalog,
+        agentActions,
+      ),
+    [
+      executeCode,
+      webSearch,
+      fileSearch,
+      memory,
+      artifacts,
+      tools,
+      skillsField,
+      agent,
+      catalog,
+      agentActions,
+    ],
+  );
+
+  return { catalog, selected, tools };
+}
+
+/**
+ * Returns a callback that revokes a tool's stored user credentials when it is
+ * removed from an agent, mirroring the legacy `AgentTool` removal. Without it,
+ * removing a tool only drops it from the form and leaves the saved credentials
+ * orphaned server-side. Fired unconditionally — a no-op for tools without creds.
+ */
 export function useUninstallToolCredentials(): (toolId: string) => void {
   const localize = useLocalize();
   const { showToast } = useToastContext();

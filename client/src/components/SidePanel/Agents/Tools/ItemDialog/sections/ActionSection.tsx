@@ -1,10 +1,8 @@
 import { useEffect } from 'react';
 import type { ActionItem } from '../../items/types';
 import { useAgentPanelContext } from '~/Providers';
+import { NEW_ACTION_ID } from '../../items/types';
 import ActionEditor from '../../ActionEditor';
-
-/** Sentinel id the marketplace assigns to its create-action selection (cross-file contract). */
-const NEW_ACTION_ID = '__new_action__';
 
 interface Props {
   item: ActionItem;

@@ -102,7 +102,7 @@ export default function CreateSkillDialog({
 
   return (
     <OGDialog open={isOpen} onOpenChange={setIsOpen}>
-      <OGDialogContent className="w-11/12 max-w-5xl overflow-hidden">
+      <OGDialogContent className="w-11/12 max-w-5xl overflow-hidden" showCloseButton={false}>
         <form
           onSubmit={handleSubmit(onSubmit)}
           className="flex max-h-[80vh] min-w-0 flex-col gap-3 overflow-hidden p-1 sm:gap-4 sm:p-2"

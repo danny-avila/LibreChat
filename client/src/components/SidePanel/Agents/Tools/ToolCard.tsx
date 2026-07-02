@@ -105,7 +105,6 @@ function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) 
       <button
         type="button"
         onClick={() => onToggle(item)}
-        onMouseDown={(e) => e.preventDefault()}
         aria-pressed={selected}
         className={cn(
           'flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left',

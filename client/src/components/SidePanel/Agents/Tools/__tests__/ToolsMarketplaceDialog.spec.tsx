@@ -57,12 +57,48 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
 }));
 
-jest.mock('../hooks', () => ({
-  useBuiltinAuthMap: () => new Map(),
-  useShowMemory: () => false,
-  useWebSearchUserProvided: () => false,
-  useUninstallToolCredentials: () => jest.fn(),
-}));
+jest.mock('../hooks', () => {
+  const { buildCatalog } = jest.requireActual('../items/catalog');
+  const { deriveSelectedItems } = jest.requireActual('../items/selectors');
+  return {
+    useUninstallToolCredentials: () => jest.fn(),
+    /** Mirrors the real pipeline over the mocked panel context + form watches. */
+    useAgentItems: ({ agentId }: { agentId: string }) => {
+      const { useAgentPanelContext } = jest.requireMock('~/Providers');
+      const { useWatch } = jest.requireMock('react-hook-form');
+      const { agentsConfig, regularTools, mcpServersMap, actions } = useAgentPanelContext();
+      const agentActions = (actions ?? []).filter(
+        (a: { agent_id: string }) => a.agent_id === agentId,
+      );
+      const tools = (useWatch({ name: 'tools' }) ?? []) as string[];
+      const catalog = buildCatalog({
+        agentsConfig: { capabilities: agentsConfig?.capabilities ?? [] },
+        regularTools: regularTools ?? [],
+        mcpServersMap: mcpServersMap ?? new Map(),
+        skills: [],
+        actions: agentActions,
+        permissions: { mcp: true, skills: false },
+      });
+      const selected = deriveSelectedItems(
+        {
+          execute_code: (useWatch({ name: 'execute_code' }) ?? false) as boolean,
+          web_search: (useWatch({ name: 'web_search' }) ?? false) as boolean,
+          file_search: (useWatch({ name: 'file_search' }) ?? false) as boolean,
+          memory: false,
+          artifacts: (useWatch({ name: 'artifacts' }) ?? '') as string,
+          tools,
+          skills: [],
+          context_files: [],
+          knowledge_files: [],
+          code_files: [],
+        },
+        catalog,
+        agentActions,
+      );
+      return { catalog, selected, tools };
+    },
+  };
+});
 
 jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');

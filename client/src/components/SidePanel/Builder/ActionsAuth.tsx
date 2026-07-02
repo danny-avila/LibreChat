@@ -91,7 +91,7 @@ export default function ActionsAuth({ disableOAuth }: { disableOAuth?: boolean }
                 {localize(current.descKey)}
               </span>
             </span>
-            <ChevronRight className="text-text-tertiar size-4 shrink-0" aria-hidden={true} />
+            <ChevronRight className="size-4 shrink-0 text-text-secondary" aria-hidden={true} />
           </button>
         </OGDialogTrigger>
       </div>

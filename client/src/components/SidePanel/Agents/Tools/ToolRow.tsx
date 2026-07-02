@@ -67,10 +67,10 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
         </span>
       </div>
       {item.status === 'needs_setup' && (
-        <span
-          aria-label={localize('com_ui_tools_needs_setup')}
-          className="size-1.5 shrink-0 rounded-full bg-red-500"
-        />
+        <span role="status" className="flex shrink-0 items-center">
+          <span className="size-1.5 rounded-full bg-red-500" aria-hidden="true" />
+          <span className="sr-only">{localize('com_ui_tools_needs_setup')}</span>
+        </span>
       )}
       <div
         className={cn(

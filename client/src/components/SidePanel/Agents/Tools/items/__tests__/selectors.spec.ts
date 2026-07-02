@@ -131,7 +131,7 @@ describe('deriveSelectedItems', () => {
     expect(result.find((i) => i.kind === 'mcp')?.id).toBe('srv');
   });
 
-  test('treats a server represented only by its server token as detached', () => {
+  test('treats a server represented only by its server token as attached', () => {
     const catalog: AgentItem[] = [
       ...sampleCatalog,
       {
@@ -149,7 +149,7 @@ describe('deriveSelectedItems', () => {
       catalog,
       [],
     );
-    expect(result.find((i) => i.kind === 'mcp')).toBeUndefined();
+    expect(result.find((i) => i.kind === 'mcp')?.id).toBe('srv');
   });
 
   test('deselect-all (empty tools) leaves no MCP server selected', () => {

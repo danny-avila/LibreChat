@@ -1,26 +1,19 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Plus } from 'lucide-react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { Label, OGDialog, OGDialogTemplate, useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, AgentCapabilities } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
-import {
-  useBuiltinAuthMap,
-  useShowMemory,
-  useWebSearchUserProvided,
-  useUninstallToolCredentials,
-} from './hooks';
 import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
+import { useAgentItems, useUninstallToolCredentials } from './hooks';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
-import { deriveSelectedItems } from './items/selectors';
 import { computeToggleAction } from './items/mutations';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers';
 import ItemDialog from './ItemDialog/ItemDialog';
-import { buildCatalog } from './items/catalog';
 import { isEphemeralAgent } from '~/common';
 import SkillsDialog from './SkillsDialog';
 import ToolRow from './ToolRow';
@@ -36,9 +29,10 @@ export default function ToolsSection({ agentId }: Props) {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [dialogItem, setDialogItem] = useState<AgentItem | null>(null);
   const [pendingActionRemoval, setPendingActionRemoval] = useState<string | null>(null);
+  const [pendingMcpRemoval, setPendingMcpRemoval] = useState<string | null>(null);
 
-  const { control, getValues, setValue } = useFormContext<AgentForm>();
-  const { agentsConfig, regularTools, mcpServersMap, actions } = useAgentPanelContext();
+  const { getValues, setValue } = useFormContext<AgentForm>();
+  const { agentsConfig, regularTools, mcpServersMap } = useAgentPanelContext();
   const { removeTool: removeMCPTool } = useRemoveMCPTool();
   const deleteAgentAction = useDeleteAgentAction({
     onSuccess: () => {
@@ -55,10 +49,6 @@ export default function ToolsSection({ agentId }: Props) {
     },
   });
 
-  const hasMcpAccess = useHasAccess({
-    permissionType: PermissionTypes.MCP_SERVERS,
-    permission: Permissions.USE,
-  });
   const hasSkillsAccess = useHasAccess({
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
@@ -70,89 +60,13 @@ export default function ToolsSection({ agentId }: Props) {
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
 
-  const showMemory = useShowMemory();
-  const webSearchUserProvided = useWebSearchUserProvided();
-  const builtinAuthMap = useBuiltinAuthMap();
   const uninstallToolCredentials = useUninstallToolCredentials();
 
-  const tools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
-  const skills = (useWatch({ control, name: 'skills' }) ?? []) as string[];
-  const executeCode = (useWatch({ control, name: 'execute_code' }) ?? false) as boolean;
-  const webSearch = (useWatch({ control, name: 'web_search' }) ?? false) as boolean;
-  const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
-  const memory = (useWatch({ control, name: 'memory' }) ?? false) as boolean;
-  const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
-  const agent = useWatch({ control, name: 'agent' });
-
-  const contextFiles = (agent?.context_files ?? []) as Array<[string, unknown]>;
-  const knowledgeFiles = (agent?.knowledge_files ?? []) as Array<[string, unknown]>;
-  const codeFiles = (agent?.code_files ?? []) as Array<[string, unknown]>;
-
-  const agentActions = useMemo(
-    () => (actions ?? []).filter((a) => a.agent_id === agentId),
-    [actions, agentId],
-  );
-
-  const catalog = useMemo(
-    () =>
-      buildCatalog({
-        agentsConfig: { capabilities: agentsConfig?.capabilities ?? [] },
-        regularTools: regularTools ?? [],
-        mcpServersMap: mcpServersMap ?? new Map(),
-        skills: skillsData?.skills ?? [],
-        actions: agentActions,
-        permissions: { mcp: hasMcpAccess, skills: showSkills },
-        showMemory,
-        webSearchUserProvided,
-        builtinAuthMap,
-      }),
-    [
-      agentsConfig,
-      regularTools,
-      mcpServersMap,
-      skillsData,
-      agentActions,
-      hasMcpAccess,
-      showSkills,
-      showMemory,
-      webSearchUserProvided,
-      builtinAuthMap,
-    ],
-  );
-
-  const selected = useMemo(
-    () =>
-      deriveSelectedItems(
-        {
-          execute_code: executeCode,
-          web_search: webSearch,
-          file_search: fileSearch,
-          memory,
-          artifacts,
-          tools,
-          skills,
-          context_files: contextFiles,
-          knowledge_files: knowledgeFiles,
-          code_files: codeFiles,
-        },
-        catalog,
-        agentActions,
-      ),
-    [
-      executeCode,
-      webSearch,
-      fileSearch,
-      memory,
-      artifacts,
-      tools,
-      skills,
-      contextFiles,
-      knowledgeFiles,
-      codeFiles,
-      catalog,
-      agentActions,
-    ],
-  );
+  const { selected, tools } = useAgentItems({
+    agentId,
+    skills: skillsData?.skills,
+    skillsPermission: showSkills,
+  });
 
   const handleQuickRemove = useCallback(
     (item: AgentItem) => {
@@ -185,17 +99,25 @@ export default function ToolsSection({ agentId }: Props) {
           break;
         }
         case 'mcp-remove':
-          removeMCPTool(patch.serverName);
+          setPendingMcpRemoval(patch.serverName);
           break;
         case 'action-remove':
           setPendingActionRemoval(patch.actionId);
           break;
         default:
-          setOpen(true);
+          break;
       }
     },
-    [getValues, setValue, removeMCPTool, uninstallToolCredentials],
+    [getValues, setValue, uninstallToolCredentials],
   );
+
+  const confirmMcpRemoval = useCallback(() => {
+    if (pendingMcpRemoval == null) {
+      return;
+    }
+    removeMCPTool(pendingMcpRemoval);
+    setPendingMcpRemoval(null);
+  }, [pendingMcpRemoval, removeMCPTool]);
 
   const confirmActionRemoval = useCallback(() => {
     if (pendingActionRemoval == null) {
@@ -313,6 +235,31 @@ export default function ToolsSection({ agentId }: Props) {
           }
           selection={{
             selectHandler: confirmActionRemoval,
+            selectClasses:
+              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+            selectText: localize('com_ui_delete'),
+          }}
+        />
+      </OGDialog>
+      <OGDialog
+        open={pendingMcpRemoval != null}
+        onOpenChange={(value) => {
+          if (!value) {
+            setPendingMcpRemoval(null);
+          }
+        }}
+      >
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_delete_tool')}
+          className="max-w-[450px]"
+          main={
+            <Label className="text-left text-sm font-medium">
+              {localize('com_ui_delete_tool_confirm')}
+            </Label>
+          }
+          selection={{
+            selectHandler: confirmMcpRemoval,
             selectClasses:
               'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
             selectText: localize('com_ui_delete'),

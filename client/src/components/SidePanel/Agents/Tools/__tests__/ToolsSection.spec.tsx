@@ -37,9 +37,7 @@ jest.mock('~/hooks/MCP', () => ({
 }));
 
 jest.mock('../hooks', () => ({
-  useBuiltinAuthMap: () => new Map(),
-  useShowMemory: () => false,
-  useWebSearchUserProvided: () => false,
+  useAgentItems: () => ({ catalog: [], selected: [], tools: [] }),
   useUninstallToolCredentials: () => jest.fn(),
 }));
 

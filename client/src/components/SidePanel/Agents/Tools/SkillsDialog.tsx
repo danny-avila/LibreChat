@@ -65,6 +65,9 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
   const { data: favorites } = useGetFavoritesQuery();
   const { data: skillFavorites } = useGetSkillFavoritesQuery();
 
+  /** Phase 2 (favorites backend): skill favorites resolve from a stubbed
+   * data-service route and no UI toggles them yet, so the "Favorites" view
+   * stays empty until the backend route and a star affordance land. */
   const favoritedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const favorite of favorites ?? []) {

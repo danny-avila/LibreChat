@@ -26,9 +26,8 @@ const SKELETON_COUNT = 3;
 
 const EMPTY_COPY_KEYS: Record<View, TranslationKeys> = {
   marketplace: 'com_ui_tools_search_no_results',
-  installed: 'com_ui_tools_search_no_results',
-  mine: 'com_ui_tools_view_mine_empty' as TranslationKeys,
-  favorites: 'com_ui_tools_view_favorites_empty' as TranslationKeys,
+  mine: 'com_ui_tools_view_mine_empty',
+  favorites: 'com_ui_tools_view_favorites_empty',
 };
 
 function ToolCardSkeleton() {
