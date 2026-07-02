@@ -1824,6 +1824,25 @@ describe('AgentClient - titleConvo', () => {
       expect(processedMessage.content).not.toContain('Response 1');
     });
 
+    it('should cap memory input tokens and preserve recent content', async () => {
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
+      mockReq.config.memory.maxInputTokens = 12;
+      const messages = [
+        new HumanMessage(`OLDER_CONTENT ${'a'.repeat(600)}`),
+        new AIMessage('Intermediate response'),
+        new HumanMessage('Please remember LATEST_MEMORY_MARKER'),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      expect(processedMessage.content).toContain('LATEST_MEMORY_MARKER');
+      expect(processedMessage.content).not.toContain('OLDER_CONTENT');
+      expect(Math.ceil(processedMessage.content.length / 4)).toBeLessThanOrEqual(12);
+    });
+
     it('should return early if processMemory is not set', async () => {
       const { HumanMessage } = require('@librechat/agents/langchain/messages');
       client.processMemory = null;
@@ -2111,7 +2130,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should only pass memory context to the primary agent by default', async () => {
       const memoryContent = 'User prefers dark mode. User is a software developer.';
-      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+      client.useMemory = jest
+        .fn()
+        .mockResolvedValue({ withKeys: memoryContent, withoutKeys: memoryContent });
 
       const parallelAgent1 = {
         id: 'parallel-agent-1',
@@ -2164,7 +2185,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should pass memory context to parallel agents when automatic memory updates are enabled', async () => {
       const memoryContent = 'User prefers dark mode. User is a software developer.';
-      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+      client.useMemory = jest
+        .fn()
+        .mockResolvedValue({ withKeys: memoryContent, withoutKeys: memoryContent });
       mockReq.config.memory.agent = {
         enabled: true,
         id: 'memory-agent',
@@ -2235,7 +2258,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle parallel agents without existing instructions when memory stays primary-only', async () => {
       const memoryContent = 'User is a data scientist.';
-      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+      client.useMemory = jest
+        .fn()
+        .mockResolvedValue({ withKeys: memoryContent, withoutKeys: memoryContent });
 
       const parallelAgentNoInstructions = {
         id: 'parallel-agent-no-instructions',
@@ -2271,7 +2296,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should not modify agentConfigs when none exist', async () => {
       const memoryContent = 'User prefers concise responses.';
-      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+      client.useMemory = jest
+        .fn()
+        .mockResolvedValue({ withKeys: memoryContent, withoutKeys: memoryContent });
 
       client.agentConfigs = null;
 
@@ -2297,7 +2324,9 @@ describe('AgentClient - titleConvo', () => {
 
     it('should handle empty agentConfigs map', async () => {
       const memoryContent = 'User likes detailed explanations.';
-      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+      client.useMemory = jest
+        .fn()
+        .mockResolvedValue({ withKeys: memoryContent, withoutKeys: memoryContent });
 
       client.agentConfigs = new Map();
 
@@ -2470,7 +2499,7 @@ describe('AgentClient - titleConvo', () => {
 
       const result = await client.useMemory();
 
-      expect(result).toBe('likes pasta');
+      expect(result).toEqual({ withKeys: 'food: likes pasta', withoutKeys: 'likes pasta' });
       expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
       expect(mockInitializeAgent).not.toHaveBeenCalled();
       expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
@@ -2495,7 +2524,7 @@ describe('AgentClient - titleConvo', () => {
 
       const result = await client.useMemory();
 
-      expect(result).toBe('');
+      expect(result).toEqual({ withKeys: '', withoutKeys: '' });
       expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
       expect(mockInitializeAgent).not.toHaveBeenCalled();
       expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
@@ -2520,7 +2549,7 @@ describe('AgentClient - titleConvo', () => {
 
       const result = await client.useMemory();
 
-      expect(result).toBe('prefers concise answers');
+      expect(result).toEqual({ withKeys: 'tone: concise', withoutKeys: 'prefers concise answers' });
       expect(mockLoadAgent).not.toHaveBeenCalled();
       expect(mockInitializeAgent).not.toHaveBeenCalled();
       expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();

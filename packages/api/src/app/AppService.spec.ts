@@ -59,6 +59,13 @@ const azureGroups = [
   } as const,
 ];
 
+/** Default agent capabilities served when no `memory` block is configured —
+ *  `AppService` strips `memory` from the defaults since the capability is inert
+ *  without a memory config. */
+const defaultAgentCapabilitiesWithoutMemory = defaultAgentCapabilities.filter(
+  (capability) => capability !== AgentCapabilities.memory,
+);
+
 describe('AppService', () => {
   const mockSystemTools = {
     ExampleTool: {
@@ -131,7 +138,7 @@ describe('AppService', () => {
         endpoints: expect.objectContaining({
           agents: expect.objectContaining({
             disableBuilder: false,
-            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            capabilities: expect.arrayContaining([...defaultAgentCapabilitiesWithoutMemory]),
             maxCitations: 30,
             maxCitationsPerFile: 7,
             minRelevanceScore: 0.45,
@@ -312,7 +319,7 @@ describe('AppService', () => {
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
             disableBuilder: false,
-            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            capabilities: expect.arrayContaining([...defaultAgentCapabilitiesWithoutMemory]),
           }),
         }),
       }),
@@ -335,7 +342,7 @@ describe('AppService', () => {
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
             disableBuilder: false,
-            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            capabilities: expect.arrayContaining([...defaultAgentCapabilitiesWithoutMemory]),
           }),
           [EModelEndpoint.openAI]: expect.objectContaining({
             titleConvo: true,

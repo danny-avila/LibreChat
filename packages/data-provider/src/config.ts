@@ -376,6 +376,7 @@ export enum AgentCapabilities {
   actions = 'actions',
   context = 'context',
   skills = 'skills',
+  memory = 'memory',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -467,6 +468,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.actions,
   AgentCapabilities.context,
   AgentCapabilities.skills,
+  AgentCapabilities.memory,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -1280,11 +1282,14 @@ export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
 });
 
+export const DEFAULT_MEMORY_MAX_INPUT_TOKENS = 12000;
+
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
   charLimit: z.number().optional().default(10000),
+  maxInputTokens: z.number().int().positive().optional().default(DEFAULT_MEMORY_MAX_INPUT_TOKENS),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
   agent: z
@@ -2274,6 +2279,8 @@ export enum LocalStorageKeys {
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
   /** Last checked toggle for Skills per conversation ID */
   LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
+  /** Last checked toggle for Memory per conversation ID */
+  LAST_MEMORY_TOGGLE_ = 'LAST_MEMORY_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

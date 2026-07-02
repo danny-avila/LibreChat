@@ -43,6 +43,9 @@ const loadAddedAgent = (params) =>
  * @param {boolean} [params.codeEnvAvailable] - `execute_code` capability flag;
  *   forwarded verbatim to the added agent's `initializeAgent`. @see
  *   InitializeAgentParams.codeEnvAvailable for full semantics.
+ * @param {boolean} [params.memoryAvailable] - `memory` capability run-level gate;
+ *   forwarded verbatim to the added agent's `initializeAgent`. @see
+ *   InitializeAgentParams.memoryAvailable for full semantics.
  * @returns {Promise<{userMCPAuthMap: Object|undefined}>} The updated userMCPAuthMap
  */
 const processAddedConvo = async ({
@@ -61,6 +64,7 @@ const processAddedConvo = async ({
   primaryAgent,
   userMCPAuthMap,
   codeEnvAvailable,
+  memoryAvailable,
 }) => {
   const addedConvo = endpointOption.addedConvo;
   if (addedConvo == null) {
@@ -106,6 +110,7 @@ const processAddedConvo = async ({
         endpointOption,
         allowedProviders,
         codeEnvAvailable,
+        memoryAvailable,
       },
       {
         getFiles: db.getFiles,

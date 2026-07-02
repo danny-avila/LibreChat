@@ -51,6 +51,7 @@ const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
   [Tools.web_search]: true,
+  [Tools.memory]: true,
 };
 
 const MAX_SEARCH_LEN = 100;

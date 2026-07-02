@@ -17,6 +17,7 @@ interface BadgeRowContextType {
   storageContextKey?: string;
   agentsConfig?: TAgentsEndpoint | null;
   skills: ReturnType<typeof useToolToggle>;
+  memory: ReturnType<typeof useToolToggle>;
   webSearch: ReturnType<typeof useToolToggle>;
   artifacts: ReturnType<typeof useToolToggle>;
   fileSearch: ReturnType<typeof useToolToggle>;
@@ -100,12 +101,14 @@ export default function BadgeRowProvider({
       const fileSearchToggleKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${storageSuffix}`;
       const artifactsToggleKey = `${LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_}${storageSuffix}`;
       const skillsToggleKey = `${LocalStorageKeys.LAST_SKILLS_TOGGLE_}${storageSuffix}`;
+      const memoryToggleKey = `${LocalStorageKeys.LAST_MEMORY_TOGGLE_}${storageSuffix}`;
 
       const codeToggleValue = getTimestampedValue(codeToggleKey);
       const webSearchToggleValue = getTimestampedValue(webSearchToggleKey);
       const fileSearchToggleValue = getTimestampedValue(fileSearchToggleKey);
       const artifactsToggleValue = getTimestampedValue(artifactsToggleKey);
       const skillsToggleValue = getTimestampedValue(skillsToggleKey);
+      const memoryToggleValue = getTimestampedValue(memoryToggleKey);
 
       const initialValues: Record<string, boolean | string> = {};
 
@@ -146,6 +149,14 @@ export default function BadgeRowProvider({
           initialValues[AgentCapabilities.skills] = JSON.parse(skillsToggleValue);
         } catch (e) {
           console.error('Failed to parse skills toggle value:', e);
+        }
+      }
+
+      if (memoryToggleValue !== null) {
+        try {
+          initialValues[Tools.memory] = JSON.parse(memoryToggleValue);
+        } catch (e) {
+          console.error('Failed to parse memory toggle value:', e);
         }
       }
 
@@ -250,10 +261,20 @@ export default function BadgeRowProvider({
     isAuthenticated: true,
   });
 
+  /** Memory hook - per-conversation toggle for the inline memory tools */
+  const memory = useToolToggle({
+    conversationId,
+    storageContextKey,
+    toolKey: Tools.memory,
+    localStorageKey: LocalStorageKeys.LAST_MEMORY_TOGGLE_,
+    isAuthenticated: true,
+  });
+
   const mcpServerManager = useMCPServerManager({ conversationId, storageContextKey });
 
   const value: BadgeRowContextType = {
     skills,
+    memory,
     webSearch,
     artifacts,
     fileSearch,

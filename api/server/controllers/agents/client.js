@@ -24,7 +24,9 @@ const {
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
+  getRequestMemories,
   createMemoryProcessor,
+  agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
@@ -33,6 +35,7 @@ const {
   injectSkillPrimes,
   isSkillPrimeMessage,
   collectFileIds,
+  processTextWithTokenLimit,
   buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
@@ -56,6 +59,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -67,6 +71,8 @@ const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+
+const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -401,11 +407,14 @@ class AgentClient extends BaseClient {
       }
     }
 
-    /** Memory context (user preferences/memories) */
-    const withoutKeys = await this.useMemory();
-    const memoryContext = withoutKeys
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
-      : undefined;
+    /** Memory context (user preferences/memories). Keyed context (with memory
+     *  keys + token metadata) is reserved for agents that can call
+     *  `delete_memory`; everyone else gets the unkeyed values only. */
+    const memories = await this.useMemory();
+    const buildMemoryContext = (text) =>
+      text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
+    const memoryContext = buildMemoryContext(memories?.withoutKeys);
+    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -456,8 +465,13 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
-        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
-          agentRunContextParts.push(memoryContext);
+        const agentHasMemory = agentHasInlineMemoryTools(agent);
+        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
+        if (
+          agentMemoryContext &&
+          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
+        ) {
+          agentRunContextParts.push(agentMemoryContext);
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -508,7 +522,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * @returns {Promise<string | undefined>}
+   * @returns {Promise<{ withKeys?: string; withoutKeys?: string } | undefined>}
    */
   async useMemory() {
     const user = this.options.req.user;
@@ -539,8 +553,12 @@ class AgentClient extends BaseClient {
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
-        return withoutKeys;
+        const { withKeys, withoutKeys } = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        return { withKeys, withoutKeys };
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -657,7 +675,20 @@ class AgentClient extends BaseClient {
     });
 
     this.processMemory = processMemory;
-    return withoutKeys;
+    let withKeys = withoutKeys;
+    try {
+      ({ withKeys } = await getRequestMemories({
+        req: this.options.req,
+        userId,
+        getFormattedMemories: db.getFormattedMemories,
+      }));
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
+        error,
+      );
+    }
+    return { withKeys, withoutKeys };
   }
 
   /**
@@ -732,7 +763,44 @@ class AgentClient extends BaseClient {
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);
-      const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
+      const configuredMaxInputTokens = Number.isFinite(memoryConfig?.maxInputTokens)
+        ? Math.floor(memoryConfig.maxInputTokens)
+        : undefined;
+      const maxInputTokens =
+        configuredMaxInputTokens != null && configuredMaxInputTokens > 0
+          ? configuredMaxInputTokens
+          : DEFAULT_MEMORY_MAX_INPUT_TOKENS;
+      const maxInputChars = maxInputTokens * MEMORY_INPUT_CHARS_PER_TOKEN;
+      const isCharTruncated = bufferString.length > maxInputChars;
+      const memoryInput = `# Current Chat:\n\n${
+        isCharTruncated
+          ? `[Earlier chat content omitted due to memory input limit]\n\n${bufferString.slice(
+              -maxInputChars,
+            )}`
+          : bufferString
+      }`;
+      const {
+        text: limitedMemoryInput,
+        tokenCount,
+        wasTruncated,
+      } = await processTextWithTokenLimit({
+        text: memoryInput,
+        tokenLimit: maxInputTokens,
+        tokenCountFn: (text) => countTokens(text),
+        preserve: 'end',
+      });
+      if (isCharTruncated || wasTruncated) {
+        logger.warn('[MemoryAgent] Memory input truncated before processing', {
+          tokenCount,
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          maxInputTokens,
+          wasTruncated,
+          maxInputChars,
+          originalLength: bufferString.length,
+        });
+      }
+      const bufferMessage = new HumanMessage(limitedMemoryInput);
       return await this.processMemory([bufferMessage]);
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
