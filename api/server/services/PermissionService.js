@@ -126,6 +126,8 @@ const grantPermission = async ({
   }
 };
 
+const inflightPrincipalsRequests = new Map();
+
 /**
  * Cached wrapper for db.getUserPrincipals
  * @param {Object} params - Parameters for getting user principals
@@ -134,7 +136,13 @@ const grantPermission = async ({
  * @returns {Promise<Array>} Array of principal objects
  */
 const getCachedUserPrincipals = async ({ userId, role }) => {
-  const cacheKey = `acl:principals:${userId.toString()}:${role || 'undefined'}`;
+  let roleKey;
+  if (role === undefined) roleKey = 'undefined';
+  else if (role === null) roleKey = 'null';
+  else if (role === '') roleKey = 'empty_string';
+  else roleKey = role;
+
+  const cacheKey = `acl:principals:${userId.toString()}:${roleKey}`;
   const cache = getLogStores(CacheKeys.ACL_PRINCIPALS);
 
   if (process.env.NODE_ENV !== 'test') {
@@ -144,13 +152,27 @@ const getCachedUserPrincipals = async ({ userId, role }) => {
     }
   }
 
-  let principals = await db.getUserPrincipals({ userId, role });
-
-  if (process.env.NODE_ENV !== 'test') {
-    await cache.set(cacheKey, principals, 60 * 1000); // 1 minute TTL
+  if (inflightPrincipalsRequests.has(cacheKey)) {
+    return inflightPrincipalsRequests.get(cacheKey);
   }
 
-  return principals;
+  const fetchPromise = (async () => {
+    try {
+      const principals = await db.getUserPrincipals({ userId, role });
+
+      if (process.env.NODE_ENV !== 'test') {
+        await cache.set(cacheKey, principals, 60 * 1000); // 1 minute TTL
+      }
+
+      return principals;
+    } finally {
+      inflightPrincipalsRequests.delete(cacheKey);
+    }
+  })();
+
+  inflightPrincipalsRequests.set(cacheKey, fetchPromise);
+
+  return fetchPromise;
 };
 
 /**
