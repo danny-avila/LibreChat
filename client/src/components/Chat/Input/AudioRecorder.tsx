@@ -2,8 +2,8 @@ import { memo, useCallback, useRef } from 'react';
 import { MicOff } from 'lucide-react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
+import { globalAudioId, type TAskFunction } from '~/common';
 import { useChatFormContext } from '~/Providers';
-import { globalAudioId } from '~/common';
 import { cn } from '~/utils';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
@@ -11,13 +11,11 @@ export default memo(function AudioRecorder({
   disabled,
   ask,
   methods,
-  textAreaRef,
   isSubmitting,
 }: {
   disabled: boolean;
-  ask: (data: { text: string }) => void;
+  ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
   isSubmitting: boolean;
 }) {
   const { setValue, reset, getValues } = methods;
@@ -49,7 +47,10 @@ export default memo(function AudioRecorder({
           isExternalSTT(speechToTextEndpoint) && existingTextRef.current
             ? `${existingTextRef.current} ${text}`
             : text;
-        ask({ text: finalText });
+        const submitted = ask({ text: finalText });
+        if (submitted === false) {
+          return;
+        }
         reset({ text: '' });
         existingTextRef.current = '';
       }
@@ -78,10 +79,6 @@ export default memo(function AudioRecorder({
     setText,
     onTranscriptionComplete,
   );
-
-  if (!textAreaRef.current) {
-    return null;
-  }
 
   const handleStartRecording = async () => {
     existingTextRef.current = getValues('text') || '';

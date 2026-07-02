@@ -3,9 +3,10 @@ import {
   EModelEndpoint,
   ReasoningEffort,
   ReasoningSummary,
+  ReasoningParameterFormat,
 } from 'librechat-data-provider';
-import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
 import type * as t from '~/types';
+import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
 
 describe('getOpenAILLMConfig', () => {
   describe('Basic Configuration', () => {
@@ -463,23 +464,159 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.high);
     });
 
-    it('should use reasoning object for non-OpenAI endpoints', () => {
+    it('should pass reasoning_effort through modelKwargs for custom endpoints', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,
         endpoint: 'custom',
         modelOptions: {
-          model: 'o1',
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should support reasoning object passthrough for custom endpoints', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        modelOptions: {
+          model: 'provider/reasoning-model',
           reasoning_effort: ReasoningEffort.high,
           reasoning_summary: ReasoningSummary.concise,
         },
       });
 
-      expect(result.llmConfig).toHaveProperty('reasoning');
-      expect(result.llmConfig.reasoning).toEqual({
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
         effort: ReasoningEffort.high,
         summary: ReasoningSummary.concise,
       });
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should apply reasoning format to default reasoning params', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        defaultParams: {
+          reasoning_effort: ReasoningEffort.low,
+          reasoning_summary: ReasoningSummary.concise,
+        },
+        modelOptions: {
+          model: 'provider/reasoning-model',
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.low,
+        summary: ReasoningSummary.concise,
+      });
+      expect(result.llmConfig.modelKwargs).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should let addParams reasoning override default reasoning params before formatting', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        defaultParams: {
+          reasoning_effort: ReasoningEffort.low,
+        },
+        addParams: {
+          reasoning_effort: ReasoningEffort.high,
+        },
+        modelOptions: {
+          model: 'provider/reasoning-model',
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
+      expect(result.llmConfig.modelKwargs).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should allow custom endpoints to disable reasoning passthrough', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.disabled,
+        modelOptions: {
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
+    it('should use Responses API reasoning when web_search enables Responses API', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        modelOptions: {
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_summary: ReasoningSummary.concise,
+          web_search: true,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+        summary: ReasoningSummary.concise,
+      });
+      expect(result.tools).toContainEqual({ type: 'web_search' });
+    });
+
+    it('should remove reasoning kwargs for GPT-4o search models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        modelOptions: {
+          model: 'gpt-4o-search',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
+    it('should honor dropParams after reasoning object conversion', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        dropParams: ['reasoning_effort'],
+        modelOptions: {
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
     });
 
     it('should use reasoning object when useResponsesApi is true', () => {
@@ -961,6 +1098,131 @@ describe('getOpenAILLMConfig', () => {
       expect(enabled.llmConfig).toHaveProperty('promptCache', true);
       expect(disabled.llmConfig).not.toHaveProperty('promptCache');
       expect(dropped.llmConfig).not.toHaveProperty('promptCache');
+    });
+
+    it('should resolve OpenRouter promptCacheTtl default/add/drop params', () => {
+      const fromDefault = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true, promptCacheTtl: '1h' },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+      const overridden = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true, promptCacheTtl: '1h' },
+        addParams: { promptCacheTtl: '5m' },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+      const dropped = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true, promptCacheTtl: '1h' },
+        dropParams: ['promptCacheTtl'],
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+
+      expect((fromDefault.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('1h');
+      expect((overridden.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('5m');
+      /** promptCache stays on, but the TTL is dropped so the SDK applies its default */
+      expect(dropped.llmConfig).toHaveProperty('promptCache', true);
+      expect((dropped.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
+    });
+
+    it('should set includeReasoningContent for DeepSeek models via OpenRouter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'deepseek/deepseek-v4-pro',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should set includeReasoningContent case-insensitively for OpenRouter DeepSeek models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'DeepSeek/DeepSeek-V4',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should set includeReasoningContent for OpenRouter DeepSeek models with the latest-routing `~` prefix', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: '~deepseek/deepseek-v4-pro',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should not set includeReasoningContent for non-DeepSeek OpenRouter models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-opus-4-7',
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
+    });
+
+    it('should set includeReasoningContent for DeepSeek-flavored models outside OpenRouter (custom proxies)', () => {
+      const directLike = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: false,
+        modelOptions: {
+          model: 'deepseek-chat',
+        },
+      });
+      expect(directLike.llmConfig).toHaveProperty('includeReasoningContent', true);
+
+      const customProxy = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: false,
+        modelOptions: {
+          model: 'deepseek/deepseek-v4-pro',
+        },
+      });
+      expect(customProxy.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should not set includeReasoningContent for non-DeepSeek models outside OpenRouter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: false,
+        modelOptions: {
+          model: 'gpt-4',
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
     });
   });
 

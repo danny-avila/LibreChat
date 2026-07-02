@@ -1,3 +1,4 @@
+const { Constants: AgentConstants } = require('@librechat/agents');
 const {
   Tools,
   Constants,
@@ -11,6 +12,8 @@ const {
 const mockGetEndpointsConfig = jest.fn();
 const mockGetMCPServerTools = jest.fn();
 const mockGetCachedTools = jest.fn();
+const mockSendEvent = jest.fn();
+const mockEmitChunk = jest.fn();
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
@@ -23,6 +26,10 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
+  sendEvent: (...args) => mockSendEvent(...args),
+  GenerationJobManager: {
+    emitChunk: (...args) => mockEmitChunk(...args),
+  },
 }));
 
 const mockLoadToolsUtil = jest.fn();
@@ -36,7 +43,9 @@ const mockLegacyDomainEncode = jest.fn();
 const mockDecryptMetadata = jest.fn();
 const mockCreateActionTool = jest.fn();
 const mockGetServerConfig = jest.fn();
+const mockFlowManager = { getFlowState: jest.fn() };
 const mockResolveConfigServers = jest.fn();
+const mockUserCanUseMCPServers = jest.fn().mockResolvedValue(true);
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn().mockResolvedValue({}),
 }));
@@ -70,13 +79,17 @@ jest.mock('~/models', () => ({
   findPluginAuthsByKeys: jest.fn(),
 }));
 jest.mock('~/config', () => ({
-  getFlowStateManager: jest.fn(() => ({})),
+  getFlowStateManager: jest.fn(() => mockFlowManager),
   getMCPServersRegistry: jest.fn(() => ({
     getServerConfig: (...args) => mockGetServerConfig(...args),
   })),
 }));
 jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: (...args) => mockResolveConfigServers(...args),
+  createMCPPermissionContext: jest.fn((req) => ({
+    canUseServers: (user) => mockUserCanUseMCPServers(user, req),
+  })),
+  userCanUseMCPServers: mockUserCanUseMCPServers,
 }));
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
@@ -88,6 +101,8 @@ const {
   processRequiredActions,
   resolveAgentCapabilities,
 } = require('../ToolService');
+const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { PENDING_STALE_MS } = require('@librechat/api');
 
 function createMockReq(capabilities) {
   return {
@@ -122,6 +137,7 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetCachedTools.mockResolvedValue(null);
     mockGetUserMCPAuthMap.mockResolvedValue({});
     mockGetServerConfig.mockResolvedValue(undefined);
+    mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
   });
 
@@ -255,6 +271,28 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.tools).toContain(regularTool);
     });
 
+    it('should filter MCP tool definitions when user lacks MCP server use permission', async () => {
+      const { userCanUseMCPServers } = require('~/server/services/MCP');
+      userCanUseMCPServers.mockResolvedValueOnce(false);
+
+      const mcpTool = `search${Constants.mcp_delimiter}myserver`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [regularTool, mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toContain(regularTool);
+      expect(callArgs.tools).not.toContain(mcpTool);
+    });
+
     it('should return actionsEnabled in the result', async () => {
       const capabilities = [AgentCapabilities.tools];
       const req = createMockReq(capabilities);
@@ -268,6 +306,85 @@ describe('ToolService - Action Capability Gating', () => {
       });
 
       expect(result.actionsEnabled).toBe(false);
+    });
+
+    it('emits separate MCP OAuth login steps and completion events for multiple pending servers', async () => {
+      const req = createMockReq([AgentCapabilities.tools]);
+      const res = { writableEnded: false };
+      const servers = ['ELI', 'Vespa'];
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig([AgentCapabilities.tools]));
+      mockResolveConfigServers.mockResolvedValue(
+        Object.fromEntries(
+          servers.map((serverName) => [
+            serverName,
+            {
+              type: 'streamable-http',
+              url: `https://mcp.example.com/${serverName}`,
+              requiresOAuth: true,
+            },
+          ]),
+        ),
+      );
+
+      mockLoadToolDefinitions
+        .mockImplementationOnce(async (_args, deps) => {
+          await deps.getOrFetchMCPServerTools(req.user.id, servers[0]);
+          await deps.getOrFetchMCPServerTools(req.user.id, servers[1]);
+          return {
+            toolDefinitions: [],
+            toolRegistry: new Map(),
+            hasDeferredTools: false,
+          };
+        })
+        .mockResolvedValue({
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        });
+
+      reinitMCPServer.mockImplementation(
+        async ({ serverName, returnOnOAuth, oauthStart, oauthEnd }) => {
+          if (returnOnOAuth === false) {
+            await oauthStart(`https://auth.example.com/${serverName}`);
+            await oauthEnd();
+            return { availableTools: { [`tool_${serverName}`]: {} } };
+          }
+
+          await oauthStart(`https://auth.example.com/${serverName}`);
+          return { availableTools: null };
+        },
+      );
+
+      await loadAgentTools({
+        req,
+        res,
+        agent: {
+          id: 'agent_123',
+          tools: servers.map((server) => `search${Constants.mcp_delimiter}${server}`),
+        },
+        definitionsOnly: true,
+      });
+
+      const runStepEvents = mockSendEvent.mock.calls
+        .map(([, event]) => event)
+        .filter((event) => event.data?.stepDetails?.type === 'tool_calls');
+      const deltaEvents = mockSendEvent.mock.calls
+        .map(([, event]) => event)
+        .filter((event) => event.data?.delta?.type === 'tool_calls');
+      const authDeltaEvents = deltaEvents.filter((event) => event.data.delta.auth);
+      const completionEvents = mockSendEvent.mock.calls
+        .map(([, event]) => event)
+        .filter((event) => event.data?.result?.tool_call?.name?.startsWith('oauth'));
+
+      expect(runStepEvents.map((event) => event.data.index)).toEqual([0, 1]);
+      expect(authDeltaEvents.map((event) => event.data.id)).toEqual([
+        'step_oauth_login_ELI',
+        'step_oauth_login_Vespa',
+      ]);
+      expect(completionEvents.map((event) => event.data.result.id)).toEqual([
+        'step_oauth_login_ELI',
+        'step_oauth_login_Vespa',
+      ]);
     });
 
     it('should not expose cached MCP tool definitions when the registry lookup fails', async () => {
@@ -306,6 +423,454 @@ describe('ToolService - Action Capability Gating', () => {
 
       expect(result.toolDefinitions).toEqual([]);
       expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+    });
+
+    it('should re-emit pending MCP OAuth prompts when cached tool definitions exist', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/mcp',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue({
+        [mcpTool]: {
+          function: {
+            name: mcpTool,
+            description: 'Cached search',
+            parameters: {},
+          },
+        },
+      });
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        createdAt: Date.now(),
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        const serverTools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: serverTools ? Object.keys(serverTools) : [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockImplementation(async ({ oauthStart }) => {
+        await oauthStart(authorizationUrl);
+        return { availableTools: { [mcpTool]: {} } };
+      });
+
+      const result = await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([mcpTool]);
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        req.user.id,
+        serverName,
+        expect.objectContaining({ requiresOAuth: true }),
+      );
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          returnOnOAuth: false,
+          oauthStart: expect.any(Function),
+        }),
+      );
+      expect(mockSendEvent).toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          event: 'on_run_step',
+          data: expect.objectContaining({
+            id: `step_oauth_login_${serverName}`,
+          }),
+        }),
+      );
+      expect(mockSendEvent).toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          event: 'on_run_step_delta',
+          data: expect.objectContaining({
+            id: `step_oauth_login_${serverName}`,
+            delta: expect.objectContaining({
+              auth: authorizationUrl,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should not join in-flight MCP initialization before replaying pending OAuth prompts', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `${Constants.mcp_all}${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/mcp',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        createdAt: Date.now(),
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockImplementation(async ({ oauthStart }) => {
+        await oauthStart(authorizationUrl);
+        return { availableTools: null };
+      });
+
+      await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        req.user.id,
+        serverName,
+        expect.objectContaining({ requiresOAuth: true }),
+      );
+      expect(reinitMCPServer).toHaveBeenCalledTimes(1);
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          returnOnOAuth: false,
+          oauthStart: expect.any(Function),
+        }),
+      );
+      expect(mockSendEvent).toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          event: 'on_run_step_delta',
+          data: expect.objectContaining({
+            id: `step_oauth_login_${serverName}`,
+            delta: expect.objectContaining({
+              auth: authorizationUrl,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should re-emit pending MCP OAuth prompts when selected MCP tools are already concrete', async () => {
+      const serverName = `Google${Constants.mcp_delimiter}Workspace`;
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        createdAt: Date.now(),
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockResolvedValue({
+        toolDefinitions: [mcpTool],
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+      });
+      reinitMCPServer.mockImplementation(async ({ oauthStart }) => {
+        await oauthStart(authorizationUrl);
+        return { availableTools: { [mcpTool]: {} } };
+      });
+
+      const result = await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([mcpTool]);
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          returnOnOAuth: false,
+          oauthStart: expect.any(Function),
+        }),
+      );
+      expect(mockSendEvent).toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          event: 'on_run_step_delta',
+          data: expect.objectContaining({
+            id: `step_oauth_login_${serverName}`,
+            delta: expect.objectContaining({
+              auth: authorizationUrl,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should emit stored pending MCP OAuth prompts before waiting on a silent in-flight join', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        createdAt: Date.now(),
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockResolvedValue({
+        toolDefinitions: [mcpTool],
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+      });
+      reinitMCPServer.mockResolvedValue({ availableTools: null });
+
+      const result = await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([mcpTool]);
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          returnOnOAuth: false,
+          oauthStart: expect.any(Function),
+        }),
+      );
+      expect(mockSendEvent).toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          event: 'on_run_step_delta',
+          data: expect.objectContaining({
+            id: `step_oauth_login_${serverName}`,
+            delta: expect.objectContaining({
+              auth: authorizationUrl,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should preserve OAuth URLs emitted while discovering MCP tools before a silent wait join', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/mcp',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer
+        .mockImplementationOnce(async ({ oauthStart }) => {
+          await oauthStart(authorizationUrl, { expiresAt: Date.now() + 60_000 });
+          return { availableTools: null };
+        })
+        .mockResolvedValue({ availableTools: null });
+
+      await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(reinitMCPServer).toHaveBeenCalledTimes(2);
+      expect(mockSendEvent).toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          event: 'on_run_step_delta',
+          data: expect.objectContaining({
+            id: `step_oauth_login_${serverName}`,
+            delta: expect.objectContaining({
+              auth: authorizationUrl,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('should pass request body context into MCP tool definition reinitialization', async () => {
+      const serverName = 'Body-Scoped';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      req.body = { conversationId: 'conv-123', messageId: 'msg-123' };
+
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockResolvedValue({ availableTools: null });
+
+      await loadAgentTools({
+        req,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          requestBody: req.body,
+        }),
+      );
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        req.user.id,
+        serverName,
+        expect.objectContaining({
+          url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
+        }),
+      );
+    });
+
+    it('returns run-scoped MCP tool definitions for request-scoped servers', async () => {
+      const serverName = 'ClickHouse';
+      const mcpTool = `list_tables${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      req.body = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const availableTools = {
+        [mcpTool]: {
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        const serverTools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: serverTools ? Object.keys(serverTools) : [],
+          toolRegistry: new Map([[mcpTool, { name: mcpTool }]]),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockResolvedValue({ availableTools });
+
+      const result = await loadAgentTools({
+        req,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([mcpTool]);
+      expect(result.mcpAvailableTools).toEqual({ [serverName]: availableTools });
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        req.user.id,
+        serverName,
+        expect.objectContaining({
+          url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
+        }),
+      );
+    });
+
+    it('should preserve pending-flow expiry for OAuth URLs captured during discovery', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      const createdAt = Date.now() - 45_000;
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/mcp',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        status: 'PENDING',
+        createdAt,
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer
+        .mockImplementationOnce(async ({ oauthStart }) => {
+          await oauthStart(authorizationUrl);
+          return { availableTools: null };
+        })
+        .mockResolvedValue({ availableTools: null });
+
+      await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      const authDeltaEvent = mockSendEvent.mock.calls
+        .map(([, event]) => event)
+        .find((event) => event.data?.delta?.auth === authorizationUrl);
+      expect(authDeltaEvent?.data.delta.expires_at).toBe(createdAt + PENDING_STALE_MS);
     });
 
     it('should use request-scoped MCP config before falling back to the registry', async () => {
@@ -353,7 +918,11 @@ describe('ToolService - Action Capability Gating', () => {
 
       expect(result.toolDefinitions).toEqual([mcpTool]);
       expect(mockGetServerConfig).not.toHaveBeenCalled();
-      expect(mockGetMCPServerTools).toHaveBeenCalledWith(req.user.id, serverName);
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        req.user.id,
+        serverName,
+        expect.objectContaining({ url: 'https://config.example.com/mcp' }),
+      );
     });
   });
 
@@ -396,6 +965,29 @@ describe('ToolService - Action Capability Gating', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = Tools.web_search;
 
+    it('does not load code execution tools that were not registered for the agent', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.web_search,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const toolRegistry = new Map([[Tools.web_search, { name: Tools.web_search }]]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_without_code', tools: [Tools.web_search] },
+        toolNames: [AgentConstants.BASH_TOOL, Tools.execute_code],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(result.loadedTools.map((tool) => tool.name)).toEqual([]);
+      expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+    });
+
     it('loads bash PTC under the legacy programmatic tool name when code capabilities are enabled', async () => {
       const capabilities = [
         AgentCapabilities.tools,
@@ -420,6 +1012,49 @@ describe('ToolService - Action Capability Gating', () => {
       ]);
       expect(result.configurable.toolRegistry).toBe(toolRegistry);
       expect(result.configurable.ptcToolMap.size).toBe(0);
+    });
+
+    it('passes run-scoped MCP tool definitions into PTC execution loading', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const serverName = 'ClickHouse';
+      const mcpTool = `list_tables${Constants.mcp_delimiter}${serverName}`;
+      const mcpAvailableTools = {
+        [serverName]: {
+          [mcpTool]: {
+            function: {
+              name: mcpTool,
+              description: 'List tables',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      };
+      const toolRegistry = new Map([[mcpTool, { name: mcpTool }]]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        mcpAvailableTools,
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tools: [mcpTool],
+          options: expect.objectContaining({
+            mcpAvailableTools,
+          }),
+        }),
+      );
     });
 
     it('does not load PTC when programmatic tools capability is disabled', async () => {

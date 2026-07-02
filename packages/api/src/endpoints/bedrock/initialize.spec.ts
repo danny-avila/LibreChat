@@ -1,12 +1,12 @@
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import {
   AuthType,
   EModelEndpoint,
   BEDROCK_OUTPUT_128K_BETA,
   BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
 } from 'librechat-data-provider';
-import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
-import { initializeBedrock } from './initialize';
 import type { BaseInitializeParams, BedrockLLMConfigResult } from '~/types';
+import { initializeBedrock } from './initialize';
 import { checkUserKeyExpiry } from '~/utils';
 
 jest.mock('https-proxy-agent', () => ({
@@ -80,6 +80,13 @@ describe('initializeBedrock', () => {
     delete process.env.BEDROCK_AWS_SESSION_TOKEN;
     delete process.env.BEDROCK_REVERSE_PROXY;
     delete process.env.PROXY;
+    delete process.env.proxy;
+    delete process.env.HTTP_PROXY;
+    delete process.env.HTTPS_PROXY;
+    delete process.env.NO_PROXY;
+    delete process.env.http_proxy;
+    delete process.env.https_proxy;
+    delete process.env.no_proxy;
     process.env.BEDROCK_AWS_ACCESS_KEY_ID = 'test-access-key';
     process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'test-secret-key';
     process.env.BEDROCK_AWS_DEFAULT_REGION = 'us-east-1';
@@ -397,6 +404,17 @@ describe('initializeBedrock', () => {
       );
     });
 
+    it('should honor NO_PROXY for reverse proxy endpoints when PROXY is set', async () => {
+      process.env.PROXY = 'http://proxy:8080';
+      process.env.NO_PROXY = 'custom-bedrock-endpoint.com';
+      process.env.BEDROCK_REVERSE_PROXY = 'custom-bedrock-endpoint.com';
+      const params = createMockParams();
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig).not.toHaveProperty('client');
+      expect(result.llmConfig).toHaveProperty('endpointHost', 'custom-bedrock-endpoint.com');
+    });
+
     it('should use AWS profile provider when PROXY is set and static credentials are unset', async () => {
       delete process.env.BEDROCK_AWS_ACCESS_KEY_ID;
       delete process.env.BEDROCK_AWS_SECRET_ACCESS_KEY;
@@ -483,6 +501,26 @@ describe('initializeBedrock', () => {
       expect(result.llmConfig).not.toHaveProperty('credentials');
     });
 
+    it('should reject a non-string user-provided Bedrock API key', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            bearerToken: {},
+            accessKeyId: 'user-access-key',
+            secretAccessKey: 'user-secret-key',
+          }),
+        }),
+      );
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
+    });
+
     it('should not use stored access keys when only bearer token mode is configured', async () => {
       process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
       const params = createMockParams();
@@ -512,6 +550,24 @@ describe('initializeBedrock', () => {
         secretAccessKey: 'static-secret-key',
       });
       expect(result.llmConfig).not.toHaveProperty('client');
+    });
+
+    it('should reject non-string user-provided access key values', async () => {
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            accessKeyId: {},
+            secretAccessKey: 'user-secret-key',
+          }),
+        }),
+      );
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
     });
   });
 

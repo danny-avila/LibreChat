@@ -8,6 +8,8 @@ import {
   PrincipalModel,
   PermissionBits,
   EToolResources,
+  Constants,
+  actionDelimiter,
 } from 'librechat-data-provider';
 import type {
   UpdateWithAggregationPipeline,
@@ -45,6 +47,8 @@ let methods: ReturnType<typeof createAgentMethods>;
 
 let createAgent: AgentMethods['createAgent'];
 let getAgent: AgentMethods['getAgent'];
+let getAgentVersions: AgentMethods['getAgentVersions'];
+let getAgentWithVersionCount: AgentMethods['getAgentWithVersionCount'];
 let updateAgent: AgentMethods['updateAgent'];
 let deleteAgent: AgentMethods['deleteAgent'];
 let deleteUserAgents: AgentMethods['deleteUserAgents'];
@@ -88,6 +92,8 @@ beforeAll(async () => {
   });
   createAgent = methods.createAgent;
   getAgent = methods.getAgent;
+  getAgentVersions = methods.getAgentVersions;
+  getAgentWithVersionCount = methods.getAgentWithVersionCount;
   updateAgent = methods.updateAgent;
   deleteAgent = methods.deleteAgent;
   deleteUserAgents = methods.deleteUserAgents;
@@ -518,6 +524,130 @@ describe('Agent Methods', () => {
       expect(retrievedAgent!.id).toBe(agentId);
       expect(retrievedAgent!.name).toBe('Test Agent');
       expect(retrievedAgent!.description).toBe('Test description');
+    });
+
+    test('should derive mcpServerNames only from MCP tools on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [actionTool, mcpTool],
+      });
+
+      expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('should derive mcpServerNames only from MCP tools on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [],
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { tools: [actionTool, mcpTool] });
+
+      expect(updatedAgent!.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('should prune nonexistent skill ids from the allowlist on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'create-prune-skill',
+        description: 'Skill backing the create-time allowlist pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'Skill Prune Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [realSkill._id.toString(), danglingId],
+        skills_enabled: true,
+      });
+
+      expect(newAgent.skills).toEqual([realSkill._id.toString()]);
+    });
+
+    test('should prune nonexistent skill ids from the allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'update-prune-skill',
+        description: 'Skill backing the update-time allowlist pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Skill Prune Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId, realSkill._id.toString()], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([realSkill._id.toString()]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
+    test('should fail closed when pruning empties the allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(false);
+    });
+
+    test('should keep full-catalog semantics for an explicit empty allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+
+      await createAgent({
+        id: agentId,
+        name: 'Explicit Empty Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { skills: [], skills_enabled: true });
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
     });
 
     test('should delete an agent', async () => {
@@ -1350,6 +1480,55 @@ describe('Agent Methods', () => {
       expect(agent!.versions![0].model).toBe('test-model');
     });
 
+    test('getAgentVersions returns only the versions array', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        name: 'First Name',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { name: 'Second Name' });
+
+      const versions = await getAgentVersions({ id: agentId });
+
+      expect(Array.isArray(versions)).toBe(true);
+      expect(versions).toHaveLength(2);
+      expect(versions![0].name).toBe('First Name');
+      expect(versions![1].name).toBe('Second Name');
+    });
+
+    test('getAgentVersions returns null for a non-existent agent', async () => {
+      const versions = await getAgentVersions({ id: `agent_${uuidv4()}` });
+      expect(versions).toBeNull();
+    });
+
+    test('getAgentWithVersionCount returns the count without the versions array', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: agentId,
+        name: 'First Name',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await updateAgent({ id: agentId }, { name: 'Second Name' });
+      await updateAgent({ id: agentId }, { name: 'Third Name' });
+
+      const agent = await getAgentWithVersionCount({ id: agentId });
+
+      expect(agent).not.toBeNull();
+      expect(agent!.name).toBe('Third Name');
+      expect(agent!.version).toBe(3);
+      expect(agent!.versions).toBeUndefined();
+    });
+
+    test('getAgentWithVersionCount returns null for a non-existent agent', async () => {
+      const agent = await getAgentWithVersionCount({ id: `agent_${uuidv4()}` });
+      expect(agent).toBeNull();
+    });
+
     test('should accumulate version history across multiple updates', async () => {
       const agentId = `agent_${uuidv4()}`;
       const author = new mongoose.Types.ObjectId();
@@ -1701,6 +1880,38 @@ describe('Agent Methods', () => {
       expect(revertedAgent.author.toString()).toBe(originalAuthor.toString());
       expect(revertedAgent.name).toBe('Original Agent');
       expect(revertedAgent.description).toBe('Original description');
+    });
+
+    test('should prune deleted skill ids when reverting to an older version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const Skill = mongoose.models.Skill;
+      const skill = await Skill.create({
+        name: 'revert-prune-skill',
+        description: 'Skill backing the revert pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const skillId = skill._id.toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Revert Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [skillId],
+        skills_enabled: true,
+      });
+
+      await updateAgent({ id: agentId }, { skills: [], name: 'No Skills Anymore' });
+      await Skill.deleteOne({ _id: skill._id });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.name).toBe('Revert Skill Agent');
+      expect(revertedAgent.skills).toEqual([]);
+      expect(revertedAgent.skills_enabled).toBe(false);
     });
 
     test('should detect action metadata changes and force version update', async () => {
@@ -3335,10 +3546,21 @@ describe('Support Contact Field', () => {
     });
 
     test('should omit skill configuration from the default list projection', async () => {
-      const targetSkillIds = [
-        new mongoose.Types.ObjectId().toString(),
-        new mongoose.Types.ObjectId().toString(),
-      ];
+      const skillDocs = await mongoose.models.Skill.create([
+        {
+          name: 'projection-skill-a',
+          description: 'Skill backing projection test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+        {
+          name: 'projection-skill-b',
+          description: 'Skill backing projection test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+      ]);
+      const targetSkillIds = skillDocs.map((doc) => doc._id.toString());
       const scopedAgent = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
         name: 'Scoped Agent',
@@ -3361,10 +3583,21 @@ describe('Support Contact Field', () => {
     });
 
     test('should include skill configuration only when explicitly requested', async () => {
-      const targetSkillIds = [
-        new mongoose.Types.ObjectId().toString(),
-        new mongoose.Types.ObjectId().toString(),
-      ];
+      const skillDocs = await mongoose.models.Skill.create([
+        {
+          name: 'scoped-skill-a',
+          description: 'Skill backing inclusion test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+        {
+          name: 'scoped-skill-b',
+          description: 'Skill backing inclusion test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+      ]);
+      const targetSkillIds = skillDocs.map((doc) => doc._id.toString());
       const scopedAgent = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
         name: 'Scoped Agent',
@@ -3512,6 +3745,85 @@ describe('Support Contact Field', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0].id).toBe(agentB1.id);
       expect(result.data[0].author).toBe(userB.toString());
+    });
+
+    test('should cap results at the default page size when limit is omitted', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(100);
+      expect(result.has_more).toBe(true);
+      expect(result.after).toBeTruthy();
+    });
+
+    test('should return all agents when limit is explicitly null', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: null,
+      });
+
+      expect(result.data).toHaveLength(102);
+      expect(result.has_more).toBe(false);
+      expect(result.after).toBeNull();
+    });
+
+    test('should honor explicit limits above the legacy 100 cap', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 105; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: 500,
+      });
+
+      expect(result.data).toHaveLength(105);
+      expect(result.has_more).toBe(false);
     });
   });
 });

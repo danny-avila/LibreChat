@@ -3,19 +3,18 @@ import { useRecoilValue } from 'recoil';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-
-import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { Agents, TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
-
 import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
+import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
 import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
 import Container from '~/components/Chat/Messages/Content/Container';
 import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
 import { MessageContext } from '~/Providers/MessageContext';
-import { subagentProgressByToolCallId } from '~/store';
 import MessageIcon from '~/components/Share/MessageIcon';
+import { subagentProgressByToolCallId } from '~/store';
 import { useAgentsMapContext } from '~/Providers';
 import { AttachmentGroup } from './Attachment';
 import { useLocalize } from '~/hooks';
@@ -293,7 +292,12 @@ export default function SubagentCall({
    * from routing through `Parts/index`.
    */
   const renderDialogPart = useCallback(
-    (part: TMessageContentParts, idx: number, isLastPart: boolean): JSX.Element | null => {
+    (
+      part: TMessageContentParts,
+      idx: number,
+      isLastPart: boolean,
+      onToolExpand?: () => void,
+    ): JSX.Element | null => {
       return (
         <SubagentDialogPart
           key={`${toolCallId}-part-${idx}`}
@@ -301,6 +305,7 @@ export default function SubagentCall({
           isSubmitting={running}
           showCursor={running && isLastPart}
           isLast={isLastPart}
+          onToolExpand={onToolExpand}
         />
       );
     },
@@ -811,11 +816,13 @@ function SubagentDialogPart({
   isSubmitting,
   showCursor,
   isLast,
+  onToolExpand,
 }: {
   part: TMessageContentParts;
   isSubmitting: boolean;
   showCursor: boolean;
   isLast: boolean;
+  onToolExpand?: () => void;
 }): JSX.Element | null {
   if (part.type === ContentTypes.TEXT) {
     const text = (part as { text: string }).text;
@@ -833,15 +840,17 @@ function SubagentDialogPart({
     const tc = (
       part as {
         [ContentTypes.TOOL_CALL]?: {
+          id?: string;
           args?: string | Record<string, unknown>;
           output?: string;
           name?: string;
           progress?: number;
+          approval?: Agents.ToolCall['approval'];
         };
       }
     )[ContentTypes.TOOL_CALL];
     if (!tc) return null;
-    return (
+    const toolCall = (
       <ToolCall
         args={tc.args ?? ''}
         output={tc.output ?? ''}
@@ -849,8 +858,22 @@ function SubagentDialogPart({
         isSubmitting={isSubmitting}
         isLast={isLast}
         name={tc.name ?? ''}
+        onExpand={onToolExpand}
       />
     );
+    // Surface approve/reject/edit controls for a tool paused INSIDE this subagent —
+    // its tool_call lives in subagent_content, not as a top-level message part, so the
+    // top-level Part.tsx render never sees it. Only while unresolved (no output yet).
+    // The dialog portals but React context still flows, so ToolApproval resolves here.
+    if (tc.approval != null && (tc.output?.length ?? 0) === 0) {
+      return (
+        <>
+          {toolCall}
+          <ToolApproval approval={tc.approval} toolCallId={tc.id ?? ''} args={tc.args} />
+        </>
+      );
+    }
+    return toolCall;
   }
   return null;
 }

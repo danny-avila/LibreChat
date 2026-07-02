@@ -33,6 +33,7 @@ export interface AuthConfig {
   oauth_authorization_url?: string;
   oauth_token_url?: string;
   oauth_scope?: string;
+  obo_scopes?: string;
   server_id?: string;
 }
 
@@ -137,6 +138,10 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
     try {
       // Build config using extracted helper
       const config = buildCompleteConfig(formData, isEditMode);
+
+      if (formData.auth.auth_type === AuthTypeEnum.OBO && formData.auth.obo_scopes) {
+        config.obo = { scopes: formData.auth.obo_scopes };
+      }
 
       const params: MCPServerCreateParams = { config };
 

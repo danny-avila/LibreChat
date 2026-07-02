@@ -16,6 +16,7 @@ export enum AuthTypeEnum {
   None = 'none',
   ServiceHttp = 'service_http',
   OAuth = 'oauth',
+  OBO = 'obo',
 }
 
 // Authorization type enum - duplicated from hook to avoid circular dependency
@@ -31,7 +32,9 @@ export enum AuthorizationTypeEnum {
  */
 export function deriveDefaultValues(server: MCPServerDefinition): MCPServerFormData {
   let authType = AuthTypeEnum.None;
-  if (server.config.oauth) {
+  if ('obo' in server.config && server.config.obo) {
+    authType = AuthTypeEnum.OBO;
+  } else if (server.config.oauth) {
     authType = AuthTypeEnum.OAuth;
   } else if ('apiKey' in server.config && server.config.apiKey) {
     authType = AuthTypeEnum.ServiceHttp;
@@ -87,6 +90,7 @@ export function deriveDefaultValues(server: MCPServerDefinition): MCPServerFormD
       oauth_authorization_url: server.config.oauth?.authorization_url || '',
       oauth_token_url: server.config.oauth?.token_url || '',
       oauth_scope: server.config.oauth?.scope || '',
+      obo_scopes: 'obo' in server.config && server.config.obo ? server.config.obo.scopes : '',
       server_id: server.serverName,
     },
     trust: true, // Pre-checked for existing servers
@@ -128,6 +132,7 @@ export function getNewServerDefaults(): MCPServerFormData {
       oauth_authorization_url: '',
       oauth_token_url: '',
       oauth_scope: '',
+      obo_scopes: '',
     },
     trust: false,
     headers: [],

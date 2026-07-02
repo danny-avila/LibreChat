@@ -1,5 +1,5 @@
 # Dockerfile.multi
-# v0.8.6-rc1
+# v0.8.7
 
 # Set configurable max-old-space-size with default
 ARG NODE_MAX_OLD_SPACE_SIZE=6144
@@ -10,7 +10,7 @@ ARG BUILD_BRANCH=
 ARG BUILD_DATE=
 
 # Base for all builds
-FROM node:20-alpine AS base-min
+FROM node:24.16.0-alpine AS base-min
 ARG NPM_CI_TIMEOUT_SECONDS=1500
 ARG NPM_CI_ATTEMPTS=2
 RUN apk upgrade --no-cache
@@ -109,6 +109,7 @@ RUN attempt=1; \
     done
 COPY api ./api
 COPY config ./config
+COPY skill ./skill
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist

@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { useAuthContext, useLocalize } from '~/hooks';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
+import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import Icon from '~/components/Chat/Messages/MessageIcon';
+import { useAuthContext, useLocalize } from '~/hooks';
 import SearchContent from './Content/SearchContent';
 import { fontSizeAtom } from '~/store/fontSize';
 import SearchButtons from './SearchButtons';
@@ -26,7 +27,10 @@ const MessageBody = ({ message, messageLabel, fontSize }) => (
   <div
     className={cn('relative flex w-11/12 flex-col', message.isCreatedByUser ? '' : 'agent-turn')}
   >
-    <div className={cn('select-none font-semibold', fontSize)}>{messageLabel}</div>
+    <div className={cn('select-none font-semibold', fontSize)}>
+      {messageLabel}
+      <MessageTimestamp value={message.createdAt ?? message.clientTimestamp} />
+    </div>
     <SearchContent message={message} />
     <SubRow classes="text-xs">
       <MinimalHoverButtons message={message} />

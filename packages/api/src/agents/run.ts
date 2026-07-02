@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
+  EModelEndpoint,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
   extractEnvVariable,
@@ -26,14 +27,25 @@ import type {
   Agent,
   AgentModelParameters,
   AgentSubagentsConfig,
+  ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
+import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
+import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
+import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { buildHITLRunWiring } from '~/agents/hitl/runtime';
+import { buildLangfuseConfig } from '~/langfuse/config';
+import { resolveConfigHeaders } from '~/utils/headers';
+import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
 
 /** Expected shape of JSON tool search results */
@@ -212,6 +224,8 @@ const customProviders = new Set([
   KnownEndpoints.ollama,
 ]);
 
+type AgentReasoningKey = 'reasoning_content' | 'reasoning';
+
 function includesOpenRouter(value?: string | null): boolean {
   return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
 }
@@ -220,8 +234,13 @@ export function getReasoningKey(
   provider: Providers,
   llmConfig: t.RunLLMConfig,
   agentEndpoint?: string | null,
-): 'reasoning_content' | 'reasoning' {
-  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  customReasoningKey?: ReasoningResponseKey,
+): AgentReasoningKey {
+  if (customReasoningKey) {
+    return customReasoningKey as AgentReasoningKey;
+  }
+
+  let reasoningKey: AgentReasoningKey = 'reasoning_content';
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
@@ -236,6 +255,61 @@ export function getReasoningKey(
     reasoningKey = 'reasoning';
   }
   return reasoningKey;
+}
+
+const DEEPSEEK_MODEL_PATTERN = /^deepseek(?:[-/]|$)/i;
+const OPENROUTER_LATEST_ROUTING_PREFIX = /^~/;
+
+function matchesDeepSeekModel(model?: string | null): boolean {
+  if (typeof model !== 'string' || model.length === 0) {
+    return false;
+  }
+  return DEEPSEEK_MODEL_PATTERN.test(model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, ''));
+}
+
+/**
+ * Whether the (provider, model) pair targets DeepSeek's thinking-mode
+ * tool-calling contract, which requires `reasoning_content` to be replayed
+ * on every prior assistant message that emitted `tool_calls`.
+ * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
+ */
+export function isDeepSeekReasoningProvider(
+  provider: string | Providers | undefined | null,
+  model?: string | null,
+): boolean {
+  if (typeof provider === 'string' && provider.length > 0) {
+    const normalized = provider.toLowerCase();
+    if (normalized === Providers.DEEPSEEK) {
+      return true;
+    }
+    if (normalized === Providers.OPENROUTER) {
+      return matchesDeepSeekModel(model);
+    }
+  }
+  return matchesDeepSeekModel(model);
+}
+
+/**
+ * Whether prior assistant tool-call messages should have `reasoning_content`
+ * reconstructed when reformatting persisted history (cross-turn replay): either
+ * DeepSeek thinking-mode (#13366) or a custom OpenAI-compatible endpoint that
+ * opted in via `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+ */
+export function shouldReplayReasoningContent(
+  agent?: {
+    provider?: string | Providers | null;
+    model?: string | null;
+    model_parameters?: { model?: string | null } | null;
+    includeReasoningHistory?: boolean | null;
+  } | null,
+): boolean {
+  if (agent == null) {
+    return false;
+  }
+  if (agent.includeReasoningHistory === true) {
+    return true;
+  }
+  return isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {
@@ -261,6 +335,10 @@ type RunAgent = Omit<Agent, 'tools'> & {
   codeEnvAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
+  /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
+  reasoningKey?: ReasoningResponseKey;
+  /** Whether to reconstruct `reasoning_content` from persisted history across turns. */
+  includeReasoningHistory?: boolean;
   /**
    * Maximum characters allowed in a single tool result before truncation.
    * Overrides the default computed from maxContextTokens.
@@ -412,6 +490,37 @@ function resolveSummarizationProvider(
             body: headerContext.requestBody,
           })
         : undefined;
+    /**
+     * Native Anthropic custom endpoints must build their config with the
+     * Anthropic client (`/v1/messages`), not `getOpenAIConfig` (which would emit
+     * OpenAI-shaped requests). The self-summarize case is handled earlier by
+     * `isSameEndpointAsAgent`; this covers summarizing against a *different*
+     * Anthropic-native custom endpoint.
+     */
+    if (customEndpointConfig.provider === EModelEndpoint.anthropic) {
+      const { llmConfig } = getAnthropicLLMConfig(apiKey, {
+        modelOptions: {},
+        proxy: process.env.PROXY ?? undefined,
+        reverseProxyUrl: baseURL,
+        headers: resolvedHeaders,
+        addParams: customEndpointConfig.addParams,
+        dropParams: customEndpointConfig.dropParams,
+        defaultParams: extractDefaultParams(customEndpointConfig.customParams?.paramDefinitions),
+      });
+      const { apiKey: resolvedApiKey, ...llmConfigOverrides } = llmConfig as Record<
+        string,
+        unknown
+      >;
+      const clientOverrides: SummarizationClientOverrides = { ...llmConfigOverrides };
+      if (typeof resolvedApiKey === 'string') {
+        clientOverrides.apiKey = resolvedApiKey;
+      }
+      /** Strip the default model so the user-supplied `summarization.model` wins. */
+      delete clientOverrides.model;
+      delete clientOverrides.modelName;
+      return { provider: Providers.ANTHROPIC, clientOverrides };
+    }
+
     /**
      * Run the endpoint config through `getOpenAIConfig` so summarization
      * inherits the same `headers`, `defaultQuery`, `addParams`/`dropParams`,
@@ -621,6 +730,36 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
 }
 
 /**
+ * Whether any agent reachable in the run — primary, handoff/parallel, or a
+ * nested subagent — opts into cross-turn `reasoning_content` reconstruction.
+ * Walks `subagentAgentConfigs` like {@link anyAgentHasCodeEnv}, since an
+ * opted-in custom endpoint may appear only as a (possibly pruned) subagent.
+ */
+export function anyAgentReplaysReasoningContent(
+  agents: Array<RunAgent | null | undefined>,
+): boolean {
+  const visited = new Set<string>();
+  const pending = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (shouldReplayReasoningContent(agent)) {
+      return true;
+    }
+    for (const child of agent.subagentAgentConfigs ?? []) {
+      if (!visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Builds SubagentConfig entries for an agent: optional self-spawn plus any
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
@@ -735,8 +874,10 @@ export async function createRun({
   signal,
   agents,
   messages,
+  discoveredToolNames,
   requestBody,
   user,
+  tenantId,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -745,6 +886,8 @@ export async function createRun({
   initialSummary,
   calibrationRatio,
   appConfig,
+  subagentUsageSink,
+  hitlCapable = false,
   streaming = true,
   streamUsage = true,
 }: {
@@ -755,8 +898,19 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
+  tenantId?: string;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
+  /**
+   * Pre-discovered deferred-tool names to force-load directly, bypassing message
+   * extraction. The HITL resume path rebuilds the graph with `messages: []` (state
+   * comes from the durable checkpoint), so the in-turn `tool_search` results that
+   * would normally mark a deferred tool discovered aren't present — without this the
+   * paused tool would be absent from the rebuilt schema-only toolMap and resume would
+   * fail with "unknown tool". Captured at pause via `extractDiscoveredToolsFromHistory`
+   * and replayed here. Merged with (not replacing) any names extracted from `messages`.
+   */
+  discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
@@ -767,6 +921,24 @@ export async function createRun({
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
    */
   appConfig?: AppConfig;
+  /**
+   * Receives per-model-call usage from subagent child runs so hosts can bill
+   * them (child graphs execute outside the run's `streamEvents` loop, so
+   * their usage never reaches `customHandlers`). Typed structurally — not as
+   * `Pick<RunConfig, 'subagentUsageSink'>` — because the field ships in
+   * `@librechat/agents` > 3.2.33; older SDK versions ignore it at runtime.
+   * Switch to the `RunConfig` pick once the dependency is bumped.
+   */
+  subagentUsageSink?: (event: SubagentUsageEvent) => void;
+  /**
+   * Whether the caller implements the HITL pause/resume lifecycle (inspects
+   * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
+   * tool-approval wiring: only AgentClient (chat + resume) sets this. The OpenAI-compatible
+   * and Responses controllers leave it false, so an approval-gated tool can't pause on a
+   * route that has no approval surface or resume endpoint (it would otherwise emit a normal
+   * final response / `[DONE]` with the tool call left unresolved).
+   */
+  hitlCapable?: boolean;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -781,10 +953,22 @@ export async function createRun({
    */
   const hasAnyDeferredTools = agents.some((agent) => agent.hasDeferredTools === true);
 
-  const discoveredTools =
-    hasAnyDeferredTools && messages?.length
-      ? extractDiscoveredToolsFromHistory(messages)
-      : new Set<string>();
+  const discoveredTools = new Set<string>();
+  if (hasAnyDeferredTools) {
+    // Normal path: extract from this run's message history (tool_search results).
+    if (messages?.length) {
+      for (const name of extractDiscoveredToolsFromHistory(messages)) {
+        discoveredTools.add(name);
+      }
+    }
+    // Resume path: replay names captured at pause, since `messages` is empty (the
+    // paused run's tool_search results live only in the checkpoint, not here).
+    if (discoveredToolNames?.length) {
+      for (const name of discoveredToolNames) {
+        discoveredTools.add(name);
+      }
+    }
+  }
 
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     const isSubagent = opts.isSubagent === true;
@@ -833,18 +1017,17 @@ export async function createRun({
       .trim();
 
     /**
-     * Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
-     *  This is done at this step because the request body may contain dynamic values
-     *  that need to be resolved after agent initialization.
+     * Resolve request-based headers across provider-specific header locations
+     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
+     * Google `customHeaders`). Done at this step because the request body may
+     * contain dynamic values (e.g. conversationId) that are only known after
+     * agent initialization.
      */
-    if (llmConfig?.configuration?.defaultHeaders != null) {
-      llmConfig.configuration.defaultHeaders = resolveHeaders({
-        headers: llmConfig.configuration.defaultHeaders as Record<string, string>,
-        user: createSafeUser(user),
-        body: requestBody,
-      });
-    }
+    resolveConfigHeaders({
+      llmConfig,
+      user: createSafeUser(user),
+      body: requestBody,
+    });
 
     /** Resolves issues with new OpenAI usage field */
     if (
@@ -914,7 +1097,7 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
-    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
+    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     return {
       provider,
       reasoningKey,
@@ -988,7 +1171,42 @@ export async function createRun({
    */
   const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
 
-  return Run.create({
+  /**
+   * Human-in-the-loop tool approval — OFF by default. When the agents endpoint
+   * opts in (`toolApproval.enabled`), attach the `PreToolUse` policy hook + the
+   * `humanInTheLoop` switch, and bind a durable checkpointer so a run that pauses
+   * for review can be rebuilt and resumed on any worker (see `agents/checkpointer.ts`
+   * and the resume route). When disabled, nothing attaches and the run is identical
+   * to before this feature shipped.
+   */
+  const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+  // Resolve the effective policy through the single seam so per-agent / per-skill
+  // sources can layer in later without touching this call site (see
+  // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
+  // is identical to reading `toolApproval` directly.
+  const toolApprovalPolicy = resolveToolApprovalPolicy({
+    endpoint: agentsEndpointConfig?.toolApproval,
+  });
+  // Gate HITL to callers that actually implement the pause/resume lifecycle. The
+  // OpenAI-compatible + Responses controllers also call createRun/processStream but never
+  // inspect `run.getInterrupt()` or persist a pending action — so an approval-gated tool
+  // would pause with no approval surface or resume endpoint, and the route would emit a
+  // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
+  // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
+  const hitl = hitlCapable ? buildHITLRunWiring(toolApprovalPolicy) : undefined;
+  if (hitl) {
+    const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
+    graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
+  }
+
+  /**
+   * Built as a variable (not an inline literal) so the extra
+   * `subagentUsageSink` field passes assignability against SDK versions
+   * whose `RunConfig` predates it (<= 3.2.33, where it is ignored at
+   * runtime) — excess-property checks only apply to fresh literals. Inline
+   * the field at the call site once the dependency is bumped.
+   */
+  const runConfig = {
     runId,
     graphConfig,
     tokenCounter,
@@ -996,9 +1214,47 @@ export async function createRun({
     initialSessions,
     calibrationRatio,
     indexTokenCountMap,
-    eagerEventToolExecution: { enabled: true },
+    subagentUsageSink,
+    // Exclude side-effecting / large-free-form-arg tools from eager execution.
+    // Eager speculatively runs a tool mid-stream; for a big streamed arg (a
+    // file body, a bash heredoc, a code block) the accumulated args can diverge
+    // from the final tool call and trip the SDK's "changed after eager
+    // execution" guard, and a speculative write/exec can land before the turn
+    // commits. create_file/edit_file write files; execute_code/bash_tool run
+    // code with large `code`/`command` args. `excludeToolNames` requires
+    // @librechat/agents with the eager-exclusion support (agents#281); older
+    // versions ignore the field.
+    eagerEventToolExecution: {
+      enabled: true,
+      excludeToolNames: [
+        CREATE_FILE_TOOL_NAME,
+        EDIT_FILE_TOOL_NAME,
+        Constants.EXECUTE_CODE,
+        Constants.BASH_TOOL,
+      ],
+    },
+    // Let host file-authoring tools share the code-execution sandbox session so
+    // a file created with create_file/edit_file is visible to later
+    // execute_code/bash_tool calls (and vice versa). The SDK folds these tools'
+    // returned exec session/files into the shared code session and injects the
+    // existing session into their requests. Requires @librechat/agents with
+    // codeSessionToolNames support (agents#283); older versions ignore it.
+    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
+    // Derive the Langfuse trace id deterministically from runId so message
+    // feedback can be scored against the trace without a lookup (see the
+    // feedback route in api/server/routes/messages.js). No-op unless Langfuse
+    // tracing is enabled. Requires @librechat/agents >= 3.2.21.
+    langfuse: buildLangfuseConfig({ appConfig, tenantId: tenantId ?? user?.tenantId }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
-  });
+    // HITL opt-in: the `humanInTheLoop` switch + the PreToolUse policy hook. Spread
+    // here (not just `compileOptions.checkpointer` above) so an `ask` decision raises
+    // a real interrupt — without these the run would never pause. Absent when disabled.
+    ...(hitl && { humanInTheLoop: hitl.humanInTheLoop, hooks: hitl.hooks }),
+  };
+  const run = await Run.create(runConfig);
+
+  applyTestRunHook(run, { messages, agents });
+  return run;
 }

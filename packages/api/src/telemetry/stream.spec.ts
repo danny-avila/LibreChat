@@ -72,16 +72,20 @@ describe('createSseStreamTelemetry', () => {
     res.writableEnded = true;
     res.emit('finish');
 
-    expect(startSpan).toHaveBeenCalledWith('librechat.sse.stream', {
-      kind: SpanKind.INTERNAL,
-      attributes: expect.objectContaining({
-        'http.request.method': 'GET',
-        'http.route': '/api/agents/chat/stream/:streamId',
-        'librechat.stream.id': 'stream-1',
-        'librechat.stream.resume': false,
-        'librechat.stream.route': '/api/agents/chat/stream/:streamId',
-      }),
-    }, context.active());
+    expect(startSpan).toHaveBeenCalledWith(
+      'librechat.sse.stream',
+      {
+        kind: SpanKind.INTERNAL,
+        attributes: expect.objectContaining({
+          'http.request.method': 'GET',
+          'http.route': '/api/agents/chat/stream/:streamId',
+          'librechat.stream.id': 'stream-1',
+          'librechat.stream.resume': false,
+          'librechat.stream.route': '/api/agents/chat/stream/:streamId',
+        }),
+      },
+      context.active(),
+    );
     expect(span.addEvent).toHaveBeenCalledWith('headers_flushed');
     expect(span.addEvent).toHaveBeenCalledWith('first_chunk');
     expect(span.addEvent).toHaveBeenCalledWith('final_event_emitted');

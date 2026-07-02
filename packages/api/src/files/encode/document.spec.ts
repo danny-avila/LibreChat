@@ -749,6 +749,38 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         file_data: `data:application/pdf;base64,${mockContent}`,
       });
     });
+
+    it.each([Providers.GOOGLE, Providers.VERTEXAI] as const)(
+      'should format %s PDF as media block when responses API is enabled',
+      async (provider) => {
+        const req = createMockRequest(15, provider) as ServerRequest;
+        const file = createMockFile(10);
+
+        const mockContent = Buffer.from('test-pdf-content').toString('base64');
+        mockedGetFileStream.mockResolvedValue({
+          file,
+          content: mockContent,
+          metadata: file,
+        });
+
+        mockedValidatePdf.mockResolvedValue({ isValid: true });
+
+        const result = await encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider, useResponsesApi: true },
+          mockStrategyFunctions,
+        );
+
+        expect(result.documents).toHaveLength(1);
+        expect(result.documents[0]).toMatchObject({
+          type: 'media',
+          mimeType: 'application/pdf',
+          data: mockContent,
+        });
+        expect(result.documents[0]).not.toHaveProperty('type', 'input_file');
+      },
+    );
   });
 
   describe('Generic document encoding path', () => {
@@ -979,6 +1011,41 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
 
       expect(result.documents).toHaveLength(0);
       expect(result.files).toHaveLength(0);
+    });
+  });
+
+  describe('concurrency guard', () => {
+    it('bounds parallel getFileStream calls and returns all documents unchanged', async () => {
+      const req = createMockRequest(50) as ServerRequest;
+      const files = Array.from({ length: 6 }, (_, i) =>
+        createMockDocFile(1, 'text/plain', `doc-${i}.txt`),
+      );
+
+      let active = 0;
+      let peak = 0;
+      mockedGetFileStream.mockImplementation(async (_req, file) => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+        active--;
+        return {
+          file,
+          content: Buffer.from(`content-${file.filename}`).toString('base64'),
+          metadata: file,
+        };
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        files,
+        { provider: Providers.OPENAI, useResponsesApi: true },
+        mockStrategyFunctions,
+      );
+
+      expect(peak).toBe(3);
+      expect(result.documents).toHaveLength(6);
+      expect(result.files).toHaveLength(6);
     });
   });
 });

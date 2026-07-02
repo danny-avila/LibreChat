@@ -1,12 +1,96 @@
 import { useState, memo, useRef } from 'react';
+import { useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
-import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import {
+  Archive,
+  ChevronRight,
+  CircleHelp,
+  FileText,
+  Keyboard,
+  LifeBuoy,
+  LogOut,
+  Scale,
+  ShieldCheck,
+} from 'lucide-react';
+import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
+import store from '~/store';
+
+function HelpSubmenu({
+  helpAndFaqURL,
+  termsOfServiceURL,
+  privacyPolicyURL,
+  onShowShortcuts,
+}: {
+  helpAndFaqURL?: string;
+  termsOfServiceURL?: string;
+  privacyPolicyURL?: string;
+  onShowShortcuts: () => void;
+}) {
+  const localize = useLocalize();
+  const hasHelpFaq = !!helpAndFaqURL && helpAndFaqURL !== '/';
+  const hasTos = !!termsOfServiceURL;
+  const hasPrivacy = !!privacyPolicyURL;
+  const showLegalDivider = (hasHelpFaq || true) && (hasTos || hasPrivacy);
+
+  return (
+    <Menu.MenuProvider placement="right-start">
+      <Menu.MenuItem
+        hideOnClick={false}
+        render={
+          <Menu.MenuButton className="select-item flex w-full cursor-pointer items-center gap-2 text-sm" />
+        }
+      >
+        <CircleHelp className="icon-md" aria-hidden="true" />
+        <span className="flex-1 text-left">{localize('com_nav_help')}</span>
+        <ChevronRight className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+      </Menu.MenuItem>
+      <Menu.Menu
+        portal
+        gutter={12}
+        className="account-settings-popover popover-ui popover-from-left z-[126] w-[244px] rounded-lg"
+      >
+        {hasHelpFaq && (
+          <Menu.MenuItem
+            onClick={() => window.open(helpAndFaqURL, '_blank', 'noopener,noreferrer')}
+            className="select-item text-sm"
+          >
+            <LifeBuoy className="icon-md" aria-hidden="true" />
+            {localize('com_nav_help_faq')}
+          </Menu.MenuItem>
+        )}
+        <Menu.MenuItem onClick={onShowShortcuts} className="select-item text-sm">
+          <Keyboard className="icon-md" aria-hidden="true" />
+          {localize('com_shortcut_keyboard_shortcuts')}
+        </Menu.MenuItem>
+        {showLegalDivider && (hasTos || hasPrivacy) && <DropdownMenuSeparator />}
+        {hasTos && (
+          <Menu.MenuItem
+            onClick={() => window.open(termsOfServiceURL, '_blank', 'noopener,noreferrer')}
+            className="select-item text-sm"
+          >
+            <Scale className="icon-md" aria-hidden="true" />
+            {localize('com_ui_terms_of_service')}
+          </Menu.MenuItem>
+        )}
+        {hasPrivacy && (
+          <Menu.MenuItem
+            onClick={() => window.open(privacyPolicyURL, '_blank', 'noopener,noreferrer')}
+            className="select-item text-sm"
+          >
+            <ShieldCheck className="icon-md" aria-hidden="true" />
+            {localize('com_ui_privacy_policy')}
+          </Menu.MenuItem>
+        )}
+      </Menu.Menu>
+    </Menu.MenuProvider>
+  );
+}
 
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
@@ -17,10 +101,12 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
+  const [showArchived, setShowArchived] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <Menu.MenuProvider>
+    <Menu.MenuProvider placement={collapsed ? 'right-end' : undefined}>
       <Menu.MenuButton
         ref={accountSettingsButtonRef}
         aria-label={localize('com_nav_account_settings')}
@@ -50,7 +136,6 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
       <Menu.Menu
         portal
         className="account-settings-popover popover-ui z-[125] w-[305px] rounded-lg md:w-[244px]"
-        placement={collapsed ? 'right-end' : undefined}
         style={{
           transformOrigin: collapsed ? 'left bottom' : 'bottom',
           translate: collapsed ? '4px 0' : '0 -4px',
@@ -69,20 +154,25 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
             <DropdownMenuSeparator />
           </>
         )}
+        <HelpSubmenu
+          helpAndFaqURL={startupConfig?.helpAndFaqURL}
+          termsOfServiceURL={startupConfig?.interface?.termsOfService?.externalUrl}
+          privacyPolicyURL={startupConfig?.interface?.privacyPolicy?.externalUrl}
+          onShowShortcuts={() => setShowShortcutsDialog(true)}
+        />
         <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
         </Menu.MenuItem>
-        {startupConfig?.helpAndFaqURL !== '/' && (
-          <Menu.MenuItem
-            onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
-            className="select-item text-sm"
-          >
-            <LinkIcon aria-hidden="true" />
-            {localize('com_nav_help_faq')}
-          </Menu.MenuItem>
-        )}
-        <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
+        <Menu.MenuItem onClick={() => setShowArchived(true)} className="select-item text-sm">
+          <Archive className="icon-md" aria-hidden="true" />
+          {localize('com_nav_archived_chats')}
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={() => setShowSettings(true)}
+          className="select-item text-sm"
+          data-testid="nav-settings"
+        >
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Menu.MenuItem>
@@ -96,6 +186,13 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         <MyFilesModal
           open={showFiles}
           onOpenChange={setShowFiles}
+          triggerRef={accountSettingsButtonRef}
+        />
+      )}
+      {showArchived && (
+        <ArchivedChatsModal
+          open={showArchived}
+          onOpenChange={setShowArchived}
           triggerRef={accountSettingsButtonRef}
         />
       )}

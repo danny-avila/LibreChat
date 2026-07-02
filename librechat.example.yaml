@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.11
+version: 1.3.13
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -60,6 +60,37 @@ cache: true
 #   # response-content-type query strings to S3.
 #   # Recommended for download paths: attach a CloudFront response headers policy
 #   # with X-Content-Type-Options: nosniff and CSP default-src 'none'.
+
+# Skill sync configuration (optional)
+# GitHub tokens are referenced from environment variables. Put the token in
+# `.env`, then reference it here with `token: '${GITHUB_SKILLS_TOKEN}'`. Use a
+# GitHub fine-grained personal access token scoped to the selected repository
+# with read-only Contents and Metadata permissions.
+# skillSync:
+#   github:
+#     enabled: false
+#     intervalMinutes: 60
+#     runOnStartup: true
+#     sources:
+#       - id: librechat-skills
+#         owner: your-org
+#         repo: your-skills-repo
+#         ref: main
+#         paths:
+#           - skills
+#         # Number of directory levels below each configured path to scan for
+#         # `SKILL.md`. Use 2 for repos shaped like `skills/<category>/<skill>`.
+#         skillDiscoveryDepth: 2
+#         token: '${GITHUB_SKILLS_TOKEN}'
+#         # Optional. Owns the mirrored skills under the given tenant so they are
+#         # created and shared within that tenant. Required for visibility when
+#         # tenant isolation is enabled. Omit for single-tenant deployments.
+#         # Treat as immutable per source id: changing (or adding/removing) the
+#         # tenantId later leaves previously mirrored skills in the old tenant,
+#         # where this source's sync can no longer see or clean them up. To move a
+#         # source between tenants, delete its mirrored skills in the old tenant
+#         # first, or use a new source id for the new tenant.
+#         # tenantId: your-tenant-id
 
 # Custom interface configuration
 interface:
@@ -138,6 +169,15 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Tools pinned to the prompt bar by default for all users.
+  # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
+  # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
+  # Use 'mcp' (or a specific MCP server name) to pin the MCP servers dropdown.
+  # When omitted, tools start unpinned and the MCP dropdown keeps its default (pinned).
+  # defaultPinnedTools:
+  #   - 'artifacts'
+  #   - 'execute_code'
+  #   - 'mcp'
   # Remote Agents configuration
   # Controls user permissions for remote agents with external API support
   # remoteAgents:
@@ -146,24 +186,31 @@ interface:
   #   share: false
   #   public: false
   # MCP Servers configuration example
+  # Shared Links configuration
+  # Controls user permissions for shared links (e.g. sharing conversations via link)
+  # sharedLinks:
+  #   create: false
+  #   share: true
+  #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
+  #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
   # mcpServers:
-    # Controls user permissions for MCP (Model Context Protocol) server management
-    # - use: Allow users to use configured MCP servers
-    # - create: Allow users to create and manage new MCP servers
-    # - share: Allow users to share MCP servers with other users
-    # - public: Allow users to share MCP servers publicly (with everyone)
+  # Controls user permissions for MCP (Model Context Protocol) server management
+  # - use: Allow users to use configured MCP servers
+  # - create: Allow users to create and manage new MCP servers
+  # - share: Allow users to share MCP servers with other users
+  # - public: Allow users to share MCP servers publicly (with everyone)
 
-    # Creation / edit MCP server config Dialog config example
-    # trustCheckbox:
-    #   label:
-    #     en: 'I understand and I want to continue'
-    #     de: 'Ich verstehe und möchte fortfahren'
-    #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
-    #   subLabel:
-    #     en: |
-    #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
-    #     de: |
-    #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
+  # Creation / edit MCP server config Dialog config example
+  # trustCheckbox:
+  #   label:
+  #     en: 'I understand and I want to continue'
+  #     de: 'Ich verstehe und möchte fortfahren'
+  #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
+  #   subLabel:
+  #     en: |
+  #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
+  #     de: |
+  #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
@@ -176,6 +223,9 @@ interface:
   # such as "_meiliIndex_1_expiredAt_1" can be dropped from conversations/messages once the new
   # "_meiliIndex_1_isTemporary_1_expiredAt_1" indexes exist.
   # retentionMode: "temporary"
+  # Set retainAgentFiles to true to keep persistent agent resource files from expiring under
+  # retentionMode: "all"; non-agent files still expire.
+  # retainAgentFiles: false
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
@@ -359,6 +409,12 @@ endpoints:
   #   maxRecursionLimit: 100
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) When conversation titles are generated:
+  #   #   immediate (default): generate as soon as the request is made, in parallel
+  #   #     with the response, from the user's first message (title appears within ~1-2s).
+  #   #   final: defer generation until the full response completes (legacy behavior).
+  #   # Set under `endpoints.all` instead to apply as the global default for all endpoints.
+  #   titleTiming: immediate
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
@@ -366,8 +422,27 @@ endpoints:
   #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
+  #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
+  #   # Useful for large organizations where many department-specific skills may be available.
+  #   skills:
+  #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+
+  # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
+  # Forwarded on every request to the provider (or an AI gateway / reverse proxy
+  # in front of it) while keeping provider-native request shaping intact. Values
+  # support env vars (${VAR}), user fields ({{LIBRECHAT_USER_*}}), and request-body
+  # fields ({{LIBRECHAT_BODY_CONVERSATIONID}}). Set the same `headers:` block under
+  # `endpoints.all` to apply globally across endpoints (endpoint values win on key
+  # collisions). NOTE: send metadata headers like these only behind a gateway that
+  # consumes them — native provider APIs ignore unknown headers.
+  # openAI:
+  #   headers:
+  #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
+  # google:
+  #   headers:
+  #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
 
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
@@ -376,6 +451,12 @@ endpoints:
   #   streamRate: 20
   #   # (optional) Title model for conversation titles
   #   titleModel: claude-3.5-haiku  # Use the visible model name (key from models config)
+  #   # (optional) Custom request headers, same placeholder resolution as above.
+  #   # Useful for correlating reverse-proxied requests by conversation, since an
+  #   # unknown header is simply ignored by the native Anthropic API.
+  #   headers:
+  #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
+  #     X-Conversation-Id: '{{LIBRECHAT_BODY_CONVERSATIONID}}'
   #
   #   # Vertex AI Configuration - enables running Claude models via Google Cloud
   #   # This is similar to Azure OpenAI but for Anthropic models on Google Cloud
@@ -401,6 +482,8 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-fable-5"
+  #     #   - "claude-opus-4-8"
   #     #   - "claude-sonnet-4-6"
   #     #   - "claude-3-7-sonnet-20250219"
   #     #   - "claude-3-5-sonnet-v2@20241022"
@@ -411,6 +494,10 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-fable-5:
+  #         deploymentName: claude-fable-5
+  #       claude-opus-4.8:
+  #         deploymentName: claude-opus-4-8
   #       claude-opus-4.5:
   #         deploymentName: claude-opus-4-5@20251101
   #       claude-sonnet-4:
@@ -431,6 +518,29 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # Anthropic-compatible Example (native `/v1/messages` API)
+    # Set `provider: anthropic` to use the native Anthropic client instead of the
+    # default OpenAI-compatible one — for Anthropic itself or Anthropic-compatible
+    # gateways (e.g. AI gateways, OpenCode Zen). The `baseURL` must be the API root
+    # the Anthropic SDK appends `/v1/messages` to. List models explicitly: model
+    # auto-fetch uses the OpenAI `/models` convention and is not used for this provider.
+    - name: 'Claude-Compatible'
+      provider: 'anthropic'
+      apiKey: '${ANTHROPIC_API_KEY}'
+      baseURL: 'https://api.anthropic.com'
+      # (optional) headers forwarded on every request (e.g. for a reverse proxy);
+      # values support the same placeholders as built-in endpoints.
+      headers:
+        anthropic-version: '2023-06-01'
+      models:
+        default:
+          - 'claude-sonnet-4-5'
+          - 'claude-opus-4-5'
+        fetch: false
+      titleConvo: true
+      titleModel: 'claude-sonnet-4-5'
+      modelDisplayLabel: 'Claude (Compatible)'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'
@@ -584,10 +694,22 @@ endpoints:
 #     - name: "gpt-4o"
 #       label: "GPT-4 Optimized"
 #       description: "Most capable GPT-4 model with multimodal support"
+#       # default: true      # Hard admin default; takes precedence over prior user choices
+#       # softDefault: true  # First-time default only; skipped after a user selects a model/spec/agent
 #       group: "openAI"  # String value matching the endpoint name
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o"
+#       # Skills can be enabled per model spec. Use true for the user's active
+#       # accessible skill catalog, false to force skills off, or a name list as
+#       # a strict allowlist for catalog, manual, and always-apply resolution.
+#       # skills: ["brand-guidelines", "code-review"]
+#       # Subagents can be enabled per model spec. `allowSelf: true` lets the
+#       # ephemeral agent spawn a fresh isolated copy of itself for focused work.
+#       # subagents:
+#       #   enabled: true
+#       #   allowSelf: true
+#       #   agent_ids: []
 #
 #     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
 #     - name: "llama3-70b-8192"
@@ -724,8 +846,10 @@ endpoints:
 #   disabled: false
 #   # (optional) Restrict memory keys to specific values to limit memory storage and improve consistency
 #   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
-#   # (optional) Maximum token limit for memory storage (not yet implemented for token counting)
+#   # (optional) Maximum token limit for stored memory values
 #   tokenLimit: 10000
+#   # (optional) Maximum tokens from recent chat sent to the memory agent before truncation
+#   maxInputTokens: 12000
 #   # (optional) Enable personalization features (defaults to true if memory is configured)
 #   # When false, users will not see the Personalization tab in settings
 #   personalize: true
@@ -742,3 +866,21 @@ endpoints:
 #     # instructions: "You are a memory management assistant. Store and manage user information accurately."
 #     # model_parameters:
 #     #   temperature: 0.1
+
+# Reject chat messages whose text matches credential-shaped patterns
+# before they reach moderation, the model, or persistence. Filter
+# types live under `messageFilter.<type>`; today only `pii` ships, but
+# the namespace is structured so future filter types can plug in.
+# Omit the whole section to disable.
+# messageFilter:
+#   pii:
+#     # (optional) Pick a subset of the starter catalog by id; omit to
+#     # enable all starters (sk_prefix, bearer_header, api_key_header).
+#     starterPatterns: [sk_prefix, bearer_header, api_key_header]
+#     # (optional) Operator-defined patterns. Each entry needs id,
+#     # label, and a JavaScript-flavor regex; the regex is validated
+#     # at config load time.
+#     customPatterns:
+#       - id: anthropic_api_key
+#         label: Anthropic API key
+#         regex: "sk-ant-[A-Za-z0-9_-]{20,}"

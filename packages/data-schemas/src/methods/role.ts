@@ -7,6 +7,8 @@ import {
 } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
 import type { IRole, IUser } from '~/types';
+import { scopedCacheKey, getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
 const systemRoleValues = new Set<string>(Object.values(SystemRoles));
@@ -31,16 +33,72 @@ export interface RoleDeps {
   };
 }
 
-export function createRoleMethods(mongoose: typeof import('mongoose'), deps: RoleDeps = {}) {
+export function createRoleMethods(
+  mongoose: typeof import('mongoose'),
+  deps: RoleDeps = {},
+): {
+  listRoles: (options?: {
+    limit?: number;
+    offset?: number;
+  }) => Promise<Pick<IRole, '_id' | 'name' | 'description'>[]>;
+  countRoles: () => Promise<number>;
+  initializeRoles: () => Promise<void>;
+  getRoleByName: (roleName: string, fieldsToSelect?: string | string[] | null) => Promise<IRole>;
+  findRolesByNames: (
+    roleNames: string[],
+    fieldsToSelect?: string | string[] | null,
+  ) => Promise<IRole[]>;
+  updateRoleByName: (roleName: string, updates: Partial<IRole>) => Promise<IRole>;
+  updateAccessPermissions: (
+    roleName: string,
+    permissionsUpdate: Record<string, Record<string, boolean>>,
+    roleData?: IRole,
+  ) => Promise<void>;
+  migrateRoleSchema: (roleName?: string) => Promise<number>;
+  createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
+  deleteRoleByName: (roleName: string) => Promise<IRole | null>;
+  updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
+  findUserIdsByRole: (roleName: string) => Promise<string[]>;
+  updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
+  listUsersByRole: (
+    roleName: string,
+    options?: { limit?: number; offset?: number },
+  ) => Promise<IUser[]>;
+  countUsersByRole: (roleName: string) => Promise<number>;
+} {
   /**
    * Initialize default roles in the system.
    * Creates the default roles (ADMIN, USER) if they don't exist in the database.
    * Updates existing roles with new permission types if they're missing.
    */
-  async function initializeRoles() {
+  async function initializeRoles(): Promise<void> {
     const Role = mongoose.models.Role;
 
     for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
+      // Strict mode hides off-schema SHARED_GLOBAL and won't $unset it on save; migrate it via the raw driver.
+      // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw read is required to see the off-schema field.
+      const legacyDoc = await Role.collection.findOne({ name: roleName });
+      if (legacyDoc?.permissions) {
+        const set: Record<string, unknown> = {};
+        const unset: Record<string, ''> = {};
+        for (const permType of ['PROMPTS', 'AGENTS']) {
+          const block = legacyDoc.permissions[permType];
+          if (block && 'SHARED_GLOBAL' in block) {
+            if (!('SHARE' in block)) {
+              set[`permissions.${permType}.SHARE`] = block.SHARED_GLOBAL;
+            }
+            unset[`permissions.${permType}.SHARED_GLOBAL`] = '';
+          }
+        }
+        if (Object.keys(unset).length) {
+          const update: Record<string, unknown> = { $unset: unset };
+          if (Object.keys(set).length) {
+            update.$set = set;
+          }
+          // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw $unset is required to drop the off-schema field.
+          await Role.collection.updateOne({ name: roleName }, update);
+        }
+      }
       let role = await Role.findOne({ name: roleName });
       const defaultPerms = roleDefaults[roleName].permissions;
 
@@ -53,9 +111,22 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
         const permissions = role.toObject()?.permissions ?? {};
         role.permissions = role.permissions || {};
         for (const permType of Object.keys(defaultPerms)) {
-          if (permissions[permType] == null || Object.keys(permissions[permType]).length === 0) {
-            role.permissions[permType] = defaultPerms[permType as keyof typeof defaultPerms];
+          const defaultBlock = defaultPerms[permType as keyof typeof defaultPerms] as Record<
+            string,
+            unknown
+          >;
+          const existingBlock = permissions[permType] as Record<string, unknown> | null | undefined;
+          if (existingBlock == null) {
+            role.permissions[permType] = defaultBlock;
+            continue;
           }
+          const mergedBlock: Record<string, unknown> = { ...existingBlock };
+          for (const field of Object.keys(defaultBlock)) {
+            if (mergedBlock[field] == null) {
+              mergedBlock[field] = defaultBlock[field];
+            }
+          }
+          role.permissions[permType] = mergedBlock;
         }
       }
       await role.save();
@@ -90,11 +161,14 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
    * If the role with the given name doesn't exist and the name is a system defined role,
    * create it and return the lean version.
    */
-  async function getRoleByName(roleName: string, fieldsToSelect: string | string[] | null = null) {
+  async function getRoleByName(
+    roleName: string,
+    fieldsToSelect: string | string[] | null = null,
+  ): Promise<IRole> {
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
       if (cache) {
-        const cachedRole = await cache.get(roleName);
+        const cachedRole = await cache.get(scopedCacheKey(roleName));
         if (cachedRole) {
           return cachedRole as IRole;
         }
@@ -109,12 +183,12 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       if (!role && systemRoleValues.has(roleName)) {
         const newRole = await new Role(roleDefaults[roleName as keyof typeof roleDefaults]).save();
         if (cache) {
-          await cache.set(roleName, newRole);
+          await cache.set(scopedCacheKey(roleName), newRole);
         }
         return newRole.toObject() as IRole;
       }
       if (cache) {
-        await cache.set(roleName, role);
+        await cache.set(scopedCacheKey(roleName), role);
       }
       return role as unknown as IRole;
     } catch (error) {
@@ -123,9 +197,59 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   /**
+   * Find roles by name without using or populating the shared role-name cache.
+   * Use this for tenant-scoped authorization lookups where the active ALS tenant context must control the query.
+   *
+   * When a non-system tenant context is active, the tenant-isolation plugin scopes the
+   * query to that tenant. When no tenant context is active (base/global users), the lookup
+   * runs under an explicit system context — so strict-mode isolation does not reject the
+   * context-less query — while an explicit base-role filter (`tenantId` unset) ensures a
+   * base user cannot match, and be assigned, a role that only exists within some tenant.
+   */
+  async function findRolesByNames(
+    roleNames: string[],
+    fieldsToSelect: string | string[] | null = null,
+  ): Promise<IRole[]> {
+    try {
+      const uniqueRoleNames = [
+        ...new Set(roleNames.map((roleName) => roleName.trim()).filter(Boolean)),
+      ];
+      if (uniqueRoleNames.length === 0) {
+        return [] as IRole[];
+      }
+
+      const Role = mongoose.models.Role;
+      const nameFilter = {
+        $or: uniqueRoleNames.map((roleName) => ({
+          name: new RegExp(`^${escapeRegExp(roleName)}$`, 'i'),
+        })),
+      };
+
+      const runQuery = (filter: Record<string, unknown>) => {
+        let query = Role.find(filter);
+        if (fieldsToSelect) {
+          query = query.select(fieldsToSelect);
+        }
+        return query.lean<IRole[]>().exec();
+      };
+
+      const tenantId = getTenantId();
+      if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
+        return await runQuery(nameFilter);
+      }
+
+      return await runAsSystem(() =>
+        runQuery({ ...nameFilter, tenantId: { $in: [null, undefined] } }),
+      );
+    } catch (error) {
+      throw new Error(`Failed to retrieve roles: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * Update role values by name.
    */
-  async function updateRoleByName(roleName: string, updates: Partial<IRole>) {
+  async function updateRoleByName(roleName: string, updates: Partial<IRole>): Promise<IRole> {
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
       const Role = mongoose.models.Role;
@@ -135,9 +259,12 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
         .exec();
       if (cache) {
         if (updates.name && updates.name !== roleName) {
-          await Promise.all([cache.set(roleName, null), cache.set(updates.name, role)]);
+          await Promise.all([
+            cache.set(scopedCacheKey(roleName), null),
+            cache.set(scopedCacheKey(updates.name), role),
+          ]);
         } else {
-          await cache.set(roleName, role);
+          await cache.set(scopedCacheKey(roleName), role);
         }
       }
       return role as unknown as IRole;
@@ -163,7 +290,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
-  ) {
+  ): Promise<void> {
     const updates: Record<string, Record<string, boolean>> = {};
     for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
       if (
@@ -296,7 +423,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
             const cache = deps.getCache?.(CacheKeys.ROLES);
             const updatedRole = await Role.findOne({ name: roleName }).select('-__v').lean().exec();
             if (cache) {
-              await cache.set(roleName, updatedRole);
+              await cache.set(scopedCacheKey(roleName), updatedRole);
             }
 
             logger.info(`Updated role '${roleName}' and removed old schema fields`);
@@ -366,7 +493,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
             const cache = deps.getCache?.(CacheKeys.ROLES);
             if (cache) {
               const updatedRole = await Role.findById(role._id).lean().exec();
-              await cache.set(role.name, updatedRole);
+              await cache.set(scopedCacheKey(role.name), updatedRole);
             }
 
             migratedCount++;
@@ -418,7 +545,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     try {
       const cache = deps.getCache?.(CacheKeys.ROLES);
       if (cache) {
-        await cache.set(role.name, role.toObject());
+        await cache.set(scopedCacheKey(role.name), role.toObject());
       }
     } catch (cacheError) {
       logger.error(`[createRoleByName] cache set failed for "${role.name}":`, cacheError);
@@ -454,7 +581,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
         // Setting null evicts the stale document. getRoleByName treats falsy cached
         // values as a miss and falls through to the DB, so this does not provide
         // negative caching — it only prevents serving the pre-deletion document.
-        await cache.set(roleName, null);
+        await cache.set(scopedCacheKey(roleName), null);
       }
     } catch (cacheError) {
       logger.error(`[deleteRoleByName] cache invalidation failed for "${roleName}":`, cacheError);
@@ -506,6 +633,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     countRoles,
     initializeRoles,
     getRoleByName,
+    findRolesByNames,
     updateRoleByName,
     updateAccessPermissions,
     migrateRoleSchema,

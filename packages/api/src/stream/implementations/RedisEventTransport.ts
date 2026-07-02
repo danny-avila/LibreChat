@@ -439,6 +439,12 @@ export class RedisEventTransport implements IEventTransport {
     }
 
     const streamState = this.streams.get(streamId)!;
+    // Internal listeners (for example cross-replica abort) can leave ordering
+    // state behind with no real SSE subscribers. A new subscriber is a fresh
+    // attachment and must not inherit that prior generation's expected seq.
+    if (streamState.count === 0) {
+      this.resetReorderBuffer(streamId);
+    }
     streamState.count++;
     streamState.handlers.set(subscriberId, handlers);
 
