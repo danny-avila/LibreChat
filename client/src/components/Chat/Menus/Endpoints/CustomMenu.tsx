@@ -1,6 +1,7 @@
 import * as React from 'react';
 import * as Ariakit from '@ariakit/react';
-import { cn } from '~/utils';
+import { useBrand } from '~/hooks';
+import { cn, interpolateBrandField } from '~/utils';
 
 export interface CustomMenuProps extends Ariakit.MenuButtonProps<'div'> {
   label?: React.ReactNode;
@@ -12,6 +13,8 @@ export interface CustomMenuProps extends Ariakit.MenuButtonProps<'div'> {
   comboboxLabel?: string;
   trigger?: Ariakit.MenuButtonProps['render'];
   defaultOpen?: boolean;
+  /** Additive `data-testid` for the menu popover (brand `model_search`). */
+  menuTestId?: string;
 }
 
 export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(function CustomMenu(
@@ -26,6 +29,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
     comboboxLabel,
     trigger,
     defaultOpen,
+    menuTestId,
     ...props
   },
   ref,
@@ -62,6 +66,7 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
         portal
         overlap
         unmountOnHide
+        data-testid={menuTestId}
         gutter={parent ? -4 : 4}
         className={cn(
           parent ? 'animate-popover-left ml-3' : 'animate-popover',
@@ -164,11 +169,25 @@ export const CustomMenuItem = React.forwardRef<HTMLDivElement, CustomMenuItemPro
   function CustomMenuItem({ name, value, ...props }, ref) {
     const menu = Ariakit.useMenuContext();
     const searchable = React.useContext(SearchableContext);
+    const { getControl } = useBrand();
+    /** Additive per-option-row automation attributes (brand `model_search`).
+     * `modeId` (a real-platform per-option id LibreChat has no analogue for) is
+     * filled with a stable unique id so each row's `data-testid` is distinct and
+     * matches the brand's `bard-mode-option-*` wildcard. No-op when unbranded. */
+    const rowBrand = getControl('model_search');
+    const rowId = React.useId();
+    const brandRowProps: Pick<CustomMenuItemProps, 'role'> & { 'data-testid'?: string } = {
+      ...(rowBrand?.option_row_testid != null && {
+        'data-testid': interpolateBrandField(rowBrand.option_row_testid, { modeId: rowId }),
+      }),
+      ...(rowBrand?.option_row_role != null && { role: rowBrand.option_row_role }),
+    };
     const defaultProps: CustomMenuItemProps = {
       ref,
       focusOnHover: true,
       blurOnHoverEnd: false,
       ...props,
+      ...brandRowProps,
       className: cn(
         'relative flex cursor-default items-center gap-2 rounded-lg px-2 py-1 outline-none! scroll-m-1 scroll-mt-[calc(var(--combobox-height,0px)+var(--label-height,4px))] aria-disabled:opacity-25 data-[active-item]:bg-black/[0.075] data-[active-item]:text-black dark:data-[active-item]:bg-white/10 dark:data-[active-item]:text-white sm:text-sm min-w-0 w-full before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-transparent before:rounded-full data-[active-item]:before:bg-black dark:data-[active-item]:before:bg-white',
         props.className,

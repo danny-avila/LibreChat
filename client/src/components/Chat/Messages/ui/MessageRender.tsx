@@ -3,9 +3,14 @@ import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
-import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import {
+  cn,
+  brandResponseAttrs,
+  getHeaderPrefixForScreenReader,
+  getMessageAriaLabel,
+} from '~/utils';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
-import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import { useBrand, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -118,6 +123,7 @@ const MessageRender = memo(function MessageRender({
   });
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const { getControl: getBrandControl } = useBrand();
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
   const hasNoChildren = !(msg?.children?.length ?? 0);
@@ -163,6 +169,14 @@ const MessageRender = memo(function MessageRender({
     return null;
   }
 
+  /** `response_container` applies to assistant turns only; a `null` field or no
+   * active brand is a no-op. Classes are appended alongside native classes (never
+   * replacing) so LibreChat's own styling is untouched. `response_content` is wired
+   * at the rendered-text element inside MessageContent. */
+  const isAssistantTurn = !msg.isCreatedByUser;
+  const brandContainer = getBrandControl('response_container');
+  const containerAttrs = brandResponseAttrs(brandContainer, isAssistantTurn);
+
   const getChatWidthClass = () => {
     if (maximizeChatSpace) {
       return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
@@ -191,7 +205,9 @@ const MessageRender = memo(function MessageRender({
         baseClasses.chat,
         conditionalClasses.focus,
         'message-render',
+        isAssistantTurn && brandContainer?.classes,
       )}
+      {...containerAttrs}
     >
       {!hasParallelContent && (
         <div className="relative flex flex-shrink-0 flex-col items-center">

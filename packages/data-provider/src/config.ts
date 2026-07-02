@@ -1049,10 +1049,9 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
-/** A single control entry within a brand's DOM contract. Core fields are typed
- * explicitly; brand files also carry control-specific descriptive selectors (e.g.
- * `menu_role`, `attr`, `option_row_testid`, `data_node_type`) that vary per brand.
- * `.passthrough()` preserves those unknown keys instead of stripping them. */
+/** A single control entry within a brand's DOM contract. Core fields plus the
+ * automation-selector fields used by menu/response controls are typed explicitly;
+ * `.passthrough()` still preserves any further brand-specific keys not listed. */
 export const brandControlSchema = z
   .object({
     label: z.string().nullable().optional(),
@@ -1063,6 +1062,19 @@ export const brandControlSchema = z
     classes: z.string().nullable().optional(),
     tag: z.string().nullable().optional(),
     notes: z.string().nullable().optional(),
+    /** Raw DOM attribute name a brand keys off (e.g. `data-is-streaming`). */
+    attr: z.string().nullable().optional(),
+    data_node_type: z.string().nullable().optional(),
+    /** Model-picker menu container selectors. */
+    menu_container_testid: z.string().nullable().optional(),
+    menu_role: z.string().nullable().optional(),
+    menu_attr: z.string().nullable().optional(),
+    /** Model-picker per-option-row selectors. */
+    option_row_testid: z.string().nullable().optional(),
+    option_row_role: z.string().nullable().optional(),
+    option_row_class: z.string().nullable().optional(),
+    option_row_attr: z.string().nullable().optional(),
+    option_selected_attr: z.string().nullable().optional(),
   })
   .passthrough();
 
