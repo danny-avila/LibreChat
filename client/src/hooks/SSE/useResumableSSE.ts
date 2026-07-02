@@ -81,26 +81,35 @@ const getStartGenerationStreamId = (data: unknown): string | null => {
 };
 
 const parseSSEErrorData = (body: string): unknown | null => {
-  const lines = body.split(/\r?\n/);
-  if (!lines.some((line) => line.trim() === 'event: error')) {
-    return null;
+  const blocks = body.split(/\r?\n\r?\n/);
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    const event = lines
+      .find((line) => line.startsWith('event:'))
+      ?.slice('event:'.length)
+      .trim();
+    if (event !== 'error') {
+      continue;
+    }
+
+    const data = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice('data:'.length).trimStart())
+      .join('\n')
+      .trim();
+
+    if (!data) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(data);
+    } catch {
+      return data;
+    }
   }
 
-  const data = lines
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice('data:'.length).trimStart())
-    .join('\n')
-    .trim();
-
-  if (!data) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(data);
-  } catch {
-    return data;
-  }
+  return null;
 };
 
 const getSSEErrorText = (payload: unknown): string | null => {

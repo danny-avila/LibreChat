@@ -1052,6 +1052,39 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('uses only the error event data from multi-event SSE start failures', async () => {
+    (request.post as jest.Mock).mockResolvedValueOnce(
+      [
+        'event: message',
+        'data: {"created":true,"message":{"messageId":"msg-1"}}',
+        '',
+        'event: error',
+        'data: {"text":"Request was blocked"}',
+        '',
+        '',
+      ].join('\n'),
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: 'Request was blocked',
+          metadata: { streamStartFailed: true },
+        },
+        submission,
+      }),
+    );
+    unmount();
+  });
+
   it('replays title events from resume state sync', async () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
