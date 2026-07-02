@@ -105,6 +105,20 @@ function buildSharedPayload() {
   return payload;
 }
 
+/**
+ * Fields that are only consumed after login. They must be withheld from the
+ * unauthenticated `GET /api/config` response so anonymous callers cannot read
+ * post-login informational config (security: upstream #13102 / #12688).
+ */
+const POST_LOGIN_ONLY_FIELDS = [
+  'showBirthdayIcon',
+  'helpAndFaqURL',
+  'sharedLinksEnabled',
+  'publicSharedLinksEnabled',
+  'openidReuseTokens',
+  'allowAccountDeletion',
+];
+
 function buildBuildInfoPayload(interfaceConfig) {
   if (interfaceConfig?.buildInfo === false) {
     return undefined;
@@ -166,12 +180,20 @@ router.get('/', async function (req, res) {
       const tenantId = getTenantId();
       const baseConfig = await getAppConfig(tenantId ? { tenantId } : { baseOnly: true });
 
+      /**
+       * Strip post-login-only fields before responding to unauthenticated callers.
+       * cloudFront is likewise withheld (consumed by useAppStartup after login).
+       */
+      const preLoginPayload = { ...sharedPayload };
+      for (const key of POST_LOGIN_ONLY_FIELDS) {
+        delete preLoginPayload[key];
+      }
+
       /** @type {Partial<TStartupConfig>} */
       const payload = {
-        ...sharedPayload,
+        ...preLoginPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
         turnstile: baseConfig?.turnstileConfig,
-        ...(cloudFront ? { cloudFront } : {}),
       };
 
       const interfaceConfig = baseConfig?.interfaceConfig;

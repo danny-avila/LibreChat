@@ -45,6 +45,8 @@ if (allowSharedLinks) {
         const share = await getSharedMessages(req.params.shareId);
 
         if (share) {
+          // Shared conversations are authenticated content; keep CDNs/proxies from caching them.
+          res.set('Cache-Control', 'private, no-store');
           res.status(200).json(share);
         } else {
           res.status(404).end();
