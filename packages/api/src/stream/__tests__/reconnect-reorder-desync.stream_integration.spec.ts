@@ -439,9 +439,10 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
       );
       const streamId = 'epoch-alloc-test';
 
-      const epochOf = () =>
-        (JSON.parse(mockPublisher.publish.mock.calls.at(-1)?.[1] as string) as { epoch?: number })
-          .epoch;
+      const epochOf = () => {
+        const calls = mockPublisher.publish.mock.calls;
+        return (JSON.parse(calls[calls.length - 1][1] as string) as { epoch?: number }).epoch;
+      };
 
       await transport.beginGeneration(streamId);
       await transport.emitChunk(streamId, { index: 0 });
