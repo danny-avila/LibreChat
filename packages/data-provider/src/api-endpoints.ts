@@ -403,3 +403,7 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+// External Verification Service
+export const verificationRequest = (baseUrl: string) =>
+  `${baseUrl}/api/users/verification-request`;
