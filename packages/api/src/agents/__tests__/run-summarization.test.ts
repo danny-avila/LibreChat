@@ -1134,6 +1134,16 @@ describe('toolOutputReferences gating', () => {
     expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
   });
 
+  it('passes a response metadata normalizer callback to agent runs', async () => {
+    const callArgs = await callAndCaptureRunConfig();
+
+    expect(callArgs.callbacks).toEqual([
+      expect.objectContaining({
+        handleLLMEnd: expect.any(Function),
+      }),
+    ]);
+  });
+
   it('omits toolOutputReferences when codeEnvAvailable is false', async () => {
     const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: false });
     expect(callArgs).not.toHaveProperty('toolOutputReferences');

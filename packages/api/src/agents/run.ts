@@ -36,6 +36,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { isUserProvided } from '~/utils/common';
+import { createResponseMetadataCallback } from './metadata';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -1033,6 +1034,7 @@ export async function createRun({
   return Run.create({
     runId,
     graphConfig,
+    callbacks: [createResponseMetadataCallback()],
     tokenCounter,
     customHandlers,
     initialSessions,
