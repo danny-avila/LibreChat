@@ -1,5 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
@@ -301,6 +301,8 @@ export type Agent = {
   skills_enabled?: boolean;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -329,6 +331,7 @@ export type AgentCreateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentUpdateParams = {
@@ -356,6 +359,7 @@ export type AgentUpdateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentListParams = {

@@ -1307,16 +1307,17 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string): Promise<void> => {
-  return request.delete(endpoints.memory(key));
+export const deleteMemory = (key: string, agentId?: string): Promise<void> => {
+  return request.delete(endpoints.memory(key, agentId));
 };
 
 export const updateMemory = (
   key: string,
   value: string,
   originalKey?: string,
+  agentId?: string,
 ): Promise<q.TUserMemory> => {
-  return request.patch(endpoints.memory(originalKey || key), { key, value });
+  return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
 };
 
 export const updateMemoryPreferences = (preferences: {
@@ -1328,6 +1329,7 @@ export const updateMemoryPreferences = (preferences: {
 export const createMemory = (data: {
   key: string;
   value: string;
+  agentId?: string;
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };

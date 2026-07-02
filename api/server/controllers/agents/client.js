@@ -41,6 +41,7 @@ const {
   isHITLEnabled,
   deleteAgentCheckpoint,
   getRequestMemories,
+  getMemoryAgentId,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
@@ -531,10 +532,34 @@ class AgentClient extends BaseClient {
      *  keys + token metadata) is reserved for agents that can call
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     const memories = await this.useMemory();
+    /** Partition the loaded memories belong to (the primary agent's). */
+    const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
     const buildMemoryContext = (text) =>
       text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
-    const memoryContext = buildMemoryContext(memories?.withoutKeys);
-    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
+    /** Resolves formatted memories for an agent's own partition. A defined
+     *  `memories` means the run-level gates (permission, opt-out, config)
+     *  passed; agents on other partitions fetch through the request-scoped
+     *  cache so repeated partitions share one query. */
+    const getAgentPartitionMemories = async (agent) => {
+      if (!memories) {
+        return undefined;
+      }
+      const agentPartition = getMemoryAgentId(agent);
+      if (agentPartition === loadedMemoryAgentId) {
+        return memories;
+      }
+      try {
+        return await getRequestMemories({
+          req: this.options.req,
+          userId: this.options.req.user.id + '',
+          agentId: agentPartition,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+      } catch (error) {
+        logger.error('[AgentClient] Error loading partition memories', error);
+        return undefined;
+      }
+    };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -583,15 +608,17 @@ class AgentClient extends BaseClient {
     const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
-      allAgents.map(({ agent, agentId }) => {
+      allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
         const agentHasMemory = agentHasInlineMemoryTools(agent);
-        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
-        if (
-          agentMemoryContext &&
-          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
-        ) {
-          agentRunContextParts.push(agentMemoryContext);
+        if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+          const partitionMemories = await getAgentPartitionMemories(agent);
+          const agentMemoryContext = buildMemoryContext(
+            agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          );
+          if (agentMemoryContext) {
+            agentRunContextParts.push(agentMemoryContext);
+          }
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -669,6 +696,8 @@ class AgentClient extends BaseClient {
     }
 
     const userId = this.options.req.user.id + '';
+    /** Memory partition of the primary agent; undefined = shared personal pool */
+    const memoryAgentId = getMemoryAgentId(this.options.agent);
     this.processMemory = undefined;
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
@@ -676,6 +705,7 @@ class AgentClient extends BaseClient {
         const { withKeys, withoutKeys } = await getRequestMemories({
           req: this.options.req,
           userId,
+          agentId: memoryAgentId,
           getFormattedMemories: db.getFormattedMemories,
         });
         return { withKeys, withoutKeys };
@@ -781,6 +811,7 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      agentId: memoryAgentId,
       config,
       messageId,
       streamId,
@@ -800,6 +831,7 @@ class AgentClient extends BaseClient {
       ({ withKeys } = await getRequestMemories({
         req: this.options.req,
         userId,
+        agentId: memoryAgentId,
         getFormattedMemories: db.getFormattedMemories,
       }));
     } catch (error) {

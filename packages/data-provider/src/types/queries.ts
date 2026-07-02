@@ -150,6 +150,10 @@ export type TUserMemory = {
   value: string;
   updated_at: string;
   tokenCount?: number;
+  /** Agent partition this memory belongs to; absent = shared personal pool */
+  agentId?: string;
+  /** Display name of the partition's agent, resolved server-side when available */
+  agentName?: string;
 };
 
 export type MemoriesResponse = {
