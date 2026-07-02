@@ -21,6 +21,8 @@ const {
   checkAccessWithRequestCache,
   requiresEphemeralUserConnection,
   containsGraphTokenPlaceholder,
+  MCPResourceListToolName,
+  MCPResourceReadToolName,
 } = require('@librechat/api');
 const {
   Time,
@@ -578,7 +580,15 @@ async function createMCPTools({
   }
 
   const serverTools = [];
-  for (const tool of result.tools) {
+  const toolKeys = result.tools.map((tool) => `${tool.name}${Constants.mcp_delimiter}${serverName}`);
+  for (const resourceToolName of [MCPResourceListToolName, MCPResourceReadToolName]) {
+    const resourceToolKey = `${resourceToolName}${Constants.mcp_delimiter}${serverName}`;
+    if (result.availableTools?.[resourceToolKey]) {
+      toolKeys.push(resourceToolKey);
+    }
+  }
+
+  for (const toolKey of toolKeys) {
     const toolInstance = await createMCPTool({
       res,
       mcpPermissionContext,
@@ -588,7 +598,7 @@ async function createMCPTools({
       configServers,
       streamId,
       availableTools: result.availableTools,
-      toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+      toolKey,
       requestBody,
       requestScopedConnections,
       config: serverConfig,
@@ -816,6 +826,72 @@ function createToolInstance({
 
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
+      if (toolName === MCPResourceListToolName) {
+        const resources = await mcpManager.listResources({
+          serverName,
+          serverConfig: capturedServerConfig,
+          options: {
+            signal: derivedSignal,
+          },
+          user: effectiveUser,
+          requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
+          requestScopedConnections:
+            config?.configurable?.requestScopedConnections ?? capturedRequestScopedConnections,
+          customUserVars,
+          flowManager,
+          tokenMethods: {
+            findToken,
+            createToken,
+            updateToken,
+            deleteTokens,
+          },
+          oauthStart,
+          oauthEnd,
+          graphTokenResolver: getGraphApiToken,
+          oboTokenResolver: exchangeOboToken,
+          oboTrustChecker: createOboTrustChecker(),
+        });
+        return [JSON.stringify({ resources }, null, 2), null];
+      }
+
+      if (toolName === MCPResourceReadToolName) {
+        const uri =
+          typeof toolArguments === 'string'
+            ? toolArguments
+            : typeof toolArguments?.uri === 'string'
+              ? toolArguments.uri
+              : '';
+        if (!uri.trim()) {
+          throw new Error('Missing required MCP resource URI.');
+        }
+        const resource = await mcpManager.readResource({
+          serverName,
+          serverConfig: capturedServerConfig,
+          uri: uri.trim(),
+          options: {
+            signal: derivedSignal,
+          },
+          user: effectiveUser,
+          requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
+          requestScopedConnections:
+            config?.configurable?.requestScopedConnections ?? capturedRequestScopedConnections,
+          customUserVars,
+          flowManager,
+          tokenMethods: {
+            findToken,
+            createToken,
+            updateToken,
+            deleteTokens,
+          },
+          oauthStart,
+          oauthEnd,
+          graphTokenResolver: getGraphApiToken,
+          oboTokenResolver: exchangeOboToken,
+          oboTrustChecker: createOboTrustChecker(),
+        });
+        return [JSON.stringify(resource, null, 2), null];
+      }
 
       const result = await mcpManager.callTool({
         serverName,

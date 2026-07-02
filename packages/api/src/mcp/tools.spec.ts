@@ -1,7 +1,11 @@
 import { Constants } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import type { MCPToolInput, MCPToolCacheDeps } from './tools';
-import { createMCPToolCacheService } from './tools';
+import {
+  MCPResourceListToolName,
+  MCPResourceReadToolName,
+  createMCPToolCacheService,
+} from './tools';
 
 const requestScopedConfig: ParsedServerConfig = {
   type: 'streamable-http',
@@ -70,6 +74,43 @@ describe('createMCPToolCacheService', () => {
       });
     });
 
+    it('constructs managed resource tool names when resources exist', async () => {
+      const deps = createMockDeps();
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'docs',
+        tools: [],
+        resources: [{ uri: 'file://a.md', name: 'A' }],
+      });
+
+      const listKey = `${MCPResourceListToolName}${Constants.mcp_delimiter}docs`;
+      const readKey = `${MCPResourceReadToolName}${Constants.mcp_delimiter}docs`;
+      expect(result[listKey]?.function.name).toBe(listKey);
+      expect(result[readKey]?.function.name).toBe(readKey);
+      expect(result[readKey]?.function.parameters?.required).toEqual(['uri']);
+      expect(deps.setCachedTools).toHaveBeenCalledWith(result, {
+        userId: 'u1',
+        serverName: 'docs',
+      });
+    });
+
+    it('does not construct managed resource tools when resources are empty', async () => {
+      const deps = createMockDeps();
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'docs',
+        tools: [],
+        resources: [],
+      });
+
+      expect(result).toEqual({});
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
     it('builds tool names without caching when the resolved config is request-scoped', async () => {
       const deps = createMockDeps({
         getServerConfig: jest.fn().mockResolvedValue(requestScopedConfig),
@@ -92,6 +133,24 @@ describe('createMCPToolCacheService', () => {
       const expectedKey = `search${Constants.mcp_delimiter}body-scoped`;
       expect(result[expectedKey]).toBeDefined();
       expect(deps.getServerConfig).toHaveBeenCalledWith('body-scoped', 'u1');
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
+    it('builds managed resource tools without caching for request-scoped servers', async () => {
+      const deps = createMockDeps({
+        getServerConfig: jest.fn().mockResolvedValue(requestScopedConfig),
+      });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'body-scoped',
+        tools: [],
+        resources: [{ uri: 'file://request.md', name: 'Request' }],
+      });
+
+      const listKey = `${MCPResourceListToolName}${Constants.mcp_delimiter}body-scoped`;
+      expect(result[listKey]).toBeDefined();
       expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
