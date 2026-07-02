@@ -1726,6 +1726,25 @@ describe('Langfuse run config', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Suite: user trace context
+// ---------------------------------------------------------------------------
+describe('user trace context', () => {
+  it('maps email to RunConfig.user.userId', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      user: { email: 'alice@example.com' },
+    });
+    expect(callArgs.user).toEqual({ userId: 'alice@example.com' });
+  });
+
+  it('falls back to username when email is absent', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      user: { username: 'alice' },
+    });
+    expect(callArgs.user).toEqual({ userId: 'alice' });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Suite: toolOutputReferences gating
 // ---------------------------------------------------------------------------
 describe('toolOutputReferences gating', () => {

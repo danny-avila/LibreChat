@@ -154,17 +154,15 @@ function processUserPlaceholders(
       continue;
     }
 
-    let replacementValue = fieldValue == null ? '' : String(fieldValue);
+    const rawValue = fieldValue == null ? '' : String(fieldValue);
 
     // Encode non-ASCII characters when used in headers
     // Fields like name, username, email can contain non-ASCII characters
     // that would cause ByteString conversion errors in the Fetch API
-    if (isHeader) {
-      const fieldsToEncode = ['name', 'username', 'email'];
-      if (fieldsToEncode.includes(field)) {
-        replacementValue = encodeHeaderValue(replacementValue);
-      }
-    }
+    const replacementValue =
+      isHeader && ['name', 'username', 'email'].includes(field)
+        ? encodeHeaderValue(rawValue)
+        : rawValue;
 
     value = value.replace(new RegExp(placeholder, 'g'), replacementValue);
   }
