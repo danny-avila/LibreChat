@@ -1796,6 +1796,19 @@ export const messageFilterSchema = z.object({
 
 export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
 
+export const tracingSchema = z.object({
+  /**
+   * Which user field to use as the `userId` in trace backends (Langfuse, LangSmith, OTel).
+   * - `email` (default): use the user's email address.
+   * - `username`: use the user's username.
+   * - `name`: use the user's display name (e.g. full name from OIDC `name` claim).
+   * - `id`: use the internal MongoDB ObjectId (not recommended for readability).
+   */
+  userIdField: z.enum(['email', 'username', 'name', 'id']).optional(),
+});
+
+export type TracingConfig = z.infer<typeof tracingSchema>;
+
 export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
@@ -1861,6 +1874,7 @@ export const configSchema = z.object({
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
   messageFilter: messageFilterSchema.optional(),
+  tracing: tracingSchema.optional(),
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
