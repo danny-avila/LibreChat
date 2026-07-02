@@ -8,10 +8,10 @@ import { useMessageContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
 import Thinking from './Parts/Thinking';
-import { useLocalize } from '~/hooks';
+import { useBrand, useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
-import { cn } from '~/utils';
+import { cn, brandResponseAttrs } from '~/utils';
 import store from '~/store';
 
 const ERROR_CONNECTION_TEXT = 'Error connecting to server, try refreshing the page.';
@@ -94,6 +94,13 @@ export const ErrorMessage = ({
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
   const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const { getControl: getBrandControl } = useBrand();
+  /** `response_content` applies to assistant turns only. This is the rendered-text
+   * element (already carries native `markdown message-content`). Brand classes are
+   * appended alongside native ones (never replacing); a `null` field or no active
+   * brand is a no-op. */
+  const brandContent = getBrandControl('response_content');
+  const contentAttrs = brandResponseAttrs(brandContent, !isCreatedByUser);
 
   const showCursorState = useMemo(
     () => showCursor === true && isSubmitting,
@@ -119,7 +126,9 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
           showCursorState && text.length > 0 && 'result-streaming',
           isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
           isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
+          !isCreatedByUser && brandContent?.classes,
         )}
+        {...contentAttrs}
       >
         {content}
       </div>

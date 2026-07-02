@@ -13,12 +13,14 @@ import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
-import { useLocalize } from '~/hooks';
+import { useBrand, useLocalize } from '~/hooks';
+import { interpolateBrandField } from '~/utils';
 
 const defaultInterface = getConfigDefaults().interface;
 
 function ModelSelectorContent() {
   const localize = useLocalize();
+  const { getControl: getBrandControl } = useBrand();
 
   const {
     // LibreChat
@@ -61,6 +63,23 @@ function ModelSelectorContent() {
     [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
   );
 
+  /** Additive brand overrides for automation attributes only. The visible model
+   * name (`selectedDisplayValue`) and tooltip text stay native. A `null` field or
+   * no active brand keeps LibreChat's native values (no-op for non-branded). */
+  const brandSwitcher = getBrandControl('model_switcher');
+  const brandSearch = getBrandControl('model_search');
+  const triggerAttrs = useMemo(
+    () => ({
+      testid: brandSwitcher?.testid ?? undefined,
+      ariaLabel:
+        interpolateBrandField(brandSwitcher?.aria, {
+          modelName: typeof selectedDisplayValue === 'string' ? selectedDisplayValue : undefined,
+        }) ?? localize('com_ui_select_model'),
+    }),
+    [brandSwitcher, selectedDisplayValue, localize],
+  );
+  const menuTestId = brandSearch?.menu_container_testid ?? undefined;
+
   const trigger = (
     <TooltipAnchor
       aria-label={localize('com_ui_select_model')}
@@ -68,7 +87,8 @@ function ModelSelectorContent() {
       render={
         <button
           className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
-          aria-label={localize('com_ui_select_model')}
+          aria-label={triggerAttrs.ariaLabel}
+          data-testid={triggerAttrs.testid}
         >
           {selectedIcon && React.isValidElement(selectedIcon) && (
             <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
@@ -96,6 +116,7 @@ function ModelSelectorContent() {
         combobox={<input id="model-search" placeholder=" " />}
         comboboxLabel={localize('com_endpoint_search_models')}
         trigger={trigger}
+        menuTestId={menuTestId}
       >
         {searchResults ? (
           renderSearchResults(searchResults, localize, searchValue)

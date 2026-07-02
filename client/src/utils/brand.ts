@@ -1,3 +1,5 @@
+import type { TBrandControl } from 'librechat-data-provider';
+
 const BRAND_TOKEN_PATTERN = /\$\{(\w+)\}/g;
 
 /** Runtime values substituted into brand field placeholders (`${token}` syntax).
@@ -32,4 +34,33 @@ export function interpolateBrandField<T extends string | null | undefined>(
     const replacement = context[token];
     return replacement == null ? match : replacement;
   }) as T;
+}
+
+/**
+ * Additive automation attributes for a response element (brand `response_container`
+ * / `response_content`). Returns the non-class DOM handles: `testid` → `data-testid`,
+ * `attr` → a presence attribute (e.g. `data-is-streaming`), and `tag` → `data-brand-tag`
+ * (the real custom-element tag cannot be rendered additively without restructuring
+ * shared message DOM). `classes` are appended alongside native classes at the call
+ * site via `cn`. Returns `{}` when the brand/field is absent or the turn is not a
+ * response, so non-branded output is byte-identical.
+ */
+export function brandResponseAttrs(
+  control: TBrandControl | null,
+  active: boolean,
+): { [attr: string]: string | undefined } {
+  if (!active || !control) {
+    return {};
+  }
+  const attrs: { [attr: string]: string | undefined } = {};
+  if (control.testid != null) {
+    attrs['data-testid'] = control.testid;
+  }
+  if (control.tag != null) {
+    attrs['data-brand-tag'] = control.tag;
+  }
+  if (control.attr != null) {
+    attrs[control.attr] = '';
+  }
+  return attrs;
 }
