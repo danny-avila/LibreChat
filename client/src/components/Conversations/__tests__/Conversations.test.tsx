@@ -10,11 +10,6 @@ jest.mock('react-virtualized', () => {
   const actual = jest.requireActual('react-virtualized');
   return {
     ...actual,
-    AutoSizer: ({
-      children,
-    }: {
-      children: (size: { width: number; height: number }) => React.ReactNode;
-    }) => children({ width: 300, height: 600 }),
     CellMeasurer: ({
       children,
     }: {
@@ -70,6 +65,7 @@ jest.mock('~/hooks', () => ({
   useFavorites: () => mockFavoritesState,
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => mockShowMarketplace,
+  useElementSize: () => ({ ref: jest.fn(), width: 300, height: 600 }),
   TranslationKeys: {},
 }));
 

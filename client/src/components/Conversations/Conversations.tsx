@@ -3,9 +3,15 @@ import throttle from 'lodash/throttle';
 import { ChevronDown, MessagesSquare } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
-import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
+import {
+  useLocalize,
+  TranslationKeys,
+  useFavorites,
+  useShowMarketplace,
+  useElementSize,
+} from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
 import { groupConversationsByDate, cn } from '~/utils';
@@ -48,7 +54,12 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-3">
+        <div
+          ref={registerChild as React.LegacyRef<HTMLDivElement>}
+          style={style}
+          className="px-3"
+          data-testid="convo-list-row"
+        >
           {children}
         </div>
       )}
@@ -169,6 +180,11 @@ const Conversations: FC<ConversationsProps> = ({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+  const {
+    ref: listContainerRef,
+    width: listWidth,
+    height: listHeight,
+  } = useElementSize<HTMLDivElement>();
 
   // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs();
@@ -220,7 +236,7 @@ const Conversations: FC<ConversationsProps> = ({
             return `unknown-${index}`;
           }
           if (item.type === 'header') {
-            return `header-${item.groupName}`;
+            return `header-${item.groupName}-${index === 0 ? 'first' : 'sub'}`;
           }
           if (item.type === 'convo') {
             return `convo-${item.convo.conversationId}`;
@@ -243,6 +259,35 @@ const Conversations: FC<ConversationsProps> = ({
     });
     return () => cancelAnimationFrame(frameId);
   }, [search.query, cache, containerRef]);
+
+  /** Grid only re-derives row offsets when the row count changes; reorders that
+   *  keep the count (e.g. a convo bumped across date groups) need an explicit recompute. */
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [flattenedItems, containerRef]);
+
+  /** CellMeasurerCache(fixedWidth) keys heights by row, not width. Rows first measured
+   *  at a narrow width (e.g. mid expand-animation from a collapsed sidebar) would
+   *  otherwise persist their wrapped heights — re-measure when the width changes. */
+  const measuredWidthRef = useRef(0);
+  useEffect(() => {
+    if (listWidth === 0 || listWidth === measuredWidthRef.current) {
+      return;
+    }
+    measuredWidthRef.current = listWidth;
+    const frameId = requestAnimationFrame(() => {
+      cache.clearAll();
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [listWidth, cache, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
@@ -328,28 +373,24 @@ const Conversations: FC<ConversationsProps> = ({
         />
       </div>
       {isChatsExpanded && (
-        <div className="min-h-0 flex-1">
-          <AutoSizer>
-            {({ width, height }) => (
-              <List
-                ref={containerRef}
-                width={width}
-                height={height}
-                deferredMeasurementCache={cache}
-                rowCount={flattenedItems.length}
-                rowHeight={getRowHeight}
-                rowRenderer={rowRenderer}
-                overscanRowCount={10}
-                aria-readonly={false}
-                className="outline-none"
-                aria-label="Conversations"
-                onRowsRendered={handleRowsRendered}
-                tabIndex={-1}
-                style={{ outline: 'none' }}
-                containerRole="rowgroup"
-              />
-            )}
-          </AutoSizer>
+        <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+          <List
+            ref={containerRef}
+            width={listWidth}
+            height={listHeight}
+            deferredMeasurementCache={cache}
+            rowCount={flattenedItems.length}
+            rowHeight={getRowHeight}
+            rowRenderer={rowRenderer}
+            overscanRowCount={10}
+            aria-readonly={false}
+            className="outline-none"
+            aria-label="Conversations"
+            onRowsRendered={handleRowsRendered}
+            tabIndex={-1}
+            style={{ outline: 'none' }}
+            containerRole="rowgroup"
+          />
         </div>
       )}
     </div>
