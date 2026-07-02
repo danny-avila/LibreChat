@@ -69,6 +69,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
     params: {
       userId: string | Types.ObjectId;
       role?: string | null;
+      idOnTheSource?: string | null;
     },
     session?: ClientSession,
   ) => Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>>;
@@ -376,8 +377,8 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    * Tenant filtering for group memberships is handled automatically by the
    * `applyTenantIsolation` Mongoose plugin on the Group schema. The
    * `tenantContextMiddleware` (chained by `requireJwtAuth` after passport auth)
-   * sets the ALS context, so `getUserGroups()` → `findGroupsByMemberId()` queries
-   * are scoped to the requesting tenant. No explicit tenantId parameter is needed.
+   * sets the ALS context, so the `memberIds` group query below is scoped to the
+   * requesting tenant. No explicit tenantId parameter is needed.
    *
    * IMPORTANT: This relies on the ALS tenant context being active. If this
    * function is called outside a request context (e.g. startup, background jobs),
@@ -386,9 +387,15 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
    *
    * Ref: #12091 (resolved by tenant context middleware in requireJwtAuth)
    *
+   * Pass `role` and `idOnTheSource` from the already-loaded request user to skip
+   * the fallback user lookup entirely, reducing the hot path to a single indexed,
+   * `_id`-projected group query. `idOnTheSource: null` means "known to be absent"
+   * (local user) and also avoids the lookup; only `undefined` triggers it.
+   *
    * @param params - Parameters object
    * @param params.userId - The user ID
-   * @param params.role - Optional user role (if not provided, will query from DB)
+   * @param params.role - Optional user role (looked up when `undefined`)
+   * @param params.idOnTheSource - Optional external member id (looked up when `undefined`)
    * @param session - Optional MongoDB session for transactions
    * @returns Array of principal objects with type and id
    */
@@ -396,10 +403,11 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
     params: {
       userId: string | Types.ObjectId;
       role?: string | null;
+      idOnTheSource?: string | null;
     },
     session?: ClientSession,
   ): Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>> {
-    const { userId, role } = params;
+    const { userId, role, idOnTheSource } = params;
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
     const principals: Array<{
@@ -407,28 +415,39 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')): {
       principalId?: string | Types.ObjectId;
     }> = [{ principalType: PrincipalType.USER, principalId: userObjectId }];
 
-    // If role is not provided, query user to get it
     let userRole = role;
-    if (userRole === undefined) {
+    let memberIdOnTheSource = idOnTheSource;
+
+    /** Single fallback lookup, only for whichever identity fields the caller omitted. */
+    if (userRole === undefined || memberIdOnTheSource === undefined) {
       const User = mongoose.models.User as Model<IUser>;
-      const query = User.findById(userId).select('role');
+      const query = User.findById(userId).select('role idOnTheSource');
       if (session) {
         query.session(session);
       }
-      const user = await query.lean<IUser>();
-      userRole = user?.role;
+      const user = await query.lean<Pick<IUser, 'role' | 'idOnTheSource'>>();
+      if (userRole === undefined) {
+        userRole = user?.role;
+      }
+      if (memberIdOnTheSource === undefined) {
+        memberIdOnTheSource = user?.idOnTheSource ?? null;
+      }
     }
 
-    // Add role as a principal if user has one
     if (userRole && userRole.trim()) {
       principals.push({ principalType: PrincipalType.ROLE, principalId: userRole });
     }
 
-    const userGroups = await getUserGroups(userId, session);
-    if (userGroups && userGroups.length > 0) {
-      userGroups.forEach((group) => {
-        principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });
-      });
+    /** `memberIds` stores `idOnTheSource` for external users, else the raw user id. */
+    const memberId = memberIdOnTheSource || userId.toString();
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const groupsQuery = Group.find({ memberIds: memberId }, { _id: 1 });
+    if (session) {
+      groupsQuery.session(session);
+    }
+    const userGroups = await groupsQuery.lean<Array<Pick<IGroup, '_id'>>>();
+    for (const group of userGroups) {
+      principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });
     }
 
     principals.push({ principalType: PrincipalType.PUBLIC });
