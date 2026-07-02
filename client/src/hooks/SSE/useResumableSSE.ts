@@ -81,12 +81,12 @@ const getStartGenerationStreamId = (data: unknown): string | null => {
 };
 
 const parseSSEErrorData = (body: string): unknown | null => {
-  if (!/^event:\s*error$/m.test(body)) {
+  const lines = body.split(/\r?\n/);
+  if (!lines.some((line) => line.trim() === 'event: error')) {
     return null;
   }
 
-  const data = body
-    .split(/\r?\n/)
+  const data = lines
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice('data:'.length).trimStart())
     .join('\n')

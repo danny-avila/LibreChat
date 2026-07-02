@@ -1027,6 +1027,31 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('surfaces CRLF SSE error bodies returned while starting generation', async () => {
+    (request.post as jest.Mock).mockResolvedValueOnce(
+      'event: error\r\ndata: {"text":"No model spec selected"}\r\n\r\n',
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: 'No model spec selected',
+          metadata: { streamStartFailed: true },
+        },
+        submission,
+      }),
+    );
+    unmount();
+  });
+
   it('replays title events from resume state sync', async () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
