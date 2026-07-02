@@ -1,6 +1,6 @@
 import React from 'react';
 import { Label, InfoHoverCard, ESide } from '@librechat/client';
-import { getRefillEligibilityDate } from 'librechat-data-provider';
+import { getNextRefillDate } from 'librechat-data-provider';
 
 import type { RefillIntervalUnit, TBalanceResponse } from 'librechat-data-provider';
 
@@ -24,7 +24,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
 
   const lastRefillDate = lastRefill ? new Date(lastRefill) : null;
   const refillEligibilityDate = lastRefillDate
-    ? getRefillEligibilityDate(lastRefillDate, refillIntervalValue, refillIntervalUnit)
+    ? getNextRefillDate(lastRefillDate, refillIntervalValue, refillIntervalUnit, new Date())
     : null;
 
   const getLocalizedIntervalUnit = (value: number, unit: RefillIntervalUnit): string =>

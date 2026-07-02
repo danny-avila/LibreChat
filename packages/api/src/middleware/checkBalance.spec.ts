@@ -1,4 +1,4 @@
-import { ViolationTypes } from 'librechat-data-provider';
+import { ViolationTypes, getRefillEligibilityDate } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { CheckBalanceDeps } from './checkBalance';
 import type { ServerRequest } from '~/types/http';
@@ -59,8 +59,9 @@ describe('checkBalance', () => {
   });
 
   describe('auto-refill details in violation', () => {
-    it('should include refill info when auto-refill is enabled and balance is insufficient', async () => {
-      const lastRefill = new Date('2026-01-01T00:00:00.000Z');
+    it('should include refill info with a future eligibility date when not yet eligible', async () => {
+      const lastRefill = new Date();
+      const createAutoRefillTransaction = jest.fn();
       const deps = createMockDeps({
         findBalanceByUser: jest.fn().mockResolvedValue({
           tokenCredits: 10,
@@ -71,29 +72,51 @@ describe('checkBalance', () => {
           lastRefill,
         }),
         getMultiplier: jest.fn().mockReturnValue(1),
-        createAutoRefillTransaction: jest.fn().mockResolvedValue(undefined),
+        createAutoRefillTransaction,
       });
 
       await expect(
         checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
       ).rejects.toThrow();
 
-      expect(deps.logViolation).toHaveBeenCalledWith(
-        req,
-        res,
-        ViolationTypes.TOKEN_BALANCE,
-        expect.objectContaining({
-          balance: 10,
-          tokenCost: 100,
-          refill: {
-            amount: 5000,
-            intervalValue: 30,
-            intervalUnit: 'days',
-            lastRefill: lastRefill.toISOString(),
-            refillEligibilityDate: new Date('2026-01-31T00:00:00.000Z').toISOString(),
-          },
+      expect(createAutoRefillTransaction).not.toHaveBeenCalled();
+      const errorArg = (deps.logViolation as jest.Mock).mock.calls[0][3];
+      expect(errorArg.refill).toEqual({
+        amount: 5000,
+        intervalValue: 30,
+        intervalUnit: 'days',
+        lastRefill: lastRefill.toISOString(),
+        refillEligibilityDate: getRefillEligibilityDate(lastRefill, 30, 'days').toISOString(),
+      });
+    });
+
+    it('should clamp the refill eligibility date to now when overdue after a failed refill', async () => {
+      const lastRefill = new Date('2020-01-01T00:00:00.000Z');
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue({
+          tokenCredits: 10,
+          autoRefillEnabled: true,
+          refillAmount: 5000,
+          refillIntervalValue: 30,
+          refillIntervalUnit: 'days',
+          lastRefill,
         }),
-        0,
+        getMultiplier: jest.fn().mockReturnValue(1),
+        createAutoRefillTransaction: jest.fn().mockRejectedValue(new Error('db down')),
+      });
+
+      const before = Date.now();
+      await expect(
+        checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
+      ).rejects.toThrow();
+      const after = Date.now();
+
+      const errorArg = (deps.logViolation as jest.Mock).mock.calls[0][3];
+      const eligibilityMs = new Date(errorArg.refill.refillEligibilityDate).getTime();
+      expect(eligibilityMs).toBeGreaterThanOrEqual(before);
+      expect(eligibilityMs).toBeLessThanOrEqual(after);
+      expect(eligibilityMs).toBeGreaterThan(
+        getRefillEligibilityDate(lastRefill, 30, 'days').getTime(),
       );
     });
 
@@ -200,6 +223,37 @@ describe('checkBalance', () => {
         expect.objectContaining({ balance: 50, tokenCost: 100 }),
         0,
       );
+      const errorArg = (deps.logViolation as jest.Mock).mock.calls[0][3];
+      expect(errorArg).not.toHaveProperty('refill');
+    });
+
+    it('should include refill info for a lazily-created balance below cost when auto-refill is configured', async () => {
+      const upsertBalanceFields = jest.fn().mockResolvedValue({ tokenCredits: 50 });
+      const deps = createMockDeps({
+        findBalanceByUser: jest.fn().mockResolvedValue(null),
+        getMultiplier: jest.fn().mockReturnValue(1),
+        balanceConfig: {
+          startBalance: 50,
+          autoRefillEnabled: true,
+          refillIntervalValue: 1,
+          refillIntervalUnit: 'days',
+          refillAmount: 1000,
+        },
+        upsertBalanceFields,
+      });
+
+      const before = Date.now();
+      await expect(
+        checkBalance({ req, res, txData: { ...baseTxData, amount: 100 } }, deps),
+      ).rejects.toThrow();
+
+      const errorArg = (deps.logViolation as jest.Mock).mock.calls[0][3];
+      expect(errorArg.refill).toMatchObject({
+        amount: 1000,
+        intervalValue: 1,
+        intervalUnit: 'days',
+      });
+      expect(new Date(errorArg.refill.refillEligibilityDate).getTime()).toBeGreaterThan(before);
     });
 
     it('should use DB-returned tokenCredits over raw startBalance config constant', async () => {
