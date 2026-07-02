@@ -83,7 +83,15 @@ export default function ToolSection({ item }: Props) {
           </button>
         </div>
       )}
-      {showForm && <PluginAuthForm plugin={item.plugin} isEntityTool onSubmit={handleSubmit} />}
+      {showForm && (
+        <PluginAuthForm
+          plugin={item.plugin}
+          isEntityTool
+          isSaving={updateUserPlugins.isLoading}
+          onCancel={editing ? () => setEditing(false) : undefined}
+          onSubmit={handleSubmit}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,13 @@
 import { useForm, useWatch } from 'react-hook-form';
-import { HoverCard, HoverCardTrigger, SecretInput, Input, Label, Button } from '@librechat/client';
+import {
+  Input,
+  Label,
+  Button,
+  Spinner,
+  HoverCard,
+  SecretInput,
+  HoverCardTrigger,
+} from '@librechat/client';
 import type { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provider';
 import type { RegisterOptions } from 'react-hook-form';
 import PluginTooltip from './PluginTooltip';
@@ -70,9 +78,19 @@ type TPluginAuthFormProps = {
   plugin: TPlugin | undefined;
   onSubmit: (installActionData: TPluginAction) => void;
   isEntityTool?: boolean;
+  /** External in-flight state (e.g. a mutation) so the button reflects the real save. */
+  isSaving?: boolean;
+  /** When provided, renders a Cancel button (used when re-editing saved credentials). */
+  onCancel?: () => void;
 };
 
-function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps) {
+function PluginAuthForm({
+  plugin,
+  onSubmit,
+  isEntityTool,
+  isSaving,
+  onCancel,
+}: TPluginAuthFormProps) {
   const {
     register,
     control,
@@ -84,6 +102,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
   const watchedValues = useWatch({ control });
   const authConfig = plugin?.authConfig ?? [];
   const allFieldsOptional = authConfig.length > 0 && authConfig.every((c) => c.optional === true);
+  const saving = isSubmitting || isSaving === true;
 
   const submit = handleSubmit((auth) =>
     onSubmit({
@@ -178,14 +197,20 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
           );
         })}
       </div>
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex justify-end gap-2">
+        {onCancel && (
+          <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
+            {localize('com_ui_cancel')}
+          </Button>
+        )}
         <Button
           type="button"
           variant="submit"
-          disabled={allFieldsOptional ? isSubmitting : !isDirty || !isValid || isSubmitting}
+          disabled={allFieldsOptional ? saving : !isDirty || !isValid || saving}
           onClick={submit}
         >
-          {isSubmitting ? localize('com_ui_saving') : localize('com_ui_save')}
+          {saving && <Spinner className="size-4" aria-hidden="true" />}
+          {saving ? localize('com_ui_saving') : localize('com_ui_save')}
         </Button>
       </div>
     </form>
