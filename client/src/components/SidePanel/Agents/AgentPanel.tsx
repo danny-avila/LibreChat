@@ -5,6 +5,7 @@ import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
+  MemoryScope,
   SystemRoles,
   ResourceType,
   EModelEndpoint,
@@ -108,7 +109,9 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       tool_options,
       skills,
       skills_enabled,
-      memory_scope,
+      /** A hidden stale 'agent' scope must not survive disabling memory —
+       *  runtime partitioning keys off memory_scope alone. */
+      memory_scope: data.memory === true ? memory_scope : MemoryScope.user,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
