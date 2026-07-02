@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
-import type { IChatProject, IConversation } from '../types';
+import type { IChatProject, IConversation, IMessage, ISharedLink } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
@@ -654,6 +654,30 @@ describe('Conversation Operations', () => {
       expect(result?.isTemporary).toBe(false);
     });
 
+    it('should force temporary conversation and set expiredAt when retentionMode is EPHEMERAL even if isTemporary is false', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.EPHEMERAL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).not.toBeNull();
+    });
+
+    it('should force temporary conversation when retentionMode is EPHEMERAL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.EPHEMERAL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).not.toBeNull();
+    });
+
     it('should filter out temporary conversations in getConvosByCursor', async () => {
       // Create some test conversations
       const newNonTemporaryConvo = await Conversation.create({
@@ -822,6 +846,220 @@ describe('Conversation Operations', () => {
       expect(result?.convoMap[legacyTemporaryConvoId]).toBeUndefined();
       expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
       expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
+    });
+  });
+
+  describe('forced retention message cascade', () => {
+    const Message = () => mongoose.models.Message as mongoose.Model<IMessage>;
+
+    beforeEach(async () => {
+      await Message().deleteMany({});
+    });
+
+    it('backfills existing messages when ephemeral converts a permanent conversation', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Existing permanent chat',
+      });
+      await Message().create([
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'one' },
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'two' },
+      ]);
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt).toBeInstanceOf(Date);
+
+      const messages = await Message().find({ conversationId }).lean();
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+      }
+    });
+
+    it('converts an active retained (all-mode) conversation when switching to ephemeral', async () => {
+      const conversationId = uuidv4();
+      const retainedUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Retained all-mode chat',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+      await Message().create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'retained',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+
+      const messages = await Message().find({ conversationId }).lean();
+      expect(messages).toHaveLength(1);
+      expect(messages[0].isTemporary).toBe(true);
+      expect(messages[0].expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+    });
+
+    it('preserves an earlier retained expiration when switching to ephemeral', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+      await SharedLink.deleteMany({});
+      const conversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Sooner retained all-mode chat',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+      await Message().create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'retained',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+      await SharedLink.create({
+        conversationId,
+        user: 'user123',
+        shareId: uuidv4(),
+        expiredAt: soonerExpiry,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const message = await Message().findOne({ conversationId }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const share = await SharedLink.findOne({ conversationId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
+    it('re-caps an already temporary conversation and its messages to a shorter window', async () => {
+      const conversationId = uuidv4();
+      const longerExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Already temporary chat',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+      await Message().create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'older temporary message',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+
+      const messages = await Message().find({ conversationId }).lean();
+      expect(messages).toHaveLength(1);
+      expect(messages[0].isTemporary).toBe(true);
+      expect(messages[0].expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+    });
+
+    it('leaves messages untouched when the conversation is already ephemeral', async () => {
+      const conversationId = uuidv4();
+      const ctx = {
+        userId: 'user123',
+        interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+      };
+      await saveConvo(ctx, { conversationId, title: 'Already ephemeral' });
+
+      const lateMessage = await Message().create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'added after conversion',
+      });
+
+      await saveConvo(ctx, { conversationId, isArchived: true });
+
+      const reloaded = await Message().findById(lateMessage._id).lean();
+      expect(reloaded?.expiredAt ?? null).toBeNull();
+    });
+
+    it('caps an existing permanent shared link when ephemeral converts a conversation', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+      await SharedLink.deleteMany({});
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Existing permanent chat',
+      });
+      const share = await SharedLink.create({
+        conversationId,
+        user: 'user123',
+        shareId: uuidv4(),
+      });
+      expect(share.expiredAt ?? null).toBeNull();
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const reloaded = await SharedLink.findOne({ conversationId }).lean();
+      expect(reloaded?.expiredAt).toBeInstanceOf(Date);
     });
   });
 

@@ -574,7 +574,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockPinnedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, pinned: true },
         { context: `POST /api/convos/pin ${mockConversationId}` },
       );
@@ -589,7 +589,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnpinnedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, pinned: false },
         { context: `POST /api/convos/pin ${mockConversationId}` },
       );

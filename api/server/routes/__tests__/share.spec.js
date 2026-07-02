@@ -38,27 +38,29 @@ jest.mock('@librechat/data-schemas', () => ({
   SYSTEM_TENANT_ID: '__SYSTEM__',
 }));
 
-jest.mock('librechat-data-provider', () => ({
-  PermissionTypes: {
-    SHARED_LINKS: 'SHARED_LINKS',
-  },
-  Permissions: {
-    CREATE: 'CREATE',
-    SHARE_PUBLIC: 'SHARE_PUBLIC',
-  },
-  RetentionMode: {
-    ALL: 'all',
-    TEMPORARY: 'temporary',
-  },
-  FileSources: {
-    local: 'local',
-    s3: 's3',
-    cloudfront: 'cloudfront',
-    azure_blob: 'azure_blob',
-    firebase: 'firebase',
-    text: 'text',
-  },
-}));
+jest.mock('librechat-data-provider', () => {
+  const RetentionMode = { ALL: 'all', TEMPORARY: 'temporary', EPHEMERAL: 'ephemeral' };
+  return {
+    PermissionTypes: {
+      SHARED_LINKS: 'SHARED_LINKS',
+    },
+    Permissions: {
+      CREATE: 'CREATE',
+      SHARE_PUBLIC: 'SHARE_PUBLIC',
+    },
+    RetentionMode,
+    isAllDataRetention: (mode) => mode === RetentionMode.ALL || mode === RetentionMode.EPHEMERAL,
+    isForcedTemporaryRetention: (mode) => mode === RetentionMode.EPHEMERAL,
+    FileSources: {
+      local: 'local',
+      s3: 's3',
+      cloudfront: 'cloudfront',
+      azure_blob: 'azure_blob',
+      firebase: 'firebase',
+      text: 'text',
+    },
+  };
+});
 
 jest.mock('mongoose', () => ({
   models: {
@@ -82,6 +84,7 @@ jest.mock('~/models', () => ({
   getSharedLink: jest.fn(),
   getSharedLinkFile: jest.fn(),
   backfillSharedLinkFiles: jest.fn(),
+  applyForcedRetention: jest.fn(),
   getRoleByName: jest.fn(),
 }));
 
@@ -135,6 +138,7 @@ const {
   updateSharedLink,
   getSharedLinkFile,
   backfillSharedLinkFiles,
+  applyForcedRetention,
   getRoleByName,
 } = require('~/models');
 const { forkSharedConversation } = require('~/server/utils/import/fork');
@@ -352,6 +356,50 @@ describe('share routes', () => {
 
     expect(response.status).toBe(404);
     expect(createSharedLink).not.toHaveBeenCalled();
+  });
+
+  it('converts the source conversation under forced retention when creating a share', async () => {
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
+
+    const response = await request(buildApp({ retentionMode: RetentionMode.EPHEMERAL }))
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(200);
+    expect(applyForcedRetention).toHaveBeenCalledWith(
+      { userId: 'user-123', interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
+      { conversationId: 'convo-123' },
+      expect.objectContaining({ context: expect.any(String) }),
+    );
+  });
+
+  it('does not convert the source conversation when the share is not created', async () => {
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockResolvedValue(null);
+
+    const response = await request(buildApp({ retentionMode: RetentionMode.EPHEMERAL }))
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(404);
+    expect(applyForcedRetention).not.toHaveBeenCalled();
+  });
+
+  it('converts the source conversation under forced retention when updating a share', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+
+    await request(buildApp({ retentionMode: RetentionMode.EPHEMERAL }))
+      .patch('/api/share/share-123')
+      .send({ snapshotFiles: false });
+
+    expect(applyForcedRetention).toHaveBeenCalledWith(
+      { userId: 'user-123', interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
+      { conversationId: 'convo-123' },
+      expect.objectContaining({ context: expect.any(String) }),
+    );
   });
 
   it('rejects new shares for expired conversations in all retention mode', async () => {

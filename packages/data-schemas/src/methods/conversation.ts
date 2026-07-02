@@ -1,13 +1,26 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
-import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
+import type {
+  AppConfig,
+  IChatProjectDocument,
+  IConversation,
+  IMessage,
+  ISharedLink,
+} from '~/types';
 import type { MessageMethods } from './message';
+import {
+  buildRetentionVisibilityFilter,
+  capConversationSharedLinks,
+  capForcedRetentionExpiry,
+  conversationNeedsForcedRetention,
+  createFallbackRetentionDate,
+  forceConversationMessagesTemporary,
+} from '~/utils/retention';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
-import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -236,23 +249,45 @@ export function createConversationMethods(
         }
       }
 
+      const isForcedRetention = isForcedTemporaryRetention(interfaceConfig?.retentionMode);
       const mayChangeProjectMembership =
         Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
         Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
       let previousChatProjectId: string | null = null;
-      if (mayChangeProjectMembership) {
+      let parentRetention: { isTemporary?: boolean | null; expiredAt?: Date | null } | null = null;
+      if (mayChangeProjectMembership || isForcedRetention) {
         const existing = await Conversation.findOne(
           { conversationId, user: userId },
-          'chatProjectId',
-        ).lean<{ chatProjectId?: string | null } | null>();
+          'chatProjectId isTemporary expiredAt',
+        ).lean<{
+          chatProjectId?: string | null;
+          isTemporary?: boolean | null;
+          expiredAt?: Date | null;
+        } | null>();
         previousChatProjectId = existing?.chatProjectId ?? null;
+        parentRetention = existing;
       }
 
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
 
-      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      if (interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = capForcedRetentionExpiry(
+            parentRetention?.expiredAt,
+            createTempChatExpirationDate(interfaceConfig),
+          );
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+          update.expiredAt = capForcedRetentionExpiry(
+            parentRetention?.expiredAt,
+            createFallbackRetentionDate(),
+          );
+        }
+      } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }
@@ -320,6 +355,18 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
+      }
+
+      const forcedExpiredAt = update.expiredAt;
+      if (
+        isForcedRetention &&
+        forcedExpiredAt instanceof Date &&
+        conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
+      ) {
+        const Message = mongoose.models.Message as Model<IMessage>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+        await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
+        await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
       }
 
       if (

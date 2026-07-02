@@ -32,6 +32,7 @@ const {
   getSharedLink,
   getSharedLinkFile,
   backfillSharedLinkFiles,
+  applyForcedRetention,
   getRoleByName,
 } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -66,6 +67,18 @@ const resolveSharedLinkExpiration = (req, conversationId) =>
       createExpirationDate: createTempChatExpirationDate,
       logger,
     },
+  );
+
+/**
+ * Converts the shared source conversation (and its messages) under forced (ephemeral)
+ * retention, so sharing an older permanent chat does not leave it visible and non-expiring
+ * after the public link itself expires; a no-op outside forced retention.
+ */
+const enforceForcedRetention = (req, conversationId, context) =>
+  applyForcedRetention(
+    { userId: req?.user?.id, interfaceConfig: req?.config?.interfaceConfig },
+    { conversationId },
+    { context },
   );
 
 /**
@@ -475,6 +488,11 @@ router.post(
       );
       if (created) {
         await grantCreationPermissions(created._id, req.user.id, grantPublic, expiredAt);
+        await enforceForcedRetention(
+          req,
+          req.params.conversationId,
+          'POST /api/share/:conversationId',
+        );
         res.status(200).json(created);
       } else {
         res.status(404).end();
@@ -516,6 +534,9 @@ router.patch('/:shareId', requireJwtAuth, configMiddleware, async (req, res) => 
     if (updatedShare) {
       if (updatedShare._id && expiredAt !== undefined) {
         await updateSharedLinkPermissionsExpiration(updatedShare._id, expiredAt);
+      }
+      if (existing?.conversationId) {
+        await enforceForcedRetention(req, existing.conversationId, 'PATCH /api/share/:shareId');
       }
       res.status(200).json(updatedShare);
     } else {

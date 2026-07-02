@@ -174,7 +174,7 @@ router.delete('/all', async (req, res) => {
  * @param {boolean} req.body.arg.isArchived - Whether to archive (true) or unarchive (false).
  * @returns {object} 200 - The updated conversation object.
  */
-router.post('/archive', validateConvoAccess, async (req, res) => {
+router.post('/archive', validateConvoAccess, configMiddleware, async (req, res) => {
   const { conversationId, isArchived } = req.body?.arg ?? {};
 
   if (!conversationId) {
@@ -202,7 +202,7 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
   }
 });
 
-router.post('/pin', validateConvoAccess, async (req, res) => {
+router.post('/pin', validateConvoAccess, configMiddleware, async (req, res) => {
   const { conversationId, pinned } = req.body?.arg ?? {};
 
   if (!conversationId) {
@@ -219,7 +219,11 @@ router.post('/pin', validateConvoAccess, async (req, res) => {
 
   try {
     const dbResponse = await db.saveConvo(
-      { userId: req.user.id },
+      {
+        userId: req.user.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       { conversationId, pinned },
       { context: `POST /api/convos/pin ${conversationId}` },
     );
@@ -240,7 +244,7 @@ const MAX_CONVO_TITLE_LENGTH = 1024;
  * @param {string} req.body.arg.title - The new title for the conversation.
  * @returns {object} 201 - The updated conversation object.
  */
-router.post('/update', validateConvoAccess, async (req, res) => {
+router.post('/update', validateConvoAccess, configMiddleware, async (req, res) => {
   const { conversationId, title } = req.body?.arg ?? {};
 
   if (!conversationId) {
@@ -335,7 +339,7 @@ router.post(
  * @param {express.Response<TForkConvoResponse>} res - Express response object.
  * @returns {Promise<void>} - The response after forking the conversation.
  */
-router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
+router.post('/fork', forkIpLimiter, forkUserLimiter, configMiddleware, async (req, res) => {
   try {
     /** @type {TForkConvoRequest} */
     const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
@@ -347,6 +351,7 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
       records: true,
       splitAtTarget,
       option,
+      interfaceConfig: req.config?.interfaceConfig,
     });
 
     res.json(result);
@@ -356,7 +361,7 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
   }
 });
 
-router.post('/duplicate', forkIpLimiter, forkUserLimiter, async (req, res) => {
+router.post('/duplicate', forkIpLimiter, forkUserLimiter, configMiddleware, async (req, res) => {
   const { conversationId, title } = req.body;
 
   try {
@@ -364,6 +369,7 @@ router.post('/duplicate', forkIpLimiter, forkUserLimiter, async (req, res) => {
       userId: req.user.id,
       conversationId,
       title,
+      interfaceConfig: req.config?.interfaceConfig,
     });
     res.status(201).json(result);
   } catch (error) {
