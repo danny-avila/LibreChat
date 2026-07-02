@@ -125,6 +125,12 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+    memory_scope: {
+      type: String,
+      enum: ['user', 'agent'],
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

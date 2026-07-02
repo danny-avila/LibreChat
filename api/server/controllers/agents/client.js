@@ -41,6 +41,7 @@ const {
   isHITLEnabled,
   deleteAgentCheckpoint,
   getRequestMemories,
+  getMemoryAgentId,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
@@ -531,6 +532,9 @@ class AgentClient extends BaseClient {
      *  keys + token metadata) is reserved for agents that can call
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     const memories = await this.useMemory();
+    /** Partition the loaded memories belong to (the primary agent's). Agents
+     *  resolving to a different partition must not receive this context. */
+    const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
     const buildMemoryContext = (text) =>
       text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
     const memoryContext = buildMemoryContext(memories?.withoutKeys);
@@ -589,6 +593,7 @@ class AgentClient extends BaseClient {
         const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
         if (
           agentMemoryContext &&
+          getMemoryAgentId(agent) === loadedMemoryAgentId &&
           (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
         ) {
           agentRunContextParts.push(agentMemoryContext);
@@ -669,6 +674,8 @@ class AgentClient extends BaseClient {
     }
 
     const userId = this.options.req.user.id + '';
+    /** Memory partition of the primary agent; undefined = shared personal pool */
+    const memoryAgentId = getMemoryAgentId(this.options.agent);
     this.processMemory = undefined;
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
@@ -676,6 +683,7 @@ class AgentClient extends BaseClient {
         const { withKeys, withoutKeys } = await getRequestMemories({
           req: this.options.req,
           userId,
+          agentId: memoryAgentId,
           getFormattedMemories: db.getFormattedMemories,
         });
         return { withKeys, withoutKeys };
@@ -781,6 +789,7 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      agentId: memoryAgentId,
       config,
       messageId,
       streamId,
@@ -800,6 +809,7 @@ class AgentClient extends BaseClient {
       ({ withKeys } = await getRequestMemories({
         req: this.options.req,
         userId,
+        agentId: memoryAgentId,
         getFormattedMemories: db.getFormattedMemories,
       }));
     } catch (error) {
