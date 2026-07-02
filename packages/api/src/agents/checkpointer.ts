@@ -42,14 +42,17 @@ const WRITE_ANCHOR_SWEEP_THRESHOLD = 1024;
 const WRITE_ANCHOR_STALE_MS = 5 * 60 * 1000;
 
 /**
- * Does a pending-write batch make its checkpoint worth persisting for resume? True if it carries
- * an interrupt (the HITL pause that resume targets) or any real state/delta channel write (a value
- * a later checkpoint's resume depends on). False for pure bookkeeping batches — `__error__`
- * (a failed, non-paused turn), `__scheduled__`, `__resume__` — which are never HITL-resumable, so
- * persisting their checkpoint would only leak storage until the next prune / Mongo TTL.
+ * Does a pending-write batch make its checkpoint worth persisting (ANCHOR it)? True if it
+ * carries an interrupt (the HITL pause that resume targets) or any real state/delta channel
+ * write (a value a later checkpoint's resume depends on). False for pure bookkeeping batches —
+ * `__error__` (a failed, non-paused turn), `__no_writes__` (a task that completed without state
+ * updates), a lone `__resume__`, `__scheduled__` — which never justify keeping a checkpoint on
+ * their own. A false verdict does NOT mean the batch is discarded: bookkeeping rows are still
+ * required when the checkpoint is retained (see the buffering in `LazyMongoSaver.putWrites`);
+ * this predicate only decides anchoring.
  *
- * `INTERRUPT` is the one `__`-prefixed channel that IS resume-worthy; every other `__…__` channel
- * is langgraph bookkeeping. Constants verified against `@langchain/langgraph-checkpoint`.
+ * `INTERRUPT` is the one `__`-prefixed channel that IS anchor-worthy; every other `__…__`
+ * channel is langgraph bookkeeping. Constants verified against `@langchain/langgraph`.
  */
 function hasResumableWrite(writes: PendingWrite[]): boolean {
   return (writes ?? []).some(([channel]) => {
@@ -83,15 +86,18 @@ function hasResumableWrite(writes: PendingWrite[]): boolean {
  * exit. Keying on the globally-unique checkpoint id (NOT thread_id) stays correct even when two
  * runs race on the same conversation (`thread_id`).
  *
- * **Why "resumable" and not "any" write.** A non-paused turn that ERRORS still records a pending
- * write — on the `__error__` bookkeeping channel — followed by a `put` (probe-confirmed). Such a
- * batch is dropped on BOTH paths: `putWrites` does not forward it to the writes collection (else an
- * orphan write row with no surviving parent checkpoint would linger until the TTL / next prune),
- * and because it is not anchored its `put` discards the checkpoint too. An errored turn is never
- * HITL-resumable, so {@link hasResumableWrite} excludes bookkeeping-only batches (`__error__`,
- * `__scheduled__`, `__resume__`) and the failed turn leaves NOTHING durable — verified against a
- * real `MongoDBSaver` (mongodb-memory-server): a throwing graph persists 0 checkpoints AND 0 write
- * rows, while interrupt→resume is unaffected (its `__interrupt__` write is forwarded as before).
+ * **Bookkeeping batches follow their checkpoint's fate.** Only a {@link hasResumableWrite
+ * resumable} batch ANCHORS a checkpoint (justifies persisting it); a bookkeeping-only batch
+ * (`__error__`, `__no_writes__`, a lone `__resume__`, …) never does — but whether its ROWS matter
+ * depends on whether the checkpoint survives, which `put` decides later. Probe-confirmed both
+ * ways: a failed non-paused turn emits `putWrites([__error__])` + `put` — persisting either half
+ * would leak (an orphan row or a dead checkpoint) — while a paused Send fan-out records completed
+ * siblings as `__no_writes__` markers on the RETAINED interrupt checkpoint, and dropping those
+ * re-executes the siblings on resume (duplicated side effects). So bookkeeping batches are
+ * BUFFERED in memory until the fate is known: forwarded once the checkpoint is anchored (or was
+ * just persisted), dropped when its `put` discards it. Net effect: an errored turn still leaves
+ * NOTHING durable (0 checkpoints, 0 write rows), and a retained checkpoint keeps EVERY pending
+ * write LangGraph recorded for it — byte-for-byte what a plain `MongoDBSaver` would store.
  *
  * For LibreChat's agent graph (standard `Annotation`/`MessagesAnnotation` channels, no
  * `DeltaChannel` — grep-confirmed in `@librechat/agents`) a clean run makes no `putWrites` at all,
@@ -112,43 +118,78 @@ function hasResumableWrite(writes: PendingWrite[]): boolean {
  * not writing it is observationally equivalent; the pre-run prune + Mongo TTL remain the
  * backstops. `getTuple`/`list`/`deleteThread`/`setup` are inherited.
  */
+/** A bookkeeping-only pending-write batch held until its checkpoint's fate is decided. */
+interface BufferedWriteBatch {
+  at: number;
+  batches: Array<{ config: RunnableConfig; writes: PendingWrite[]; taskId: string }>;
+}
+
 export class LazyMongoSaver extends MongoDBSaver {
-  /** checkpoint id → time the `putWrites` flagging it arrived; each consumed by its `put`. */
+  /** checkpoint id → time the resumable `putWrites` anchoring it arrived; consumed by `put`. */
   private readonly writeAnchorIds = new Map<string, number>();
+  /** checkpoint id → time its anchored `put` persisted it, so a bookkeeping batch that lands
+   * after the `put` (concurrent dispatch) is forwarded instead of buffered forever. */
+  private readonly persistedIds = new Map<string, number>();
+  /** checkpoint id → bookkeeping batches parked until the checkpoint persists or is discarded. */
+  private readonly bufferedBookkeeping = new Map<string, BufferedWriteBatch>();
 
   override async putWrites(
     config: RunnableConfig,
     writes: PendingWrite[],
     taskId: string,
   ): Promise<void> {
+    const checkpointId = config.configurable?.checkpoint_id as string | undefined;
+    if (!checkpointId) {
+      // No checkpoint id to tie a fate to — forward untouched (the base saver's contract).
+      return super.putWrites(config, writes, taskId);
+    }
     if (!hasResumableWrite(writes)) {
-      // A bookkeeping-only batch (e.g. `__error__` from a failed, non-paused turn). Its
-      // checkpoint is discarded by `put`, so forwarding to `super.putWrites` would leave an
-      // ORPHAN row in the writes collection — a write whose parent checkpoint never persists —
-      // until the Mongo TTL or the conversation's next pre-run prune. Drop it entirely: a
-      // non-resumable batch is never read back on resume, so nothing durable is needed.
+      // A bookkeeping-only batch (`__error__` from a failed turn, a completed Send-sibling's
+      // `__no_writes__` marker, a lone `__resume__`, …). It must NOT anchor the checkpoint,
+      // but its rows follow the checkpoint's fate: required on a RETAINED checkpoint
+      // (probe-confirmed — dropping a sibling's `__no_writes__` marker re-executes the
+      // sibling on resume), an orphan on a discarded one. Forward when the fate is already
+      // known to be "persist"; otherwise buffer until an anchoring batch or `put` decides.
+      if (this.writeAnchorIds.has(checkpointId) || this.persistedIds.has(checkpointId)) {
+        return super.putWrites(config, writes, taskId);
+      }
+      const buffered = this.bufferedBookkeeping.get(checkpointId);
+      if (buffered) {
+        buffered.batches.push({ config, writes, taskId });
+      } else {
+        sweepStale(this.bufferedBookkeeping, (b) => b.at);
+        this.bufferedBookkeeping.set(checkpointId, {
+          at: Date.now(),
+          batches: [{ config, writes, taskId }],
+        });
+      }
       return;
     }
-    // Anchor the checkpoint so its `put` persists it: an interrupt (a HITL pause), or a real
-    // state/delta channel a later checkpoint depends on. Keyed on the globally-unique checkpoint
-    // id so concurrent runs on the same `thread_id` can't cross-consume anchors. The anchor is
-    // recorded BEFORE the awaited super call on purpose: LangGraph dispatches the matching `put`
-    // concurrently with `putWrites` (probe-confirmed), so recording after the await could let a
-    // slow-I/O interrupt `put` miss its anchor and be wrongly discarded.
-    const checkpointId = config.configurable?.checkpoint_id as string | undefined;
-    if (checkpointId) {
-      this.recordWriteAnchor(checkpointId);
-    }
+    // A resumable batch — an interrupt (a HITL pause) or a real state/delta channel a later
+    // checkpoint depends on — anchors the checkpoint so its `put` persists it. Keyed on the
+    // globally-unique checkpoint id so concurrent runs on the same `thread_id` can't
+    // cross-consume anchors. The anchor is recorded BEFORE the awaited super call on purpose:
+    // LangGraph dispatches the matching `put` concurrently with `putWrites` (probe-confirmed),
+    // so recording after the await could let a slow-I/O interrupt `put` miss its anchor and be
+    // wrongly discarded.
+    this.recordWriteAnchor(checkpointId);
     try {
+      const buffered = this.bufferedBookkeeping.get(checkpointId);
+      this.bufferedBookkeeping.delete(checkpointId);
+      if (buffered) {
+        // The checkpoint's fate is now "persist" — flush the bookkeeping batches that
+        // arrived before this anchor so the stored pending writes are complete.
+        await Promise.all(
+          buffered.batches.map((b) => super.putWrites(b.config, b.writes, b.taskId)),
+        );
+      }
       return await super.putWrites(config, writes, taskId);
     } catch (err) {
       // The write batch never landed — best-effort un-anchor so the concurrent `put` doesn't
       // persist a checkpoint whose pending writes are missing (an unresumable phantom pause).
       // If `put` already consumed the anchor, the thrown error still fails the run and the
       // pre-run prune / Mongo TTL reclaim the orphan.
-      if (checkpointId) {
-        this.writeAnchorIds.delete(checkpointId);
-      }
+      this.writeAnchorIds.delete(checkpointId);
       throw err;
     }
   }
@@ -160,13 +201,18 @@ export class LazyMongoSaver extends MongoDBSaver {
   ): Promise<RunnableConfig> {
     if (this.writeAnchorIds.delete(checkpoint.id)) {
       // Carries a resumable write (interrupt / real-channel delta anchor) — persist so resume
-      // can read it.
+      // can read it, and remember the id briefly so any bookkeeping batch dispatched after
+      // this `put` is forwarded rather than parked.
+      sweepStale(this.persistedIds, (t) => t);
+      this.persistedIds.set(checkpoint.id, Date.now());
       return super.put(config, checkpoint, metadata);
     }
     // No resumable writes ⇒ a clean exit (a non-paused completion, a resumed turn's clean
-    // finish, or an error-only checkpoint): discard. Return the config LangGraph expects
-    // (pointing at the checkpoint it believes was saved) so the run finishes normally;
-    // nothing durable is written.
+    // finish, or an error-only turn): discard, and drop the parked bookkeeping batches with
+    // it — this is what keeps a failed turn from leaving orphan rows in the writes
+    // collection. Return the config LangGraph expects (pointing at the checkpoint it believes
+    // was saved) so the run finishes normally; nothing durable is written.
+    this.bufferedBookkeeping.delete(checkpoint.id);
     return {
       ...config,
       configurable: {
@@ -177,22 +223,32 @@ export class LazyMongoSaver extends MongoDBSaver {
   }
 
   /**
-   * Track a checkpoint id that received pending writes. Evicts ONLY genuinely-stale ids
+   * Track a checkpoint id whose `put` must persist it. Evicts ONLY genuinely-stale ids
    * (older than {@link WRITE_ANCHOR_STALE_MS}, i.e. from a crashed run whose `put` never
    * landed) — never a recent in-flight id — so a slow-I/O interrupt `put` is never
    * mis-classified as a clean exit. If nothing is stale the map is allowed to grow rather
    * than drop a valid id; the next sweep reclaims the crashed ones.
    */
   private recordWriteAnchor(checkpointId: string): void {
-    const now = Date.now();
-    if (this.writeAnchorIds.size >= WRITE_ANCHOR_SWEEP_THRESHOLD) {
-      for (const [id, recordedAt] of this.writeAnchorIds) {
-        if (now - recordedAt > WRITE_ANCHOR_STALE_MS) {
-          this.writeAnchorIds.delete(id);
-        }
-      }
+    sweepStale(this.writeAnchorIds, (t) => t);
+    this.writeAnchorIds.set(checkpointId, Date.now());
+  }
+}
+
+/**
+ * Evict genuinely-stale entries from a fate-tracking map once it is crowded
+ * ({@link WRITE_ANCHOR_SWEEP_THRESHOLD}). Entries from a crashed run (older than
+ * {@link WRITE_ANCHOR_STALE_MS}) are reclaimed; recent in-flight entries never are.
+ */
+function sweepStale<T>(map: Map<string, T>, timeOf: (value: T) => number): void {
+  if (map.size < WRITE_ANCHOR_SWEEP_THRESHOLD) {
+    return;
+  }
+  const now = Date.now();
+  for (const [id, value] of map) {
+    if (now - timeOf(value) > WRITE_ANCHOR_STALE_MS) {
+      map.delete(id);
     }
-    this.writeAnchorIds.set(checkpointId, now);
   }
 }
 

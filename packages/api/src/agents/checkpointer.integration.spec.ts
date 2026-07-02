@@ -158,10 +158,9 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
   it('does NOT persist an error-only checkpoint OR its write row (failed non-paused turn — no leak)', async () => {
     // A turn that throws before any pause records a pending write on the `__error__`
     // bookkeeping channel, then a `put` (probe-confirmed against @langchain/langgraph). That
-    // checkpoint is never HITL-resumable, so the lazy saver must leave NOTHING durable: not the
-    // checkpoint (discarded by `put`) and not the write row (`putWrites` drops a bookkeeping-only
-    // batch instead of forwarding it, which would otherwise orphan a row in the writes collection
-    // until the next fresh-turn prune / Mongo TTL).
+    // checkpoint is never HITL-resumable, so the lazy saver must leave NOTHING durable: the
+    // bookkeeping batch is PARKED (not forwarded) until the checkpoint's fate is known, and the
+    // discarding `put` drops both — no dead checkpoint, no orphan row in the writes collection.
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
     const { config, checkpoint, metadata } = putArgs(threadId);
@@ -180,6 +179,43 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     expect(
       await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
     ).toBe(0);
+  });
+
+  it('preserves bookkeeping writes on a RETAINED checkpoint, in either arrival order', async () => {
+    // Codex M2 (probe-confirmed): when one Send-sibling interrupts, siblings that completed
+    // without state updates are recorded as `__no_writes__` pending writes on the SAME retained
+    // checkpoint. Those markers must persist — dropping them makes LangGraph re-execute the
+    // completed siblings on resume (duplicated side effects). The saver parks bookkeeping
+    // batches until the checkpoint is anchored, so both orders must end durable.
+    const NO_WRITES = '__no_writes__'; // langgraph constants.NO_WRITES (runner marker)
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+
+    const runOrder = async (bookkeepingFirst: boolean) => {
+      const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+      const { config, checkpoint, metadata } = putArgs(threadId);
+      const writeCfg = {
+        configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id },
+      };
+      const bookkeeping = () => saver!.putWrites(writeCfg, [[NO_WRITES, null]], 'task-sibling');
+      const anchor = () => saver!.putWrites(writeCfg, [[INTERRUPT, 'approve?']], 'task-gate');
+      if (bookkeepingFirst) {
+        await bookkeeping();
+        await anchor();
+      } else {
+        await anchor();
+        await bookkeeping();
+      }
+      await saver!.put(config, checkpoint, metadata);
+
+      const tuple = await saver!.getTuple(readConfig(threadId));
+      expect(tuple).toBeDefined();
+      const channels = (tuple?.pendingWrites ?? []).map((w) => w[1]);
+      expect(channels).toContain(INTERRUPT);
+      expect(channels).toContain(NO_WRITES);
+    };
+
+    await runOrder(true); // parked, then flushed by the anchoring batch
+    await runOrder(false); // forwarded directly (checkpoint already anchored)
   });
 
   it('un-anchors a checkpoint whose putWrites failed (no phantom pause persisted)', async () => {
@@ -325,5 +361,52 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     // Resume with the approval — the paused run rehydrates from the durable interrupt checkpoint.
     const out = await graph.invoke(new Command({ resume: 'YES' }), cfg);
     expect(out.approved).toBe('YES');
+  });
+
+  it('end-to-end: completed Send-siblings are NOT re-executed after a pause (no duplicate side effects)', async () => {
+    // Codex M2 end-to-end: a Send fan-out where 'b' pauses for approval while 'a'/'c' complete
+    // with side effects but NO state writes (→ `__no_writes__` markers on the retained
+    // checkpoint). On resume — through a REBUILT graph, as resume.js rebuilds the Run — the
+    // completed siblings must not run again. Before the buffering fix this probe measured
+    // effects {a:2, c:2}: the dropped markers made LangGraph re-execute both siblings.
+    const { StateGraph, START, END, interrupt, Annotation, Send, Command } = await import(
+      '@langchain/langgraph'
+    );
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+
+    const effects: Record<string, number> = {};
+    const State = Annotation.Root({
+      items: Annotation({ reducer: (a: string[], b: string[]) => (a ?? []).concat(b ?? []) }),
+      results: Annotation({ reducer: (a: string[], b: string[]) => (a ?? []).concat(b ?? []) }),
+    });
+    const build = () =>
+      new StateGraph(State)
+        .addNode('fan', () => ({}))
+        .addNode('work', (s: { item?: string }) => {
+          if (s.item === 'b') {
+            return { results: [`b:${interrupt('approve b?')}`] };
+          }
+          effects[s.item!] = (effects[s.item!] ?? 0) + 1; // side effect, no state update
+          return {}; // no channel writes → langgraph records a `__no_writes__` marker
+        })
+        .addConditionalEdges(
+          'fan',
+          (s) => s.items.map((i: string) => new Send('work', { item: i })),
+          ['work'],
+        )
+        .addEdge(START, 'fan')
+        .addEdge('work', END)
+        .compile({ checkpointer: saver as never });
+
+    const thread = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const cfg = { configurable: { thread_id: thread }, durability: 'exit' as const };
+
+    await build().invoke({ items: ['a', 'b', 'c'], results: [] }, cfg); // pauses on 'b'
+    expect(effects).toEqual({ a: 1, c: 1 });
+
+    // Resume on a REBUILT graph sharing the durable saver (mirrors resume.js).
+    const out = await build().invoke(new Command({ resume: 'YES' }), cfg);
+    expect(out.results).toEqual(['b:YES']);
+    expect(effects).toEqual({ a: 1, c: 1 }); // siblings did NOT re-execute
   });
 });
