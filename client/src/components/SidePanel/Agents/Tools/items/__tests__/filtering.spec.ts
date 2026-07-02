@@ -1,6 +1,6 @@
-import { applyFilter, matchesView } from '../filtering';
-import { makePlugin, makeSkill } from 'test/itemFactories';
 import type { AgentItem } from '../types';
+import { makePlugin, makeSkill } from 'test/itemFactories';
+import { applyFilter, matchesView } from '../filtering';
 
 const items: AgentItem[] = [
   {
@@ -81,9 +81,45 @@ describe('applyFilter', () => {
     expect(result.map((i) => i.id)).toEqual(['s1']);
   });
 
-  test('"favorites" view returns only favorited ids', () => {
-    const result = applyFilter(items, { view: 'favorites' }, { favoritedIds: new Set(['dalle']) });
+  test('"favorites" view returns only items matching compound kind:id keys', () => {
+    const result = applyFilter(
+      items,
+      { view: 'favorites' },
+      { favoritedIds: new Set(['tool:dalle']) },
+    );
     expect(result.map((i) => i.id)).toEqual(['dalle']);
+  });
+
+  test('"favorites" view does not match bare ids (cross-kind collision guard)', () => {
+    const result = applyFilter(items, { view: 'favorites' }, { favoritedIds: new Set(['dalle']) });
+    expect(result.length).toBe(0);
+  });
+
+  test('"favorites" view distinguishes the same id across kinds', () => {
+    const collision: AgentItem[] = [
+      {
+        kind: 'tool',
+        id: 'shared-id',
+        name: 'Tool',
+        description: '',
+        iconKey: 'tool',
+        plugin: makePlugin({ pluginKey: 'shared-id' }),
+      },
+      {
+        kind: 'skill',
+        id: 'shared-id',
+        name: 'Skill',
+        description: '',
+        iconKey: 'skill',
+        skill: makeSkill({ _id: 'shared-id' }),
+      },
+    ];
+    const result = applyFilter(
+      collision,
+      { view: 'favorites' },
+      { favoritedIds: new Set(['skill:shared-id']) },
+    );
+    expect(result.map((i) => i.kind)).toEqual(['skill']);
   });
 
   test('"favorites" view with no favorited set returns nothing', () => {
@@ -116,8 +152,8 @@ describe('matchesView', () => {
     expect(matchesView(tool, 'mine', {})).toBe(false);
   });
 
-  test('"favorites" matches only ids in the favorited set', () => {
-    const context = { favoritedIds: new Set(['s1']) };
+  test('"favorites" matches only compound keys in the favorited set', () => {
+    const context = { favoritedIds: new Set(['skill:s1']) };
     expect(matchesView(ownedSkill, 'favorites', context)).toBe(true);
     expect(matchesView(unownedSkill, 'favorites', context)).toBe(false);
   });

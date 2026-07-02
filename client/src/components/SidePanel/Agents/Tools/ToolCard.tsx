@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import { BadgeCheck, Check, Globe, Info, Settings, User } from 'lucide-react';
+import { BadgeCheck, Check, Globe, Info, Settings, Star, User } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import { hasConfigurableSettings } from './items/configurable';
@@ -12,6 +12,8 @@ interface ToolCardProps {
   selected: boolean;
   onToggle: (item: AgentItem) => void;
   onConfigure?: (item: AgentItem) => void;
+  isFavorited?: boolean;
+  onToggleFavorite?: (item: AgentItem) => void;
 }
 
 function useDisplayStrings(item: AgentItem): { name: string; description: string } {
@@ -76,12 +78,20 @@ function ItemIconView({ item, size }: ItemIconProps) {
   );
 }
 
-function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) {
+function ToolCardImpl({
+  item,
+  selected,
+  onToggle,
+  onConfigure,
+  isFavorited = false,
+  onToggleFavorite,
+}: ToolCardProps) {
   const localize = useLocalize();
   const { name, description } = useDisplayStrings(item);
   const { user } = useAuthContext();
   const isNative = item.kind === 'builtin';
   const kindLabel = localize(KIND_LABEL_KEYS[item.kind]);
+  const canFavorite = onToggleFavorite !== undefined && item.kind !== 'action';
   const canConfigure = hasConfigurableSettings(item) && onConfigure !== undefined;
   const skill = item.kind === 'skill' ? item.skill : undefined;
   const isPublicSkill = skill?.isPublic === true;
@@ -180,25 +190,50 @@ function ToolCardImpl({ item, selected, onToggle, onConfigure }: ToolCardProps) 
           </div>
         ) : null}
       </button>
-      {(canConfigure || showInfoOnly) && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onConfigure?.(item);
-          }}
-          aria-label={
-            canConfigure ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
-          }
-          className={cn(
-            'absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-lg text-text-secondary',
-            'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
-            'group-focus-within:opacity-100 group-hover:opacity-100',
-            'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
+      {(canFavorite || canConfigure || showInfoOnly) && (
+        <div className="absolute bottom-2 right-2 flex items-center gap-1">
+          {canFavorite && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleFavorite?.(item);
+              }}
+              aria-pressed={isFavorited}
+              aria-label={localize(isFavorited ? 'com_ui_unfavorite' : 'com_ui_favorite')}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-lg text-text-secondary',
+                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
+                'group-focus-within:opacity-100 group-hover:opacity-100',
+                'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
+                isFavorited &&
+                  'text-amber-600 opacity-100 hover:text-amber-500 dark:text-amber-500 dark:hover:text-amber-400',
+              )}
+            >
+              <Star className={cn('size-4', isFavorited && 'fill-current')} aria-hidden="true" />
+            </button>
           )}
-        >
-          <DetailIcon className="size-4" aria-hidden="true" />
-        </button>
+          {(canConfigure || showInfoOnly) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConfigure?.(item);
+              }}
+              aria-label={
+                canConfigure ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
+              }
+              className={cn(
+                'flex size-7 items-center justify-center rounded-lg text-text-secondary',
+                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
+                'group-focus-within:opacity-100 group-hover:opacity-100',
+                'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
+              )}
+            >
+              <DetailIcon className="size-4" aria-hidden="true" />
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

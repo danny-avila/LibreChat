@@ -1,7 +1,11 @@
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
+import type { TToolFavorite } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
+
+const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
+  a.itemType === b.itemType && a.itemId === b.itemId;
 
 export const useGetFavoritesQuery = (
   config?: Omit<UseQueryOptions<FavoritesState, Error>, 'queryKey' | 'queryFn'>,
@@ -40,12 +44,12 @@ export const useUpdateFavoritesMutation = () => {
   );
 };
 
-export const useGetSkillFavoritesQuery = (
-  config?: Omit<UseQueryOptions<string[], Error>, 'queryKey' | 'queryFn'>,
+export const useGetToolFavoritesQuery = (
+  config?: Omit<UseQueryOptions<TToolFavorite[], Error>, 'queryKey' | 'queryFn'>,
 ) => {
-  return useQuery<string[], Error>(
-    [QueryKeys.skillFavorites],
-    () => dataService.getSkillFavorites() as Promise<string[]>,
+  return useQuery<TToolFavorite[], Error>(
+    [QueryKeys.toolFavorites],
+    () => dataService.getToolFavorites(),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -55,23 +59,41 @@ export const useGetSkillFavoritesQuery = (
   );
 };
 
-export const useUpdateSkillFavoritesMutation = () => {
+export const useAddToolFavoriteMutation = () => {
   const queryClient = useQueryClient();
-  return useMutation(
-    (skillFavorites: string[]) =>
-      dataService.updateSkillFavorites(skillFavorites) as Promise<string[]>,
-    {
-      onMutate: async (newFavorites) => {
-        await queryClient.cancelQueries([QueryKeys.skillFavorites]);
-        const previous = queryClient.getQueryData<string[]>([QueryKeys.skillFavorites]);
-        queryClient.setQueryData([QueryKeys.skillFavorites], newFavorites);
-        return { previous };
-      },
-      onError: (_err, _newFavorites, context) => {
-        if (context?.previous !== undefined) {
-          queryClient.setQueryData([QueryKeys.skillFavorites], context.previous);
-        }
-      },
+  return useMutation((favorite: TToolFavorite) => dataService.addToolFavorite(favorite), {
+    onMutate: async (favorite) => {
+      await queryClient.cancelQueries([QueryKeys.toolFavorites]);
+      const previous = queryClient.getQueryData<TToolFavorite[]>([QueryKeys.toolFavorites]);
+      queryClient.setQueryData<TToolFavorite[]>([QueryKeys.toolFavorites], (current) => {
+        const list = current ?? [];
+        return list.some((f) => sameFavorite(f, favorite)) ? list : [...list, favorite];
+      });
+      return { previous };
     },
-  );
+    onError: (_err, _favorite, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData([QueryKeys.toolFavorites], context.previous);
+      }
+    },
+  });
+};
+
+export const useRemoveToolFavoriteMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation((favorite: TToolFavorite) => dataService.removeToolFavorite(favorite), {
+    onMutate: async (favorite) => {
+      await queryClient.cancelQueries([QueryKeys.toolFavorites]);
+      const previous = queryClient.getQueryData<TToolFavorite[]>([QueryKeys.toolFavorites]);
+      queryClient.setQueryData<TToolFavorite[]>([QueryKeys.toolFavorites], (current) =>
+        (current ?? []).filter((f) => !sameFavorite(f, favorite)),
+      );
+      return { previous };
+    },
+    onError: (_err, _favorite, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData([QueryKeys.toolFavorites], context.previous);
+      }
+    },
+  });
 };

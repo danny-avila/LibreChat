@@ -16,6 +16,9 @@ interface MarketplaceCatalogProps {
   view?: View;
   isLoadingSkills?: boolean;
   skillsInView?: boolean;
+  /** Compound `kind:id` keys of the user's favorited items. */
+  favoriteKeys?: Set<string>;
+  onToggleFavorite?: (item: AgentItem) => void;
   /** Overrides the default per-view empty message (e.g. "No skills found"). */
   emptyKey?: TranslationKeys;
   /** Accessible label for the grid; defaults to the marketplace label. */
@@ -54,6 +57,8 @@ export default function MarketplaceCatalog({
   view = 'marketplace',
   isLoadingSkills = false,
   skillsInView = false,
+  favoriteKeys,
+  onToggleFavorite,
   emptyKey,
   ariaLabel,
 }: MarketplaceCatalogProps) {
@@ -84,6 +89,8 @@ export default function MarketplaceCatalog({
             selected={selectedIds.has(itemKey(item))}
             onToggle={onToggle}
             onConfigure={onConfigure}
+            isFavorited={favoriteKeys?.has(itemKey(item)) ?? false}
+            onToggleFavorite={onToggleFavorite}
           />
         </li>
       ))}

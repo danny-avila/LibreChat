@@ -36,11 +36,21 @@ jest.mock('~/Providers', () => ({
   }),
 }));
 
+const mockToggleFavorite = jest.fn();
+let mockFavoriteKeys = new Set<string>();
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useHasAccess: () => true,
   useCategories: () => ({ categories: [] }),
   useAuthContext: () => ({ user: { id: 'u1' } }),
+  useToolFavorites: () => ({
+    favoriteKeys: mockFavoriteKeys,
+    toggle: mockToggleFavorite,
+    isFavorite: (item: { kind: string; id: string }) =>
+      mockFavoriteKeys.has(`${item.kind}:${item.id}`),
+    isLoading: false,
+  }),
 }));
 
 jest.mock('@ariakit/react/menu', () => ({
@@ -49,8 +59,7 @@ jest.mock('@ariakit/react/menu', () => ({
 
 jest.mock('~/data-provider', () => ({
   useListSkillsQuery: () => ({ data: { skills: [] }, isLoading: false }),
-  useGetFavoritesQuery: () => ({ data: [] }),
-  useGetSkillFavoritesQuery: () => ({ data: [] }),
+  useGetToolFavoritesQuery: () => ({ data: [] }),
 }));
 
 jest.mock('react-router-dom', () => ({
@@ -144,6 +153,8 @@ describe('ToolsMarketplaceDialog', () => {
     mockSetValue.mockClear();
     mockGetValues.mockClear();
     mockGetValues.mockReturnValue([]);
+    mockToggleFavorite.mockClear();
+    mockFavoriteKeys = new Set<string>();
   });
 
   test('renders cards from catalog when open', () => {
@@ -185,5 +196,26 @@ describe('ToolsMarketplaceDialog', () => {
       expect.arrayContaining(['dalle']),
       expect.objectContaining({ shouldDirty: true }),
     );
+  });
+
+  test('clicking a card star toggles the favorite without selecting the tool', () => {
+    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'com_ui_favorite' })[0]);
+    expect(mockToggleFavorite).toHaveBeenCalledTimes(1);
+    expect(mockSetValue).not.toHaveBeenCalled();
+  });
+
+  test('the Favorites view shows only favorited items', () => {
+    mockFavoriteKeys = new Set(['tool:dalle']);
+    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_tools_view_favorites/ }));
+    expect(screen.getByText('DALL-E')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_run_code')).not.toBeInTheDocument();
+  });
+
+  test('the Favorites view is empty without favorites', () => {
+    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_tools_view_favorites/ }));
+    expect(screen.getByText('com_ui_tools_view_favorites_empty')).toBeInTheDocument();
   });
 });

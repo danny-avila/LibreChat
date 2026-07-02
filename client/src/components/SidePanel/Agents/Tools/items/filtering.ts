@@ -1,4 +1,5 @@
 import type { AgentItem, ItemFilter } from './types';
+import { itemKey } from './selectors';
 
 /**
  * Extra, non-serializable inputs the view filter needs. Kept out of
@@ -6,7 +7,11 @@ import type { AgentItem, ItemFilter } from './types';
  * — like the set of favorited ids — can be threaded in by callers.
  */
 export interface FilterContext {
-  /** Ids of items the user has favorited; required for the `favorites` view. */
+  /**
+   * Compound `kind:id` keys (the `itemKey` format) of the user's favorited
+   * items; required for the `favorites` view. Compound keys prevent an item
+   * of one kind from matching a favorite of another kind with the same id.
+   */
   favoritedIds?: Set<string>;
 }
 
@@ -42,7 +47,7 @@ export function matchesView(
     case 'mine':
       return item.ownedByUser === true;
     case 'favorites':
-      return context.favoritedIds?.has(item.id) === true;
+      return context.favoritedIds?.has(itemKey(item)) === true;
     default:
       return true;
   }

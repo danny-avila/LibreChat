@@ -14,13 +14,12 @@ import { useAgentItems, useUninstallToolCredentials } from './hooks';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
 import { itemKey, mcpServerToken } from './items/selectors';
 import { computeToggleAction } from './items/mutations';
-import { useGetFavoritesQuery } from '~/data-provider';
+import { useLocalize, useToolFavorites } from '~/hooks';
 import MarketplaceSidebar from './MarketplaceSidebar';
 import MarketplaceCatalog from './MarketplaceCatalog';
 import ItemDialog from './ItemDialog/ItemDialog';
 import { applyFilter } from './items/filtering';
 import { NEW_ACTION_ID } from './items/types';
-import { useLocalize } from '~/hooks';
 
 interface ToolsMarketplaceDialogProps {
   open: boolean;
@@ -43,21 +42,7 @@ export default function ToolsMarketplaceDialog({
   /** Skills are excluded here — they have their own picker (`SkillsDialog`). */
   const { catalog, selected: selectedItems } = useAgentItems({ agentId });
 
-  const { data: favorites } = useGetFavoritesQuery();
-
-  /** Phase 2 (favorites backend): the favorites API only stores agent favorites
-   * today, so nothing here ever matches a catalog item id and the sidebar's
-   * "Favorites" view stays empty — same for "Made by you", which only skills
-   * populate (and this dialog excludes skills). Both views are kept visible as
-   * scaffolding until tool favoriting/ownership lands server-side. */
-  const favoritedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const favorite of favorites ?? []) {
-      if (favorite.agentId != null) ids.add(favorite.agentId);
-      if (favorite.spec != null) ids.add(favorite.spec);
-    }
-    return ids;
-  }, [favorites]);
+  const { favoriteKeys, toggle: toggleFavorite } = useToolFavorites();
 
   const [view, setView] = useState<View>('marketplace');
   const [kind, setKind] = useState<Kind>('all');
@@ -97,8 +82,9 @@ export default function ToolsMarketplaceDialog({
   );
 
   const filtered = useMemo(
-    () => applyFilter(catalog, { search, kind, category: 'all', view }, { favoritedIds }),
-    [catalog, search, kind, view, favoritedIds],
+    () =>
+      applyFilter(catalog, { search, kind, category: 'all', view }, { favoritedIds: favoriteKeys }),
+    [catalog, search, kind, view, favoriteKeys],
   );
 
   const handleToggle = useCallback(
@@ -225,6 +211,8 @@ export default function ToolsMarketplaceDialog({
                 onToggle={handleCardClick}
                 onConfigure={handleConfigure}
                 view={view}
+                favoriteKeys={favoriteKeys}
+                onToggleFavorite={toggleFavorite}
               />
             </div>
           </div>

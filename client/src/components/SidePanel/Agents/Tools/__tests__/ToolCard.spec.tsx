@@ -103,4 +103,75 @@ describe('ToolCard', () => {
     render(<ToolCard item={own} selected={false} onToggle={jest.fn()} />);
     expect(screen.queryByText('Me')).not.toBeInTheDocument();
   });
+
+  describe('favorite star', () => {
+    test('renders with add label and aria-pressed=false when not favorited', () => {
+      render(
+        <ToolCard
+          item={skill}
+          selected={false}
+          onToggle={jest.fn()}
+          onToggleFavorite={jest.fn()}
+        />,
+      );
+      const star = screen.getByRole('button', { name: 'com_ui_favorite' });
+      expect(star).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    test('clicking the star calls onToggleFavorite without toggling the card', () => {
+      const onToggle = jest.fn();
+      const onToggleFavorite = jest.fn();
+      render(
+        <ToolCard
+          item={skill}
+          selected={false}
+          onToggle={onToggle}
+          onToggleFavorite={onToggleFavorite}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_favorite' }));
+      expect(onToggleFavorite).toHaveBeenCalledWith(skill);
+      expect(onToggle).not.toHaveBeenCalled();
+    });
+
+    test('a favorited card keeps the star visible with the remove label', () => {
+      render(
+        <ToolCard
+          item={skill}
+          selected={false}
+          onToggle={jest.fn()}
+          isFavorited
+          onToggleFavorite={jest.fn()}
+        />,
+      );
+      const star = screen.getByRole('button', { name: 'com_ui_unfavorite' });
+      expect(star).toHaveAttribute('aria-pressed', 'true');
+      expect(star).toHaveClass('opacity-100');
+    });
+
+    test('renders no star without an onToggleFavorite handler', () => {
+      render(<ToolCard item={skill} selected={false} onToggle={jest.fn()} />);
+      expect(screen.queryByRole('button', { name: 'com_ui_favorite' })).not.toBeInTheDocument();
+    });
+
+    test('renders no star for action items', () => {
+      const action: AgentItem = {
+        kind: 'action',
+        id: 'a1',
+        name: 'My Action',
+        description: '',
+        iconKey: 'action',
+        endpointCount: 0,
+      };
+      render(
+        <ToolCard
+          item={action}
+          selected={false}
+          onToggle={jest.fn()}
+          onToggleFavorite={jest.fn()}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: 'com_ui_favorite' })).not.toBeInTheDocument();
+    });
+  });
 });

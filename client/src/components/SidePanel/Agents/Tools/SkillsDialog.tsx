@@ -16,14 +16,10 @@ import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { CategoryOption } from './CategoryFilter';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
-import {
-  useListSkillsQuery,
-  useGetFavoritesQuery,
-  useGetSkillFavoritesQuery,
-} from '~/data-provider';
-import { useLocalize, useHasAccess, useAuthContext } from '~/hooks';
+import { useLocalize, useHasAccess, useAuthContext, useToolFavorites } from '~/hooks';
 import { CreateSkillDialog } from '~/components/Skills/dialogs';
 import MarketplaceCatalog from './MarketplaceCatalog';
+import { useListSkillsQuery } from '~/data-provider';
 import { CategoryIcon } from '~/components/Prompts';
 import { buildSkillItems } from './items/catalog';
 import ItemDialog from './ItemDialog/ItemDialog';
@@ -62,24 +58,7 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
     { limit: 100 },
     { enabled: hasSkillsAccess },
   );
-  const { data: favorites } = useGetFavoritesQuery();
-  const { data: skillFavorites } = useGetSkillFavoritesQuery();
-
-  /** Phase 2 (favorites backend): skill favorites resolve from a stubbed
-   * data-service route and no UI toggles them yet, so the "Favorites" view
-   * stays empty until the backend route and a star affordance land. */
-  const favoritedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const favorite of favorites ?? []) {
-      if (favorite.skillId != null) {
-        ids.add(favorite.skillId);
-      }
-    }
-    for (const skillId of skillFavorites ?? []) {
-      ids.add(skillId);
-    }
-    return ids;
-  }, [favorites, skillFavorites]);
+  const { favoriteKeys, toggle: toggleFavorite } = useToolFavorites();
 
   const skillsField = useWatch({ control, name: 'skills' });
   const selectedIds = useMemo(
@@ -120,8 +99,13 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
   }, [catalog]);
 
   const filtered = useMemo(
-    () => applyFilter(catalog, { search, kind: 'skill', category, view }, { favoritedIds }),
-    [catalog, search, category, view, favoritedIds],
+    () =>
+      applyFilter(
+        catalog,
+        { search, kind: 'skill', category, view },
+        { favoritedIds: favoriteKeys },
+      ),
+    [catalog, search, category, view, favoriteKeys],
   );
 
   const handleSkillCreated = useCallback(
@@ -226,6 +210,8 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
               view={view}
               isLoadingSkills={isLoadingSkills}
               skillsInView={view !== 'mine'}
+              favoriteKeys={favoriteKeys}
+              onToggleFavorite={toggleFavorite}
               emptyKey={emptyKey}
               ariaLabel={localize('com_ui_skills')}
             />
