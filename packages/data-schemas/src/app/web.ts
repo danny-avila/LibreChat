@@ -16,6 +16,11 @@ export const webSearchAuth = {
       tavilyApiKey: 1 as const,
       tavilySearchUrl: 0 as const,
     },
+    firecrawl: {
+      firecrawlApiKey: 1 as const,
+      firecrawlApiUrl: 0 as const,
+      firecrawlVersion: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {

@@ -98,6 +98,17 @@ describe('ApiKeyDialog', () => {
     expect(screen.getByText('com_ui_web_search_reranker_cohere_key')).toBeInTheDocument();
   });
 
+  it('shows Firecrawl auth fields once when selected as provider and scraper', () => {
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    render(<ApiKeyDialog {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('com_ui_web_search_provider_firecrawl'));
+    expect(screen.getAllByPlaceholderText('com_ui_web_search_firecrawl_url')).toHaveLength(1);
+    expect(screen.getAllByPlaceholderText('com_ui_web_search_firecrawl_version')).toHaveLength(1);
+    expect(screen.getByText('com_ui_web_search_provider_firecrawl_key')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_web_search_scraper_firecrawl_key')).not.toBeInTheDocument();
+  });
+
   it('does not render provider section if SYSTEM_DEFINED', () => {
     mockUseGetStartupConfig.mockReturnValue({ data: {} });
     const props = {
