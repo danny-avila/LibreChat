@@ -70,13 +70,14 @@ export function deriveDefaultValues(server: MCPServerDefinition): MCPServerFormD
   // Normalize 'http' transport alias to 'streamable-http'
   const rawType = 'type' in server.config ? server.config.type : 'streamable-http';
   const normalizedType =
-    rawType === 'http' ? 'streamable-http' : (rawType as 'streamable-http' | 'sse');
+    rawType === 'http' ? 'streamable-http' : (rawType as 'streamable-http' | 'sse' | 'websocket');
 
   return {
     title: server.config.title || '',
     description: server.config.description || '',
     url: 'url' in server.config ? (server.config as { url: string }).url : '',
     type: normalizedType || 'streamable-http',
+    requiresOAuth: server.config.requiresOAuth === true,
     icon: server.config.iconPath || '',
     auth: {
       auth_type: authType,
@@ -103,6 +104,7 @@ export function deriveDefaultValues(server: MCPServerDefinition): MCPServerFormD
       key,
       title: (cfg as { title: string; description: string }).title,
       description: (cfg as { title: string; description: string }).description,
+      sensitive: (cfg as { sensitive?: boolean }).sensitive !== false,
     })),
     chatMenu: server.config.chatMenu !== false,
     serverInstructionsMode,
@@ -120,6 +122,7 @@ export function getNewServerDefaults(): MCPServerFormData {
     description: '',
     url: '',
     type: 'streamable-http',
+    requiresOAuth: false,
     icon: '',
     auth: {
       auth_type: AuthTypeEnum.None,
@@ -158,6 +161,7 @@ export function buildBaseConfig(
     ...(formData.description && { description: formData.description }),
     ...(formData.icon && { iconPath: formData.icon }),
     ...(!formData.chatMenu && { chatMenu: false }),
+    ...(formData.requiresOAuth && { requiresOAuth: true }),
     ...(formData.serverInstructionsMode === 'server' && { serverInstructions: true }),
     ...(formData.serverInstructionsMode === 'custom' &&
       formData.serverInstructionsCustom.trim() && {
@@ -300,18 +304,19 @@ export function buildHeaders(
  */
 export function buildCustomUserVars(
   vars: MCPServerFormData['customUserVars'],
-): Record<string, { title: string; description: string }> | undefined {
+): Record<string, { title: string; description: string; sensitive?: boolean }> | undefined {
   if (vars.length === 0) {
     return undefined;
   }
-  const map: Record<string, { title: string; description: string }> = {};
-  for (const { key, title, description } of vars) {
+  const map: Record<string, { title: string; description: string; sensitive?: boolean }> = {};
+  for (const { key, title, description, sensitive } of vars) {
     const trimmedKey = key.trim();
     const trimmedTitle = title.trim();
     if (trimmedKey && trimmedTitle) {
       map[trimmedKey] = {
         title: trimmedTitle,
         description: description.trim(),
+        ...(sensitive === false ? { sensitive: false } : { sensitive: true }),
       };
     }
   }

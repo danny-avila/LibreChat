@@ -28,6 +28,7 @@ jest.mock('~/hooks', () => ({
       com_ui_mcp_variable_title_placeholder: 'e.g. API Key',
       com_ui_mcp_variable_description_placeholder: 'e.g. Your API key for this service',
       com_ui_description: 'Description',
+      com_ui_sensitive: 'Sensitive',
       com_ui_optional: '(optional)',
       com_ui_field_required: 'This field is required',
       com_ui_delete: 'Delete',
@@ -71,6 +72,24 @@ jest.mock('@librechat/client', () => {
       HTMLTextAreaElement,
       React.TextareaHTMLAttributes<HTMLTextAreaElement>
     >((props, ref) => ActualReact.createElement('textarea', { ref, ...props })),
+    Checkbox: ({
+      id,
+      checked,
+      onCheckedChange,
+      ...rest
+    }: {
+      id?: string;
+      checked?: boolean;
+      onCheckedChange?: (v: boolean) => void;
+      [key: string]: unknown;
+    }) =>
+      ActualReact.createElement('input', {
+        id,
+        type: 'checkbox',
+        checked,
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) => onCheckedChange?.(e.target.checked),
+        ...rest,
+      }),
   };
 });
 
@@ -109,6 +128,7 @@ function Wrapper({ defaultValues = {} }: WrapperProps) {
       trust: false,
       headers: [],
       customUserVars: [],
+      requiresOAuth: false,
       chatMenu: true,
       serverInstructionsMode: 'none',
       serverInstructionsCustom: '',

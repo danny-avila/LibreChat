@@ -386,7 +386,7 @@ describe('deriveDefaultValues – customUserVars', () => {
     expect(defaults.customUserVars).toEqual([]);
   });
 
-  it('maps each customUserVars entry to { key, title, description }', () => {
+  it('maps each customUserVars entry to include sensitive defaults', () => {
     const server = makeServer({
       customUserVars: {
         API_KEY: { title: 'API Key', description: 'Your API key' },
@@ -396,8 +396,8 @@ describe('deriveDefaultValues – customUserVars', () => {
     const defaults = deriveDefaultValues(server);
     expect(defaults.customUserVars).toEqual(
       expect.arrayContaining([
-        { key: 'API_KEY', title: 'API Key', description: 'Your API key' },
-        { key: 'INDEX', title: 'Index Name', description: '' },
+        { key: 'API_KEY', title: 'API Key', description: 'Your API key', sensitive: true },
+        { key: 'INDEX', title: 'Index Name', description: '', sensitive: true },
       ]),
     );
     expect(defaults.customUserVars).toHaveLength(2);
@@ -516,19 +516,21 @@ describe('buildCustomUserVars', () => {
     const result = buildCustomUserVars([
       { key: 'API_KEY', title: 'API Key', description: 'Your API key' },
     ]);
-    expect(result).toEqual({ API_KEY: { title: 'API Key', description: 'Your API key' } });
+    expect(result).toEqual({
+      API_KEY: { title: 'API Key', description: 'Your API key', sensitive: true },
+    });
   });
 
   it('preserves empty description string', () => {
     const result = buildCustomUserVars([{ key: 'TOKEN', title: 'Token', description: '' }]);
-    expect(result).toEqual({ TOKEN: { title: 'Token', description: '' } });
+    expect(result).toEqual({ TOKEN: { title: 'Token', description: '', sensitive: true } });
   });
 
   it('trims whitespace from key, title, and description', () => {
     const result = buildCustomUserVars([
       { key: '  MY_VAR  ', title: '  My Var  ', description: '  desc  ' },
     ]);
-    expect(result).toEqual({ MY_VAR: { title: 'My Var', description: 'desc' } });
+    expect(result).toEqual({ MY_VAR: { title: 'My Var', description: 'desc', sensitive: true } });
   });
 
   it('skips entries with blank keys', () => {
@@ -536,7 +538,7 @@ describe('buildCustomUserVars', () => {
       { key: '', title: 'Should be skipped', description: '' },
       { key: 'VALID', title: 'Valid Var', description: '' },
     ]);
-    expect(result).toEqual({ VALID: { title: 'Valid Var', description: '' } });
+    expect(result).toEqual({ VALID: { title: 'Valid Var', description: '', sensitive: true } });
   });
 
   it('skips entries with blank titles', () => {
@@ -544,7 +546,7 @@ describe('buildCustomUserVars', () => {
       { key: 'MY_KEY', title: '', description: 'some desc' },
       { key: 'OTHER', title: 'Other', description: '' },
     ]);
-    expect(result).toEqual({ OTHER: { title: 'Other', description: '' } });
+    expect(result).toEqual({ OTHER: { title: 'Other', description: '', sensitive: true } });
   });
 
   it('skips entries with whitespace-only key', () => {
@@ -572,9 +574,23 @@ describe('buildCustomUserVars', () => {
       { key: 'TOP_K', title: 'Top K', description: 'Number of results' },
     ]);
     expect(result).toEqual({
-      API_KEY: { title: 'API Key', description: 'Key for auth' },
-      INDEX: { title: 'Index Name', description: '' },
-      TOP_K: { title: 'Top K', description: 'Number of results' },
+      API_KEY: { title: 'API Key', description: 'Key for auth', sensitive: true },
+      INDEX: { title: 'Index Name', description: '', sensitive: true },
+      TOP_K: { title: 'Top K', description: 'Number of results', sensitive: true },
+    });
+  });
+
+  it('preserves sensitive: false when provided', () => {
+    const result = buildCustomUserVars([
+      {
+        key: 'PROJECT_ID',
+        title: 'Project ID',
+        description: 'Public identifier',
+        sensitive: false,
+      },
+    ]);
+    expect(result).toEqual({
+      PROJECT_ID: { title: 'Project ID', description: 'Public identifier', sensitive: false },
     });
   });
 });

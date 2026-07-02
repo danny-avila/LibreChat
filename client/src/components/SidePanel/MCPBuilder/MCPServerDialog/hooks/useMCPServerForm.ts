@@ -47,6 +47,7 @@ export interface CustomUserVarEntry {
   key: string;
   title: string;
   description: string;
+  sensitive: boolean;
 }
 
 export type ServerInstructionsMode = 'none' | 'server' | 'custom';
@@ -57,7 +58,8 @@ export interface MCPServerFormData {
   description?: string;
   icon?: string;
   url: string;
-  type: 'streamable-http' | 'sse';
+  type: 'streamable-http' | 'sse' | 'websocket';
+  requiresOAuth: boolean;
   auth: AuthConfig;
   trust: boolean;
   headers: HeaderEntry[];

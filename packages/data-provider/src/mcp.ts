@@ -396,7 +396,6 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     timeout: true,
     sseReadTimeout: true,
     initTimeout: true,
-    requiresOAuth: true,
     oauth_headers: true,
   });
 

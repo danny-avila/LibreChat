@@ -14,6 +14,8 @@ import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => {
     const t: Record<string, string> = {
+      com_ui_oauth: 'OAuth',
+      com_ui_mcp_requires_oauth_description: 'Mark this server as requiring OAuth authentication',
       com_ui_mcp_chat_menu: 'Show in chat menu',
       com_ui_mcp_chat_menu_description: 'Display this server in the chat menu for quick access',
       com_ui_mcp_server_instructions: 'Server Instructions',
@@ -124,6 +126,7 @@ function Wrapper({ defaultValues = {} }: WrapperProps) {
       trust: false,
       headers: [],
       customUserVars: [],
+      requiresOAuth: false,
       chatMenu: true,
       serverInstructionsMode: 'none',
       serverInstructionsCustom: '',
@@ -152,19 +155,19 @@ describe('AdvancedSection – chat menu checkbox', () => {
 
   it('renders checkbox checked by default (chatMenu: true)', () => {
     render(<Wrapper defaultValues={{ chatMenu: true }} />);
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    const checkbox = screen.getByLabelText('Show in chat menu') as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
   });
 
   it('renders checkbox unchecked when chatMenu is false', () => {
     render(<Wrapper defaultValues={{ chatMenu: false }} />);
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    const checkbox = screen.getByLabelText('Show in chat menu') as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
   });
 
   it('toggles the checkbox on click', () => {
     render(<Wrapper defaultValues={{ chatMenu: true }} />);
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    const checkbox = screen.getByLabelText('Show in chat menu') as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
     fireEvent.change(checkbox, { target: { checked: false } });
     expect(checkbox.checked).toBe(false);

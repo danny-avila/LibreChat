@@ -25,6 +25,32 @@ export default function AdvancedSection() {
 
   return (
     <div className="space-y-3">
+      {/* Requires OAuth */}
+      <div className="flex items-start gap-3">
+        <Controller
+          name="requiresOAuth"
+          control={control}
+          render={({ field }) => (
+            <Checkbox
+              id="requires-oauth"
+              checked={field.value}
+              onCheckedChange={field.onChange}
+              aria-labelledby="requires-oauth-label"
+              aria-describedby="requires-oauth-description"
+              className="mt-0.5"
+            />
+          )}
+        />
+        <Label htmlFor="requires-oauth" className="flex cursor-pointer flex-col gap-0.5">
+          <span id="requires-oauth-label" className="text-sm font-medium text-text-primary">
+            {localize('com_ui_oauth')}
+          </span>
+          <span id="requires-oauth-description" className="text-xs font-normal text-text-secondary">
+            {localize('com_ui_mcp_requires_oauth_description')}
+          </span>
+        </Label>
+      </div>
+
       {/* Chat Menu */}
       <div className="flex items-start gap-3">
         <Controller

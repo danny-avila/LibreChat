@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { useFieldArray, useFormContext } from 'react-hook-form';
-import { Input, Label, Button, Textarea } from '@librechat/client';
+import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
+import { Input, Label, Button, Textarea, Checkbox } from '@librechat/client';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -46,7 +46,7 @@ export default function CustomUserVarsDefinitionSection({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => append({ key: '', title: '', description: '' })}
+          onClick={() => append({ key: '', title: '', description: '', sensitive: true })}
           className="h-7 shrink-0 gap-1 px-2 text-xs"
         >
           <Plus className="size-3" aria-hidden="true" />
@@ -171,6 +171,29 @@ export default function CustomUserVarsDefinitionSection({
                   {...register(`customUserVars.${index}.description`)}
                   className="resize-none text-xs"
                 />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Controller
+                  name={`customUserVars.${index}.sensitive`}
+                  control={control}
+                  defaultValue={true}
+                  render={({ field }) => (
+                    <Checkbox
+                      id={`customUserVars.${index}.sensitive`}
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      aria-labelledby={`customUserVars.${index}.sensitive-label`}
+                    />
+                  )}
+                />
+                <Label
+                  id={`customUserVars.${index}.sensitive-label`}
+                  htmlFor={`customUserVars.${index}.sensitive`}
+                  className="text-xs"
+                >
+                  {localize('com_ui_sensitive')}
+                </Label>
               </div>
             </div>
           ))}

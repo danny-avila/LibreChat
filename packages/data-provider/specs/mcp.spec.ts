@@ -728,7 +728,7 @@ describe('MCP_USER_INPUT_FIELDS', () => {
     // omitServerManagedFields() before MCPServerUserInputSchema is built.
     expect(MCP_USER_INPUT_FIELDS.has('startup')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('timeout')).toBe(false);
-    expect(MCP_USER_INPUT_FIELDS.has('requiresOAuth')).toBe(false);
+    expect(MCP_USER_INPUT_FIELDS.has('requiresOAuth')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('oauth_headers')).toBe(false);
 
     // Stdio is intentionally excluded from MCPServerUserInputSchema (security
