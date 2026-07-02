@@ -1,5 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
-const { getMissingCustomUserVars, requiresEphemeralUserConnection } = require('@librechat/api');
+const {
+  getMissingCustomUserVars,
+  requiresEphemeralUserConnection,
+  isMissingRuntimeBodyPlaceholderMessage,
+} = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
@@ -53,6 +57,9 @@ async function reinitMCPServer({
   let oauthRequired = false;
   let oauthUrl = null;
   let ephemeralServer = false;
+  /** Set when `getConnection` failed only because runtime body placeholders (e.g.
+   *  `{{LIBRECHAT_BODY_CONVERSATIONID}}`) could not be resolved outside a chat turn. */
+  let missingRuntimeBodyPlaceholder = false;
 
   try {
     const registry = getMCPServersRegistry();
@@ -168,11 +175,27 @@ async function reinitMCPServer({
 
       const isOAuthFlowInitiated = err.message === 'OAuth flow initiated - return early';
 
-      if (isOAuthError || oauthRequired || isOAuthFlowInitiated) {
-        logger.info(
-          `[MCP Reinitialize] OAuth required for ${serverName}, attempting tool discovery without auth`,
-        );
-        oauthRequired = true;
+      /**
+       * Servers using `{{LIBRECHAT_BODY_*}}` placeholders can only resolve them during
+       * an active chat turn. Reinitialize (e.g. from the Admin Panel, or agent/tool-panel
+       * discovery) runs without a request body, so `getConnection` throws instead of
+       * connecting. This is not a real failure — fall back to `discoverServerTools`,
+       * which already handles missing body fields gracefully (returns no tools instead
+       * of throwing), the same way OAuth-required servers are handled below.
+       */
+      missingRuntimeBodyPlaceholder = isMissingRuntimeBodyPlaceholderMessage(err.message ?? '');
+
+      if (isOAuthError || oauthRequired || isOAuthFlowInitiated || missingRuntimeBodyPlaceholder) {
+        if (missingRuntimeBodyPlaceholder) {
+          logger.info(
+            `[MCP Reinitialize] ${serverName} uses runtime body placeholders unavailable outside a chat turn; attempting tool discovery instead`,
+          );
+        } else {
+          logger.info(
+            `[MCP Reinitialize] OAuth required for ${serverName}, attempting tool discovery without auth`,
+          );
+          oauthRequired = true;
+        }
 
         try {
           const discoveryResult = await mcpManager.discoverServerTools({
@@ -236,6 +259,12 @@ async function reinitMCPServer({
       }
       if (connection) {
         return `MCP server '${serverName}' reinitialized successfully`;
+      }
+      if (missingRuntimeBodyPlaceholder && tools && tools.length > 0) {
+        return `MCP server '${serverName}' tools discovered; connection will be established on first use in a chat turn`;
+      }
+      if (missingRuntimeBodyPlaceholder) {
+        return `MCP server '${serverName}' uses request-scoped placeholders and will connect on first use in a chat turn`;
       }
       return `Failed to reinitialize MCP server '${serverName}'`;
     };

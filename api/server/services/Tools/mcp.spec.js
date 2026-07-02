@@ -184,3 +184,81 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('reinitMCPServer — runtime BODY placeholder fallback (issue #14074)', () => {
+  const user = { id: 'user-123' };
+  const serverName = 'Thingy';
+  /** Matches the error `UserConnectionManager#getUserConnection` throws when a
+   *  server config needs `{{LIBRECHAT_BODY_*}}` fields the request doesn't have. */
+  const missingBodyPlaceholderError = new Error(
+    `[MCP][User: ${user.id}][${serverName}] Request body field(s) required to resolve runtime MCP placeholders: conversationId.`,
+  );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpdateMCPServerTools.mockResolvedValue({});
+  });
+
+  it('falls back to tool discovery instead of failing outright when body placeholders are unavailable', async () => {
+    mockGetConnection.mockRejectedValue(missingBodyPlaceholderError);
+    const tools = [{ name: 'search', inputSchema: { type: 'object', properties: {} } }];
+    mockDiscoverServerTools.mockResolvedValue({ tools, oauthRequired: false, oauthUrl: null });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: {
+        type: 'streamable-http',
+        url: 'https://thingy.example.com/mcp',
+        headers: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockDiscoverServerTools).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      success: true,
+      oauthRequired: false,
+      tools,
+    });
+    expect(result.message).not.toMatch(/^Failed to reinitialize/);
+  });
+
+  it('reports a non-failure state (not the generic "Failed to reinitialize" message) when no tools are found yet', async () => {
+    mockGetConnection.mockRejectedValue(missingBodyPlaceholderError);
+    mockDiscoverServerTools.mockResolvedValue({
+      tools: null,
+      oauthRequired: false,
+      oauthUrl: null,
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: {
+        type: 'streamable-http',
+        url: 'https://thingy.example.com/mcp',
+        headers: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(result.oauthRequired).toBe(false);
+    expect(result.message).not.toMatch(/^Failed to reinitialize/);
+  });
+
+  it('still treats unrelated connection errors as real failures', async () => {
+    mockGetConnection.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockDiscoverServerTools).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.message).toBe(`Failed to reinitialize MCP server '${serverName}'`);
+  });
+});
