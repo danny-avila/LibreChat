@@ -151,27 +151,33 @@ export class RedisEventTransport implements IEventTransport {
   }
 
   /**
-   * Resolve the generation epoch to stamp on outgoing messages. seq === 0 increments the
-   * shared epoch counter so a reused streamId gets a strictly higher epoch; the value is
-   * cached to avoid a Redis read per chunk (a mid-generation start reads it once).
+   * Allocate a fresh generation epoch at generation start, before any chunk is published.
+   * INCR gives a reused streamId a strictly higher epoch than the prior generation, and the
+   * key is persisted (with TTL) so it survives cleanup deleting only the sequence key.
+   * Allocating here (once) rather than on the first emit avoids a race where concurrent
+   * startup emits let a later seq read the previous generation's epoch.
    */
-  private async getGenerationEpoch(streamId: string, seq: number): Promise<number> {
+  async beginGeneration(streamId: string): Promise<void> {
     const epochKey = KEYS.epoch(streamId);
-    if (seq === 0) {
-      const epoch = await this.publisher.incr(epochKey);
-      this.publisher.expire(epochKey, RedisEventTransport.SEQUENCE_TTL_SECONDS).catch((err) => {
-        logger.warn(`[RedisEventTransport] Failed to set TTL on epoch key ${epochKey}:`, err);
-      });
-      this.producerEpochs.set(streamId, epoch);
-      return epoch;
-    }
+    const epoch = await this.publisher.incr(epochKey);
+    this.publisher.expire(epochKey, RedisEventTransport.SEQUENCE_TTL_SECONDS).catch((err) => {
+      logger.warn(`[RedisEventTransport] Failed to set TTL on epoch key ${epochKey}:`, err);
+    });
+    this.producerEpochs.set(streamId, epoch);
+  }
+
+  /**
+   * Epoch to stamp on outgoing messages. Uses the value allocated by beginGeneration; a
+   * producer that resumes emitting mid-generation without a cached value reads the key once.
+   */
+  private async getGenerationEpoch(streamId: string): Promise<number> {
     const cached = this.producerEpochs.get(streamId);
     if (cached != null) {
       return cached;
     }
-    const rawStr = await this.publisher.get(epochKey);
-    const parsed = rawStr != null ? parseInt(rawStr, 10) : 1;
-    const epoch = Number.isNaN(parsed) ? 1 : parsed;
+    const rawStr = await this.publisher.get(KEYS.epoch(streamId));
+    const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
+    const epoch = Number.isNaN(parsed) ? 0 : parsed;
     this.producerEpochs.set(streamId, epoch);
     return epoch;
   }
@@ -272,6 +278,11 @@ export class RedisEventTransport implements IEventTransport {
       if (parsed.epoch != null) {
         if (streamState.currentEpoch == null) {
           streamState.currentEpoch = parsed.epoch;
+          // First epoch-tagged message after untagged (pre-upgrade) traffic: if the buffer
+          // already advanced past this seq, it is a new generation and nextSeq is stale.
+          if (parsed.seq != null && parsed.seq < streamState.reorderBuffer.nextSeq) {
+            this.resetReorderBuffer(streamId);
+          }
         } else if (parsed.epoch > streamState.currentEpoch) {
           streamState.currentEpoch = parsed.epoch;
           this.resetReorderBuffer(streamId);
@@ -570,7 +581,7 @@ export class RedisEventTransport implements IEventTransport {
     try {
       const channel = CHANNELS.events(streamId);
       const seq = await this.getNextSequence(streamId);
-      const epoch = await this.getGenerationEpoch(streamId, seq);
+      const epoch = await this.getGenerationEpoch(streamId);
       const message: PubSubMessage = { type: EventTypes.CHUNK, seq, epoch, data: event };
       await this.publisher.publish(channel, JSON.stringify(message));
     } catch (err) {
@@ -585,7 +596,7 @@ export class RedisEventTransport implements IEventTransport {
   async emitDone(streamId: string, event: unknown): Promise<void> {
     const channel = CHANNELS.events(streamId);
     const seq = await this.getNextSequence(streamId);
-    const epoch = await this.getGenerationEpoch(streamId, seq);
+    const epoch = await this.getGenerationEpoch(streamId);
     const message: PubSubMessage = { type: EventTypes.DONE, seq, epoch, data: event };
 
     try {
@@ -603,7 +614,7 @@ export class RedisEventTransport implements IEventTransport {
   async emitError(streamId: string, error: string): Promise<void> {
     const channel = CHANNELS.events(streamId);
     const seq = await this.getNextSequence(streamId);
-    const epoch = await this.getGenerationEpoch(streamId, seq);
+    const epoch = await this.getGenerationEpoch(streamId);
     const message: PubSubMessage = { type: EventTypes.ERROR, seq, epoch, error };
 
     try {

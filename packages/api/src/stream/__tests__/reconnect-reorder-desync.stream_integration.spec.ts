@@ -407,6 +407,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
       const epochKey = `stream:{${streamId}}:epoch`;
 
       transport.subscribe(streamId, { onChunk: () => {} });
+      await transport.beginGeneration(streamId);
       await transport.emitChunk(streamId, { index: 0 });
 
       expect(await mockPublisher.get(seqKey)).not.toBeNull();
@@ -416,6 +417,85 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
 
       expect(await mockPublisher.get(seqKey)).toBeNull();
       expect(await mockPublisher.get(epochKey)).not.toBeNull();
+
+      transport.destroy();
+    });
+
+    test('beginGeneration allocates a distinct, persisted epoch per generation and stamps it on emits', async () => {
+      /**
+       * Allocating the epoch once at generation start (not on the seq===0 emit) means every
+       * chunk of a generation carries the same epoch regardless of emit ordering, and the
+       * epoch key is persisted so a reused streamId's next generation is strictly higher.
+       */
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+      const streamId = 'epoch-alloc-test';
+
+      const epochOf = () =>
+        (JSON.parse(mockPublisher.publish.mock.calls.at(-1)?.[1] as string) as { epoch?: number })
+          .epoch;
+
+      await transport.beginGeneration(streamId);
+      await transport.emitChunk(streamId, { index: 0 });
+      await transport.emitChunk(streamId, { index: 1 });
+      const gen1Epoch = epochOf();
+      // Every chunk of the generation carries the same epoch, including seq > 0.
+      await transport.emitChunk(streamId, { index: 2 });
+      expect(epochOf()).toBe(gen1Epoch);
+
+      // Reused streamId (cleanup deleted only :seq): next generation gets a higher epoch.
+      transport.cleanup(streamId);
+      await transport.beginGeneration(streamId);
+      await transport.emitChunk(streamId, { index: 0 });
+      expect(epochOf()).toBeGreaterThan(gen1Epoch as number);
+
+      transport.destroy();
+    });
+
+    test('realigns when the first epoch-tagged message follows untagged traffic', () => {
+      /**
+       * Rolling-upgrade transition: a consumer advanced nextSeq on untagged (pre-upgrade)
+       * messages, then the reused streamId's new generation arrives epoch-tagged from seq 0.
+       * The first epoch-tagged message must realign rather than drop the new generation.
+       */
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+      const streamId = 'epoch-transition-test';
+      const channel = `stream:{${streamId}}:events`;
+      const chunks: unknown[] = [];
+      transport.subscribe(streamId, { onChunk: (event) => chunks.push(event) });
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+
+      // Untagged (no epoch) traffic advances nextSeq to 3.
+      for (let i = 0; i < 3; i++) {
+        messageHandler(channel, JSON.stringify({ type: 'chunk', seq: i, data: { index: i } }));
+      }
+      expect(chunks.map((c) => (c as { index: number }).index)).toEqual([0, 1, 2]);
+
+      // New generation, now epoch-tagged, restarts at seq 0 while nextSeq is still 3.
+      messageHandler(
+        channel,
+        JSON.stringify({ type: 'chunk', seq: 0, epoch: 1, data: { index: 100 } }),
+      );
+      expect(chunks.map((c) => (c as { index: number }).index)).toEqual([0, 1, 2, 100]);
 
       transport.destroy();
     });

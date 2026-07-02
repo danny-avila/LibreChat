@@ -477,6 +477,13 @@ export interface IEventTransport {
     },
   ): { unsubscribe: () => void; ready?: Promise<void> };
 
+  /**
+   * Allocate a fresh generation epoch at generation start (Redis mode).
+   * Called once per generation before any chunk is published so all of a
+   * generation's messages carry one epoch. Optional - only in Redis transport.
+   */
+  beginGeneration?(streamId: string): void | Promise<void>;
+
   /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
   emitChunk(streamId: string, event: unknown): void | Promise<void>;
 
