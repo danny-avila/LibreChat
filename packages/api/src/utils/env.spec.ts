@@ -2,7 +2,13 @@ import { Types } from 'mongoose';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
-import { resolveHeaders, resolveNestedObject, processMCPEnv, encodeHeaderValue } from './env';
+import {
+  createSafeUser,
+  resolveHeaders,
+  resolveNestedObject,
+  processMCPEnv,
+  encodeHeaderValue,
+} from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
   return !options.type || options.type === 'stdio';
@@ -464,6 +470,27 @@ describe('resolveHeaders', () => {
     expect(result['X-User-EmailVerified']).toBe('true');
     expect(result['X-User-TwoFactorEnabled']).toBe('false');
     expect(result['X-User-TermsAccepted']).toBe('true');
+  });
+
+  it('should not expose tenant or issuer fields through safe user placeholders', () => {
+    const user = createTestUser({
+      tenantId: 'tenant-secret',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    const safeUser = createSafeUser(user);
+    const headers = {
+      'X-Tenant': '{{LIBRECHAT_USER_TENANTID}}',
+      'X-Issuer': '{{LIBRECHAT_USER_OPENIDISSUER}}',
+    };
+
+    expect(safeUser).not.toHaveProperty('tenantId');
+    expect(safeUser).not.toHaveProperty('openidIssuer');
+    expect(resolveHeaders({ headers, user: safeUser })['X-Tenant']).toBe(
+      '{{LIBRECHAT_USER_TENANTID}}',
+    );
+    expect(resolveHeaders({ headers, user: safeUser })['X-Issuer']).toBe(
+      '{{LIBRECHAT_USER_OPENIDISSUER}}',
+    );
   });
 
   it('should handle multiple placeholders in one value', () => {

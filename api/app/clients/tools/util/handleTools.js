@@ -1,9 +1,10 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
 const {
   checkAccess,
   toolkitParent,
   createSafeUser,
+  createAuthIdentityContext,
   mcpToolPattern,
   loadWebSearchAuth,
   buildInlineMemoryTool,
@@ -45,6 +46,7 @@ const {
   resolveConfigServers,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
@@ -468,6 +470,24 @@ const loadTools = async ({
   const safeUser = createSafeUser(options.req?.user);
   const requestScopedConnections =
     options.requestScopedConnections ?? getMCPRequestContext(options.req, options.res);
+  /**
+   * Build the OBO upstream-token closure once at the request boundary (where
+   * `req`/`res` are in scope) and thread the function into MCP handling, so the
+   * MCP layer never receives the raw Express request. The closure reads/refreshes
+   * the live `req.session.openidTokens` at tool-call time and mirrors rotations
+   * to the `refreshToken` cookie when the response is still writable.
+   */
+  const oboIdentityContext = createAuthIdentityContext({
+    user: options.req?.user,
+    tenantId: getTenantId(),
+  });
+  const upstreamTokenProvider = createOpenIDSessionTokenProvider({
+    req: options.req,
+    res: options.res,
+    user: options.req?.user,
+    identityContext: oboIdentityContext,
+    tokenPreference: 'access_token',
+  });
 
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
@@ -488,6 +508,8 @@ const loadTools = async ({
           requestBody: options.req?.body,
           requestScopedConnections,
           res: options.res,
+          upstreamTokenProvider,
+          oboIdentityContext,
           streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
           serverName: config.serverName,

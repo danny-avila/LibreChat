@@ -2,6 +2,7 @@ export * from './types';
 export * from './handler';
 export * from './tokens';
 export * from './detectOAuth';
+export * from './expiry';
 export * from './methods';
 export * from './obo';
 export * from './pending';
