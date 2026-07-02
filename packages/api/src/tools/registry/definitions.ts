@@ -337,6 +337,25 @@ export const tavilySearchSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+/** Keenable Search tool JSON schema */
+export const keenableSearchSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      minLength: 1,
+      description: 'The search query string.',
+    },
+    max_results: {
+      type: 'number',
+      minimum: 1,
+      maximum: 20,
+      description: 'The maximum number of search results to return. Defaults to 10.',
+    },
+  },
+  required: ['query'],
+};
+
 /** File Search tool JSON schema */
 export const fileSearchSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -414,6 +433,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'A search engine optimized for comprehensive, accurate, and trusted results. Useful for when you need to answer questions about current events.',
     schema: tavilySearchSchema,
+    toolType: 'builtin',
+  },
+  keenable_search: {
+    name: 'keenable_search',
+    description:
+      "Keenable is a search engine built for AI agents. Returns relevant web pages with titles, URLs, and content snippets. Useful for answering questions about current events or anything beyond the model's training data.",
+    schema: keenableSearchSchema,
     toolType: 'builtin',
   },
   file_search: {
