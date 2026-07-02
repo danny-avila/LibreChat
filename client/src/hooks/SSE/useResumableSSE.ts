@@ -154,9 +154,7 @@ const isServerNotReadyError = (error: unknown) => {
     data != null && typeof data === 'object' && 'code' in data
       ? (data as { code?: unknown }).code
       : undefined;
-  return (
-    candidate?.response?.status === 503 && code === SERVER_NOT_READY_CODE
-  );
+  return candidate?.response?.status === 503 && code === SERVER_NOT_READY_CODE;
 };
 
 const getRetryAfterDelay = (error: unknown, fallbackDelay: number) => {
