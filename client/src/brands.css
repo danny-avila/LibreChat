@@ -1,0 +1,300 @@
+/**
+ * Per-brand visual theme layer.
+ *
+ * Purely cosmetic. Each block overrides only the existing theme CSS custom
+ * properties defined in `style.css` (`:root` / `.dark`) — no component styles,
+ * no DOM, no automation-facing attributes (`data-testid`, `aria-*`, classes)
+ * are touched. The active brand is selected by the `BRAND` env var and surfaced
+ * on `/api/config`; `BrandTheme` mirrors it onto `<html data-brand="…">` at
+ * runtime. When `BRAND` is unset the attribute is absent, none of these blocks
+ * match, and appearance is byte-identical to stock LibreChat.
+ *
+ * Scoping is `html[data-brand="…"]` (specificity 0,1,1), which outranks both
+ * `.dark` (0,1,0) and the base `html` / `:root` (0,1,0 / 0,0,1) rules. That is
+ * intentional: each brand forces its own palette regardless of LibreChat's
+ * light/dark toggle. Every variable the `.dark` block sets is re-declared here
+ * so no dark-mode value can leak through when a brand pins a light palette (and
+ * vice-versa). Semantic affordances (`--*-warning`, `--*-destructive`) are left
+ * to the native tokens on purpose.
+ *
+ * Fonts reuse already-bundled families (Inter, Roboto Mono) and system stacks —
+ * no external font requests are introduced. The brand font is set on the scoped
+ * root (cascades to inheriting text) and on `.font-sans` for the few elements
+ * that pin it explicitly; `.font-mono` (code) is deliberately left alone.
+ */
+
+/* ── gemini — soft blue accent, light/white background, clean sans-serif ── */
+html[data-brand='gemini'] {
+  --presentation: #ffffff;
+
+  --text-primary: #1f1f1f;
+  --text-secondary: #444746;
+  --text-secondary-alt: #5f6368;
+  --text-tertiary: #70757a;
+
+  --ring-primary: #1a73e8;
+
+  --header-primary: #ffffff;
+  --header-hover: #f6f9fe;
+  --header-button-hover: #eef3fb;
+
+  --surface-active: #e8eefb;
+  --surface-active-alt: #d9e4f8;
+  --surface-hover: #eef3fb;
+  --surface-hover-alt: #e1e9f7;
+  --surface-primary: #ffffff;
+  --surface-primary-alt: #f8fafd;
+  --surface-primary-contrast: #eef3fb;
+  --surface-secondary: #f6f9fe;
+  --surface-secondary-alt: #e8eefb;
+  --surface-tertiary: #eef3fb;
+  --surface-tertiary-alt: #ffffff;
+  --surface-dialog: #ffffff;
+  --surface-submit: #1a73e8;
+  --surface-submit-hover: #1765cc;
+  --surface-chat: #ffffff;
+
+  --border-light: #e6eaf1;
+  --border-medium: #d6deea;
+  --border-medium-alt: #d6deea;
+  --border-heavy: #b9c5da;
+  --border-xheavy: #97a7c4;
+
+  --brand-purple: #1a73e8;
+
+  --background: 0 0% 100%;
+  --foreground: 0 0% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 12%;
+  --primary: 214 82% 51%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 214 60% 96%;
+  --secondary-foreground: 0 0% 12%;
+  --muted: 214 40% 96%;
+  --muted-foreground: 220 4% 40%;
+  --accent: 214 60% 94%;
+  --accent-foreground: 214 82% 30%;
+  --border: 214 30% 90%;
+  --input: 214 30% 90%;
+  --ring: 214 82% 51%;
+  --switch-unchecked: 214 15% 70%;
+
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Arial,
+    sans-serif;
+}
+html[data-brand='gemini'] .font-sans {
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Arial,
+    sans-serif;
+}
+
+/* ── chatgpt — near-black background, teal-green accent, neutral sans-serif ── */
+html[data-brand='chatgpt'] {
+  --presentation: #0d0d0d;
+
+  --text-primary: #ececec;
+  --text-secondary: #c5c5c5;
+  --text-secondary-alt: #b4b4b4;
+  --text-tertiary: #9b9b9b;
+
+  --ring-primary: #10a37f;
+
+  --header-primary: #171717;
+  --header-hover: #212121;
+  --header-button-hover: #262626;
+
+  --surface-active: #2f2f2f;
+  --surface-active-alt: #363636;
+  --surface-hover: #262626;
+  --surface-hover-alt: #303030;
+  --surface-primary: #0d0d0d;
+  --surface-primary-alt: #171717;
+  --surface-primary-contrast: #1a1a1a;
+  --surface-secondary: #171717;
+  --surface-secondary-alt: #212121;
+  --surface-tertiary: #212121;
+  --surface-tertiary-alt: #2a2a2a;
+  --surface-dialog: #171717;
+  --surface-submit: #10a37f;
+  --surface-submit-hover: #0e8e6d;
+  --surface-chat: #0d0d0d;
+
+  --border-light: #2a2a2a;
+  --border-medium: #363636;
+  --border-medium-alt: #363636;
+  --border-heavy: #4d4d4d;
+  --border-xheavy: #666666;
+
+  --brand-purple: #19c37d;
+
+  --background: 0 0% 5%;
+  --foreground: 0 0% 93%;
+  --card: 0 0% 9%;
+  --card-foreground: 0 0% 93%;
+  --primary: 162 82% 35%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 13%;
+  --secondary-foreground: 0 0% 93%;
+  --muted: 0 0% 13%;
+  --muted-foreground: 0 0% 63%;
+  --accent: 162 40% 18%;
+  --accent-foreground: 0 0% 93%;
+  --border: 0 0% 18%;
+  --input: 0 0% 18%;
+  --ring: 162 82% 35%;
+  --switch-unchecked: 0 0% 40%;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+html[data-brand='chatgpt'] .font-sans {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+/* ── claude — warm cream/tan background, coral accent, slightly serif feel ── */
+html[data-brand='claude'] {
+  --presentation: #f5f1e8;
+
+  --text-primary: #3d3a34;
+  --text-secondary: #5c574c;
+  --text-secondary-alt: #6e685b;
+  --text-tertiary: #857e6e;
+
+  --ring-primary: #d97757;
+
+  --header-primary: #f5f1e8;
+  --header-hover: #efe9dc;
+  --header-button-hover: #e8e1d1;
+
+  --surface-active: #e5dcc9;
+  --surface-active-alt: #dbcfb6;
+  --surface-hover: #e9e1d0;
+  --surface-hover-alt: #ded3bd;
+  --surface-primary: #f5f1e8;
+  --surface-primary-alt: #efe9dc;
+  --surface-primary-contrast: #e8e1d1;
+  --surface-secondary: #efe9dc;
+  --surface-secondary-alt: #e5dcc9;
+  --surface-tertiary: #e8e1d1;
+  --surface-tertiary-alt: #f5f1e8;
+  --surface-dialog: #faf7f0;
+  --surface-submit: #d97757;
+  --surface-submit-hover: #c96442;
+  --surface-chat: #f5f1e8;
+
+  --border-light: #e2d9c6;
+  --border-medium: #d3c7ae;
+  --border-medium-alt: #d3c7ae;
+  --border-heavy: #bcac8c;
+  --border-xheavy: #a3906c;
+
+  --brand-purple: #d97757;
+
+  --background: 43 33% 93%;
+  --foreground: 40 9% 22%;
+  --card: 43 40% 96%;
+  --card-foreground: 40 9% 22%;
+  --primary: 16 62% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 41 30% 88%;
+  --secondary-foreground: 40 9% 22%;
+  --muted: 41 25% 88%;
+  --muted-foreground: 40 7% 42%;
+  --accent: 20 45% 88%;
+  --accent-foreground: 16 50% 35%;
+  --border: 41 28% 82%;
+  --input: 41 28% 82%;
+  --ring: 16 62% 60%;
+  --switch-unchecked: 40 15% 68%;
+
+  font-family: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+}
+html[data-brand='claude'] .font-sans {
+  font-family: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+}
+
+/* ── grok — stark black/white, techy monospace-ish font ── */
+html[data-brand='grok'] {
+  --presentation: #000000;
+
+  --text-primary: #ffffff;
+  --text-secondary: #cfcfcf;
+  --text-secondary-alt: #b0b0b0;
+  --text-tertiary: #8f8f8f;
+
+  --ring-primary: #ffffff;
+
+  --header-primary: #000000;
+  --header-hover: #0a0a0a;
+  --header-button-hover: #141414;
+
+  --surface-active: #1f1f1f;
+  --surface-active-alt: #262626;
+  --surface-hover: #171717;
+  --surface-hover-alt: #212121;
+  --surface-primary: #000000;
+  --surface-primary-alt: #0a0a0a;
+  --surface-primary-contrast: #141414;
+  --surface-secondary: #0a0a0a;
+  --surface-secondary-alt: #141414;
+  --surface-tertiary: #141414;
+  --surface-tertiary-alt: #1c1c1c;
+  --surface-dialog: #0a0a0a;
+  --surface-submit: #2b2b2b;
+  --surface-submit-hover: #1a1a1a;
+  --surface-chat: #000000;
+
+  --border-light: #1f1f1f;
+  --border-medium: #2e2e2e;
+  --border-medium-alt: #2e2e2e;
+  --border-heavy: #454545;
+  --border-xheavy: #5c5c5c;
+
+  --brand-purple: #ffffff;
+
+  --background: 0 0% 0%;
+  --foreground: 0 0% 100%;
+  --card: 0 0% 4%;
+  --card-foreground: 0 0% 100%;
+  --primary: 0 0% 100%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 0 0% 10%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 10%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 0 0% 14%;
+  --accent-foreground: 0 0% 100%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
+  --ring: 0 0% 80%;
+  --switch-unchecked: 0 0% 35%;
+
+  font-family: 'Roboto Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+html[data-brand='grok'] .font-sans {
+  font-family: 'Roboto Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
