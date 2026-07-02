@@ -1,5 +1,6 @@
-import { EToolResources } from './assistants';
+import type { TDefaultLLMDeliveryPathConfig } from '../file-config';
 import type { CodeEnvRef } from '../codeEnvRef';
+import { EToolResources } from './assistants';
 
 export enum FileSources {
   local = 'local',
@@ -45,6 +46,8 @@ export type EndpointFileConfig = {
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegExp[];
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type FileConfig = {
@@ -73,6 +76,8 @@ export type FileConfig = {
     supportedMimeTypes?: RegExp[];
   };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type FileConfigInput = {
@@ -100,6 +105,8 @@ export type FileConfigInput = {
     supportedMimeTypes?: string[];
   };
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  defaultLLMDeliveryPath?: TDefaultLLMDeliveryPathConfig;
+  legacyFileUploadUX?: boolean;
 };
 
 export type TFile = {
@@ -160,6 +167,7 @@ export type TFile = {
      */
     codeEnvRef?: CodeEnvRef;
   };
+  llmDeliveryPath?: 'provider' | 'text' | 'none';
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };

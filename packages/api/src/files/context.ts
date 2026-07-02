@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import { FileSources, mergeFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
+import type { TokenCountFn } from '~/utils/text';
 import type { ServerRequest } from '~/types';
 import { processTextWithTokenLimit } from '~/utils/text';
-import type { TokenCountFn } from '~/utils/text';
 
 /**
  * Extracts text context from attachments and returns formatted text.
@@ -39,7 +39,12 @@ export async function extractFileContext({
 
   for (const file of attachments) {
     const source = file.source ?? FileSources.local;
-    if (source === FileSources.text && file.text) {
+    if (file.llmDeliveryPath === 'none') {
+      continue;
+    }
+
+    const hasTextDelivery = file.llmDeliveryPath === 'text' || source === FileSources.text;
+    if (hasTextDelivery && file.text) {
       const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
         text: file.text,
         tokenLimit: fileTokenLimit,

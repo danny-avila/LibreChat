@@ -24,6 +24,15 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
 import type {
+  TFileUpdate,
+  ProvisionState,
+  TFilterFilesByAgentAccess,
+  TProvisionToCodeEnv,
+  TProvisionToVectorDB,
+  TCheckSessionsAlive,
+  TLoadCodeApiKey,
+} from './resources';
+import type {
   ServerRequest,
   EndpointDbMethods,
   EndpointTokenConfig,
@@ -31,7 +40,6 @@ import type {
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
-import type { TFilterFilesByAgentAccess } from './resources';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -332,6 +340,10 @@ export type InitializedAgent = Agent & {
    * context limits with the same numbers the UI shows — not default rates.
    */
   endpointTokenConfig?: EndpointTokenConfig;
+  /** Warnings from lazy file provisioning (e.g., failed uploads) */
+  provisionWarnings?: string[];
+  /** State for deferred file provisioning — actual uploads happen at tool invocation time */
+  provisionState?: ProvisionState;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -553,6 +565,16 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     has_more?: boolean;
     after?: string | null;
   }>;
+  /** Optional: provision a file to the code execution environment */
+  provisionToCodeEnv?: TProvisionToCodeEnv;
+  /** Optional: provision a file to the vector DB for file_search */
+  provisionToVectorDB?: TProvisionToVectorDB;
+  /** Optional: batch-check code env file liveness */
+  checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional: load CODE_API_KEY once per request */
+  loadCodeApiKey?: TLoadCodeApiKey;
+  /** Optional: persist file metadata updates after provisioning */
+  updateFile?: (data: TFileUpdate) => Promise<unknown>;
 }
 
 /**
@@ -619,6 +641,14 @@ export async function initializeAgent(
   const provider = agent.provider;
   agent.endpoint = provider;
 
+  /** Build the set of tool resources the agent has enabled */
+  const toolResourceSet = new Set<EToolResources>();
+  for (const tool of agent.tools ?? []) {
+    if (EToolResources[tool as keyof typeof EToolResources]) {
+      toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
+    }
+  }
+
   /**
    * Load conversation files for ALL agents, not just the initial agent.
    * This enables handoff agents to access files that were uploaded earlier
@@ -627,12 +657,6 @@ export async function initializeAgent(
    */
   if (conversationId != null && resendFiles) {
     const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
-    const toolResourceSet = new Set<EToolResources>();
-    for (const tool of agent.tools ?? []) {
-      if (EToolResources[tool as keyof typeof EToolResources]) {
-        toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
-      }
-    }
 
     const toolFiles = requestFileOwnerScope
       ? ((await db.getToolFilesByIds(
@@ -752,6 +776,8 @@ export async function initializeAgent(
     requestAttachments: primedRequestAttachments,
     agentContextAttachments: primedAgentContextAttachments,
     tool_resources,
+    provisionState,
+    warnings: provisionWarnings,
   } = await primeResources({
     req: req as never,
     getFiles: db.getFiles as never,
@@ -763,6 +789,9 @@ export async function initializeAgent(
       : undefined,
     tool_resources: agent.tool_resources,
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+    enabledToolResources: toolResourceSet,
+    checkSessionsAlive: db.checkSessionsAlive,
+    loadCodeApiKey: db.loadCodeApiKey,
   });
 
   /**
@@ -1310,6 +1339,9 @@ export async function initializeAgent(
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
+    provisionState,
+    provisionWarnings:
+      provisionWarnings != null && provisionWarnings.length > 0 ? provisionWarnings : undefined,
     maxContextTokens:
       maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens

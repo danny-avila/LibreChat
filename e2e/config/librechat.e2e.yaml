@@ -40,6 +40,25 @@ mcpServers:
     description: Local HTTP MCP fixture for allowlist-override e2e tests.
     timeout: 30000
 
+# Per-endpoint file upload config so both upload UXs get e2e coverage:
+# - Mock Provider A keeps the legacy 3-way dropdown (chat.spec.ts exercises
+#   "Upload to Provider"); legacyFileUploadUX also forces llmDeliveryPath
+#   'provider', so that test's CSV still reaches the model.
+# - Mock Provider B uses the unified single button with spreadsheet/csv routed
+#   to llmDeliveryPath 'none' (unified-upload.spec.ts).
+fileConfig:
+  endpoints:
+    'Mock Provider A':
+      legacyFileUploadUX: true
+    'Mock Provider B':
+      defaultLLMDeliveryPath:
+        overrides:
+          'text/csv': 'none'
+          'text/plain': 'none'
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'none'
+          # Routed to the provider: still delivered to the model AND shown in chat.
+          'text/markdown': 'provider'
+
 endpoints:
   custom:
     - name: 'Mock Provider A'
