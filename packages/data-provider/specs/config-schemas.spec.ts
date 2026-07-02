@@ -5,6 +5,7 @@ import {
   endpointSchema,
   RetentionMode,
   configSchema,
+  initialModelsConfig,
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
@@ -212,6 +213,13 @@ describe('tModelSpecPresetSchema', () => {
       expect(result.data.topP).toBe(0.9);
       expect(result.data.maxOutputTokens).toBe(4096);
     }
+  });
+});
+
+describe('initialModelsConfig', () => {
+  it('includes Sora for Azure OpenAI defaults without adding it to OpenAI defaults', () => {
+    expect(initialModelsConfig[EModelEndpoint.azureOpenAI]).toContain('sora');
+    expect(initialModelsConfig[EModelEndpoint.openAI]).not.toContain('sora');
   });
 });
 
