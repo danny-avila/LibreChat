@@ -1544,6 +1544,127 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('coerces a stringified edits array (JSON-in-JSON) so the edit still applies', async () => {
+      const saveSkillFileContent = jest.fn();
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'edit-skill',
+          body: '# Existing',
+          fileCount: 1,
+          version: 1,
+        })),
+        getSkillFileByPath: jest.fn(async () => ({
+          content: 'hello old\n',
+          isBinary: false,
+          mimeType: 'text/markdown',
+          bytes: 10,
+          filepath: '/tmp/a.md',
+          source: 'local',
+          relativePath: 'references/a.md',
+        })),
+        saveSkillFileContent,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_file_stringified_array',
+          name: 'edit_file',
+          args: {
+            path: 'skills/edit-skill/references/a.md',
+            edits: JSON.stringify([{ old_text: 'hello old', new_text: 'hello new' }]),
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.artifact).toMatchObject({
+        path: 'skills/edit-skill/references/a.md',
+        edits: 1,
+        strategies: ['exact'],
+      });
+      expect(saveSkillFileContent).toHaveBeenCalledWith(
+        expect.objectContaining({ relativePath: 'references/a.md', content: 'hello new\n' }),
+      );
+    });
+
+    it('coerces stringified entries inside an edits array', async () => {
+      const saveSkillFileContent = jest.fn();
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'edit-skill',
+          body: '# Existing',
+          fileCount: 1,
+          version: 1,
+        })),
+        getSkillFileByPath: jest.fn(async () => ({
+          content: 'hello old\n',
+          isBinary: false,
+          mimeType: 'text/markdown',
+          bytes: 10,
+          filepath: '/tmp/a.md',
+          source: 'local',
+          relativePath: 'references/a.md',
+        })),
+        saveSkillFileContent,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_file_stringified_entry',
+          name: 'edit_file',
+          args: {
+            path: 'skills/edit-skill/references/a.md',
+            edits: [JSON.stringify({ old_text: 'hello old', new_text: 'hello new' })],
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(saveSkillFileContent).toHaveBeenCalledWith(
+        expect.objectContaining({ relativePath: 'references/a.md', content: 'hello new\n' }),
+      );
+    });
+
+    it('still rejects an unparseable edits string with the explicit error', async () => {
+      const saveSkillFileContent = jest.fn();
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'edit-skill',
+          body: '# Existing',
+          fileCount: 1,
+          version: 1,
+        })),
+        getSkillFileByPath: jest.fn(async () => ({
+          content: 'hello old\n',
+          isBinary: false,
+          mimeType: 'text/markdown',
+          bytes: 10,
+          filepath: '/tmp/a.md',
+          source: 'local',
+          relativePath: 'references/a.md',
+        })),
+        saveSkillFileContent,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_file_bad_edits',
+          name: 'edit_file',
+          args: {
+            path: 'skills/edit-skill/references/a.md',
+            edits: 'not valid json',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('non-empty edits array');
+      expect(saveSkillFileContent).not.toHaveBeenCalled();
+    });
+
     it('rejects bundled skill file writes when the skill version changed after reading', async () => {
       const getSkillByName = jest
         .fn()

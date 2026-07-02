@@ -35,6 +35,7 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
@@ -1214,7 +1215,31 @@ export async function createRun({
     calibrationRatio,
     indexTokenCountMap,
     subagentUsageSink,
-    eagerEventToolExecution: { enabled: true },
+    // Exclude side-effecting / large-free-form-arg tools from eager execution.
+    // Eager speculatively runs a tool mid-stream; for a big streamed arg (a
+    // file body, a bash heredoc, a code block) the accumulated args can diverge
+    // from the final tool call and trip the SDK's "changed after eager
+    // execution" guard, and a speculative write/exec can land before the turn
+    // commits. create_file/edit_file write files; execute_code/bash_tool run
+    // code with large `code`/`command` args. `excludeToolNames` requires
+    // @librechat/agents with the eager-exclusion support (agents#281); older
+    // versions ignore the field.
+    eagerEventToolExecution: {
+      enabled: true,
+      excludeToolNames: [
+        CREATE_FILE_TOOL_NAME,
+        EDIT_FILE_TOOL_NAME,
+        Constants.EXECUTE_CODE,
+        Constants.BASH_TOOL,
+      ],
+    },
+    // Let host file-authoring tools share the code-execution sandbox session so
+    // a file created with create_file/edit_file is visible to later
+    // execute_code/bash_tool calls (and vice versa). The SDK folds these tools'
+    // returned exec session/files into the shared code session and injects the
+    // existing session into their requests. Requires @librechat/agents with
+    // codeSessionToolNames support (agents#283); older versions ignore it.
+    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
