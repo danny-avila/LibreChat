@@ -1,5 +1,5 @@
 import { removeNullishValues } from 'librechat-data-provider';
-import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
+import type { TCustomConfig, TConfigDefaults } from 'librechat-data-provider';
 import type { AppConfig } from '~/types/app';
 import { isMemoryEnabled } from './memory';
 
@@ -27,21 +27,6 @@ export async function loadDefaultInterface({
   /** Only disable memories if memory config is present and explicitly disabled */
   const shouldDisableMemories = memoryConfig && !memoryEnabled;
 
-  // If an env var is set, let it control agents' `create` alone (we always want `use` enabled)
-  let agents = interfaceConfig?.agents;
-  const agentsEnvVar = getEnvBoolean('INTERFACE_AGENTS');
-  if (agentsEnvVar !== undefined) {
-    // Our librechat.yaml doesn't use the boolean, so simplify for now
-    if (typeof agents === 'boolean') {
-      throw Error(`Define the agent perms more specifically, please!`);
-    }
-
-    agents = {
-      ...(agents ?? {}),
-      create: agentsEnvVar,
-    };
-  }
-
   const loadedInterface: AppConfig['interfaceConfig'] = removeNullishValues({
     // UI elements - use schema defaults
     modelSelect:
@@ -64,7 +49,7 @@ export async function loadDefaultInterface({
     memories: shouldDisableMemories ? false : interfaceConfig?.memories,
     prompts: interfaceConfig?.prompts,
     multiConvo: interfaceConfig?.multiConvo,
-    agents: agents,
+    agents: interfaceConfig?.agents,
     temporaryChat: interfaceConfig?.temporaryChat,
     temporaryChatRetention: interfaceConfig?.temporaryChatRetention,
     retentionMode: interfaceConfig?.retentionMode,

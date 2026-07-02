@@ -28,7 +28,7 @@ interface:
   # We're purposefully disabling most LibreChat features (for now)
   agents:
     use: true
-    create: false # Can be overridden with env var INTERFACE_AGENTS
+    create: true
     share: false # in addition to hiding the copy link, we are setting share to false
     public: true
   bookmarks: false
