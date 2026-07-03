@@ -1383,6 +1383,42 @@ describe('Message Operations', () => {
       }
     });
 
+    it('preserves an edited message expiring sooner than its parent under forced retention', async () => {
+      const conversationId = uuidv4();
+      const editedMessageId = uuidv4();
+      const messageDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 12 * 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Carried-over chat',
+        isTemporary: false,
+        expiredAt: parentDeadline,
+      });
+      await Message.create({
+        messageId: editedMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'edited',
+        isTemporary: false,
+        expiredAt: messageDeadline,
+      });
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, messageId: editedMessageId },
+        { context: 'edit', capExpiryToConversation: true },
+      );
+
+      const message = await Message.findOne({ messageId: editedMessageId, user: 'user123' }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(messageDeadline.getTime());
+    });
+
     it('converts a permanent conversation and its messages without a messageId (tag write)', async () => {
       const conversationId = uuidv4();
       await Conversation().create({

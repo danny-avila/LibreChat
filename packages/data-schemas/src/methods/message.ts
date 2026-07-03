@@ -583,10 +583,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
 
     if (typeof messageId === 'string' && messageId.length > 0) {
-      await Message.updateOne(
-        { messageId, user: userId },
-        { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
-      );
+      await Message.updateOne({ messageId, user: userId }, [
+        {
+          $set: {
+            isTemporary: true,
+            expiredAt: { $min: [{ $ifNull: ['$expiredAt', forcedExpiredAt] }, forcedExpiredAt] },
+          },
+        },
+      ]);
     }
     await cascadeForcedConversationRetention(
       Conversation,
