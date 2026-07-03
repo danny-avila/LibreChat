@@ -57,6 +57,16 @@ describe('scanMonochrome', () => {
   it('is not monochrome when fully opaque, since a mask would flatten it to a block', () => {
     expect(scanMonochrome(rgba(0, 0, 0, 255, 90, 90, 90, 255))).toBe(false);
   });
+
+  it('is not monochrome when a semi-transparent fill covers every pixel', () => {
+    // grayscale and partly transparent, but no empty pixel: masking it would
+    // paint a full-canvas currentColor wash rather than reveal a glyph.
+    expect(scanMonochrome(rgba(128, 128, 128, 128, 90, 90, 90, 200))).toBe(false);
+  });
+
+  it('is monochrome when a translucent glyph sits on genuinely empty pixels', () => {
+    expect(scanMonochrome(rgba(128, 128, 128, 128, 0, 0, 0, 0))).toBe(true);
+  });
 });
 
 describe('detectMonochrome', () => {
@@ -202,6 +212,27 @@ describe('sanitizeSvg', () => {
     expect(clean).toContain('stdDeviation="2"');
     expect(clean).toContain('filter="url(#f)"');
     expect(clean).not.toContain('evil.example');
+  });
+
+  it('strips external url() references from presentation and style attributes', () => {
+    for (const attr of [
+      'filter="url(https://evil.example/f.svg#f)"',
+      'fill="url(https://evil.example/p)"',
+      'style="fill:url(//evil.example/p)"',
+      'clip-path="url(data:image/svg+xml,evil)"',
+    ]) {
+      const clean = sanitizeSvg(`<svg><rect ${attr} width="10" height="10" /></svg>`);
+      expect(clean).not.toContain('evil.example');
+      expect(clean).not.toContain('evil');
+    }
+  });
+
+  it('preserves local url() paint and filter references', () => {
+    const dirty =
+      '<svg><defs><filter id="f"><feGaussianBlur stdDeviation="1" /></filter><linearGradient id="g"><stop offset="0" stop-color="#000" /></linearGradient></defs><rect fill="url(#g)" filter="url(#f)" width="10" height="10" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('fill="url(#g)"');
+    expect(clean).toContain('filter="url(#f)"');
   });
 
   it('preserves gradient stop inheritance via local href', () => {
