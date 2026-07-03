@@ -244,11 +244,31 @@ describe('sanitizeSvg', () => {
     expect(clean).toContain('fill="url(#g2)"');
   });
 
-  it('drops <style> blocks with external url() references', () => {
-    const dirty = '<svg><style>rect { fill: url(https://evil.example/x); }</style><rect /></svg>';
+  it('preserves internal stylesheet paint rules', () => {
+    const dirty =
+      '<svg><style>.red{fill:#e00}.blue{fill:#00f}</style><path class="red" d="M0 0h1v1z" /><path class="blue" d="M1 1h1v1z" /></svg>';
     const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('<style');
+    expect(clean).toContain('.red{fill:#e00}');
+    expect(clean).toContain('.blue{fill:#00f}');
+    expect(clean).toContain('class="red"');
+  });
+
+  it('scrubs @import and external url() from internal stylesheets', () => {
+    const dirty =
+      '<svg><style>@import url(https://evil.example/x.css);.a{fill:url(https://evil.example/beacon)}.b{fill:url(#grad)}</style><rect class="a" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('<style');
     expect(clean).not.toContain('evil.example');
-    expect(clean.toLowerCase()).not.toContain('<style');
+    expect(clean).not.toContain('@import');
+    expect(clean).toContain('url(#grad)');
+  });
+
+  it('strips a script smuggled after a premature </style> close', () => {
+    const dirty = '<svg><style>.a{}</style><script>alert(1)</script></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('<script');
+    expect(clean).not.toContain('alert(1)');
   });
 
   it('drops href-smuggling animation elements', () => {

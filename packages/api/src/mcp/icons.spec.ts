@@ -99,6 +99,33 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).not.toContain('evil.example');
   });
 
+  it('preserves internal stylesheet paint rules', () => {
+    const raw =
+      '<svg><style>.red{fill:#e00}.blue{fill:#00f}</style><path class="red" d="M0 0h1v1z"/><path class="blue" d="M1 1h1v1z"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).toContain('<style');
+    expect(clean).toContain('.red{fill:#e00}');
+    expect(clean).toContain('.blue{fill:#00f}');
+    expect(clean).toContain('class="red"');
+  });
+
+  it('scrubs @import and external url() from internal stylesheets', () => {
+    const raw =
+      '<svg><style>@import url(https://evil.example/x.css);.a{fill:url(https://evil.example/beacon)}.b{fill:url(#grad)}</style><rect class="a"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).toContain('<style');
+    expect(clean).not.toContain('evil.example');
+    expect(clean).not.toContain('@import');
+    expect(clean).toContain('url(#grad)');
+  });
+
+  it('strips a script smuggled after a premature </style> close', () => {
+    const raw = '<svg><style>.a{}</style><script>alert(1)</script></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).not.toContain('<script');
+    expect(clean).not.toContain('alert(1)');
+  });
+
   it('strips external url() references from presentation and style attributes', () => {
     for (const attr of [
       'filter="url(https://evil.example/f.svg#f)"',
