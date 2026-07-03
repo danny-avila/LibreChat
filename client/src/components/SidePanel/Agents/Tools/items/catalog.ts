@@ -148,16 +148,18 @@ export function buildCatalog(inputs: BuildCatalogInputs): AgentItem[] {
     }
   }
 
-  for (const plugin of inputs.regularTools) {
-    items.push({
-      kind: 'tool',
-      id: plugin.pluginKey,
-      name: plugin.name ?? plugin.pluginKey,
-      description: plugin.description ?? '',
-      iconKey: 'tool',
-      plugin,
-      status: pluginNeedsAuth(plugin) ? 'needs_setup' : undefined,
-    });
+  if (enabled.has(AgentCapabilities.tools)) {
+    for (const plugin of inputs.regularTools) {
+      items.push({
+        kind: 'tool',
+        id: plugin.pluginKey,
+        name: plugin.name ?? plugin.pluginKey,
+        description: plugin.description ?? '',
+        iconKey: 'tool',
+        plugin,
+        status: pluginNeedsAuth(plugin) ? 'needs_setup' : undefined,
+      });
+    }
   }
 
   if (inputs.permissions.skills) {

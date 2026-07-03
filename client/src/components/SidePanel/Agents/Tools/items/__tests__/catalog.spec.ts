@@ -12,6 +12,11 @@ const emptyInputs: BuildCatalogInputs = {
   permissions: { mcp: true, skills: true },
 };
 
+const toolInputs: BuildCatalogInputs = {
+  ...emptyInputs,
+  agentsConfig: { capabilities: [AgentCapabilities.tools] },
+};
+
 describe('buildCatalog', () => {
   test('returns empty when nothing is enabled', () => {
     expect(buildCatalog(emptyInputs)).toEqual([]);
@@ -103,18 +108,26 @@ describe('buildCatalog', () => {
     expect(skill?.name).toBe('Reviewer');
   });
 
-  test('emits tool items', () => {
+  test('emits tool items when the tools capability is enabled', () => {
     const items = buildCatalog({
-      ...emptyInputs,
+      ...toolInputs,
       regularTools: [makePlugin({ pluginKey: 'dalle', name: 'DALL-E', description: 'Images' })],
     });
     const tool = items.find((i) => i.kind === 'tool');
     expect(tool?.id).toBe('dalle');
   });
 
-  test('marks an auth-requiring, unauthenticated tool as needs_setup', () => {
+  test('hides tool items when the admin disabled the tools capability', () => {
     const items = buildCatalog({
       ...emptyInputs,
+      regularTools: [makePlugin({ pluginKey: 'dalle', name: 'DALL-E', description: 'Images' })],
+    });
+    expect(items.find((i) => i.kind === 'tool')).toBeUndefined();
+  });
+
+  test('marks an auth-requiring, unauthenticated tool as needs_setup', () => {
+    const items = buildCatalog({
+      ...toolInputs,
       regularTools: [
         makePlugin({
           pluginKey: 'serpapi',
@@ -131,7 +144,7 @@ describe('buildCatalog', () => {
 
   test('leaves status undefined for an authenticated auth-requiring tool', () => {
     const items = buildCatalog({
-      ...emptyInputs,
+      ...toolInputs,
       regularTools: [
         makePlugin({
           pluginKey: 'serpapi',
@@ -148,7 +161,7 @@ describe('buildCatalog', () => {
 
   test('leaves status undefined for a tool with no authConfig', () => {
     const items = buildCatalog({
-      ...emptyInputs,
+      ...toolInputs,
       regularTools: [makePlugin({ pluginKey: 'dalle', name: 'DALL-E', description: 'Images' })],
     });
     const tool = items.find((i) => i.kind === 'tool');
@@ -211,7 +224,7 @@ describe('buildCatalog', () => {
     map.set('srv', { serverName: 'srv', isConfigured: true, tools: [] });
     const items = buildCatalog({
       ...emptyInputs,
-      agentsConfig: { capabilities: [AgentCapabilities.execute_code] },
+      agentsConfig: { capabilities: [AgentCapabilities.execute_code, AgentCapabilities.tools] },
       regularTools: [makePlugin({ pluginKey: 't1', name: 'T1', description: '' })],
       mcpServersMap: map,
       skills: [makeSkill({ _id: 's1', name: 'S1', description: '' })],

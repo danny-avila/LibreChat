@@ -29,7 +29,7 @@ jest.mock('react-hook-form', () => ({
 
 jest.mock('~/Providers', () => ({
   useAgentPanelContext: () => ({
-    agentsConfig: { capabilities: ['execute_code'] },
+    agentsConfig: { capabilities: ['execute_code', 'tools'] },
     regularTools: [{ pluginKey: 'dalle', name: 'DALL-E', description: 'Images' }],
     mcpServersMap: new Map(),
     actions: [],
