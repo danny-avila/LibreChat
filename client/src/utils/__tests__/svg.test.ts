@@ -271,6 +271,16 @@ describe('sanitizeSvg', () => {
     expect(clean).not.toContain('alert(1)');
   });
 
+  it('does not let escaped markup in a stylesheet reintroduce elements', () => {
+    // Scrubbed CSS is set as a text node, so `\3c/style\3e\3cimage\3e` stays
+    // inert escaped text rather than becoming a real element.
+    const dirty =
+      '<svg><style>\\3c/style\\3e\\3cimage href="https://evil.example/x.png"/\\3e</style></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean.toLowerCase()).not.toContain('<image');
+    expect(clean).toContain('&lt;');
+  });
+
   it('strips CSS-escaped external url() from style attributes and stylesheets', () => {
     const attrEsc = sanitizeSvg(
       '<svg><rect style="fill:u\\72l(https://evil.example/x)" width="10" height="10" /></svg>',
