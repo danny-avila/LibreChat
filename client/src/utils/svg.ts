@@ -114,19 +114,44 @@ export function detectMonochrome(src: string): Promise<boolean> {
   });
 }
 
+let svgPurifier: ReturnType<typeof DOMPurify> | null = null;
+
+/**
+ * Dedicated DOMPurify instance for SVG icons, so the fragment-only href hook
+ * never leaks into the app's shared default instance. The hook keeps local
+ * references (`href="#id"` on `<use>` and gradient inheritance — common
+ * exporter output) while stripping every external, relative, or scheme-carrying
+ * href that could smuggle a fetch or navigation.
+ */
+function getSvgPurifier(): ReturnType<typeof DOMPurify> {
+  if (svgPurifier) {
+    return svgPurifier;
+  }
+  svgPurifier = DOMPurify(window);
+  svgPurifier.addHook('afterSanitizeAttributes', (node) => {
+    for (const attr of ['href', 'xlink:href']) {
+      const value = node.getAttribute(attr);
+      if (value != null && !value.trim().startsWith('#')) {
+        node.removeAttribute(attr);
+      }
+    }
+  });
+  return svgPurifier;
+}
+
 /**
  * Strips active and external-referencing content from user-provided SVG markup,
  * leaving only safe drawing elements. The `svg`/`svgFilters` profiles restrict
  * the tag set and DOMPurify drops every `on*` handler by default; on top of that
  * the forbidden tags remove embedded HTML (`foreignObject`), scripts, stylesheets,
- * and external references (`a`/`use`/`image`/`animate`/`set`), and forbidding
- * `href`/`xlink:href` closes `javascript:`-URL and external-fetch smuggling.
+ * links, and animation, while `<use>` is re-allowed with hrefs restricted to
+ * same-document fragments by the purifier hook.
  */
 export function sanitizeSvg(svg: string): string {
-  return DOMPurify.sanitize(svg, {
+  return getSvgPurifier().sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
-    FORBID_TAGS: ['script', 'foreignObject', 'style', 'a', 'use', 'image', 'animate', 'set'],
-    FORBID_ATTR: ['href', 'xlink:href'],
+    ADD_TAGS: ['use'],
+    FORBID_TAGS: ['script', 'foreignObject', 'style', 'a', 'image', 'animate', 'set'],
   });
 }
 
