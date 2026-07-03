@@ -1,4 +1,5 @@
 import sanitizeHtml from 'sanitize-html';
+import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
 
 /**
  * Server-side sanitization for user-provided MCP server icons. The client
@@ -305,10 +306,17 @@ function normalizeIconValue(value: string): string {
 
 /**
  * Sanitize a user-provided MCP `iconPath`. SVG data URIs are decoded, stripped
- * of active content via an allowlist, and re-encoded; a malformed SVG data URI
- * resolves to an empty string so a broken icon is stored rather than raw markup.
- * All other values (raster data URIs, URLs, relative paths) are returned
- * unchanged.
+ * of active content via an allowlist, and re-encoded as base64; a malformed SVG
+ * data URI resolves to an empty string so a broken icon is stored rather than
+ * raw markup. All other values (raster data URIs, URLs, relative paths) are
+ * returned unchanged.
+ *
+ * Base64 is far more compact than percent-encoding for the angle-bracket-heavy
+ * SVG markup that sanitizing can even slightly grow (it expands self-closing
+ * tags to explicit close tags), so it minimizes needless rejection. The result
+ * is then measured against the schema length cap and dropped if it still exceeds
+ * it, so a value that passed the cap on input can never be stored over it and
+ * then rejected when the prefilled value is resubmitted on the next edit.
  */
 export function sanitizeMcpIconPath(iconPath: string): string {
   const normalized = normalizeIconValue(iconPath);
@@ -320,5 +328,6 @@ export function sanitizeMcpIconPath(iconPath: string): string {
     return '';
   }
   const clean = scrubStyleBlocks(sanitizeHtml(svg, SVG_SANITIZE_OPTIONS));
-  return `data:image/svg+xml,${encodeURIComponent(clean)}`;
+  const encoded = `data:image/svg+xml;base64,${Buffer.from(clean, 'utf-8').toString('base64')}`;
+  return encoded.length > MAX_MCP_ICON_PATH_LENGTH ? '' : encoded;
 }
