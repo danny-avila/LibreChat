@@ -187,6 +187,23 @@ describe('sanitizeSvg', () => {
     expect(clean).toContain('xlink:href="#p"');
   });
 
+  it('keeps the xmlns:xlink declaration that binds xlink:href prefixes', () => {
+    const dirty =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><use xlink:href="#p" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+  });
+
+  it('preserves safe filter effects and strips external feImage references', () => {
+    const dirty =
+      '<svg><filter id="f"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b" /><feOffset in="b" dx="2" dy="2" /><feImage href="https://evil.example/x.png" /></filter><rect width="10" height="10" filter="url(#f)" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('feGaussianBlur');
+    expect(clean).toContain('stdDeviation="2"');
+    expect(clean).toContain('filter="url(#f)"');
+    expect(clean).not.toContain('evil.example');
+  });
+
   it('preserves gradient stop inheritance via local href', () => {
     const dirty =
       '<svg><linearGradient id="g"><stop offset="0" stop-color="#000" /></linearGradient><linearGradient id="g2" href="#g" x1="0" x2="1" /><rect fill="url(#g2)" width="10" height="10" /></svg>';
