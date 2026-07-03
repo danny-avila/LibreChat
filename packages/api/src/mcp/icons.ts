@@ -16,11 +16,13 @@ import sanitizeHtml from 'sanitize-html';
 const SVG_DATA_URI = /^data:image\/svg\+xml/i;
 
 /**
- * SVG elements safe to keep for an icon. Drawing, shape, gradient, and clip
- * primitives, plus `use` for self-contained `<defs>` references (common exporter
- * output). `script`, `foreignObject`, `style`, `a`, `image`, `animate`, and
- * `set` are intentionally omitted so no active content, embedded HTML, or
- * navigation survives; hrefs are restricted to same-document fragments below.
+ * SVG elements safe to keep for an icon. Drawing, shape, gradient, clip, and
+ * filter primitives, plus `use` for self-contained `<defs>` references (common
+ * exporter output). The filter set mirrors the client sanitizer's DOMPurify
+ * `svgFilters` profile so an icon that previews with effects is stored intact.
+ * `script`, `foreignObject`, `style`, `a`, `image`, `animate`, and `set` are
+ * intentionally omitted so no active content, embedded HTML, or navigation
+ * survives; hrefs are restricted to same-document fragments below.
  */
 const ALLOWED_SVG_TAGS = [
   'svg',
@@ -44,6 +46,32 @@ const ALLOWED_SVG_TAGS = [
   'pattern',
   'title',
   'desc',
+  'filter',
+  'feBlend',
+  'feColorMatrix',
+  'feComponentTransfer',
+  'feComposite',
+  'feConvolveMatrix',
+  'feDiffuseLighting',
+  'feDisplacementMap',
+  'feDistantLight',
+  'feDropShadow',
+  'feFlood',
+  'feFuncA',
+  'feFuncB',
+  'feFuncG',
+  'feFuncR',
+  'feGaussianBlur',
+  'feImage',
+  'feMerge',
+  'feMergeNode',
+  'feMorphology',
+  'feOffset',
+  'fePointLight',
+  'feSpecularLighting',
+  'feSpotLight',
+  'feTile',
+  'feTurbulence',
 ];
 
 /**
@@ -56,6 +84,7 @@ const ALLOWED_SVG_TAGS = [
 const ALLOWED_SVG_ATTRS = [
   'viewBox',
   'xmlns',
+  'xmlns:xlink',
   'width',
   'height',
   'x',
@@ -96,6 +125,58 @@ const ALLOWED_SVG_ATTRS = [
   'style',
   'href',
   'xlink:href',
+  'filter',
+  'filterUnits',
+  'primitiveUnits',
+  'color-interpolation-filters',
+  'in',
+  'in2',
+  'result',
+  'mode',
+  'type',
+  'values',
+  'operator',
+  'k1',
+  'k2',
+  'k3',
+  'k4',
+  'stdDeviation',
+  'dx',
+  'dy',
+  'flood-color',
+  'flood-opacity',
+  'lighting-color',
+  'surfaceScale',
+  'diffuseConstant',
+  'specularConstant',
+  'specularExponent',
+  'azimuth',
+  'elevation',
+  'pointsAtX',
+  'pointsAtY',
+  'pointsAtZ',
+  'limitingConeAngle',
+  'radius',
+  'scale',
+  'xChannelSelector',
+  'yChannelSelector',
+  'baseFrequency',
+  'numOctaves',
+  'seed',
+  'stitchTiles',
+  'order',
+  'kernelMatrix',
+  'divisor',
+  'bias',
+  'targetX',
+  'targetY',
+  'edgeMode',
+  'preserveAlpha',
+  'slope',
+  'intercept',
+  'amplitude',
+  'exponent',
+  'tableValues',
 ];
 
 /** Drops any `href`/`xlink:href` that is not a same-document fragment, mirroring

@@ -70,6 +70,35 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('x1="0"');
   });
 
+  it('keeps the xmlns:xlink declaration that binds preserved xlink:href prefixes', () => {
+    const raw =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><path id="p" d="M0 0h1v1z"/></defs><use xlink:href="#p"/></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+    expect(clean).toContain('xlink:href="#p"');
+  });
+
+  it('preserves safe filter effects the client sanitizer allows', () => {
+    const raw =
+      '<svg><filter id="f"><feDropShadow dx="1" dy="1" stdDeviation="0.5" flood-color="#000" flood-opacity="0.4"/><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b"/><feOffset in="b" dx="2" dy="2"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter><rect width="10" height="10" filter="url(#f)"/></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).toContain('feDropShadow');
+    expect(clean).toContain('feGaussianBlur');
+    expect(clean).toContain('stdDeviation="2"');
+    expect(clean).toContain('flood-color="#000"');
+    expect(clean).toContain('filter="url(#f)"');
+  });
+
+  it('strips external feImage references inside filters', () => {
+    const raw =
+      '<svg><filter id="f"><feImage href="https://evil.example/x.png"/></filter><rect filter="url(#f)"/></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).not.toContain('evil.example');
+  });
+
   it('preserves case-sensitive SVG names and multi-color paint', () => {
     const raw =
       '<svg viewBox="0 0 24 24"><linearGradient id="g"><stop offset="0" stop-color="#f00"/></linearGradient><path d="M0 0h24v24H0z" fill="url(#g)"/></svg>';
