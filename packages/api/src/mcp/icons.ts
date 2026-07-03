@@ -46,6 +46,7 @@ const ALLOWED_SVG_TAGS = [
   'pattern',
   'title',
   'desc',
+  'style',
   'filter',
   'feBlend',
   'feColorMatrix',
@@ -196,6 +197,26 @@ function hasExternalUrlReference(value: string): boolean {
   return false;
 }
 
+/** Strips comments and `@import` at-rules and rewrites external `url(...)` to
+ *  `none`, keeping only local paint rules from an internal stylesheet. */
+function sanitizeCssText(css: string): string {
+  return css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/@import[^;]*;?/gi, '')
+    .replace(CSS_URL_REFERENCE, (full, _quote, target) =>
+      target.trim().startsWith('#') ? full : 'none',
+    );
+}
+
+/** Scrubs the CSS inside every `<style>` block of an already-tag-sanitized SVG so
+ *  an internal stylesheet keeps its local class paints but cannot fetch externally. */
+function scrubStyleBlocks(svg: string): string {
+  return svg.replace(
+    /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi,
+    (_full, open, css, close) => `${open}${sanitizeCssText(css)}${close}`,
+  );
+}
+
 /**
  * Drops references that leave the document: any `href`/`xlink:href` that is not a
  * same-document fragment, and any attribute (`filter`, `fill`, `mask`,
@@ -222,12 +243,17 @@ function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes):
  * sensitive SVG names (`viewBox`, `linearGradient`, `clipPath`, …) survive the
  * round-trip; lowercasing them would break rendering. `allowedSchemes` is empty
  * as a second layer behind the fragment-only href transform: a fragment carries
- * no scheme, so nothing legitimate is affected.
+ * no scheme, so nothing legitimate is affected. `<style>` is allowed
+ * (`allowVulnerableTags`) because these icons only render in inert `<img>`/CSS-mask
+ * contexts isolated from any host page — no script runs and, after `scrubStyleBlocks`
+ * removes `@import`/external `url()`, no subresource loads — so an internal
+ * stylesheet's local paint rules are safe to keep.
  */
 const SVG_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: ALLOWED_SVG_TAGS,
   allowedAttributes: { '*': ALLOWED_SVG_ATTRS },
   allowedSchemes: [],
+  allowVulnerableTags: true,
   transformTags: { '*': keepLocalReferences },
   parser: { lowerCaseTags: false, lowerCaseAttributeNames: false },
 };
@@ -266,6 +292,6 @@ export function sanitizeMcpIconPath(iconPath: string): string {
   if (svg == null) {
     return '';
   }
-  const clean = sanitizeHtml(svg, SVG_SANITIZE_OPTIONS);
+  const clean = scrubStyleBlocks(sanitizeHtml(svg, SVG_SANITIZE_OPTIONS));
   return `data:image/svg+xml,${encodeURIComponent(clean)}`;
 }

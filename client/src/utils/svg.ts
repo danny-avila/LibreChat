@@ -130,20 +130,41 @@ export function hasExternalUrlReference(value: string): boolean {
   return false;
 }
 
+/**
+ * Neutralizes external references inside an internal `<style>` block (used by
+ * exporter SVGs that store multi-color paint in class rules) while keeping the
+ * local rules intact: strips comments and `@import` at-rules, and rewrites any
+ * non-fragment `url(...)` to `none`.
+ */
+export function sanitizeCssText(css: string): string {
+  return css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/@import[^;]*;?/gi, '')
+    .replace(CSS_URL_REFERENCE, (full, _quote, target) =>
+      target.trim().startsWith('#') ? full : 'none',
+    );
+}
+
 let svgPurifier: ReturnType<typeof DOMPurify> | null = null;
 
 /**
- * Dedicated DOMPurify instance for SVG icons, so the local-reference hook never
- * leaks into the app's shared default instance. The hook keeps same-document
+ * Dedicated DOMPurify instance for SVG icons, so the local-reference hooks never
+ * leak into the app's shared default instance. They keep same-document
  * references (`href="#id"` on `<use>`/gradients and `url(#id)` paint/filter/clip
  * values — common exporter output) while stripping every external, relative, or
- * scheme-carrying `href` or `url(...)` that could smuggle a fetch or navigation.
+ * scheme-carrying `href` or `url(...)`, and scrub `<style>` blocks so an internal
+ * stylesheet keeps its local paint rules but cannot `@import` or fetch externally.
  */
 function getSvgPurifier(): ReturnType<typeof DOMPurify> {
   if (svgPurifier) {
     return svgPurifier;
   }
   svgPurifier = DOMPurify(window);
+  svgPurifier.addHook('uponSanitizeElement', (node) => {
+    if (node.nodeName?.toLowerCase() === 'style' && node.textContent) {
+      node.textContent = sanitizeCssText(node.textContent);
+    }
+  });
   svgPurifier.addHook('afterSanitizeAttributes', (node) => {
     for (const attr of ['href', 'xlink:href']) {
       const value = node.getAttribute(attr);
@@ -164,15 +185,17 @@ function getSvgPurifier(): ReturnType<typeof DOMPurify> {
  * Strips active and external-referencing content from user-provided SVG markup,
  * leaving only safe drawing elements. The `svg`/`svgFilters` profiles restrict
  * the tag set and DOMPurify drops every `on*` handler by default; on top of that
- * the forbidden tags remove embedded HTML (`foreignObject`), scripts, stylesheets,
- * links, and animation, while `<use>` is re-allowed with hrefs restricted to
- * same-document fragments by the purifier hook.
+ * the forbidden tags remove embedded HTML (`foreignObject`), scripts, links, and
+ * animation, while `<use>` and `<style>` are re-allowed with hrefs and CSS
+ * references restricted to same-document fragments by the purifier hooks. These
+ * icons only ever render in inert `<img>`/CSS-mask contexts isolated from the
+ * host page, so a script-free, externally-inert `<style>` is safe to keep.
  */
 export function sanitizeSvg(svg: string): string {
   return getSvgPurifier().sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
-    ADD_TAGS: ['use'],
-    FORBID_TAGS: ['script', 'foreignObject', 'style', 'a', 'image', 'animate', 'set'],
+    ADD_TAGS: ['use', 'style'],
+    FORBID_TAGS: ['script', 'foreignObject', 'a', 'image', 'animate', 'set'],
   });
 }
 
