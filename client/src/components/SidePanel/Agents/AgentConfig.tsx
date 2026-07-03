@@ -116,7 +116,10 @@ export default function AgentConfig() {
             type="button"
             onClick={() => setActivePanel(Panel.model)}
             title={model || undefined}
-            className="relative flex h-9 w-full min-w-0 items-center overflow-hidden rounded-lg border border-border-light bg-surface-secondary px-1 text-sm font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className={cn(
+              'relative flex h-9 w-full min-w-0 items-center overflow-hidden rounded-lg border border-border-light bg-surface-secondary text-sm font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+              model != null && model ? 'px-1' : 'px-3',
+            )}
           >
             <div className="flex w-full min-w-0 items-center gap-2">
               {Icon && (

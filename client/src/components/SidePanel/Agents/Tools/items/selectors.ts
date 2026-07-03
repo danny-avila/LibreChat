@@ -62,17 +62,28 @@ export function mcpServerToken(serverName: string): string {
   return `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`;
 }
 
+/**
+ * Whether a form `tools` token references the given MCP server, across every
+ * format ever persisted: the server placeholder token, the raw server name,
+ * the legacy `mcp_<server>` token, and per-tool ids in both prefix and suffix
+ * shapes. Selection and removal must share this predicate — anything the
+ * selection logic counts as attached, an explicit remove must also strip, or
+ * a legacy token leaves the server permanently selected.
+ */
+export function matchesMcpServer(token: string, serverName: string): boolean {
+  const prefixed = `${MCP_PREFIX}${serverName}`;
+  return (
+    token === mcpServerToken(serverName) ||
+    token === serverName ||
+    token === prefixed ||
+    token.startsWith(`${prefixed}_`) ||
+    token.endsWith(`_${prefixed}`)
+  );
+}
+
 function isMcpSelected(item: AgentItem, form: FormSelection): boolean {
   if (item.kind !== 'mcp') return false;
-  const prefixed = `${MCP_PREFIX}${item.id}`;
-  return form.tools.some(
-    (t) =>
-      t === mcpServerToken(item.id) ||
-      t === item.id ||
-      t === prefixed ||
-      t.startsWith(`${prefixed}_`) ||
-      t.endsWith(`_${prefixed}`),
-  );
+  return form.tools.some((t) => matchesMcpServer(t, item.id));
 }
 
 function isSkillSelected(item: AgentItem, form: FormSelection): boolean {

@@ -7,12 +7,13 @@ import {
   OGDialogTitle,
   OGDialogContent,
   OGDialogDescription,
+  useToastContext,
 } from '@librechat/client';
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
 import type { AgentForm } from '~/common';
+import { itemKey, mcpServerToken, matchesMcpServer } from './items/selectors';
 import { useAgentItems, useUninstallToolCredentials } from './hooks';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
-import { itemKey, mcpServerToken } from './items/selectors';
 import { computeToggleAction } from './items/mutations';
 import { useLocalize, useToolFavorites } from '~/hooks';
 import MarketplaceSidebar from './MarketplaceSidebar';
@@ -20,6 +21,7 @@ import MarketplaceCatalog from './MarketplaceCatalog';
 import ItemDialog from './ItemDialog/ItemDialog';
 import { applyFilter } from './items/filtering';
 import { NEW_ACTION_ID } from './items/types';
+import { isEphemeralAgent } from '~/common';
 
 interface ToolsMarketplaceDialogProps {
   open: boolean;
@@ -36,6 +38,7 @@ export default function ToolsMarketplaceDialog({
   agentId,
 }: ToolsMarketplaceDialogProps) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const uninstallToolCredentials = useUninstallToolCredentials();
 
@@ -56,6 +59,13 @@ export default function ToolsMarketplaceDialog({
         setAddMcpOpen(true);
         return;
       }
+      /** Actions are persisted against the agent id, so an unsaved agent has
+       * nothing to attach them to — surface the save-first error instead of
+       * letting the editor fail on submit. */
+      if (isEphemeralAgent(agentId)) {
+        showToast({ message: localize('com_agents_no_agent_id_error'), status: 'error' });
+        return;
+      }
       setDetailItem({
         kind: 'action',
         id: NEW_ACTION_ID,
@@ -65,7 +75,7 @@ export default function ToolsMarketplaceDialog({
         endpointCount: 0,
       });
     },
-    [localize],
+    [agentId, localize, showToast],
   );
 
   const selectedIds = useMemo(() => new Set(selectedItems.map(itemKey)), [selectedItems]);
@@ -123,11 +133,10 @@ export default function ToolsMarketplaceDialog({
         case 'mcp-remove': {
           if (item.kind !== 'mcp') break;
           const toolIds = new Set((item.server.tools ?? []).map((t) => t.tool_id));
-          const serverToken = mcpServerToken(item.id);
           const current = (getValues('tools') ?? []) as string[];
           setValue(
             'tools',
-            current.filter((t) => t !== serverToken && !toolIds.has(t)),
+            current.filter((t) => !matchesMcpServer(t, item.id) && !toolIds.has(t)),
             { shouldDirty: true },
           );
           break;

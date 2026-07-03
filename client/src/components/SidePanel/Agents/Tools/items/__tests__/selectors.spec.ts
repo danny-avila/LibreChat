@@ -1,7 +1,7 @@
 import { AgentCapabilities, Constants } from 'librechat-data-provider';
 import type { AgentItem } from '../types';
 import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
-import { deriveSelectedItems } from '../selectors';
+import { deriveSelectedItems, matchesMcpServer } from '../selectors';
 
 const mcpServerToken = (serverName: string) =>
   `${Constants.mcp_server}${Constants.mcp_delimiter}${serverName}`;
@@ -195,5 +195,25 @@ describe('deriveSelectedItems', () => {
     const kindOrder = result.map((i) => i.kind);
     expect(kindOrder.indexOf('builtin')).toBeLessThan(kindOrder.indexOf('tool'));
     expect(kindOrder.indexOf('tool')).toBeLessThan(kindOrder.indexOf('skill'));
+  });
+});
+
+describe('matchesMcpServer', () => {
+  test('matches every persisted token format for the server', () => {
+    expect(matchesMcpServer(`${Constants.mcp_server}${Constants.mcp_delimiter}srv`, 'srv')).toBe(
+      true,
+    );
+    expect(matchesMcpServer('srv', 'srv')).toBe(true);
+    expect(matchesMcpServer('mcp_srv', 'srv')).toBe(true);
+    expect(matchesMcpServer('mcp_srv_tool', 'srv')).toBe(true);
+    expect(matchesMcpServer('search_mcp_srv', 'srv')).toBe(true);
+    expect(matchesMcpServer(`sys__all__sys${Constants.mcp_delimiter}srv`, 'srv')).toBe(true);
+  });
+
+  test('does not match tokens for other servers or plain tool ids', () => {
+    expect(matchesMcpServer('mcp_other', 'srv')).toBe(false);
+    expect(matchesMcpServer('search_mcp_other', 'srv')).toBe(false);
+    expect(matchesMcpServer('dalle', 'srv')).toBe(false);
+    expect(matchesMcpServer('srv2', 'srv')).toBe(false);
   });
 });
