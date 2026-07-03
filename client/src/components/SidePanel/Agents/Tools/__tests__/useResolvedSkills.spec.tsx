@@ -110,16 +110,15 @@ describe('useResolvedSkills', () => {
     expect(result.current?.[0].name).toBe('com_ui_skill_unavailable');
   });
 
-  test('does not surface a placeholder for a transient lookup error', async () => {
+  test('keeps a transient lookup error visible under the same placeholder', async () => {
     mockGetSkill.mockRejectedValue({ response: { status: 500 } });
 
     const { result } = renderResolvedSkills(['flaky'], []);
 
     await waitFor(() => {
-      expect(mockGetSkill).toHaveBeenCalledWith('flaky');
+      expect(result.current).toHaveLength(1);
     });
-    await waitFor(() => {
-      expect(result.current).toHaveLength(0);
-    });
+    expect(result.current?.[0]._id).toBe('flaky');
+    expect(result.current?.[0].name).toBe('com_ui_skill_unavailable');
   });
 });

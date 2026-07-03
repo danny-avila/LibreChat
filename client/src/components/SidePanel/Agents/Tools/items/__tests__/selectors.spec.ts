@@ -205,7 +205,6 @@ describe('matchesMcpServer', () => {
     );
     expect(matchesMcpServer('srv', 'srv')).toBe(true);
     expect(matchesMcpServer('mcp_srv', 'srv')).toBe(true);
-    expect(matchesMcpServer('mcp_srv_tool', 'srv')).toBe(true);
     expect(matchesMcpServer('search_mcp_srv', 'srv')).toBe(true);
     expect(matchesMcpServer(`sys__all__sys${Constants.mcp_delimiter}srv`, 'srv')).toBe(true);
   });
@@ -215,5 +214,13 @@ describe('matchesMcpServer', () => {
     expect(matchesMcpServer('search_mcp_other', 'srv')).toBe(false);
     expect(matchesMcpServer('dalle', 'srv')).toBe(false);
     expect(matchesMcpServer('srv2', 'srv')).toBe(false);
+  });
+
+  test('never claims a longer server name sharing the prefix', () => {
+    expect(matchesMcpServer('mcp_github_extra', 'github')).toBe(false);
+    expect(matchesMcpServer('github_extra', 'github')).toBe(false);
+    expect(matchesMcpServer('search_mcp_github_extra', 'github')).toBe(false);
+    expect(matchesMcpServer('mcp_github_extra', 'github_extra')).toBe(true);
+    expect(matchesMcpServer('search_mcp_github_extra', 'github_extra')).toBe(true);
   });
 });

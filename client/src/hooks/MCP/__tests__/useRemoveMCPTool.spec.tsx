@@ -38,7 +38,6 @@ describe('useRemoveMCPTool', () => {
       `${Constants.mcp_server}${Constants.mcp_delimiter}srv`,
       'srv',
       'mcp_srv',
-      'mcp_srv_tool',
       `search${Constants.mcp_delimiter}srv`,
       `sys__all__sys${Constants.mcp_delimiter}srv`,
       'dalle',

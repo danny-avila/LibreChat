@@ -65,10 +65,13 @@ export function mcpServerToken(serverName: string): string {
 /**
  * Whether a form `tools` token references the given MCP server, across every
  * format ever persisted: the server placeholder token, the raw server name,
- * the legacy `mcp_<server>` token, and per-tool ids in both prefix and suffix
- * shapes. Selection and removal must share this predicate — anything the
- * selection logic counts as attached, an explicit remove must also strip, or
- * a legacy token leaves the server permanently selected.
+ * the exact `mcp_<server>` pluginKey form, and delimiter-suffixed per-tool
+ * ids (`<tool>_mcp_<server>`). All checks are exact or delimiter-bounded —
+ * server names may contain underscores, so a bare prefix match would claim
+ * `mcp_github_extra` for a server named `github`. Selection and removal must
+ * share this predicate: anything the selection logic counts as attached, an
+ * explicit remove must also strip, or a legacy token leaves the server
+ * permanently selected.
  */
 export function matchesMcpServer(token: string, serverName: string): boolean {
   const prefixed = `${MCP_PREFIX}${serverName}`;
@@ -76,7 +79,6 @@ export function matchesMcpServer(token: string, serverName: string): boolean {
     token === mcpServerToken(serverName) ||
     token === serverName ||
     token === prefixed ||
-    token.startsWith(`${prefixed}_`) ||
     token.endsWith(`_${prefixed}`)
   );
 }
