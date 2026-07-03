@@ -1,9 +1,22 @@
+import { isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
-import logger from '~/config/winston';
+import type {
+  AppConfig,
+  IChatProject,
+  IChatProjectDocument,
+  IConversation,
+  IMessage,
+  ISharedLink,
+} from '~/types';
+import {
+  buildRetentionVisibilityFilter,
+  cascadeForcedConversationRetention,
+  cascadeForcedRetentionByProject,
+  resolveForcedRetentionDate,
+} from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
-import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { escapeRegExp } from '~/utils/string';
-import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
+import logger from '~/config/winston';
 
 export type ChatProjectSortBy = 'name' | 'createdAt' | 'lastConversationAt';
 export type ChatProjectSortDirection = 'asc' | 'desc';
@@ -51,11 +64,16 @@ export interface ChatProjectMethods {
     projectId: string,
     input: UpdateChatProjectInput,
   ): Promise<IChatProject | null>;
-  deleteChatProject(user: string, projectId: string): Promise<DeleteChatProjectResult>;
+  deleteChatProject(
+    user: string,
+    projectId: string,
+    interfaceConfig?: AppConfig['interfaceConfig'],
+  ): Promise<DeleteChatProjectResult>;
   assignConversationToProject(
     user: string,
     conversationId: string,
     projectId: string | null,
+    interfaceConfig?: AppConfig['interfaceConfig'],
   ): Promise<AssignConversationToProjectResult | null>;
   refreshChatProjectStats(user: string, projectId: string): Promise<IChatProject | null>;
 }
@@ -252,6 +270,54 @@ export async function updateChatProjectLastConversationForUser(
 }
 
 export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
+  /**
+   * Converts a project's conversations to the forced (ephemeral) window when the deployment runs
+   * in ephemeral mode. Assigning, removing, or bulk-unassigning a chat rewrites its row without
+   * setting `isTemporary`/`expiredAt`, so a permanent chat organized after the install switched
+   * to ephemeral would otherwise stay visible and never expire. A no-op outside forced retention.
+   */
+  function forceProjectConversationRetention(
+    user: string,
+    chatProjectId: string,
+    interfaceConfig?: AppConfig['interfaceConfig'],
+  ): Promise<void> {
+    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
+      return Promise.resolve();
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    return cascadeForcedRetentionByProject(
+      Conversation,
+      Message,
+      SharedLink,
+      user,
+      chatProjectId,
+      resolveForcedRetentionDate(interfaceConfig),
+    );
+  }
+
+  function forceConversationRetention(
+    user: string,
+    conversationId: string,
+    interfaceConfig?: AppConfig['interfaceConfig'],
+  ): Promise<void> {
+    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
+      return Promise.resolve();
+    }
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    return cascadeForcedConversationRetention(
+      Conversation,
+      Message,
+      SharedLink,
+      user,
+      conversationId,
+      resolveForcedRetentionDate(interfaceConfig),
+    );
+  }
+
   async function createChatProject(
     user: string,
     input: CreateChatProjectInput,
@@ -360,6 +426,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
   async function deleteChatProject(
     user: string,
     projectId: string,
+    interfaceConfig?: AppConfig['interfaceConfig'],
   ): Promise<DeleteChatProjectResult> {
     if (!isValidObjectIdString(projectId)) {
       return { deletedCount: 0, modifiedCount: 0 };
@@ -372,6 +439,8 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     if (!project) {
       return { deletedCount: 0, modifiedCount: 0 };
     }
+
+    await forceProjectConversationRetention(user, projectId, interfaceConfig);
 
     const [conversationResult, deleteResult] = await Promise.all([
       Conversation.updateMany(
@@ -391,6 +460,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     user: string,
     conversationId: string,
     projectId: string | null,
+    interfaceConfig?: AppConfig['interfaceConfig'],
   ): Promise<AssignConversationToProjectResult | null> {
     const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
@@ -429,6 +499,8 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     if (!updatedConversation) {
       return null;
     }
+
+    await forceConversationRetention(user, conversationId, interfaceConfig);
 
     const projectIds = new Set(
       [previousProjectId, normalizedProjectId].filter((id): id is string => Boolean(id)),
