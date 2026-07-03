@@ -80,7 +80,7 @@ function samplePixels(image: HTMLImageElement): Uint8ClampedArray | null {
   const canvas = document.createElement('canvas');
   canvas.width = size.width;
   canvas.height = size.height;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
+  const context = canvas.getContext('2d');
   if (!context) {
     return null;
   }
@@ -115,18 +115,31 @@ export function detectMonochrome(src: string): Promise<boolean> {
 }
 
 /**
- * Strips scripts, event handlers, and other active content from user-provided
- * SVG markup using an allowlist sanitizer, leaving only safe drawing elements.
+ * Strips active and external-referencing content from user-provided SVG markup,
+ * leaving only safe drawing elements. The `svg`/`svgFilters` profiles restrict
+ * the tag set and DOMPurify drops every `on*` handler by default; on top of that
+ * the forbidden tags remove embedded HTML (`foreignObject`), scripts, stylesheets,
+ * and external references (`a`/`use`/`image`/`animate`/`set`), and forbidding
+ * `href`/`xlink:href` closes `javascript:`-URL and external-fetch smuggling.
  */
 export function sanitizeSvg(svg: string): string {
   return DOMPurify.sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
-    FORBID_TAGS: ['script', 'foreignObject'],
-    FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover', 'onmouseenter', 'onfocus'],
+    FORBID_TAGS: ['script', 'foreignObject', 'style', 'a', 'use', 'image', 'animate', 'set'],
+    FORBID_ATTR: ['href', 'xlink:href'],
   });
 }
 
-/** Encodes SVG markup as a URL-encoded `image/svg+xml` data URI. */
+/**
+ * Encodes SVG markup as a base64 `image/svg+xml` data URI. Base64 keeps the
+ * payload at a flat ~1.33x of the source, versus the ~1.5x+ of percent-encoding
+ * for the angle-bracket-heavy SVG that ships in every server/group listing. The
+ * `encodeURIComponent` round-trip converts UTF-8 to a binary string first so
+ * `btoa` handles non-ASCII glyphs without throwing.
+ */
 export function svgToDataUri(svg: string): string {
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  const binary = encodeURIComponent(svg).replace(/%([0-9A-F]{2})/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+  return `data:image/svg+xml;base64,${btoa(binary)}`;
 }

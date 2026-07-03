@@ -1,10 +1,23 @@
 import { useEffect, useState } from 'react';
-import { isSvgIcon, detectMonochrome } from '~/utils';
+import { isSvgIcon, detectMonochrome, isSameOriginOrDataIcon } from '~/utils';
 
 /** Resolved monochrome verdicts, keyed by icon source, shared across instances. */
 const monochromeCache = new Map<string, boolean>();
 /** In-flight resolutions, so concurrent instances of the same icon sample once. */
 const inFlight = new Map<string, Promise<boolean>>();
+/** Bound the verdict cache so a session that cycles many distinct data-URI
+ *  icons (each a large, unique key) can't grow it without limit. */
+const MAX_MONOCHROME_CACHE = 256;
+
+function rememberVerdict(src: string, monochrome: boolean): void {
+  if (monochromeCache.size >= MAX_MONOCHROME_CACHE) {
+    const oldest = monochromeCache.keys().next().value;
+    if (oldest !== undefined) {
+      monochromeCache.delete(oldest);
+    }
+  }
+  monochromeCache.set(src, monochrome);
+}
 
 function resolveMonochrome(src: string): Promise<boolean> {
   const cached = monochromeCache.get(src);
@@ -18,7 +31,7 @@ function resolveMonochrome(src: string): Promise<boolean> {
   const promise = detectMonochrome(src)
     .catch(() => false)
     .then((monochrome) => {
-      monochromeCache.set(src, monochrome);
+      rememberVerdict(src, monochrome);
       inFlight.delete(src);
       return monochrome;
     });
@@ -43,7 +56,8 @@ export default function useAdaptiveIcon(
   src?: string | null,
   monochrome?: boolean,
 ): { shouldTint: boolean } {
-  const key = typeof monochrome !== 'boolean' && isSvgIcon(src) ? src : null;
+  const key =
+    typeof monochrome !== 'boolean' && isSvgIcon(src) && isSameOriginOrDataIcon(src) ? src : null;
   const [state, setState] = useState<{ key: string | null; monochrome: boolean }>(() => ({
     key,
     monochrome: cachedVerdict(key),
@@ -62,7 +76,9 @@ export default function useAdaptiveIcon(
     let active = true;
     resolveMonochrome(key).then((resolved) => {
       if (active) {
-        setState((prev) => (prev.key === key ? { key, monochrome: resolved } : prev));
+        setState((prev) =>
+          prev.key === key && prev.monochrome !== resolved ? { key, monochrome: resolved } : prev,
+        );
       }
     });
     return () => {

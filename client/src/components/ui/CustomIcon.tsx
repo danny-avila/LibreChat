@@ -17,6 +17,10 @@ interface CustomIconProps {
  * keep their original colors. Pass an explicit `monochrome` flag to skip
  * detection when the icon's config already declares it. The tint color is
  * inherited from the element's text color, so set a `text-*` class on `className`.
+ *
+ * In forced-colors mode (Windows High Contrast) the UA overrides
+ * `background-color`, which would blank a masked glyph, so `custom-icon-tint`
+ * repaints it with the `CanvasText` system color (see `style.css`).
  */
 export default function CustomIcon({
   src,
@@ -35,7 +39,7 @@ export default function CustomIcon({
         role={decorative ? undefined : 'img'}
         aria-label={decorative ? undefined : alt}
         aria-hidden={decorative ? true : undefined}
-        className={cn('inline-block', className)}
+        className={cn('custom-icon-tint inline-block', className)}
         style={{
           backgroundColor: 'currentColor',
           maskImage: maskUrl,
@@ -47,7 +51,11 @@ export default function CustomIcon({
           maskSize: 'contain',
           WebkitMaskSize: 'contain',
         }}
-      />
+      >
+        {onError != null && (
+          <img src={src} alt="" aria-hidden="true" className="hidden" onError={onError} />
+        )}
+      </span>
     );
   }
 

@@ -4,7 +4,8 @@ import {
   resetFakeIcons,
   getLastCrossOrigin,
 } from 'test/canvasMock';
-import { detectMonochrome, sanitizeSvg, scanMonochrome } from '../svg';
+import { detectMonochrome, sanitizeSvg, scanMonochrome, svgToDataUri } from '../svg';
+import { isSvgIcon } from '../icons';
 
 const rgba = (...quads: number[]) => Uint8ClampedArray.from(quads);
 
@@ -141,5 +142,71 @@ describe('sanitizeSvg', () => {
     const clean = sanitizeSvg(dirty);
     expect(clean.toLowerCase()).not.toContain('foreignobject');
     expect(clean.toLowerCase()).not.toContain('iframe');
+  });
+
+  it('strips anchors and javascript: URLs', () => {
+    const dirty = '<svg><a href="javascript:alert(1)"><rect width="10" height="10" /></a></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('javascript:');
+    expect(clean.toLowerCase()).not.toContain('<a');
+    expect(clean).toContain('rect');
+  });
+
+  it('drops external <image> references so an SVG cannot phone home', () => {
+    const dirty =
+      '<svg><image href="https://evil.example/track.png" width="10" height="10" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('evil.example');
+    expect(clean.toLowerCase()).not.toContain('<image');
+  });
+
+  it('drops external <use> references', () => {
+    const dirty = '<svg><use href="https://evil.example/x.svg#a" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('evil.example');
+    expect(clean.toLowerCase()).not.toContain('<use');
+  });
+
+  it('drops <style> blocks with external url() references', () => {
+    const dirty = '<svg><style>rect { fill: url(https://evil.example/x); }</style><rect /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('evil.example');
+    expect(clean.toLowerCase()).not.toContain('<style');
+  });
+
+  it('drops href-smuggling animation elements', () => {
+    const dirty = '<svg><a><animate attributeName="href" values="javascript:alert(1)" /></a></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('javascript:');
+    expect(clean.toLowerCase()).not.toContain('<animate');
+  });
+});
+
+describe('svgToDataUri', () => {
+  const b64Body = (uri: string) => uri.slice('data:image/svg+xml;base64,'.length);
+
+  it('produces a base64 image/svg+xml data URI', () => {
+    const uri = svgToDataUri('<svg><path d="M0 0h1v1H0z" /></svg>');
+    expect(uri.startsWith('data:image/svg+xml;base64,')).toBe(true);
+  });
+
+  it('round-trips through sanitizeSvg into a URI that isSvgIcon accepts', () => {
+    const uri = svgToDataUri(sanitizeSvg('<svg><path d="M0 0h1v1H0z" /></svg>'));
+    expect(isSvgIcon(uri)).toBe(true);
+    const decoded = atob(b64Body(uri));
+    expect(decoded).toContain('path');
+    expect(decoded.startsWith('<svg')).toBe(true);
+  });
+
+  it('encodes non-ASCII markup without throwing and stays decodable', () => {
+    const uri = svgToDataUri('<svg><title>café ☕</title><path d="M0 0h1v1H0z" /></svg>');
+    expect(uri.startsWith('data:image/svg+xml;base64,')).toBe(true);
+    const utf8 = decodeURIComponent(
+      atob(b64Body(uri))
+        .split('')
+        .map((c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join(''),
+    );
+    expect(utf8).toContain('café ☕');
   });
 });
