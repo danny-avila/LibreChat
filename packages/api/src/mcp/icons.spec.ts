@@ -1,7 +1,12 @@
+import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
 import { sanitizeMcpIconPath } from './icons';
 
-/** Decode the percent-encoded SVG body `sanitizeMcpIconPath` re-emits. */
+/** Decode the SVG body `sanitizeMcpIconPath` re-emits (base64 or percent-form). */
 function decode(dataUri: string): string {
+  const base64Prefix = 'data:image/svg+xml;base64,';
+  if (dataUri.startsWith(base64Prefix)) {
+    return Buffer.from(dataUri.slice(base64Prefix.length), 'base64').toString('utf-8');
+  }
   return decodeURIComponent(dataUri.replace(/^data:image\/svg\+xml,/, ''));
 }
 
@@ -175,5 +180,27 @@ describe('sanitizeMcpIconPath', () => {
 
   it('returns an empty string for a malformed SVG data URI', () => {
     expect(sanitizeMcpIconPath('data:image/svg+xml')).toBe('');
+  });
+
+  it('keeps the sanitized output within the schema length cap', () => {
+    const raw = `<svg><text>${'A'.repeat(150_000)}</text></svg>`;
+    const input = `data:image/svg+xml;base64,${Buffer.from(raw, 'utf-8').toString('base64')}`;
+    expect(input.length).toBeLessThanOrEqual(MAX_MCP_ICON_PATH_LENGTH);
+    const out = sanitizeMcpIconPath(input);
+    expect(out.length).toBeLessThanOrEqual(MAX_MCP_ICON_PATH_LENGTH);
+    expect(decode(out)).toContain('AAAA');
+  });
+
+  it('never stores an icon over the length cap even when sanitizing grows it', () => {
+    // A base64 input under the cap whose many self-closing tags expand under
+    // sanitization (explicit close tags) past the cap; it must be dropped, not
+    // stored over-limit where the next edit's re-validation would reject it.
+    const cell = '<rect x="1" y="1" width="2" height="2" fill="#abc"/>';
+    const raw = `<svg>${cell.repeat(3400)}</svg>`;
+    const input = `data:image/svg+xml;base64,${Buffer.from(raw, 'utf-8').toString('base64')}`;
+    expect(input.length).toBeLessThanOrEqual(MAX_MCP_ICON_PATH_LENGTH);
+    const out = sanitizeMcpIconPath(input);
+    expect(out.length).toBeLessThanOrEqual(MAX_MCP_ICON_PATH_LENGTH);
+    expect(out).toBe('');
   });
 });
