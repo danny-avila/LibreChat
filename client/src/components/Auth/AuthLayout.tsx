@@ -26,6 +26,7 @@ function AuthLayout({
 }) {
   const localize = useLocalize();
 
+  const isLoginNotice = pathname === '/login';
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const DisplayError = () => {
     if (hasStartupConfigError) {
@@ -68,7 +69,7 @@ function AuthLayout({
           />
         </div>
       </BlinkAnimation>
-      <DisplayError />
+      {!isLoginNotice && <DisplayError />}
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
       </div>
@@ -84,7 +85,8 @@ function AuthLayout({
             </h1>
           )}
           {children}
-          {!pathname.includes('2fa') &&
+          {!isLoginNotice &&
+            !pathname.includes('2fa') &&
             (pathname.includes('login') || pathname.includes('register')) && (
               <SocialLoginRender startupConfig={startupConfig} />
             )}
