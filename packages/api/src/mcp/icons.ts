@@ -17,9 +17,10 @@ const SVG_DATA_URI = /^data:image\/svg\+xml/i;
 
 /**
  * SVG elements safe to keep for an icon. Drawing, shape, gradient, and clip
- * primitives only. `script`, `foreignObject`, `style`, `a`, `use`, `image`,
- * `animate`, and `set` are intentionally omitted so no active content, embedded
- * HTML, external references, or href smuggling survives.
+ * primitives, plus `use` for self-contained `<defs>` references (common exporter
+ * output). `script`, `foreignObject`, `style`, `a`, `image`, `animate`, and
+ * `set` are intentionally omitted so no active content, embedded HTML, or
+ * navigation survives; hrefs are restricted to same-document fragments below.
  */
 const ALLOWED_SVG_TAGS = [
   'svg',
@@ -34,6 +35,7 @@ const ALLOWED_SVG_TAGS = [
   'text',
   'tspan',
   'defs',
+  'use',
   'linearGradient',
   'radialGradient',
   'stop',
@@ -45,9 +47,11 @@ const ALLOWED_SVG_TAGS = [
 ];
 
 /**
- * Presentation and geometry attributes safe to keep. Deliberately excludes
- * `href`/`xlink:href` and any `on*` handler so external references and event
- * handlers cannot survive on the allowed elements.
+ * Presentation and geometry attributes safe to keep. `href`/`xlink:href` are
+ * allowed but restricted to same-document fragments (`#id`) by the tag
+ * transform below, so local `<use>`/gradient references survive while external
+ * references and `javascript:` URLs are stripped; `on*` handlers are never
+ * allowed.
  */
 const ALLOWED_SVG_ATTRS = [
   'viewBox',
@@ -90,17 +94,34 @@ const ALLOWED_SVG_ATTRS = [
   'id',
   'class',
   'style',
+  'href',
+  'xlink:href',
 ];
+
+/** Drops any `href`/`xlink:href` that is not a same-document fragment, mirroring
+ *  the client-side `sanitizeSvg` rule. */
+function keepLocalHrefs(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
+  for (const attr of ['href', 'xlink:href']) {
+    const value = attribs[attr];
+    if (value !== undefined && !value.trim().startsWith('#')) {
+      delete attribs[attr];
+    }
+  }
+  return { tagName, attribs };
+}
 
 /**
  * `parser.lowerCaseTags`/`lowerCaseAttributeNames` are disabled so case-
  * sensitive SVG names (`viewBox`, `linearGradient`, `clipPath`, …) survive the
- * round-trip; lowercasing them would break rendering.
+ * round-trip; lowercasing them would break rendering. `allowedSchemes` is empty
+ * as a second layer behind the fragment-only href transform: a fragment carries
+ * no scheme, so nothing legitimate is affected.
  */
 const SVG_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: ALLOWED_SVG_TAGS,
   allowedAttributes: { '*': ALLOWED_SVG_ATTRS },
-  allowedSchemes: ['http', 'https'],
+  allowedSchemes: [],
+  transformTags: { '*': keepLocalHrefs },
   parser: { lowerCaseTags: false, lowerCaseAttributeNames: false },
 };
 

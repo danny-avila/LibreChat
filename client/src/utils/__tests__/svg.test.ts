@@ -160,11 +160,40 @@ describe('sanitizeSvg', () => {
     expect(clean.toLowerCase()).not.toContain('<image');
   });
 
-  it('drops external <use> references', () => {
+  it('strips external <use> references but keeps the element inert', () => {
     const dirty = '<svg><use href="https://evil.example/x.svg#a" /></svg>';
     const clean = sanitizeSvg(dirty);
     expect(clean).not.toContain('evil.example');
-    expect(clean.toLowerCase()).not.toContain('<use');
+    expect(clean).not.toContain('href');
+  });
+
+  it('strips relative-path and javascript: hrefs from <use>', () => {
+    for (const href of ['icons.svg#a', '//evil.example/x.svg#a', 'javascript:alert(1)']) {
+      const clean = sanitizeSvg(`<svg><use href="${href}" /></svg>`);
+      expect(clean).not.toContain('href');
+    }
+  });
+
+  it('preserves local <defs>/<use> references', () => {
+    const dirty = '<svg><defs><path id="p" d="M0 0h10v10H0z" /></defs><use href="#p" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('<use href="#p"');
+    expect(clean).toContain('d="M0 0h10v10H0z"');
+  });
+
+  it('preserves local xlink:href <use> references', () => {
+    const dirty = '<svg><defs><path id="p" d="M0 0h1v1z" /></defs><use xlink:href="#p" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('xlink:href="#p"');
+  });
+
+  it('preserves gradient stop inheritance via local href', () => {
+    const dirty =
+      '<svg><linearGradient id="g"><stop offset="0" stop-color="#000" /></linearGradient><linearGradient id="g2" href="#g" x1="0" x2="1" /><rect fill="url(#g2)" width="10" height="10" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('href="#g"');
+    expect(clean).toContain('x1="0"');
+    expect(clean).toContain('fill="url(#g2)"');
   });
 
   it('drops <style> blocks with external url() references', () => {
