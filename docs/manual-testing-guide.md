@@ -8,7 +8,7 @@ Feature numbering matches `docs/Requirements.md`:
 
 | # | Feature | Status |
 |---|---|---|
-| **Feature 1** | Local file access | ⬜ Not released yet |
+| **Feature 1** | Local file access | ✅ Available for testing (Chrome/Edge) |
 | **Feature 2** | Long-horizon tasks (background multi-step jobs) | ✅ Available for testing |
 | **Feature 3** | Browser control | ⬜ Not released yet |
 
@@ -197,13 +197,34 @@ still finish once before stopping. Report if many steps continue after cancel.
 
 ---
 
-## Feature 1 — Local file access ⬜ (not released yet)
+## Feature 1 — Local file access ✅ (ready to test — Chrome/Edge)
 
-**In plain words:** you give the app permission to one folder on your computer. The assistant
-can then read files there and create new ones. **Chrome or Edge only.**
+**In plain words:** you give the app permission to one folder on your computer. During a
+**background task**, the assistant can read files there and create new ones — entirely in your
+browser. **Chrome or Edge only** (Safari shows a disabled icon with an explanation).
 
-> These tests apply once Feature 1 is shipped. Skip section B until the team confirms it is
-> ready.
+Local file operations run through the **job bridge**: the server job asks the browser to read or
+write, your connected folder is used, and the result is sent back so the task can continue.
+
+### Prerequisites
+
+1. **Chrome or Edge** — required for folder access.
+2. **Agents → USE** permission — same as long-horizon tasks; the folder icon is hidden without it.
+3. **Connect a folder first** before tests B2–B7 (Test B1).
+
+### How to connect a folder
+
+1. Select a model in the chat header (same as for Send).
+2. In the composer toolbar (next to the list-checks / Send buttons), click the **folder-plus icon**.
+   - Tooltip: **"Connect a folder on your computer"**
+3. In the OS picker, choose your test folder and confirm.
+4. When the browser asks to view/edit files, click **Allow** (or **Edit**).
+5. The icon turns **green**; hover to see the connected folder name.
+
+To disconnect, click the green folder icon again.
+
+**Important:** normal **Send** chat does **not** use your local folder yet. For file read/write
+tests, use the **list-checks icon** (long-running task) — see tests B2–B4 and B7.
 
 ### Get ready — make a safe test folder
 
@@ -218,37 +239,48 @@ Using an empty throwaway folder means a mistake can't touch anything important.
 ### Test B1 — Connect a folder
 
 **You do:**
-1. Click **"Connect a folder"** in the app.
+1. Click the **folder-plus icon** in the composer (next to list-checks / Send).
 2. In the pop-up, choose the **`aiwp-test`** folder and confirm.
 3. When the browser asks to view/edit files, click **Allow** (or **Edit**).
 
 **You should see:**
-- The app shows the folder as connected (its name appears somewhere in the interface).
+- The folder icon turns **green**.
+- Hovering shows the folder name (e.g. *Connected to "aiwp-test"*).
+- No error message.
 
 **Pass:** the folder connects with no error.
-**Fail:** an error appears or nothing indicates it connected.
+**Fail:** an error appears or the icon stays grey with no indication of success.
 
 ---
 
-### Test B2 — The assistant reads a file
+### Test B2 — A background task reads a file
 
 **You do:**
-- Ask: *"Read notes.txt in my connected folder and tell me what it says."*
+1. Confirm the folder is connected (green icon) and `notes.txt` exists in `aiwp-test`.
+2. Start a **new chat**, pick a model, and type:
+   > Read notes.txt from my connected local folder and tell me exactly what it says.
+3. Click the **list-checks icon** (not Send).
 
 **You should see:**
-- The assistant replies with the content: `Hello from my computer`.
+- A status banner (**In progress**, then possibly **Needs your input** briefly while the file is read).
+- The task continues and the assistant reply includes: `Hello from my computer`.
+- Optionally verify in your OS file explorer that `notes.txt` was not modified.
 
-**Pass:** it reports the correct text.
-**Fail:** it can't find the file or reports the wrong content.
+**Pass:** the assistant reports the correct file content.
+**Fail:** it can't find the file, reports wrong content, or the job stops with **Error** without reading.
+
+**Note:** the model must request a local file operation (`CLIENT_OP`). If it completes without touching the folder, try a clearer goal: *"Use my connected folder — read the file notes.txt and quote its contents."*
 
 ---
 
-### Test B3 — The assistant creates a file
+### Test B3 — A background task creates a file
 
 **You do:**
-1. Ask: *"Create a file called summary.txt in my folder with the text 'Test successful'."*
-2. Wait for the assistant to confirm.
-3. Open the `aiwp-test` folder yourself in your computer's file explorer.
+1. Confirm the folder is connected.
+2. Start a **long-running task** (list-checks) with:
+   > Create a file called summary.txt in my connected local folder with the text 'Test successful'.
+3. Wait for the banner to show **Done**.
+4. Open the `aiwp-test` folder in your computer's file explorer.
 
 **You should see:**
 - A new file `summary.txt` exists and contains `Test successful`.
@@ -258,16 +290,17 @@ Using an empty throwaway folder means a mistake can't touch anything important.
 
 ---
 
-### Test B4 — Safety: it can't leave the folder
+### Test B4 — Safety: paths outside the folder are blocked
 
 **You do:**
-- Ask: *"Read a file that is outside my connected folder, one level up."*
+1. With the folder connected, start a long-running task asking something like:
+   > Try to read ../notes.txt or any file outside my connected folder using a parent-directory path.
 
 **You should see:**
-- The assistant **cannot** do it — access outside the connected folder is refused.
+- The task stops with **Error**, or the assistant reports it cannot access paths outside the connected folder.
+- Your files **outside** `aiwp-test` are not read or listed.
 
-**Pass:** anything outside the connected folder is blocked. (This is an important safety
-check — a Fail here is serious, report it right away.)
+**Pass:** anything outside the connected folder is blocked. (A Fail here is serious — report it right away.)
 **Fail:** it manages to read or list files outside `aiwp-test`.
 
 ---
@@ -275,29 +308,45 @@ check — a Fail here is serious, report it right away.)
 ### Test B5 — Reconnecting after closing the browser
 
 **You do:**
-1. Fully close Chrome/Edge (all windows), reopen it, and return to the app.
-2. Look at the folder feature.
+1. Connect `aiwp-test` (Test B1).
+2. Fully close Chrome/Edge (all windows), reopen it, and return to the app.
 
 **You should see:**
-- A **"Reconnect folder"** option (it remembers your folder but needs permission again).
-- After clicking Reconnect and approving, reading files works again.
+- An amber **Reconnect folder** banner below the header.
+- The folder icon shows a **sync/reconnect** style (amber), not green.
+- Click **Reconnect folder** in the banner (or the folder icon) and approve permission.
+- After reconnect, Test B2 works again without choosing the folder from scratch.
 
-**Pass:** you reconnect without choosing the folder from scratch.
-**Fail:** the folder is forgotten entirely, or reconnect doesn't work.
+**Pass:** you reconnect without re-picking the folder from the OS dialog.
+**Fail:** the folder is forgotten entirely, or reconnect doesn't restore access.
 
 ---
 
 ### Test B6 — Safari shows a friendly message (only if you have a Mac)
 
 **You do:**
-- Open the app in **Safari** and look for "Connect a folder".
+- Open the app in **Safari** and look for the folder icon in the composer.
 
 **You should see:**
-- A clear message that this feature needs Chrome or Edge — not a broken button or a crash.
+- A **disabled** folder icon; hovering shows that local folder access requires Chrome or Edge — not a crash or broken picker.
 
-**Pass:** friendly message, no crash.
+**Pass:** friendly tooltip, no crash.
 
 ---
+
+### Test B7 — Task waits when the folder isn't available (job bridge)
+
+**You do:**
+1. **Disconnect** the folder (click the green folder icon) or deny permission.
+2. Start a long-running task that needs a local file (same as Test B2).
+3. Observe the banner, then **connect or reconnect** the folder.
+
+**You should see:**
+- While disconnected, the banner shows **Needs your input** and the job does not finish.
+- After you connect/reconnect the folder, the task **resumes on its own** (no need to restart the job) and eventually completes with the file content.
+
+**Pass:** job pauses at `waiting_client`, then continues after folder access is restored.
+**Fail:** job errors immediately, or never resumes after reconnecting.
 
 ## Feature 3 — Browser control ⬜ (not released yet)
 
@@ -351,17 +400,18 @@ Use this to track your run. Mark each one Pass or Fail.
 | **Feature 2** — Long-horizon | A2 — Task continues after you leave | ✅ | ☐ |
 | **Feature 2** — Long-horizon | A3 — Stopping a task | ✅ | ☐ |
 | **Feature 2** — Long-horizon | A4 — Conversation in sidebar | ✅ | ☐ |
-| **Feature 1** — Local files | B1 — Connect a folder | ⬜ | ☐ |
-| **Feature 1** — Local files | B2 — Read a file | ⬜ | ☐ |
-| **Feature 1** — Local files | B3 — Create a file | ⬜ | ☐ |
-| **Feature 1** — Local files | B4 — Cannot leave the folder (safety) | ⬜ | ☐ |
-| **Feature 1** — Local files | B5 — Reconnect after closing the browser | ⬜ | ☐ |
-| **Feature 1** — Local files | B6 — Safari friendly message | ⬜ | ☐ |
+| **Feature 1** — Local files | B1 — Connect a folder | ✅ | ☐ |
+| **Feature 1** — Local files | B2 — Background task reads a file | ✅ | ☐ |
+| **Feature 1** — Local files | B3 — Background task creates a file | ✅ | ☐ |
+| **Feature 1** — Local files | B4 — Cannot leave the folder (safety) | ✅ | ☐ |
+| **Feature 1** — Local files | B5 — Reconnect after closing the browser | ✅ | ☐ |
+| **Feature 1** — Local files | B6 — Safari friendly message | ✅ | ☐ |
+| **Feature 1** — Local files | B7 — Task waits until folder reconnected | ✅ | ☐ |
 | **Feature 3** — Browser | C1 — Uses a website | ⬜ | ☐ |
 
 **Golden rule:** you're checking whether the feature does what a normal user would expect. If
 something feels confusing or surprising even when it "works," note that too — that's useful
 feedback.
 
-For implementation details and what is still pending for Feature 2, see
-`docs/new-features-plan.md` (sections **6b** and **6c**).
+For implementation details and what is still pending, see
+`docs/new-features-plan.md` (sections **6c** for Feature 2 backlog, **6d** for Feature 1 status).

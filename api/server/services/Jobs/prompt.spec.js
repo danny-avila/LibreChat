@@ -1,4 +1,12 @@
-const { buildStepPrompt, parseStepStatus, summarizeStep } = require('./prompt');
+const {
+  buildStepPrompt,
+  parseStepStatus,
+  summarizeStep,
+  buildDisplayUserText,
+  formatStepResponseForDisplay,
+  buildDisplayResponseText,
+  formatClientOpResultForDisplay,
+} = require('./prompt');
 
 describe('Jobs prompt helpers', () => {
   describe('buildStepPrompt', () => {
@@ -55,6 +63,53 @@ describe('Jobs prompt helpers', () => {
     it('handles empty output', () => {
       expect(summarizeStep('')).toBe('(no output)');
       expect(summarizeStep('STATUS: DONE')).toBe('(no output)');
+    });
+  });
+
+  describe('buildDisplayUserText', () => {
+    it('shows the goal on the first step only', () => {
+      expect(buildDisplayUserText({ stepIndex: 0, goal: '  List my files  ' })).toBe(
+        'List my files',
+      );
+      expect(buildDisplayUserText({ stepIndex: 1, goal: 'List my files' })).toBeNull();
+    });
+  });
+
+  describe('formatStepResponseForDisplay', () => {
+    it('removes control lines and leaked prompt instructions', () => {
+      const raw = [
+        'Here are your files:',
+        '- notes.txt',
+        'STATUS: DONE',
+        'Continue with the next single step toward the goal now.',
+        'CLIENT_OP: {"op":"listDir","path":""}',
+      ].join('\n');
+
+      expect(formatStepResponseForDisplay(raw)).toBe('Here are your files:\n- notes.txt');
+    });
+  });
+
+  describe('buildDisplayResponseText', () => {
+    it('shows a friendly line when the model only emitted CLIENT_OP', () => {
+      expect(buildDisplayResponseText('CLIENT_OP: {"op":"listDir","path":""}')).toBe(
+        'Checking your connected folder…',
+      );
+    });
+
+    it('lists .txt files when the goal asks for them and the model only returned STATUS: DONE', () => {
+      const display = buildDisplayResponseText('STATUS: DONE', {
+        goal: 'list txt files of my connected folder',
+        lastClientOpResult: {
+          op: { op: 'listDir', path: '' },
+          result: [
+            { name: 'notes.txt', kind: 'file' },
+            { name: 'readme.md', kind: 'file' },
+          ],
+        },
+      });
+
+      expect(display).toContain('notes.txt');
+      expect(display).not.toContain('readme.md');
     });
   });
 });

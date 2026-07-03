@@ -1,4 +1,5 @@
 const { parseStepStatus, summarizeStep } = require('./prompt');
+const { parseClientOp } = require('./clientOp');
 
 /**
  * The planning loop for a long-horizon job. Given the job and the text a step
@@ -25,13 +26,28 @@ const { parseStepStatus, summarizeStep } = require('./prompt');
  * @param {string} [params.messageId] - Message id of the step's response.
  * @returns {{
  *   isDone: boolean,
- *   status: 'running' | 'done',
+ *   status: 'running' | 'waiting_client' | 'done',
  *   summary: string,
  *   currentStep: number,
  *   checkpoint: { stepSummaries: string[], lastMessageId?: string },
+ *   pendingClientOp?: { op: string, path?: string, content?: string, contentRef?: string } | null,
  * }}
  */
 function decideNextStep({ job, stepIndex, responseText, priorSummaries, messageId }) {
+  const clientOp = parseClientOp(responseText);
+  if (clientOp) {
+    const summary = summarizeStep(responseText);
+    const stepSummaries = [...priorSummaries, summary];
+    return {
+      isDone: false,
+      status: 'waiting_client',
+      summary,
+      currentStep: stepIndex + 1,
+      checkpoint: { stepSummaries, lastMessageId: messageId },
+      pendingClientOp: clientOp,
+    };
+  }
+
   const signal = parseStepStatus(responseText);
   const summary = summarizeStep(responseText);
   const stepSummaries = [...priorSummaries, summary];
@@ -45,6 +61,7 @@ function decideNextStep({ job, stepIndex, responseText, priorSummaries, messageI
     summary,
     currentStep: stepIndex + 1,
     checkpoint: { stepSummaries, lastMessageId: messageId },
+    pendingClientOp: null,
   };
 }
 

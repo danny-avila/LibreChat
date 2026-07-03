@@ -44,6 +44,9 @@ const agentJobClientOpSchema = new Schema<IAgentJobClientOp>(
     contentRef: {
       type: String,
     },
+    content: {
+      type: String,
+    },
   },
   { _id: false },
 );

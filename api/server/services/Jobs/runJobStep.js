@@ -1,5 +1,6 @@
+const crypto = require('crypto');
 const { logger, tenantStorage } = require('@librechat/data-schemas');
-const { Constants } = require('librechat-data-provider');
+const { Constants, isEphemeralAgentId } = require('librechat-data-provider');
 const buildEndpointOption = require('~/server/middleware/buildEndpointOption');
 const { initializeClient } = require('~/server/services/Endpoints/agents/initialize');
 const { getAppConfig } = require('~/server/services/Config');
@@ -9,24 +10,81 @@ const {
   resolveRunTarget,
 } = require('~/server/services/Scheduler/headlessRequest');
 const { saveMessage, saveConvo } = require('~/models');
-const { buildStepPrompt } = require('./prompt');
-const { detectStepFailure, extractStepResponseText } = require('./failure');
+const {
+  buildStepPrompt,
+  buildDisplayUserText,
+  buildDisplayResponseText,
+  patchMessageTextFields,
+} = require('./prompt');
+const { detectStepFailure, extractStepResponseText, formatCapturedError } = require('./failure');
+
+/**
+ * Job steps after the first chain onto the previous assistant message. The
+ * agent client still creates an ephemeral user turn, so the raw response may
+ * point at that unsaved id — re-parent before persisting for display.
+ *
+ * @param {{ stepIndex: number, parentMessageId?: string, responseParentMessageId?: string, userMessageId?: string }} params
+ * @returns {string}
+ */
+function resolveAssistantParentMessageId({
+  stepIndex,
+  parentMessageId,
+  responseParentMessageId,
+  userMessageId,
+}) {
+  if (
+    stepIndex === 0 &&
+    typeof userMessageId === 'string' &&
+    userMessageId.length > 0 &&
+    userMessageId !== Constants.NO_PARENT
+  ) {
+    return userMessageId;
+  }
+  if (
+    stepIndex > 0 &&
+    typeof parentMessageId === 'string' &&
+    parentMessageId.length > 0 &&
+    parentMessageId !== Constants.NO_PARENT
+  ) {
+    return parentMessageId;
+  }
+  if (
+    typeof responseParentMessageId === 'string' &&
+    responseParentMessageId.length > 0 &&
+    responseParentMessageId !== Constants.NO_PARENT
+  ) {
+    return responseParentMessageId;
+  }
+  return parentMessageId ?? Constants.NO_PARENT;
+}
 
 /**
  * Builds the request body for a single job step. Unlike the scheduler, a job
  * runs many turns in one conversation, so steps chain via `parentMessageId`.
  */
 function buildStepBody({ conversationId, target, parentMessageId }) {
-  return {
+  const hasSavedAgent =
+    typeof target.agent_id === 'string' &&
+    target.agent_id.length > 0 &&
+    !isEphemeralAgentId(target.agent_id);
+
+  const body = {
     conversationId,
     parentMessageId: parentMessageId || Constants.NO_PARENT,
     endpoint: target.endpoint,
     endpointType: target.endpointType,
-    agent_id: target.agent_id,
     model: target.model,
     spec: target.spec,
     isTemporary: false,
   };
+
+  if (hasSavedAgent) {
+    body.agent_id = target.agent_id;
+  } else {
+    body.ephemeralAgent = { skills: true };
+  }
+
+  return body;
 }
 
 /** Extracts the assistant's text from a client response. */
@@ -89,7 +147,8 @@ async function executeStep({ owner, job, stepIndex, stepSummaries, parentMessage
 
   await buildEndpointOption(req, res, () => {});
   if (!req.body.endpointOption) {
-    const reason = res.capturedError ? `: ${res.capturedError}` : '';
+    const captured = formatCapturedError(res.capturedError);
+    const reason = captured ? `: ${captured}` : '';
     throw new Error(`Failed to build endpoint option for job step${reason}`);
   }
 
@@ -103,12 +162,37 @@ async function executeStep({ owner, job, stepIndex, stepSummaries, parentMessage
     signal: abortController.signal,
   });
 
+  client.skipSaveUserMessage = true;
+
+  const checkpoint = job.checkpoint && typeof job.checkpoint === 'object' ? job.checkpoint : {};
+
   const stepPrompt = buildStepPrompt({
     goal: job.goal,
     stepSummaries,
     stepIndex,
     maxSteps: job.maxSteps,
+    lastClientOpResult: checkpoint.lastClientOpResult,
   });
+
+  const reqCtx = { userId, interfaceConfig: appConfig?.interfaceConfig };
+  const displayUserText = buildDisplayUserText({ stepIndex, goal: job.goal });
+
+  if (displayUserText && stepIndex === 0) {
+    const userMessageId = crypto.randomUUID();
+    await saveMessage(
+      reqCtx,
+      {
+        messageId: userMessageId,
+        parentMessageId: parentMessageId || Constants.NO_PARENT,
+        conversationId,
+        sender: 'User',
+        text: displayUserText,
+        isCreatedByUser: true,
+      },
+      { context: 'Jobs.runJobStep - user message (step 0)' },
+    );
+    req.body.overrideUserMessageId = userMessageId;
+  }
 
   let userMessage;
   const response = await client.sendMessage(stepPrompt, {
@@ -146,20 +230,38 @@ async function executeStep({ owner, job, stepIndex, stepSummaries, parentMessage
     throw new Error(failureMessage);
   }
 
-  const reqCtx = { userId, interfaceConfig: appConfig?.interfaceConfig };
+  const displayResponseText = buildDisplayResponseText(responseText, {
+    lastClientOpResult: checkpoint.lastClientOpResult,
+    goal: job.goal,
+  });
+  const resolvedParentMessageId = resolveAssistantParentMessageId({
+    stepIndex,
+    parentMessageId,
+    responseParentMessageId: response.parentMessageId,
+    userMessageId: userMessage?.messageId,
+  });
 
-  if (!client.skipSaveUserMessage && userMessage) {
-    await saveMessage(reqCtx, userMessage, {
-      context: 'Jobs.runJobStep - user message',
-    });
-  }
-
-  if (client.savedMessageIds && !client.savedMessageIds.has(response.messageId)) {
-    await saveMessage(
-      reqCtx,
-      { ...response, user: userId },
-      { context: 'Jobs.runJobStep - response message' },
-    );
+  if (response.messageId) {
+    try {
+      let assistantMessage = {
+        ...response,
+        messageId: response.messageId,
+        conversationId,
+        parentMessageId: resolvedParentMessageId,
+        isCreatedByUser: false,
+      };
+      if (displayResponseText.length > 0) {
+        assistantMessage = patchMessageTextFields(assistantMessage, displayResponseText);
+      }
+      await saveMessage(reqCtx, assistantMessage, {
+        context: 'Jobs.runJobStep - assistant message',
+      });
+    } catch (error) {
+      logger.warn(
+        `[Jobs] Failed to persist assistant message ${response.messageId} for job step:`,
+        error,
+      );
+    }
   }
 
   await saveConvo(
@@ -173,4 +275,4 @@ async function executeStep({ owner, job, stepIndex, stepSummaries, parentMessage
   return { responseText, messageId: response.messageId };
 }
 
-module.exports = { runJobStep };
+module.exports = { runJobStep, resolveAssistantParentMessageId };

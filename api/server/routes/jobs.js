@@ -8,6 +8,7 @@ const {
   getAgentJobById,
   listAgentJobs,
   cancelAgentJob,
+  resolveClientOp,
   getRoleByName,
   saveConvo,
 } = require('~/models');
@@ -172,6 +173,35 @@ router.post('/:id/cancel', async (req, res) => {
   } catch (error) {
     logger.error('[jobs] cancel error:', error);
     res.status(500).json({ error: 'Failed to cancel job' });
+  }
+});
+
+/**
+ * Browser client posts the outcome of a pending local file operation
+ * (Feature 1 — File System Access API bridge).
+ */
+router.post('/:id/client-op-result', async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    if (typeof body.success !== 'boolean') {
+      return res.status(400).json({ error: 'success is required' });
+    }
+
+    const job = await resolveClientOp(req.params.id, req.user.id, {
+      success: body.success,
+      result: body.result,
+      error: typeof body.error === 'string' ? body.error : undefined,
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found or no pending client operation' });
+    }
+
+    publishJobUpdate(req.params.id, { type: 'status', job });
+    res.json({ job });
+  } catch (error) {
+    logger.error('[jobs] client-op-result error:', error);
+    res.status(500).json({ error: 'Failed to record client operation result' });
   }
 });
 

@@ -44,6 +44,8 @@ export interface IAgentJobClientOp {
   path?: string;
   /** Reference to file content (e.g. a temp file id) for write operations. */
   contentRef?: string;
+  /** Inline file body for write operations requested directly by the model. */
+  content?: string;
 }
 
 /**

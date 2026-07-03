@@ -57,6 +57,7 @@ import {
   type AgentJobMethods,
   type CreateAgentJobInput,
   type RecordJobStepInput,
+  type ResolveClientOpInput,
 } from './agentJob';
 import {
   createSkillMethods,
@@ -305,6 +306,7 @@ export type {
   AgentJobMethods,
   CreateAgentJobInput,
   RecordJobStepInput,
+  ResolveClientOpInput,
   AgentMethods,
   ConfigMethods,
   TenantMethods,

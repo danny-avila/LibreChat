@@ -25,6 +25,8 @@ Chromium (Chrome/Edge) supports `window.showDirectoryPicker()` — a real OS fol
 
 **[VERIFY]:** How tool-calling is currently wired in your fork's frontend — does the model already call client-side tools for anything, or has everything so far been server-side? This determines whether the file tool lives in the browser (model output triggers a client-side read/write, result sent back up) or whether files get uploaded/downloaded through the backend per-call (simpler, more roundtrips, more compatible with your existing architecture if all tool execution is currently server-side). Recommend the latter to start — less new architecture — and only move file I/O client-side if the roundtrip cost is actually a problem in practice.
 
+**Resolved (Phase 1B shipped):** Local file I/O is **client-side** via the File System Access API, bridged into long-horizon jobs. The worker does not read the user's disk directly; when a job step needs a local file, the model emits a `CLIENT_OP` directive, the job enters `waiting_client`, the browser executes `listDir` / `readFile` / `writeFile` against the connected handle, and posts the result to `POST /api/jobs/:id/client-op-result`. Phase 1A (server-side filesystem MCP workspace) remains optional and is **not** implemented.
+
 ---
 
 ### Feature 2: Long-horizon work
@@ -68,8 +70,24 @@ Don't build this. Claude in Chrome is Anthropic's existing browser-automation ex
 | Feature | Spec section | Status |
 |---|---|---|
 | **Long-horizon work** | Feature 2 above | **Core shipped** — backend worker, API, composer UI, SSE reconnection, user-friendly status banner. Manual testing: `docs/manual-testing-guide.md` (tests A1–A4). Remaining backlog: `docs/new-features-plan.md` §6c. |
-| **Local file access** | Feature 1 above | **Not started** (M3/M4 in delivery plan). |
+| **Local file access** | Feature 1 above | **Phase 1B shipped** — folder picker, IndexedDB persistence, reconnect flow, scoped file ops, job bridge (`pendingClientOp` → `client-op-result`). Manual testing: `docs/manual-testing-guide.md` (tests B1–B7). Phase 1A (server MCP workspace) not started. |
 | **Browser control** | Feature 3 above | **Not started** (M5 in delivery plan). |
+
+### Feature 1 — user-facing behavior (Phase 1B, implemented)
+
+- **Connect:** folder icon (+) in the composer (Chrome/Edge only; requires **Agents → USE**). Pick a folder; handle persists in IndexedDB across sessions.
+- **Connected state:** icon turns green; tooltip shows folder name. Click again to disconnect.
+- **Reconnect:** after a full browser restart, an amber **Reconnect folder** banner appears; click Reconnect and approve permission (no need to re-pick the folder).
+- **Safari:** folder icon is disabled with a tooltip explaining Chrome/Edge is required.
+- **File ops in jobs:** start a **long-running task** (list-checks icon). When the model needs a local file, the job pauses with banner **Needs your input**; if the folder is connected, the app services the op automatically and the job continues.
+
+### Feature 1 — internal model (for developers)
+
+- **Client layer:** `client/src/hooks/LocalFiles/` — `listDir`, `readFile`, `writeFile` with path validation (rejects `..`, absolute paths).
+- **Job bridge:** model emits `CLIENT_OP: {"op":"readFile","path":"notes.txt"}` (etc.) → planner sets `waiting_client` + `pendingClientOp` → `JobClientOpBridge` executes locally → `resolveClientOp` requeues the job with `checkpoint.lastClientOpResult` for the next step prompt.
+- **API:** `POST /api/jobs/:id/client-op-result` (owner-scoped, requires pending op).
+
+Full plan, file map, and milestones: `docs/new-features-plan.md` (§4, §6d, M4).
 
 ### Feature 2 — user-facing behavior (implemented)
 

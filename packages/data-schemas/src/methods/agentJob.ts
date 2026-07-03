@@ -38,6 +38,13 @@ export type RecordJobStepInput = {
   pendingClientOp?: IAgentJobClientOp | null;
 };
 
+/** Payload posted back when the browser finishes a pending local file operation. */
+export type ResolveClientOpInput = {
+  success: boolean;
+  result?: unknown;
+  error?: string | null;
+};
+
 export function createAgentJobMethods(mongoose: typeof import('mongoose')) {
   const getModel = () => mongoose.models.AgentJob as Model<IAgentJobDocument>;
 
@@ -142,7 +149,62 @@ export function createAgentJobMethods(mongoose: typeof import('mongoose')) {
     const AgentJob = getModel();
     return AgentJob.findOneAndUpdate(
       { _id: id, user: userId, status: { $nin: ['done', 'error', 'canceled'] } },
-      { $set: { status: 'canceled', lockedAt: null, lockedBy: null } },
+      { $set: { status: 'canceled', lockedAt: null, lockedBy: null, pendingClientOp: null } },
+      { new: true },
+    ).lean<IAgentJobDocument>();
+  }
+
+  /**
+   * Records the browser client's outcome for a pending local file operation.
+   * On success the job returns to `queued` so the worker can continue; on
+   * failure it becomes terminal `error`.
+   */
+  async function resolveClientOp(
+    id: string | Types.ObjectId,
+    userId: string | Types.ObjectId,
+    input: ResolveClientOpInput,
+  ): Promise<IAgentJobDocument | null> {
+    const AgentJob = getModel();
+    const existing = await AgentJob.findOne({
+      _id: id,
+      user: userId,
+      status: 'waiting_client',
+      pendingClientOp: { $ne: null },
+    }).lean<IAgentJobDocument>();
+
+    if (!existing?.pendingClientOp) {
+      return null;
+    }
+
+    const priorCheckpoint =
+      existing.checkpoint &&
+      typeof existing.checkpoint === 'object' &&
+      !Array.isArray(existing.checkpoint)
+        ? { ...(existing.checkpoint as Record<string, unknown>) }
+        : {};
+
+    if (input.success) {
+      priorCheckpoint.lastClientOpResult = {
+        op: existing.pendingClientOp,
+        result: input.result,
+      };
+      delete priorCheckpoint.lastClientOpError;
+    } else {
+      priorCheckpoint.lastClientOpError = input.error ?? 'Client operation failed';
+    }
+
+    return AgentJob.findOneAndUpdate(
+      { _id: id, user: userId, status: 'waiting_client' },
+      {
+        $set: {
+          status: input.success ? 'queued' : 'error',
+          pendingClientOp: null,
+          checkpoint: priorCheckpoint,
+          lastError: input.success ? null : (input.error ?? 'Client operation failed'),
+          lockedAt: null,
+          lockedBy: null,
+        },
+      },
       { new: true },
     ).lean<IAgentJobDocument>();
   }
@@ -154,6 +216,7 @@ export function createAgentJobMethods(mongoose: typeof import('mongoose')) {
     claimDueJob,
     recordJobStep,
     cancelAgentJob,
+    resolveClientOp,
   };
 }
 

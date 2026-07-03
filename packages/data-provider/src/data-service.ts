@@ -987,6 +987,13 @@ export function cancelJob(id: string): Promise<jb.TAgentJobResponse> {
   return request.post(endpoints.cancelJob(id), {});
 }
 
+export function submitJobClientOpResult(
+  id: string,
+  payload: jb.TSubmitClientOpResult,
+): Promise<jb.TAgentJobResponse> {
+  return request.post(endpoints.submitJobClientOpResult(id), payload);
+}
+
 export function listSkillFiles(skillId: string): Promise<sk.TListSkillFilesResponse> {
   return request.get(endpoints.skillFiles(skillId));
 }

@@ -23,6 +23,7 @@ import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
 import JobStatusBanner from './JobStatusBanner';
+import LocalFolderBanner from './LocalFolderBanner';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -104,6 +105,7 @@ function ChatView({ index = 0 }: { index?: number }) {
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
               <Header />
+              <LocalFolderBanner />
               <JobStatusBanner conversationId={conversationId} bootstrapJobId={bootstrapJobId} />
               <>
                 <div

@@ -86,5 +86,24 @@ describe('Jobs planner', () => {
       expect(decision.checkpoint.stepSummaries.slice(0, 2)).toEqual(['first', 'second']);
       expect(decision.checkpoint.stepSummaries).toHaveLength(3);
     });
+
+    it('pauses for a local file operation when CLIENT_OP is present', () => {
+      const decision = decideNextStep({
+        job: { maxSteps: 5 },
+        stepIndex: 0,
+        responseText: 'Need local file.\nCLIENT_OP: {"op":"readFile","path":"notes.txt"}',
+        priorSummaries: [],
+        messageId: 'm0',
+      });
+
+      expect(decision.status).toBe('waiting_client');
+      expect(decision.pendingClientOp).toEqual({
+        op: 'readFile',
+        path: 'notes.txt',
+        content: undefined,
+        contentRef: undefined,
+      });
+      expect(decision.currentStep).toBe(1);
+    });
   });
 });

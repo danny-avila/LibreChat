@@ -53,7 +53,7 @@ Feature 2 (Long-horizon job runner)   ← structural piece; everything else hang
 
 ## 3. Feature 2 — Long-horizon job runner (FIRST)
 
-> **Implementation status:** M1 + M2 core shipped on branch `feature/long-horizon-jobs`. See **§6b** for what is built, **§6c** for what remains. The component list below is the original design spec; items marked ✅ are implemented, ⬜ are pending or deferred.
+> **Implementation status:** M1 + M2 (Feature 2) and M4 (Feature 1 Phase 1B) shipped on branch `feature/long-horizon-jobs`. See **§6b** (Feature 2), **§6d** (Feature 1), **§6c** (Feature 2 backlog).
 
 ### Goal
 A user starts a multi-step task; it runs on the backend even if the tab closes; progress is written into the conversation as messages/events; reopening shows everything that happened.
@@ -65,7 +65,7 @@ Do **not** add Bull/BullMQ: it adds infrastructure (mandatory Redis, extra proce
 
 **Backend — data (`packages/data-schemas`):** ✅
 - `src/schema/agentJob.ts` — schema (see §6b for fields).
-- `src/methods/agentJob.ts` — ✅ `createAgentJob`, `getAgentJobById`, `listAgentJobs` (incl. `conversationId` filter), `claimDueJob`, `recordJobStep`, `cancelAgentJob`. ⬜ separate `markJobStep` / `completeJob` / `failJob` / `requestClientOp` / `resolveClientOp` (consolidated or deferred to Feature 1).
+- `src/methods/agentJob.ts` — ✅ `createAgentJob`, `getAgentJobById`, `listAgentJobs` (incl. `conversationId` filter), `claimDueJob`, `recordJobStep`, `cancelAgentJob`, `resolveClientOp` (Feature 1 bridge). ⬜ separate `markJobStep` / `completeJob` / `failJob` / `requestClientOp` (consolidated into `recordJobStep` / planner).
 - `src/types/agentJob.ts` — types.
 
 **Backend — worker (`api/server/services/Jobs/`):** ✅ (with notes)
@@ -80,6 +80,7 @@ Do **not** add Bull/BullMQ: it adds infrastructure (mandatory Redis, extra proce
 - `GET /api/jobs` — ✅ list (`?status=`, `?conversationId=`).
 - `POST /api/jobs/:id/cancel` — ✅ cancel + SSE notify.
 - `GET /api/jobs/:id/events` — ✅ SSE snapshot + live updates.
+- `POST /api/jobs/:id/client-op-result` — ✅ Feature 1 bridge (browser posts local file op outcome).
 
 **Frontend (`client/src`):** ✅ minimal UI (⬜ polish — see §6c)
 - `data-provider/Jobs/` — ✅ `useJobsQuery`, `useJobQuery`, `useCreateJobMutation`, `useCancelJobMutation`.
@@ -168,41 +169,46 @@ Do **not** add Bull/BullMQ: it adds infrastructure (mandatory Redis, extra proce
 The user grants a folder on their machine; the agent reads/writes inside it, scoped and revocable.
 
 ### Architecture decision (per the spec's own recommendation)
-**Start with the backend path that already exists** (upload/download via the `filesystem` MCP), and only move to the File System Access API on the client if the roundtrip cost is actually a problem.
+**Phase 1B (client-side) was implemented first** on branch `feature/long-horizon-jobs` because Feature 2's job bridge was already designed for it. **Phase 1A** (upload/download via the `filesystem` MCP on the server) remains optional for environments where a server workspace is enough.
 
-#### Phase 1A — Backend files (low risk, nearly exists)
+#### Phase 1A — Backend files (low risk, nearly exists) — ⬜ Not started (M3)
 - A `filesystem` MCP scoped to `/app/uploads` already exists, plus `/api/files` upload. Formalize a per-conversation/job "workspace": one folder per conversation under the MCP path.
 - The Feature 2 job can request list/read/write inside that workspace via the existing MCP tools.
 - **Real repo warning (`librechat.yaml` ~line 511):** on Cloud Run the filesystem is ephemeral. For persistence, mount GCS/a volume. Document and decide.
 
-#### Phase 1B — File System Access API (browser, Chrome/Edge only)
-- Only if a **real user folder** (not the server's) is needed.
-- New frontend components:
-  - `client/src/hooks/LocalFiles/useDirectoryHandle.ts` — `window.showDirectoryPicker()`, persist the `FileSystemDirectoryHandle` in **IndexedDB** (not localStorage; handles are not serializable).
-  - `useReconnectFolder` — re-request permission after browser restart (`handle.requestPermission()` requires a user gesture). Provide a "reconnect folder" state, not a silent failure.
-  - Client tool layer: `listDir`, `readFile`, `writeFile` — **reject any path outside the handle** (security).
-  - Feature-detect + fallback: Safari is unsupported → clear message.
-- Job ↔ client bridge:
-  - The job sets `agentJob.pendingClientOp` (e.g. `{ op: 'writeFile', path, contentRef }`).
-  - While open, the frontend detects the pending op (via SSE or job polling), executes it against the local handle, and replies with `POST /api/jobs/:id/client-op-result`.
-  - If the tab is closed when the job needs the file → the job moves to `waiting_client` and is serviced on reopen (queue/retry).
+#### Phase 1B — File System Access API (browser, Chrome/Edge only) — ✅ Shipped (M4)
+
+Implemented on branch `feature/long-horizon-jobs`. See **§6d** for file map and tests.
+
+- **Frontend**
+  - `client/src/hooks/LocalFiles/` — `showDirectoryPicker()`, IndexedDB persistence, `useDirectoryHandle`, `useReconnectFolder`, scoped `listDir` / `readFile` / `writeFile` (path validation rejects `..` and absolute paths).
+  - `ConnectFolderButton.tsx` — composer folder icon (connect / reconnect / disconnect); Safari gets a disabled icon + tooltip.
+  - `LocalFolderBanner.tsx` — amber reconnect banner after browser restart.
+  - `LocalFilesProvider` in `Root.tsx`.
+- **Job ↔ client bridge**
+  - Model emits `CLIENT_OP: {"op":"listDir"|"readFile"|"writeFile", ...}` → planner sets `waiting_client` + `pendingClientOp`.
+  - `JobClientOpBridge` + `useJobClientOpBridge` — detects pending ops via active-jobs polling, executes against the handle, posts `POST /api/jobs/:id/client-op-result`.
+  - `resolveClientOp` — stores `checkpoint.lastClientOpResult`, requeues job (`queued`) or marks `error` on failure.
+  - Tab closed or folder disconnected → job stays `waiting_client` until reconnect (manual test B7).
 
 ### Integration
 - The `agentJob.pendingClientOp` scoping fits cleanly on top of the Feature 2 runner (which is why this comes second).
-- Reuse the existing `file` schema for metadata if files are uploaded to the backend.
+- Reuse the existing `file` schema for metadata if files are uploaded to the backend (Phase 1A).
 
 ### How to test
-**Unit (frontend, Jest):**
-- Mock `showDirectoryPicker` / `FileSystemDirectoryHandle`: verify IndexedDB persistence (use `fake-indexeddb`).
-- The tool layer rejects paths containing `..` or outside the handle.
-- Denied `requestPermission` → reconnect state.
+**Unit (frontend, Jest):** ✅
+- `client/src/hooks/LocalFiles/path.spec.ts` — path traversal rejection.
+- `client/src/hooks/LocalFiles/storage.spec.ts` — IndexedDB handle persistence (mocked IDB).
 
-**Integration:**
+**Unit (backend, Jest):** ✅
+- `api/server/services/Jobs/clientOp.spec.js` — `CLIENT_OP` parsing.
+- `planner.spec.js` — `waiting_client` when op present.
+- `packages/data-schemas/src/methods/agentJob.spec.ts` — `resolveClientOp`.
+
+**Integration:** ⬜
 - Job requests `writeFile` → with tab open it executes and confirms; with tab closed → job `waiting_client`, completes on reconnect.
 
-**Manual (Chrome/Edge):**
-- Connect a real folder → ask the agent to create/read a file → verify in the OS file explorer.
-- Restart the browser → "reconnect folder" state → reconnect without re-picking the folder.
+**Manual (Chrome/Edge):** ✅ ready — `docs/manual-testing-guide.md` tests B1–B7.
 
 **Acceptance criteria:**
 - Scoped read/write works; nothing outside the handle is reachable; permission persists across sessions (with reconnect gesture); correct fallback on Safari.
@@ -259,22 +265,24 @@ Feature 2 milestones **M1** and **M2** are implemented on branch `feature/long-h
 - `src/types/agentJob.ts` — `IAgentJob`, `AgentJobStatus`, `IAgentJobStep`, `IAgentJobClientOp` (the client-op type pre-wires Feature 1).
 - `src/schema/agentJob.ts` — schema with embedded steps, `checkpoint`, `maxSteps`, atomic-claim fields (`lockedAt`/`lockedBy`), and scan indexes.
 - `src/models/agentJob.ts` — model with tenant isolation.
-- `src/methods/agentJob.ts` — `createAgentJob`, `getAgentJobById`, `listAgentJobs`, `claimDueJob` (atomic claim + stale-lock TTL), `recordJobStep`, `cancelAgentJob`.
+- `src/methods/agentJob.ts` — `createAgentJob`, `getAgentJobById`, `listAgentJobs`, `claimDueJob` (atomic claim + stale-lock TTL), `recordJobStep`, `cancelAgentJob`, **`resolveClientOp`** (Feature 1 bridge).
 - Registered in the `types` / `models` / `methods` index files.
 
 **Worker (`api/server/services/Jobs/`)**
-- `index.js` — poller mirroring `Scheduler/index.js` (tick, atomic claim as system, lock TTL, `MAX_PER_TICK`). Runs **one step per tick** and re-queues (`running`) until terminal, giving multi-step execution that survives restarts.
-- `runJobStep.js` — one headless agent turn inside the owner's tenant, chaining turns via `parentMessageId` and persisting messages into the job's conversation (checkpointing).
-- `planner.js` — pure decision logic (`decideNextStep`, `canRunStep`): continue vs. finish, respecting the `maxSteps` cap and the model's `STATUS:` signal.
-- `prompt.js` — step-prompt construction + `STATUS: CONTINUE/DONE` parsing + step summarization.
+- `index.js` — poller mirroring `Scheduler/index.js` (tick, atomic claim as system, lock TTL, `MAX_PER_TICK`). Runs **one step per tick** and re-queues until terminal, giving multi-step execution that survives restarts. Publishes `waiting_client` updates when a local file op is requested.
+- `runJobStep.js` — one headless agent turn inside the owner's tenant, chaining turns via `parentMessageId` and persisting messages into the job's conversation (checkpointing). Passes `lastClientOpResult` into step prompts.
+- `planner.js` — pure decision logic (`decideNextStep`, `canRunStep`): continue vs. finish vs. **`waiting_client`**, respecting `maxSteps` and `STATUS:` / **`CLIENT_OP:`** signals.
+- `prompt.js` — step-prompt construction + status parsing + **`CLIENT_OP`** instructions + step summarization.
+- `clientOp.js` — parses `CLIENT_OP: {...}` from model output.
 - `events.js` — in-process pub/sub the worker publishes to after each step (latency optimization on top of durable Mongo state).
 
 **API (`api/server/routes/jobs.js`)**
 - `GET /api/jobs` — list (`?status=`, `?conversationId=` filters), `POST /api/jobs` (create + sidebar convo), `GET /api/jobs/:id`, `POST /api/jobs/:id/cancel`.
-- `GET /api/jobs/:id/events` — **SSE stream**: replays a `snapshot` on connect (so a reopened tab shows everything that happened while closed) then relays live `update` events; auto-closes on terminal status; heartbeat keeps proxies open. Gated by the agents `USE` permission.
+- `GET /api/jobs/:id/events` — **SSE stream**: replays a `snapshot` on connect then relays live `update` events; auto-closes on terminal status; heartbeat keeps proxies open. Gated by the agents `USE` permission.
+- `POST /api/jobs/:id/client-op-result` — Feature 1 bridge (browser posts local file op outcome).
 
 **Shared contracts (`packages/data-provider`)**
-- `src/types/jobs.ts`, endpoints (`jobs`, `job`, `cancelJob`, `jobEvents`), `QueryKeys.jobs`/`job`, and `data-service` functions (`getJobs`, `getJob`, `createJob`, `cancelJob`).
+- `src/types/jobs.ts`, endpoints (`jobs`, `job`, `cancelJob`, `jobEvents`, **`submitJobClientOpResult`**), `QueryKeys.jobs`/`job`, and `data-service` functions (`getJobs`, `getJob`, `createJob`, `cancelJob`, **`submitJobClientOpResult`**).
 
 **Frontend (`client/src`)**
 - `data-provider/Jobs/` — React Query `useJobsQuery`, `useJobQuery`, `useCreateJobMutation`, `useCancelJobMutation`.
@@ -314,8 +322,8 @@ When multiple jobs are active, a secondary line shows: *"N other background task
 | React Query v4 API mismatch | `refetchInterval` used v5 `query.state.data` shape | Fixed to v4 callback `(data) => …` |
 
 ### Tests
-- `packages/data-schemas/src/methods/agentJob.spec.ts` — 14 tests (CRUD, conversationId filter, atomic claim, stale-lock re-claim, terminal guards, step recording, owner-scoped cancel).
-- `api/server/services/Jobs/planner.spec.js` + `prompt.spec.js` — 16 tests (continue/finish decisions, cap enforcement, status parsing, summarization).
+- `packages/data-schemas/src/methods/agentJob.spec.ts` — 17 tests (CRUD, conversationId filter, atomic claim, stale-lock re-claim, terminal guards, step recording, owner-scoped cancel, **`resolveClientOp`**).
+- `api/server/services/Jobs/planner.spec.js` + `prompt.spec.js` + **`clientOp.spec.js`** + `failure.spec.js` — 27 tests (continue/finish/`waiting_client` decisions, cap enforcement, status parsing, **`CLIENT_OP`** parsing, summarization).
 
 ### Not yet wired (optional follow-ups)
 
@@ -324,11 +332,10 @@ See **§6c** for the full Feature 2 backlog. Summary:
 - Playwright E2E for tab-close/reopen acceptance criteria.
 - Integration tests (`runJobStep`, N-step flow, worker restart, cancel mid-run).
 - Handlers TypeScript in `packages/api/src/jobs/` (routes remain thin JS wrappers).
-- `requestClientOp` / `resolveClientOp` bridge (**Feature 1** — local files; schema field exists).
 - Abort in-flight step via `AbortController` on cancel.
-- Terminal-state UI (Done / Error / Canceled badge after job finishes).
-- Active-jobs list / sidebar panel.
 - Agents permission fallback when `interface.agents.use: false` (Skills-only setups).
+
+Feature 1 bridge and UI: see **§6d** (M4 shipped; M3 / integration tests still open).
 
 ---
 
@@ -352,7 +359,67 @@ Feature 2 is **usable end-to-end** via the composer UI, but not every item from 
 | **P3 — robustness** | Abort in-flight LLM step when user cancels | True stop, not just DB flag | ⬜ |
 | **P3 — robustness** | Cross-instance live SSE (Redis pub/sub or poll-only doc) | Multi-node deployments | ⬜ Partial — Mongo is source of truth; SSE is best-effort per instance |
 | **P3 — architecture** | Move handlers to `packages/api/src/jobs/` (TS) | `CLAUDE.md` convention | ⬜ |
-| **Deferred → F1** | `waiting_client` / `paused` states + `pendingClientOp` bridge | Local file access | ⬜ Schema only |
+
+---
+
+## 6d. Implementation status — Feature 1 (M4 / Phase 1B shipped)
+
+Feature 1 **Phase 1B** (File System Access API + job bridge) is implemented on branch `feature/long-horizon-jobs`. **Phase 1A** (server MCP workspace) is not started.
+
+### What was built
+
+**Client file layer (`client/src/hooks/LocalFiles/`)**
+- `types.ts`, `support.ts`, `path.ts`, `storage.ts`, `operations.ts` — feature detect, IndexedDB handle storage, path validation, scoped `listDir` / `readFile` / `writeFile`.
+- `LocalFilesContext.tsx` — provider with states: `loading`, `unsupported`, `disconnected`, `connected`, `needs_reconnect`.
+- `useDirectoryHandle.ts`, `useReconnectFolder.ts` — thin hooks for UI.
+
+**Client UI**
+- `components/Chat/Input/ConnectFolderButton.tsx` — folder-plus / folder-open / sync icons in composer.
+- `components/Chat/LocalFolderBanner.tsx` — reconnect banner after browser restart.
+- `components/Jobs/JobClientOpBridge.tsx` + `hooks/Jobs/useJobClientOpBridge.ts` — headless bridge for `waiting_client` jobs.
+- `routes/Root.tsx` — `LocalFilesProvider` + `JobClientOpBridge` mounted app-wide.
+
+**Job bridge (backend)**
+- `api/server/services/Jobs/clientOp.js` — parse `CLIENT_OP: {...}` from model output.
+- `planner.js` — sets `status: waiting_client` + `pendingClientOp` when op detected.
+- `prompt.js` — documents `CLIENT_OP` format for the model; injects `checkpoint.lastClientOpResult` into the next step.
+- `packages/data-schemas/src/methods/agentJob.ts` — **`resolveClientOp`** (success → `queued` + result in checkpoint; failure → `error`).
+- `POST /api/jobs/:id/client-op-result` in `api/server/routes/jobs.js`.
+
+**Shared contracts**
+- `TAgentJobClientOp`, `pendingClientOp` on `TAgentJob`, `TSubmitClientOpResult`, `submitJobClientOpResult()` in data-provider.
+- `useSubmitClientOpResultMutation` in `client/src/data-provider/Jobs/mutations.ts`.
+
+**i18n (English only)**
+- `com_ui_local_folder_*` keys in `client/src/locales/en/translation.json`.
+
+### Tests
+- `client/src/hooks/LocalFiles/path.spec.ts` + `storage.spec.ts` — 9 tests.
+- `api/server/services/Jobs/clientOp.spec.js` — 4 tests.
+- `planner.spec.js` — `waiting_client` case.
+- `agentJob.spec.ts` — 3 `resolveClientOp` tests.
+
+### Remaining (Feature 1)
+
+| Priority | Item | Status |
+|---|---|---|
+| **P1** | Integration test: job `writeFile` with tab open / closed | ⬜ |
+| **P1** | Manual sign-off B1–B7 | ⬜ |
+| **P2** | Phase 1A — server filesystem MCP workspace (M3) | ⬜ Not started |
+| **P2** | `contentRef` server-side blob for large writes (today: inline `content` in `CLIENT_OP`) | ⬜ |
+| **P3** | Normal chat (Send) local file tools — today ops are **long-task only** | ⬜ By design for M4 |
+
+### How to use Feature 1 today
+
+1. **Chrome or Edge**, user with **Agents → USE**.
+2. Click **folder-plus** in the composer → pick a folder → allow access.
+3. Start a **long-running task** (list-checks) whose goal requires reading/writing files in that folder.
+4. If the model emits `CLIENT_OP`, the bridge runs automatically when the folder is connected; banner may show **Needs your input** until complete.
+5. After a browser restart, use **Reconnect folder** (banner or amber icon) before starting new file tasks.
+
+Manual scenarios: `docs/manual-testing-guide.md` tests **B1–B7**.
+
+---
 
 ### How to use Feature 2 today
 
@@ -375,12 +442,12 @@ Each milestone is tagged with the feature it belongs to.
 | **M1 — Minimal job runner** | **Feature 2** (Long-horizon job runner) | `agentJob` schema + worker + `POST /api/jobs` + single-step checkpoint | Jest | ✅ Done |
 | **M2 — Multi-step + SSE reconnection** | **Feature 2** (Long-horizon job runner) | planner loop, step rendering, composer UI, SSE snapshot, tab reopen via messages | Jest + manual | ✅ Core done — see §6c for E2E/UX follow-ups |
 | **M3 — Backend files (Phase 1A)** | **Feature 1** (Local file access) | per-conversation workspace via the filesystem MCP inside the job | Jest + integration | ⬜ Pending |
-| **M4 — File System Access API (Phase 1B)** | **Feature 1** (Local file access) | picker + IndexedDB + `pendingClientOp` bridge. Optional, based on need | Jest (frontend) + manual (Chrome/Edge) | ⬜ Pending |
+| **M4 — File System Access API (Phase 1B)** | **Feature 1** (Local file access) | picker + IndexedDB + `pendingClientOp` bridge | Jest (frontend + backend) + manual (Chrome/Edge) | ✅ Done — see §6d; manual B1–B7 |
 | **M5 — Browser control** | **Feature 3** (Browser control) | add browser MCP + scoping, after confirming Claude in Chrome's MCP surface | Manual + integration | ⬜ Pending |
 
 **Summary by feature:**
 - **Feature 2 (Long-horizon job runner):** M1 ✅, M2 ✅ core — §6c backlog before calling Feature 2 fully closed.
-- **Feature 1 (Local file access):** M3, M4 — M3 (backend, low risk) before M4 (client-side, optional).
+- **Feature 1 (Local file access):** M4 ✅ (Phase 1B); M3 ⬜ (Phase 1A server workspace — optional).
 - **Feature 3 (Browser control):** M5 — mostly configuration once Feature 2 is stable.
 
 ---
@@ -390,14 +457,15 @@ Each milestone is tagged with the feature it belongs to.
 | Area | Files (implemented) |
 |---|---|
 | Job schema/methods | `packages/data-schemas/src/schema/agentJob.ts`, `src/methods/agentJob.ts`, `src/types/agentJob.ts`, `src/models/agentJob.ts` |
-| Job worker | `api/server/services/Jobs/index.js`, `runJobStep.js`, `planner.js`, `prompt.js`, `events.js` |
+| Job worker | `api/server/services/Jobs/index.js`, `runJobStep.js`, `planner.js`, `prompt.js`, `clientOp.js`, `events.js`, `failure.js` |
 | Job API | `api/server/routes/jobs.js` (registered in `api/server/routes/index.js`, worker started in `api/server/index.js`) |
 | Job frontend — data | `client/src/data-provider/Jobs/queries.ts`, `mutations.ts`, `index.ts` |
-| Job frontend — hooks | `client/src/hooks/Jobs/useJobEvents.ts`, `useConversationJob.ts`, `useStartLongTask.ts`, `cache.ts` |
-| Job frontend — UI | `client/src/components/Chat/Input/StartLongTaskButton.tsx`, `JobStatusBanner.tsx`, `ChatView.tsx` (job-aware empty state), `Nav/Jobs/ActiveJobsList.tsx` |
+| Job frontend — hooks | `client/src/hooks/Jobs/useJobEvents.ts`, `useConversationJob.ts`, `useStartLongTask.ts`, `useJobClientOpBridge.ts`, `cache.ts` |
+| Job frontend — UI | `client/src/components/Chat/Input/StartLongTaskButton.tsx`, `JobStatusBanner.tsx`, `ChatView.tsx` (job-aware empty state), `Nav/Jobs/ActiveJobsList.tsx`, `components/Jobs/JobClientOpBridge.tsx` |
+| Local files (Phase 1B) | `client/src/hooks/LocalFiles/*`, `ConnectFolderButton.tsx`, `LocalFolderBanner.tsx`, `Root.tsx` (`LocalFilesProvider`) |
 | Shared types | `packages/data-provider/src/types/jobs.ts`, `api-endpoints.ts`, `keys.ts`, `data-service.ts` |
-| Tests | `packages/data-schemas/src/methods/agentJob.spec.ts`, `api/server/services/Jobs/planner.spec.js`, `prompt.spec.js` |
-| Local files (planned) | `client/src/hooks/LocalFiles/*`, `filesystem` MCP + `file` schema |
+| Tests | `packages/data-schemas/src/methods/agentJob.spec.ts`, `api/server/services/Jobs/*.spec.js`, `client/src/hooks/LocalFiles/*.spec.ts` |
+| Local files Phase 1A (planned) | `filesystem` MCP + `file` schema |
 | Browser control (planned) | `librechat.yaml` `mcpServers`, `client/src/utils/mcpToolsForPopover.ts` |
 
 ### Reference building blocks (existing, reused)

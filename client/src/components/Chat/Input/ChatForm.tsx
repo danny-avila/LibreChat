@@ -35,6 +35,7 @@ import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
+import ConnectFolderButton from './ConnectFolderButton';
 import StartLongTaskButton from './StartLongTaskButton';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
@@ -388,6 +389,9 @@ const ChatForm = memo(function ChatForm({
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'} flex items-center gap-1`}>
+                <ConnectFolderButton
+                  disabled={filesLoading || isSubmitting || disableInputs || isNotAppendable}
+                />
                 {isSubmitting && showStopButton ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (

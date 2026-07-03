@@ -413,6 +413,7 @@ export const jobs = (params?: { status?: string; conversationId?: string }) => {
 };
 export const job = (id: string) => `${BASE_URL}/api/jobs/${encodeURIComponent(id)}`;
 export const cancelJob = (id: string) => `${job(id)}/cancel`;
+export const submitJobClientOpResult = (id: string) => `${job(id)}/client-op-result`;
 export const jobEvents = (id: string) => `${job(id)}/events`;
 
 export const skillFiles = (id: string) => `${getSkill(id)}/files`;

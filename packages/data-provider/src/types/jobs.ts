@@ -18,6 +18,13 @@ export type TAgentJobStep = {
   endedAt?: string;
 };
 
+export type TAgentJobClientOp = {
+  op: 'listDir' | 'readFile' | 'writeFile';
+  path?: string;
+  contentRef?: string;
+  content?: string;
+};
+
 export type TAgentJob = {
   _id: string;
   user: string;
@@ -32,6 +39,7 @@ export type TAgentJob = {
   steps: TAgentJobStep[];
   currentStep: number;
   maxSteps: number;
+  pendingClientOp?: TAgentJobClientOp | null;
   lastError?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -54,6 +62,12 @@ export type TAgentJobsResponse = {
 
 export type TAgentJobResponse = {
   job: TAgentJob;
+};
+
+export type TSubmitClientOpResult = {
+  success: boolean;
+  result?: unknown;
+  error?: string;
 };
 
 /** Payload pushed over the job SSE channel as the worker advances a job. */

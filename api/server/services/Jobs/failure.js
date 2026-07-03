@@ -29,6 +29,9 @@ function formatCapturedError(capturedError) {
     return capturedError;
   }
   if (typeof capturedError === 'object' && capturedError !== null) {
+    if (typeof capturedError.text === 'string') {
+      return capturedError.text;
+    }
     if (typeof capturedError.message === 'string') {
       return capturedError.message;
     }
@@ -143,6 +146,7 @@ function detectStepFailure({ response, responseText, capturedError }) {
 module.exports = {
   detectStepFailure,
   extractStepResponseText,
+  formatCapturedError,
   hasErrorContentPart,
   looksLikeFailureText,
 };

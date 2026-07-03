@@ -99,8 +99,9 @@ async function runOneJobStep(job) {
         status: decision.status,
         currentStep: decision.currentStep,
         checkpoint: decision.checkpoint,
+        pendingClientOp: decision.pendingClientOp ?? null,
       },
-      'step',
+      decision.status === 'waiting_client' ? 'status' : 'step',
     );
   } catch (error) {
     logger.error(`[Jobs] Step ${stepIndex} failed for job ${job._id}:`, error);

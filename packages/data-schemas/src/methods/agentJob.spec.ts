@@ -277,4 +277,81 @@ describe('AgentJob methods', () => {
       expect(canceled).toBeNull();
     });
   });
+
+  describe('resolveClientOp', () => {
+    it('queues the job again after a successful client operation', async () => {
+      const created = await methods.createAgentJob({
+        user: new mongoose.Types.ObjectId(userId),
+        conversationId: 'c1',
+        goal: 'local file task',
+        status: 'waiting_client',
+      });
+
+      await AgentJob.updateOne(
+        { _id: created._id },
+        {
+          $set: {
+            pendingClientOp: { op: 'readFile', path: 'notes.txt' },
+          },
+        },
+      );
+
+      const resolved = await methods.resolveClientOp(created._id, userId, {
+        success: true,
+        result: 'hello from disk',
+      });
+
+      expect(resolved?.status).toBe('queued');
+      expect(resolved?.pendingClientOp ?? null).toBeNull();
+      expect(resolved?.checkpoint).toMatchObject({
+        lastClientOpResult: {
+          op: { op: 'readFile', path: 'notes.txt' },
+          result: 'hello from disk',
+        },
+      });
+    });
+
+    it('marks the job error when the client operation fails', async () => {
+      const created = await methods.createAgentJob({
+        user: new mongoose.Types.ObjectId(userId),
+        conversationId: 'c1',
+        goal: 'local file task',
+        status: 'waiting_client',
+      });
+
+      await AgentJob.updateOne(
+        { _id: created._id },
+        {
+          $set: {
+            pendingClientOp: { op: 'writeFile', path: 'out.txt', content: 'data' },
+          },
+        },
+      );
+
+      const resolved = await methods.resolveClientOp(created._id, userId, {
+        success: false,
+        error: 'Permission denied',
+      });
+
+      expect(resolved?.status).toBe('error');
+      expect(resolved?.lastError).toBe('Permission denied');
+      expect(resolved?.pendingClientOp ?? null).toBeNull();
+    });
+
+    it('returns null when no pending client operation exists', async () => {
+      const created = await methods.createAgentJob({
+        user: new mongoose.Types.ObjectId(userId),
+        conversationId: 'c1',
+        goal: 'nothing pending',
+        status: 'running',
+      });
+
+      const resolved = await methods.resolveClientOp(created._id, userId, {
+        success: true,
+        result: 'ignored',
+      });
+
+      expect(resolved).toBeNull();
+    });
+  });
 });

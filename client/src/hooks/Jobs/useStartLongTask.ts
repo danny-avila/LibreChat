@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys } from 'librechat-data-provider';
+import { isEphemeralAgentId, QueryKeys } from 'librechat-data-provider';
 import type { TConversation, TAgentJobResponse } from 'librechat-data-provider';
 import { useCreateJobMutation } from '~/data-provider/Jobs/mutations';
 import { useChatFormContext } from '~/Providers';
@@ -39,7 +39,10 @@ export default function useStartLongTask() {
         const response = await mutateAsync({
           goal,
           conversationId,
-          agent_id: conversation?.agent_id ?? undefined,
+          agent_id:
+            conversation?.agent_id && !isEphemeralAgentId(conversation.agent_id)
+              ? conversation.agent_id
+              : undefined,
           endpoint: conversation?.endpoint ?? undefined,
           endpointType: conversation?.endpointType ?? undefined,
           model: conversation?.model ?? undefined,
