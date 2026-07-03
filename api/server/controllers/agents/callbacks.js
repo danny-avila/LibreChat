@@ -55,7 +55,6 @@ function collectAnnotationsFromValue(value, collected = []) {
   return collected;
 }
 
-
 function isHostFileAuthoringArtifact(artifact) {
   return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
 }
@@ -82,14 +81,18 @@ class ModelEndHandler {
    * @param {(data: Record<string, unknown>) => Promise<void> | void} [emitUsage] Optional
    *   callback to stream per-call token usage to the client.
    */
-  constructor(collectedUsage, collectedThoughtSignatures = null, emitUsage = null, collectedAnnotations = null) {
+  constructor(
+    collectedUsage,
+    collectedThoughtSignatures = null,
+    emitUsage = null,
+    collectedAnnotations = null,
+  ) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
     this.collectedAnnotations = collectedAnnotations || [];
-
     this.emitUsage = emitUsage;
   }
 
@@ -117,7 +120,7 @@ class ModelEndHandler {
     let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
-          if (Array.isArray(this.collectedAnnotations)) {
+      if (Array.isArray(this.collectedAnnotations)) {
         const annotations = collectAnnotationsFromValue(data?.output);
         if (annotations.length > 0) {
           const model = metadata?.ls_model_name || agentContext.clientOptions?.model;
@@ -395,7 +398,7 @@ function getDefaultHandlers({
       collectedUsage,
       collectedThoughtSignatures,
       emitTokenUsage,
-      collectedAnnotations
+      collectedAnnotations,
     ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
@@ -773,6 +776,28 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
           return attachment;
         })().catch((error) => {
           logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
+    if (output.artifact[Tools.memory]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.memory,
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+            [Tools.memory]: output.artifact[Tools.memory],
+          };
+          if (!streamId && !res.headersSent) {
+            return attachment;
+          }
+          writeAttachment(res, streamId, attachment);
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing memory artifact content:', error);
           return null;
         }),
       );
