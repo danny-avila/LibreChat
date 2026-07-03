@@ -39,7 +39,7 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
         {icon ? (
           <CustomIcon
             src={icon}
-            alt={localize('com_ui_icon')}
+            alt=""
             className="h-full w-full rounded-xl object-cover text-text-primary"
           />
         ) : (
