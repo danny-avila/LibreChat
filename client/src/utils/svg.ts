@@ -22,19 +22,18 @@ const ALPHA_THRESHOLD = 8;
  * True when the icon can be safely tinted to a single theme color. In one pass it
  * requires that every sufficiently opaque pixel is grayscale (its red, green, and
  * blue channels differ by no more than the tolerance) and that at least one pixel
- * is not fully opaque. A fully transparent image paints no tone, and a fully
- * opaque one has no shape for a CSS mask to reveal and would flatten to a solid
- * block, so neither counts as monochrome.
+ * is genuinely empty (at or below the paint threshold). A fully transparent image
+ * paints no tone, and one whose every pixel is painted, even at partial opacity,
+ * has no glyph-shaped hole for a CSS mask to reveal and would flatten to a solid
+ * currentColor wash, so neither counts as monochrome.
  */
 export function scanMonochrome(data: Uint8ClampedArray): boolean {
   let painted = false;
-  let hasTransparency = false;
+  let hasEmptyArea = false;
   for (let i = 0; i < data.length; i += 4) {
     const alpha = data[i + 3];
-    if (alpha < 255) {
-      hasTransparency = true;
-    }
     if (alpha <= ALPHA_THRESHOLD) {
+      hasEmptyArea = true;
       continue;
     }
     painted = true;
@@ -49,7 +48,7 @@ export function scanMonochrome(data: Uint8ClampedArray): boolean {
       return false;
     }
   }
-  return painted && hasTransparency;
+  return painted && hasEmptyArea;
 }
 
 /** The dimensions to sample the image at, scaled down to `SAMPLE_SIZE`, or null
@@ -114,14 +113,31 @@ export function detectMonochrome(src: string): Promise<boolean> {
   });
 }
 
+/** Matches every `url(...)` reference in a CSS/presentation value, capturing the
+ *  optional quote and the target so non-fragment references can be rejected. */
+const CSS_URL_REFERENCE = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+
+/** True when a value carries a `url(...)` reference that is not a same-document
+ *  fragment, e.g. `url(https://…)`, `url(//…)`, `url(data:…)`, or `url(x.svg#id)`. */
+export function hasExternalUrlReference(value: string): boolean {
+  CSS_URL_REFERENCE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CSS_URL_REFERENCE.exec(value)) !== null) {
+    if (!match[2].trim().startsWith('#')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 let svgPurifier: ReturnType<typeof DOMPurify> | null = null;
 
 /**
- * Dedicated DOMPurify instance for SVG icons, so the fragment-only href hook
- * never leaks into the app's shared default instance. The hook keeps local
- * references (`href="#id"` on `<use>` and gradient inheritance — common
- * exporter output) while stripping every external, relative, or scheme-carrying
- * href that could smuggle a fetch or navigation.
+ * Dedicated DOMPurify instance for SVG icons, so the local-reference hook never
+ * leaks into the app's shared default instance. The hook keeps same-document
+ * references (`href="#id"` on `<use>`/gradients and `url(#id)` paint/filter/clip
+ * values — common exporter output) while stripping every external, relative, or
+ * scheme-carrying `href` or `url(...)` that could smuggle a fetch or navigation.
  */
 function getSvgPurifier(): ReturnType<typeof DOMPurify> {
   if (svgPurifier) {
@@ -133,6 +149,11 @@ function getSvgPurifier(): ReturnType<typeof DOMPurify> {
       const value = node.getAttribute(attr);
       if (value != null && !value.trim().startsWith('#')) {
         node.removeAttribute(attr);
+      }
+    }
+    for (const attr of Array.from(node.attributes)) {
+      if (hasExternalUrlReference(attr.value)) {
+        node.removeAttribute(attr.name);
       }
     }
   });
