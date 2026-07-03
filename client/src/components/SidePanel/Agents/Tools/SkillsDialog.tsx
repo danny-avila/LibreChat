@@ -18,6 +18,7 @@ import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
 import { useLocalize, useHasAccess, useAuthContext, useToolFavorites } from '~/hooks';
 import { CreateSkillDialog } from '~/components/Skills/dialogs';
+import { skillsEnabledTransition } from './items/mutations';
 import MarketplaceCatalog from './MarketplaceCatalog';
 import { useListSkillsQuery } from '~/data-provider';
 import { CategoryIcon } from '~/components/Prompts';
@@ -108,29 +109,37 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
     [catalog, search, category, view, favoriteKeys],
   );
 
+  const applySkillsSelection = useCallback(
+    (next: string[]) => {
+      const current = (getValues('skills') ?? []) as string[];
+      setValue('skills', next, { shouldDirty: true });
+      const flag = skillsEnabledTransition(current, next, getValues('skills_enabled'));
+      if (flag !== undefined) {
+        setValue('skills_enabled', flag, { shouldDirty: true });
+      }
+    },
+    [getValues, setValue],
+  );
+
   const handleSkillCreated = useCallback(
     (skill: TSkill) => {
       const current = (getValues('skills') ?? []) as string[];
-      setValue('skills', Array.from(new Set([...current, skill._id])), { shouldDirty: true });
+      applySkillsSelection(Array.from(new Set([...current, skill._id])));
       setView('mine');
     },
-    [getValues, setValue],
+    [getValues, applySkillsSelection],
   );
 
   const handleToggle = useCallback(
     (item: AgentItem) => {
       const current = (getValues('skills') ?? []) as string[];
       if (selectedIds.has(itemKey(item))) {
-        setValue(
-          'skills',
-          current.filter((id) => id !== item.id),
-          { shouldDirty: true },
-        );
+        applySkillsSelection(current.filter((id) => id !== item.id));
         return;
       }
-      setValue('skills', Array.from(new Set([...current, item.id])), { shouldDirty: true });
+      applySkillsSelection(Array.from(new Set([...current, item.id])));
     },
-    [getValues, setValue, selectedIds],
+    [getValues, applySkillsSelection, selectedIds],
   );
 
   const viewOptions = useMemo(

@@ -13,14 +13,15 @@ import {
   AgentCapabilities,
 } from 'librechat-data-provider';
 import type { TSkillSummary } from 'librechat-data-provider';
+import type { AgentForm, ExtendedFile } from '~/common';
 import type { AgentItem } from './items/types';
-import type { AgentForm } from '~/common';
+import { useVerifyAgentToolAuth, useGetAgentFiles } from '~/data-provider';
 import { useLocalize, useHasAccess, useHasMemoryAccess } from '~/hooks';
-import { useVerifyAgentToolAuth } from '~/data-provider';
+import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import { deriveSelectedItems } from './items/selectors';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useAgentPanelContext } from '~/Providers';
 import { buildCatalog } from './items/catalog';
+import { processAgentOption } from '~/utils';
 
 /**
  * Maps builtin capability ids to whether they still need setup (USER_PROVIDED auth
@@ -75,6 +76,55 @@ export function useShowMemory(): boolean {
   }, [agentsConfig, hasMemoryAccess, user]);
 }
 
+export interface AgentFileEntries {
+  contextFiles: Array<[string, ExtendedFile]>;
+  knowledgeFiles: Array<[string, ExtendedFile]>;
+  codeFiles: Array<[string, ExtendedFile]>;
+}
+
+const NO_FILES: Array<[string, ExtendedFile]> = [];
+
+/**
+ * File entries for the agent's builtin file tools (File Context, File Search,
+ * Code Interpreter). Agents loaded from the API carry only
+ * `tool_resources.*.file_ids` — the client-side entry arrays exist on the form
+ * `agent` object only after an in-session upload. Reading them directly would
+ * show an existing agent's attachments as empty, so this derives the missing
+ * arrays by merging the agent files query into the file map, exactly like the
+ * legacy `AgentConfig` hydration. Must be rendered inside the agent form's
+ * `FormProvider` and the file map context.
+ */
+export function useAgentFileEntries(): AgentFileEntries {
+  const { control } = useFormContext<AgentForm>();
+  const agent = useWatch({ control, name: 'agent' });
+  const agentId = useWatch({ control, name: 'id' });
+  const fileMap = useFileMapContext();
+  const { data: agentFiles = [] } = useGetAgentFiles(agentId);
+
+  return useMemo(() => {
+    if (agent == null || agent.id !== agentId) {
+      return { contextFiles: NO_FILES, knowledgeFiles: NO_FILES, codeFiles: NO_FILES };
+    }
+    const needsHydration =
+      agent.context_files == null || agent.knowledge_files == null || agent.code_files == null;
+    let processed: ReturnType<typeof processAgentOption> | null = null;
+    if (needsHydration) {
+      const mergedFileMap = { ...fileMap };
+      for (const file of agentFiles) {
+        if (file.file_id) {
+          mergedFileMap[file.file_id] = file;
+        }
+      }
+      processed = processAgentOption({ agent, fileMap: mergedFileMap });
+    }
+    return {
+      contextFiles: agent.context_files ?? processed?.context_files ?? NO_FILES,
+      knowledgeFiles: agent.knowledge_files ?? processed?.knowledge_files ?? NO_FILES,
+      codeFiles: agent.code_files ?? processed?.code_files ?? NO_FILES,
+    };
+  }, [agent, agentId, fileMap, agentFiles]);
+}
+
 interface UseAgentItemsOptions {
   agentId: string;
   /** Skills to include in the catalog; omit to exclude the skill kind entirely. */
@@ -120,7 +170,7 @@ export function useAgentItems({
   const fileSearch = (useWatch({ control, name: 'file_search' }) ?? false) as boolean;
   const memory = (useWatch({ control, name: 'memory' }) ?? false) as boolean;
   const artifacts = (useWatch({ control, name: 'artifacts' }) ?? '') as string;
-  const agent = useWatch({ control, name: 'agent' });
+  const { contextFiles, knowledgeFiles, codeFiles } = useAgentFileEntries();
 
   const agentActions = useMemo(
     () => (actions ?? []).filter((a) => a.agent_id === agentId),
@@ -154,8 +204,6 @@ export function useAgentItems({
     ],
   );
 
-  /** Depends on the watched `agent` object rather than per-render derived file
-   * arrays, so the memo only recomputes when form state actually changes. */
   const selected = useMemo(
     () =>
       deriveSelectedItems(
@@ -167,9 +215,9 @@ export function useAgentItems({
           artifacts,
           tools,
           skills: skillsField,
-          context_files: (agent?.context_files ?? []) as Array<[string, unknown]>,
-          knowledge_files: (agent?.knowledge_files ?? []) as Array<[string, unknown]>,
-          code_files: (agent?.code_files ?? []) as Array<[string, unknown]>,
+          context_files: contextFiles,
+          knowledge_files: knowledgeFiles,
+          code_files: codeFiles,
         },
         catalog,
         agentActions,
@@ -182,7 +230,9 @@ export function useAgentItems({
       artifacts,
       tools,
       skillsField,
-      agent,
+      contextFiles,
+      knowledgeFiles,
+      codeFiles,
       catalog,
       agentActions,
     ],

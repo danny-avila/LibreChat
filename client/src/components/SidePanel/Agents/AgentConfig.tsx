@@ -1,10 +1,11 @@
 import { Input } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
-import type { AgentForm, ExtendedFile, IconComponentTypes } from '~/common';
-import { useLocalize, useAgentCapabilities } from '~/hooks';
+import type { AgentForm, IconComponentTypes } from '~/common';
 import AgentCategorySelector from './AgentCategorySelector';
+import { useLocalize, useAgentCapabilities } from '~/hooks';
 import { validateEmail, getIconKey, cn } from '~/utils';
+import { useAgentFileEntries } from './Tools/hooks';
 import { useAgentPanelContext } from '~/Providers';
 import ToolsSection from './Tools/ToolsSection';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -29,7 +30,7 @@ export default function AgentConfig() {
   const model = useWatch({ control, name: 'model' });
   const agent = useWatch({ control, name: 'agent' });
   const agent_id = useWatch({ control, name: 'id' });
-  const contextFiles = (agent?.context_files ?? []) as Array<[string, ExtendedFile]>;
+  const { contextFiles } = useAgentFileEntries();
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let Icon: IconComponentTypes | null | undefined;

@@ -1,12 +1,10 @@
-import { useMemo } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
-import type { ExtendedFile, AgentForm } from '~/common';
 import type { AgentItem } from '../items/types';
 import BuiltinSection from './sections/BuiltinSection';
-import ToolSection from './sections/ToolSection';
-import SkillSection from './sections/SkillSection';
-import McpSection from './sections/McpSection';
 import ActionSection from './sections/ActionSection';
+import SkillSection from './sections/SkillSection';
+import ToolSection from './sections/ToolSection';
+import McpSection from './sections/McpSection';
+import { useAgentFileEntries } from '../hooks';
 
 interface Props {
   item: AgentItem;
@@ -15,21 +13,7 @@ interface Props {
 }
 
 export default function ItemDialogBody({ item, agentId, onClose }: Props) {
-  const { control } = useFormContext<AgentForm>();
-  const agent = useWatch({ control, name: 'agent' });
-
-  const contextFiles = useMemo(
-    () => (agent?.context_files ?? []) as Array<[string, ExtendedFile]>,
-    [agent?.context_files],
-  );
-  const knowledgeFiles = useMemo(
-    () => (agent?.knowledge_files ?? []) as Array<[string, ExtendedFile]>,
-    [agent?.knowledge_files],
-  );
-  const codeFiles = useMemo(
-    () => (agent?.code_files ?? []) as Array<[string, ExtendedFile]>,
-    [agent?.code_files],
-  );
+  const { contextFiles, knowledgeFiles, codeFiles } = useAgentFileEntries();
 
   if (item.kind === 'builtin') {
     return (

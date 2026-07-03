@@ -1,11 +1,15 @@
 import '@testing-library/jest-dom/extend-expect';
 import { render, screen } from '@testing-library/react';
-import ItemDialogBody from '../ItemDialogBody';
 import type { AgentItem } from '../../items/types';
+import ItemDialogBody from '../ItemDialogBody';
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, getValues: () => undefined, setValue: jest.fn() }),
   useWatch: () => undefined,
+}));
+
+jest.mock('../../hooks', () => ({
+  useAgentFileEntries: () => ({ contextFiles: [], knowledgeFiles: [], codeFiles: [] }),
 }));
 
 jest.mock('../sections/BuiltinSection', () => ({

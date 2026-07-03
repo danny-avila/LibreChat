@@ -1,7 +1,7 @@
 import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
-import { computeToggleAction } from '../mutations';
-import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
 import type { AgentItem } from '../types';
+import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
+import { computeToggleAction, skillsEnabledTransition } from '../mutations';
 
 const builtinCode: AgentItem = {
   kind: 'builtin',
@@ -128,5 +128,32 @@ describe('computeToggleAction', () => {
       type: 'action-remove',
       actionId: 'a1',
     });
+  });
+});
+
+describe('skillsEnabledTransition', () => {
+  test('adding the first skill turns the master flag on', () => {
+    expect(skillsEnabledTransition([], ['s1'], undefined)).toBe(true);
+    expect(skillsEnabledTransition([], ['s1'], false)).toBe(true);
+  });
+
+  test('adding the first skill leaves an already-on flag alone', () => {
+    expect(skillsEnabledTransition([], ['s1'], true)).toBeUndefined();
+  });
+
+  test('removing the last skill turns the master flag off', () => {
+    expect(skillsEnabledTransition(['s1'], [], true)).toBe(false);
+  });
+
+  test('removing the last skill leaves an off flag alone', () => {
+    expect(skillsEnabledTransition(['s1'], [], false)).toBeUndefined();
+    expect(skillsEnabledTransition(['s1'], [], undefined)).toBeUndefined();
+  });
+
+  test('edits within a non-empty selection never touch the flag', () => {
+    expect(skillsEnabledTransition(['s1'], ['s1', 's2'], true)).toBeUndefined();
+    expect(skillsEnabledTransition(['s1'], ['s1', 's2'], false)).toBeUndefined();
+    expect(skillsEnabledTransition(['s1', 's2'], ['s1'], true)).toBeUndefined();
+    expect(skillsEnabledTransition(['s1', 's2'], ['s1'], false)).toBeUndefined();
   });
 });

@@ -7,10 +7,10 @@ import type { TPlugin } from 'librechat-data-provider';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
 import { useAgentItems, useResolvedSkills, useUninstallToolCredentials } from './hooks';
+import { computeToggleAction, skillsEnabledTransition } from './items/mutations';
 import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
-import { computeToggleAction } from './items/mutations';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers';
 import ItemDialog from './ItemDialog/ItemDialog';
@@ -92,11 +92,12 @@ export default function ToolsSection({ agentId }: Props) {
         }
         case 'skill-remove': {
           const current = (getValues('skills') ?? []) as string[];
-          setValue(
-            'skills',
-            current.filter((s) => s !== patch.id),
-            { shouldDirty: true },
-          );
+          const next = current.filter((s) => s !== patch.id);
+          setValue('skills', next, { shouldDirty: true });
+          const flag = skillsEnabledTransition(current, next, getValues('skills_enabled'));
+          if (flag !== undefined) {
+            setValue('skills_enabled', flag, { shouldDirty: true });
+          }
           break;
         }
         case 'mcp-remove':
