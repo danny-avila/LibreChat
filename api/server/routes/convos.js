@@ -23,6 +23,7 @@ const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
   [EModelEndpoint.assistants]: require('~/server/services/Endpoints/assistants'),
 };
+const CONVERSATION_DELETION_DISABLED = true;
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -97,6 +98,10 @@ router.get('/gen_title/:conversationId', async (req, res) => {
 });
 
 router.delete('/', async (req, res) => {
+  if (CONVERSATION_DELETION_DISABLED) {
+    return res.status(403).json({ error: 'Deleting conversations is disabled' });
+  }
+
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body.arg;
 

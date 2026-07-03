@@ -325,6 +325,14 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     const { text, index, model } = req.body;
 
     if (index === undefined) {
+      const message = await getMessage({ user: req.user.id, messageId });
+      if (!message) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+      if (message.isCreatedByUser !== true) {
+        return res.status(403).json({ error: 'Editing responses is disabled' });
+      }
+
       const tokenCount = await countTokens(text, model);
       const result = await updateMessage(req, { messageId, text, tokenCount });
       return res.status(200).json(result);
@@ -334,9 +342,14 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
       return res.status(400).json({ error: 'Invalid index' });
     }
 
-    const message = (await getMessages({ conversationId, messageId }, 'content tokenCount'))?.[0];
+    const message = (
+      await getMessages({ conversationId, messageId }, 'content tokenCount isCreatedByUser')
+    )?.[0];
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
+    }
+    if (message.isCreatedByUser !== true) {
+      return res.status(403).json({ error: 'Editing responses is disabled' });
     }
 
     const existingContent = message.content;

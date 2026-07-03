@@ -1,28 +1,22 @@
 import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
-import { Ellipsis, Share2, CopyPlus, Archive, Pen, Trash } from 'lucide-react';
+import { Ellipsis, Share2, CopyPlus, Archive, Pen } from 'lucide-react';
 import type { MouseEvent } from 'react';
-import type { TMessage } from 'librechat-data-provider';
 import {
   useDuplicateConversationMutation,
-  useDeleteConversationMutation,
   useGetStartupConfig,
   useArchiveConvoMutation,
 } from '~/data-provider';
 import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
-import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 
 function ConvoOptions({
   conversationId,
-  title,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -40,7 +34,6 @@ function ConvoOptions({
   isShiftHeld?: boolean;
 }) {
   const localize = useLocalize();
-  const queryClient = useQueryClient();
   const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
@@ -52,34 +45,10 @@ function ConvoOptions({
 
   const menuId = useId();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
-  const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
   const archiveConvoMutation = useArchiveConvoMutation();
-
-  const deleteMutation = useDeleteConversationMutation({
-    onSuccess: () => {
-      if (currentConvoId === conversationId || currentConvoId === 'new') {
-        newConversation();
-        navigate('/c/new', { replace: true });
-      }
-      retainView();
-      showToast({
-        message: localize('com_ui_convo_delete_success'),
-        severity: NotificationSeverity.SUCCESS,
-        showIcon: true,
-      });
-    },
-    onError: () => {
-      showToast({
-        message: localize('com_ui_convo_delete_error'),
-        severity: NotificationSeverity.ERROR,
-        showIcon: true,
-      });
-    },
-  });
 
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
@@ -106,30 +75,10 @@ function ConvoOptions({
 
   const isDuplicateLoading = duplicateConversation.isLoading;
   const isArchiveLoading = archiveConvoMutation.isLoading;
-  const isDeleteLoading = deleteMutation.isLoading;
 
   const shareHandler = useCallback(() => {
     setShowShareDialog(true);
   }, []);
-
-  const deleteHandler = useCallback(() => {
-    setShowDeleteDialog(true);
-  }, []);
-
-  const handleInstantDelete = useCallback(
-    (e: MouseEvent) => {
-      e.stopPropagation();
-      const convoId = conversationId ?? '';
-      if (!convoId) {
-        return;
-      }
-      const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, convoId]);
-      const thread_id = messages?.[messages.length - 1]?.thread_id;
-      const endpoint = messages?.[messages.length - 1]?.endpoint;
-      deleteMutation.mutate({ conversationId: convoId, thread_id, endpoint, source: 'button' });
-    },
-    [conversationId, deleteMutation, queryClient],
-  );
 
   const handleArchiveClick = useCallback(
     async (e?: MouseEvent) => {
@@ -222,24 +171,12 @@ function ConvoOptions({
           <Archive className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
         ),
       },
-      {
-        label: localize('com_ui_delete'),
-        onClick: deleteHandler,
-        icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
-        ariaHasPopup: 'dialog' as const,
-        ariaControls: 'delete-conversation-dialog',
-        /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
-        hideOnClick: false,
-        ref: deleteButtonRef,
-        render: (props) => <button {...props} />,
-      },
     ],
     [
       localize,
       shareHandler,
       startupConfig,
       renameHandler,
-      deleteHandler,
       isArchiveLoading,
       isDuplicateLoading,
       handleArchiveClick,
@@ -254,7 +191,7 @@ function ConvoOptions({
       : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
   );
 
-  if (isShiftHeld && isActiveConvo && !isPopoverActive && !showShareDialog && !showDeleteDialog) {
+  if (isShiftHeld && isActiveConvo && !isPopoverActive && !showShareDialog) {
     return (
       <div className="flex items-center gap-0.5">
         <button
@@ -267,18 +204,6 @@ function ConvoOptions({
             <Spinner className="size-4" />
           ) : (
             <Archive className="icon-md text-text-secondary" aria-hidden={true} />
-          )}
-        </button>
-        <button
-          aria-label={localize('com_ui_delete')}
-          className={cn(buttonClassName, 'hover:bg-surface-hover')}
-          onClick={handleInstantDelete}
-          disabled={isDeleteLoading}
-        >
-          {isDeleteLoading ? (
-            <Spinner className="size-4" />
-          ) : (
-            <Trash className="icon-md text-text-secondary" aria-hidden={true} />
           )}
         </button>
       </div>
@@ -329,17 +254,6 @@ function ConvoOptions({
           open={showShareDialog}
           onOpenChange={setShowShareDialog}
           triggerRef={shareButtonRef}
-        />
-      )}
-      {showDeleteDialog && (
-        <DeleteButton
-          title={title ?? ''}
-          retainView={retainView}
-          triggerRef={deleteButtonRef}
-          setMenuOpen={setIsPopoverActive}
-          showDeleteDialog={showDeleteDialog}
-          conversationId={conversationId ?? ''}
-          setShowDeleteDialog={setShowDeleteDialog}
         />
       )}
     </>
