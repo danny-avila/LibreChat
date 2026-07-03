@@ -45,6 +45,31 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('path');
   });
 
+  it('strips relative-path and javascript: hrefs from <use>', () => {
+    for (const href of ['icons.svg#a', '//evil.example/x.svg#a', 'javascript:alert(1)']) {
+      const input = `data:image/svg+xml,${encodeURIComponent(`<svg><use href="${href}"/></svg>`)}`;
+      expect(decode(sanitizeMcpIconPath(input))).not.toContain('href');
+    }
+  });
+
+  it('preserves local <defs>/<use> references', () => {
+    const raw = '<svg><defs><path id="p" d="M0 0h10v10H0z"/></defs><use href="#p"/></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).toContain('<use href="#p"');
+    expect(clean).toContain('d="M0 0h10v10H0z"');
+  });
+
+  it('preserves local xlink:href references and gradient inheritance', () => {
+    const raw =
+      '<svg><defs><path id="p" d="M0 0h1v1z"/></defs><use xlink:href="#p"/><linearGradient id="g2" href="#g" x1="0" x2="1"/></svg>';
+    const input = `data:image/svg+xml,${encodeURIComponent(raw)}`;
+    const clean = decode(sanitizeMcpIconPath(input));
+    expect(clean).toContain('xlink:href="#p"');
+    expect(clean).toContain('href="#g"');
+    expect(clean).toContain('x1="0"');
+  });
+
   it('preserves case-sensitive SVG names and multi-color paint', () => {
     const raw =
       '<svg viewBox="0 0 24 24"><linearGradient id="g"><stop offset="0" stop-color="#f00"/></linearGradient><path d="M0 0h24v24H0z" fill="url(#g)"/></svg>';
