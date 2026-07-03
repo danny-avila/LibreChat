@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react/menu';
 import { Button, DropdownPopup } from '@librechat/client';
+import { Permissions, PermissionTypes, AgentCapabilities } from 'librechat-data-provider';
 import { LayoutGrid, ListFilter, Wrench, Server, Workflow, Star, User, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { AgentItemKind, ItemFilter } from './items/types';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useHasAccess } from '~/hooks';
+import { useAgentPanelContext } from '~/Providers';
 import { cn } from '~/utils';
 
 type View = NonNullable<ItemFilter['view']>;
@@ -61,22 +63,34 @@ export default function MarketplaceSidebar({
 }: MarketplaceSidebarProps) {
   const localize = useLocalize();
   const [createOpen, setCreateOpen] = useState(false);
+  const { agentsConfig } = useAgentPanelContext();
+  const hasMcpCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.CREATE,
+  });
+  const actionsEnabled = useMemo(
+    () => agentsConfig?.capabilities?.includes(AgentCapabilities.actions) ?? false,
+    [agentsConfig],
+  );
 
-  const createItems = useMemo(
-    () => [
-      {
+  const createItems = useMemo(() => {
+    const items: Array<{ label: string; icon: ReactNode; onClick: () => void }> = [];
+    if (hasMcpCreateAccess) {
+      items.push({
         label: localize('com_ui_tools_kind_mcp'),
         icon: <Server className="size-4" aria-hidden="true" />,
         onClick: () => onCreateNew?.('mcp'),
-      },
-      {
+      });
+    }
+    if (actionsEnabled) {
+      items.push({
         label: localize('com_ui_tools_kind_actions'),
         icon: <Workflow className="size-4" aria-hidden="true" />,
         onClick: () => onCreateNew?.('action'),
-      },
-    ],
-    [localize, onCreateNew],
-  );
+      });
+    }
+    return items;
+  }, [localize, onCreateNew, hasMcpCreateAccess, actionsEnabled]);
 
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-0.5 border-r border-border-light bg-surface-primary-alt p-3">
@@ -84,30 +98,32 @@ export default function MarketplaceSidebar({
         {localize('com_ui_tools_marketplace')}
       </h2>
 
-      <DropdownPopup
-        portal={true}
-        mountByState={true}
-        unmountOnHide={true}
-        isOpen={createOpen}
-        setIsOpen={setCreateOpen}
-        menuId="marketplace-create-new"
-        className="pointer-events-auto"
-        trigger={
-          <Ariakit.MenuButton
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="mb-2 mt-1 w-full justify-center gap-1.5"
-              >
-                <Plus className="size-4" aria-hidden="true" />
-                <span className="truncate">{localize('com_ui_tools_create_new')}</span>
-              </Button>
-            }
-          />
-        }
-        items={createItems}
-      />
+      {createItems.length > 0 && (
+        <DropdownPopup
+          portal={true}
+          mountByState={true}
+          unmountOnHide={true}
+          isOpen={createOpen}
+          setIsOpen={setCreateOpen}
+          menuId="marketplace-create-new"
+          className="pointer-events-auto"
+          trigger={
+            <Ariakit.MenuButton
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mb-2 mt-1 w-full justify-center gap-1.5"
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  <span className="truncate">{localize('com_ui_tools_create_new')}</span>
+                </Button>
+              }
+            />
+          }
+          items={createItems}
+        />
+      )}
 
       <SidebarItem
         icon={<LayoutGrid className="size-4" />}

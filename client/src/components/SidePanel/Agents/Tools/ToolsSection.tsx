@@ -6,8 +6,8 @@ import { PermissionTypes, Permissions, AgentCapabilities } from 'librechat-data-
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
+import { useAgentItems, useResolvedSkills, useUninstallToolCredentials } from './hooks';
 import { useListSkillsQuery, useDeleteAgentAction } from '~/data-provider';
-import { useAgentItems, useUninstallToolCredentials } from './hooks';
 import { useRemoveMCPTool, useVisibleTools } from '~/hooks/MCP';
 import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
 import { computeToggleAction } from './items/mutations';
@@ -59,12 +59,13 @@ export default function ToolsSection({ agentId }: Props) {
   );
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
+  const resolvedSkills = useResolvedSkills(skillsData?.skills);
 
   const uninstallToolCredentials = useUninstallToolCredentials();
 
   const { selected, tools } = useAgentItems({
     agentId,
-    skills: skillsData?.skills,
+    skills: resolvedSkills,
     skillsPermission: showSkills,
   });
 

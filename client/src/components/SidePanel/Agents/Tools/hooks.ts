@@ -1,11 +1,14 @@
 import { useMemo, useCallback } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { useToastContext } from '@librechat/client';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
   Tools,
   AuthType,
+  QueryKeys,
   Permissions,
+  dataService,
   PermissionTypes,
   AgentCapabilities,
 } from 'librechat-data-provider';
@@ -186,6 +189,78 @@ export function useAgentItems({
   );
 
   return { catalog, selected, tools };
+}
+
+/** A skill lookup only counts as a confirmed miss on 404/403 — deleted or no
+ *  longer shared. Transient/network/server errors must not present a valid
+ *  configured skill as unattached. */
+function isConfirmedSkillMiss(error: unknown): boolean {
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  return status === 404 || status === 403;
+}
+
+/**
+ * Resolves agent allowlist skill ids missing from the first catalog page
+ * (`limit: 100`) individually — a cache miss alone must never drop a
+ * configured skill from the selected list, where it could no longer be
+ * inspected or removed. Confirmed misses (deleted or no longer shared) are
+ * kept as placeholder entries so the stale allowlist id stays removable.
+ * Must be rendered inside the agent form's `FormProvider`.
+ */
+export function useResolvedSkills(pageSkills?: TSkillSummary[]): TSkillSummary[] | undefined {
+  const localize = useLocalize();
+  const { control } = useFormContext<AgentForm>();
+  const skillsWatch = useWatch({ control, name: 'skills' });
+  const unresolvedIds = useMemo(() => {
+    if (pageSkills === undefined) {
+      return [];
+    }
+    const known = new Set(pageSkills.map((skill) => skill._id));
+    return ((skillsWatch ?? []) as string[]).filter((id) => !known.has(id));
+  }, [pageSkills, skillsWatch]);
+
+  const lookups = useQueries({
+    queries: unresolvedIds.map((skillId) => ({
+      queryKey: [QueryKeys.skill, skillId],
+      queryFn: () => dataService.getSkill(skillId),
+      retry: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+      refetchOnWindowFocus: false,
+    })),
+  });
+
+  return useMemo(() => {
+    if (pageSkills === undefined) {
+      return undefined;
+    }
+    if (unresolvedIds.length === 0) {
+      return pageSkills;
+    }
+    const extras: TSkillSummary[] = [];
+    for (let i = 0; i < unresolvedIds.length; i++) {
+      const lookup = lookups[i];
+      if (lookup?.data != null) {
+        extras.push(lookup.data);
+        continue;
+      }
+      if (lookup?.isError === true && isConfirmedSkillMiss(lookup.error)) {
+        extras.push({
+          _id: unresolvedIds[i],
+          name: localize('com_ui_skill_unavailable'),
+          description: '',
+          author: '',
+          authorName: '',
+          version: 0,
+          source: 'inline',
+          fileCount: 0,
+          createdAt: '',
+          updatedAt: '',
+        });
+      }
+    }
+    return extras.length > 0 ? [...pageSkills, ...extras] : pageSkills;
+  }, [pageSkills, unresolvedIds, lookups, localize]);
 }
 
 /**

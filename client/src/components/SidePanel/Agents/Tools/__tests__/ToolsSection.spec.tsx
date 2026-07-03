@@ -38,6 +38,7 @@ jest.mock('~/hooks/MCP', () => ({
 
 jest.mock('../hooks', () => ({
   useAgentItems: () => ({ catalog: [], selected: [], tools: [] }),
+  useResolvedSkills: (skills?: unknown[]) => skills,
   useUninstallToolCredentials: () => jest.fn(),
 }));
 
