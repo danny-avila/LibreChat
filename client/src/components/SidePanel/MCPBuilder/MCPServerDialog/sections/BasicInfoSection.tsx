@@ -26,7 +26,10 @@ export default function BasicInfoSection() {
     const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
     if (isSvg) {
       reader.onloadend = () => {
-        const sanitized = sanitizeSvg(reader.result as string);
+        if (typeof reader.result !== 'string') {
+          return;
+        }
+        const sanitized = sanitizeSvg(reader.result);
         setValue('icon', svgToDataUri(sanitized));
       };
       reader.readAsText(file);
@@ -34,7 +37,10 @@ export default function BasicInfoSection() {
     }
 
     reader.onloadend = () => {
-      setValue('icon', reader.result as string);
+      if (typeof reader.result !== 'string') {
+        return;
+      }
+      setValue('icon', reader.result);
     };
     reader.readAsDataURL(file);
   };

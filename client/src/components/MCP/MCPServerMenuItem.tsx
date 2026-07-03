@@ -62,7 +62,7 @@ export default function MCPServerMenuItem({
           <CustomIcon
             src={server.config.iconPath}
             className="h-8 w-8 rounded-lg object-cover text-text-primary"
-            alt={displayName}
+            alt=""
           />
         ) : (
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-tertiary">
