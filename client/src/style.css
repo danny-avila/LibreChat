@@ -374,6 +374,16 @@ html {
   }
 }
 
+/* A theme-tinted custom icon paints its glyph via `background-color:
+ * currentColor` clipped by a CSS mask. Forced-colors (Windows High Contrast)
+ * overrides `background-color` and would blank the glyph, so repaint it with
+ * the `CanvasText` system color the UA preserves. */
+@media (forced-colors: active) {
+  .custom-icon-tint {
+    background-color: CanvasText;
+  }
+}
+
 .ellipsis {
   overflow: hidden;
   white-space: nowrap;

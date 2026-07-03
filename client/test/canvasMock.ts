@@ -94,15 +94,18 @@ class FakeContext {
       return new ImageData(1, 1);
     }
     const data = Uint8ClampedArray.from(icon.pixels);
+    /* `ImageData(data, width)` — the second arg is the row width in pixels, so
+     * this yields a 1-row image. `scanMonochrome` walks the flat RGBA buffer and
+     * ignores geometry, so a single row is all the detector needs. */
     return new ImageData(data, data.length / 4);
   }
 }
 
 /**
  * Installs the `Image`/canvas fakes on the current jsdom globals. `defineProperty`
- * with an `any`-typed descriptor value avoids the overload-heavy `getContext`
- * type, keeping the shim free of casts. Call from a `beforeEach`; jsdom resets
- * globals between test files, so no teardown is needed.
+ * is used because lib.dom types `PropertyDescriptor.value` loosely, so the
+ * overload-heavy `getContext` signature is satisfied without a cast. Call from a
+ * `beforeEach`; jsdom resets globals between test files, so no teardown is needed.
  */
 export function installCanvasMock(): void {
   Object.defineProperty(global, 'Image', {
