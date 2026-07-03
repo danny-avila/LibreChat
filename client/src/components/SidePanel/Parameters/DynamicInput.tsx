@@ -5,7 +5,7 @@ import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } 
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
-import { cn } from '~/utils';
+import { cn, sanitizeIntegerInput } from '~/utils';
 
 function DynamicInput({
   label = '',
@@ -15,6 +15,7 @@ function DynamicInput({
   columnSpan,
   setOption,
   optionType,
+  type,
   placeholder = '',
   readonly = false,
   showDefault = false,
@@ -43,6 +44,12 @@ function DynamicInput({
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (type === 'number') {
+      // Integer token params: strip thousands separators so "120,000" / "120.000"
+      // become 120000 instead of being truncated to 120 downstream by parseInt.
+      setInputValue(sanitizeIntegerInput(e.target.value), true);
+      return;
+    }
     setInputValue(e, !isNaN(Number(e.target.value)));
   };
 
@@ -78,6 +85,7 @@ function DynamicInput({
           <Input
             id={`${settingKey}-dynamic-input`}
             disabled={readonly}
+            inputMode={type === 'number' ? 'numeric' : undefined}
             value={inputValue ?? defaultValue ?? ''}
             onChange={handleInputChange}
             placeholder={placeholderText}

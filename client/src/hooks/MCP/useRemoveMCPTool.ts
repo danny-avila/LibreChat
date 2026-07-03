@@ -6,8 +6,7 @@ import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 
 /**
- * Hook for removing MCP tools/servers from an agent
- * Provides unified logic for MCPTool, UninitializedMCPTool, and UnconfiguredMCPTool components
+ * Hook for removing an MCP server (and all of its tools) from the agent form.
  * Note: This only removes the tool from the form, it does not delete associated auth credentials
  */
 export function useRemoveMCPTool(options?: { showToast?: boolean }) {
