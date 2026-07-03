@@ -133,7 +133,7 @@ describe('Conversation Structure Tests', () => {
 
     // Check if the tree is correct
     expect(tree!.length).toBe(1); // Should have only one root message
-    let currentNode = tree![0];
+    let currentNode: TMessage = tree![0];
     for (let i = 1; i < 20; i++) {
       expect(currentNode.children!.length).toBe(1);
       currentNode = currentNode.children![0];
@@ -165,7 +165,7 @@ describe('Conversation Structure Tests', () => {
     const retrievedMessages = await getMessages({ conversationId, user: userId });
     const tree = buildTree({ messages: retrievedMessages as TMessage[] });
     expect(tree!.length).toBe(1);
-    let currentNode = tree![0];
+    let currentNode: TMessage = tree![0];
     for (let i = 1; i < 20; i++) {
       expect(currentNode.children!.length).toBe(1);
       currentNode = currentNode.children![0];
@@ -203,7 +203,7 @@ describe('Conversation Structure Tests', () => {
 
     // Check if the tree is correct
     expect(tree!.length).toBe(1); // Should have only one root message
-    let currentNode = tree![0];
+    let currentNode: TMessage = tree![0];
     for (let i = 1; i < 20; i++) {
       expect(currentNode.children!.length).toBe(1);
       currentNode = currentNode.children![0];
