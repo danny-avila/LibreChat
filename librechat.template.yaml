@@ -1,0 +1,150 @@
+version: 1.3.13
+
+cache: true
+
+interface:
+  customWelcome: 'Benvingut a LibreChat!'
+  fileSearch: true
+  privacyPolicy:
+    externalUrl: ''
+    openNewTab: false
+  termsOfService:
+    externalUrl: ''
+    openNewTab: false
+  modelSelect: true
+  parameters: true
+  presets: true
+  prompts:
+    use: true
+    create: true
+    share: false
+    public: false
+  bookmarks: true
+  multiConvo: true
+  agents:
+    use: true
+    create: true
+    share: false
+    public: false
+  peoplePicker:
+    users: true
+    groups: true
+    roles: true
+  marketplace:
+    use: false
+  fileCitations: true
+
+# Cloudflare Turnstile
+# Descomenta i posa la teva site key per activar-ho
+#turnstile:
+#  siteKey: "LA_TEVA_SITE_KEY_DE_CLOUDFLARE"
+#  options:
+#    language: "ca"
+#    size: "normal"
+
+registration:
+  socialLogins: []
+  # allowedDomains:
+  #   - "elteudomini.com"
+
+endpoints:
+  anthropic:
+    streamRate: 20
+
+  custom:
+    # Qwen / DashScope (Alibaba Cloud)
+    - name: 'Qwen'
+      apiKey: '${QWEN_API_KEY}'
+      baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+      models:
+        default:
+          - 'qwen-max'
+          - 'qwen-plus'
+          - 'qwen-turbo'
+          - 'qwen-long'
+          - 'qwen-coder-plus'
+          - 'qwen-coder-turbo'
+          - 'qwen-vl-max'
+          - 'qwen-vl-plus'
+        fetch: true
+      titleConvo: true
+      titleModel: 'qwen-turbo'
+      modelDisplayLabel: 'Qwen'
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+
+    # DeepSeek
+    - name: 'DeepSeek'
+      apiKey: '${DEEPSEEK_API_KEY}'
+      baseURL: 'https://api.deepseek.com/v1'
+      models:
+        default:
+          - 'deepseek-chat'
+          - 'deepseek-reasoner'
+        fetch: false
+      titleConvo: true
+      titleModel: 'deepseek-chat'
+      modelDisplayLabel: 'DeepSeek'
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+
+    # Zhipu AI / GLM
+    - name: 'Zhipu AI'
+      apiKey: '${ZHIPU_API_KEY}'
+      baseURL: 'https://open.bigmodel.cn/api/paas/v4'
+      models:
+        default:
+          - 'glm-4-plus'
+          - 'glm-4-air'
+          - 'glm-4-flash'
+          - 'glm-4-long'
+          - 'glm-4v-plus'
+          - 'glm-4v'
+          - 'cogview-4'
+        fetch: false
+      titleConvo: true
+      titleModel: 'glm-4-flash'
+      modelDisplayLabel: 'Zhipu AI'
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+
+    # Ollama (models locals)
+    - name: 'Ollama'
+      apiKey: 'ollama'
+      baseURL: 'http://ollama:11434/v1/'
+      models:
+        default:
+          - 'llama3.2'
+          - 'mistral'
+          - 'qwen2.5'
+          - 'deepseek-r1'
+          - 'codellama'
+        fetch: true
+      titleConvo: true
+      titleModel: 'current_model'
+      modelDisplayLabel: 'Ollama (Local)'
+
+  allowedAddresses:
+    - 'ollama:11434'
+    - 'localhost:11434'
+    - '127.0.0.1:11434'
+    - 'host.docker.internal:11434'
+
+# MCP Servers
+mcpServers:
+  qwen-image:
+    type: stdio
+    command: node
+    args:
+      - '/app/mcp-servers/qwen-image/index.js'
+    env:
+      DASHSCOPE_API_KEY: '${QWEN_API_KEY}'
+    timeout: 120000
+
+actions:
+  allowedDomains:
+    - 'dashscope-intl.aliyuncs.com'
+    - 'dashscope.aliyuncs.com'
+    - 'api.deepseek.com'
+    - 'open.bigmodel.cn'
+  allowedAddresses:
+    - 'ollama:11434'
+    - 'localhost:11434'
+    - '127.0.0.1:11434'

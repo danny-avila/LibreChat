@@ -1,0 +1,10 @@
+FROM registry.librechat.ai/danny-avila/librechat-dev:latest
+
+USER root
+
+COPY mcp-servers/qwen-image/package.json /app/mcp-servers/qwen-image/package.json
+COPY mcp-servers/qwen-image/index.js /app/mcp-servers/qwen-image/index.js
+
+RUN cd /app/mcp-servers/qwen-image && npm install --production
+
+USER node

@@ -1,0 +1,71 @@
+# Apache2 Reverse Proxy Configuration for LibreChat
+#
+# Prerequisites:
+#   sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers
+#   sudo systemctl restart apache2
+#
+# Copy this file to /etc/apache2/sites-available/librechat.conf
+# Then: sudo a2ensite librechat && sudo systemctl reload apache2
+
+<VirtualHost *:80>
+    ServerName chat.example.com
+    # Redirect HTTP to HTTPS (uncomment if using SSL)
+    # RewriteEngine On
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:3080/ flushpackets=on
+    ProxyPassReverse / http://localhost:3080/
+
+    # WebSocket support (for SSE streaming)
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} =websocket [NC]
+    RewriteRule /(.*) ws://localhost:3080/$1 [P,L]
+
+    # Increase timeout for long-running AI responses
+    ProxyTimeout 300
+
+    # Increase request body size for file uploads (25MB)
+    LimitRequestBody 26214400
+
+    # Disable response buffering for streaming
+    SetEnv proxy-no-buffering 1
+
+    # Security headers
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options SAMEORIGIN
+    Header always set X-XSS-Protection "1; mode=block"
+</VirtualHost>
+
+# HTTPS Configuration (uncomment and adjust for your SSL setup)
+# <VirtualHost *:443>
+#     ServerName chat.example.com
+#
+#     SSLEngine on
+#     SSLCertificateFile /etc/letsencrypt/live/chat.example.com/fullchain.pem
+#     SSLCertificateKeyFile /etc/letsencrypt/live/chat.example.com/privkey.pem
+#
+#     # Modern SSL configuration
+#     SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+#     SSLCipherSuite ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
+#     SSLHonorCipherOrder off
+#
+#     Header always set Strict-Transport-Security "max-age=63072000"
+#
+#     ProxyPreserveHost On
+#     ProxyPass / http://localhost:3080/ flushpackets=on
+#     ProxyPassReverse / http://localhost:3080/
+#
+#     RewriteEngine On
+#     RewriteCond %{HTTP:Upgrade} =websocket [NC]
+#     RewriteRule /(.*) ws://localhost:3080/$1 [P,L]
+#
+#     ProxyTimeout 300
+#     LimitRequestBody 26214400
+#     SetEnv proxy-no-buffering 1
+#
+#     Header always set X-Content-Type-Options nosniff
+#     Header always set X-Frame-Options SAMEORIGIN
+#     Header always set X-XSS-Protection "1; mode=block"
+# </VirtualHost>
