@@ -179,13 +179,39 @@ const ALLOWED_SVG_ATTRS = [
   'tableValues',
 ];
 
-/** Drops any `href`/`xlink:href` that is not a same-document fragment, mirroring
- *  the client-side `sanitizeSvg` rule. */
-function keepLocalHrefs(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
-  for (const attr of ['href', 'xlink:href']) {
-    const value = attribs[attr];
-    if (value !== undefined && !value.trim().startsWith('#')) {
-      delete attribs[attr];
+/** Matches every `url(...)` reference in a presentation/style value, capturing
+ *  the optional quote and the target so non-fragment references can be rejected. */
+const CSS_URL_REFERENCE = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+
+/** True when a value carries a `url(...)` reference that is not a same-document
+ *  fragment, e.g. `url(https://…)`, `url(//…)`, `url(data:…)`, or `url(x.svg#id)`. */
+function hasExternalUrlReference(value: string): boolean {
+  CSS_URL_REFERENCE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CSS_URL_REFERENCE.exec(value)) !== null) {
+    if (!match[2].trim().startsWith('#')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Drops references that leave the document: any `href`/`xlink:href` that is not a
+ * same-document fragment, and any attribute (`filter`, `fill`, `mask`,
+ * `clip-path`, `style`, …) carrying a non-fragment `url(...)`. Mirrors the
+ * client-side `sanitizeSvg` rule so stored icons cannot pull external resources.
+ */
+function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
+  for (const [name, value] of Object.entries(attribs)) {
+    if (name === 'href' || name === 'xlink:href') {
+      if (!value.trim().startsWith('#')) {
+        delete attribs[name];
+      }
+      continue;
+    }
+    if (hasExternalUrlReference(value)) {
+      delete attribs[name];
     }
   }
   return { tagName, attribs };
@@ -202,7 +228,7 @@ const SVG_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: ALLOWED_SVG_TAGS,
   allowedAttributes: { '*': ALLOWED_SVG_ATTRS },
   allowedSchemes: [],
-  transformTags: { '*': keepLocalHrefs },
+  transformTags: { '*': keepLocalReferences },
   parser: { lowerCaseTags: false, lowerCaseAttributeNames: false },
 };
 

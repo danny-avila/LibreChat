@@ -99,6 +99,27 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).not.toContain('evil.example');
   });
 
+  it('strips external url() references from presentation and style attributes', () => {
+    for (const attr of [
+      'filter="url(https://evil.example/f.svg#f)"',
+      'fill="url(https://evil.example/p)"',
+      'style="fill:url(//evil.example/p)"',
+      'clip-path="url(data:image/svg+xml,evil)"',
+    ]) {
+      const raw = `<svg><rect ${attr} width="10" height="10"/></svg>`;
+      const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+      expect(clean).not.toContain('evil');
+    }
+  });
+
+  it('preserves local url() paint and filter references', () => {
+    const raw =
+      '<svg><defs><filter id="f"><feGaussianBlur stdDeviation="1"/></filter><linearGradient id="g"><stop offset="0" stop-color="#000"/></linearGradient></defs><rect fill="url(#g)" filter="url(#f)" width="10" height="10"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).toContain('fill="url(#g)"');
+    expect(clean).toContain('filter="url(#f)"');
+  });
+
   it('preserves case-sensitive SVG names and multi-color paint', () => {
     const raw =
       '<svg viewBox="0 0 24 24"><linearGradient id="g"><stop offset="0" stop-color="#f00"/></linearGradient><path d="M0 0h24v24H0z" fill="url(#g)"/></svg>';
