@@ -278,6 +278,32 @@ function decodeSvgDataUri(iconPath: string): string | null {
 }
 
 /**
+ * Normalizes a value the way a browser does before it resolves an `<img src>` or
+ * CSS `url()`: strips leading and trailing C0 controls and spaces, then removes
+ * any ASCII tab/newline anywhere. Without this, a prefix like `\n data:…` (or an
+ * embedded newline in the media type) slips past the anchored data-URI check yet
+ * still renders once the browser trims it, leaving the SVG unsanitized.
+ */
+function normalizeIconValue(value: string): string {
+  const isTabOrNewline = (code: number) => code === 0x09 || code === 0x0a || code === 0x0d;
+  let start = 0;
+  let end = value.length;
+  while (start < end && value.charCodeAt(start) <= 0x20) {
+    start += 1;
+  }
+  while (end > start && value.charCodeAt(end - 1) <= 0x20) {
+    end -= 1;
+  }
+  const chars: string[] = [];
+  for (let i = start; i < end; i += 1) {
+    if (!isTabOrNewline(value.charCodeAt(i))) {
+      chars.push(value[i]);
+    }
+  }
+  return chars.join('');
+}
+
+/**
  * Sanitize a user-provided MCP `iconPath`. SVG data URIs are decoded, stripped
  * of active content via an allowlist, and re-encoded; a malformed SVG data URI
  * resolves to an empty string so a broken icon is stored rather than raw markup.
@@ -285,10 +311,11 @@ function decodeSvgDataUri(iconPath: string): string | null {
  * unchanged.
  */
 export function sanitizeMcpIconPath(iconPath: string): string {
-  if (!SVG_DATA_URI.test(iconPath)) {
+  const normalized = normalizeIconValue(iconPath);
+  if (!SVG_DATA_URI.test(normalized)) {
     return iconPath;
   }
-  const svg = decodeSvgDataUri(iconPath);
+  const svg = decodeSvgDataUri(normalized);
   if (svg == null) {
     return '';
   }
