@@ -362,7 +362,13 @@ export function sanitizeMcpIconPath(iconPath: string): string {
   if (svg == null) {
     return '';
   }
-  const clean = scrubStyleBlocks(sanitizeHtml(svg, SVG_SANITIZE_OPTIONS));
+  const sanitized = sanitizeHtml(svg, SVG_SANITIZE_OPTIONS);
+  const scrubbed = scrubStyleBlocks(sanitized);
+  /* `scrubStyleBlocks` splices un-escaped CSS back as raw markup, so an escaped
+   * sequence like `\3c/style\3e\3cimage/\3e` can reintroduce a real element past
+   * the allowlist. When a `<style>` block was actually rewritten, re-run the
+   * allowlist over the result to strip anything the un-escaping surfaced. */
+  const clean = scrubbed === sanitized ? sanitized : sanitizeHtml(scrubbed, SVG_SANITIZE_OPTIONS);
   const encoded = `data:image/svg+xml;base64,${Buffer.from(clean, 'utf-8').toString('base64')}`;
   return encoded.length > MAX_MCP_ICON_PATH_LENGTH ? '' : encoded;
 }

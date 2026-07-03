@@ -131,6 +131,22 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).not.toContain('alert(1)');
   });
 
+  it('does not let escaped markup in a stylesheet reintroduce elements past the allowlist', () => {
+    // `\3c` = "<", `\3e` = ">": harmless text during the first pass, real markup
+    // once the CSS is un-escaped and spliced back — must be re-sanitized away.
+    const cases = [
+      '<svg><style>\\3c/style\\3e\\3cimage href="https://evil.example/x.png"/\\3e</style></svg>',
+      '<svg><style>\\3c/style\\3e\\3cscript\\3ealert(1)\\3c/script\\3e</style></svg>',
+      '<svg><style>\\3c/style\\3e\\3cstyle\\3e@import "https://evil.example/x.css";\\3c/style\\3e</style></svg>',
+    ];
+    for (const raw of cases) {
+      const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+      expect(clean).not.toContain('evil.example');
+      expect(clean.toLowerCase()).not.toContain('<image');
+      expect(clean.toLowerCase()).not.toContain('<script');
+    }
+  });
+
   it('strips external url() references from presentation and style attributes', () => {
     for (const attr of [
       'filter="url(https://evil.example/f.svg#f)"',
