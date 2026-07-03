@@ -98,6 +98,25 @@ describe('useToolFavorites', () => {
     expect(result.current.isFavorite({ kind: 'action', id: 'a1' })).toBe(false);
   });
 
+  test('starring before the list loads refetches instead of hiding existing favorites', async () => {
+    mockGetToolFavorites
+      .mockImplementationOnce(() => new Promise<TToolFavorite[]>(() => undefined))
+      .mockResolvedValueOnce([...seeded, { itemType: 'skill', itemId: 's1' }]);
+
+    const { result } = renderHook(() => useToolFavorites(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      await result.current.toggle({ kind: 'skill', id: 's1' });
+    });
+
+    await waitFor(() =>
+      expect(result.current.favoriteKeys).toEqual(
+        new Set(['tool:dalle', 'mcp:everything', 'skill:s1']),
+      ),
+    );
+    expect(mockGetToolFavorites).toHaveBeenCalledTimes(2);
+  });
+
   test('shows the item-worded cap toast and rolls back on rejection', async () => {
     mockAddToolFavorite.mockRejectedValue({
       response: { data: { code: 'MAX_FAVORITES_EXCEEDED', limit: 100 } },

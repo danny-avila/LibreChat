@@ -62,18 +62,30 @@ export const useGetToolFavoritesQuery = (
 export const useAddToolFavoriteMutation = () => {
   const queryClient = useQueryClient();
   return useMutation((favorite: TToolFavorite) => dataService.addToolFavorite(favorite), {
+    /** Optimistic writes only apply over known server data. Before the list
+     * query has populated, seeding the cache from `[]` would make the toggled
+     * item look like the user's only favorite (and `cancelQueries` kills the
+     * initial fetch that would correct it) — so skip the write and let
+     * `onSettled` refetch the authoritative list instead. */
     onMutate: async (favorite) => {
       await queryClient.cancelQueries([QueryKeys.toolFavorites]);
       const previous = queryClient.getQueryData<TToolFavorite[]>([QueryKeys.toolFavorites]);
-      queryClient.setQueryData<TToolFavorite[]>([QueryKeys.toolFavorites], (current) => {
-        const list = current ?? [];
-        return list.some((f) => sameFavorite(f, favorite)) ? list : [...list, favorite];
-      });
+      if (previous !== undefined) {
+        queryClient.setQueryData<TToolFavorite[]>(
+          [QueryKeys.toolFavorites],
+          previous.some((f) => sameFavorite(f, favorite)) ? previous : [...previous, favorite],
+        );
+      }
       return { previous };
     },
     onError: (_err, _favorite, context) => {
       if (context?.previous !== undefined) {
         queryClient.setQueryData([QueryKeys.toolFavorites], context.previous);
+      }
+    },
+    onSettled: (_data, _err, _favorite, context) => {
+      if (context?.previous === undefined) {
+        queryClient.invalidateQueries([QueryKeys.toolFavorites]);
       }
     },
   });
@@ -85,14 +97,22 @@ export const useRemoveToolFavoriteMutation = () => {
     onMutate: async (favorite) => {
       await queryClient.cancelQueries([QueryKeys.toolFavorites]);
       const previous = queryClient.getQueryData<TToolFavorite[]>([QueryKeys.toolFavorites]);
-      queryClient.setQueryData<TToolFavorite[]>([QueryKeys.toolFavorites], (current) =>
-        (current ?? []).filter((f) => !sameFavorite(f, favorite)),
-      );
+      if (previous !== undefined) {
+        queryClient.setQueryData<TToolFavorite[]>(
+          [QueryKeys.toolFavorites],
+          previous.filter((f) => !sameFavorite(f, favorite)),
+        );
+      }
       return { previous };
     },
     onError: (_err, _favorite, context) => {
       if (context?.previous !== undefined) {
         queryClient.setQueryData([QueryKeys.toolFavorites], context.previous);
+      }
+    },
+    onSettled: (_data, _err, _favorite, context) => {
+      if (context?.previous === undefined) {
+        queryClient.invalidateQueries([QueryKeys.toolFavorites]);
       }
     },
   });

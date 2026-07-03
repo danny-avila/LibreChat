@@ -71,7 +71,7 @@ export default function ActionsPanel({
     },
   });
 
-  const { reset, watch } = methods;
+  const { reset } = methods;
 
   useEffect(() => {
     if (action?.metadata?.auth) {

@@ -53,11 +53,12 @@ export default function VersionItem({
   const date = getTimestampDate(version);
   const hasUpdatedAt = version.updatedAt != null;
   const hasCreatedAt = version.createdAt != null;
-  const relativeLabel = date
-    ? formatDistanceToNow(date, { addSuffix: true })
-    : hasUpdatedAt || hasCreatedAt
-      ? localize('com_ui_agent_version_unknown_date')
-      : localize('com_ui_agent_version_no_date');
+  const fallbackDateLabel = localize(
+    hasUpdatedAt || hasCreatedAt
+      ? 'com_ui_agent_version_unknown_date'
+      : 'com_ui_agent_version_no_date',
+  );
+  const relativeLabel = date ? formatDistanceToNow(date, { addSuffix: true }) : fallbackDateLabel;
   const absoluteLabel = date ? date.toLocaleString() : relativeLabel;
 
   const toolsCount = countItems(version.tools);
