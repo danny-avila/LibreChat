@@ -1,6 +1,7 @@
 import type { FilterQuery, Model } from 'mongoose';
-import type { IConversation, IMessage, ISharedLink } from '~/types';
-import { DEFAULT_RETENTION_HOURS } from './tempChatRetention';
+import type { AppConfig, IConversation, IMessage, ISharedLink } from '~/types';
+import { createTempChatExpirationDate, DEFAULT_RETENTION_HOURS } from './tempChatRetention';
+import logger from '~/config/winston';
 
 export type RetentionFilterDocument = {
   isTemporary?: boolean | null;
@@ -31,6 +32,21 @@ export const buildRetentionVisibilityFilter = <
 
 export const createFallbackRetentionDate = (now: number = Date.now()): Date =>
   new Date(now + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000);
+
+/**
+ * Resolves the forced-retention deadline from the interface config, falling back to the default
+ * window when the configured retention hours cannot be computed.
+ */
+export const resolveForcedRetentionDate = (
+  interfaceConfig?: AppConfig['interfaceConfig'],
+): Date => {
+  try {
+    return createTempChatExpirationDate(interfaceConfig);
+  } catch (err) {
+    logger.error('Error creating forced retention expiration date:', err);
+    return createFallbackRetentionDate();
+  }
+};
 
 /**
  * Matches retention documents that do not yet conform to a forced (ephemeral) deadline:
@@ -204,31 +220,32 @@ export const cascadeForcedConversationRetention = async (
 };
 
 /**
- * Bulk-applies forced retention to every conversation carrying a bookmark tag. A tag rename
- * or delete writes conversation rows directly (`Conversation.updateMany`) without setting
- * `isTemporary`/`expiredAt`, so a permanent chat tagged before the install switched to
- * ephemeral would otherwise stay visible and never expire. One pass converts the chats,
- * backfills their messages, and caps their shares; the gap filter keeps it a no-op for chats
- * that already conform and never extends a chat that already expires sooner.
+ * Bulk-applies forced retention to the user's conversations selected by `conversationMatch`
+ * (a bookmark tag, a chat project, etc.). Writes that touch these rows directly
+ * (`Conversation.updateMany`) without setting `isTemporary`/`expiredAt` would otherwise leave a
+ * permanent chat visible and non-expiring after an install switched to ephemeral. Chats are
+ * bucketed by their capped deadline so each bucket converts the chats, backfills their messages,
+ * and caps their shares in one pass; the gap filter keeps it a no-op for chats that already
+ * conform and never extends a chat that already expires sooner.
  */
-export const cascadeForcedRetentionByTag = async (
+const cascadeForcedRetentionForConversationSet = async (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
   SharedLink: Model<ISharedLink>,
   userId: string,
-  tag: string,
+  conversationMatch: FilterQuery<IConversation>,
   forcedExpiredAt: Date,
 ): Promise<void> => {
-  const taggedConversations = await Conversation.find(
-    { user: userId, tags: tag },
+  const conversations = await Conversation.find(
+    { user: userId, ...conversationMatch } as FilterQuery<IConversation>,
     'conversationId isTemporary expiredAt',
   ).lean<Array<RetentionFilterDocument & { conversationId?: string }>>();
-  if (taggedConversations.length === 0) {
+  if (conversations.length === 0) {
     return;
   }
 
   const retentionBuckets = new Map<number, { expiredAt: Date; conversationIds: string[] }>();
-  for (const convo of taggedConversations) {
+  for (const convo of conversations) {
     if (typeof convo.conversationId !== 'string' || convo.conversationId.length === 0) {
       continue;
     }
@@ -277,6 +294,52 @@ export const cascadeForcedRetentionByTag = async (
     );
   }
 };
+
+/**
+ * Bulk-applies forced retention to every conversation carrying a bookmark tag. A tag rename or
+ * delete writes conversation rows directly without setting `isTemporary`/`expiredAt`, so a
+ * permanent chat tagged before the install switched to ephemeral would otherwise stay visible
+ * and never expire.
+ */
+export const cascadeForcedRetentionByTag = (
+  Conversation: Model<IConversation>,
+  Message: Model<IMessage>,
+  SharedLink: Model<ISharedLink>,
+  userId: string,
+  tag: string,
+  forcedExpiredAt: Date,
+): Promise<void> =>
+  cascadeForcedRetentionForConversationSet(
+    Conversation,
+    Message,
+    SharedLink,
+    userId,
+    { tags: tag } as FilterQuery<IConversation>,
+    forcedExpiredAt,
+  );
+
+/**
+ * Bulk-applies forced retention to every conversation in a chat project. Assigning a chat to a
+ * project, removing it, or deleting the project rewrites conversation rows without setting
+ * `isTemporary`/`expiredAt`, so a permanent chat organized after the install switched to
+ * ephemeral would otherwise stay visible and never expire.
+ */
+export const cascadeForcedRetentionByProject = (
+  Conversation: Model<IConversation>,
+  Message: Model<IMessage>,
+  SharedLink: Model<ISharedLink>,
+  userId: string,
+  chatProjectId: string,
+  forcedExpiredAt: Date,
+): Promise<void> =>
+  cascadeForcedRetentionForConversationSet(
+    Conversation,
+    Message,
+    SharedLink,
+    userId,
+    { chatProjectId } as FilterQuery<IConversation>,
+    forcedExpiredAt,
+  );
 
 /**
  * One-time backfill of forced (ephemeral) retention over pre-existing data. Convert-on-touch
