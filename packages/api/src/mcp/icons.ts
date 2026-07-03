@@ -185,12 +185,39 @@ const ALLOWED_SVG_ATTRS = [
  *  the optional quote and the target so non-fragment references can be rejected. */
 const CSS_URL_REFERENCE = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
 
+/** Matches a single CSS escape: `\` + up to six hex digits (with an optional
+ *  trailing whitespace the browser consumes), or `\` + any other character. */
+const CSS_ESCAPE = /\\(?:([0-9a-fA-F]{1,6})\s?|(.))/g;
+
+/**
+ * Resolves CSS escape sequences the way a browser does at tokenization time, so
+ * an obfuscated reference like `u\72l(…)` or `\40import` is seen as the `url()`
+ * / `@import` it becomes before the literal matchers run. Single pass, matching
+ * the browser: `u\5c72l` stays a literal backslash and is not a `url` token.
+ */
+function unescapeCss(value: string): string {
+  if (!value.includes('\\')) {
+    return value;
+  }
+  return value.replace(CSS_ESCAPE, (_match, hex: string | undefined, char: string | undefined) => {
+    if (hex === undefined) {
+      return char ?? '';
+    }
+    const code = Number.parseInt(hex, 16);
+    if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+      return '�';
+    }
+    return String.fromCodePoint(code);
+  });
+}
+
 /** True when a value carries a `url(...)` reference that is not a same-document
  *  fragment, e.g. `url(https://…)`, `url(//…)`, `url(data:…)`, or `url(x.svg#id)`. */
 function hasExternalUrlReference(value: string): boolean {
   CSS_URL_REFERENCE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = CSS_URL_REFERENCE.exec(value)) !== null) {
+  const decoded = unescapeCss(value);
+  while ((match = CSS_URL_REFERENCE.exec(decoded)) !== null) {
     if (!match[2].trim().startsWith('#')) {
       return true;
     }
@@ -198,10 +225,12 @@ function hasExternalUrlReference(value: string): boolean {
   return false;
 }
 
-/** Strips comments and `@import` at-rules and rewrites external `url(...)` to
- *  `none`, keeping only local paint rules from an internal stylesheet. */
+/** Resolves CSS escapes, then strips comments and `@import` at-rules and rewrites
+ *  external `url(...)` to `none`, keeping only local paint rules from a stylesheet
+ *  or inline `style`. Escapes are resolved first so an obfuscated reference cannot
+ *  hide from the matchers. */
 function sanitizeCssText(css: string): string {
-  return css
+  return unescapeCss(css)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/@import[^;]*;?/gi, '')
     .replace(CSS_URL_REFERENCE, (full, _quote, target) =>
@@ -220,9 +249,11 @@ function scrubStyleBlocks(svg: string): string {
 
 /**
  * Drops references that leave the document: any `href`/`xlink:href` that is not a
- * same-document fragment, and any attribute (`filter`, `fill`, `mask`,
- * `clip-path`, `style`, …) carrying a non-fragment `url(...)`. Mirrors the
- * client-side `sanitizeSvg` rule so stored icons cannot pull external resources.
+ * same-document fragment, and any single-value presentation attribute (`filter`,
+ * `fill`, `mask`, `clip-path`, …) carrying a non-fragment `url(...)`. The
+ * multi-declaration `style` attribute is scrubbed in place instead so its local
+ * paint rules survive. All checks resolve CSS escapes first (see `unescapeCss`),
+ * mirroring the client-side `sanitizeSvg` rule so stored icons cannot fetch.
  */
 function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
   for (const [name, value] of Object.entries(attribs)) {
@@ -230,6 +261,10 @@ function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes):
       if (!value.trim().startsWith('#')) {
         delete attribs[name];
       }
+      continue;
+    }
+    if (name === 'style') {
+      attribs[name] = sanitizeCssText(value);
       continue;
     }
     if (hasExternalUrlReference(value)) {

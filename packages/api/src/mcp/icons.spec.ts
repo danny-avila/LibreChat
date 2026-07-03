@@ -152,6 +152,36 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('filter="url(#f)"');
   });
 
+  it('strips CSS-escaped external url() from style attributes and stylesheets', () => {
+    const attr =
+      '<svg><rect style="fill:u\\72l(https://evil.example/x)" width="10" height="10"/></svg>';
+    expect(
+      decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(attr)}`)),
+    ).not.toContain('evil.example');
+    const block =
+      '<svg><style>.a{fill:u\\72l(https://evil.example/b)}.b{fill:url(#g)}</style><rect class="a"/></svg>';
+    const cleanBlock = decode(
+      sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(block)}`),
+    );
+    expect(cleanBlock).not.toContain('evil.example');
+    expect(cleanBlock).toContain('url(#g)');
+  });
+
+  it('strips CSS-escaped @import from internal stylesheets', () => {
+    const raw = '<svg><style>\\40import "https://evil.example/x.css";</style><rect/></svg>';
+    expect(
+      decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`)),
+    ).not.toContain('evil.example');
+  });
+
+  it('keeps co-located local declarations when scrubbing an escaped external ref', () => {
+    const raw =
+      '<svg><rect style="fill:u\\72l(https://evil.example/x);stroke:#000" width="10" height="10"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).not.toContain('evil.example');
+    expect(clean).toContain('stroke:#000');
+  });
+
   it('preserves case-sensitive SVG names and multi-color paint', () => {
     const raw =
       '<svg viewBox="0 0 24 24"><linearGradient id="g"><stop offset="0" stop-color="#f00"/></linearGradient><path d="M0 0h24v24H0z" fill="url(#g)"/></svg>';
