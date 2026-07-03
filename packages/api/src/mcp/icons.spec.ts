@@ -157,6 +157,22 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('fill="url(#g)"');
   });
 
+  it('sanitizes an SVG data URI hidden behind leading whitespace or controls', () => {
+    const evil = '<svg><image href="https://evil.example/x.png"/><path d="M0 0h1v1z"/></svg>';
+    const body = `data:image/svg+xml,${encodeURIComponent(evil)}`;
+    for (const prefix of ['\n ', '\t', ' \r\n', ' ', '   ']) {
+      const clean = decode(sanitizeMcpIconPath(prefix + body));
+      expect(clean).not.toContain('evil.example');
+      expect(clean).toContain('path');
+    }
+  });
+
+  it('sanitizes an SVG data URI whose media type hides an embedded newline', () => {
+    const evil = '<svg><image href="https://evil.example/x.png"/></svg>';
+    const input = `data:image/svg+x\nml,${encodeURIComponent(evil)}`;
+    expect(decode(sanitizeMcpIconPath(input))).not.toContain('evil.example');
+  });
+
   it('returns an empty string for a malformed SVG data URI', () => {
     expect(sanitizeMcpIconPath('data:image/svg+xml')).toBe('');
   });
