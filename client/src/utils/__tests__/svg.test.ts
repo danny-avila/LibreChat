@@ -271,6 +271,33 @@ describe('sanitizeSvg', () => {
     expect(clean).not.toContain('alert(1)');
   });
 
+  it('strips CSS-escaped external url() from style attributes and stylesheets', () => {
+    const attrEsc = sanitizeSvg(
+      '<svg><rect style="fill:u\\72l(https://evil.example/x)" width="10" height="10" /></svg>',
+    );
+    expect(attrEsc).not.toContain('evil.example');
+    const styleEsc = sanitizeSvg(
+      '<svg><style>.a{fill:u\\72l(https://evil.example/b)}.b{fill:url(#g)}</style><rect class="a" /></svg>',
+    );
+    expect(styleEsc).not.toContain('evil.example');
+    expect(styleEsc).toContain('url(#g)');
+  });
+
+  it('strips CSS-escaped @import from internal stylesheets', () => {
+    const clean = sanitizeSvg(
+      '<svg><style>\\40import "https://evil.example/x.css";</style><rect /></svg>',
+    );
+    expect(clean).not.toContain('evil.example');
+  });
+
+  it('keeps co-located local declarations when scrubbing an escaped external ref', () => {
+    const clean = sanitizeSvg(
+      '<svg><rect style="fill:u\\72l(https://evil.example/x);stroke:#000" width="10" height="10" /></svg>',
+    );
+    expect(clean).not.toContain('evil.example');
+    expect(clean).toContain('stroke:#000');
+  });
+
   it('drops href-smuggling animation elements', () => {
     const dirty = '<svg><a><animate attributeName="href" values="javascript:alert(1)" /></a></svg>';
     const clean = sanitizeSvg(dirty);
