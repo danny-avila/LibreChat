@@ -6,6 +6,7 @@ const {
   createTempChatExpirationDate,
   forcedRetentionGapFilter,
   sweepForcedRetention,
+  BASE_CONFIG_PRINCIPAL_ID,
 } = require('@librechat/data-schemas');
 const { RetentionMode } = require('librechat-data-provider');
 
@@ -13,8 +14,45 @@ require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
 const { getAppConfig } = require('~/server/services/Config');
-const { Conversation, Message, SharedLink, File } = require('~/db/models');
+const { Conversation, Message, SharedLink, File, Config } = require('~/db/models');
 const { refreshChatProjectStats } = require('~/models');
+
+const RETENTION_OVERRIDE_PATHS = ['interface.retentionMode', 'interface.temporaryChatRetention'];
+
+const overridesTouchRetention = (overrides) => {
+  const interfaceOverrides = overrides?.interface;
+  if (interfaceOverrides == null || typeof interfaceOverrides !== 'object') {
+    return false;
+  }
+  return 'retentionMode' in interfaceOverrides || 'temporaryChatRetention' in interfaceOverrides;
+};
+
+const tombstonesTouchRetention = (tombstones) =>
+  (tombstones ?? []).some(
+    (tombstone) => tombstone === 'interface' || RETENTION_OVERRIDE_PATHS.includes(tombstone),
+  );
+
+/**
+ * Finds active principal-scoped (role/user/group) config overrides that change retention
+ * behavior. The sweep evaluates one config per tenant, so a principal whose effective
+ * retention differs from the tenant default would be skipped or swept with the wrong
+ * deadline; such tenants are refused instead of migrated incorrectly.
+ */
+async function findPrincipalRetentionOverrides() {
+  const configs = await Config.find({
+    isActive: true,
+    principalId: { $ne: BASE_CONFIG_PRINCIPAL_ID },
+  })
+    .select('principalType principalId overrides tombstones')
+    .lean();
+
+  return configs
+    .filter(
+      (config) =>
+        overridesTouchRetention(config.overrides) || tombstonesTouchRetention(config.tombstones),
+    )
+    .map((config) => `${config.principalType}:${config.principalId}`);
+}
 
 /**
  * Converts one tenant's pre-existing data to the forced (ephemeral) window using that tenant's
@@ -33,6 +71,23 @@ async function sweepTenant({ tenantId, dryRun, force }) {
       `[tenant ${label}] retentionMode is "${retentionMode ?? 'unset'}", not "ephemeral" — skipping.`,
     );
     return { tenantId: tenantId ?? null, skipped: true, retentionMode };
+  }
+
+  const principalOverrides = await findPrincipalRetentionOverrides();
+  if (principalOverrides.length > 0 && !force) {
+    logger.error(
+      `[tenant ${label}] ${principalOverrides.length} principal-scoped config override(s) change ` +
+        `retention behavior (${principalOverrides.join(', ')}). The migration evaluates one ` +
+        'config per tenant, so it cannot safely convert this tenant; remove the overrides or ' +
+        'pass --force to sweep with the tenant-level config anyway.',
+    );
+    return {
+      tenantId: tenantId ?? null,
+      skipped: true,
+      retentionMode,
+      reason: 'principal-scoped retention overrides',
+      principalOverrides,
+    };
   }
 
   const forcedExpiredAt = createTempChatExpirationDate(interfaceConfig);
@@ -145,7 +200,11 @@ if (require.main === module) {
 
       if (result.tenants.length > 0 && result.tenants.every((tenant) => tenant.skipped)) {
         console.log('\n=== NOTHING TO MIGRATE ===');
-        console.log('No tenant has ephemeral retention enabled.');
+        for (const tenant of result.tenants) {
+          const label = tenant.tenantId ?? 'default';
+          const reason = tenant.reason ?? `retentionMode: ${tenant.retentionMode ?? 'unset'}`;
+          console.log(`[${label}] skipped (${reason})`);
+        }
         console.log('Enable ephemeral retention, or pass --force to run anyway.');
         process.exit(1);
       }
@@ -155,7 +214,8 @@ if (require.main === module) {
         for (const tenant of result.tenants) {
           const label = tenant.tenantId ?? 'default';
           if (tenant.skipped) {
-            console.log(`[${label}] skipped (retentionMode: ${tenant.retentionMode ?? 'unset'})`);
+            const reason = tenant.reason ?? `retentionMode: ${tenant.retentionMode ?? 'unset'}`;
+            console.log(`[${label}] skipped (${reason})`);
             continue;
           }
           const expiry = tenant.forcedExpiredAt;
