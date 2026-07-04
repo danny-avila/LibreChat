@@ -400,6 +400,11 @@ export const cascadeForcedRetentionByProject = (
  * and files are capped to that same per-conversation deadline, so the sweep never extends data
  * that already expires sooner and never lets a dependent record outlive its conversation. It is
  * idempotent: re-running skips conversations that already conform.
+ *
+ * Converted conversations become `isTemporary: true`, which `visibleProjectConversationFilter`
+ * hides, so each converted chat's project membership is collected in `projects` for the caller
+ * to recompute cached project stats (the sweep cannot refresh them itself without a circular
+ * dependency on the chat-project methods).
  */
 export const sweepForcedRetention = async (
   Conversation: Model<IConversation>,
@@ -407,15 +412,21 @@ export const sweepForcedRetention = async (
   SharedLink: Model<ISharedLink>,
   File: Model<IMongoFile>,
   forcedExpiredAt: Date,
-): Promise<{ conversations: number; errors: number }> => {
+): Promise<{
+  conversations: number;
+  errors: number;
+  projects: Array<{ user: string; chatProjectId: string }>;
+}> => {
   const result = { conversations: 0, errors: 0 };
+  const projectKeys = new Set<string>();
+  const projects: Array<{ user: string; chatProjectId: string }> = [];
   const cursor = Conversation.find(forcedRetentionGapFilter<IConversation>(forcedExpiredAt))
-    .select('_id conversationId user expiredAt')
+    .select('_id conversationId user expiredAt chatProjectId')
     .lean()
     .cursor();
 
   for await (const convo of cursor) {
-    const { conversationId, user } = convo;
+    const { conversationId, user, chatProjectId } = convo;
     if (typeof conversationId !== 'string' || !conversationId || !user) {
       continue;
     }
@@ -431,10 +442,17 @@ export const sweepForcedRetention = async (
       await capConversationFiles(File, conversationId, expiredAt);
       await Conversation.updateOne({ _id: convo._id }, { $set: { isTemporary: true, expiredAt } });
       result.conversations += 1;
+      if (typeof chatProjectId === 'string' && chatProjectId.length > 0) {
+        const key = `${user}|${chatProjectId}`;
+        if (!projectKeys.has(key)) {
+          projectKeys.add(key);
+          projects.push({ user: String(user), chatProjectId });
+        }
+      }
     } catch {
       result.errors += 1;
     }
   }
 
-  return result;
+  return { ...result, projects };
 };
