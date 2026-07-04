@@ -237,15 +237,22 @@ export const cascadeForcedConversationRetention = async (
     'isTemporary expiredAt',
   ).lean<RetentionFilterDocument | null>();
   const expiredAt = capForcedRetentionExpiry(parent?.expiredAt, forcedExpiredAt);
-  const convoResult = await Conversation.updateOne(
+  if (!conversationNeedsForcedRetention(parent, expiredAt)) {
+    return;
+  }
+  /**
+   * Backfill the dependent messages, shares, and files before marking the conversation
+   * conforming. If a child update throws, the conversation stays non-conforming (the in-memory
+   * gap check above still matches it), so a later forced-retention write re-runs the whole
+   * cascade instead of skipping it because the parent already satisfies the gap filter.
+   */
+  await forceConversationMessagesTemporary(Message, userId, conversationId, expiredAt);
+  await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
+  await capConversationFiles(File, conversationId, expiredAt);
+  await Conversation.updateOne(
     { conversationId, user: userId, ...forcedRetentionGapFilter<IConversation>(expiredAt) },
     { $set: { isTemporary: true, expiredAt } },
   );
-  if (convoResult.modifiedCount > 0) {
-    await forceConversationMessagesTemporary(Message, userId, conversationId, expiredAt);
-    await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
-    await capConversationFiles(File, conversationId, expiredAt);
-  }
 };
 
 /**

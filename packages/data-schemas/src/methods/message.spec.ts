@@ -3,8 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IChatProject, IConversation, IMessage, IMongoFile, ISharedLink } from '..';
+import { cascadeForcedConversationRetention, sweepForcedRetention } from '../utils/retention';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
-import { sweepForcedRetention } from '../utils/retention';
 import { createMessageMethods } from './message';
 import { createModels } from '../models';
 import logger from '~/config/winston';
@@ -1909,6 +1909,62 @@ describe('Message Operations', () => {
         forcedExpiredAt,
       );
       expect(retried).toEqual({ conversations: 1, errors: 0 });
+
+      const converted = await Conversation().findOne({ conversationId }).lean();
+      expect(converted?.isTemporary).toBe(true);
+      expect(converted?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+    });
+  });
+
+  describe('cascadeForcedConversationRetention', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+    const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+    const File = () => mongoose.models.File as mongoose.Model<IMongoFile>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+      await SharedLink().deleteMany({});
+    });
+
+    it('leaves the conversation non-conforming when a child backfill fails so a re-run retries it', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+
+      const throwingFile = {
+        updateMany: jest.fn().mockRejectedValue(new Error('file backfill failed')),
+      } as unknown as mongoose.Model<IMongoFile>;
+
+      await expect(
+        cascadeForcedConversationRetention(
+          Conversation(),
+          Message,
+          SharedLink(),
+          throwingFile,
+          'user123',
+          conversationId,
+          forcedExpiredAt,
+        ),
+      ).rejects.toThrow('file backfill failed');
+
+      const stillPermanent = await Conversation().findOne({ conversationId }).lean();
+      expect(stillPermanent?.isTemporary ?? null).not.toBe(true);
+      expect(stillPermanent?.expiredAt ?? null).toBeNull();
+
+      await cascadeForcedConversationRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        'user123',
+        conversationId,
+        forcedExpiredAt,
+      );
 
       const converted = await Conversation().findOne({ conversationId }).lean();
       expect(converted?.isTemporary).toBe(true);
