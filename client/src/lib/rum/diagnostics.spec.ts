@@ -4,6 +4,7 @@ import {
   flushEarlyRumQueue,
   queueSpaRouteChange,
   registerFcpAttribution,
+  restoreRumEmitter,
   testExports,
 } from './diagnostics';
 
@@ -121,6 +122,22 @@ describe('rum diagnostics', () => {
 
     expect(window.__lcRumQueue).toEqual([]);
     expect(sessionStorage.getItem('lc-rum-queue')).toBeNull();
+  });
+
+  it('restores the HyperDX-backed emitter after the early queue was discarded', () => {
+    window.__lcRumQueue = [];
+    discardEarlyRumQueue();
+
+    restoreRumEmitter({ addAction });
+    window.__lcRumPush?.('spa-route-change', { fromPath: '/login', toPath: '/c/new' });
+
+    expect(addAction).toHaveBeenCalledWith(
+      'spa-route-change',
+      expect.objectContaining({
+        fromPath: '/login',
+        toPath: '/c/new',
+      }),
+    );
   });
 
   it('builds FCP attribution from web-vitals attribution metrics', () => {

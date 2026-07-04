@@ -162,6 +162,7 @@ function fcpAttributes(
 
 export function flushEarlyRumQueue(HyperDX: HyperDXActionClient): void {
   if (earlyQueueFlushed) {
+    installRumEmitter(HyperDX);
     return;
   }
 
@@ -176,6 +177,14 @@ export function flushEarlyRumQueue(HyperDX: HyperDXActionClient): void {
     emitEarlyRumEvent(HyperDX, event);
   });
 
+  installRumEmitter(HyperDX);
+}
+
+export function restoreRumEmitter(HyperDX: HyperDXActionClient): void {
+  installRumEmitter(HyperDX);
+}
+
+function installRumEmitter(HyperDX: HyperDXActionClient): void {
   window.__lcRumPush = (type, attributes) => {
     emitEarlyRumEvent(HyperDX, {
       type,

@@ -20,10 +20,11 @@ jest.mock('@hyperdx/browser', () => ({
 jest.mock('./diagnostics', () => ({
   discardEarlyRumQueue: jest.fn(),
   queueSpaRouteChange: jest.fn(),
+  restoreRumEmitter: jest.fn(),
   startRumDiagnostics: jest.fn(),
 }));
 
-const { discardEarlyRumQueue, queueSpaRouteChange, startRumDiagnostics } =
+const { discardEarlyRumQueue, queueSpaRouteChange, restoreRumEmitter, startRumDiagnostics } =
   jest.requireMock('./diagnostics');
 
 jest.mock('~/data-provider', () => ({
@@ -139,6 +140,53 @@ describe('useRum', () => {
 
     expect(mockInit).not.toHaveBeenCalled();
     expect(discardEarlyRumQueue).toHaveBeenCalled();
+  });
+
+  it('restores the RUM emitter when an initialized proxy config becomes valid again', async () => {
+    const validRumConfig = {
+      provider: 'hyperdx',
+      enabled: true,
+      url: '/api/rum',
+      serviceName: 'librechat-web',
+      authMode: 'proxy',
+    };
+    let rumConfig = validRumConfig;
+    mockUseGetStartupConfig.mockImplementation(() => ({
+      data: {
+        rum: rumConfig,
+      },
+    }));
+
+    const { rerender } = renderHook(() => useRum());
+
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenCalled();
+    });
+
+    mockUseAuthContext.mockReturnValue({
+      isAuthenticated: false,
+      token: undefined,
+      user: undefined,
+    });
+    rerender();
+
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
+
+    mockUseAuthContext.mockReturnValue({
+      isAuthenticated: true,
+      token: 'jwt-token',
+      user: {
+        id: 'user-123',
+        role: 'USER',
+        tenantId: 'org-123',
+      },
+    });
+    rumConfig = { ...validRumConfig };
+    rerender();
+
+    expect(restoreRumEmitter).toHaveBeenCalledWith(
+      expect.objectContaining({ init: expect.any(Function) }),
+    );
   });
 
   it('initializes proxy RUM with the LibreChat bearer token for same-origin ingest', async () => {

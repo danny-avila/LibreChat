@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { TRumConfig, TUser } from 'librechat-data-provider';
 import type { HyperDXActionClient } from './diagnostics';
-import { discardEarlyRumQueue, queueSpaRouteChange, startRumDiagnostics } from './diagnostics';
+import {
+  discardEarlyRumQueue,
+  queueSpaRouteChange,
+  restoreRumEmitter,
+  startRumDiagnostics,
+} from './diagnostics';
 import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { normalizeRumPath } from './routes';
@@ -158,6 +163,9 @@ export default function useRum(): void {
     const initKey = [config.url, config.serviceName, config.authMode, apiKey].join(':');
 
     if (initializedKeyRef.current === initKey) {
+      if (hyperDxRef.current) {
+        restoreRumEmitter(hyperDxRef.current);
+      }
       return;
     }
 
