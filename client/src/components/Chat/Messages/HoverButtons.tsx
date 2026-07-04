@@ -6,7 +6,7 @@ import type {
   TMessageContentParts,
   TFeedback,
 } from 'librechat-data-provider';
-import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
+import { EditIcon, Clipboard, CheckMark, ContinueIcon } from '@librechat/client';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
@@ -104,7 +104,6 @@ const HoverButtons = ({
   conversation,
   isSubmitting,
   message,
-  regenerate,
   handleContinue,
   latestMessage,
   isLast,
@@ -133,13 +132,8 @@ const HoverButtons = ({
     latestMessageId: latestMessage?.messageId,
   });
 
-  const {
-    hideEditButton,
-    regenerateEnabled,
-    continueSupported,
-    forkingSupported,
-    isEditableEndpoint,
-  } = generationCapabilities;
+  const { hideEditButton, continueSupported, forkingSupported, isEditableEndpoint } =
+    generationCapabilities;
 
   if (!conversation) {
     return null;
@@ -150,12 +144,13 @@ const HoverButtons = ({
   if (error === true) {
     return (
       <div className="visible flex justify-center self-end lg:justify-start">
-        {regenerateEnabled && (
+        {continueSupported && (
           <HoverButton
-            onClick={regenerate}
-            title={localize('com_ui_regenerate')}
-            icon={<RegenerateIcon size="19" />}
+            onClick={(e) => e && handleContinue(e)}
+            title={localize('com_ui_continue')}
+            icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
             isLast={isLast}
+            className="active"
           />
         )}
       </div>
@@ -207,7 +202,7 @@ const HoverButtons = ({
       />
 
       {/* Edit Button */}
-      {isEditableEndpoint && (
+      {isEditableEndpoint && isCreatedByUser && (
         <HoverButton
           id={`edit-${message.messageId}`}
           onClick={onEdit}
@@ -217,7 +212,6 @@ const HoverButtons = ({
           isVisible={!hideEditButton}
           isDisabled={hideEditButton}
           isLast={isLast}
-          className={isCreatedByUser ? '' : 'active'}
         />
       )}
 
@@ -233,17 +227,6 @@ const HoverButtons = ({
       {/* Feedback Buttons */}
       {!isCreatedByUser && handleFeedback != null && (
         <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
-      )}
-
-      {/* Regenerate Button */}
-      {regenerateEnabled && (
-        <HoverButton
-          onClick={regenerate}
-          title={localize('com_ui_regenerate')}
-          icon={<RegenerateIcon size="19" />}
-          isLast={isLast}
-          className="active"
-        />
       )}
 
       {/* Continue Button */}

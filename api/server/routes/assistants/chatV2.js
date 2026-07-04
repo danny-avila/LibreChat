@@ -10,6 +10,7 @@ const {
 const validateConvoAccess = require('~/server/middleware/validate/convoAccess');
 const validateAssistant = require('~/server/middleware/assistants/validate');
 const chatController = require('~/server/controllers/assistants/chatV2');
+const { denyRestrictedChatActions } = require('~/server/middleware/restrictConversationActions');
 
 router.post('/abort', handleAbort());
 
@@ -27,6 +28,7 @@ router.post(
   buildEndpointOption,
   validateAssistant,
   validateConvoAccess,
+  denyRestrictedChatActions,
   setHeaders,
   chatController,
 );

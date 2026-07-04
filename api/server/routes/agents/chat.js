@@ -8,6 +8,7 @@ const {
   buildEndpointOption,
   canAccessAgentFromBody,
 } = require('~/server/middleware');
+const { denyRestrictedChatActions } = require('~/server/middleware/restrictConversationActions');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const AgentController = require('~/server/controllers/agents/request');
 const addTitle = require('~/server/services/Endpoints/agents/title');
@@ -29,6 +30,7 @@ router.use(moderateText);
 router.use(checkAgentAccess);
 router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
+router.use(denyRestrictedChatActions);
 router.use(buildEndpointOption);
 
 const controller = async (req, res, next) => {
