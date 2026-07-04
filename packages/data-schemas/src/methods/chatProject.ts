@@ -486,6 +486,16 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     }
 
     const previousProjectId = conversation.chatProjectId ?? null;
+
+    /**
+     * Convert the touched conversation to the forced (ephemeral) window before capturing the
+     * updated document. The caller returns this object straight to the client, which writes it
+     * into the active conversation and the React Query cache, so it must already carry the
+     * isTemporary/expiredAt fields rather than a stale pre-conversion snapshot. A no-op outside
+     * forced retention.
+     */
+    await forceConversationRetention(user, conversationId, interfaceConfig);
+
     const update =
       normalizedProjectId == null
         ? { $unset: { chatProjectId: '' } }
@@ -499,8 +509,6 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     if (!updatedConversation) {
       return null;
     }
-
-    await forceConversationRetention(user, conversationId, interfaceConfig);
 
     const projectIds = new Set(
       [previousProjectId, normalizedProjectId].filter((id): id is string => Boolean(id)),

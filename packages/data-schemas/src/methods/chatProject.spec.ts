@@ -313,12 +313,16 @@ describe('ChatProject methods', () => {
     ]);
     await SharedLink.create({ conversationId: 'convo-1', user, shareId: uuidv4() });
 
-    await methods.assignConversationToProject(
+    const result = await methods.assignConversationToProject(
       user,
       'convo-1',
       project._id!.toString(),
       ephemeralConfig,
     );
+
+    expect(result?.conversation.isTemporary).toBe(true);
+    expect(result?.conversation.expiredAt).toBeInstanceOf(Date);
+    expect(result?.conversation.chatProjectId).toBe(project._id!.toString());
 
     const conversation = await Conversation.findOne({
       user,
