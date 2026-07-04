@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Link2, ListOrdered } from 'lucide-react';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { AgentForm } from '~/common';
-import OrchestrationPattern from './OrchestrationPattern';
 import {
   AgentGlyph,
   AgentRow,
@@ -11,8 +10,9 @@ import {
   AgentSelectInline,
   useSelectableAgents,
 } from './AgentList';
-import { CountPill } from './ui';
+import OrchestrationPattern from './OrchestrationPattern';
 import { useLocalize } from '~/hooks';
+import { CountPill } from './ui';
 
 interface AgentChainProps {
   field: ControllerRenderProps<AgentForm, 'agent_ids'>;

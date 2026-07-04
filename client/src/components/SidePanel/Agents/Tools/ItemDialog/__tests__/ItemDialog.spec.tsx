@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/extend-expect';
 import { fireEvent, render, screen } from '@testing-library/react';
-import ItemDialog from '../ItemDialog';
 import type { AgentItem } from '../../items/types';
+import ItemDialog from '../ItemDialog';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,

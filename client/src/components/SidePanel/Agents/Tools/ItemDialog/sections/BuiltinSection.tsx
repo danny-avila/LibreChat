@@ -1,14 +1,14 @@
-import { useFormContext, useWatch } from 'react-hook-form';
 import { Radio } from '@librechat/client';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { Tools, ArtifactModes, AgentCapabilities } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, ExtendedFile } from '~/common';
 import type { BuiltinId } from '../../items/types';
-import type { TranslationKeys } from '~/hooks/useLocalize';
+import { useVerifyAgentToolAuth } from '~/data-provider';
+import SearchAction from '../../../Search/Action';
 import FileContext from '../../../FileContext';
 import FileSearch from '../../../FileSearch';
-import SearchAction from '../../../Search/Action';
 import CodeFiles from '../../../Code/Files';
-import { useVerifyAgentToolAuth } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 interface Props {

@@ -1,8 +1,8 @@
-import { Input, HoverCard, HoverCardPortal, HoverCardContent } from '@librechat/client';
 import { useFormContext, Controller } from 'react-hook-form';
+import { Input, HoverCard, HoverCardPortal, HoverCardContent } from '@librechat/client';
 import type { AgentForm } from '~/common';
-import { InfoTrigger } from './ui';
 import { useLocalize } from '~/hooks';
+import { InfoTrigger } from './ui';
 import { ESide } from '~/common';
 
 export default function MaxAgentSteps() {

@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import { X, PlusCircle } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { ControlCombobox } from '@librechat/client';
-import type { ReactNode } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, TMessage } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { OptionWithIcon } from '~/common';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';

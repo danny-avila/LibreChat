@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
+import * as Ariakit from '@ariakit/react/menu';
 import { ChevronDown, Filter } from 'lucide-react';
 import { Button, DropdownPopup } from '@librechat/client';
-import * as Ariakit from '@ariakit/react/menu';
 import type { ReactNode } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

@@ -1,7 +1,7 @@
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
-import { ToggleSetting } from './ui';
 import { useLocalize } from '~/hooks';
+import { ToggleSetting } from './ui';
 
 const id = 'skills_enabled_killswitch';
 

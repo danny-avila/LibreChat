@@ -2,11 +2,11 @@ import { useMemo } from 'react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
+import { useAgentPanelContext } from '~/Providers';
 import AgentSubagents from './AgentSubagents';
 import AgentHandoffs from './AgentHandoffs';
-import AgentChain from './AgentChain';
 import { groupHeadingClass } from './ui';
-import { useAgentPanelContext } from '~/Providers';
+import AgentChain from './AgentChain';
 import { useLocalize } from '~/hooks';
 
 interface OrchestrationHubProps {

@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { MAX_SUBAGENTS } from 'librechat-data-provider';
-import { Network, Users } from 'lucide-react';
 import { Switch } from '@librechat/client';
+import { Network, Users } from 'lucide-react';
+import { MAX_SUBAGENTS } from 'librechat-data-provider';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { AgentForm } from '~/common';
-import OrchestrationPattern from './OrchestrationPattern';
 import { StaticAgentRow, AddAgentSelect, ListMeta, useSelectableAgents } from './AgentList';
-import { ToggleSetting } from './ui';
+import OrchestrationPattern from './OrchestrationPattern';
 import { useLocalize } from '~/hooks';
+import { ToggleSetting } from './ui';
 
 interface AgentSubagentsProps {
   field: ControllerRenderProps<AgentForm, 'subagents'>;

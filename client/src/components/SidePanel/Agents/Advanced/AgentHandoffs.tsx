@@ -1,10 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Waypoints, ChevronDown } from 'lucide-react';
 import { Label, Input, Textarea } from '@librechat/client';
-import type { GraphEdge } from 'librechat-data-provider';
 import type { ControllerRenderProps } from 'react-hook-form';
+import type { GraphEdge } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
-import OrchestrationPattern from './OrchestrationPattern';
 import {
   AgentRow,
   agentIcon,
@@ -12,8 +11,9 @@ import {
   AgentSelectInline,
   useSelectableAgents,
 } from './AgentList';
-import { CountPill } from './ui';
+import OrchestrationPattern from './OrchestrationPattern';
 import { useLocalize } from '~/hooks';
+import { CountPill } from './ui';
 
 interface AgentHandoffsProps {
   field: ControllerRenderProps<AgentForm, 'edges'>;

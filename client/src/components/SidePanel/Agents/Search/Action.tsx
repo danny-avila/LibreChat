@@ -1,8 +1,8 @@
 import { useRef } from 'react';
-import { KeyRound, CircleCheck } from 'lucide-react';
 import { Button } from '@librechat/client';
-import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext } from 'react-hook-form';
+import { KeyRound, CircleCheck } from 'lucide-react';
+import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useLocalize, useSearchApiKeyForm } from '~/hooks';
 import ApiKeyDialog from './ApiKeyDialog';

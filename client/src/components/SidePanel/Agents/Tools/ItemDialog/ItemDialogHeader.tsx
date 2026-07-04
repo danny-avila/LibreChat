@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { OGDialogHeader, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import type { AgentItem } from '../items/types';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { AgentItem } from '../items/types';
 import { getIconForItem } from '../items/icons';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

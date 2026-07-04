@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, Check, Copy } from 'lucide-react';
-import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useFormContext } from 'react-hook-form';
 import { useToastContext } from '@librechat/client';
+import { ChevronLeft, Check, Copy } from 'lucide-react';
+import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
-import { useAgentPanelContext } from '~/Providers';
 import { sectionLabelClass, groupHeadingClass } from './ui';
+import { useLocalize, useHasAccess } from '~/hooks';
+import { useAgentPanelContext } from '~/Providers';
 import OrchestrationHub from './OrchestrationHub';
 import MaxAgentSteps from './MaxAgentSteps';
 import SkillsToggle from './SkillsToggle';
-import { useLocalize, useHasAccess } from '~/hooks';
 import { Panel } from '~/common';
 
 export default function AdvancedPanel() {
