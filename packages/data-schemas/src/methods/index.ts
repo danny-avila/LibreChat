@@ -203,6 +203,7 @@ export function createMethods(
   const conversationMethods = createConversationMethods(mongoose, {
     getMessages: messageMethods.getMessages,
     deleteMessages: messageMethods.deleteMessages,
+    searchMessages: messageMethods.searchMessages,
   });
 
   // ACL entry methods (used internally for removeAllPermissions)
