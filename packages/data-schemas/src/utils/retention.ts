@@ -122,8 +122,8 @@ export const forceConversationMessagesTemporary = async (
   userId: string,
   conversationId: string,
   expiredAt: Date,
-): Promise<void> => {
-  await Message.updateMany(
+): Promise<number> => {
+  const result = await Message.updateMany(
     { conversationId, user: userId, ...forcedRetentionGapFilter<IMessage>(expiredAt) },
     [
       {
@@ -134,6 +134,7 @@ export const forceConversationMessagesTemporary = async (
       },
     ],
   );
+  return result.modifiedCount ?? 0;
 };
 
 /**
@@ -148,8 +149,8 @@ export const capConversationSharedLinks = async (
   userId: string,
   conversationId: string,
   forcedExpiredAt: Date,
-): Promise<void> => {
-  await SharedLink.updateMany(
+): Promise<number> => {
+  const result = await SharedLink.updateMany(
     {
       conversationId,
       user: userId,
@@ -157,6 +158,7 @@ export const capConversationSharedLinks = async (
     },
     { $set: { expiredAt: forcedExpiredAt } },
   );
+  return result.modifiedCount ?? 0;
 };
 
 /**
@@ -176,14 +178,15 @@ export const capConversationFiles = async (
   File: Model<IMongoFile>,
   conversationId: string,
   forcedExpiredAt: Date,
-): Promise<void> => {
-  await File.updateMany(
+): Promise<number> => {
+  const result = await File.updateMany(
     {
       conversationId,
       $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }],
     },
     { $set: { expiredAt: forcedExpiredAt } },
   );
+  return result.modifiedCount ?? 0;
 };
 
 /**
@@ -236,19 +239,24 @@ export const cascadeForcedConversationRetention = async (
     { conversationId, user: userId },
     'isTemporary expiredAt',
   ).lean<RetentionFilterDocument | null>();
-  const expiredAt = capForcedRetentionExpiry(parent?.expiredAt, forcedExpiredAt);
-  if (!conversationNeedsForcedRetention(parent, expiredAt)) {
+  if (parent == null) {
     return;
   }
+  const expiredAt = capForcedRetentionExpiry(parent.expiredAt, forcedExpiredAt);
   /**
-   * Backfill the dependent messages, shares, and files before marking the conversation
-   * conforming. If a child update throws, the conversation stays non-conforming (the in-memory
-   * gap check above still matches it), so a later forced-retention write re-runs the whole
-   * cascade instead of skipping it because the parent already satisfies the gap filter.
+   * Cap the dependent messages, shares, and files independently of the parent gap check, and
+   * before the parent conversion. An already-conforming parent can still own lagging children
+   * (permanent shares or later-window files created before the mode switch, or left by a partial
+   * earlier backfill), and a child failure must leave the parent non-conforming so a later
+   * forced-retention write re-runs the whole cascade. Each cap is an indexed no-op once the
+   * chat's children conform.
    */
   await forceConversationMessagesTemporary(Message, userId, conversationId, expiredAt);
   await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
   await capConversationFiles(File, conversationId, expiredAt);
+  if (!conversationNeedsForcedRetention(parent, expiredAt)) {
+    return;
+  }
   await Conversation.updateOne(
     { conversationId, user: userId, ...forcedRetentionGapFilter<IConversation>(expiredAt) },
     { $set: { isTemporary: true, expiredAt } },
@@ -405,6 +413,11 @@ export const cascadeForcedRetentionByProject = (
  * hides, so each converted chat's project membership is collected in `projects` for the caller
  * to recompute cached project stats (the sweep cannot refresh them itself without a circular
  * dependency on the chat-project methods).
+ *
+ * Already-conforming temporary conversations are swept too: their dependent shares, files, and
+ * messages can still lag (permanent shares or later-window records created before the mode
+ * switch), so an alignment pass caps those children to each parent's own deadline. `aligned`
+ * counts the conversations whose children needed changes.
  */
 export const sweepForcedRetention = async (
   Conversation: Model<IConversation>,
@@ -414,12 +427,50 @@ export const sweepForcedRetention = async (
   forcedExpiredAt: Date,
 ): Promise<{
   conversations: number;
+  aligned: number;
   errors: number;
   projects: Array<{ user: string; chatProjectId: string }>;
 }> => {
-  const result = { conversations: 0, errors: 0 };
+  const result = { conversations: 0, aligned: 0, errors: 0 };
   const projectKeys = new Set<string>();
   const projects: Array<{ user: string; chatProjectId: string }> = [];
+
+  /**
+   * Alignment pass first: conforming parents are excluded from the gap-filtered conversion
+   * cursor below, and running this before the conversion avoids revisiting the conversations
+   * that pass converts (their children are capped at conversion time).
+   */
+  const alignCursor = Conversation.find({
+    isTemporary: true,
+    expiredAt: { $ne: null, $lte: forcedExpiredAt },
+  } as FilterQuery<IConversation>)
+    .select('conversationId user expiredAt')
+    .lean()
+    .cursor();
+
+  for await (const convo of alignCursor) {
+    const { conversationId, user, expiredAt } = convo;
+    if (
+      typeof conversationId !== 'string' ||
+      !conversationId ||
+      !user ||
+      !(expiredAt instanceof Date)
+    ) {
+      continue;
+    }
+    try {
+      const changed =
+        (await forceConversationMessagesTemporary(Message, user, conversationId, expiredAt)) +
+        (await capConversationSharedLinks(SharedLink, user, conversationId, expiredAt)) +
+        (await capConversationFiles(File, conversationId, expiredAt));
+      if (changed > 0) {
+        result.aligned += 1;
+      }
+    } catch {
+      result.errors += 1;
+    }
+  }
+
   const cursor = Conversation.find(forcedRetentionGapFilter<IConversation>(forcedExpiredAt))
     .select('_id conversationId user expiredAt chatProjectId')
     .lean()
