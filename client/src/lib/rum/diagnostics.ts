@@ -195,7 +195,7 @@ export function flushEarlyRumQueue(HyperDX: HyperDXActionClient): void {
   try {
     sessionStorage.removeItem(EARLY_RUM_QUEUE_STORAGE_KEY);
   } catch {
-    /* no-op */
+    HyperDX.addAction('early-rum-queue-storage-error', { operation: 'clear' });
   }
   queuedEvents.forEach((event) => {
     emitEarlyRumEvent(HyperDX, event);

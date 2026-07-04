@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en-US">
   <head>
     <meta charset="utf-8" />
@@ -7,12 +7,18 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="description" content="LibreChat - An open source chat application with support for multiple AI models" />
+    <meta
+      name="description"
+      content="LibreChat - An open source chat application with support for multiple AI models"
+    />
     <title>LibreChat</title>
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon-180x180.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
+    />
     <style>
       html,
       body {
@@ -54,22 +60,37 @@
         var RUM_QUEUE_KEY = 'lc-rum-queue';
         var MAX_RUM_QUEUE = 20;
         window.__lcRumQueue = Array.isArray(window.__lcRumQueue) ? window.__lcRumQueue : [];
+        function recordRumQueueStorageError(operation) {
+          try {
+            enqueueRumEvent(
+              {
+                type: 'rum-queue-storage-error',
+                at: Math.round(performance.now()),
+                visibilityState: document.visibilityState,
+                attributes: { operation: operation },
+              },
+              false,
+            );
+          } catch (e) {
+            /* no-op */
+          }
+        }
         try {
           var persistedQueue = JSON.parse(sessionStorage.getItem(RUM_QUEUE_KEY) || '[]');
           if (Array.isArray(persistedQueue)) {
             window.__lcRumQueue = persistedQueue.concat(window.__lcRumQueue).slice(-MAX_RUM_QUEUE);
           }
         } catch (e) {
-          /* no-op */
+          recordRumQueueStorageError('hydrate');
         }
         function persistRumQueue() {
           try {
             sessionStorage.setItem(RUM_QUEUE_KEY, JSON.stringify(window.__lcRumQueue));
           } catch (e) {
-            /* no-op */
+            recordRumQueueStorageError('persist');
           }
         }
-        function enqueueRumEvent(event) {
+        function enqueueRumEvent(event, shouldPersist) {
           if (window.__lcRumQueue.length >= MAX_RUM_QUEUE) {
             var replaceIndex = window.__lcRumQueue.findIndex(function (queuedEvent) {
               return queuedEvent && queuedEvent.type === 'visibility-change';
@@ -77,7 +98,9 @@
             window.__lcRumQueue.splice(replaceIndex === -1 ? 0 : replaceIndex, 1);
           }
           window.__lcRumQueue.push(event);
-          persistRumQueue();
+          if (shouldPersist !== false) {
+            persistRumQueue();
+          }
         }
         window.__lcRumPush = function (type, attributes) {
           try {
