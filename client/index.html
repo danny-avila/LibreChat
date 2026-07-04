@@ -61,6 +61,14 @@
         var MAX_RUM_QUEUE = 20;
         window.__lcRumRecoveryGuardInstalled = true;
         window.__lcRumQueue = Array.isArray(window.__lcRumQueue) ? window.__lcRumQueue : [];
+        try {
+          var persistedQueue = JSON.parse(sessionStorage.getItem(RUM_QUEUE_KEY) || '[]');
+          if (Array.isArray(persistedQueue)) {
+            window.__lcRumQueue = persistedQueue.concat(window.__lcRumQueue).slice(-MAX_RUM_QUEUE);
+          }
+        } catch (e) {
+          /* Diagnostics should never affect application startup. */
+        }
         window.__lcRumPush = function (type, attributes) {
           try {
             var safeAttributes = {};
@@ -85,7 +93,6 @@
               attributes: safeAttributes,
             });
             sessionStorage.setItem(RUM_QUEUE_KEY, JSON.stringify(window.__lcRumQueue));
-            window.__lcRumQueueHydrated = true;
           } catch (e) {
             /* Diagnostics should never affect application startup. */
           }
@@ -132,6 +139,17 @@
           }
           return true;
         };
+        if (navigator.serviceWorker) {
+          navigator.serviceWorker.addEventListener('message', function (event) {
+            if (!event.data || event.data.type !== 'LC_SW_PING') {
+              return;
+            }
+            var source = event.source || navigator.serviceWorker.controller;
+            if (source) {
+              source.postMessage({ type: 'LC_SW_PONG' });
+            }
+          });
+        }
         window.addEventListener(
           'error',
           function (event) {

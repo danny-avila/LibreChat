@@ -89,6 +89,20 @@ describe('rum diagnostics', () => {
     });
   });
 
+  it('keeps post-flush queue pushes non-throwing when HyperDX rejects an action', () => {
+    const throwingAddAction = jest.fn(() => {
+      throw new Error('sdk failure');
+    });
+
+    flushEarlyRumQueue({ addAction: throwingAddAction });
+
+    expect(() => window.__lcRumPush?.('stale-asset-recovery-start')).not.toThrow();
+    expect(throwingAddAction).toHaveBeenCalledWith(
+      'early-stale-asset-recovery-start',
+      expect.any(Object),
+    );
+  });
+
   it('builds FCP attribution from web-vitals attribution metrics', () => {
     const metric = {
       name: 'FCP',

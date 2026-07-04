@@ -1,3 +1,7 @@
 import { installRumBootstrap } from './bootstrap';
 
-installRumBootstrap(window);
+try {
+  installRumBootstrap(window);
+} catch {
+  /* Diagnostics should never affect application startup. */
+}

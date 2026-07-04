@@ -125,17 +125,14 @@ export default function useRum(): void {
   const rumConfig = startupConfig?.rum;
   const route = useMemo(() => normalizeRumPath(location.pathname), [location.pathname]);
   const routeRef = useRef<string>(route);
-  const previousRouteRef = useRef<string | undefined>(route);
 
   useEffect(() => {
-    const previousRoute = previousRouteRef.current;
-    routeRef.current = route;
-
+    const previousRoute = routeRef.current;
     if (previousRoute && previousRoute !== route) {
       queueSpaRouteChange(previousRoute, route);
     }
 
-    previousRouteRef.current = route;
+    routeRef.current = route;
   }, [route]);
 
   useEffect(() => {

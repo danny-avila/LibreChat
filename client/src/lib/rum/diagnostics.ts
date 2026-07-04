@@ -51,9 +51,6 @@ const URL_ATTRIBUTE_KEYS: Record<string, string> = {
   toPath: 'toPath',
 };
 const EARLY_RUM_QUEUE_STORAGE_KEY = 'lc-rum-queue';
-const DIRECT_EVENT_ACTION_NAMES: Record<string, string> = {
-  'spa-route-change': 'spa-route-change',
-};
 
 declare global {
   interface Window {
@@ -194,15 +191,19 @@ function emitEarlyRumEvent(HyperDX: HyperDXActionClient, event: RumQueuedEvent):
     return;
   }
 
-  const actionName = DIRECT_EVENT_ACTION_NAMES[event.type] ?? `early-${event.type}`;
-  HyperDX.addAction(
-    actionName,
-    compact({
-      at: round(event.at),
-      visibilityState: nonEmptyString(event.visibilityState),
-      ...sanitizeQueuedAttributes(event.attributes),
-    }),
-  );
+  const actionName = event.type === 'spa-route-change' ? event.type : `early-${event.type}`;
+  try {
+    HyperDX.addAction(
+      actionName,
+      compact({
+        at: round(event.at),
+        visibilityState: nonEmptyString(event.visibilityState),
+        ...sanitizeQueuedAttributes(event.attributes),
+      }),
+    );
+  } catch {
+    /* Diagnostics should never affect app behavior or stale-asset recovery. */
+  }
 }
 
 export function queueSpaRouteChange(
