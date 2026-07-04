@@ -1,5 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Button, Input, Label, SecretInput, Switch, useToastContext } from '@librechat/client';
+import {
+  Button,
+  Input,
+  Label,
+  SecretInput,
+  Spinner,
+  Switch,
+  useToastContext,
+} from '@librechat/client';
 import {
   useGetLangfuseConnectionQuery,
   useUpdateLangfuseConnectionMutation,
@@ -162,7 +170,14 @@ export default function LangfuseConnection() {
           disabled={!canSubmit || testMutation.isLoading}
           onClick={handleTest}
         >
-          {localize('com_ui_langfuse_test')}
+          {testMutation.isLoading ? (
+            <span className="flex items-center gap-2">
+              <Spinner className="h-4 w-4" />
+              {localize('com_ui_langfuse_testing')}
+            </span>
+          ) : (
+            localize('com_ui_langfuse_test')
+          )}
         </Button>
         <Button disabled={!canSubmit || updateMutation.isLoading} onClick={handleSave}>
           {localize('com_ui_save')}

@@ -1650,6 +1650,7 @@
   "com_ui_langfuse_secret_key_hint": "The secret key is encrypted at rest and is never shown again after saving.",
   "com_ui_langfuse_secret_key_fingerprint": "Configured key fingerprint:",
   "com_ui_langfuse_test": "Test connection",
+  "com_ui_langfuse_testing": "Testing connection",
   "com_ui_langfuse_saved": "Langfuse connection saved",
   "com_ui_langfuse_save_error": "Failed to save the Langfuse connection",
   "com_ui_langfuse_test_success": "Connected to Langfuse successfully",
