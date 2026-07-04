@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
-import type { IChatProject, IConversation, IMessage, ISharedLink } from '../types';
+import type { IChatProject, IConversation, IMessage, IMongoFile, ISharedLink } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
@@ -851,9 +851,11 @@ describe('Conversation Operations', () => {
 
   describe('forced retention message cascade', () => {
     const Message = () => mongoose.models.Message as mongoose.Model<IMessage>;
+    const File = () => mongoose.models.File as mongoose.Model<IMongoFile>;
 
     beforeEach(async () => {
       await Message().deleteMany({});
+      await File().deleteMany({});
     });
 
     it('backfills existing messages when ephemeral converts a permanent conversation', async () => {
@@ -887,6 +889,34 @@ describe('Conversation Operations', () => {
         expect(message.isTemporary).toBe(true);
         expect(message.expiredAt).toBeInstanceOf(Date);
       }
+    });
+
+    it('caps existing files when ephemeral converts a permanent conversation', async () => {
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Existing permanent chat',
+      });
+      await File().collection.insertOne({
+        file_id: fileId,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const file = await File().findOne({ file_id: fileId }).lean<IMongoFile>();
+      expect(file?.expiredAt).toBeInstanceOf(Date);
     });
 
     it('converts an active retained (all-mode) conversation when switching to ephemeral', async () => {
