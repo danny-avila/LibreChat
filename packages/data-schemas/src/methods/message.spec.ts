@@ -1751,7 +1751,7 @@ describe('Message Operations', () => {
         File(),
         forcedExpiredAt,
       );
-      expect(result).toEqual({ conversations: 1, errors: 0 });
+      expect(result).toEqual({ conversations: 1, errors: 0, projects: [] });
 
       const permanent = await Conversation().findOne({ conversationId: permanentId }).lean();
       expect(permanent?.isTemporary).toBe(true);
@@ -1816,6 +1816,40 @@ describe('Message Operations', () => {
 
       const unrelatedFile = await File().findOne({ file_id: unrelatedFileId }).lean();
       expect(unrelatedFile?.expiredAt ?? null).toBeNull();
+    });
+
+    it('collects converted project memberships so callers can refresh project stats', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const chatProjectId = new mongoose.Types.ObjectId().toString();
+
+      await Conversation().create([
+        {
+          conversationId: uuidv4(),
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          chatProjectId,
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          chatProjectId,
+        },
+        { conversationId: uuidv4(), user: 'user123', endpoint: 'openAI', isTemporary: false },
+      ]);
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+
+      expect(result.conversations).toBe(3);
+      expect(result.projects).toEqual([{ user: 'user123', chatProjectId }]);
     });
 
     it('aligns a permanent message to a sooner parent deadline instead of the forced window', async () => {
@@ -1895,7 +1929,7 @@ describe('Message Operations', () => {
         File(),
         forcedExpiredAt,
       );
-      expect(failed).toEqual({ conversations: 0, errors: 1 });
+      expect(failed).toEqual({ conversations: 0, errors: 1, projects: [] });
 
       const stillPermanent = await Conversation().findOne({ conversationId }).lean();
       expect(stillPermanent?.isTemporary ?? null).not.toBe(true);
@@ -1908,7 +1942,7 @@ describe('Message Operations', () => {
         File(),
         forcedExpiredAt,
       );
-      expect(retried).toEqual({ conversations: 1, errors: 0 });
+      expect(retried).toEqual({ conversations: 1, errors: 0, projects: [] });
 
       const converted = await Conversation().findOne({ conversationId }).lean();
       expect(converted?.isTemporary).toBe(true);
@@ -1939,7 +1973,7 @@ describe('Message Operations', () => {
       const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
         sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt),
       );
-      expect(result).toEqual({ conversations: 1, errors: 0 });
+      expect(result).toEqual({ conversations: 1, errors: 0, projects: [] });
 
       const tenantA = await Conversation().collection.findOne({
         conversationId: tenantAConversationId,
