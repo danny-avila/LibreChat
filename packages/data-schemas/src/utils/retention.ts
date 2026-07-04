@@ -219,14 +219,15 @@ export const capForcedRetentionToParent = async (
 
 /**
  * Converts or re-caps a parent conversation to the forced deadline and, when that first
- * brings the conversation into the forced window, backfills its lagging messages. Shared
- * by every forced-retention message-write path so a single conversation/message rule is
- * enforced regardless of which save touched the chat.
+ * brings the conversation into the forced window, backfills its lagging messages, shares, and
+ * files. Shared by every forced-retention message-write path so a single conversation/message
+ * rule is enforced regardless of which save touched the chat.
  */
 export const cascadeForcedConversationRetention = async (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
   SharedLink: Model<ISharedLink>,
+  File: Model<IMongoFile>,
   userId: string,
   conversationId: string,
   forcedExpiredAt: Date,
@@ -243,6 +244,7 @@ export const cascadeForcedConversationRetention = async (
   if (convoResult.modifiedCount > 0) {
     await forceConversationMessagesTemporary(Message, userId, conversationId, expiredAt);
     await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
+    await capConversationFiles(File, conversationId, expiredAt);
   }
 };
 
@@ -252,13 +254,14 @@ export const cascadeForcedConversationRetention = async (
  * (`Conversation.updateMany`) without setting `isTemporary`/`expiredAt` would otherwise leave a
  * permanent chat visible and non-expiring after an install switched to ephemeral. Chats are
  * bucketed by their capped deadline so each bucket converts the chats, backfills their messages,
- * and caps their shares in one pass; the gap filter keeps it a no-op for chats that already
- * conform and never extends a chat that already expires sooner.
+ * and caps their shares and files in one pass; the gap filter keeps it a no-op for chats that
+ * already conform and never extends a chat that already expires sooner.
  */
 const cascadeForcedRetentionForConversationSet = async (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
   SharedLink: Model<ISharedLink>,
+  File: Model<IMongoFile>,
   userId: string,
   conversationMatch: FilterQuery<IConversation>,
   forcedExpiredAt: Date,
@@ -319,6 +322,13 @@ const cascadeForcedRetentionForConversationSet = async (
       },
       { $set: { expiredAt } },
     );
+    await File.updateMany(
+      {
+        conversationId: { $in: conversationIds },
+        $or: [{ expiredAt: null }, { expiredAt: { $gt: expiredAt } }],
+      },
+      { $set: { expiredAt } },
+    );
   }
 };
 
@@ -332,6 +342,7 @@ export const cascadeForcedRetentionByTag = (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
   SharedLink: Model<ISharedLink>,
+  File: Model<IMongoFile>,
   userId: string,
   tag: string,
   forcedExpiredAt: Date,
@@ -340,6 +351,7 @@ export const cascadeForcedRetentionByTag = (
     Conversation,
     Message,
     SharedLink,
+    File,
     userId,
     { tags: tag } as FilterQuery<IConversation>,
     forcedExpiredAt,
@@ -355,6 +367,7 @@ export const cascadeForcedRetentionByProject = (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
   SharedLink: Model<ISharedLink>,
+  File: Model<IMongoFile>,
   userId: string,
   chatProjectId: string,
   forcedExpiredAt: Date,
@@ -363,6 +376,7 @@ export const cascadeForcedRetentionByProject = (
     Conversation,
     Message,
     SharedLink,
+    File,
     userId,
     { chatProjectId } as FilterQuery<IConversation>,
     forcedExpiredAt,

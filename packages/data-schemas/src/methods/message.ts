@@ -1,6 +1,6 @@
 import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
-import type { AppConfig, IConversation, IMessage, ISharedLink } from '~/types';
+import type { AppConfig, IConversation, IMessage, IMongoFile, ISharedLink } from '~/types';
 import {
   capForcedRetentionExpiry,
   capForcedRetentionToParent,
@@ -222,10 +222,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       if (isForcedRetention && cascadeExpiredAt instanceof Date) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
         const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+        const File = mongoose.models.File as Model<IMongoFile>;
         await cascadeForcedConversationRetention(
           Conversation,
           Message,
           SharedLink,
+          File,
           userId,
           conversationId,
           cascadeExpiredAt,
@@ -570,6 +572,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const Message = mongoose.models.Message as Model<IMessage>;
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    const File = mongoose.models.File as Model<IMongoFile>;
 
     if (metadata?.capExpiryToConversation === true) {
       forcedExpiredAt = await capForcedRetentionToParent(
@@ -596,6 +599,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       Conversation,
       Message,
       SharedLink,
+      File,
       userId,
       conversationId,
       forcedExpiredAt,
@@ -636,11 +640,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const Message = mongoose.models.Message as Model<IMessage>;
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    const File = mongoose.models.File as Model<IMongoFile>;
 
     await cascadeForcedRetentionByTag(
       Conversation,
       Message,
       SharedLink,
+      File,
       userId,
       tag,
       forcedExpiredAt,

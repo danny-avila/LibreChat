@@ -6,6 +6,7 @@ import type {
   IChatProjectDocument,
   IConversation,
   IMessage,
+  IMongoFile,
   ISharedLink,
 } from '~/types';
 import {
@@ -287,10 +288,12 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const Message = mongoose.models.Message as Model<IMessage>;
     const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    const File = mongoose.models.File as Model<IMongoFile>;
     return cascadeForcedRetentionByProject(
       Conversation,
       Message,
       SharedLink,
+      File,
       user,
       chatProjectId,
       resolveForcedRetentionDate(interfaceConfig),
@@ -308,10 +311,12 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const Message = mongoose.models.Message as Model<IMessage>;
     const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    const File = mongoose.models.File as Model<IMongoFile>;
     return cascadeForcedConversationRetention(
       Conversation,
       Message,
       SharedLink,
+      File,
       user,
       conversationId,
       resolveForcedRetentionDate(interfaceConfig),

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IChatProject, IConversation, IMessage, ISharedLink } from '~/types';
+import type { IChatProject, IConversation, IMessage, IMongoFile, ISharedLink } from '~/types';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 import { createModels } from '~/models';
 
@@ -23,6 +23,7 @@ let ChatProject: mongoose.Model<IChatProject>;
 let Conversation: mongoose.Model<IConversation>;
 let Message: mongoose.Model<IMessage>;
 let SharedLink: mongoose.Model<ISharedLink>;
+let File: mongoose.Model<IMongoFile>;
 let methods: ChatProjectMethods;
 let modelsToCleanup: string[] = [];
 
@@ -38,6 +39,7 @@ beforeAll(async () => {
   Conversation = mongoose.models.Conversation as mongoose.Model<IConversation>;
   Message = mongoose.models.Message as mongoose.Model<IMessage>;
   SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+  File = mongoose.models.File as mongoose.Model<IMongoFile>;
   methods = createChatProjectMethods(mongoose);
 
   await mongoose.connect(mongoUri);
@@ -59,6 +61,7 @@ afterEach(async () => {
   await Conversation.deleteMany({});
   await Message.deleteMany({});
   await SharedLink.deleteMany({});
+  await File.deleteMany({});
 });
 
 async function createConversation(user: string, conversationId: string, title: string) {
@@ -304,7 +307,7 @@ describe('ChatProject methods', () => {
     expect(deleteResult.deletedCount).toBe(0);
   });
 
-  it('forces ephemeral retention on a permanent chat, its messages, and shares when assigning', async () => {
+  it('forces ephemeral retention on a permanent chat, its messages, shares, and files when assigning', async () => {
     const project = await methods.createChatProject(user, { name: 'Ephemeral' });
     await createConversation(user, 'convo-1', 'Permanent');
     await Message.create([
@@ -312,6 +315,13 @@ describe('ChatProject methods', () => {
       { messageId: uuidv4(), conversationId: 'convo-1', user, text: 'second' },
     ]);
     await SharedLink.create({ conversationId: 'convo-1', user, shareId: uuidv4() });
+    const fileId = uuidv4();
+    await File.collection.insertOne({
+      file_id: fileId,
+      conversationId: 'convo-1',
+      user: new mongoose.Types.ObjectId(),
+      expiredAt: null,
+    });
 
     const result = await methods.assignConversationToProject(
       user,
@@ -340,6 +350,9 @@ describe('ChatProject methods', () => {
 
     const share = await SharedLink.findOne({ user, conversationId: 'convo-1' }).lean<ISharedLink>();
     expect(share?.expiredAt).toBeInstanceOf(Date);
+
+    const file = await File.findOne({ file_id: fileId }).lean<IMongoFile>();
+    expect(file?.expiredAt).toBeInstanceOf(Date);
   });
 
   it('forces ephemeral retention when removing a chat from its project', async () => {
@@ -380,6 +393,13 @@ describe('ChatProject methods', () => {
     await methods.assignConversationToProject(user, 'convo-1', projectId);
     await methods.assignConversationToProject(user, 'convo-2', projectId);
     await Message.create({ messageId: uuidv4(), conversationId: 'convo-1', user, text: 'hi' });
+    const fileId = uuidv4();
+    await File.collection.insertOne({
+      file_id: fileId,
+      conversationId: 'convo-1',
+      user: new mongoose.Types.ObjectId(),
+      expiredAt: null,
+    });
 
     await methods.deleteChatProject(user, projectId, ephemeralConfig);
 
@@ -397,5 +417,8 @@ describe('ChatProject methods', () => {
     const message = await Message.findOne({ user, conversationId: 'convo-1' }).lean<IMessage>();
     expect(message?.isTemporary).toBe(true);
     expect(message?.expiredAt).toBeInstanceOf(Date);
+
+    const file = await File.findOne({ file_id: fileId }).lean<IMongoFile>();
+    expect(file?.expiredAt).toBeInstanceOf(Date);
   });
 });
