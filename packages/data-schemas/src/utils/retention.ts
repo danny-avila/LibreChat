@@ -1,5 +1,5 @@
 import type { FilterQuery, Model } from 'mongoose';
-import type { AppConfig, IConversation, IMessage, ISharedLink } from '~/types';
+import type { AppConfig, IConversation, IMessage, IMongoFile, ISharedLink } from '~/types';
 import { createTempChatExpirationDate, DEFAULT_RETENTION_HOURS } from './tempChatRetention';
 import logger from '~/config/winston';
 
@@ -153,6 +153,33 @@ export const capConversationSharedLinks = async (
     {
       conversationId,
       user: userId,
+      $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }],
+    },
+    { $set: { expiredAt: forcedExpiredAt } },
+  );
+};
+
+/**
+ * Caps a conversation's uploaded files to the forced deadline. Files use a retention-scoped
+ * `expiredAt` swept by application code (`getExpiredFiles` only sweeps files whose own `expiredAt`
+ * is set), so a permanent file (`expiredAt: null`) uploaded before forced retention would linger
+ * in storage after the conversation and messages TTL out. Only files with no expiration or a later
+ * one are touched, so it is a no-op once a conversation conforms and never extends a file that
+ * already expires sooner. Under ephemeral retention every conversation-scoped file is meant to
+ * expire (persistent agent files are not retained), so no agent-file exclusion is needed here.
+ *
+ * Scoped by `conversationId` alone: it is a globally unique per-conversation id, and unlike the
+ * message/share caps the `File.user` field is an `ObjectId` rather than the string user id, so
+ * filtering by user would require a cast the callers cannot guarantee.
+ */
+export const capConversationFiles = async (
+  File: Model<IMongoFile>,
+  conversationId: string,
+  forcedExpiredAt: Date,
+): Promise<void> => {
+  await File.updateMany(
+    {
+      conversationId,
       $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }],
     },
     { $set: { expiredAt: forcedExpiredAt } },
@@ -347,16 +374,17 @@ export const cascadeForcedRetentionByProject = (
  * deployment with existing chats leaves untouched permanent rows visible and non-expiring.
  *
  * Streams every conversation that does not yet conform to the forced window and converts it,
- * its messages, and its shares one conversation at a time. Each conversation is capped to the
- * earlier of its own deadline and the forced window, and its messages and shares are capped to
- * that same per-conversation deadline, so the sweep never extends data that already expires
- * sooner and never lets a message outlive its conversation. It is idempotent: re-running skips
- * conversations that already conform.
+ * its messages, its shares, and its uploaded files one conversation at a time. Each conversation
+ * is capped to the earlier of its own deadline and the forced window, and its messages, shares,
+ * and files are capped to that same per-conversation deadline, so the sweep never extends data
+ * that already expires sooner and never lets a dependent record outlive its conversation. It is
+ * idempotent: re-running skips conversations that already conform.
  */
 export const sweepForcedRetention = async (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
   SharedLink: Model<ISharedLink>,
+  File: Model<IMongoFile>,
   forcedExpiredAt: Date,
 ): Promise<{ conversations: number; errors: number }> => {
   const result = { conversations: 0, errors: 0 };
@@ -373,12 +401,13 @@ export const sweepForcedRetention = async (
     try {
       const expiredAt = capForcedRetentionExpiry(convo.expiredAt, forcedExpiredAt);
       /**
-       * Convert the dependent messages and shares before marking the conversation itself
+       * Convert the dependent messages, shares, and files before marking the conversation itself
        * conforming. If a child backfill throws, the conversation stays non-conforming so the
        * gap-filtered query picks it up again on a re-run, keeping the sweep safe to repeat.
        */
       await forceConversationMessagesTemporary(Message, user, conversationId, expiredAt);
       await capConversationSharedLinks(SharedLink, user, conversationId, expiredAt);
+      await capConversationFiles(File, conversationId, expiredAt);
       await Conversation.updateOne({ _id: convo._id }, { $set: { isTemporary: true, expiredAt } });
       result.conversations += 1;
     } catch {

@@ -12,16 +12,16 @@ require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
 const { getAppConfig } = require('~/server/services/Config');
-const { Conversation, Message, SharedLink } = require('~/db/models');
+const { Conversation, Message, SharedLink, File } = require('~/db/models');
 
 /**
  * Backfills forced (ephemeral) retention over conversations that predate the mode.
  *
  * Convert-on-touch only converts chats that are subsequently written, so enabling ephemeral
  * retention on a deployment with existing data leaves untouched permanent chats visible and
- * non-expiring. This sweep converts every non-conforming conversation, its messages, and its
- * shares to the forced window (capping rather than extending sooner deadlines). It is
- * idempotent and safe to re-run.
+ * non-expiring. This sweep converts every non-conforming conversation, its messages, its
+ * shares, and its uploaded files to the forced window (capping rather than extending sooner
+ * deadlines). It is idempotent and safe to re-run.
  */
 async function migrateEphemeralRetention({ dryRun = true, force = false } = {}) {
   await connect();
@@ -55,7 +55,13 @@ async function migrateEphemeralRetention({ dryRun = true, force = false } = {}) 
       };
     }
 
-    const result = await sweepForcedRetention(Conversation, Message, SharedLink, forcedExpiredAt);
+    const result = await sweepForcedRetention(
+      Conversation,
+      Message,
+      SharedLink,
+      File,
+      forcedExpiredAt,
+    );
     logger.info('Ephemeral Retention Migration completed', result);
     return { dryRun: false, forcedExpiredAt, ...result };
   });

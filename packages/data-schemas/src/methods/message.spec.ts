@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IConversation, IMessage, ISharedLink } from '..';
+import type { IConversation, IMessage, IMongoFile, ISharedLink } from '..';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { sweepForcedRetention } from '../utils/retention';
 import { createMessageMethods } from './message';
@@ -1667,10 +1667,12 @@ describe('Message Operations', () => {
   describe('sweepForcedRetention', () => {
     const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
     const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+    const File = () => mongoose.models.File as mongoose.Model<IMongoFile>;
 
     beforeEach(async () => {
       await Conversation().deleteMany({});
       await SharedLink().deleteMany({});
+      await File().deleteMany({});
     });
 
     it('converts untouched permanent conversations, messages, and shares and skips conforming ones', async () => {
@@ -1710,6 +1712,7 @@ describe('Message Operations', () => {
         Conversation(),
         Message,
         SharedLink(),
+        File(),
         forcedExpiredAt,
       );
       expect(result).toEqual({ conversations: 1, errors: 0 });
@@ -1729,6 +1732,54 @@ describe('Message Operations', () => {
 
       const conforming = await Conversation().findOne({ conversationId: conformingId }).lean();
       expect(conforming?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
+    it("caps a converted conversation's permanent files while preserving sooner and unrelated ones", async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      const conversationId = uuidv4();
+      const unrelatedConversationId = uuidv4();
+      const permanentFileId = uuidv4();
+      const soonerFileId = uuidv4();
+      const unrelatedFileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+      await File().collection.insertMany([
+        {
+          file_id: permanentFileId,
+          conversationId,
+          user: new mongoose.Types.ObjectId(),
+          expiredAt: null,
+        },
+        {
+          file_id: soonerFileId,
+          conversationId,
+          user: new mongoose.Types.ObjectId(),
+          expiredAt: soonerExpiry,
+        },
+        {
+          file_id: unrelatedFileId,
+          conversationId: unrelatedConversationId,
+          user: new mongoose.Types.ObjectId(),
+          expiredAt: null,
+        },
+      ]);
+
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt);
+
+      const permanentFile = await File().findOne({ file_id: permanentFileId }).lean();
+      expect(permanentFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const soonerFile = await File().findOne({ file_id: soonerFileId }).lean();
+      expect(soonerFile?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const unrelatedFile = await File().findOne({ file_id: unrelatedFileId }).lean();
+      expect(unrelatedFile?.expiredAt ?? null).toBeNull();
     });
 
     it('aligns a permanent message to a sooner parent deadline instead of the forced window', async () => {
@@ -1752,7 +1803,7 @@ describe('Message Operations', () => {
         isTemporary: false,
       });
 
-      await sweepForcedRetention(Conversation(), Message, SharedLink(), forcedExpiredAt);
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt);
 
       const convo = await Conversation().findOne({ conversationId }).lean();
       expect(convo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
@@ -1780,7 +1831,7 @@ describe('Message Operations', () => {
         expiredAt: null,
       });
 
-      await sweepForcedRetention(Conversation(), Message, SharedLink(), forcedExpiredAt);
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt);
 
       const message = await Message.findOne({ messageId: legacyMessageId }).lean();
       expect(message?.isTemporary).toBe(true);
@@ -1805,6 +1856,7 @@ describe('Message Operations', () => {
         Conversation(),
         Message,
         throwingSharedLink,
+        File(),
         forcedExpiredAt,
       );
       expect(failed).toEqual({ conversations: 0, errors: 1 });
@@ -1817,6 +1869,7 @@ describe('Message Operations', () => {
         Conversation(),
         Message,
         SharedLink(),
+        File(),
         forcedExpiredAt,
       );
       expect(retried).toEqual({ conversations: 1, errors: 0 });
