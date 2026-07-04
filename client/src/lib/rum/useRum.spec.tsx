@@ -161,13 +161,39 @@ describe('useRum', () => {
     expect(queueSpaRouteChange).not.toHaveBeenCalled();
   });
 
-  it('restores the RUM emitter when an initialized proxy config becomes valid again', async () => {
+  it('preserves the early RUM queue while proxy mode waits for an auth token', async () => {
+    mockUseAuthContext.mockReturnValue({
+      isAuthenticated: false,
+      token: undefined,
+      user: undefined,
+    });
+    mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: '/api/rum',
+          serviceName: 'librechat-web',
+          authMode: 'proxy',
+        },
+      },
+    });
+
+    renderHook(() => useRum());
+
+    expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).not.toHaveBeenCalled();
+  });
+
+  it('restores the RUM emitter when an initialized config becomes valid again', async () => {
     const validRumConfig = {
       provider: 'hyperdx',
       enabled: true,
-      url: '/api/rum',
+      url: 'https://rum.example.com',
       serviceName: 'librechat-web',
-      authMode: 'proxy',
+      authMode: 'publicToken',
+      publicToken: 'public-token',
     };
     let rumConfig = validRumConfig;
     mockUseGetStartupConfig.mockImplementation(() => ({
@@ -183,24 +209,11 @@ describe('useRum', () => {
       expect(mockInit).toHaveBeenCalled();
     });
 
-    mockUseAuthContext.mockReturnValue({
-      isAuthenticated: false,
-      token: undefined,
-      user: undefined,
-    });
+    rumConfig = { ...validRumConfig, enabled: false };
     rerender();
 
     expect(discardEarlyRumQueue).toHaveBeenCalled();
 
-    mockUseAuthContext.mockReturnValue({
-      isAuthenticated: true,
-      token: 'jwt-token',
-      user: {
-        id: 'user-123',
-        role: 'USER',
-        tenantId: 'org-123',
-      },
-    });
     rumConfig = { ...validRumConfig };
     rerender();
 
@@ -271,6 +284,7 @@ describe('useRum', () => {
     renderHook(() => useRum());
 
     expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).not.toHaveBeenCalled();
   });
 
   it('queues SPA route changes through the shared early RUM channel', async () => {

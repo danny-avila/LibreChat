@@ -42,6 +42,21 @@ function shouldInitializeRum(config: TRumConfig | undefined, token: string | und
   return config.authMode === 'proxy' && !!token && !config.publicToken;
 }
 
+function isProxyRumWaitingForToken(
+  config: TRumConfig | undefined,
+  token: string | undefined,
+): boolean {
+  return (
+    !!config?.enabled &&
+    config.provider === 'hyperdx' &&
+    !!config.url &&
+    !!config.serviceName &&
+    config.authMode === 'proxy' &&
+    !token &&
+    !config.publicToken
+  );
+}
+
 function getApiKey(config: TRumConfig, token: string | undefined): string {
   if (config.authMode === 'proxy') {
     return token ? PROXY_API_KEY : '';
@@ -153,7 +168,9 @@ export default function useRum(): void {
       if (rumConfig?.authMode === 'proxy') {
         rumProxyToken = undefined;
       }
-      discardEarlyRumQueue();
+      if (!isProxyRumWaitingForToken(rumConfig, token)) {
+        discardEarlyRumQueue();
+      }
       return;
     }
 
