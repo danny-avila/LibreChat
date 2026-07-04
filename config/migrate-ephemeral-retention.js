@@ -99,14 +99,23 @@ async function migrateEphemeralRetention({ dryRun = true, force = false } = {}) 
 
     const tenantIds = await Conversation.distinct('tenantId');
     const realTenants = tenantIds.filter((tenantId) => tenantId != null && tenantId !== '');
-    const hasUntenanted = tenantIds.some((tenantId) => tenantId == null || tenantId === '');
+    /**
+     * `distinct` only enumerates stored values, so rows missing the tenantId field entirely
+     * contribute nothing to it. Count them directly ({ tenantId: null } matches both explicit
+     * null and missing fields) so pre-tenancy rows in a mixed deployment surface a warning
+     * instead of being silently skipped.
+     */
+    const untenantedCount = await Conversation.countDocuments({
+      $or: [{ tenantId: null }, { tenantId: '' }],
+    });
+    const hasUntenanted = untenantedCount > 0;
     const skippedUntenanted = realTenants.length > 0 && hasUntenanted;
 
     const tenants = realTenants.length > 0 ? realTenants : [undefined];
     if (skippedUntenanted) {
       logger.warn(
-        'Some conversations have no tenantId; they cannot be scoped to a tenant config and are ' +
-          'skipped. Re-run in a single-tenant context to convert them.',
+        `${untenantedCount} conversation(s) have no tenantId; they cannot be scoped to a tenant ` +
+          'config and are skipped. Re-run in a single-tenant context to convert them.',
       );
     }
 
