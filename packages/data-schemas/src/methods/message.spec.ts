@@ -1895,7 +1895,7 @@ describe('Message Operations', () => {
         File(),
         forcedExpiredAt,
       );
-      expect(result).toEqual({ conversations: 1, errors: 0, projects: [] });
+      expect(result).toEqual({ conversations: 1, aligned: 0, errors: 0, projects: [] });
 
       const permanent = await Conversation().findOne({ conversationId: permanentId }).lean();
       expect(permanent?.isTemporary).toBe(true);
@@ -1960,6 +1960,46 @@ describe('Message Operations', () => {
 
       const unrelatedFile = await File().findOne({ file_id: unrelatedFileId }).lean();
       expect(unrelatedFile?.expiredAt ?? null).toBeNull();
+    });
+
+    it('aligns lagging children of an already-conforming temporary conversation', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+      });
+      await SharedLink().create({ conversationId, user: 'user123', shareId: uuidv4() });
+      await File().collection.insertOne({
+        file_id: fileId,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+      });
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+      expect(result).toEqual({ conversations: 0, aligned: 1, errors: 0, projects: [] });
+
+      const share = await SharedLink().findOne({ conversationId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const file = await File().findOne({ file_id: fileId }).lean();
+      expect(file?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const parent = await Conversation().findOne({ conversationId }).lean();
+      expect(parent?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
     });
 
     it('collects converted project memberships so callers can refresh project stats', async () => {
@@ -2073,7 +2113,7 @@ describe('Message Operations', () => {
         File(),
         forcedExpiredAt,
       );
-      expect(failed).toEqual({ conversations: 0, errors: 1, projects: [] });
+      expect(failed).toEqual({ conversations: 0, aligned: 0, errors: 1, projects: [] });
 
       const stillPermanent = await Conversation().findOne({ conversationId }).lean();
       expect(stillPermanent?.isTemporary ?? null).not.toBe(true);
@@ -2086,7 +2126,7 @@ describe('Message Operations', () => {
         File(),
         forcedExpiredAt,
       );
-      expect(retried).toEqual({ conversations: 1, errors: 0, projects: [] });
+      expect(retried).toEqual({ conversations: 1, aligned: 0, errors: 0, projects: [] });
 
       const converted = await Conversation().findOne({ conversationId }).lean();
       expect(converted?.isTemporary).toBe(true);
@@ -2117,7 +2157,7 @@ describe('Message Operations', () => {
       const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
         sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt),
       );
-      expect(result).toEqual({ conversations: 1, errors: 0, projects: [] });
+      expect(result).toEqual({ conversations: 1, aligned: 0, errors: 0, projects: [] });
 
       const tenantA = await Conversation().collection.findOne({
         conversationId: tenantAConversationId,
@@ -2140,6 +2180,48 @@ describe('Message Operations', () => {
     beforeEach(async () => {
       await Conversation().deleteMany({});
       await SharedLink().deleteMany({});
+      await File().deleteMany({});
+    });
+
+    it('caps lagging children even when the parent conversation already conforms', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+      });
+      await SharedLink().create({ conversationId, user: 'user123', shareId: uuidv4() });
+      await File().collection.insertOne({
+        file_id: fileId,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+      });
+
+      await cascadeForcedConversationRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        'user123',
+        conversationId,
+        forcedExpiredAt,
+      );
+
+      const share = await SharedLink().findOne({ conversationId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const file = await File().findOne({ file_id: fileId }).lean();
+      expect(file?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const parent = await Conversation().findOne({ conversationId }).lean();
+      expect(parent?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
     });
 
     it('leaves the conversation non-conforming when a child backfill fails so a re-run retries it', async () => {
