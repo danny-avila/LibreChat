@@ -6,11 +6,13 @@ import type {
   IChatProjectDocument,
   IConversation,
   IMessage,
+  IMongoFile,
   ISharedLink,
 } from '~/types';
 import type { MessageMethods } from './message';
 import {
   buildRetentionVisibilityFilter,
+  capConversationFiles,
   capConversationSharedLinks,
   capForcedRetentionExpiry,
   conversationNeedsForcedRetention,
@@ -365,8 +367,10 @@ export function createConversationMethods(
       ) {
         const Message = mongoose.models.Message as Model<IMessage>;
         const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+        const File = mongoose.models.File as Model<IMongoFile>;
         await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
         await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
+        await capConversationFiles(File, conversationId, forcedExpiredAt);
       }
 
       if (
