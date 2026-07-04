@@ -29,18 +29,24 @@ import { processAgentOption } from '~/utils';
  * marketplace marks the capability `needs_setup` and routes its toggle to the
  * config dialog instead of silently enabling it without credentials. Only
  * `web_search` currently carries a user-provided key with an in-dialog entry point.
+ *
+ * While verification is still loading we don't yet know whether a user-provided
+ * key is required, so `web_search` is treated as `needs_setup`: a click routes to
+ * the config dialog rather than enabling it without the key on a slow connection.
+ * Once the query resolves, only an unsatisfied user-provided key keeps the flag —
+ * a system-defined deployment or a satisfied key clears it for a direct toggle.
  */
 export function useBuiltinAuthMap(): Map<string, boolean> {
-  const { data } = useVerifyAgentToolAuth({ toolId: Tools.web_search }, { retry: 1 });
+  const { data, isLoading } = useVerifyAgentToolAuth({ toolId: Tools.web_search }, { retry: 1 });
   return useMemo(() => {
     const map = new Map<string, boolean>();
     const isUserProvided =
       data?.authTypes?.some(([, authType]) => authType === AuthType.USER_PROVIDED) ?? false;
-    if (isUserProvided && data?.authenticated !== true) {
+    if (isLoading || (isUserProvided && data?.authenticated !== true)) {
       map.set(AgentCapabilities.web_search, true);
     }
     return map;
-  }, [data]);
+  }, [data, isLoading]);
 }
 
 /**
