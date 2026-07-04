@@ -374,13 +374,14 @@ html {
   }
 }
 
-/* A theme-tinted custom icon paints its glyph via `background-color:
+/* A theme-tinted custom icon paints its glyph via an inline `background-color:
  * currentColor` clipped by a CSS mask. Forced-colors (Windows High Contrast)
- * overrides `background-color` and would blank the glyph, so repaint it with
- * the `CanvasText` system color the UA preserves. */
+ * overrides `background-color` and would blank the glyph, so repaint it with the
+ * `CanvasText` system color the UA preserves. `!important` is required: the tint
+ * color is set inline on the element, so a class rule cannot win without it. */
 @media (forced-colors: active) {
   .custom-icon-tint {
-    background-color: CanvasText;
+    background-color: CanvasText !important;
   }
 }
 
