@@ -161,10 +161,15 @@
             var failedPreload =
               el.tagName === 'LINK' && /preload/.test(el.rel || '') && /\.js$/.test(el.href || '');
             if (failedScript || failedPreload) {
+              var isRumBootstrap = el.getAttribute('data-lc-rum-bootstrap') === 'true';
               window.__lcRumPush('asset-load-error', {
                 tagName: el.tagName,
                 assetUrl: el.src || el.href,
+                optional: isRumBootstrap,
               });
+              if (isRumBootstrap) {
+                return;
+              }
               window.__lcRecoverStaleAssets();
             }
           },
@@ -183,7 +188,11 @@
         });
       })();
     </script>
-    <script type="module" src="/src/lib/rum/bootstrap-entry.js"></script>
+    <script
+      data-lc-rum-bootstrap="true"
+      type="module"
+      src="/src/lib/rum/bootstrap-entry.js"
+    ></script>
     <script defer type="module" src="/src/main.jsx"></script>
   </head>
   <body>

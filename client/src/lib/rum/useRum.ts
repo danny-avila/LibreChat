@@ -120,7 +120,7 @@ async function loadHyperDX(): Promise<HyperDXBrowser> {
 }
 
 export default function useRum(): void {
-  const { data: startupConfig } = useGetStartupConfig();
+  const { data: startupConfig, isFetched: startupConfigFetched } = useGetStartupConfig();
   const { token, user } = useAuthContext();
   const location = useLocation();
   const initializedKeyRef = useRef<string | undefined>(undefined);
@@ -128,20 +128,24 @@ export default function useRum(): void {
   const sampledInRef = useRef<boolean>(true);
   const hyperDxRef = useRef<HyperDXBrowser | undefined>(undefined);
   const rumConfig = startupConfig?.rum;
+  const shouldBufferRoutes = !startupConfigFetched || !!rumConfig;
   const route = useMemo(() => normalizeRumPath(location.pathname), [location.pathname]);
   const routeRef = useRef<string>(route);
 
   useEffect(() => {
     const previousRoute = routeRef.current;
-    if (previousRoute && previousRoute !== route) {
+    if (previousRoute && previousRoute !== route && shouldBufferRoutes) {
       queueSpaRouteChange(previousRoute, route);
     }
 
     routeRef.current = route;
-  }, [route]);
+  }, [route, shouldBufferRoutes]);
 
   useEffect(() => {
     if (!rumConfig) {
+      if (startupConfigFetched) {
+        discardEarlyRumQueue();
+      }
       return;
     }
 
@@ -208,7 +212,7 @@ export default function useRum(): void {
     return () => {
       cancelled = true;
     };
-  }, [rumConfig, token, user]);
+  }, [rumConfig, startupConfigFetched, token, user]);
 
   useEffect(() => {
     hyperDxRef.current?.setGlobalAttributes(

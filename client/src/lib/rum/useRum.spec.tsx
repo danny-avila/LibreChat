@@ -43,6 +43,7 @@ jest.mock('react-router-dom', () => ({
 describe('useRum', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseGetStartupConfig.mockReturnValue({ data: undefined, isFetched: false });
     mockUseLocation.mockReturnValue({ pathname: '/c/conversation-123' });
     mockUseAuthContext.mockReturnValue({
       isAuthenticated: true,
@@ -103,6 +104,7 @@ describe('useRum', () => {
 
   it('does not initialize RUM for unsupported auth modes', async () => {
     mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
       data: {
         rum: {
           provider: 'hyperdx',
@@ -123,6 +125,7 @@ describe('useRum', () => {
 
   it('discards the early RUM queue when sampling excludes the page', async () => {
     mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
       data: {
         rum: {
           provider: 'hyperdx',
@@ -142,6 +145,22 @@ describe('useRum', () => {
     expect(discardEarlyRumQueue).toHaveBeenCalled();
   });
 
+  it('discards and stops route buffering when startup config has no RUM config', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {},
+      isFetched: true,
+    });
+
+    const { rerender } = renderHook(() => useRum());
+
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
+
+    mockUseLocation.mockReturnValue({ pathname: '/login' });
+    rerender();
+
+    expect(queueSpaRouteChange).not.toHaveBeenCalled();
+  });
+
   it('restores the RUM emitter when an initialized proxy config becomes valid again', async () => {
     const validRumConfig = {
       provider: 'hyperdx',
@@ -152,6 +171,7 @@ describe('useRum', () => {
     };
     let rumConfig = validRumConfig;
     mockUseGetStartupConfig.mockImplementation(() => ({
+      isFetched: true,
       data: {
         rum: rumConfig,
       },
@@ -196,6 +216,7 @@ describe('useRum', () => {
     );
     window.fetch = Object.assign(fetchMock, { preconnect: () => undefined });
     mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
       data: {
         rum: {
           provider: 'hyperdx',
@@ -235,6 +256,7 @@ describe('useRum', () => {
       user: undefined,
     });
     mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
       data: {
         rum: {
           provider: 'hyperdx',
