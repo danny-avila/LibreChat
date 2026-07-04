@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Input, Label, Switch, useToastContext } from '@librechat/client';
+import { Button, Input, Label, SecretInput, Switch, useToastContext } from '@librechat/client';
 import {
   useGetLangfuseConnectionQuery,
   useUpdateLangfuseConnectionMutation,
@@ -116,11 +116,31 @@ export default function LangfuseConnection() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="langfuse-secret-key">{localize('com_ui_langfuse_secret_key')}</Label>
-        <Input
+        <div className="flex items-center justify-between">
+          <Label htmlFor="langfuse-secret-key">
+            {localize('com_ui_langfuse_secret_key')}{' '}
+            <span className="sr-only">
+              ({secretConfigured ? localize('com_ui_set') : localize('com_ui_unset')})
+            </span>
+          </Label>
+          <div
+            aria-hidden="true"
+            className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary"
+          >
+            <div
+              className={
+                secretConfigured
+                  ? 'h-1.5 w-1.5 rounded-full bg-green-500'
+                  : 'h-1.5 w-1.5 rounded-full border border-border-medium'
+              }
+            />
+            <span>{secretConfigured ? localize('com_ui_set') : localize('com_ui_unset')}</span>
+          </div>
+        </div>
+        <SecretInput
           id="langfuse-secret-key"
-          type="password"
           autoComplete="new-password"
+          controlsOnHover
           value={secretKey}
           placeholder={secretConfigured ? localize('com_ui_langfuse_secret_key_set') : 'sk-lf-...'}
           onChange={(e) => setSecretKey(e.target.value)}
