@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IConversation, IMessage, IMongoFile, ISharedLink } from '..';
+import type { IChatProject, IConversation, IMessage, IMongoFile, ISharedLink } from '..';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { sweepForcedRetention } from '../utils/retention';
 import { createMessageMethods } from './message';
@@ -1417,6 +1417,42 @@ describe('Message Operations', () => {
       const message = await Message.findOne({ messageId: editedMessageId, user: 'user123' }).lean();
       expect(message?.isTemporary).toBe(true);
       expect(message?.expiredAt?.getTime()).toBe(messageDeadline.getTime());
+    });
+
+    it('refreshes owning project stats when forced retention hides a project chat', async () => {
+      const ChatProject = mongoose.models.ChatProject as mongoose.Model<IChatProject>;
+      await ChatProject.deleteMany({});
+      const conversationId = uuidv4();
+      const project = await ChatProject.create({
+        name: 'Ephemeral Project',
+        user: 'user123',
+        conversationCount: 1,
+        lastConversationId: conversationId,
+        lastConversationAt: new Date(),
+      });
+      const projectId = project._id!.toString();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Project chat',
+        isTemporary: false,
+        chatProjectId: projectId,
+      });
+      await Message.create({ messageId: uuidv4(), conversationId, user: 'user123', text: 'hi' });
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId },
+        { context: 'tag' },
+      );
+
+      const refreshed = await ChatProject.findById(projectId).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId ?? null).toBeNull();
     });
 
     it('converts a permanent conversation and its messages without a messageId (tag write)', async () => {

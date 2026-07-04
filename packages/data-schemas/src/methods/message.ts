@@ -9,6 +9,7 @@ import {
   createFallbackRetentionDate,
 } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { refreshChatProjectStatsForUser } from './chatProject';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -539,6 +540,38 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Recomputes the owning project's cached stats after forced retention hides project chats.
+   * A conversion flips the conversation to `isTemporary: true`, which
+   * `visibleProjectConversationFilter` excludes, so a stale count/`lastConversationId` would keep
+   * pointing at a chat the project workspace no longer shows — matching `saveConvo`, which already
+   * refreshes project stats on a retention-visibility change. Scoped to conversations carrying a
+   * `chatProjectId`; a no-op when none of the touched chats belong to a project.
+   */
+  async function refreshForcedRetentionProjectStats(
+    userId: string,
+    conversationFilter: FilterQuery<IConversation>,
+  ): Promise<void> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const projectChats = await Conversation.find(
+      { user: userId, ...conversationFilter, chatProjectId: { $exists: true, $ne: null } },
+      'chatProjectId',
+    ).lean<Array<{ chatProjectId?: string | null }>>();
+    if (projectChats.length === 0) {
+      return;
+    }
+
+    const projectIds = new Set<string>();
+    for (const chat of projectChats) {
+      if (typeof chat.chatProjectId === 'string' && chat.chatProjectId.length > 0) {
+        projectIds.add(chat.chatProjectId);
+      }
+    }
+    for (const projectId of projectIds) {
+      await refreshChatProjectStatsForUser(mongoose, userId, projectId);
+    }
+  }
+
+  /**
    * Enforces forced (ephemeral) retention on a conversation (and optionally a specific
    * message) that was touched outside `saveMessage`/`saveConvo` — message edits, feedback,
    * or bookmark-tag writes. Without these, an older permanent chat touched after an install
@@ -604,6 +637,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       conversationId,
       forcedExpiredAt,
     );
+    await refreshForcedRetentionProjectStats(userId, {
+      conversationId,
+    } as FilterQuery<IConversation>);
   }
 
   /**
@@ -651,6 +687,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       tag,
       forcedExpiredAt,
     );
+    await refreshForcedRetentionProjectStats(userId, { tags: tag } as FilterQuery<IConversation>);
   }
 
   /**
