@@ -33,7 +33,7 @@ describe('LangfuseConnection', () => {
     render(<LangfuseConnection />);
     expect(screen.getByLabelText('com_ui_langfuse_base_url')).toBeInTheDocument();
     expect(screen.getByLabelText('com_ui_langfuse_public_key')).toBeInTheDocument();
-    expect(screen.getByLabelText('com_ui_langfuse_secret_key')).toBeInTheDocument();
+    expect(screen.getByLabelText(/com_ui_langfuse_secret_key/)).toBeInTheDocument();
   });
 
   it('prefills stored values and shows the key fingerprint without the secret', () => {
@@ -52,7 +52,7 @@ describe('LangfuseConnection', () => {
       'https://cloud.langfuse.com',
     );
     expect(screen.getByLabelText('com_ui_langfuse_public_key')).toHaveValue('pk-lf-1');
-    expect(screen.getByLabelText('com_ui_langfuse_secret_key')).toHaveValue('');
+    expect(screen.getByLabelText(/com_ui_langfuse_secret_key/)).toHaveValue('');
     expect(screen.getByText('abc123def456')).toBeInTheDocument();
   });
 
@@ -64,7 +64,7 @@ describe('LangfuseConnection', () => {
     fireEvent.change(screen.getByLabelText('com_ui_langfuse_public_key'), {
       target: { value: 'pk-lf-1' },
     });
-    fireEvent.change(screen.getByLabelText('com_ui_langfuse_secret_key'), {
+    fireEvent.change(screen.getByLabelText(/com_ui_langfuse_secret_key/), {
       target: { value: 'sk-lf-secret' },
     });
 
