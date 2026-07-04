@@ -14,6 +14,7 @@ const connect = require('./connect');
 
 const { getAppConfig } = require('~/server/services/Config');
 const { Conversation, Message, SharedLink, File } = require('~/db/models');
+const { refreshChatProjectStats } = require('~/models');
 
 /**
  * Converts one tenant's pre-existing data to the forced (ephemeral) window using that tenant's
@@ -46,13 +47,30 @@ async function sweepTenant({ tenantId, dryRun, force }) {
     return { tenantId: tenantId ?? null, dryRun: true, nonConforming, forcedExpiredAt };
   }
 
-  const result = await sweepForcedRetention(
+  const { projects, ...counts } = await sweepForcedRetention(
     Conversation,
     Message,
     SharedLink,
     File,
     forcedExpiredAt,
   );
+
+  /**
+   * Converted conversations are hidden from project views (isTemporary: true), so recompute the
+   * cached stats of every project that owned one; otherwise conversationCount and
+   * lastConversationId keep pointing at chats the project workspace no longer shows.
+   */
+  let projectsRefreshed = 0;
+  for (const { user, chatProjectId } of projects) {
+    try {
+      await refreshChatProjectStats(user, chatProjectId);
+      projectsRefreshed += 1;
+    } catch (error) {
+      logger.error(`[tenant ${label}] Failed to refresh project ${chatProjectId} stats`, error);
+    }
+  }
+
+  const result = { ...counts, projectsRefreshed };
   logger.info(`[tenant ${label}] completed`, result);
   return { tenantId: tenantId ?? null, forcedExpiredAt, ...result };
 }
