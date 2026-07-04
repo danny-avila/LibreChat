@@ -1,10 +1,16 @@
 import type { FCPMetricWithAttribution } from 'web-vitals/attribution';
 import {
-  emitNavigationTiming,
   flushEarlyRumQueue,
-  reportSpaRouteChange,
+  queueSpaRouteChange,
+  registerFcpAttribution,
   testExports,
 } from './diagnostics';
+
+const mockOnFCP = jest.fn();
+
+jest.mock('web-vitals/attribution', () => ({
+  onFCP: (...args: unknown[]) => mockOnFCP(...args),
+}));
 
 describe('rum diagnostics', () => {
   const addAction = jest.fn();
@@ -19,51 +25,6 @@ describe('rum diagnostics', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
-  });
-
-  it('emits sanitized navigation timing attributes', () => {
-    Object.defineProperty(performance, 'getEntriesByType', {
-      configurable: true,
-      value: jest.fn(),
-    });
-    jest.spyOn(performance, 'getEntriesByType').mockReturnValue([
-      {
-        name: 'https://example.com/c/65a5e0a7d1c2b3a4f5e6d789?token=secret',
-        type: 'navigate',
-        redirectCount: 1,
-        redirectStart: 10.2,
-        redirectEnd: 20.7,
-        workerStart: 0,
-        fetchStart: 10900.3,
-        requestStart: 10905.3,
-        responseStart: 10990.8,
-        responseEnd: 10991.7,
-        domInteractive: 11011.1,
-        loadEventEnd: 11140.5,
-        nextHopProtocol: 'h2',
-        transferSize: 1024,
-      } as PerformanceNavigationTiming,
-    ]);
-
-    emitNavigationTiming({ addAction }, '/c/:conversationId');
-
-    expect(addAction).toHaveBeenCalledWith(
-      'navigation-timing',
-      expect.objectContaining({
-        initialPath: '/c/:conversationId',
-        currentPath: '/c/:conversationId',
-        currentRoute: '/c/:conversationId',
-        navType: 'navigate',
-        redirectCount: 1,
-        redirectStart: 10,
-        redirectEnd: 21,
-        fetchStart: 10900,
-        responseStart: 10991,
-        nextHopProtocol: 'h2',
-        transferSize: 1024,
-      }),
-    );
-    expect(addAction.mock.calls[0][1]).not.toEqual(expect.objectContaining({ token: 'secret' }));
   });
 
   it('flushes early queued lifecycle events once', () => {
@@ -93,13 +54,37 @@ describe('rum diagnostics', () => {
     expect(window.__lcRumQueue).toEqual([]);
   });
 
-  it('reports normalized SPA route changes', () => {
-    reportSpaRouteChange({ addAction }, '/login', '/c/65a5e0a7d1c2b3a4f5e6d789');
+  it('routes SPA changes through the early RUM queue', () => {
+    window.__lcRumPush = jest.fn();
+
+    queueSpaRouteChange('/login', '/c/65a5e0a7d1c2b3a4f5e6d789');
+
+    expect(window.__lcRumPush).toHaveBeenCalledWith('spa-route-change', {
+      fromPath: '/login',
+      toPath: '/c/:conversationId',
+      pageElapsedMs: 1234,
+    });
+  });
+
+  it('emits queued SPA route changes without an early prefix', () => {
+    window.__lcRumQueue = [
+      {
+        type: 'spa-route-change',
+        at: 1234.4,
+        visibilityState: 'visible',
+        attributes: {
+          fromPath: '/login?token=secret',
+          toPath: '/c/65a5e0a7d1c2b3a4f5e6d789',
+        },
+      },
+    ];
+
+    flushEarlyRumQueue({ addAction });
 
     expect(addAction).toHaveBeenCalledWith('spa-route-change', {
       fromPath: '/login',
       toPath: '/c/:conversationId',
-      pageElapsedMs: 1234,
+      at: 1234,
       visibilityState: 'visible',
     });
   });
@@ -148,5 +133,56 @@ describe('rum diagnostics', () => {
         responseStart: 10955,
       }),
     );
+  });
+
+  it('emits one page-load diagnostic action from FCP attribution', async () => {
+    const metric = {
+      name: 'FCP',
+      value: 12000.2,
+      rating: 'poor',
+      delta: 12000.2,
+      id: 'v1-123',
+      navigationType: 'navigate',
+      entries: [],
+      attribution: {
+        timeToFirstByte: 11000.2,
+        firstByteToFCP: 1000,
+        loadState: 'complete',
+        fcpEntry: { startTime: 12000.2 },
+        navigationEntry: {
+          name: 'https://example.com/c/new',
+          type: 'navigate',
+          fetchStart: 10866,
+          responseStart: 11000,
+        },
+      },
+    } as unknown as FCPMetricWithAttribution;
+
+    await registerFcpAttribution({ addAction }, () => '/c/new');
+    mockOnFCP.mock.calls[0][0](metric);
+
+    expect(addAction).toHaveBeenCalledTimes(1);
+    expect(addAction).toHaveBeenCalledWith(
+      'page-load-diagnostics',
+      expect.objectContaining({
+        currentRoute: '/c/new',
+        fcp: 12000,
+        firstByteToFCP: 1000,
+        fetchStart: 10866,
+        initialPath: '/c/new',
+        responseStart: 11000,
+      }),
+    );
+  });
+
+  it('allows FCP attribution registration to retry after registration failures', async () => {
+    mockOnFCP.mockImplementationOnce(() => {
+      throw new Error('registration failed');
+    });
+
+    await registerFcpAttribution({ addAction }, () => '/c/new');
+    await registerFcpAttribution({ addAction }, () => '/c/new');
+
+    expect(mockOnFCP).toHaveBeenCalledTimes(2);
   });
 });

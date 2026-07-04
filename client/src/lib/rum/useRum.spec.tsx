@@ -18,11 +18,11 @@ jest.mock('@hyperdx/browser', () => ({
 }));
 
 jest.mock('./diagnostics', () => ({
-  reportSpaRouteChange: jest.fn(),
+  queueSpaRouteChange: jest.fn(),
   startRumDiagnostics: jest.fn(),
 }));
 
-const { reportSpaRouteChange, startRumDiagnostics } = jest.requireMock('./diagnostics');
+const { queueSpaRouteChange, startRumDiagnostics } = jest.requireMock('./diagnostics');
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => mockUseGetStartupConfig(),
@@ -179,7 +179,7 @@ describe('useRum', () => {
     expect(mockInit).not.toHaveBeenCalled();
   });
 
-  it('reports SPA route changes after RUM initializes', async () => {
+  it('queues SPA route changes through the shared early RUM channel', async () => {
     mockUseGetStartupConfig.mockReturnValue({
       data: {
         rum: {
@@ -202,10 +202,6 @@ describe('useRum', () => {
     mockUseLocation.mockReturnValue({ pathname: '/login' });
     rerender();
 
-    expect(reportSpaRouteChange).toHaveBeenCalledWith(
-      expect.objectContaining({ init: expect.any(Function) }),
-      '/c/:conversationId',
-      '/login',
-    );
+    expect(queueSpaRouteChange).toHaveBeenCalledWith('/c/:conversationId', '/login');
   });
 });

@@ -45,10 +45,15 @@ const URL_ATTRIBUTE_KEYS: Record<string, string> = {
   currentPath: 'currentPath',
   currentUrl: 'currentPath',
   firstScopeUrl: 'firstScopePath',
+  fromPath: 'fromPath',
   fullUrl: 'fullPath',
   scriptUrl: 'scriptPath',
+  toPath: 'toPath',
 };
 const EARLY_RUM_QUEUE_STORAGE_KEY = 'lc-rum-queue';
+const DIRECT_EVENT_ACTION_NAMES: Record<string, string> = {
+  'spa-route-change': 'spa-route-change',
+};
 
 declare global {
   interface Window {
@@ -57,7 +62,6 @@ declare global {
   }
 }
 
-let pageLoadDiagnosticsSent = false;
 let fcpAttributionRegistered = false;
 let earlyQueueFlushed = false;
 
@@ -111,11 +115,6 @@ function pathFromUrl(rawUrl: unknown): string | undefined {
   }
 }
 
-function getNavigationEntry(): NavigationTimingLike | undefined {
-  const entries = performance.getEntriesByType?.('navigation') ?? [];
-  return entries[0] as NavigationTimingLike | undefined;
-}
-
 function sharedNavigationAttributes(nav: NavigationTimingLike | undefined): RumActionAttributes {
   return compact({
     initialPath: pathFromUrl(nav?.name),
@@ -144,18 +143,6 @@ function sharedNavigationAttributes(nav: NavigationTimingLike | undefined): RumA
   });
 }
 
-function navigationAttributes(
-  nav: NavigationTimingLike | undefined,
-  currentRoute: string,
-): RumActionAttributes {
-  return compact({
-    ...sharedNavigationAttributes(nav),
-    currentPath: normalizeRumPath(window.location.pathname),
-    currentRoute,
-    visibilityState: document.visibilityState,
-  });
-}
-
 function fcpAttributes(
   metric: FCPMetricWithAttribution,
   currentRoute: string,
@@ -174,15 +161,6 @@ function fcpAttributes(
     ...sharedNavigationAttributes(nav),
     visibilityState: document.visibilityState,
   });
-}
-
-export function emitNavigationTiming(HyperDX: HyperDXActionClient, currentRoute: string): void {
-  if (pageLoadDiagnosticsSent) {
-    return;
-  }
-
-  pageLoadDiagnosticsSent = true;
-  HyperDX.addAction('navigation-timing', navigationAttributes(getNavigationEntry(), currentRoute));
 }
 
 export function flushEarlyRumQueue(HyperDX: HyperDXActionClient): void {
@@ -216,8 +194,9 @@ function emitEarlyRumEvent(HyperDX: HyperDXActionClient, event: RumQueuedEvent):
     return;
   }
 
+  const actionName = DIRECT_EVENT_ACTION_NAMES[event.type] ?? `early-${event.type}`;
   HyperDX.addAction(
-    `early-${event.type}`,
+    actionName,
     compact({
       at: round(event.at),
       visibilityState: nonEmptyString(event.visibilityState),
@@ -226,8 +205,7 @@ function emitEarlyRumEvent(HyperDX: HyperDXActionClient, event: RumQueuedEvent):
   );
 }
 
-export function reportSpaRouteChange(
-  HyperDX: HyperDXActionClient,
+export function queueSpaRouteChange(
   fromPath: string,
   toPath: string,
   pageElapsedMs = performance.now(),
@@ -239,15 +217,11 @@ export function reportSpaRouteChange(
     return;
   }
 
-  HyperDX.addAction(
-    'spa-route-change',
-    compact({
-      fromPath: normalizedFromPath,
-      toPath: normalizedToPath,
-      pageElapsedMs: round(pageElapsedMs),
-      visibilityState: document.visibilityState,
-    }),
-  );
+  window.__lcRumPush?.('spa-route-change', {
+    fromPath: normalizedFromPath,
+    toPath: normalizedToPath,
+    pageElapsedMs: round(pageElapsedMs),
+  });
 }
 
 export async function registerFcpAttribution(
@@ -258,12 +232,12 @@ export async function registerFcpAttribution(
     return;
   }
 
-  fcpAttributionRegistered = true;
   try {
     const { onFCP } = await import('web-vitals/attribution');
     onFCP((metric) => {
-      HyperDX.addAction('fcp-attribution', fcpAttributes(metric, getCurrentRoute()));
+      HyperDX.addAction('page-load-diagnostics', fcpAttributes(metric, getCurrentRoute()));
     });
+    fcpAttributionRegistered = true;
   } catch {
     /* Diagnostics must never trigger stale-asset recovery or app reloads. */
   }
@@ -274,17 +248,14 @@ export function startRumDiagnostics(
   getCurrentRoute: () => string,
 ): void {
   flushEarlyRumQueue(HyperDX);
-  emitNavigationTiming(HyperDX, getCurrentRoute());
   void registerFcpAttribution(HyperDX, getCurrentRoute);
 }
 
 export const testExports = {
   compact,
   fcpAttributes,
-  navigationAttributes,
   pathFromUrl,
   resetDiagnosticsState: () => {
-    pageLoadDiagnosticsSent = false;
     fcpAttributionRegistered = false;
     earlyQueueFlushed = false;
   },
