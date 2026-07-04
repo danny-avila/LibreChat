@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, SystemRoles } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
 import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
@@ -27,6 +27,7 @@ export function useSettingsContext(): SettingsContextValue {
   });
 
   const balanceEnabled = startupConfig?.balance?.enabled === true;
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const isLocalProvider = user?.provider === 'local';
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
@@ -51,6 +52,7 @@ export function useSettingsContext(): SettingsContextValue {
       allowAccountDeletion,
       aboutEnabled,
       engineTTS,
+      isAdmin,
     }),
     [
       balanceEnabled,
@@ -65,6 +67,7 @@ export function useSettingsContext(): SettingsContextValue {
       allowAccountDeletion,
       aboutEnabled,
       engineTTS,
+      isAdmin,
     ],
   );
 }

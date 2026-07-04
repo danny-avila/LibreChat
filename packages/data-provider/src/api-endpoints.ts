@@ -438,6 +438,10 @@ export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: stri
 /* Skill active states (per-user overrides) */
 export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
 
+/* Langfuse connection (admin) */
+export const adminLangfuseConnection = () => `${BASE_URL}/api/admin/langfuse/connection`;
+export const adminLangfuseConnectionTest = () => `${adminLangfuseConnection()}/test`;
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;

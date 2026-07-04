@@ -18,6 +18,7 @@ import {
 import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
+import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection';
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
@@ -490,6 +491,16 @@ export const registry: SettingEntry[] = [
     section: 'apiKeys',
     labelKey: 'com_ui_settings_label_revoke_keys',
     Component: RevokeKeys,
+  },
+  // Data controls · Integrations
+  {
+    id: 'langfuseConnection',
+    tab: DATA,
+    section: 'integrations',
+    labelKey: 'com_ui_langfuse_title',
+    keywords: ['langfuse', 'observability', 'tracing', 'telemetry', 'traces'],
+    show: (ctx) => ctx.isAdmin,
+    Component: LangfuseConnection,
   },
   // Data controls · Danger zone
   {

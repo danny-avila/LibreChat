@@ -1,4 +1,5 @@
 export { createAdminConfigHandlers } from './config';
+export { createAdminLangfuseHandlers } from './langfuse';
 export { createAdminGrantsHandlers } from './grants';
 export { createAdminGroupsHandlers } from './groups';
 export { createAdminRolesHandlers } from './roles';
@@ -6,6 +7,7 @@ export { createAdminSkillsSyncAccess, createAdminSkillsSyncHandlers } from './sk
 export { createAdminUsersHandlers } from './users';
 export { createAdminAuditLogHandlers } from './auditLog';
 export type { AdminConfigDeps } from './config';
+export type { AdminLangfuseDeps } from './langfuse';
 export type { AdminGrantsDeps, GrantPrincipalType } from './grants';
 export type { AdminGroupsDeps } from './groups';
 export type { AdminRolesDeps } from './roles';

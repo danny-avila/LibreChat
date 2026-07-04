@@ -830,3 +830,30 @@ export type TUpdateSkillNodeRequest = {
   parentId?: string | null;
   order?: number;
 };
+
+export type TLangfuseConnectionStatus = {
+  configured: boolean;
+  enabled: boolean;
+  baseUrl?: string;
+  publicKey?: string;
+  secretKeyFingerprint?: string;
+  updatedAt?: string;
+};
+
+export type TUpdateLangfuseConnectionRequest = {
+  enabled: boolean;
+  baseUrl: string;
+  publicKey: string;
+  secretKey?: string;
+};
+
+export type TLangfuseConnectionTestRequest = {
+  baseUrl: string;
+  publicKey: string;
+  secretKey?: string;
+};
+
+export type TLangfuseConnectionTestResponse = {
+  success: boolean;
+  message?: string;
+};

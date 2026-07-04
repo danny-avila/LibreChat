@@ -43,9 +43,6 @@ describe('buildLangfuseConfig', () => {
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
-          fanout: {
-            enabled: true,
-          },
         },
       } as unknown as AppConfig,
     });
