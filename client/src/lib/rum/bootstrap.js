@@ -23,6 +23,7 @@ function safeAttributes(attributes) {
 export function installRumBootstrap(targetWindow) {
   const targetDocument = targetWindow.document;
   const targetNavigator = targetWindow.navigator;
+  const recoveryGuardInstalled = targetWindow.__lcRumRecoveryGuardInstalled === true;
   let targetSessionStorage;
   try {
     targetSessionStorage = targetWindow.sessionStorage;
@@ -74,15 +75,18 @@ export function installRumBootstrap(targetWindow) {
     }
   }
 
-  try {
-    const persistedQueue = JSON.parse(targetSessionStorage?.getItem(RUM_QUEUE_KEY) || '[]');
-    if (Array.isArray(persistedQueue)) {
-      targetWindow.__lcRumQueue = persistedQueue
-        .concat(targetWindow.__lcRumQueue)
-        .slice(-MAX_RUM_QUEUE);
+  if (targetWindow.__lcRumQueueHydrated !== true) {
+    try {
+      const persistedQueue = JSON.parse(targetSessionStorage?.getItem(RUM_QUEUE_KEY) || '[]');
+      if (Array.isArray(persistedQueue)) {
+        targetWindow.__lcRumQueue = persistedQueue
+          .concat(targetWindow.__lcRumQueue)
+          .slice(-MAX_RUM_QUEUE);
+      }
+      targetWindow.__lcRumQueueHydrated = true;
+    } catch {
+      recordRumQueueStorageError('hydrate');
     }
-  } catch {
-    recordRumQueueStorageError('hydrate');
   }
 
   targetWindow.__lcRumPush = function (type, attributes) {
@@ -98,10 +102,13 @@ export function installRumBootstrap(targetWindow) {
     }
   };
 
-  targetWindow.__lcRumPush('inline-start', {
-    prerendering: targetDocument.prerendering === true,
-    currentPath: targetWindow.location.pathname,
-  });
+  if (targetWindow.__lcRumInlineStarted !== true) {
+    targetWindow.__lcRumInlineStarted = true;
+    targetWindow.__lcRumPush('inline-start', {
+      prerendering: targetDocument.prerendering === true,
+      currentPath: targetWindow.location.pathname,
+    });
+  }
 
   targetDocument.addEventListener(
     'visibilitychange',
@@ -134,34 +141,36 @@ export function installRumBootstrap(targetWindow) {
     }
   }
 
-  targetWindow.__lcRecoverStaleAssets = function () {
-    if (!shouldRecover()) {
-      return false;
-    }
+  if (!recoveryGuardInstalled) {
+    targetWindow.__lcRecoverStaleAssets = function () {
+      if (!shouldRecover()) {
+        return false;
+      }
 
-    targetWindow.__lcRumPush('stale-asset-recovery-start');
-    const reload = () => {
-      targetWindow.__lcRumPush('stale-asset-recovery-reload');
-      targetWindow.location.reload();
+      targetWindow.__lcRumPush('stale-asset-recovery-start');
+      const reload = () => {
+        targetWindow.__lcRumPush('stale-asset-recovery-reload');
+        targetWindow.location.reload();
+      };
+
+      if (targetNavigator.serviceWorker) {
+        const scopeBase = new URL('./', targetDocument.baseURI || targetWindow.location.href).href;
+        targetNavigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) =>
+            Promise.all(
+              registrations
+                .filter((registration) => registration.scope.indexOf(scopeBase) === 0)
+                .map((registration) => registration.unregister()),
+            ),
+          )
+          .then(reload, reload);
+      } else {
+        reload();
+      }
+      return true;
     };
-
-    if (targetNavigator.serviceWorker) {
-      const scopeBase = new URL('./', targetDocument.baseURI || targetWindow.location.href).href;
-      targetNavigator.serviceWorker
-        .getRegistrations()
-        .then((registrations) =>
-          Promise.all(
-            registrations
-              .filter((registration) => registration.scope.indexOf(scopeBase) === 0)
-              .map((registration) => registration.unregister()),
-          ),
-        )
-        .then(reload, reload);
-    } else {
-      reload();
-    }
-    return true;
-  };
+  }
 
   if (targetNavigator.serviceWorker) {
     const controller = targetNavigator.serviceWorker.controller;
@@ -201,35 +210,37 @@ export function installRumBootstrap(targetWindow) {
     });
   }
 
-  targetWindow.addEventListener(
-    'error',
-    (event) => {
-      const el = event.target;
-      if (!el || !el.tagName) {
-        return;
-      }
-      const failedScript = el.tagName === 'SCRIPT' && el.src;
-      const failedPreload =
-        el.tagName === 'LINK' && /preload/.test(el.rel || '') && /\.js$/.test(el.href || '');
-      if (failedScript || failedPreload) {
-        targetWindow.__lcRumPush('asset-load-error', {
-          tagName: el.tagName,
-          assetUrl: el.src || el.href,
-        });
+  if (!recoveryGuardInstalled) {
+    targetWindow.addEventListener(
+      'error',
+      (event) => {
+        const el = event.target;
+        if (!el || !el.tagName) {
+          return;
+        }
+        const failedScript = el.tagName === 'SCRIPT' && el.src;
+        const failedPreload =
+          el.tagName === 'LINK' && /preload/.test(el.rel || '') && /\.js$/.test(el.href || '');
+        if (failedScript || failedPreload) {
+          targetWindow.__lcRumPush('asset-load-error', {
+            tagName: el.tagName,
+            assetUrl: el.src || el.href,
+          });
+          targetWindow.__lcRecoverStaleAssets();
+        }
+      },
+      true,
+    );
+    targetWindow.addEventListener('unhandledrejection', (event) => {
+      const message = event.reason && event.reason.message;
+      if (
+        typeof message === 'string' &&
+        (message.indexOf('dynamically imported module') !== -1 ||
+          message.indexOf('Importing a module script failed') !== -1)
+      ) {
+        targetWindow.__lcRumPush('dynamic-import-error');
         targetWindow.__lcRecoverStaleAssets();
       }
-    },
-    true,
-  );
-  targetWindow.addEventListener('unhandledrejection', (event) => {
-    const message = event.reason && event.reason.message;
-    if (
-      typeof message === 'string' &&
-      (message.indexOf('dynamically imported module') !== -1 ||
-        message.indexOf('Importing a module script failed') !== -1)
-    ) {
-      targetWindow.__lcRumPush('dynamic-import-error');
-      targetWindow.__lcRecoverStaleAssets();
-    }
-  });
+    });
+  }
 }

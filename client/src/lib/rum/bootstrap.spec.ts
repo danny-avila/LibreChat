@@ -2,6 +2,9 @@ import { installRumBootstrap } from './bootstrap';
 
 type BootstrapTestWindow = {
   __lcRecoverStaleAssets?: () => boolean;
+  __lcRumInlineStarted?: boolean;
+  __lcRumQueueHydrated?: boolean;
+  __lcRumRecoveryGuardInstalled?: boolean;
   __lcRumPush?: unknown;
   __lcRumQueue?: unknown;
 };
@@ -16,6 +19,9 @@ describe('rum bootstrap', () => {
     bootstrapWindow().__lcRumQueue = undefined;
     bootstrapWindow().__lcRumPush = undefined;
     bootstrapWindow().__lcRecoverStaleAssets = undefined;
+    bootstrapWindow().__lcRumInlineStarted = undefined;
+    bootstrapWindow().__lcRumQueueHydrated = undefined;
+    bootstrapWindow().__lcRumRecoveryGuardInstalled = undefined;
     Object.defineProperty(navigator, 'serviceWorker', {
       configurable: true,
       value: undefined,
@@ -68,6 +74,28 @@ describe('rum bootstrap', () => {
       'asset-load-error',
       'inline-start',
     ]);
+  });
+
+  it('does not duplicate inline guard events when the guard already hydrated the queue', () => {
+    const existingRecover = jest.fn(() => false);
+    bootstrapWindow().__lcRumQueueHydrated = true;
+    bootstrapWindow().__lcRumRecoveryGuardInstalled = true;
+    bootstrapWindow().__lcRecoverStaleAssets = existingRecover;
+    bootstrapWindow().__lcRumQueue = [
+      { type: 'asset-load-error', attributes: { tagName: 'SCRIPT' } },
+    ];
+    sessionStorage.setItem(
+      'lc-rum-queue',
+      JSON.stringify([{ type: 'asset-load-error', attributes: { tagName: 'SCRIPT' } }]),
+    );
+
+    installRumBootstrap(window);
+
+    expect(window.__lcRumQueue?.map((event) => event.type)).toEqual([
+      'asset-load-error',
+      'inline-start',
+    ]);
+    expect(bootstrapWindow().__lcRecoverStaleAssets).toBe(existingRecover);
   });
 
   it('persists stale-asset recovery diagnostics before unregistering and reloading', () => {
