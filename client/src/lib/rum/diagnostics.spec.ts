@@ -1,5 +1,6 @@
 import type { FCPMetricWithAttribution } from 'web-vitals/attribution';
 import {
+  discardEarlyRumQueue,
   flushEarlyRumQueue,
   queueSpaRouteChange,
   registerFcpAttribution,
@@ -20,6 +21,8 @@ describe('rum diagnostics', () => {
     testExports.resetDiagnosticsState();
     window.history.replaceState({}, '', '/c/65a5e0a7d1c2b3a4f5e6d789?token=secret#hash');
     window.__lcRumQueue = undefined;
+    window.__lcRumPush = undefined;
+    sessionStorage.clear();
     jest.spyOn(performance, 'now').mockReturnValue(1234.4);
   });
 
@@ -101,6 +104,23 @@ describe('rum diagnostics', () => {
       'early-stale-asset-recovery-start',
       expect.any(Object),
     );
+  });
+
+  it('discards persisted early RUM when the page is not sampled', () => {
+    window.__lcRumQueue = [
+      {
+        type: 'asset-load-error',
+        attributes: { tagName: 'SCRIPT' },
+      },
+    ];
+    window.__lcRumPush = jest.fn();
+    sessionStorage.setItem('lc-rum-queue', JSON.stringify(window.__lcRumQueue));
+
+    discardEarlyRumQueue();
+    window.__lcRumPush?.('spa-route-change', { fromPath: '/login', toPath: '/c/new' });
+
+    expect(window.__lcRumQueue).toEqual([]);
+    expect(sessionStorage.getItem('lc-rum-queue')).toBeNull();
   });
 
   it('builds FCP attribution from web-vitals attribution metrics', () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { TRumConfig, TUser } from 'librechat-data-provider';
 import type { HyperDXActionClient } from './diagnostics';
-import { queueSpaRouteChange, startRumDiagnostics } from './diagnostics';
+import { discardEarlyRumQueue, queueSpaRouteChange, startRumDiagnostics } from './diagnostics';
 import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { normalizeRumPath } from './routes';
@@ -144,6 +144,7 @@ export default function useRum(): void {
       if (rumConfig?.authMode === 'proxy') {
         rumProxyToken = undefined;
       }
+      discardEarlyRumQueue();
       return;
     }
 
@@ -167,6 +168,7 @@ export default function useRum(): void {
     }
 
     if (!sampledInRef.current) {
+      discardEarlyRumQueue();
       return;
     }
 

@@ -186,6 +186,16 @@ export function flushEarlyRumQueue(HyperDX: HyperDXActionClient): void {
   };
 }
 
+export function discardEarlyRumQueue(): void {
+  window.__lcRumQueue?.splice(0);
+  try {
+    sessionStorage.removeItem(EARLY_RUM_QUEUE_STORAGE_KEY);
+  } catch {
+    /* Diagnostics should never affect app behavior. */
+  }
+  window.__lcRumPush = () => undefined;
+}
+
 function emitEarlyRumEvent(HyperDX: HyperDXActionClient, event: RumQueuedEvent): void {
   if (typeof event.type !== 'string' || event.type === '') {
     return;

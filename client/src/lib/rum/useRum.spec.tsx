@@ -18,11 +18,13 @@ jest.mock('@hyperdx/browser', () => ({
 }));
 
 jest.mock('./diagnostics', () => ({
+  discardEarlyRumQueue: jest.fn(),
   queueSpaRouteChange: jest.fn(),
   startRumDiagnostics: jest.fn(),
 }));
 
-const { queueSpaRouteChange, startRumDiagnostics } = jest.requireMock('./diagnostics');
+const { discardEarlyRumQueue, queueSpaRouteChange, startRumDiagnostics } =
+  jest.requireMock('./diagnostics');
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => mockUseGetStartupConfig(),
@@ -115,6 +117,28 @@ describe('useRum', () => {
     renderHook(() => useRum());
 
     expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
+  });
+
+  it('discards the early RUM queue when sampling excludes the page', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: 'https://rum.example.com',
+          serviceName: 'librechat-web',
+          authMode: 'publicToken',
+          publicToken: 'public-token',
+          sampleRate: 0,
+        },
+      },
+    });
+
+    renderHook(() => useRum());
+
+    expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
   });
 
   it('initializes proxy RUM with the LibreChat bearer token for same-origin ingest', async () => {
