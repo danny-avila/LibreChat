@@ -1,12 +1,21 @@
 import { installRumBootstrap } from './bootstrap';
 
+type BootstrapTestWindow = {
+  __lcRecoverStaleAssets?: () => boolean;
+  __lcRumPush?: unknown;
+  __lcRumQueue?: unknown;
+};
+
+function bootstrapWindow(): BootstrapTestWindow {
+  return window as unknown as BootstrapTestWindow;
+}
+
 describe('rum bootstrap', () => {
   beforeEach(() => {
     sessionStorage.clear();
-    (window as typeof window & { __lcRumQueue?: unknown }).__lcRumQueue = undefined;
-    (window as typeof window & { __lcRumPush?: unknown }).__lcRumPush = undefined;
-    (window as typeof window & { __lcRecoverStaleAssets?: unknown }).__lcRecoverStaleAssets =
-      undefined;
+    bootstrapWindow().__lcRumQueue = undefined;
+    bootstrapWindow().__lcRumPush = undefined;
+    bootstrapWindow().__lcRecoverStaleAssets = undefined;
     Object.defineProperty(navigator, 'serviceWorker', {
       configurable: true,
       value: undefined,
@@ -19,7 +28,7 @@ describe('rum bootstrap', () => {
   });
 
   it('forces the early RUM queue to an array and persists sanitized events', () => {
-    (window as typeof window & { __lcRumQueue?: unknown }).__lcRumQueue = 'bad';
+    bootstrapWindow().__lcRumQueue = 'bad';
 
     installRumBootstrap(window);
     window.__lcRumPush?.('asset-load-error', {
@@ -76,7 +85,7 @@ describe('rum bootstrap', () => {
 
     installRumBootstrap(window);
 
-    expect(window.__lcRecoverStaleAssets?.()).toBe(true);
+    expect(bootstrapWindow().__lcRecoverStaleAssets?.()).toBe(true);
     const persistedQueue = JSON.parse(sessionStorage.getItem('lc-rum-queue') || '[]');
 
     expect(getRegistrations).toHaveBeenCalled();
