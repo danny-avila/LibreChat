@@ -69,7 +69,7 @@ export interface ConversationMethods {
 
 export function createConversationMethods(
   mongoose: typeof import('mongoose'),
-  messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages'>,
+  messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages' | 'searchMessages'>,
 ): ConversationMethods {
   function getMessageMethods() {
     if (!messageMethods) {
@@ -570,23 +570,35 @@ export function createConversationMethods(
 
     if (search) {
       try {
-        const meiliResults = await (
-          Conversation as unknown as {
-            meiliSearch: (
-              query: string,
-              options: Record<string, string>,
-            ) => Promise<{
-              hits: Array<{ conversationId: string }>;
-            }>;
-          }
-        ).meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
-          : [];
-        if (!matchingIds.length) {
+        const { searchMessages } = getMessageMethods();
+        const [convoResults, messageResults] = await Promise.all([
+          (
+            Conversation as unknown as {
+              meiliSearch: (
+                query: string,
+                options: Record<string, string>,
+              ) => Promise<{
+                hits: Array<{ conversationId: string }>;
+              }>;
+            }
+          ).meiliSearch(search, { filter: `user = "${user}"` }),
+          searchMessages(search, { filter: `user = "${user}"` }) as Promise<{
+            hits?: Array<{ conversationId: string }>;
+          }>,
+        ]);
+        const matchingIds = new Set<string>();
+        for (const hit of convoResults.hits ?? []) {
+          matchingIds.add(hit.conversationId);
+        }
+        for (const hit of messageResults.hits ?? []) {
+          matchingIds.add(hit.conversationId);
+        }
+        if (!matchingIds.size) {
           return { conversations: [], nextCursor: null };
         }
-        filters.push({ conversationId: { $in: matchingIds } } as FilterQuery<IConversation>);
+        filters.push({
+          conversationId: { $in: [...matchingIds] },
+        } as FilterQuery<IConversation>);
       } catch (error) {
         logger.error('[getConvosByCursor] Error during meiliSearch', error);
         throw new Error('Error during meiliSearch');

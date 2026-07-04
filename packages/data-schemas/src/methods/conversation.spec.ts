@@ -28,6 +28,7 @@ let modelsToCleanup: string[] = [];
 // Mock message methods (same as original test mocking ./Message)
 const getMessages = jest.fn().mockResolvedValue([]);
 const deleteMessages = jest.fn().mockResolvedValue({ deletedCount: 0 });
+const searchMessages = jest.fn().mockResolvedValue({ hits: [] });
 
 let methods: ConversationMethods;
 
@@ -47,7 +48,7 @@ beforeAll(async () => {
     position: number;
   }>;
 
-  methods = createConversationMethods(mongoose, { getMessages, deleteMessages });
+  methods = createConversationMethods(mongoose, { getMessages, deleteMessages, searchMessages });
 
   await mongoose.connect(mongoUri);
 });
@@ -112,6 +113,7 @@ describe('Conversation Operations', () => {
     jest.clearAllMocks();
     getMessages.mockResolvedValue([]);
     deleteMessages.mockResolvedValue({ deletedCount: 0 });
+    searchMessages.mockResolvedValue({ hits: [] });
 
     mockCtx = {
       userId: 'user123',
@@ -1439,6 +1441,62 @@ describe('Conversation Operations', () => {
 
       expect(result?.conversations).toHaveLength(25);
       expect(result?.nextCursor).toBeNull(); // No next page
+    });
+  });
+
+  describe('getConvosByCursor search', () => {
+    it('should include conversations matched only by message content', async () => {
+      const titleMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Contains keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+      const contentMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Unrelated title',
+        endpoint: EModelEndpoint.openAI,
+      });
+      await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'No match anywhere',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, {
+        meiliSearch: jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] }),
+      });
+      searchMessages.mockResolvedValue({
+        hits: [{ conversationId: contentMatch.conversationId }],
+      });
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      const convoIds = result?.conversations.map((c) => c.conversationId);
+      expect(convoIds).toHaveLength(2);
+      expect(convoIds).toContain(titleMatch.conversationId);
+      expect(convoIds).toContain(contentMatch.conversationId);
+    });
+
+    it('should return an empty result when neither titles nor messages match', async () => {
+      await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'No match anywhere',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+      searchMessages.mockResolvedValue({ hits: [] });
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      expect(result?.conversations).toHaveLength(0);
+      expect(result?.nextCursor).toBeNull();
     });
   });
 
