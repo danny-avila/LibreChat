@@ -290,6 +290,7 @@ describe('GET /api/config', () => {
       expect(mockGetAppConfig).toHaveBeenCalledWith({
         role: 'USER',
         userId: 'user123',
+        idOnTheSource: null,
         tenantId: 'fallback-tenant',
       });
     });
@@ -304,6 +305,7 @@ describe('GET /api/config', () => {
       expect(mockGetAppConfig).toHaveBeenCalledWith({
         role: 'USER',
         userId: 'user123',
+        idOnTheSource: null,
         tenantId: 'user-tenant',
       });
     });

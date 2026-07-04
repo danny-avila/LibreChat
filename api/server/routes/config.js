@@ -3,6 +3,7 @@ const {
   isEnabled,
   getBalanceConfig,
   getCloudFrontConfig,
+  getAppConfigOptionsFromUser,
   resolveBuildInfo,
   resolveTitleTiming,
   sanitizeModelSpecs,
@@ -244,11 +245,7 @@ router.get('/', async function (req, res) {
       return res.status(200).send(payload);
     }
 
-    const appConfig = await getAppConfig({
-      role: req.user.role,
-      userId: req.user.id,
-      tenantId: req.user.tenantId || getTenantId(),
-    });
+    const appConfig = await getAppConfig(getAppConfigOptionsFromUser(req.user));
 
     const balanceConfig = getBalanceConfig(appConfig);
     const cloudFront = buildCloudFrontStartupConfig();

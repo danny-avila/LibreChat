@@ -40,6 +40,12 @@ jest.mock('@librechat/api', () => ({
   },
   normalizeHttpError: jest.fn((error) => error),
   extractWebSearchEnvVars: jest.fn((params) => params.keys),
+  getAppConfigOptionsFromUser: jest.fn((user) => ({
+    role: user?.role,
+    userId: user?.id,
+    idOnTheSource: user?.id ? (user.idOnTheSource ?? null) : undefined,
+    tenantId: user?.tenantId,
+  })),
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
 }));
