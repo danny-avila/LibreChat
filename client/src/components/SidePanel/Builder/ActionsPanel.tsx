@@ -109,7 +109,7 @@ export default function ActionsPanel({
                 <ChevronLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
               </button>
               <h2 className="text-center text-base font-semibold text-text-primary">
-                {(action ? 'Edit' : 'Add') + ' actions'}
+                {localize(action ? 'com_assistants_edit_actions' : 'com_assistants_add_actions')}
               </h2>
               {action ? (
                 <OGDialog>

@@ -51,7 +51,11 @@ function DynamicInput({
       // Keep a leading minus for fields whose range permits negatives (e.g.
       // Google thinkingBudget, where -1 selects dynamic/auto thinking).
       const allowNegative = range != null && range.min < 0;
-      setInputValue(sanitizeIntegerInput(e.target.value, allowNegative), true);
+      const sanitized = sanitizeIntegerInput(e.target.value, allowNegative);
+      // A lone "-" is an in-progress negative; keep it as a string so the field
+      // shows the sign instead of coercing Number("-") to NaN. It resolves to a
+      // number as soon as a digit is typed.
+      setInputValue(sanitized, sanitized !== '-');
       return;
     }
     setInputValue(e, !isNaN(Number(e.target.value)));

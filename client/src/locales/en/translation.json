@@ -127,6 +127,7 @@
   "com_assistants_delete_actions_error": "There was an error deleting the action.",
   "com_assistants_delete_actions_success": "Successfully deleted Action from Assistant",
   "com_assistants_description_placeholder": "Optional: Describe your Assistant here",
+  "com_assistants_edit_actions": "Edit Actions",
   "com_assistants_file_search": "File Search",
   "com_assistants_file_search_info": "File search enables the assistant with knowledge from files that you or your users upload. Once a file is uploaded, the assistant automatically decides when to retrieve content based on user requests. Attaching vector stores for File Search is not yet supported. You can attach them from the Provider Playground or attach files to messages for file search on a thread basis.",
   "com_assistants_function_use": "Assistant used {{0}}",
