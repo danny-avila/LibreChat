@@ -314,6 +314,26 @@ export function createConversationMethods(
         update.expiredAt = null;
       }
 
+      const forcedExpiredAt = update.expiredAt;
+      /**
+       * Backfill the dependent messages, shares, and files before converting the parent. The
+       * findOneAndUpdate below writes isTemporary/expiredAt on the conversation, so if a child
+       * update failed after it, a retried save would reload an already-conforming parent
+       * (conversationNeedsForcedRetention false) and permanently skip the child rows.
+       */
+      if (
+        isForcedRetention &&
+        forcedExpiredAt instanceof Date &&
+        conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
+      ) {
+        const Message = mongoose.models.Message as Model<IMessage>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+        const File = mongoose.models.File as Model<IMongoFile>;
+        await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
+        await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
+        await capConversationFiles(File, conversationId, forcedExpiredAt);
+      }
+
       const createdAtOnInsert =
         metadata?.createdAtOnInsert instanceof Date &&
         !Number.isNaN(metadata.createdAtOnInsert.getTime())
@@ -357,20 +377,6 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
-      }
-
-      const forcedExpiredAt = update.expiredAt;
-      if (
-        isForcedRetention &&
-        forcedExpiredAt instanceof Date &&
-        conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
-      ) {
-        const Message = mongoose.models.Message as Model<IMessage>;
-        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
-        const File = mongoose.models.File as Model<IMongoFile>;
-        await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
-        await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
-        await capConversationFiles(File, conversationId, forcedExpiredAt);
       }
 
       if (
