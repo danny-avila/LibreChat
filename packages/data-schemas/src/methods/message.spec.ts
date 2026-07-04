@@ -1914,6 +1914,44 @@ describe('Message Operations', () => {
       expect(converted?.isTemporary).toBe(true);
       expect(converted?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
     });
+
+    it('scopes the sweep to the active tenant context, leaving other tenants untouched', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const tenantAConversationId = uuidv4();
+      const tenantBConversationId = uuidv4();
+      await Conversation().collection.insertMany([
+        {
+          conversationId: tenantAConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          tenantId: 'tenant-a',
+        },
+        {
+          conversationId: tenantBConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          tenantId: 'tenant-b',
+        },
+      ]);
+
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt),
+      );
+      expect(result).toEqual({ conversations: 1, errors: 0 });
+
+      const tenantA = await Conversation().collection.findOne({
+        conversationId: tenantAConversationId,
+      });
+      expect(tenantA?.isTemporary).toBe(true);
+
+      const tenantB = await Conversation().collection.findOne({
+        conversationId: tenantBConversationId,
+      });
+      expect(tenantB?.isTemporary ?? null).not.toBe(true);
+      expect(tenantB?.expiredAt ?? null).toBeNull();
+    });
   });
 
   describe('cascadeForcedConversationRetention', () => {
