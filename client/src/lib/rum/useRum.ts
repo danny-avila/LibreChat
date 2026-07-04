@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { TRumConfig, TUser } from 'librechat-data-provider';
-import { reportSpaRouteChange, startRumDiagnostics, type HyperDXActionClient } from './diagnostics';
+import type { HyperDXActionClient } from './diagnostics';
+import { reportSpaRouteChange, startRumDiagnostics } from './diagnostics';
 import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { normalizeRumPath } from './routes';
