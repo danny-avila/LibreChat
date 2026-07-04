@@ -2,10 +2,10 @@ import { OptionTypes } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger } from '@librechat/client';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
+import { cn, sanitizeIntegerInput } from '~/utils';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
-import { cn, sanitizeIntegerInput } from '~/utils';
 
 function DynamicInput({
   label = '',
@@ -16,6 +16,7 @@ function DynamicInput({
   setOption,
   optionType,
   type,
+  range,
   placeholder = '',
   readonly = false,
   showDefault = false,
@@ -45,9 +46,12 @@ function DynamicInput({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (type === 'number') {
-      // Integer token params: strip thousands separators so "120,000" / "120.000"
+      // Integer params: strip thousands separators so "120,000" / "120.000"
       // become 120000 instead of being truncated to 120 downstream by parseInt.
-      setInputValue(sanitizeIntegerInput(e.target.value), true);
+      // Keep a leading minus for fields whose range permits negatives (e.g.
+      // Google thinkingBudget, where -1 selects dynamic/auto thinking).
+      const allowNegative = range != null && range.min < 0;
+      setInputValue(sanitizeIntegerInput(e.target.value, allowNegative), true);
       return;
     }
     setInputValue(e, !isNaN(Number(e.target.value)));

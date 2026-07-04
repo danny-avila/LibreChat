@@ -3,13 +3,19 @@
  *
  * Strips thousands separators and any stray characters so values like
  * `"120,000"` (US) or `"120.000"` (EU) collapse to `"120000"` instead of being
- * silently truncated to `120` by a downstream `parseInt`. Every numeric model
- * parameter rendered as a text input is an integer token count, so this is
- * locale-agnostic: both `,` and `.` are treated as grouping separators.
+ * silently truncated to `120` by a downstream `parseInt`. Both `,` and `.` are
+ * treated as grouping separators, so this is locale-agnostic.
  *
- * An empty result is preserved so the field can be cleared, which unsets the
- * value and falls back to the model/server default.
+ * When `allowNegative` is set (for fields whose range permits negatives, e.g.
+ * Google `thinkingBudget` where `-1` selects dynamic/auto thinking), a single
+ * leading minus is preserved; a lone `"-"` is kept so the sign can be typed
+ * before the digits. An empty result is preserved so the field can be cleared,
+ * which unsets the value and falls back to the model/server default.
  */
-export function sanitizeIntegerInput(value: string): string {
-  return value.replace(/\D/g, '');
+export function sanitizeIntegerInput(value: string, allowNegative = false): string {
+  const digits = value.replace(/\D/g, '');
+  if (allowNegative && value.trimStart().startsWith('-')) {
+    return `-${digits}`;
+  }
+  return digits;
 }
