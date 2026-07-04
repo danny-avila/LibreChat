@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import useRum from './useRum';
 
 const mockInit = jest.fn();
+const mockAddAction = jest.fn();
 const mockSetGlobalAttributes = jest.fn();
 const mockUseGetStartupConfig = jest.fn();
 const mockUseAuthContext = jest.fn();
@@ -10,10 +11,18 @@ const mockUseLocation = jest.fn();
 jest.mock('@hyperdx/browser', () => ({
   __esModule: true,
   default: {
+    addAction: (...args: unknown[]) => mockAddAction(...args),
     init: (...args: unknown[]) => mockInit(...args),
     setGlobalAttributes: (...args: unknown[]) => mockSetGlobalAttributes(...args),
   },
 }));
+
+jest.mock('./diagnostics', () => ({
+  reportSpaRouteChange: jest.fn(),
+  startRumDiagnostics: jest.fn(),
+}));
+
+const { reportSpaRouteChange, startRumDiagnostics } = jest.requireMock('./diagnostics');
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => mockUseGetStartupConfig(),
@@ -82,6 +91,10 @@ describe('useRum', () => {
     });
     expect(mockSetGlobalAttributes).not.toHaveBeenCalledWith(
       expect.objectContaining({ email: 'user@example.com' }),
+    );
+    expect(startRumDiagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({ init: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -164,5 +177,35 @@ describe('useRum', () => {
     renderHook(() => useRum());
 
     expect(mockInit).not.toHaveBeenCalled();
+  });
+
+  it('reports SPA route changes after RUM initializes', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: 'https://rum.example.com',
+          serviceName: 'librechat-web',
+          authMode: 'publicToken',
+          publicToken: 'public-token',
+        },
+      },
+    });
+
+    const { rerender } = renderHook(() => useRum());
+
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenCalled();
+    });
+
+    mockUseLocation.mockReturnValue({ pathname: '/login' });
+    rerender();
+
+    expect(reportSpaRouteChange).toHaveBeenCalledWith(
+      expect.objectContaining({ init: expect.any(Function) }),
+      '/c/:conversationId',
+      '/login',
+    );
   });
 });

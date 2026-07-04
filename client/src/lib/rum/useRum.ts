@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { TRumConfig, TUser } from 'librechat-data-provider';
+import { reportSpaRouteChange, startRumDiagnostics, type HyperDXActionClient } from './diagnostics';
 import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { normalizeRumPath } from './routes';
 
 const PROXY_API_KEY = 'librechat-rum-proxy';
+const MAX_PENDING_ROUTE_CHANGES = 20;
+
+type PendingRouteChange = {
+  fromPath: string;
+  pageElapsedMs: number;
+  toPath: string;
+};
 
 let rumProxyToken: string | undefined;
 let rumProxyFetchPatched = false;
 
-type HyperDXBrowser = {
+type HyperDXBrowser = HyperDXActionClient & {
   init: (config: {
     advancedNetworkCapture: boolean;
     apiKey: string;
@@ -123,10 +131,32 @@ export default function useRum(): void {
   const rumConfig = startupConfig?.rum;
   const route = useMemo(() => normalizeRumPath(location.pathname), [location.pathname]);
   const routeRef = useRef<string>(route);
+  const previousRouteRef = useRef<string | undefined>(route);
+  const pendingRouteChangesRef = useRef<PendingRouteChange[]>([]);
 
   useEffect(() => {
+    const previousRoute = previousRouteRef.current;
     routeRef.current = route;
-  }, [route]);
+
+    if (previousRoute && previousRoute !== route) {
+      if (hyperDxRef.current) {
+        reportSpaRouteChange(hyperDxRef.current, previousRoute, route);
+      } else if (shouldInitializeRum(rumConfig, token) && sampledInRef.current) {
+        if (pendingRouteChangesRef.current.length >= MAX_PENDING_ROUTE_CHANGES) {
+          pendingRouteChangesRef.current.shift();
+        }
+        pendingRouteChangesRef.current.push({
+          fromPath: previousRoute,
+          pageElapsedMs: performance.now(),
+          toPath: route,
+        });
+      } else {
+        pendingRouteChangesRef.current = [];
+      }
+    }
+
+    previousRouteRef.current = route;
+  }, [route, rumConfig, token]);
 
   useEffect(() => {
     if (!rumConfig) {
@@ -184,6 +214,15 @@ export default function useRum(): void {
         hyperDxRef.current = HyperDX;
         initializedKeyRef.current = initKey;
         HyperDX.setGlobalAttributes(buildGlobalAttributes(user, config, routeRef.current));
+        startRumDiagnostics(HyperDX, () => routeRef.current);
+        pendingRouteChangesRef.current.splice(0).forEach((routeChange) => {
+          reportSpaRouteChange(
+            HyperDX,
+            routeChange.fromPath,
+            routeChange.toPath,
+            routeChange.pageElapsedMs,
+          );
+        });
       })
       .catch(() => undefined);
 
