@@ -919,6 +919,50 @@ describe('Conversation Operations', () => {
       expect(file?.expiredAt).toBeInstanceOf(Date);
     });
 
+    it('keeps the chat convertible when a child backfill fails during forced conversion', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Existing permanent chat',
+      });
+      await Message().create({ messageId: uuidv4(), conversationId, user: 'user123', text: 'hi' });
+
+      const spy = jest.spyOn(File(), 'updateMany').mockImplementationOnce(() => {
+        throw new Error('file backfill failed');
+      });
+      const failed = await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+      spy.mockRestore();
+      expect(failed).toEqual({ message: 'Error saving conversation' });
+
+      const stillPermanent = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(stillPermanent?.isTemporary ?? null).not.toBe(true);
+      expect(stillPermanent?.expiredAt ?? null).toBeNull();
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const converted = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(converted?.isTemporary).toBe(true);
+      expect(converted?.expiredAt).toBeInstanceOf(Date);
+
+      const message = await Message().findOne({ conversationId }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt).toBeInstanceOf(Date);
+    });
+
     it('converts an active retained (all-mode) conversation when switching to ephemeral', async () => {
       const conversationId = uuidv4();
       const retainedUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
