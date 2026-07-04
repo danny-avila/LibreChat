@@ -28,6 +28,7 @@ export function useSettingsContext(): SettingsContextValue {
 
   const balanceEnabled = startupConfig?.balance?.enabled === true;
   const isAdmin = user?.role === SystemRoles.ADMIN;
+  const langfuseFanoutEnabled = startupConfig?.langfuseFanoutEnabled === true;
   const isLocalProvider = user?.provider === 'local';
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
@@ -53,6 +54,7 @@ export function useSettingsContext(): SettingsContextValue {
       aboutEnabled,
       engineTTS,
       isAdmin,
+      langfuseFanoutEnabled,
     }),
     [
       balanceEnabled,
@@ -68,6 +70,7 @@ export function useSettingsContext(): SettingsContextValue {
       aboutEnabled,
       engineTTS,
       isAdmin,
+      langfuseFanoutEnabled,
     ],
   );
 }

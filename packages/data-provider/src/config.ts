@@ -1486,6 +1486,7 @@ export type StartupConfigContext = 'share';
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
+  langfuseFanoutEnabled?: boolean;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;

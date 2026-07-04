@@ -19,6 +19,7 @@ const ctx: SettingsContextValue = {
   aboutEnabled: false,
   engineTTS: 'browser',
   isAdmin: false,
+  langfuseFanoutEnabled: false,
 };
 
 function setup(extra: Partial<SettingsContextValue> = {}, query = '') {

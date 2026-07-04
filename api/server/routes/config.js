@@ -277,6 +277,7 @@ router.get('/', async function (req, res) {
       conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,
+      langfuseFanoutEnabled: /^(true|1)$/i.test((process.env.LANGFUSE_FANOUT_ENABLED ?? '').trim()),
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
     };

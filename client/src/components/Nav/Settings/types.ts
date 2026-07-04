@@ -48,6 +48,7 @@ export interface SettingsContextValue {
   aboutEnabled: boolean;
   engineTTS: string;
   isAdmin: boolean;
+  langfuseFanoutEnabled: boolean;
 }
 
 export interface SettingEntry {
