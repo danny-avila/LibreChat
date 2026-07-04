@@ -1646,7 +1646,7 @@
   "com_ui_langfuse_base_url": "Host",
   "com_ui_langfuse_public_key": "Public key",
   "com_ui_langfuse_secret_key": "Secret key",
-  "com_ui_langfuse_secret_key_set": "Saved — enter a new key to replace it",
+  "com_ui_langfuse_secret_key_set": "Saved. Enter a new key to replace it",
   "com_ui_langfuse_secret_key_hint": "The secret key is encrypted at rest and is never shown again after saving.",
   "com_ui_langfuse_secret_key_fingerprint": "Configured key fingerprint:",
   "com_ui_langfuse_test": "Test connection",
