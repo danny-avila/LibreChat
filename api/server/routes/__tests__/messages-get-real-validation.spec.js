@@ -2,10 +2,26 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  CODE_EXECUTION_TOOLS: new Set(['execute_code', 'bash_tool']),
+  BashExecutionToolDefinition: {
+    name: 'bash_tool',
+    description: 'bash',
+    schema: { type: 'object', properties: {} },
+  },
+  ReadFileToolDefinition: {
+    name: 'read_file',
+    description: 'Read a file',
+    parameters: { type: 'object', properties: {} },
+    responseFormat: 'content',
+  },
+  buildBashExecutionToolDescription: () => 'bash',
   sleep: jest.fn(),
 }));
 
 jest.mock('@librechat/api', () => ({
+  createMessageRequestMiddleware:
+    jest.requireActual('@librechat/api').createMessageRequestMiddleware,
   unescapeLaTeX: jest.fn((x) => x),
   countTokens: jest.fn().mockResolvedValue(10),
   sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
