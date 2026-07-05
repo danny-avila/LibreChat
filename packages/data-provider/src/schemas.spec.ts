@@ -18,6 +18,10 @@ describe('anthropicSettings', () => {
       it('should return 64K for claude-sonnet-4-5', () => {
         expect(reset('claude-sonnet-4-5')).toBe(64000);
       });
+
+      it('should return 64K for dated claude-sonnet-4', () => {
+        expect(reset('claude-sonnet-4-20250514')).toBe(64000);
+      });
     });
 
     describe('Claude Sonnet 4.6+ models (128K limit)', () => {
@@ -278,6 +282,10 @@ describe('anthropicSettings', () => {
     describe('Claude Sonnet 4/4.5 and Haiku 4+ models (64K cap)', () => {
       it('should cap at 64K for claude-sonnet-4 when value exceeds', () => {
         expect(set(100000, 'claude-sonnet-4')).toBe(64000);
+      });
+
+      it('should cap at 64K for dated claude-sonnet-4 when value exceeds', () => {
+        expect(set(100000, 'claude-sonnet-4-20250514')).toBe(64000);
       });
 
       it('should allow 50K for claude-sonnet-4', () => {

@@ -1600,6 +1600,9 @@ describe('Claude Model Tests', () => {
     expect(getModelMaxOutputTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
       maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
     );
+    expect(getModelMaxOutputTokens('claude-sonnet-4.6', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4.6'],
+    );
   });
 
   it('should handle Claude Sonnet 4.6 model name variations', () => {
