@@ -1,0 +1,186 @@
+import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { LocalizeFunction } from '~/common';
+
+export type ExportFormat = 'text' | 'md';
+export type MessageContentExport = [] | [sender: string, text: string];
+
+type TextValue = string | { value?: string | null } | null | undefined;
+type TextDeltaContentPart = {
+  type: ContentTypes.TEXT_DELTA;
+  text?: TextValue;
+  text_delta?: TextValue;
+};
+
+export type ExportableContentPart = TMessageContentParts | TextDeltaContentPart;
+
+export const handledExportContentTypes = [
+  ContentTypes.TEXT,
+  ContentTypes.THINK,
+  ContentTypes.TEXT_DELTA,
+  ContentTypes.TOOL_CALL,
+  ContentTypes.IMAGE_FILE,
+  ContentTypes.IMAGE_URL,
+  ContentTypes.VIDEO_URL,
+  ContentTypes.INPUT_AUDIO,
+  ContentTypes.AGENT_UPDATE,
+  ContentTypes.SUMMARY,
+  ContentTypes.ERROR,
+] satisfies readonly ContentTypes[];
+
+const getTextValue = (value: TextValue): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return value?.value ?? '';
+};
+
+const stringify = (value: unknown): string => JSON.stringify(value ?? null);
+
+const hasFormattedContent = (content: MessageContentExport): content is [string, string] =>
+  content.length > 0;
+
+const formatReasoning = (reasoning: string, format: ExportFormat): string => {
+  if (format === 'md') {
+    return `<details>\n<summary>Thinking</summary>\n\n${reasoning}\n</details>`;
+  }
+  return `Thinking:\n${reasoning}`;
+};
+
+const getUrlText = (value: string | { url?: string } | undefined): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return value?.url ?? stringify(value);
+};
+
+export function formatMessageContent({
+  sender,
+  content,
+  format = 'text',
+  localize,
+}: {
+  sender: string;
+  content?: ExportableContentPart;
+  format?: ExportFormat;
+  localize: LocalizeFunction;
+}): MessageContentExport {
+  if (!content) {
+    return [];
+  }
+
+  if (content.type === ContentTypes.ERROR) {
+    return [sender, content.error ?? getTextValue(content.text)];
+  }
+
+  if (content.type === ContentTypes.TEXT) {
+    const text = getTextValue(content.text);
+    if (text.trim().length === 0) {
+      return [];
+    }
+    return [sender, text];
+  }
+
+  if (content.type === ContentTypes.THINK) {
+    const reasoning = getTextValue(content.think);
+    if (reasoning.trim().length === 0) {
+      return [];
+    }
+    return [sender, formatReasoning(reasoning, format)];
+  }
+
+  if (content.type === ContentTypes.TEXT_DELTA) {
+    const text = getTextValue(content.text_delta ?? content.text);
+    if (text.trim().length === 0) {
+      return [];
+    }
+    return [sender, text];
+  }
+
+  if (content.type === ContentTypes.TOOL_CALL) {
+    const toolCall = content.tool_call;
+    if (!toolCall) {
+      return ['Tool', stringify(toolCall)];
+    }
+    if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
+      return [localize('com_ui_run_code'), stringify(toolCall.code_interpreter)];
+    }
+    if (toolCall.type === ToolCallTypes.RETRIEVAL) {
+      return ['Retrieval', stringify(toolCall)];
+    }
+    if (toolCall.type === ToolCallTypes.FILE_SEARCH) {
+      return ['File Search', stringify(toolCall)];
+    }
+    return ['Tool', stringify(toolCall)];
+  }
+
+  if (content.type === ContentTypes.IMAGE_FILE) {
+    return ['Image', stringify(content.image_file)];
+  }
+
+  if (content.type === ContentTypes.IMAGE_URL) {
+    return ['Image', getUrlText(content.image_url)];
+  }
+
+  if (content.type === ContentTypes.VIDEO_URL) {
+    return ['Video', getUrlText(content.video_url)];
+  }
+
+  if (content.type === ContentTypes.INPUT_AUDIO) {
+    return ['Audio', stringify(content.input_audio)];
+  }
+
+  if (content.type === ContentTypes.AGENT_UPDATE) {
+    return ['Agent Update', stringify(content.agent_update)];
+  }
+
+  if (content.type === ContentTypes.SUMMARY) {
+    const summary = content.content
+      ?.map((part) => getTextValue(part.text))
+      .filter((text) => text.length > 0)
+      .join('\n\n');
+    return ['Summary', summary ?? stringify(content)];
+  }
+
+  return [sender, stringify(content)];
+}
+
+export function formatMessageText({
+  message,
+  format = 'text',
+  localize,
+}: {
+  message: Partial<TMessage> | undefined;
+  format?: ExportFormat;
+  localize: LocalizeFunction;
+}): string {
+  if (!message) {
+    return '';
+  }
+
+  const formatText = (sender: string, text: string) => {
+    if (format === 'text') {
+      return `>> ${sender}:\n${text}`;
+    }
+    return `**${sender}**\n${text}`;
+  };
+
+  if (!message.content) {
+    return formatText(message.sender || '', message.text || '');
+  }
+
+  return message.content
+    .filter((content) => content != null)
+    .map((content) =>
+      formatMessageContent({
+        sender: message.sender || '',
+        content,
+        format,
+        localize,
+      }),
+    )
+    .filter(hasFormattedContent)
+    .map((text) => formatText(text[0], text[1]))
+    .join('\n\n\n');
+}
