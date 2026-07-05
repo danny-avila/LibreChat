@@ -96,10 +96,16 @@ router.post('/', configMiddleware, async (req, res) => {
 router.put('/:tag', configMiddleware, async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
+    /**
+     * Enforce retention with the old tag before the rename commits. The rename rewrites the
+     * conversations' tag entries, so a cascade failure afterwards would 500 while a retried
+     * PUT /:oldTag hits the 404 path (the old tag no longer exists) and the affected chats
+     * never convert. The old tag selects the same conversations the renamed tag will carry,
+     * and enforcing on a nonexistent tag is a no-op, so a failed rename retries cleanly.
+     */
+    await enforceForcedRetentionForTag(req, decodedTag, 'PUT /api/tags/:tag');
     const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
     if (tag) {
-      const renamedTag = typeof req.body?.tag === 'string' ? req.body.tag : decodedTag;
-      await enforceForcedRetentionForTag(req, renamedTag, 'PUT /api/tags/:tag');
       res.status(200).json(tag);
     } else {
       res.status(404).json({ error: 'Tag not found' });
