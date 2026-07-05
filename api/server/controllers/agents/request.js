@@ -20,7 +20,7 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-const { saveMessage, getMessages, getConvo } = require('~/models');
+const { saveMessage, getMessages, getConvo, saveConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -172,6 +172,101 @@ async function finishResumableRequest(req, userId) {
     await cleanupMCPRequestContextForReq(req);
   } finally {
     await decrementPendingRequest(userId);
+  }
+}
+
+/**
+ * Persists a failed turn (user message + `error: true` response) when generation
+ * fails before anything reached the database, e.g. `initializeClient` rejecting
+ * on an unavailable model. Follow-ups chain from the preliminary response id
+ * (`${userMessageId}_`) and `isUnpersistedPreliminaryParent` 409s them until that
+ * row exists; without this write it never would, dead-ending the conversation.
+ * Replay turns (regenerate/edit/continue) are skipped: their rows already exist,
+ * and upserting here could clobber a completed response.
+ */
+async function saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, errorText }) {
+  try {
+    const { isContinued, isRegenerate, editedContent, responseMessageId } = req.body ?? {};
+    if (isContinued || isRegenerate || editedContent != null || responseMessageId) {
+      return;
+    }
+
+    const userMessage = getPreliminaryUserMessage(req.body, conversationId);
+    const errorMessageId = getPreliminaryResponseMessageId(req.body);
+    if (!userMessage || !errorMessageId) {
+      return;
+    }
+
+    const userId = req.user.id;
+    const existing = await getMessages(
+      { user: userId, messageId: errorMessageId, conversationId },
+      '_id',
+    );
+    if (existing.length > 0) {
+      return;
+    }
+
+    const reqCtx = {
+      userId,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    };
+    const context = 'api/server/controllers/agents/request.js - failed turn';
+    const endpoint = endpointOption?.endpoint;
+    const model = getAgentResponseModel(req, endpointOption);
+    const iconURL = getEndpointIconURL(req, endpointOption);
+
+    await saveMessage(
+      reqCtx,
+      {
+        ...userMessage,
+        user: userId,
+        sender: 'User',
+        isCreatedByUser: true,
+        error: false,
+        unfinished: false,
+      },
+      { context },
+    );
+    await saveMessage(
+      reqCtx,
+      {
+        messageId: errorMessageId,
+        conversationId,
+        parentMessageId: userMessage.messageId,
+        ...(endpoint != null && { endpoint }),
+        ...(model != null && { model }),
+        ...(iconURL != null && { iconURL }),
+        user: userId,
+        text: errorText,
+        error: true,
+        unfinished: false,
+        isCreatedByUser: false,
+      },
+      { context },
+    );
+
+    if (isNewConvo) {
+      await saveConvo(
+        reqCtx,
+        {
+          conversationId,
+          ...(endpoint != null && { endpoint }),
+          ...(endpointOption?.endpointType != null && {
+            endpointType: endpointOption.endpointType,
+          }),
+          ...(model != null && { model }),
+          ...(iconURL != null && { iconURL }),
+          ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
+          ...((endpointOption?.agent_id ?? req.body?.agent_id) != null && {
+            agent_id: endpointOption?.agent_id ?? req.body?.agent_id,
+          }),
+        },
+        { context },
+      );
+    }
+  } catch (err) {
+    logger.error('[AgentController] Failed to persist error turn', err);
   }
 }
 
@@ -849,7 +944,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // abortJob already handled emitDone and completeJob
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
-          await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
+          const errorText = error.message || 'Generation failed';
+          await saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, errorText });
+          await GenerationJobManager.emitError(streamId, errorText);
           GenerationJobManager.completeJob(streamId, error.message);
         }
 
@@ -884,8 +981,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to start generation' });
     } else {
-      // JSON already sent, emit error to stream so client can receive it
-      await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
+      // JSON already sent; persist the failed turn before emitting the error so
+      // the preliminary response row exists by the time the user can retry.
+      const errorText = error.message || 'Failed to start generation';
+      await saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, errorText });
+      await GenerationJobManager.emitError(streamId, errorText);
     }
     GenerationJobManager.completeJob(streamId, error.message);
     await finishResumableRequest(req, userId);
