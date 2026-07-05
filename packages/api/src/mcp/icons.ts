@@ -343,20 +343,20 @@ function normalizeIconValue(value: string): string {
  * Sanitize a user-provided MCP `iconPath`. SVG data URIs are decoded, stripped
  * of active content via an allowlist, and re-encoded as base64; a malformed SVG
  * data URI resolves to an empty string so a broken icon is stored rather than
- * raw markup. All other values (raster data URIs, URLs, relative paths) are
- * returned unchanged.
+ * raw markup. Other values (raster data URIs, URLs, relative paths) pass through
+ * unchanged unless they exceed the length cap.
  *
- * Base64 is far more compact than percent-encoding for the angle-bracket-heavy
- * SVG markup that sanitizing can even slightly grow (it expands self-closing
- * tags to explicit close tags), so it minimizes needless rejection. The result
- * is then measured against the schema length cap and dropped if it still exceeds
- * it, so a value that passed the cap on input can never be stored over it and
- * then rejected when the prefilled value is resubmitted on the next edit.
+ * This is the single enforcement point for `MAX_MCP_ICON_PATH_LENGTH`: any value
+ * still over the cap after sanitizing is dropped to an empty string. Enforcing it
+ * here rather than as a schema `.max()` means editing a server whose stored icon
+ * predates the cap succeeds (the oversized icon is cleared) instead of failing
+ * validation and locking the user out of the whole update. Base64 also keeps SVG
+ * output compact so a legitimate icon is rarely dropped.
  */
 export function sanitizeMcpIconPath(iconPath: string): string {
   const normalized = normalizeIconValue(iconPath);
   if (!SVG_DATA_URI.test(normalized)) {
-    return iconPath;
+    return iconPath.length > MAX_MCP_ICON_PATH_LENGTH ? '' : iconPath;
   }
   const svg = decodeSvgDataUri(normalized);
   if (svg == null) {
