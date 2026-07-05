@@ -706,8 +706,9 @@ describe('ResumableAgentController resume metadata', () => {
         mockGenerationJobManager.emitError.mock.invocationCallOrder[0],
       );
       expect(mockSaveConvo).toHaveBeenCalledTimes(1);
-      const [, convoUpdate] = mockSaveConvo.mock.calls[0];
+      const [, convoUpdate, convoMetadata] = mockSaveConvo.mock.calls[0];
       expect(convoUpdate).toEqual({ conversationId });
+      expect(convoMetadata).toEqual(expect.objectContaining({ noUpsert: true }));
     });
 
     it('allows a follow-up chaining from the persisted error turn (issue 14095)', async () => {
@@ -845,10 +846,20 @@ describe('ResumableAgentController resume metadata', () => {
       );
     });
 
-    it('does not persist failed replay turns', async () => {
+    it('does not persist failed edit or continue turns', async () => {
       const initializeClient = jest.fn().mockRejectedValue(new Error('model unavailable'));
       await AgentController(
-        createFailedRequest({ isRegenerate: true, responseMessageId: 'prior-response_' }),
+        createFailedRequest({
+          editedContent: { type: 'text', text: 'edited' },
+          responseMessageId: 'prior-response_',
+        }),
+        createSentResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+      await AgentController(
+        createFailedRequest({ isContinued: true, responseMessageId: 'prior-response_' }),
         createSentResponse(),
         jest.fn(),
         initializeClient,
@@ -858,6 +869,86 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockSaveMessage).not.toHaveBeenCalled();
       expect(mockSaveConvo).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.emitError).toHaveBeenCalled();
+    });
+
+    it('persists only the error row for a failed regenerate', async () => {
+      const initializeClient = jest.fn().mockRejectedValue(new Error('model unavailable'));
+      await AgentController(
+        createFailedRequest({
+          isRegenerate: true,
+          responseMessageId: 'original-response_',
+          overrideParentMessageId: 'original-user',
+        }),
+        createSentResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveMessage).toHaveBeenCalledTimes(1);
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'original-response_',
+          parentMessageId: 'original-user',
+          text: 'model unavailable',
+          error: true,
+          isCreatedByUser: false,
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('does not persist a failed regenerate whose placeholder collides with the original row', async () => {
+      mockGetMessages.mockResolvedValue([{ _id: 'original-underscore-row' }]);
+      const initializeClient = jest.fn().mockRejectedValue(new Error('model unavailable'));
+      await AgentController(
+        createFailedRequest({
+          isRegenerate: true,
+          responseMessageId: 'legacy-response_',
+          overrideParentMessageId: 'original-user',
+        }),
+        createSentResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+    });
+
+    it('skips the error row when a partial response was already saved on disconnect', async () => {
+      const serverUserMessage = {
+        messageId: 'server-user',
+        parentMessageId: 'prior-response',
+        conversationId,
+        sender: 'User',
+        text: 'Hello with a removed model.',
+        isCreatedByUser: true,
+      };
+      const sendMessage = jest.fn(async (text, opts) => {
+        opts.onStart(serverUserMessage, 'live-response-id');
+        throw new Error('failed after partial save');
+      });
+      const initializeClient = jest.fn().mockResolvedValue({ client: { sendMessage } });
+      mockGetMessages.mockImplementation(async (filter) =>
+        filter.messageId === 'live-response-id' ? [{ _id: 'partial-row' }] : [],
+      );
+
+      await AgentController(
+        createFailedRequest(),
+        createSentResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+      await flushBackgroundGeneration();
+
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(
+        conversationId,
+        'failed after partial save',
+      );
     });
 
     it('does not overwrite an already-persisted response row', async () => {

@@ -181,16 +181,25 @@ async function finishResumableRequest(req, userId) {
  * on an unavailable model. Follow-ups chain from the preliminary response id
  * (`${userMessageId}_`) and `isUnpersistedPreliminaryParent` 409s them until that
  * row exists; without this write it never would, dead-ending the conversation.
- * Replay turns (regenerate/edit/continue) are skipped: their rows already exist,
- * and upserting here could clobber a completed response.
+ * Regenerates persist only the error row under the client's regen placeholder id;
+ * edit/continue turns are skipped since their rows already exist.
  */
 async function saveErrorTurn(
   req,
-  { conversationId, endpointOption, isNewConvo, errorText, jobCreatedAt, liveUserMessage },
+  {
+    conversationId,
+    endpointOption,
+    isNewConvo,
+    errorText,
+    jobCreatedAt,
+    liveUserMessage,
+    liveResponseMessageId,
+  },
 ) {
   try {
-    const { isContinued, isRegenerate, editedContent, responseMessageId } = req.body ?? {};
-    if (isContinued || isRegenerate || editedContent != null || responseMessageId) {
+    const { isContinued, isRegenerate, editedContent, responseMessageId, overrideParentMessageId } =
+      req.body ?? {};
+    if (isContinued || editedContent != null || (responseMessageId && !isRegenerate)) {
       return;
     }
 
@@ -203,28 +212,48 @@ async function saveErrorTurn(
       }
     }
 
-    /** After `onStart`, the client tracks BaseClient's generated user message id
-     *  (the `created` event replaces its optimistic ids), so the persisted turn
-     *  must use the live ids; the preliminary req.body ids only match failures
-     *  that happen before `onStart`. */
-    const userMessage =
-      liveUserMessage != null
-        ? {
-            ...liveUserMessage,
-            ...(Array.isArray(req.body?.files) &&
-              req.body.files.length > 0 && { files: req.body.files }),
-            ...(Array.isArray(req.body?.manualSkills) &&
-              req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
-            ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
-              req.body.alwaysAppliedSkills.length > 0 && {
-                alwaysAppliedSkills: req.body.alwaysAppliedSkills,
-              }),
-          }
-        : getPreliminaryUserMessage(req.body, conversationId);
-    const errorMessageId = getPreliminaryResponseMessageId(
-      liveUserMessage != null ? { messageId: liveUserMessage.messageId } : req.body,
-    );
-    if (!userMessage || !errorMessageId) {
+    let userMessage = null;
+    let errorMessageId = null;
+    let errorParentMessageId = null;
+    if (isRegenerate) {
+      /** The regen placeholder (`${originalResponseId}_`) is where the client
+       *  renders the failed attempt; the original user message already exists,
+       *  so only the error row is written. A legacy `_`-suffixed original id
+       *  collides with its own placeholder, and the existence check below then
+       *  skips the write instead of clobbering the completed response. */
+      errorMessageId =
+        typeof responseMessageId === 'string' && responseMessageId.length > 0
+          ? responseMessageId
+          : null;
+      errorParentMessageId = liveUserMessage?.messageId ?? overrideParentMessageId ?? null;
+    } else {
+      /** After `onStart`, the client tracks BaseClient's generated user message id
+       *  (the `created` event replaces its optimistic ids), so the persisted turn
+       *  must use the live ids; the preliminary req.body ids only match failures
+       *  that happen before `onStart`. */
+      userMessage =
+        liveUserMessage != null
+          ? {
+              ...liveUserMessage,
+              ...(Array.isArray(req.body?.files) &&
+                req.body.files.length > 0 && { files: req.body.files }),
+              ...(Array.isArray(req.body?.manualSkills) &&
+                req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+              ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+                req.body.alwaysAppliedSkills.length > 0 && {
+                  alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+                }),
+            }
+          : getPreliminaryUserMessage(req.body, conversationId);
+      if (!userMessage) {
+        return;
+      }
+      errorMessageId = getPreliminaryResponseMessageId(
+        liveUserMessage != null ? { messageId: liveUserMessage.messageId } : req.body,
+      );
+      errorParentMessageId = userMessage.messageId;
+    }
+    if (!errorMessageId || !errorParentMessageId) {
       return;
     }
 
@@ -235,6 +264,18 @@ async function saveErrorTurn(
     );
     if (existing.length > 0) {
       return;
+    }
+    /** A disconnect may have already persisted this turn's partial response under
+     *  the live response id (`allSubscribersLeft`); a reload re-anchors the client
+     *  on that row, so also writing the error row would fork a duplicate branch. */
+    if (liveResponseMessageId != null && liveResponseMessageId !== errorMessageId) {
+      const partial = await getMessages(
+        { user: userId, messageId: liveResponseMessageId, conversationId },
+        '_id',
+      );
+      if (partial.length > 0) {
+        return;
+      }
     }
 
     const reqCtx = {
@@ -247,24 +288,26 @@ async function saveErrorTurn(
     const model = getAgentResponseModel(req, endpointOption);
     const iconURL = getEndpointIconURL(req, endpointOption);
 
-    await saveMessage(
-      reqCtx,
-      {
-        ...userMessage,
-        user: userId,
-        sender: 'User',
-        isCreatedByUser: true,
-        error: false,
-        unfinished: false,
-      },
-      { context },
-    );
+    if (userMessage) {
+      await saveMessage(
+        reqCtx,
+        {
+          ...userMessage,
+          user: userId,
+          sender: 'User',
+          isCreatedByUser: true,
+          error: false,
+          unfinished: false,
+        },
+        { context },
+      );
+    }
     await saveMessage(
       reqCtx,
       {
         messageId: errorMessageId,
         conversationId,
-        parentMessageId: userMessage.messageId,
+        parentMessageId: errorParentMessageId,
         ...(endpoint != null && { endpoint }),
         ...(model != null && { model }),
         ...(iconURL != null && { iconURL }),
@@ -285,21 +328,27 @@ async function saveErrorTurn(
      *  conversation that no longer exists (`req.resolvedConversation === null`,
      *  e.g. deleted from another tab) gets the full seed so the upsert doesn't
      *  create an unusable endpoint-less row. */
-    const convoFields =
-      isNewConvo || req.resolvedConversation === null
-        ? {
-            ...(endpoint != null && { endpoint }),
-            ...(endpointOption?.endpointType != null && {
-              endpointType: endpointOption.endpointType,
-            }),
-            ...(model != null && { model }),
-            ...(iconURL != null && { iconURL }),
-            ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
-            ...(agentId != null && { agent_id: agentId }),
-            ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
-          }
-        : {};
-    await saveConvo(reqCtx, { conversationId, ...convoFields }, { context });
+    const seedConvo = isNewConvo || req.resolvedConversation === null;
+    const convoFields = seedConvo
+      ? {
+          ...(endpoint != null && { endpoint }),
+          ...(endpointOption?.endpointType != null && {
+            endpointType: endpointOption.endpointType,
+          }),
+          ...(model != null && { model }),
+          ...(iconURL != null && { iconURL }),
+          ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
+          ...(agentId != null && { agent_id: agentId }),
+          ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
+        }
+      : {};
+    /** noUpsert: a conversation deleted between `attachConversationCreatedAt`
+     *  reading it and this refresh must not be recreated as an endpoint-less row. */
+    await saveConvo(
+      reqCtx,
+      { conversationId, ...convoFields },
+      seedConvo ? { context } : { context, noUpsert: true },
+    );
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
   }
@@ -517,10 +566,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
 
     let userMessage;
+    let liveResponseMessageId;
 
     const getReqData = (data = {}) => {
       if (data.userMessage) {
         userMessage = data.userMessage;
+      }
+      if (data.responseMessageId) {
+        liveResponseMessageId = data.responseMessageId;
       }
       // conversationId is pre-generated, no need to update from callback
     };
@@ -595,6 +648,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
           userMessage = userMsg;
+          liveResponseMessageId = respMsgId;
 
           // Store userMessage and responseMessageId upfront for resume capability
           GenerationJobManager.updateMetadata(streamId, {
@@ -988,6 +1042,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             errorText,
             jobCreatedAt,
             liveUserMessage: userMessage,
+            liveResponseMessageId,
           });
           await GenerationJobManager.emitError(streamId, errorText);
           GenerationJobManager.completeJob(streamId, error.message);
