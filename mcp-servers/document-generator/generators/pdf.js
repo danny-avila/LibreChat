@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { marked } from 'marked';
-import fs from 'fs';
+import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 
 /**
@@ -167,7 +168,7 @@ export async function generatePDF(content, filename, outputPath, options = {}) {
   });
   
   // Pipe to file
-  const stream = fs.createWriteStream(filepath);
+  const stream = fsSync.createWriteStream(filepath);
   doc.pipe(stream);
   
   const baseFontSize = options.fontSize || 12;
@@ -198,13 +199,12 @@ export async function generatePDF(content, filename, outputPath, options = {}) {
         break;
         
       case 'code':
-        doc.fontSize(baseFontSize - 2).font('Courier').fillColor('#333333');
-        doc.rect(doc.x - 5, doc.y, doc.page.width - 144, 0).fill('#f5f5f5');
+        doc.fontSize(baseFontSize - 2).font('Courier');
         doc.text(element.content, {
           indent: 10,
           fill: '#333333'
         });
-        doc.fillColor('#000000');
+        doc.fill('#000000');
         doc.moveDown();
         break;
     }

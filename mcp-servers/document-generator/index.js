@@ -11,6 +11,9 @@ import path from 'path';
 // Output directory for generated documents
 const OUTPUT_PATH = process.env.DOCUMENTS_PATH || '/app/uploads/documents';
 
+// Base URL for document downloads (adjust based on your deployment)
+const BASE_URL = process.env.DOCUMENTS_BASE_URL || 'http://localhost:3080';
+
 const server = new Server(
   {
     name: 'document-generator',
@@ -89,12 +92,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const result = await generateMarkdown(content, filename, OUTPUT_PATH);
+      const downloadUrl = `${BASE_URL}/uploads/documents/${result.filename}`;
 
       return {
         content: [
           {
             type: 'text',
-            text: `Markdown document generated successfully!\n\nFile: ${result.filename}\nPath: ${result.filepath}\n\nYou can download the file from the LibreChat interface or access it directly at the path above.`,
+            text: `Markdown document generated successfully!\n\nFile: ${result.filename}\nPath: ${result.filepath}\nDownload URL: ${downloadUrl}\n\nYou can download the file using the URL above or access it directly from the server.`,
           },
         ],
       };
@@ -115,12 +119,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (fontSize) options.fontSize = fontSize;
 
       const result = await generatePDF(content, filename, OUTPUT_PATH, options);
+      const downloadUrl = `${BASE_URL}/uploads/documents/${result.filename}`;
 
       return {
         content: [
           {
             type: 'text',
-            text: `PDF document generated successfully!\n\nFile: ${result.filename}\nPath: ${result.filepath}\n\nYou can download the file from the LibreChat interface or access it directly at the path above.`,
+            text: `PDF document generated successfully!\n\nFile: ${result.filename}\nPath: ${result.filepath}\nDownload URL: ${downloadUrl}\n\nYou can download the file using the URL above or access it directly from the server.`,
           },
         ],
       };
