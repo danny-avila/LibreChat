@@ -113,9 +113,45 @@ export function detectMonochrome(src: string): Promise<boolean> {
   });
 }
 
-/** Matches every `url(...)` reference in a CSS/presentation value, capturing the
- *  optional quote and the target so non-fragment references can be rejected. */
-const CSS_URL_REFERENCE = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+/** Matches every `url(...)` reference in a CSS/presentation value. A quoted
+ *  target may contain `)` (capture groups 1/2), an unquoted one may not (group 3),
+ *  so the target is `match[1] ?? match[2] ?? match[3]`. */
+const CSS_URL_REFERENCE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^'")]*))\s*\)/gi;
+
+/** XML predefined entities — the only named references a `data:image/svg+xml`
+ *  document (parsed as XML) decodes; unknown named entities make it fail to parse. */
+const XML_NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Decodes the XML character references a browser resolves when it parses the
+ * stored `image/svg+xml` document, so `&#64;import` / `&#x40;import` are seen as
+ * `@import` before the CSS matchers run (SVG `<style>` text is otherwise raw and
+ * reaches the scrubber still entity-encoded). Single pass, matching the parser.
+ */
+export function decodeXmlEntities(text: string): string {
+  if (text.indexOf('&') === -1) {
+    return text;
+  }
+  return text.replace(
+    /&#(\d+);|&#[xX]([0-9a-fA-F]+);|&(amp|lt|gt|quot|apos);/g,
+    (match, dec?: string, hex?: string, named?: string) => {
+      if (named !== undefined) {
+        return XML_NAMED_ENTITIES[named];
+      }
+      const code = dec !== undefined ? Number.parseInt(dec, 10) : Number.parseInt(hex ?? '', 16);
+      if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+        return match;
+      }
+      return String.fromCodePoint(code);
+    },
+  );
+}
 
 /** Matches a single CSS escape: `\` + up to six hex digits (with an optional
  *  trailing whitespace the browser consumes), or `\` + any other character. */
@@ -143,14 +179,21 @@ export function unescapeCss(value: string): string {
   });
 }
 
+/** Resolves the character references and CSS escapes a browser would, in that
+ *  order, so an obfuscated reference is seen as the token it becomes. */
+function resolveCssRefs(value: string): string {
+  return unescapeCss(decodeXmlEntities(value));
+}
+
 /** True when a value carries a `url(...)` reference that is not a same-document
  *  fragment, e.g. `url(https://…)`, `url(//…)`, `url(data:…)`, or `url(x.svg#id)`. */
 export function hasExternalUrlReference(value: string): boolean {
   CSS_URL_REFERENCE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  const decoded = unescapeCss(value);
+  const decoded = resolveCssRefs(value);
   while ((match = CSS_URL_REFERENCE.exec(decoded)) !== null) {
-    if (!match[2].trim().startsWith('#')) {
+    const target = (match[1] ?? match[2] ?? match[3] ?? '').trim();
+    if (!target.startsWith('#')) {
       return true;
     }
   }
@@ -160,17 +203,18 @@ export function hasExternalUrlReference(value: string): boolean {
 /**
  * Neutralizes external references inside a `<style>` block or inline `style`
  * (used by exporter SVGs that store multi-color paint in class rules) while
- * keeping local rules intact. Resolves CSS escapes first so an obfuscated
- * reference cannot hide, then strips comments and `@import` at-rules and
- * rewrites any non-fragment `url(...)` to `none`.
+ * keeping local rules intact. Resolves entities and CSS escapes first so an
+ * obfuscated reference cannot hide, then strips comments and `@import` at-rules
+ * and rewrites any non-fragment `url(...)` to `none`.
  */
 export function sanitizeCssText(css: string): string {
-  return unescapeCss(css)
+  return resolveCssRefs(css)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/@import[^;]*;?/gi, '')
-    .replace(CSS_URL_REFERENCE, (full, _quote, target) =>
-      target.trim().startsWith('#') ? full : 'none',
-    );
+    .replace(CSS_URL_REFERENCE, (full, q1, q2, q3) => {
+      const target = (q1 ?? q2 ?? q3 ?? '').trim();
+      return target.startsWith('#') ? full : 'none';
+    });
 }
 
 let svgPurifier: ReturnType<typeof DOMPurify> | null = null;

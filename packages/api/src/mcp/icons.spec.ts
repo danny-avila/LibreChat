@@ -198,6 +198,38 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('stroke:#000');
   });
 
+  it('strips XML-entity-encoded @import from internal stylesheets', () => {
+    for (const enc of ['&#64;import', '&#x40;import', '&#x40;IMPORT']) {
+      const raw = `<svg><style>${enc} "https://evil.example/x.css";</style><rect/></svg>`;
+      expect(
+        decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`)),
+      ).not.toContain('evil.example');
+    }
+  });
+
+  it('strips markup smuggled through XML-entity-encoded </style>', () => {
+    const raw =
+      '<svg><style>&#60;/style&#62;&#60;image href="https://evil.example/x.png"/&#62;</style></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).not.toContain('evil.example');
+    expect(clean.toLowerCase()).not.toContain('<image');
+  });
+
+  it('strips a quoted CSS url() whose path contains a right parenthesis', () => {
+    const block =
+      '<svg><style>.a{fill:url("https://evil.example/a)b")}.b{fill:url(#g)}</style><rect class="a"/></svg>';
+    const cleanBlock = decode(
+      sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(block)}`),
+    );
+    expect(cleanBlock).not.toContain('evil.example');
+    expect(cleanBlock).toContain('url(#g)');
+    const attr =
+      '<svg><rect style="fill:url(&quot;https://evil.example/a)b&quot;)" width="10" height="10"/></svg>';
+    expect(
+      decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(attr)}`)),
+    ).not.toContain('evil.example');
+  });
+
   it('preserves case-sensitive SVG names and multi-color paint', () => {
     const raw =
       '<svg viewBox="0 0 24 24"><linearGradient id="g"><stop offset="0" stop-color="#f00"/></linearGradient><path d="M0 0h24v24H0z" fill="url(#g)"/></svg>';
