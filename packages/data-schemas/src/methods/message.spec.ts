@@ -2119,6 +2119,7 @@ describe('Message Operations', () => {
       const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const conversationId = uuidv4();
       const messageFileId = uuidv4();
+      const toolOutputFileId = uuidv4();
       const convoFileId = uuidv4();
 
       await Conversation().create({
@@ -2134,9 +2135,11 @@ describe('Message Operations', () => {
         user: 'user123',
         text: 'with attachment',
         files: [{ file_id: messageFileId, filename: 'doc.pdf' }],
+        attachments: [{ file_id: toolOutputFileId, filename: 'chart.png' }],
       });
       await File().collection.insertMany([
         { file_id: messageFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
+        { file_id: toolOutputFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
         { file_id: convoFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
       ]);
 
@@ -2152,6 +2155,9 @@ describe('Message Operations', () => {
 
       const messageFile = await File().findOne({ file_id: messageFileId }).lean();
       expect(messageFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const toolOutputFile = await File().findOne({ file_id: toolOutputFileId }).lean();
+      expect(toolOutputFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
 
       const convoFile = await File().findOne({ file_id: convoFileId }).lean();
       expect(convoFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
