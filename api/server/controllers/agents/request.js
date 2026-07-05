@@ -184,15 +184,46 @@ async function finishResumableRequest(req, userId) {
  * Replay turns (regenerate/edit/continue) are skipped: their rows already exist,
  * and upserting here could clobber a completed response.
  */
-async function saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, errorText }) {
+async function saveErrorTurn(
+  req,
+  { conversationId, endpointOption, isNewConvo, errorText, jobCreatedAt, liveUserMessage },
+) {
   try {
     const { isContinued, isRegenerate, editedContent, responseMessageId } = req.body ?? {};
     if (isContinued || isRegenerate || editedContent != null || responseMessageId) {
       return;
     }
 
-    const userMessage = getPreliminaryUserMessage(req.body, conversationId);
-    const errorMessageId = getPreliminaryResponseMessageId(req.body);
+    /** A replaced/superseded generation is no longer authoritative for this
+     *  conversation; mirror the success path's liveness check before writing. */
+    if (jobCreatedAt != null) {
+      const liveJob = await GenerationJobManager.getJob(conversationId);
+      if (!liveJob || liveJob.createdAt !== jobCreatedAt) {
+        return;
+      }
+    }
+
+    /** After `onStart`, the client tracks BaseClient's generated user message id
+     *  (the `created` event replaces its optimistic ids), so the persisted turn
+     *  must use the live ids; the preliminary req.body ids only match failures
+     *  that happen before `onStart`. */
+    const userMessage =
+      liveUserMessage != null
+        ? {
+            ...liveUserMessage,
+            ...(Array.isArray(req.body?.files) &&
+              req.body.files.length > 0 && { files: req.body.files }),
+            ...(Array.isArray(req.body?.manualSkills) &&
+              req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+            ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+              req.body.alwaysAppliedSkills.length > 0 && {
+                alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+              }),
+          }
+        : getPreliminaryUserMessage(req.body, conversationId);
+    const errorMessageId = getPreliminaryResponseMessageId(
+      liveUserMessage != null ? { messageId: liveUserMessage.messageId } : req.body,
+    );
     if (!userMessage || !errorMessageId) {
       return;
     }
@@ -250,20 +281,24 @@ async function saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, 
     const chatProjectId = endpointOption?.chatProjectId ?? req.body?.chatProjectId;
     /** Existing conversations get a minimal update that preserves their fields:
      *  saveConvo recomputes `messages` and bumps `updatedAt` so the saved failed
-     *  turn is reflected in the conversation doc and chat-list ordering. */
-    const convoFields = isNewConvo
-      ? {
-          ...(endpoint != null && { endpoint }),
-          ...(endpointOption?.endpointType != null && {
-            endpointType: endpointOption.endpointType,
-          }),
-          ...(model != null && { model }),
-          ...(iconURL != null && { iconURL }),
-          ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
-          ...(agentId != null && { agent_id: agentId }),
-          ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
-        }
-      : {};
+     *  turn is reflected in the conversation doc and chat-list ordering. A
+     *  conversation that no longer exists (`req.resolvedConversation === null`,
+     *  e.g. deleted from another tab) gets the full seed so the upsert doesn't
+     *  create an unusable endpoint-less row. */
+    const convoFields =
+      isNewConvo || req.resolvedConversation === null
+        ? {
+            ...(endpoint != null && { endpoint }),
+            ...(endpointOption?.endpointType != null && {
+              endpointType: endpointOption.endpointType,
+            }),
+            ...(model != null && { model }),
+            ...(iconURL != null && { iconURL }),
+            ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
+            ...(agentId != null && { agent_id: agentId }),
+            ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
+          }
+        : {};
     await saveConvo(reqCtx, { conversationId, ...convoFields }, { context });
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
@@ -328,6 +363,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   req.body.conversationId = conversationId;
 
   let client = null;
+  let jobCreatedAt = null;
 
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
@@ -338,7 +374,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
 
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
-    const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+    jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
@@ -945,7 +981,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
           const errorText = error.message || 'Generation failed';
-          await saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, errorText });
+          await saveErrorTurn(req, {
+            conversationId,
+            endpointOption,
+            isNewConvo,
+            errorText,
+            jobCreatedAt,
+            liveUserMessage: userMessage,
+          });
           await GenerationJobManager.emitError(streamId, errorText);
           GenerationJobManager.completeJob(streamId, error.message);
         }
@@ -984,7 +1027,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // JSON already sent; persist the failed turn before emitting the error so
       // the preliminary response row exists by the time the user can retry.
       const errorText = error.message || 'Failed to start generation';
-      await saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, errorText });
+      await saveErrorTurn(req, {
+        conversationId,
+        endpointOption,
+        isNewConvo,
+        errorText,
+        jobCreatedAt,
+      });
       await GenerationJobManager.emitError(streamId, errorText);
     }
     GenerationJobManager.completeJob(streamId, error.message);

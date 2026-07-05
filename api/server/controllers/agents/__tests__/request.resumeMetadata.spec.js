@@ -8,11 +8,14 @@ const mockLogger = {
 };
 
 const mockGenerationJobManager = {
+  getJob: jest.fn(),
   createJob: jest.fn(),
   emitError: jest.fn(),
+  emitChunk: jest.fn(),
   completeJob: jest.fn(),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
+  setContentParts: jest.fn(),
 };
 
 const mockCheckAndIncrementPendingRequest = jest.fn();
@@ -185,9 +188,11 @@ describe('ResumableAgentController resume metadata', () => {
       abortController: new AbortController(),
       emitter: { on: jest.fn() },
     });
+    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
+    mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
     mockSaveMessage.mockResolvedValue({});
     mockSaveConvo.mockResolvedValue({});
   });
@@ -757,6 +762,86 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(
         conversationId,
         'provider exploded',
+      );
+    });
+
+    it('persists the failed turn under the live ids when generation fails after onStart', async () => {
+      const serverUserMessage = {
+        messageId: 'server-user',
+        parentMessageId: 'prior-response',
+        conversationId,
+        sender: 'User',
+        text: 'Hello with a removed model.',
+        isCreatedByUser: true,
+      };
+      const sendMessage = jest.fn(async (text, opts) => {
+        opts.onStart(serverUserMessage, 'server-response-uuid');
+        throw new Error('failed after onStart');
+      });
+      const initializeClient = jest.fn().mockResolvedValue({ client: { sendMessage } });
+      const res = createSentResponse();
+
+      await AgentController(createFailedRequest(), res, jest.fn(), initializeClient, null);
+      await flushBackgroundGeneration();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'server-user',
+          parentMessageId: 'prior-response',
+          isCreatedByUser: true,
+        }),
+        expect.any(Object),
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'server-user_',
+          parentMessageId: 'server-user',
+          text: 'failed after onStart',
+          error: true,
+        }),
+        expect.any(Object),
+      );
+      const savedIds = mockSaveMessage.mock.calls.map(([, message]) => message.messageId);
+      expect(savedIds).not.toContain('user-message_');
+    });
+
+    it('does not persist turns from a superseded generation', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 2000, status: 'running' });
+      const initializeClient = jest.fn().mockRejectedValue(new Error('stale failure'));
+      await AgentController(
+        createFailedRequest(),
+        createSentResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockSaveConvo).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.emitError).toHaveBeenCalled();
+    });
+
+    it('seeds conversation fields when the existing conversation was deleted', async () => {
+      mockGetConvo.mockResolvedValue(null);
+      const initializeClient = jest.fn().mockRejectedValue(new Error('model unavailable'));
+      await AgentController(
+        createFailedRequest(),
+        createSentResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          conversationId,
+          endpoint: 'azureOpenAI',
+          model: 'gpt-4o',
+        }),
+        expect.any(Object),
       );
     });
 
