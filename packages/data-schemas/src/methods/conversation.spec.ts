@@ -919,6 +919,46 @@ describe('Conversation Operations', () => {
       expect(file?.expiredAt).toBeInstanceOf(Date);
     });
 
+    it('caps lagging children when saving an already-conforming temporary conversation', async () => {
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+      const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Conforming temporary chat',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+      });
+      await SharedLink.create({ conversationId, user: 'user123', shareId: uuidv4() });
+      await File().collection.insertOne({
+        file_id: fileId,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const share = await SharedLink.findOne({ conversationId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const file = await File().findOne({ file_id: fileId }).lean<IMongoFile>();
+      expect(file?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+    });
+
     it('keeps the chat convertible when a child backfill fails during forced conversion', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
@@ -1086,25 +1126,28 @@ describe('Conversation Operations', () => {
       expect(messages[0].expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
     });
 
-    it('leaves messages untouched when the conversation is already ephemeral', async () => {
+    it('heals a permanent message row inside an already-ephemeral conversation', async () => {
       const conversationId = uuidv4();
       const ctx = {
         userId: 'user123',
         interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
       };
       await saveConvo(ctx, { conversationId, title: 'Already ephemeral' });
+      const parent = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(parent?.expiredAt).toBeInstanceOf(Date);
 
       const lateMessage = await Message().create({
         messageId: uuidv4(),
         conversationId,
         user: 'user123',
-        text: 'added after conversion',
+        text: 'legacy row without retention fields',
       });
 
       await saveConvo(ctx, { conversationId, isArchived: true });
 
       const reloaded = await Message().findById(lateMessage._id).lean();
-      expect(reloaded?.expiredAt ?? null).toBeNull();
+      expect(reloaded?.isTemporary).toBe(true);
+      expect(reloaded?.expiredAt?.getTime()).toBe(parent?.expiredAt?.getTime());
     });
 
     it('caps an existing permanent shared link when ephemeral converts a conversation', async () => {
