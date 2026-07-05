@@ -692,6 +692,7 @@ describe('ResumableAgentController resume metadata', () => {
           conversationId,
           endpoint: 'azureOpenAI',
           model: 'gpt-4o',
+          sender: 'AI',
           text: 'The model "gpt-4o" is not available.',
           error: true,
           isCreatedByUser: false,
@@ -767,6 +768,7 @@ describe('ResumableAgentController resume metadata', () => {
     });
 
     it('persists the failed turn under the live ids when generation fails after onStart', async () => {
+      const normalizedFiles = [{ file_id: 'file-1', filepath: '/uploads/normalized.png' }];
       const serverUserMessage = {
         messageId: 'server-user',
         parentMessageId: 'prior-response',
@@ -774,6 +776,7 @@ describe('ResumableAgentController resume metadata', () => {
         sender: 'User',
         text: 'Hello with a removed model.',
         isCreatedByUser: true,
+        files: normalizedFiles,
       };
       const sendMessage = jest.fn(async (text, opts) => {
         opts.onStart(serverUserMessage, 'server-response-uuid');
@@ -782,7 +785,13 @@ describe('ResumableAgentController resume metadata', () => {
       const initializeClient = jest.fn().mockResolvedValue({ client: { sendMessage } });
       const res = createSentResponse();
 
-      await AgentController(createFailedRequest(), res, jest.fn(), initializeClient, null);
+      await AgentController(
+        createFailedRequest({ files: [{ file_id: 'file-1' }] }),
+        res,
+        jest.fn(),
+        initializeClient,
+        null,
+      );
       await flushBackgroundGeneration();
 
       expect(mockSaveMessage).toHaveBeenCalledWith(
@@ -791,6 +800,7 @@ describe('ResumableAgentController resume metadata', () => {
           messageId: 'server-user',
           parentMessageId: 'prior-response',
           isCreatedByUser: true,
+          files: normalizedFiles,
         }),
         expect.any(Object),
       );
@@ -806,6 +816,48 @@ describe('ResumableAgentController resume metadata', () => {
       );
       const savedIds = mockSaveMessage.mock.calls.map(([, message]) => message.messageId);
       expect(savedIds).not.toContain('user-message_');
+    });
+
+    it('settles the created publish before emitting the error', async () => {
+      const events = [];
+      mockGenerationJobManager.emitChunk.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setImmediate(() => {
+              events.push('created-delivered');
+              resolve();
+            });
+          }),
+      );
+      mockGenerationJobManager.emitError.mockImplementation(async () => {
+        events.push('error-emitted');
+      });
+      const sendMessage = jest.fn(async (text, opts) => {
+        opts.onStart(
+          {
+            messageId: 'server-user',
+            parentMessageId: 'prior-response',
+            conversationId,
+            sender: 'User',
+            text,
+            isCreatedByUser: true,
+          },
+          'server-response-uuid',
+        );
+        throw new Error('failed right after onStart');
+      });
+      const initializeClient = jest.fn().mockResolvedValue({ client: { sendMessage } });
+
+      await AgentController(
+        createFailedRequest(),
+        createSentResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+      await flushBackgroundGeneration();
+
+      expect(events).toEqual(['created-delivered', 'error-emitted']);
     });
 
     it('does not persist turns from a superseded generation', async () => {

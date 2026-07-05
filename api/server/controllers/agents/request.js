@@ -194,6 +194,7 @@ async function saveErrorTurn(
     jobCreatedAt,
     liveUserMessage,
     liveResponseMessageId,
+    sender,
   },
 ) {
   try {
@@ -231,15 +232,21 @@ async function saveErrorTurn(
        *  (the `created` event replaces its optimistic ids), so the persisted turn
        *  must use the live ids; the preliminary req.body ids only match failures
        *  that happen before `onStart`. */
+      /** Request-body fields only fill gaps: BaseClient may have already set
+       *  normalized values (e.g. `buildMessageFiles` output) on the live message,
+       *  which must not be clobbered with the raw request entries. */
       userMessage =
         liveUserMessage != null
           ? {
               ...liveUserMessage,
-              ...(Array.isArray(req.body?.files) &&
+              ...(liveUserMessage.files == null &&
+                Array.isArray(req.body?.files) &&
                 req.body.files.length > 0 && { files: req.body.files }),
-              ...(Array.isArray(req.body?.manualSkills) &&
+              ...(liveUserMessage.manualSkills == null &&
+                Array.isArray(req.body?.manualSkills) &&
                 req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
-              ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+              ...(liveUserMessage.alwaysAppliedSkills == null &&
+                Array.isArray(req.body?.alwaysAppliedSkills) &&
                 req.body.alwaysAppliedSkills.length > 0 && {
                   alwaysAppliedSkills: req.body.alwaysAppliedSkills,
                 }),
@@ -308,6 +315,7 @@ async function saveErrorTurn(
         messageId: errorMessageId,
         conversationId,
         parentMessageId: errorParentMessageId,
+        sender: sender ?? 'AI',
         ...(endpoint != null && { endpoint }),
         ...(model != null && { model }),
         ...(iconURL != null && { iconURL }),
@@ -567,6 +575,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     let userMessage;
     let liveResponseMessageId;
+    let createdEmitPromise;
 
     const getReqData = (data = {}) => {
       if (data.userMessage) {
@@ -678,7 +687,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             },
           });
 
-          GenerationJobManager.emitChunk(streamId, {
+          createdEmitPromise = GenerationJobManager.emitChunk(streamId, {
             created: true,
             // Skill selections aren't on `userMessage` yet at onStart (BaseClient adds
             // them later), so attach them from the request — this is the message
@@ -1035,6 +1044,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
           const errorText = error.message || 'Generation failed';
+          /** Settle the fire-and-forget `created` publish first so the error
+           *  event cannot overtake it and leave the client handling the failure
+           *  on its optimistic ids while the turn persists under the live ids. */
+          if (createdEmitPromise != null) {
+            await Promise.resolve(createdEmitPromise).catch(() => {});
+          }
           await saveErrorTurn(req, {
             conversationId,
             endpointOption,
@@ -1043,6 +1058,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             jobCreatedAt,
             liveUserMessage: userMessage,
             liveResponseMessageId,
+            sender: client?.sender,
           });
           await GenerationJobManager.emitError(streamId, errorText);
           GenerationJobManager.completeJob(streamId, error.message);
