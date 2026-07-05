@@ -236,7 +236,7 @@ const advanceRetryTimer = async (ms: number) => {
   await flushMicrotasks();
 };
 
-describe('useResumableSSE - 404 error path', () => {
+describe('useResumableSSE', () => {
   beforeEach(() => {
     mockSSEInstances.length = 0;
     localStorage.clear();
