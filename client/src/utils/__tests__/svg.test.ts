@@ -308,6 +308,27 @@ describe('sanitizeSvg', () => {
     expect(clean).toContain('stroke:#000');
   });
 
+  it('strips XML-entity-encoded @import from internal stylesheets', () => {
+    for (const enc of ['&#64;import', '&#x40;import', '&#x40;IMPORT']) {
+      const clean = sanitizeSvg(
+        `<svg><style>${enc} "https://evil.example/x.css";</style><rect /></svg>`,
+      );
+      expect(clean).not.toContain('evil.example');
+    }
+  });
+
+  it('strips a quoted CSS url() whose path contains a right parenthesis', () => {
+    const block = sanitizeSvg(
+      '<svg><style>.a{fill:url("https://evil.example/a)b")}.b{fill:url(#g)}</style><rect class="a" /></svg>',
+    );
+    expect(block).not.toContain('evil.example');
+    expect(block).toContain('url(#g)');
+    const attr = sanitizeSvg(
+      '<svg><rect style="fill:url(&quot;https://evil.example/a)b&quot;)" width="10" height="10" /></svg>',
+    );
+    expect(attr).not.toContain('evil.example');
+  });
+
   it('drops href-smuggling animation elements', () => {
     const dirty = '<svg><a><animate attributeName="href" values="javascript:alert(1)" /></a></svg>';
     const clean = sanitizeSvg(dirty);

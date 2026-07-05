@@ -181,9 +181,50 @@ const ALLOWED_SVG_ATTRS = [
   'tableValues',
 ];
 
-/** Matches every `url(...)` reference in a presentation/style value, capturing
- *  the optional quote and the target so non-fragment references can be rejected. */
-const CSS_URL_REFERENCE = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+/** Matches every `url(...)` reference in a presentation/style value. A quoted
+ *  target may contain `)` (capture groups 1/2), an unquoted one may not (group 3),
+ *  so the target is `match[1] ?? match[2] ?? match[3]`. */
+const CSS_URL_REFERENCE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^'")]*))\s*\)/gi;
+
+/** The target of a `CSS_URL_REFERENCE` match, from whichever quoting group hit. */
+function urlTarget(match: RegExpExecArray | RegExpMatchArray): string {
+  return (match[1] ?? match[2] ?? match[3] ?? '').trim();
+}
+
+/** XML predefined entities — the only named references a `data:image/svg+xml`
+ *  document (parsed as XML) decodes; unknown named entities make it fail to parse. */
+const XML_NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Decodes the XML character references a browser resolves when it parses the
+ * stored `image/svg+xml` document, so `&#64;import` / `&#x40;import` are seen as
+ * `@import` before the CSS matchers run (SVG `<style>` text is otherwise raw and
+ * reaches this scrubber still entity-encoded). Single pass, matching the parser.
+ */
+function decodeXmlEntities(text: string): string {
+  if (text.indexOf('&') === -1) {
+    return text;
+  }
+  return text.replace(
+    /&#(\d+);|&#[xX]([0-9a-fA-F]+);|&(amp|lt|gt|quot|apos);/g,
+    (match, dec: string | undefined, hex: string | undefined, named: string | undefined) => {
+      if (named !== undefined) {
+        return XML_NAMED_ENTITIES[named];
+      }
+      const code = dec !== undefined ? Number.parseInt(dec, 10) : Number.parseInt(hex ?? '', 16);
+      if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+        return match;
+      }
+      return String.fromCodePoint(code);
+    },
+  );
+}
 
 /** Matches a single CSS escape: `\` + up to six hex digits (with an optional
  *  trailing whitespace the browser consumes), or `\` + any other character. */
@@ -211,31 +252,38 @@ function unescapeCss(value: string): string {
   });
 }
 
+/** Resolves the character references and CSS escapes a browser would, in that
+ *  order, so an obfuscated reference is seen as the token it becomes. */
+function resolveCssRefs(value: string): string {
+  return unescapeCss(decodeXmlEntities(value));
+}
+
 /** True when a value carries a `url(...)` reference that is not a same-document
  *  fragment, e.g. `url(https://…)`, `url(//…)`, `url(data:…)`, or `url(x.svg#id)`. */
 function hasExternalUrlReference(value: string): boolean {
   CSS_URL_REFERENCE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  const decoded = unescapeCss(value);
+  const decoded = resolveCssRefs(value);
   while ((match = CSS_URL_REFERENCE.exec(decoded)) !== null) {
-    if (!match[2].trim().startsWith('#')) {
+    if (!urlTarget(match).startsWith('#')) {
       return true;
     }
   }
   return false;
 }
 
-/** Resolves CSS escapes, then strips comments and `@import` at-rules and rewrites
- *  external `url(...)` to `none`, keeping only local paint rules from a stylesheet
- *  or inline `style`. Escapes are resolved first so an obfuscated reference cannot
- *  hide from the matchers. */
+/** Resolves entities/escapes, then strips comments and `@import` at-rules and
+ *  rewrites external `url(...)` to `none`, keeping only local paint rules from a
+ *  stylesheet or inline `style`. References are resolved first so an obfuscated
+ *  one cannot hide from the matchers. */
 function sanitizeCssText(css: string): string {
-  return unescapeCss(css)
+  return resolveCssRefs(css)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/@import[^;]*;?/gi, '')
-    .replace(CSS_URL_REFERENCE, (full, _quote, target) =>
-      target.trim().startsWith('#') ? full : 'none',
-    );
+    .replace(CSS_URL_REFERENCE, (full, q1, q2, q3) => {
+      const target = (q1 ?? q2 ?? q3 ?? '').trim();
+      return target.startsWith('#') ? full : 'none';
+    });
 }
 
 /** Scrubs the CSS inside every `<style>` block of an already-tag-sanitized SVG so
