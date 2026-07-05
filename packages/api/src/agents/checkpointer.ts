@@ -394,6 +394,50 @@ export async function deleteAgentCheckpoint(
   }
 }
 
+/**
+ * Bulk variant of {@link deleteAgentCheckpoint} for terminal transitions that cover MANY
+ * threads at once — deleting conversations, "delete all", account deletion. One indexed
+ * `deleteMany` per collection instead of two round-trips per thread. Deletes through the
+ * same live mongoose connection the saver is built on, using the same resolved collection
+ * names; like the single-thread variant it no-ops in memory mode or before Mongo is
+ * connected, and never throws (the conversations are already gone — the Mongo TTL remains
+ * the backstop for anything this misses).
+ *
+ * @param threadIds - LangGraph `thread_id`s (LibreChat conversationIds); falsy entries skipped.
+ */
+export async function deleteAgentCheckpoints(
+  threadIds: Array<string | null | undefined> | undefined,
+  cfg?: TCheckpointerConfig,
+): Promise<void> {
+  const ids = (threadIds ?? []).filter((id): id is string => Boolean(id));
+  if (ids.length === 0) {
+    return;
+  }
+  // Reuse the saver gate: memory mode / no connection ⇒ nothing durable to delete.
+  const saver = await getAgentCheckpointer(cfg);
+  if (!saver) {
+    return;
+  }
+  const resolved = resolveCheckpointerConfig(cfg);
+  try {
+    const db = mongoose.connection.db;
+    if (!db) {
+      return;
+    }
+    await Promise.all([
+      db.collection(resolved.checkpointCollectionName).deleteMany({ thread_id: { $in: ids } }),
+      db
+        .collection(resolved.checkpointWritesCollectionName)
+        .deleteMany({ thread_id: { $in: ids } }),
+    ]);
+  } catch (err) {
+    logger.warn(
+      `[checkpointer] Failed to bulk-delete checkpoints for ${ids.length} thread(s):`,
+      err,
+    );
+  }
+}
+
 /** Test-only: drop the memoized saver so a fresh build is forced. */
 export function __resetCheckpointerForTests(): void {
   saverPromise = undefined;

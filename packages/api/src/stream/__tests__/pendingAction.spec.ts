@@ -199,6 +199,47 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     });
   });
 
+  describe('expireApproval → approval-expired handler', () => {
+    // The host registers this to prune the paused run's durable checkpoint eagerly on
+    // expiry (sweeper or stale submit) instead of waiting out the checkpoint TTL.
+    test('fires the registered handler with the streamId after a successful expiry', async () => {
+      const streamId = 'stream-expire-handler';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId, { actionId: 'action-A' }));
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+
+      expect(await manager.expireApproval(streamId, 'action-A')).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(streamId);
+    });
+
+    test('does NOT fire when nothing was expired (failed CAS)', async () => {
+      const streamId = 'stream-expire-handler-noop';
+      await manager.createJob(streamId, 'user-1'); // running — no pending action to expire
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+
+      expect(await manager.expireApproval(streamId)).toBe(false);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test('a throwing handler never breaks the expiry itself', async () => {
+      const streamId = 'stream-expire-handler-throws';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId));
+
+      manager.setApprovalExpiredHandler(() => {
+        throw new Error('prune failed');
+      });
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(await manager.getJobStatus(streamId)).toBe('aborted');
+    });
+  });
+
   describe('facade integration', () => {
     test('requires_action drops the running count but keeps the user-active set', async () => {
       const streamId = 'stream-counts';

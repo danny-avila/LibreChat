@@ -64,7 +64,7 @@ export interface ConversationMethods {
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-  ): Promise<DeleteResult & { messages: DeleteResult }>;
+  ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
 }
 
 export function createConversationMethods(
@@ -811,7 +811,10 @@ export function createConversationMethods(
         );
       }
 
-      return { ...deleteConvoResult, messages: deleteMessagesResult };
+      // conversationIds lets callers run sibling cleanup that lives in higher layers
+      // (e.g. pruning the conversations' durable agent checkpoints) without re-querying
+      // documents that no longer exist.
+      return { ...deleteConvoResult, messages: deleteMessagesResult, conversationIds };
     } catch (error) {
       logger.error('[deleteConvos] Error deleting conversations and messages', error);
       throw error;

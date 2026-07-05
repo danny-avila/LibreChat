@@ -7,6 +7,7 @@ const {
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
+  deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
 const {
@@ -360,7 +361,20 @@ const deleteUserController = async (req, res) => {
     await db.deleteBalances({ user: user._id });
     await db.deletePresets(user.id);
     try {
-      await db.deleteConvos(user.id);
+      const convoDeletion = await db.deleteConvos(user.id);
+      // HITL: prune the deleted conversations' durable checkpoints — a paused run's
+      // checkpoint would otherwise persist until the Mongo TTL. Never throws.
+      const appConfig =
+        req.config ??
+        (await getAppConfig({
+          role: req.user?.role,
+          userId: req.user?.id,
+          tenantId: req.user?.tenantId,
+        }));
+      await deleteAgentCheckpoints(
+        convoDeletion?.conversationIds,
+        appConfig?.endpoints?.agents?.checkpointer,
+      );
     } catch (error) {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }

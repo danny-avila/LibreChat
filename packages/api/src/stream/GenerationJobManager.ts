@@ -207,6 +207,13 @@ class GenerationJobManagerClass {
   /** Whether to cleanup event transport immediately on job completion */
   private _cleanupOnComplete = true;
 
+  /**
+   * Host cleanup fired after an approval EXPIRES (periodic sweeper or a stale submit) —
+   * e.g. prune the paused run's durable checkpoint eagerly instead of letting it sit
+   * until its store TTL. Best-effort: failures are logged, never break the expiry.
+   */
+  private _onApprovalExpired: ((streamId: string) => void | Promise<void>) | null = null;
+
   constructor(options?: GenerationJobManagerOptions) {
     this.jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
@@ -278,6 +285,17 @@ class GenerationJobManagerClass {
     logger.info(
       `[GenerationJobManager] Configured with ${this._isRedis ? 'Redis' : 'in-memory'} stores`,
     );
+  }
+
+  /**
+   * Register a host callback fired after an approval EXPIRES — from the periodic sweeper or
+   * a stale submit — e.g. to prune the paused run's durable checkpoint eagerly instead of
+   * waiting out its TTL. Unlike {@link configure} this never resets services, so it is safe
+   * to call from any startup path (including ones that run on constructor defaults). The
+   * `streamId` argument equals the LangGraph `thread_id` (LibreChat's conversationId).
+   */
+  setApprovalExpiredHandler(handler: ((streamId: string) => void | Promise<void>) | null): void {
+    this._onApprovalExpired = handler;
   }
 
   /**
@@ -1689,6 +1707,13 @@ class GenerationJobManagerClass {
       await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
     } catch (err) {
       logger.error(`[GenerationJobManager] Failed to notify expired approval ${streamId}`, err);
+    }
+    if (this._onApprovalExpired) {
+      try {
+        await this._onApprovalExpired(streamId);
+      } catch (err) {
+        logger.warn(`[GenerationJobManager] Approval-expired cleanup failed for ${streamId}`, err);
+      }
     }
     this.runningJobs.delete(streamId);
     return true;

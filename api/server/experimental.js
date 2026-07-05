@@ -16,9 +16,11 @@ const {
   isEnabled,
   apiNotFound,
   ErrorController,
+  GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   performStartupChecks,
   handleJsonParseError,
+  deleteAgentCheckpoint,
   initializeFileStorage,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
@@ -310,6 +312,15 @@ if (cluster.isMaster) {
     const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
+    });
+    // Prune the paused run's durable checkpoint when its approval EXPIRES (a stale submit —
+    // this startup never runs the periodic sweeper) instead of leaving it until the Mongo
+    // TTL. Mirrors api/server/index.js's configureGenerationStreams wiring; safe here even
+    // though this startup runs the manager on constructor defaults (the setter never resets
+    // services). streamId === conversationId === the LangGraph thread_id.
+    GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
+      const currentConfig = await getAppConfig();
+      await deleteAgentCheckpoint(conversationId, currentConfig?.endpoints?.agents?.checkpointer);
     });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();

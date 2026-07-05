@@ -21,6 +21,7 @@ const {
   GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   createStreamServices,
+  deleteAgentCheckpoint,
   initializeFileStorage,
   initializeDeploymentSkills,
   loadToolApprovalHooks,
@@ -84,6 +85,14 @@ const configureGenerationStreams = () => {
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
   GenerationJobManager.initialize();
+  // Prune the paused run's durable checkpoint when its approval EXPIRES (periodic sweeper
+  // or a stale submit) instead of leaving it until the Mongo TTL. streamId === conversationId
+  // === the LangGraph thread_id. Config is resolved lazily per expiry so the prune always
+  // targets the currently configured checkpoint collections.
+  GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
+    const appConfig = await getAppConfig();
+    await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
+  });
 };
 
 const startServer = async () => {

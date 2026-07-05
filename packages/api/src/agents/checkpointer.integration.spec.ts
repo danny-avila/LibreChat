@@ -5,6 +5,7 @@ import { emptyCheckpoint, ERROR, INTERRUPT } from '@langchain/langgraph-checkpoi
 import {
   getAgentCheckpointer,
   deleteAgentCheckpoint,
+  deleteAgentCheckpoints,
   __resetCheckpointerForTests,
 } from './checkpointer';
 
@@ -119,6 +120,41 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
 
   it('deleteAgentCheckpoint is a no-op for an undefined threadId', async () => {
     await expect(deleteAgentCheckpoint(undefined, MONGO_CFG)).resolves.toBeUndefined();
+  });
+
+  it('deleteAgentCheckpoints bulk-prunes exactly the given threads (checkpoints AND writes)', async () => {
+    // The bulk path behind conversation deletion / delete-all / account deletion:
+    // one $in deleteMany per collection instead of two round-trips per thread.
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadA = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const threadB = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const threadC = `convo-${new mongoose.Types.ObjectId().toString()}`;
+
+    await seedInterruptCheckpoint(saver!, threadA);
+    await seedInterruptCheckpoint(saver!, threadB);
+    await seedInterruptCheckpoint(saver!, threadC);
+
+    // Falsy entries are skipped rather than widening the delete.
+    await deleteAgentCheckpoints([threadA, undefined, threadB, null], MONGO_CFG);
+
+    expect(await saver!.getTuple(readConfig(threadA))).toBeUndefined();
+    expect(await saver!.getTuple(readConfig(threadB))).toBeUndefined();
+    expect(await saver!.getTuple(readConfig(threadC))).toBeDefined();
+
+    const db = mongoose.connection.db!;
+    const writesFilter = { thread_id: { $in: [threadA, threadB] } };
+    expect(await db.collection('agent_checkpoints').countDocuments(writesFilter)).toBe(0);
+    expect(await db.collection('agent_checkpoint_writes').countDocuments(writesFilter)).toBe(0);
+    // The untouched thread keeps its interrupt write row.
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadC }),
+    ).toBe(1);
+  });
+
+  it('deleteAgentCheckpoints is a no-op for an empty or all-falsy list', async () => {
+    await expect(deleteAgentCheckpoints([], MONGO_CFG)).resolves.toBeUndefined();
+    await expect(deleteAgentCheckpoints([undefined, null], MONGO_CFG)).resolves.toBeUndefined();
+    await expect(deleteAgentCheckpoints(undefined, MONGO_CFG)).resolves.toBeUndefined();
   });
 });
 
