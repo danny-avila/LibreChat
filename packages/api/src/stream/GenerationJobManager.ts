@@ -1731,6 +1731,16 @@ class GenerationJobManagerClass {
     if (!this._onApprovalExpired) {
       return;
     }
+    // Dedup across the expiry paths: a locally expired approval (expireApproval) stays in
+    // the store/runtime for the completed-job TTL, so later sweeps re-enter the relay
+    // branch for the same aborted approval — run the cleanup once per runtime lifetime.
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.approvalCleanupRan) {
+      return;
+    }
+    if (runtime) {
+      runtime.approvalCleanupRan = true;
+    }
     let resolvedJob = job;
     if (resolvedJob === undefined) {
       try {
@@ -1781,11 +1791,9 @@ class GenerationJobManagerClass {
         // The winning store cleanup (`cleanupRequiresActionIndex`) transitions status
         // directly and can't run host cleanup — do it on relay. Deliberately NOT gated on
         // `errorEvent`: a reconnect seeds that flag from the aborted job, which must not
-        // suppress the (idempotent) prune. Once per runtime lifetime.
-        if (runtime && !runtime.approvalCleanupRan) {
-          runtime.approvalCleanupRan = true;
-          await this.runApprovalExpiredHandler(streamId, job);
-        }
+        // suppress the (idempotent) prune. The handler dedups per runtime lifetime, which
+        // also covers approvals expired LOCALLY via expireApproval.
+        await this.runApprovalExpiredHandler(streamId, job);
         changed = this.runningJobs.delete(streamId) || changed;
         continue;
       }

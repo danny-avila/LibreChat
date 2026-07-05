@@ -214,6 +214,13 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(handler).toHaveBeenCalledTimes(1);
       // The expired job rides along so the host can resolve tenant/user-scoped config.
       expect(handler).toHaveBeenCalledWith(streamId, expect.objectContaining({ userId: 'user-1' }));
+
+      // The aborted job outlives the expiry (completed-job TTL), so the next sweep enters
+      // the relay branch for the SAME approval — the cleanup must not run a second time.
+      await (
+        manager as unknown as { expireStaleApprovals(): Promise<void> }
+      ).expireStaleApprovals();
+      expect(handler).toHaveBeenCalledTimes(1);
     });
 
     test('relays a store-won expiry through the handler (multi-replica path)', async () => {
