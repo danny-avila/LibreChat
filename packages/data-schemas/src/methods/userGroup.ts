@@ -20,8 +20,8 @@ const pendingGroupLookups = new Map<string, PendingGroupLookup>();
 const GROUP_LOCK_POLL_MS = 50;
 /** Above this many member keys, invalidation clears the namespace instead of fanning out deletes. */
 const INVALIDATION_CLEAR_THRESHOLD = 1000;
-/** Margin added to the lock wait when scheduling the delayed second invalidation pass. */
-const STALE_WRITE_GRACE_MS = 500;
+/** Fallback delay for the second invalidation pass when the store sets none. */
+const DEFAULT_STALE_EVICTION_DELAY_MS = 3000;
 
 const isCachedGroupId = (value: unknown): value is string =>
   typeof value === 'string' && isValidObjectIdString(value);
@@ -415,14 +415,14 @@ export function createUserGroupMethods(
   /**
    * Cross-process builds cannot see this process's stale flags, so a build in another
    * container that read pre-mutation state can re-cache it after the first delete.
-   * A delayed second pass (bounded by the lock wait plus one query round-trip) evicts
-   * such rewrites on stores shared across processes, independent of build locking.
+   * A delayed second pass evicts such rewrites on stores shared across processes,
+   * independent of build locking; the store supplies the delay budget.
    */
   function scheduleSecondInvalidation(cache: CacheStore, secondPass: () => Promise<void>): void {
     if (!cache.crossProcess) {
       return;
     }
-    const graceMs = Math.max(cache.lockWaitMs ?? 0, 0) + STALE_WRITE_GRACE_MS;
+    const graceMs = Math.max(cache.staleEvictionDelayMs ?? DEFAULT_STALE_EVICTION_DELAY_MS, 0);
     const timer = setTimeout(() => {
       secondPass().catch(() => undefined);
     }, graceMs);

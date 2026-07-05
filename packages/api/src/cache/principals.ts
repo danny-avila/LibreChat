@@ -13,6 +13,7 @@ const lockWait = math(process.env.USER_PRINCIPALS_LOCK_WAIT_MS, lockTtl);
 export type UserPrincipalsCache = Keyv & {
   crossProcess?: boolean;
   lockWaitMs?: number;
+  staleEvictionDelayMs?: number;
   acquireLock?: (key: string) => Promise<string | null>;
   releaseLock?: (key: string, token: string) => Promise<void>;
 };
@@ -50,6 +51,9 @@ export function userPrincipalsCache(): UserPrincipalsCache | undefined {
      * pass depends on this even when build locking is disabled (lock TTL of 0). */
     cache.crossProcess = true;
     cache.lockWaitMs = Math.max(lockWait, 0);
+    /** Lock wait plus one build round-trip, floored so lockless configurations
+     * (lock TTL of 0) still cover multi-second builds in other containers. */
+    cache.staleEvictionDelayMs = Math.max(cache.lockWaitMs + 500, 3000);
   }
   if (isRedisBacked && redisClient != null && lockTtl > 0) {
     cache.acquireLock = async (key) => {

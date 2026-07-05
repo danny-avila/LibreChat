@@ -1066,6 +1066,7 @@ describe('userGroup methods', () => {
         acquireLock: jest.fn(async () => 'lock-token'),
         releaseLock: jest.fn(async () => undefined),
         lockWaitMs: 0,
+        staleEvictionDelayMs: 200,
       });
       const cachedMethods = createUserGroupMethods(mongoose, {
         getCache: jest.fn(() => lockedCache),
@@ -1098,7 +1099,11 @@ describe('userGroup methods', () => {
         memberIds: ['nolock-ext-1'],
       });
       const cache = createFakeCache();
-      const crossProcessCache = Object.assign(cache, { crossProcess: true, lockWaitMs: 0 });
+      const crossProcessCache = Object.assign(cache, {
+        crossProcess: true,
+        lockWaitMs: 0,
+        staleEvictionDelayMs: 200,
+      });
       const cachedMethods = createUserGroupMethods(mongoose, {
         getCache: jest.fn(() => crossProcessCache),
       });
