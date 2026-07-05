@@ -163,10 +163,11 @@ export const capConversationSharedLinks = async (
 
 /**
  * Collects the file ids a set of conversations references. Message-attachment uploads create
- * File rows without a `conversationId` — they are referenced only from `Message.files[].file_id`
- * and the conversation's own `files` array — so conversation-scoped file caps must also target
- * these ids. `seedFileIds` takes the conversations' `files` arrays; message references are read
- * in one pass over the conversations' messages.
+ * File rows without a `conversationId` — they are referenced only from `Message.files[].file_id`,
+ * `Message.attachments[].file_id` (tool/agent outputs), and the conversation's own `files`
+ * array — so conversation-scoped file caps must also target these ids. `seedFileIds` takes the
+ * conversations' `files` arrays; message references are read in one pass over the conversations'
+ * messages.
  */
 export const collectConversationFileIds = async (
   Message: Model<IMessage>,
@@ -175,6 +176,15 @@ export const collectConversationFileIds = async (
   seedFileIds?: Iterable<string | null | undefined>,
 ): Promise<string[]> => {
   const fileIds = new Set<string>();
+  const addFileIds = (references?: Array<{ file_id?: unknown } | null>) => {
+    for (const reference of references ?? []) {
+      const fileId = reference?.file_id;
+      if (typeof fileId === 'string' && fileId.length > 0) {
+        fileIds.add(fileId);
+      }
+    }
+  };
+
   for (const fileId of seedFileIds ?? []) {
     if (typeof fileId === 'string' && fileId.length > 0) {
       fileIds.add(fileId);
@@ -185,17 +195,21 @@ export const collectConversationFileIds = async (
       {
         user: userId,
         conversationId: { $in: conversationIds },
-        files: { $exists: true, $ne: null },
+        $or: [
+          { files: { $exists: true, $ne: null } },
+          { attachments: { $exists: true, $ne: null } },
+        ],
       },
-      'files',
-    ).lean<Array<{ files?: Array<{ file_id?: unknown } | null> }>>();
+      'files attachments',
+    ).lean<
+      Array<{
+        files?: Array<{ file_id?: unknown } | null>;
+        attachments?: Array<{ file_id?: unknown } | null>;
+      }>
+    >();
     for (const message of messages) {
-      for (const file of message.files ?? []) {
-        const fileId = file?.file_id;
-        if (typeof fileId === 'string' && fileId.length > 0) {
-          fileIds.add(fileId);
-        }
-      }
+      addFileIds(message.files);
+      addFileIds(message.attachments);
     }
   }
   return [...fileIds];
