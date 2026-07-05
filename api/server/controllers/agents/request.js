@@ -246,11 +246,13 @@ async function saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, 
       { context },
     );
 
-    if (isNewConvo) {
-      await saveConvo(
-        reqCtx,
-        {
-          conversationId,
+    const agentId = endpointOption?.agent_id ?? req.body?.agent_id;
+    const chatProjectId = endpointOption?.chatProjectId ?? req.body?.chatProjectId;
+    /** Existing conversations get a minimal update that preserves their fields:
+     *  saveConvo recomputes `messages` and bumps `updatedAt` so the saved failed
+     *  turn is reflected in the conversation doc and chat-list ordering. */
+    const convoFields = isNewConvo
+      ? {
           ...(endpoint != null && { endpoint }),
           ...(endpointOption?.endpointType != null && {
             endpointType: endpointOption.endpointType,
@@ -258,13 +260,11 @@ async function saveErrorTurn(req, { conversationId, endpointOption, isNewConvo, 
           ...(model != null && { model }),
           ...(iconURL != null && { iconURL }),
           ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
-          ...((endpointOption?.agent_id ?? req.body?.agent_id) != null && {
-            agent_id: endpointOption?.agent_id ?? req.body?.agent_id,
-          }),
-        },
-        { context },
-      );
-    }
+          ...(agentId != null && { agent_id: agentId }),
+          ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
+        }
+      : {};
+    await saveConvo(reqCtx, { conversationId, ...convoFields }, { context });
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
   }

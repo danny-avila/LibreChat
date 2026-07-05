@@ -700,7 +700,9 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockSaveMessage.mock.invocationCallOrder[1]).toBeLessThan(
         mockGenerationJobManager.emitError.mock.invocationCallOrder[0],
       );
-      expect(mockSaveConvo).not.toHaveBeenCalled();
+      expect(mockSaveConvo).toHaveBeenCalledTimes(1);
+      const [, convoUpdate] = mockSaveConvo.mock.calls[0];
+      expect(convoUpdate).toEqual({ conversationId });
     });
 
     it('allows a follow-up chaining from the persisted error turn (issue 14095)', async () => {
@@ -793,6 +795,11 @@ describe('ResumableAgentController resume metadata', () => {
       const req = createFailedRequest({
         conversationId: undefined,
         parentMessageId: '00000000-0000-0000-0000-000000000000',
+        endpointOption: {
+          endpoint: 'azureOpenAI',
+          modelOptions: { model: 'gpt-4o' },
+          chatProjectId: '507f1f77bcf86cd799439011',
+        },
       });
       const res = createResumableResponse();
 
@@ -810,6 +817,7 @@ describe('ResumableAgentController resume metadata', () => {
           conversationId: mintedId,
           endpoint: 'azureOpenAI',
           model: 'gpt-4o',
+          chatProjectId: '507f1f77bcf86cd799439011',
         }),
         expect.any(Object),
       );
