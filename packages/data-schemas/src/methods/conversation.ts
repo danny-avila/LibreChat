@@ -18,6 +18,7 @@ import {
   capForcedRetentionExpiry,
   collectConversationFileIds,
   conversationNeedsForcedRetention,
+  conversationSeedFileIds,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
 } from '~/utils/retention';
@@ -368,16 +369,18 @@ export function createConversationMethods(
         isTemporary?: boolean | null;
         expiredAt?: Date | null;
         files?: string[];
+        file_ids?: string[];
       } | null = null;
       if (mayChangeProjectMembership || isForcedRetention) {
         const existing = await Conversation.findOne(
           { conversationId, user: userId },
-          'chatProjectId isTemporary expiredAt files',
+          'chatProjectId isTemporary expiredAt files file_ids',
         ).lean<{
           chatProjectId?: string | null;
           isTemporary?: boolean | null;
           expiredAt?: Date | null;
           files?: string[];
+          file_ids?: string[];
         } | null>();
         previousChatProjectId = existing?.chatProjectId ?? null;
         parentRetention = existing;
@@ -450,12 +453,12 @@ export function createConversationMethods(
               Message,
               userId,
               [conversationId],
-              parentRetention.files,
+              conversationSeedFileIds(parentRetention),
             )
           : [];
         await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
         await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
-        await capConversationFiles(File, conversationId, forcedExpiredAt, fileIds);
+        await capConversationFiles(File, userId, conversationId, forcedExpiredAt, fileIds);
       }
 
       const createdAtOnInsert =
