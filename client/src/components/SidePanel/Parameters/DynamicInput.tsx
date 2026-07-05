@@ -7,6 +7,8 @@ import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
 
+const PARTIAL_NUMBER_PATTERN = /^-?\d*\.?\d*$/;
+
 function DynamicInput({
   type,
   label = '',
@@ -46,10 +48,23 @@ function DynamicInput({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
     const parsesAsNumber = !isNaN(Number(value));
-    if (type === SettingTypes.Number && value !== '' && !parsesAsNumber) {
+    if (type !== SettingTypes.Number) {
+      setInputValue(e, type === SettingTypes.String ? false : parsesAsNumber);
       return;
     }
-    setInputValue(e, type === SettingTypes.String ? false : parsesAsNumber);
+    if (value === '') {
+      setInputValue(e, true);
+      return;
+    }
+    if (!parsesAsNumber && !PARTIAL_NUMBER_PATTERN.test(value)) {
+      return;
+    }
+    /** Partial input ("-", "1.") displays locally without committing to form state */
+    if (!parsesAsNumber || value.endsWith('.')) {
+      setLocalValue(value);
+      return;
+    }
+    setInputValue(e, true);
   };
 
   const placeholderText = placeholderCode

@@ -67,6 +67,45 @@ describe('DynamicInput', () => {
     expect(commit).toHaveBeenLastCalledWith(4096);
   });
 
+  it('allows typing negative numbers for number settings (e.g. thinkingBudget -1)', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    const { input, commit } = setup({ type: 'number', settingKey: 'thinkingBudget' });
+
+    await user.type(input, '-1');
+
+    expect(input).toHaveValue('-1');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(commit).toHaveBeenLastCalledWith(-1);
+  });
+
+  it('allows typing decimals for number settings', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    const { input, commit } = setup({ type: 'number', settingKey: 'temperature' });
+
+    await user.type(input, '0.5');
+
+    expect(input).toHaveValue('0.5');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(commit).toHaveBeenLastCalledWith(0.5);
+  });
+
+  it('does not commit a lone minus sign to form state', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    const { input, commit } = setup({ type: 'number', settingKey: 'thinkingBudget' });
+
+    await user.type(input, '-');
+
+    expect(input).toHaveValue('-');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
   it('commits digit-only input as a string for string settings', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     const { input, commit } = setup({ type: 'string', settingKey: 'modelLabel' });

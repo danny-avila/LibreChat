@@ -2,9 +2,12 @@ const NUMERIC_PARAM_KEYS = new Set([
   'temperature',
   'top_p',
   'topP',
+  'top_k',
   'topK',
   'frequency_penalty',
+  'frequencyPenalty',
   'presence_penalty',
+  'presencePenalty',
   'max_tokens',
   'maxTokens',
   'max_output_tokens',
@@ -12,6 +15,7 @@ const NUMERIC_PARAM_KEYS = new Set([
   'max_context_tokens',
   'maxContextTokens',
   'fileTokenLimit',
+  'thinking_budget',
   'thinkingBudget',
 ]);
 

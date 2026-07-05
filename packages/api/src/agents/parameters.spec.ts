@@ -64,9 +64,12 @@ describe('sanitizeModelParameters', () => {
       'temperature',
       'top_p',
       'topP',
+      'top_k',
       'topK',
       'frequency_penalty',
+      'frequencyPenalty',
       'presence_penalty',
+      'presencePenalty',
       'max_tokens',
       'maxTokens',
       'max_output_tokens',
@@ -74,6 +77,7 @@ describe('sanitizeModelParameters', () => {
       'max_context_tokens',
       'maxContextTokens',
       'fileTokenLimit',
+      'thinking_budget',
       'thinkingBudget',
     ];
     const corrupt = Object.fromEntries(keys.map((key) => [key, 'System']));
