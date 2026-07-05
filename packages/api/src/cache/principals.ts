@@ -11,6 +11,7 @@ const lockTtl = math(process.env.USER_PRINCIPALS_LOCK_TTL_MS, 5000);
 const lockWait = math(process.env.USER_PRINCIPALS_LOCK_WAIT_MS, lockTtl);
 
 export type UserPrincipalsCache = Keyv & {
+  crossProcess?: boolean;
   lockWaitMs?: number;
   acquireLock?: (key: string) => Promise<string | null>;
   releaseLock?: (key: string, token: string) => Promise<void>;
@@ -44,8 +45,13 @@ export function userPrincipalsCache(): UserPrincipalsCache | undefined {
   const isRedisBacked =
     keyvRedisClient != null &&
     !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.USER_PRINCIPALS);
-  if (isRedisBacked && redisClient != null && lockTtl > 0) {
+  if (isRedisBacked) {
+    /** Marks the store shared across containers; the delayed stale-rewrite eviction
+     * pass depends on this even when build locking is disabled (lock TTL of 0). */
+    cache.crossProcess = true;
     cache.lockWaitMs = Math.max(lockWait, 0);
+  }
+  if (isRedisBacked && redisClient != null && lockTtl > 0) {
     cache.acquireLock = async (key) => {
       const token = randomUUID();
       const result = await redisClient.set(key, token, 'PX', lockTtl, 'NX');

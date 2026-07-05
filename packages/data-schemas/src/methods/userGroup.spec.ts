@@ -1062,6 +1062,7 @@ describe('userGroup methods', () => {
       });
       const cache = createFakeCache();
       const lockedCache = Object.assign(cache, {
+        crossProcess: true,
         acquireLock: jest.fn(async () => 'lock-token'),
         releaseLock: jest.fn(async () => undefined),
         lockWaitMs: 0,
@@ -1086,6 +1087,142 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
         group._id.toString(),
       ]);
+    });
+
+    it('runs the delayed second invalidation on cross-process stores without build locks', async () => {
+      const user = await createTestUser({ idOnTheSource: 'nolock-ext-1' });
+      await Group.create({
+        name: 'No Lock Team',
+        source: 'entra',
+        idOnTheSource: 'nolock-grp-1',
+        memberIds: ['nolock-ext-1'],
+      });
+      const cache = createFakeCache();
+      const crossProcessCache = Object.assign(cache, { crossProcess: true, lockWaitMs: 0 });
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => crossProcessCache),
+      });
+
+      await cachedMethods.removeUserFromAllGroups(user._id.toString());
+      expect(cache.delete).toHaveBeenCalledTimes(1);
+
+      cache.store.set(user._id.toString(), []);
+      await new Promise((resolve) => setTimeout(resolve, 700));
+
+      expect(cache.store.has(user._id.toString())).toBe(false);
+    });
+
+    it('takes over the build when the lock frees without a cache fill', async () => {
+      const user = await createTestUser({ idOnTheSource: 'takeover-ext-1' });
+      const group = await Group.create({
+        name: 'Takeover Team',
+        source: 'entra',
+        idOnTheSource: 'takeover-grp-1',
+        memberIds: ['takeover-ext-1'],
+      });
+      const cache = createFakeCache();
+      const lockedCache = Object.assign(cache, {
+        crossProcess: true,
+        acquireLock: jest
+          .fn(async (): Promise<string | null> => 'lock-token')
+          .mockResolvedValueOnce(null),
+        releaseLock: jest.fn(async () => undefined),
+        lockWaitMs: 5000,
+      });
+      const cachedMethods = createUserGroupMethods(mongoose, {
+        getCache: jest.fn(() => lockedCache),
+      });
+
+      const startedAt = Date.now();
+      const principals = await cachedMethods.getUserPrincipals({
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'takeover-ext-1',
+      });
+
+      /** The poller re-attempts the lock instead of sleeping out the 5s wait budget */
+      expect(Date.now() - startedAt).toBeLessThan(1500);
+      expect(groupPrincipalIds(principals)).toEqual([group._id.toString()]);
+      expect(lockedCache.acquireLock).toHaveBeenCalledTimes(2);
+      expect(lockedCache.releaseLock).toHaveBeenCalledWith(
+        'USER_PRINCIPALS_LOCK:takeover-ext-1',
+        'lock-token',
+      );
+    });
+
+    it('reads cache builds from the primary, and uncached reads from the connection default', async () => {
+      const user = await createTestUser({ idOnTheSource: 'primary-ext-1' });
+      await Group.create({
+        name: 'Primary Team',
+        source: 'entra',
+        idOnTheSource: 'primary-grp-1',
+        memberIds: ['primary-ext-1'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'primary-ext-1',
+      };
+
+      const readSpy = jest.spyOn(mongoose.Query.prototype, 'read');
+      await cachedMethods.getUserPrincipals(params);
+      expect(readSpy).toHaveBeenCalledWith('primary');
+
+      readSpy.mockClear();
+      await methods.getUserPrincipals(params);
+      expect(readSpy).not.toHaveBeenCalledWith('primary');
+      readSpy.mockRestore();
+    });
+
+    it('coalesces deferred invalidations into one session listener', async () => {
+      const user = await createTestUser({ idOnTheSource: 'coalesce-ext-1' });
+      const groups = await Group.create(
+        Array.from({ length: 12 }, (_, index) => ({
+          name: `Coalesce Team ${index}`,
+          source: 'entra' as const,
+          idOnTheSource: `coalesce-grp-${index}`,
+          memberIds: [],
+        })),
+      );
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      const baseListenerCount = session.listenerCount('ended');
+      for (const group of groups) {
+        await cachedMethods.addUserToGroup(user._id, group._id, session);
+      }
+      expect(session.listenerCount('ended')).toBe(baseListenerCount + 1);
+      expect(cache.delete).not.toHaveBeenCalled();
+
+      await session.commitTransaction();
+      await session.endSession();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(cache.delete).toHaveBeenCalledWith('coalesce-ext-1');
+      expect(cache.delete.mock.calls.length).toBeGreaterThanOrEqual(groups.length);
+    });
+
+    it('clears the cache for aggregation-pipeline bulk updates touching memberIds', async () => {
+      await Group.create({
+        name: 'Pipeline Team',
+        source: 'entra',
+        idOnTheSource: 'pipe-grp-1',
+        memberIds: ['pipe-ext-1'],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const pipelineUpdate = [{ $set: { memberIds: ['pipe-ext-2'] } }] as unknown as Record<
+        string,
+        unknown
+      >;
+
+      await cachedMethods.bulkUpdateGroups({ idOnTheSource: 'pipe-grp-1' }, pipelineUpdate);
+
+      expect(cache.clear).toHaveBeenCalledTimes(1);
     });
 
     it('skips the namespace clear for no-op bulk membership replacements', async () => {

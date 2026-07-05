@@ -26,6 +26,16 @@ const STALE_WRITE_GRACE_MS = 500;
 const isCachedGroupId = (value: unknown): value is string =>
   typeof value === 'string' && isValidObjectIdString(value);
 
+type DeferredInvalidation = {
+  /** ALS snapshot (tenant scoping) captured where the mutation ran. */
+  run: (invalidate: () => Promise<void>) => Promise<void>;
+  invalidate: () => Promise<void>;
+};
+
+/** One queue (and one `ended` listener) per session, so many mutations in one transaction
+ * cannot trip the emitter's max-listeners warning. Weak keys drop abandoned sessions. */
+const sessionInvalidations = new WeakMap<ClientSession, DeferredInvalidation[]>();
+
 /**
  * Runs cache invalidation immediately, or defers it to session end for transactional
  * writes. Mid-transaction invalidation would let concurrent readers re-cache pre-commit
@@ -36,16 +46,24 @@ function runAfterTransaction(
   session: ClientSession | undefined,
   invalidate: () => Promise<void>,
 ): Promise<void> {
-  if (session?.inTransaction()) {
-    /** The `ended` listener runs in the emitter's context; snapshot the caller's ALS
-     * (tenant scoping) so the deferred invalidation still derives tenant-scoped keys. */
-    const runInCallerContext = AsyncLocalStorage.snapshot();
-    session.once('ended', () => {
-      runInCallerContext(invalidate).catch(() => undefined);
-    });
+  if (!session?.inTransaction()) {
+    return invalidate();
+  }
+  const deferred: DeferredInvalidation = { run: AsyncLocalStorage.snapshot(), invalidate };
+  const queue = sessionInvalidations.get(session);
+  if (queue) {
+    queue.push(deferred);
     return Promise.resolve();
   }
-  return invalidate();
+  const newQueue: DeferredInvalidation[] = [deferred];
+  sessionInvalidations.set(session, newQueue);
+  session.once('ended', () => {
+    sessionInvalidations.delete(session);
+    for (const entry of newQueue) {
+      entry.run(entry.invalidate).catch(() => undefined);
+    }
+  });
+  return Promise.resolve();
 }
 
 /** Extracts member ids referenced by a group update; indeterminate when they cannot be enumerated. */
@@ -53,6 +71,10 @@ function collectMemberIdsFromGroupUpdate(update: Record<string, unknown>): {
   memberIds: string[];
   indeterminate: boolean;
 } {
+  if (Array.isArray(update)) {
+    /** Aggregation-pipeline updates: affected members cannot be statically enumerated. */
+    return { memberIds: [], indeterminate: true };
+  }
   const memberIds: string[] = [];
 
   const collect = (value: unknown): boolean => {
@@ -224,11 +246,20 @@ export function createUserGroupMethods(
   async function queryGroupIds(
     memberId: string,
     session?: ClientSession,
+    readPrimary = false,
   ): Promise<Types.ObjectId[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const groupsQuery = Group.find({ memberIds: memberId }, { _id: 1 });
     if (session) {
       groupsQuery.session(session);
+    }
+    if (readPrimary && !session) {
+      /**
+       * Cache builds must not capture a lagging secondary's pre-mutation state for the
+       * full TTL (`secondaryPreferred` deployments); uncached reads keep the connection
+       * default, where staleness is bounded by replication lag as before.
+       */
+      groupsQuery.read('primary');
     }
     const groups = await groupsQuery.lean<Array<Pick<IGroup, '_id'>>>();
     return groups.map((group) => group._id);
@@ -292,13 +323,7 @@ export function createUserGroupMethods(
           } catch {
             lockFailed = true;
           }
-          if (lockToken) {
-            /** Another process may have filled the key between the fast-path miss and the lock. */
-            const cached = await readCachedGroupIds(cache, cacheKey);
-            if (cached) {
-              return cached;
-            }
-          } else if (!lockFailed) {
+          if (!lockToken && !lockFailed) {
             const waitUntil = Date.now() + Math.max(cache.lockWaitMs ?? 0, 0);
             while (Date.now() < waitUntil) {
               await new Promise((resolve) => setTimeout(resolve, GROUP_LOCK_POLL_MS));
@@ -306,11 +331,31 @@ export function createUserGroupMethods(
               if (cached) {
                 return cached;
               }
+              /**
+               * Re-attempt the lock each tick: a holder whose write was invalidated away
+               * (or that crashed) never fills the key, so take over the build as soon as
+               * the lock frees instead of sleeping out the full wait budget.
+               */
+              try {
+                lockToken = await cache.acquireLock(lockKey);
+              } catch {
+                break;
+              }
+              if (lockToken) {
+                break;
+              }
+            }
+          }
+          if (lockToken) {
+            /** Another process may have filled the key between the fast-path miss and the lock. */
+            const cached = await readCachedGroupIds(cache, cacheKey);
+            if (cached) {
+              return cached;
             }
           }
         }
 
-        const groupIds = await queryGroupIds(memberId);
+        const groupIds = await queryGroupIds(memberId, undefined, true);
         if (!stale) {
           try {
             await cache.set(
@@ -371,10 +416,10 @@ export function createUserGroupMethods(
    * Cross-process builds cannot see this process's stale flags, so a build in another
    * container that read pre-mutation state can re-cache it after the first delete.
    * A delayed second pass (bounded by the lock wait plus one query round-trip) evicts
-   * such rewrites; only Redis-backed stores (lock-capable) share data across processes.
+   * such rewrites on stores shared across processes, independent of build locking.
    */
   function scheduleSecondInvalidation(cache: CacheStore, secondPass: () => Promise<void>): void {
-    if (!cache.acquireLock) {
+    if (!cache.crossProcess) {
       return;
     }
     const graceMs = Math.max(cache.lockWaitMs ?? 0, 0) + STALE_WRITE_GRACE_MS;
