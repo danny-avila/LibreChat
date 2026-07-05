@@ -519,15 +519,34 @@ actions:
 mcpServers:
 
   # Official, Node-based. Read uploaded files; write text-based artifacts.
-  # VERIFY the path below is writable in your container and matches your fork.
+  #
+  # PER-USER ISOLATION (security): each user gets their own subprocess jailed to
+  # `/app/uploads/<their user id>`, so no user (or tenant) can read, list, or write
+  # another user's files. Two settings make this work together:
+  #   1. `startup: false` — excludes this server from the SHARED app-level connection
+  #      pool. Without it, LibreChat would spawn ONE filesystem process rooted at the
+  #      raw path and hand it to every user (see ConnectionsRepository
+  #      `isAllowedToConnectToServer`), giving everyone a shared, unscoped root.
+  #      With it, the connection is created lazily PER USER on first tool call.
+  #   2. `{{LIBRECHAT_USER_ID}}` — resolved per user by `processMCPEnv` at connection
+  #      time (only user-level connections carry a user, which is why (1) is required).
+  # The `sh -c … mkdir -p … && exec …` wrapper pre-creates the per-user directory,
+  # because @modelcontextprotocol/server-filesystem refuses to start if its root does
+  # not already exist. `exec` hands stdio (the MCP transport) straight to the server.
+  # The user id is a Mongo ObjectId (hex only); it is single-quoted defensively.
+  #
+  # NOTE: tools are discovered lazily per user (not at startup) — expected for
+  # `startup: false` servers; the agent resolves them via the `filesystem_mcp_all`
+  # wildcard on first use. Explicit cross-user/tenant sharing is intentionally NOT
+  # provided here and must be designed separately.
   filesystem:
     type: stdio
-    command: npx
+    command: sh
     args:
-      - "-y"
-      - "@modelcontextprotocol/server-filesystem"
-      - "/app/uploads"          # <-- VERIFY/ADJUST to a writable path in your container
-    timeout: 90000              # 90s — generous for first-run npx download
+      - "-c"
+      - "mkdir -p '/app/uploads/{{LIBRECHAT_USER_ID}}' && exec npx -y @modelcontextprotocol/server-filesystem '/app/uploads/{{LIBRECHAT_USER_ID}}'"
+    startup: false             # force per-user connections (no shared app-level root)
+    timeout: 90000             # 90s — generous for first-run npx download
 
   # Purpose-built .xlsx generation (charts, formatting). MIT. PYTHON-based —
   # requires Python 3.8+ in the container (see note 2 above) or it will fail.
