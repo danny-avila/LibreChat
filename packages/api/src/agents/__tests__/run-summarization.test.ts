@@ -1188,6 +1188,8 @@ describe('Langfuse run config', () => {
   });
 
   it('adds tenant Langfuse credentials from tenant-scoped app config', async () => {
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
+
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
@@ -1197,7 +1199,6 @@ describe('Langfuse run config', () => {
           baseUrl: 'https://cloud.langfuse.com',
           fanout: {
             enabled: true,
-            collectorUrl: 'http://langfuse-fanout-collector:4318',
           },
         },
       } as unknown as AppConfig,

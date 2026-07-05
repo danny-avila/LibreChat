@@ -873,6 +873,35 @@ describe('Langfuse feedback scores', () => {
     },
   );
 
+  it('ignores tenant app config collectorUrl when deciding tenant score fanout', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        publicKey: 'tenant-public-key',
+        secretKey: 'tenant-secret-key',
+        baseUrl: 'https://cloud.langfuse.com',
+        fanout: {
+          enabled: true,
+          collectorUrl: 'http://collector-from-db:4318',
+        },
+      } as unknown as AppConfig['langfuse']),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'http://central-langfuse:3000/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
+      }),
+    );
+  });
+
   it('skips scores when Langfuse sampling is set to zero', async () => {
     process.env.LANGFUSE_SAMPLE_RATE = '0';
     const { sendFeedbackScore } = await loadFeedback();

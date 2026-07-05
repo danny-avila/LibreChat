@@ -6,9 +6,7 @@ import { normalizeString } from '~/utils/text';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
-export type LangfuseFanoutConfig = LangfuseAppConfig['fanout'] & {
-  collectorUrl?: string;
-};
+export type LangfuseFanoutConfig = LangfuseAppConfig['fanout'];
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
 };
@@ -96,9 +94,7 @@ export function buildLangfuseConfig({
   const hasTenantCredentials = Boolean(tenantCredentials);
   const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
   const fanoutEnabled = isLangfuseFanoutEnabled(fanout);
-  const fanoutCollectorUrl =
-    normalizeString(fanout?.collectorUrl) ??
-    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+  const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   const tenantDestination = resolveLangfuseTenantDestination(config?.baseUrl);
   const tenantExportDestination = hasTenantCredentials ? tenantDestination : undefined;
   const tenantExportCollectorUrl = fanoutCollectorUrl;

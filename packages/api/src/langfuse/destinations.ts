@@ -79,9 +79,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   if (!isLangfuseFanoutEnabled(fanout)) {
     return undefined;
   }
-  const fanoutCollectorUrl =
-    normalizeString(fanout?.collectorUrl) ??
-    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+  const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   if (!fanoutCollectorUrl) {
     return undefined;
   }
@@ -103,8 +101,8 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
 }
 
 /**
- * Score fanout uses Langfuse's direct REST API. Trace fanout may use the OTLP
- * collector via appConfig.langfuse.fanout.collectorUrl/LANGFUSE_FANOUT_COLLECTOR_URL.
+ * Score fanout uses Langfuse's direct REST API. The deployment-level collector
+ * URL is still required so tenant score fanout follows trace fanout availability.
  */
 export function getScoreDestinations(appConfig?: AppConfig): LangfuseScoreDestination[] {
   const destinations = [getCentralScoreDestination(), getTenantScoreDestination(appConfig)].filter(

@@ -33,6 +33,7 @@ describe('buildLangfuseConfig', () => {
 
   it('decrypts encrypted tenant secrets for tenant trace export', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
     const { encryptV3 } = await import('@librechat/data-schemas');
     const { buildLangfuseConfig } = await import('./config');
 
@@ -45,7 +46,6 @@ describe('buildLangfuseConfig', () => {
           baseUrl: 'https://cloud.langfuse.com',
           fanout: {
             enabled: true,
-            collectorUrl: 'http://langfuse-fanout-collector:4318',
           },
         },
       } as unknown as AppConfig,
@@ -59,6 +59,33 @@ describe('buildLangfuseConfig', () => {
         'librechat.langfuse.tenant_export.enabled': 'true',
         'librechat.langfuse.destination': 'eu',
       },
+    });
+  });
+
+  it('ignores tenant app config collectorUrl and uses the deployment fanout collector URL', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const config = buildLangfuseConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+          fanout: {
+            enabled: true,
+            collectorUrl: 'http://collector-from-db:4318',
+          },
+        },
+      } as unknown as AppConfig,
+    });
+
+    expect(config).toMatchObject({
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
+      baseUrl: 'http://collector-from-env:4318/tenant/eu',
     });
   });
 
