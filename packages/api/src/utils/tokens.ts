@@ -173,7 +173,8 @@ const anthropicModels = {
 
 const ANTHROPIC_SONNET_4_6_PLUS_CONTEXT = 1000000;
 const ANTHROPIC_SONNET_4_6_PLUS_OUTPUT = 128000;
-const ANTHROPIC_SONNET_4_6_PLUS_PATTERN = /claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})(?=$|[^0-9])/;
+const ANTHROPIC_SONNET_4_6_PLUS_PATTERN =
+  /(?:claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})|claude[-.]?4[-.]?(?:[6-9]|\d{2})[-.]?sonnet)(?=$|[^0-9])/;
 
 function usesAnthropicContextMap(endpoint: EModelEndpoint): boolean {
   return (
@@ -648,7 +649,7 @@ export function matchModelName(
 
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
   if (
-    matchedPattern === 'claude-sonnet-4' &&
+    (matchedPattern === 'claude-sonnet-4' || matchedPattern === 'claude-4') &&
     getAnthropicSonnet46PlusContext(modelName, endpoint) != null
   ) {
     return modelName;

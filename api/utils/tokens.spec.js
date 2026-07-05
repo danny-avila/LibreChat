@@ -1618,9 +1618,13 @@ describe('Claude Model Tests', () => {
       'claude-sonnet-4.9',
       'claude-sonnet-4-10',
       'claude-sonnet-4.10',
+      'claude-4-10-sonnet',
+      'claude-4.10-sonnet',
+      'anthropic.claude-4-10-sonnet',
     ].forEach((model) => {
       expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(1000000);
     });
+    expect(getModelMaxTokens('anthropic.claude-4-10-sonnet', EModelEndpoint.bedrock)).toBe(1000000);
   });
 
   it('should return correct max output tokens for Claude Sonnet 4.7+ aliases (128K)', () => {
@@ -1634,6 +1638,8 @@ describe('Claude Model Tests', () => {
       'claude-sonnet-4.9',
       'claude-sonnet-4-10',
       'claude-sonnet-4.10',
+      'claude-4-10-sonnet',
+      'claude-4.10-sonnet',
     ].forEach((model) => {
       expect(getModelMaxOutputTokens(model, EModelEndpoint.anthropic)).toBe(128000);
     });
@@ -1647,6 +1653,9 @@ describe('Claude Model Tests', () => {
     expect(getModelMaxOutputTokens('claude-sonnet-4-20250514', EModelEndpoint.anthropic)).toBe(
       maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4'],
     );
+    expect(getModelMaxTokens('claude-4-20250514-sonnet', EModelEndpoint.bedrock)).toBe(
+      maxTokensMap[EModelEndpoint.bedrock]['claude-4'],
+    );
   });
 
   it('should keep double-digit Claude Sonnet 4 minor names when matching models', () => {
@@ -1655,6 +1664,10 @@ describe('Claude Model Tests', () => {
     );
     expect(matchModelName('claude-sonnet-4.10-latest', EModelEndpoint.anthropic)).toBe(
       'claude-sonnet-4.10-latest',
+    );
+    expect(matchModelName('claude-4-10-sonnet', EModelEndpoint.bedrock)).toBe('claude-4-10-sonnet');
+    expect(matchModelName('anthropic.claude-4.10-sonnet', EModelEndpoint.bedrock)).toBe(
+      'anthropic.claude-4.10-sonnet',
     );
   });
 
