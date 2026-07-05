@@ -8,6 +8,10 @@ export interface CacheStore {
   set: (key: string, value: unknown) => Promise<unknown>;
   delete?: (key: string) => Promise<unknown>;
   clear?: () => Promise<unknown>;
+  /** True when the store is shared across processes (e.g. Redis-backed). */
+  crossProcess?: boolean;
+  /** Delay before the second invalidation pass that evicts cross-process stale rewrites. */
+  staleEvictionDelayMs?: number;
   /** Acquires a cross-process build lock; resolves a release token, or null when already held. */
   acquireLock?: (key: string) => Promise<string | null>;
   releaseLock?: (key: string, token: string) => Promise<unknown>;
