@@ -176,6 +176,38 @@ describe('useArtifacts', () => {
       expect(result.current.activeTab).toBe('preview');
     });
 
+    it('should switch to preview when enclosed artifact uses a longer code fence', () => {
+      (useRecoilValue as jest.Mock).mockReturnValue({});
+      (useRecoilState as jest.Mock).mockReturnValue([null, mockSetCurrentArtifactId]);
+
+      const { result, rerender } = renderHook(() => useArtifacts());
+
+      act(() => {
+        result.current.setActiveTab('code');
+      });
+
+      expect(result.current.activeTab).toBe('code');
+
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        isSubmitting: true,
+        latestMessageText: [
+          ':::artifact{title="Git" type="text/markdown"}',
+          '````markdown',
+          '# Title',
+          '```bash',
+          'echo one',
+          '```',
+          '````',
+          ':::',
+        ].join('\n'),
+      });
+
+      rerender();
+
+      expect(result.current.activeTab).toBe('preview');
+    });
+
     it('should not switch to preview if artifact is not enclosed', () => {
       const artifact = createArtifact({
         content: 'const App = () => <div>Test</div>',
