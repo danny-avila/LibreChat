@@ -92,6 +92,16 @@ describe('supportsAdaptiveThinking', () => {
     expect(supportsAdaptiveThinking('claude-sonnet-4-7')).toBe(true);
   });
 
+  test('should return true for double-digit claude-sonnet-4 minors', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-10')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-sonnet-4.10')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-4-10-sonnet')).toBe(true);
+  });
+
+  test('should not parse Sonnet 4 date suffixes as double-digit minors', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-20250514')).toBe(false);
+  });
+
   test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {
     expect(supportsAdaptiveThinking('anthropic.claude-sonnet-4-6')).toBe(true);
   });
@@ -164,6 +174,16 @@ describe('supportsContext1m', () => {
 
   test('should return true for claude-sonnet-4-6', () => {
     expect(supportsContext1m('claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for double-digit claude-sonnet-4 minors', () => {
+    expect(supportsContext1m('claude-sonnet-4-10')).toBe(true);
+    expect(supportsContext1m('claude-sonnet-4.10')).toBe(true);
+    expect(supportsContext1m('claude-4-10-sonnet')).toBe(true);
+  });
+
+  test('should not treat Sonnet 4 date suffixes as 1M context models', () => {
+    expect(supportsContext1m('claude-sonnet-4-20250514')).toBe(false);
   });
 
   test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {

@@ -969,7 +969,13 @@ describe('getLLMConfig', () => {
       });
 
       it('should default Claude Sonnet 4.6+ models to 128K tokens', () => {
-        const testCases = ['claude-sonnet-4-6', 'claude-sonnet-4.6', 'claude-sonnet-4-9'];
+        const testCases = [
+          'claude-sonnet-4-6',
+          'claude-sonnet-4.6',
+          'claude-sonnet-4-9',
+          'claude-sonnet-4-10',
+          'claude-sonnet-4.10',
+        ];
 
         testCases.forEach((model) => {
           const result = getLLMConfig('test-key', {

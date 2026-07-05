@@ -40,6 +40,11 @@ describe('anthropicSettings', () => {
       it('should return 128K for claude-sonnet-4-9', () => {
         expect(reset('claude-sonnet-4-9')).toBe(128000);
       });
+
+      it('should return 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(reset('claude-sonnet-4-10')).toBe(128000);
+        expect(reset('claude-sonnet-4.10')).toBe(128000);
+      });
     });
 
     describe('Claude Sonnet 5+ models (128K limit)', () => {
@@ -312,6 +317,11 @@ describe('anthropicSettings', () => {
 
       it('should cap at 128K for claude-sonnet-4.6 when value exceeds', () => {
         expect(set(150000, 'claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should cap at 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(set(100000, 'claude-sonnet-4-10')).toBe(100000);
+        expect(set(150000, 'claude-sonnet-4.10')).toBe(128000);
       });
 
       it('should allow 100K for claude-sonnet-5', () => {

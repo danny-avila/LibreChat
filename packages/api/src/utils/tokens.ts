@@ -171,6 +171,47 @@ const anthropicModels = {
   'claude-mythos-5': 1000000,
 };
 
+const ANTHROPIC_SONNET_4_6_PLUS_CONTEXT = 1000000;
+const ANTHROPIC_SONNET_4_6_PLUS_OUTPUT = 128000;
+const ANTHROPIC_SONNET_4_6_PLUS_PATTERN =
+  /claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})(?=$|[^0-9])/;
+
+function usesAnthropicContextMap(endpoint: EModelEndpoint): boolean {
+  return (
+    endpoint === EModelEndpoint.anthropic ||
+    endpoint === EModelEndpoint.bedrock ||
+    endpoint === EModelEndpoint.openAI ||
+    endpoint === EModelEndpoint.agents ||
+    endpoint === EModelEndpoint.custom
+  );
+}
+
+function getAnthropicSonnet46PlusContext(
+  modelName: string,
+  endpoint: EModelEndpoint,
+): number | undefined {
+  if (
+    !usesAnthropicContextMap(endpoint) ||
+    !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)
+  ) {
+    return undefined;
+  }
+  return ANTHROPIC_SONNET_4_6_PLUS_CONTEXT;
+}
+
+function getAnthropicSonnet46PlusOutput(
+  modelName: string,
+  endpoint: EModelEndpoint,
+): number | undefined {
+  if (
+    endpoint !== EModelEndpoint.anthropic ||
+    !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)
+  ) {
+    return undefined;
+  }
+  return ANTHROPIC_SONNET_4_6_PLUS_OUTPUT;
+}
+
 const deepseekModels = {
   deepseek: 128000,
   'deepseek-chat': 128000,
@@ -544,6 +585,10 @@ export function getModelMaxTokens(
       return overrideValue;
     }
   }
+  const sonnet46PlusValue = getAnthropicSonnet46PlusContext(modelName, endpoint);
+  if (sonnet46PlusValue != null) {
+    return sonnet46PlusValue;
+  }
   return getModelTokenValue(modelName, maxTokensMap[endpoint as keyof typeof maxTokensMap]);
 }
 
@@ -566,6 +611,10 @@ export function getModelMaxOutputTokens(
     if (overrideValue != null) {
       return overrideValue;
     }
+  }
+  const sonnet46PlusValue = getAnthropicSonnet46PlusOutput(modelName, endpoint);
+  if (sonnet46PlusValue != null) {
+    return sonnet46PlusValue;
   }
   return getModelTokenValue(
     modelName,
@@ -605,6 +654,12 @@ export function matchModelName(
   }
 
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
+  if (
+    matchedPattern === 'claude-sonnet-4' &&
+    getAnthropicSonnet46PlusContext(modelName, endpoint) != null
+  ) {
+    return modelName;
+  }
   return matchedPattern || modelName;
 }
 

@@ -94,16 +94,16 @@ function parseOpusVersion(model: string): { major: number; minor: number } | nul
 }
 
 /** Extracts sonnet major/minor version from both naming formats.
- *  Uses single-digit minor capture to avoid matching date suffixes (e.g., -20250514). */
+ *  Uses bounded minor capture to avoid matching date suffixes (e.g., -20250514). */
 function parseSonnetVersion(model: string): { major: number; minor: number } | null {
-  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)(?:[-.](\d)(?!\d))?/);
+  const nameFirst = model.match(/claude-sonnet[-.]?(\d+)(?:[-.](\d{1,2})(?!\d))?/);
   if (nameFirst) {
     return {
       major: parseInt(nameFirst[1], 10),
       minor: nameFirst[2] != null ? parseInt(nameFirst[2], 10) : 0,
     };
   }
-  const numFirst = model.match(/claude-(\d+)(?:[-.](\d)(?!\d))?-sonnet/);
+  const numFirst = model.match(/claude-(\d+)(?:[-.](\d{1,2})(?!\d))?-sonnet/);
   if (numFirst) {
     return {
       major: parseInt(numFirst[1], 10),

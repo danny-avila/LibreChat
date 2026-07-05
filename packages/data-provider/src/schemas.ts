@@ -488,7 +488,7 @@ const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 const CLAUDE_SONNET_128K_OUTPUT_PATTERN =
-  /claude-sonnet[-.]?(?:4[-.]?[6-9]|[5-9]|\d{2,})(?=$|[^0-9])/;
+  /claude-sonnet[-.]?(?:4[-.]?(?:[6-9]|\d{2})|[5-9]|\d{2,})(?=$|[^0-9])/;
 
 /**
  * Claude "Mythos-class" model families — new top-level classes (peers of

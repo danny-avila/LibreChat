@@ -1608,7 +1608,7 @@ describe('Claude Model Tests', () => {
     );
   });
 
-  it('should return correct context length for Claude Sonnet 4.7 through 4.9 aliases (1M)', () => {
+  it('should return correct context length for Claude Sonnet 4.7+ aliases (1M)', () => {
     [
       'claude-sonnet-4-7',
       'claude-sonnet-4.7',
@@ -1616,14 +1616,14 @@ describe('Claude Model Tests', () => {
       'claude-sonnet-4.8',
       'claude-sonnet-4-9',
       'claude-sonnet-4.9',
+      'claude-sonnet-4-10',
+      'claude-sonnet-4.10',
     ].forEach((model) => {
-      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(
-        maxTokensMap[EModelEndpoint.anthropic][model],
-      );
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(1000000);
     });
   });
 
-  it('should return correct max output tokens for Claude Sonnet 4.7 through 4.9 aliases (128K)', () => {
+  it('should return correct max output tokens for Claude Sonnet 4.7+ aliases (128K)', () => {
     const { getModelMaxOutputTokens } = require('@librechat/api');
     [
       'claude-sonnet-4-7',
@@ -1632,11 +1632,30 @@ describe('Claude Model Tests', () => {
       'claude-sonnet-4.8',
       'claude-sonnet-4-9',
       'claude-sonnet-4.9',
+      'claude-sonnet-4-10',
+      'claude-sonnet-4.10',
     ].forEach((model) => {
-      expect(getModelMaxOutputTokens(model, EModelEndpoint.anthropic)).toBe(
-        maxOutputTokensMap[EModelEndpoint.anthropic][model],
-      );
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.anthropic)).toBe(128000);
     });
+  });
+
+  it('should not treat dated Claude Sonnet 4 IDs as Claude Sonnet 4.6+ aliases', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxTokens('claude-sonnet-4-20250514', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4'],
+    );
+    expect(getModelMaxOutputTokens('claude-sonnet-4-20250514', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4'],
+    );
+  });
+
+  it('should keep double-digit Claude Sonnet 4 minor names when matching models', () => {
+    expect(matchModelName('claude-sonnet-4-10', EModelEndpoint.anthropic)).toBe(
+      'claude-sonnet-4-10',
+    );
+    expect(matchModelName('claude-sonnet-4.10-latest', EModelEndpoint.anthropic)).toBe(
+      'claude-sonnet-4.10-latest',
+    );
   });
 
   it('should handle Claude Sonnet 4.6 model name variations', () => {
