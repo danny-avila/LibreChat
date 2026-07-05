@@ -150,6 +150,20 @@ function AgentSelect({
         }
       });
 
+      /** Legacy state from the removed Advanced kill switch: a non-empty
+       * allowlist with the master flag off (or unset, for agents predating
+       * the flag). The builder has no control left for it and the runtime
+       * treats it as "no skills", yet the section would render the selection
+       * as active. Normalize to enabled so the form matches what the UI
+       * shows and a later save persists the displayed behavior. */
+      if (
+        Array.isArray(formValues.skills) &&
+        formValues.skills.length > 0 &&
+        formValues.skills_enabled !== true
+      ) {
+        formValues.skills_enabled = true;
+      }
+
       reset(formValues);
     },
     [reset],

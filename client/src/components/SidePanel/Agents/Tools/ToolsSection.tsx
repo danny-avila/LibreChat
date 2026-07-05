@@ -83,8 +83,16 @@ export default function ToolsSection({ agentId }: Props) {
   const skillsEnabledValue = useWatch({ control, name: 'skills_enabled' });
   const useAllSkills = skillsEnabledValue === true && (skillsValue ?? []).length === 0;
   /** Selection stashed when "use all skills" turns on, so turning it back off
-   * restores the previous picks instead of destroying them. */
+   * restores the previous picks instead of destroying them. Cleared when the
+   * agent changes — the section isn't remounted on switch (only the form
+   * resets), so a stale stash could otherwise restore one agent's allowlist
+   * into another. */
   const stashedSkillsRef = useRef<string[]>([]);
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+  if (prevAgentId !== agentId) {
+    setPrevAgentId(agentId);
+    stashedSkillsRef.current = [];
+  }
 
   const handleUseAllSkillsChange = useCallback(
     (checked: boolean) => {

@@ -205,6 +205,18 @@ describe('use all skills toggle', () => {
     expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
   });
 
+  test('does not restore a stash from a different agent', () => {
+    mockFormValues = { skills: ['s1'], skills_enabled: true };
+    const { rerender } = render(<ToolsSection agentId="a" />);
+    fireEvent.click(screen.getByRole('switch'));
+    mockFormValues = { skills: [], skills_enabled: true };
+    rerender(<ToolsSection agentId="b" />);
+    mockSetValue.mockClear();
+    fireEvent.click(screen.getByRole('switch'));
+    expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
+  });
+
   test('turning it off with nothing stashed disables the master flag', () => {
     mockFormValues = { skills: [], skills_enabled: true };
     render(<ToolsSection agentId="a" />);
