@@ -1608,6 +1608,37 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should return correct context length for Claude Sonnet 4.7 through 4.9 aliases (1M)', () => {
+    [
+      'claude-sonnet-4-7',
+      'claude-sonnet-4.7',
+      'claude-sonnet-4-8',
+      'claude-sonnet-4.8',
+      'claude-sonnet-4-9',
+      'claude-sonnet-4.9',
+    ].forEach((model) => {
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(
+        maxTokensMap[EModelEndpoint.anthropic][model],
+      );
+    });
+  });
+
+  it('should return correct max output tokens for Claude Sonnet 4.7 through 4.9 aliases (128K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    [
+      'claude-sonnet-4-7',
+      'claude-sonnet-4.7',
+      'claude-sonnet-4-8',
+      'claude-sonnet-4.8',
+      'claude-sonnet-4-9',
+      'claude-sonnet-4.9',
+    ].forEach((model) => {
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.anthropic)).toBe(
+        maxOutputTokensMap[EModelEndpoint.anthropic][model],
+      );
+    });
+  });
+
   it('should handle Claude Sonnet 4.6 model name variations', () => {
     const modelVariations = [
       'claude-sonnet-4-6',
