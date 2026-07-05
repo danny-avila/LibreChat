@@ -104,7 +104,7 @@ describe('loadConfigModels', () => {
       role: 'USER',
       userId: 'testUserId',
       tenantId: 'tenant-a',
-      idOnTheSource: null,
+      idOnTheSource: undefined,
     });
   });
 

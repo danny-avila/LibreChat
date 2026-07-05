@@ -554,8 +554,17 @@ describe('getAppConfigOptionsFromUser', () => {
     });
   });
 
-  it('marks local users with null idOnTheSource to skip fallback identity lookups', () => {
+  it('preserves omitted source identity for partial users so fallback lookup can run', () => {
     expect(getAppConfigOptionsFromUser({ id: 'uid1', role: 'USER' })).toEqual({
+      role: 'USER',
+      userId: 'uid1',
+      idOnTheSource: undefined,
+      tenantId: undefined,
+    });
+  });
+
+  it('marks explicitly normalized local users with null idOnTheSource', () => {
+    expect(getAppConfigOptionsFromUser({ id: 'uid1', role: 'USER', idOnTheSource: null })).toEqual({
       role: 'USER',
       userId: 'uid1',
       idOnTheSource: null,

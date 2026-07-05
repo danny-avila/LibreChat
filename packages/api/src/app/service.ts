@@ -60,7 +60,7 @@ export interface GetAppConfigOptions {
 }
 
 export interface AppConfigUserLike {
-  /** Resolved app user id. When present, missing `idOnTheSource` means a known local user. */
+  /** Resolved app user id. */
   id?: string;
   role?: string;
   tenantId?: string;
@@ -72,10 +72,12 @@ export function getAppConfigOptionsFromUser(
   tenantId?: string,
 ): GetAppConfigOptions {
   const userId = user?.id;
+  const hasSourceIdentity =
+    user != null && Object.prototype.hasOwnProperty.call(user, 'idOnTheSource');
   return {
     role: user?.role,
     userId,
-    idOnTheSource: userId ? (user.idOnTheSource ?? null) : undefined,
+    idOnTheSource: userId && hasSourceIdentity ? (user.idOnTheSource ?? null) : undefined,
     tenantId: tenantId ?? user?.tenantId ?? getTenantId(),
   };
 }

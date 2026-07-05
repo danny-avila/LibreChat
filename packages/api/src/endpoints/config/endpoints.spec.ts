@@ -258,7 +258,7 @@ describe('createEndpointsConfigService', () => {
       expect(mockGetAppConfig).toHaveBeenCalledWith({
         role: 'USER',
         userId: 'u1',
-        idOnTheSource: null,
+        idOnTheSource: undefined,
         tenantId: 'tenant-a',
       });
     });
@@ -318,7 +318,6 @@ describe('createEndpointsConfigService', () => {
       expect(getUserPrincipals).toHaveBeenCalledWith({
         userId: 'u1',
         role: 'USER',
-        idOnTheSource: null,
       });
       expect(getApplicableConfigs).toHaveBeenCalledWith(
         expect.arrayContaining([
