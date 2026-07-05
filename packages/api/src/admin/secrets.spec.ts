@@ -5,13 +5,19 @@ process.env.CREDS_KEY =
 // CREDS_KEY is set above (encryptV3 reads the key at module load).
 let encryptConfigSecretFields: typeof import('./secrets').encryptConfigSecretFields;
 let encryptConfigSecrets: typeof import('./secrets').encryptConfigSecrets;
+let decryptConfigSecret: typeof import('./secrets').decryptConfigSecret;
+let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
 let decryptV3: typeof import('@librechat/data-schemas').decryptV3;
 
 beforeAll(async () => {
-  ({ encryptConfigSecretFields, encryptConfigSecrets, redactConfigSecrets } = await import(
-    './secrets'
-  ));
+  ({
+    decryptConfigSecret,
+    encryptConfigSecretFields,
+    encryptConfigSecrets,
+    preserveConfigSecrets,
+    redactConfigSecrets,
+  } = await import('./secrets'));
   ({ decryptV3 } = await import('@librechat/data-schemas'));
 });
 
@@ -161,6 +167,115 @@ describe('encryptConfigSecrets', () => {
     });
 
     expect(out).not.toHaveProperty('langfuse');
+  });
+});
+
+describe('decryptConfigSecret', () => {
+  it('decrypts encrypted config secrets and passes plaintext through', () => {
+    const encrypted = encryptConfigSecrets({
+      langfuse: { secretKey: 'sk-lf-secret' },
+    }).langfuse.secretKey;
+
+    expect(decryptConfigSecret(encrypted)).toBe('sk-lf-secret');
+    expect(decryptConfigSecret(' sk-plaintext ')).toBe('sk-plaintext');
+    expect(decryptConfigSecret('')).toBeUndefined();
+  });
+
+  it('returns undefined for undecryptable encrypted values', () => {
+    expect(decryptConfigSecret('v3:not-valid-ciphertext')).toBeUndefined();
+  });
+});
+
+describe('preserveConfigSecrets', () => {
+  it('preserves an existing encrypted secret when a full object omits it', () => {
+    const existing = encryptConfigSecrets({
+      langfuse: {
+        publicKey: 'pk-old',
+        secretKey: 'sk-old',
+      },
+    });
+    const next = encryptConfigSecrets({
+      langfuse: {
+        publicKey: 'pk-new',
+      },
+    });
+
+    const preserved = preserveConfigSecrets(next, existing);
+    const preservedLangfuse = preserved.langfuse as Record<string, string>;
+    const existingLangfuse = existing.langfuse as Record<string, string>;
+
+    expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-old');
+    expect(preservedLangfuse.secretKeyFingerprint).toBe(existingLangfuse.secretKeyFingerprint);
+    expect(preserved.langfuse.publicKey).toBe('pk-new');
+  });
+
+  it('encrypts preserved plaintext secrets from existing stored config', () => {
+    const next = encryptConfigSecrets({
+      langfuse: {
+        publicKey: 'pk-new',
+      },
+    });
+
+    const preserved = preserveConfigSecrets(next, {
+      langfuse: {
+        publicKey: 'pk-old',
+        secretKey: 'sk-legacy-plaintext',
+      },
+    });
+    const preservedLangfuse = preserved.langfuse as Record<string, string>;
+
+    expect(preservedLangfuse.secretKey).toMatch(/^v3:/);
+    expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-legacy-plaintext');
+    expect(preservedLangfuse.secretKeyFingerprint).toMatch(/^[a-f0-9]{12}$/);
+  });
+
+  it('does not preserve when the secret section is absent', () => {
+    const existing = encryptConfigSecrets({
+      langfuse: {
+        secretKey: 'sk-old',
+      },
+    });
+
+    expect(preserveConfigSecrets({ interface: { modelSelect: false } }, existing)).toEqual({
+      interface: { modelSelect: false },
+    });
+  });
+
+  it('does not preserve when the secret is explicitly cleared', () => {
+    const existing = encryptConfigSecrets({
+      langfuse: {
+        secretKey: 'sk-old',
+      },
+    });
+    const next = encryptConfigSecrets({
+      langfuse: {
+        secretKey: '',
+      },
+    });
+
+    expect(preserveConfigSecrets(next, existing)).toEqual({
+      langfuse: {
+        secretKey: '',
+        secretKeyFingerprint: '',
+      },
+    });
+  });
+
+  it('preserves existing secrets for object-valued ancestor patches', () => {
+    const existing = encryptConfigSecrets({
+      langfuse: {
+        publicKey: 'pk-old',
+        secretKey: 'sk-old',
+      },
+    });
+
+    const preserved = preserveConfigSecrets({ publicKey: 'pk-new' }, existing, 'langfuse');
+    const preservedLangfuse = preserved as Record<string, string>;
+    const existingLangfuse = existing.langfuse as Record<string, string>;
+
+    expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-old');
+    expect(preservedLangfuse.secretKeyFingerprint).toBe(existingLangfuse.secretKeyFingerprint);
+    expect(preserved.publicKey).toBe('pk-new');
   });
 });
 

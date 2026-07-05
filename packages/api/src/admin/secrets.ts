@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { encryptV3 } from '@librechat/data-schemas';
+import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 
 /**
  * Dot-path config fields whose values are secrets. They are encrypted at rest
@@ -20,7 +20,36 @@ const FINGERPRINT_LENGTH = 12;
 const ENCRYPTED_PREFIX = 'v3:';
 
 function fingerprint(secret: string): string {
-  return crypto.createHash('sha256').update(secret).digest('hex').slice(0, FINGERPRINT_LENGTH);
+  const key = process.env.CREDS_KEY;
+  if (!key) {
+    throw new Error('CREDS_KEY is required to fingerprint config secrets');
+  }
+  const keyBytes = Buffer.from(key, 'hex');
+  if (keyBytes.length !== 32) {
+    throw new Error(`Invalid CREDS_KEY length: expected 32 bytes, got ${keyBytes.length} bytes`);
+  }
+  return crypto
+    .createHmac('sha256', keyBytes)
+    .update(secret)
+    .digest('hex')
+    .slice(0, FINGERPRINT_LENGTH);
+}
+
+function normalizeSecretString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+}
+
+export function decryptConfigSecret(value: unknown): string | undefined {
+  const normalized = normalizeSecretString(value);
+  if (!normalized || !normalized.startsWith(ENCRYPTED_PREFIX)) {
+    return normalized;
+  }
+  try {
+    return decryptV3(normalized);
+  } catch (error) {
+    logger.warn('[adminConfig] Failed to decrypt config secret', error);
+    return undefined;
+  }
 }
 
 export function getConfigSecretFingerprintPath(fieldPath: string): string | undefined {
@@ -244,6 +273,62 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
 }
 
 /**
+ * Preserves an existing encrypted secret when a whole secret ancestor object is
+ * replaced without a secret value. This lets redacted admin reads round-trip
+ * safely: omitting a secret keeps it, while setting it to an empty value clears
+ * it.
+ */
+export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath = ''): T {
+  if (
+    next == null ||
+    typeof next !== 'object' ||
+    existing == null ||
+    typeof existing !== 'object'
+  ) {
+    return next;
+  }
+
+  const result = structuredClone(next);
+  for (const path of ENCRYPTED_CONFIG_FIELD_PATHS) {
+    const relativePath = getRelativeSecretPath(path, basePath);
+    if (relativePath == null || relativePath.length === 0) {
+      continue;
+    }
+
+    const segments = relativePath.split('.');
+    const leaf = segments[segments.length - 1];
+    const parentPath = segments.slice(0, -1).join('.');
+    const parent = parentPath ? getNestedValue(result, parentPath) : result;
+    if (!isRecord(parent) || leaf in parent) {
+      continue;
+    }
+
+    const existingValue = normalizeSecretString(getNestedValue(existing, path));
+    if (!existingValue) {
+      continue;
+    }
+
+    const fingerprintPath = FINGERPRINT_PATHS[path];
+    const relativeFingerprintPath = fingerprintPath
+      ? getRelativeSecretPath(fingerprintPath, basePath)
+      : null;
+    const encryptedValue = existingValue.startsWith(ENCRYPTED_PREFIX)
+      ? existingValue
+      : encryptV3(existingValue);
+    setNestedValue(result, relativePath, encryptedValue);
+    if (relativeFingerprintPath) {
+      const existingFingerprint = getNestedValue(existing, fingerprintPath);
+      if (existingValue.startsWith(ENCRYPTED_PREFIX) && typeof existingFingerprint === 'string') {
+        setNestedValue(result, relativeFingerprintPath, existingFingerprint);
+      } else {
+        setNestedValue(result, relativeFingerprintPath, fingerprint(existingValue));
+      }
+    }
+  }
+  return result;
+}
+
+/**
  * Deletes secret-registered fields from `root` in place so admin reads never
  * return secret values (encrypted or otherwise). Fingerprint companions are
  * preserved. The caller passes a cloned object.
@@ -259,22 +344,7 @@ export function redactConfigSecrets<T>(root: T): T {
       deleteLiteralDottedKey(root, fingerprintPath);
     }
     deleteArrayAncestor(root, path);
-
-    const segments = path.split('.');
-    let cursor = root as Record<string, unknown>;
-    let reachable = true;
-    for (let i = 0; i < segments.length - 1; i++) {
-      const next = cursor[segments[i]];
-      if (next == null || typeof next !== 'object') {
-        reachable = false;
-        break;
-      }
-      cursor = next as Record<string, unknown>;
-    }
-    const leaf = segments[segments.length - 1];
-    if (reachable && leaf in cursor) {
-      delete cursor[leaf];
-    }
+    deleteNestedValue(root, path);
   }
   return root;
 }

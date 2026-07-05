@@ -1,7 +1,12 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { LangfuseFanoutConfig } from './config';
+import {
+  isFalseEnv,
+  normalizeBoolean,
+  resolveTenantCredentials,
+  toBasicAuthorization,
+} from './utils';
 import { isLangfuseFanoutEnabled, isLangfuseTenantExportEnabled } from './config';
-import { isFalseEnv, normalizeBoolean, toBasicAuthorization } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
 
@@ -81,9 +86,8 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
     return undefined;
   }
 
-  const publicKey = normalizeString(config?.publicKey);
-  const secretKey = normalizeString(config?.secretKey);
-  if (!publicKey || !secretKey) {
+  const tenantCredentials = resolveTenantCredentials(config);
+  if (!tenantCredentials) {
     return undefined;
   }
   const destination = resolveLangfuseTenantDestination(config?.baseUrl);
@@ -94,7 +98,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   return {
     name: 'tenant',
     baseUrl: destination.baseUrl,
-    authorization: toBasicAuthorization(publicKey, secretKey),
+    authorization: toBasicAuthorization(tenantCredentials.publicKey, tenantCredentials.secretKey),
   };
 }
 

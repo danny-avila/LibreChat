@@ -18,6 +18,7 @@ import {
   getConfigSecretFingerprintPath,
   isConfigSecretAncestorPath,
   isConfigSecretDescendantPath,
+  preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
 
@@ -196,6 +197,28 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
     redactConfigSecrets(safeConfig.config);
   }
   return safeConfig;
+}
+
+function isObjectValuedSecretAncestor(fieldPath: string, value: unknown): boolean {
+  return (
+    isConfigSecretAncestorPath(fieldPath) &&
+    value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  );
+}
+
+function preservePatchedConfigSecretFields(
+  fields: Record<string, unknown>,
+  existingOverrides?: unknown,
+): Record<string, unknown> {
+  const result = { ...fields };
+  for (const [fieldPath, value] of Object.entries(result)) {
+    if (isObjectValuedSecretAncestor(fieldPath, value)) {
+      result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
+    }
+  }
+  return result;
 }
 
 // ── Handler factory ──────────────────────────────────────────────────
@@ -431,11 +454,21 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         : { expectEmpty: true, preservePriority: true };
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
+      const needsSecretPreservation = Object.entries(
+        encryptedOverrides as Record<string, unknown>,
+      ).some(([fieldPath, value]) => isObjectValuedSecretAncestor(fieldPath, value));
+      const existingForSecrets = needsSecretPreservation
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : null;
+      const preservedOverrides = preserveConfigSecrets(
+        encryptedOverrides,
+        existingForSecrets?.overrides,
+      );
       const config = await upsertConfig(
         principalType,
         principalId,
         principalModel(principalType),
-        encryptedOverrides,
+        preservedOverrides,
         requestedPriority,
         undefined,
         upsertOptions,
@@ -566,17 +599,25 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
+      const needsSecretPreservation = Object.entries(fields).some(([fieldPath, value]) =>
+        isObjectValuedSecretAncestor(fieldPath, value),
+      );
 
       const existing =
-        requestedPriority == null
+        requestedPriority == null || needsSecretPreservation
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
+      const encryptedFields = encryptConfigSecretFields(fields);
+      const preservedFields = preservePatchedConfigSecretFields(
+        encryptedFields,
+        existing?.overrides,
+      );
 
       const config = await patchConfigFields(
         principalType,
         principalId,
         principalModel(principalType),
-        encryptConfigSecretFields(fields),
+        preservedFields,
         requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
