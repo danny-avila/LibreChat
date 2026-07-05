@@ -3,11 +3,11 @@ import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import {
-  resolveHeaders,
   resolveNestedObject,
-  processMCPEnv,
   encodeHeaderValue,
+  resolveHeaders,
   createSafeUser,
+  processMCPEnv,
 } from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
