@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import useRum from './useRum';
 
 const mockInit = jest.fn();
+const mockAddAction = jest.fn();
 const mockSetGlobalAttributes = jest.fn();
 const mockUseGetStartupConfig = jest.fn();
 const mockUseAuthContext = jest.fn();
@@ -10,10 +11,21 @@ const mockUseLocation = jest.fn();
 jest.mock('@hyperdx/browser', () => ({
   __esModule: true,
   default: {
+    addAction: (...args: unknown[]) => mockAddAction(...args),
     init: (...args: unknown[]) => mockInit(...args),
     setGlobalAttributes: (...args: unknown[]) => mockSetGlobalAttributes(...args),
   },
 }));
+
+jest.mock('./diagnostics', () => ({
+  discardEarlyRumQueue: jest.fn(),
+  queueSpaRouteChange: jest.fn(),
+  restoreRumEmitter: jest.fn(),
+  startRumDiagnostics: jest.fn(),
+}));
+
+const { discardEarlyRumQueue, queueSpaRouteChange, restoreRumEmitter, startRumDiagnostics } =
+  jest.requireMock('./diagnostics');
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => mockUseGetStartupConfig(),
@@ -31,6 +43,7 @@ jest.mock('react-router-dom', () => ({
 describe('useRum', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseGetStartupConfig.mockReturnValue({ data: undefined, isFetched: false });
     mockUseLocation.mockReturnValue({ pathname: '/c/conversation-123' });
     mockUseAuthContext.mockReturnValue({
       isAuthenticated: true,
@@ -83,10 +96,15 @@ describe('useRum', () => {
     expect(mockSetGlobalAttributes).not.toHaveBeenCalledWith(
       expect.objectContaining({ email: 'user@example.com' }),
     );
+    expect(startRumDiagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({ init: expect.any(Function) }),
+      expect.any(Function),
+    );
   });
 
   it('does not initialize RUM for unsupported auth modes', async () => {
     mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
       data: {
         rum: {
           provider: 'hyperdx',
@@ -102,6 +120,106 @@ describe('useRum', () => {
     renderHook(() => useRum());
 
     expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
+  });
+
+  it('discards the early RUM queue when sampling excludes the page', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: 'https://rum.example.com',
+          serviceName: 'librechat-web',
+          authMode: 'publicToken',
+          publicToken: 'public-token',
+          sampleRate: 0,
+        },
+      },
+    });
+
+    renderHook(() => useRum());
+
+    expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
+  });
+
+  it('discards and stops route buffering when startup config has no RUM config', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {},
+      isFetched: true,
+    });
+
+    const { rerender } = renderHook(() => useRum());
+
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
+
+    mockUseLocation.mockReturnValue({ pathname: '/login' });
+    rerender();
+
+    expect(queueSpaRouteChange).not.toHaveBeenCalled();
+  });
+
+  it('preserves the early RUM queue while proxy mode waits for an auth token', async () => {
+    mockUseAuthContext.mockReturnValue({
+      isAuthenticated: false,
+      token: undefined,
+      user: undefined,
+    });
+    mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: '/api/rum',
+          serviceName: 'librechat-web',
+          authMode: 'proxy',
+        },
+      },
+    });
+
+    renderHook(() => useRum());
+
+    expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).not.toHaveBeenCalled();
+  });
+
+  it('restores the RUM emitter when an initialized config becomes valid again', async () => {
+    const validRumConfig = {
+      provider: 'hyperdx',
+      enabled: true,
+      url: 'https://rum.example.com',
+      serviceName: 'librechat-web',
+      authMode: 'publicToken',
+      publicToken: 'public-token',
+    };
+    let rumConfig = validRumConfig;
+    mockUseGetStartupConfig.mockImplementation(() => ({
+      isFetched: true,
+      data: {
+        rum: rumConfig,
+      },
+    }));
+
+    const { rerender } = renderHook(() => useRum());
+
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenCalled();
+    });
+
+    rumConfig = { ...validRumConfig, enabled: false };
+    rerender();
+
+    expect(discardEarlyRumQueue).toHaveBeenCalled();
+
+    rumConfig = { ...validRumConfig };
+    rerender();
+
+    expect(restoreRumEmitter).toHaveBeenCalledWith(
+      expect.objectContaining({ init: expect.any(Function) }),
+    );
   });
 
   it('initializes proxy RUM with the LibreChat bearer token for same-origin ingest', async () => {
@@ -111,6 +229,7 @@ describe('useRum', () => {
     );
     window.fetch = Object.assign(fetchMock, { preconnect: () => undefined });
     mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
       data: {
         rum: {
           provider: 'hyperdx',
@@ -150,6 +269,7 @@ describe('useRum', () => {
       user: undefined,
     });
     mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
       data: {
         rum: {
           provider: 'hyperdx',
@@ -164,5 +284,32 @@ describe('useRum', () => {
     renderHook(() => useRum());
 
     expect(mockInit).not.toHaveBeenCalled();
+    expect(discardEarlyRumQueue).not.toHaveBeenCalled();
+  });
+
+  it('queues SPA route changes through the shared early RUM channel', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: 'https://rum.example.com',
+          serviceName: 'librechat-web',
+          authMode: 'publicToken',
+          publicToken: 'public-token',
+        },
+      },
+    });
+
+    const { rerender } = renderHook(() => useRum());
+
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenCalled();
+    });
+
+    mockUseLocation.mockReturnValue({ pathname: '/login' });
+    rerender();
+
+    expect(queueSpaRouteChange).toHaveBeenCalledWith('/c/:conversationId', '/login');
   });
 });

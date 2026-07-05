@@ -7,8 +7,17 @@ const {
   sessionCache,
   standardCache,
   violationCache,
+  userPrincipalsCache,
   registerShutdownTask,
 } = require('@librechat/api');
+
+/** No-op store registered when the user principals cache is disabled (TTL of 0). */
+const disabledCache = {
+  get: async () => undefined,
+  set: async () => undefined,
+  delete: async () => undefined,
+  clear: async () => undefined,
+};
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -36,6 +45,7 @@ const namespaces = {
   [CacheKeys.SAML_SESSION]: sessionCache(CacheKeys.SAML_SESSION),
 
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
+  [CacheKeys.USER_PRINCIPALS]: userPrincipalsCache() ?? disabledCache,
   [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
   [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),

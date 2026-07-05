@@ -10,16 +10,19 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   apiNotFound,
   ErrorController,
+  GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   performStartupChecks,
   handleJsonParseError,
+  deleteAgentCheckpoint,
   initializeFileStorage,
+  loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
 } = require('@librechat/api');
@@ -300,6 +303,32 @@ if (cluster.isMaster) {
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
     initializeGitHubSkillSync(appConfig);
+    // Register configured tool-approval policy hooks (mirrors the standard startup path).
+    // Honors the `enabled` kill switch; hooks are base-config-only, registered process-wide.
+    // Read from the BASE config specifically — `appConfig` above (getAppConfig() with no
+    // principal) still merges DB `__base__` overrides, which must not drive which hook
+    // modules load in every worker (matches api/server/index.js's baseOnly usage).
+    const baseAppConfig = await getAppConfig({ baseOnly: true });
+    const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
+    await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
+      basePath: path.resolve(__dirname, '../..'),
+    });
+    // Prune the paused run's durable checkpoint when its approval EXPIRES (a stale submit —
+    // this startup never runs the periodic sweeper) instead of leaving it until the Mongo
+    // TTL. Mirrors api/server/index.js's configureGenerationStreams wiring; safe here even
+    // though this startup runs the manager on constructor defaults (the setter never resets
+    // services). streamId === conversationId === the LangGraph thread_id.
+    GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
+      // Resolve config in the PAUSED JOB's tenant/user scope (mirrors index.js): enter the
+      // tenant ALS context — getAppConfig args alone only key the cache.
+      await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
+        const currentConfig = await getAppConfig({
+          userId: job?.userId,
+          tenantId: job?.tenantId,
+        });
+        await deleteAgentCheckpoint(conversationId, currentConfig?.endpoints?.agents?.checkpointer);
+      });
+    });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);

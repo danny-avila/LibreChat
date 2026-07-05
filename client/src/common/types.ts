@@ -233,6 +233,9 @@ export type AgentPanelContextType = {
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
   mcpServersMap: Map<string, MCPServerInfo>;
+  /** True while the MCP tools list is being fetched and no data has arrived yet,
+   * so consumers can show a skeleton instead of an empty "no tools" state. */
+  mcpToolsLoading: boolean;
   availableMCPServers: MCPServerDefinition[];
   availableMCPServersMap: t.MCPServersListResponse | undefined;
 };

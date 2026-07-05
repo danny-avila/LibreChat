@@ -156,6 +156,13 @@ const anthropicModels = {
   'claude-sonnet-4': 200000,
   'claude-sonnet-4-5': 200000,
   'claude-sonnet-4-6': 1000000,
+  'claude-sonnet-4.6': 1000000,
+  'claude-sonnet-4-7': 1000000,
+  'claude-sonnet-4.7': 1000000,
+  'claude-sonnet-4-8': 1000000,
+  'claude-sonnet-4.8': 1000000,
+  'claude-sonnet-4-9': 1000000,
+  'claude-sonnet-4.9': 1000000,
   'claude-sonnet-5': 1000000,
   'claude-opus-4-6': 1000000,
   'claude-opus-4-7': 1000000,
@@ -163,6 +170,41 @@ const anthropicModels = {
   'claude-fable-5': 1000000,
   'claude-mythos-5': 1000000,
 };
+
+const ANTHROPIC_SONNET_4_6_PLUS_CONTEXT = 1000000;
+const ANTHROPIC_SONNET_4_6_PLUS_OUTPUT = 128000;
+const ANTHROPIC_SONNET_4_6_PLUS_PATTERN =
+  /(?:claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})|claude[-.]?4[-.]?(?:[6-9]|\d{2})[-.]?sonnet)(?=$|[^0-9])/;
+
+function usesAnthropicContextMap(endpoint: EModelEndpoint): boolean {
+  return (
+    endpoint === EModelEndpoint.anthropic ||
+    endpoint === EModelEndpoint.bedrock ||
+    endpoint === EModelEndpoint.openAI ||
+    endpoint === EModelEndpoint.agents ||
+    endpoint === EModelEndpoint.custom
+  );
+}
+
+function getAnthropicSonnet46PlusContext(
+  modelName: string,
+  endpoint: EModelEndpoint,
+): number | undefined {
+  if (!usesAnthropicContextMap(endpoint) || !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)) {
+    return undefined;
+  }
+  return ANTHROPIC_SONNET_4_6_PLUS_CONTEXT;
+}
+
+function getAnthropicSonnet46PlusOutput(
+  modelName: string,
+  endpoint: EModelEndpoint,
+): number | undefined {
+  if (endpoint !== EModelEndpoint.anthropic || !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)) {
+    return undefined;
+  }
+  return ANTHROPIC_SONNET_4_6_PLUS_OUTPUT;
+}
 
 const deepseekModels = {
   deepseek: 128000,
@@ -408,7 +450,14 @@ const anthropicMaxOutputs = {
   'claude-3-opus': 4096,
   'claude-haiku-4-5': 64000,
   'claude-sonnet-4': 64000,
-  'claude-sonnet-4-6': 64000,
+  'claude-sonnet-4-6': 128000,
+  'claude-sonnet-4.6': 128000,
+  'claude-sonnet-4-7': 128000,
+  'claude-sonnet-4.7': 128000,
+  'claude-sonnet-4-8': 128000,
+  'claude-sonnet-4.8': 128000,
+  'claude-sonnet-4-9': 128000,
+  'claude-sonnet-4.9': 128000,
   'claude-sonnet-5': 128000,
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
@@ -530,6 +579,10 @@ export function getModelMaxTokens(
       return overrideValue;
     }
   }
+  const sonnet46PlusValue = getAnthropicSonnet46PlusContext(modelName, endpoint);
+  if (sonnet46PlusValue != null) {
+    return sonnet46PlusValue;
+  }
   return getModelTokenValue(modelName, maxTokensMap[endpoint as keyof typeof maxTokensMap]);
 }
 
@@ -552,6 +605,10 @@ export function getModelMaxOutputTokens(
     if (overrideValue != null) {
       return overrideValue;
     }
+  }
+  const sonnet46PlusValue = getAnthropicSonnet46PlusOutput(modelName, endpoint);
+  if (sonnet46PlusValue != null) {
+    return sonnet46PlusValue;
   }
   return getModelTokenValue(
     modelName,
@@ -591,6 +648,12 @@ export function matchModelName(
   }
 
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
+  if (
+    (matchedPattern === 'claude-sonnet-4' || matchedPattern === 'claude-4') &&
+    getAnthropicSonnet46PlusContext(modelName, endpoint) != null
+  ) {
+    return modelName;
+  }
   return matchedPattern || modelName;
 }
 

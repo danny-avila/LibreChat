@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const {
+  getTransactionSupport,
+  tenantStorage,
+  getTenantId,
+  logger,
+} = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -501,6 +506,21 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
  * @returns {Promise<void>}
  */
 const syncUserEntraGroupMemberships = async (user, accessToken, session = null) => {
+  const tenantId = user?.tenantId ? String(user.tenantId) : undefined;
+  if (!tenantId || getTenantId() != null) {
+    return performEntraGroupMembershipSync(user, accessToken, session);
+  }
+  /**
+   * The OAuth callback runs before `tenantContextMiddleware`, so establish the
+   * user's tenant context here: group queries, created groups, and principal
+   * cache invalidation are then scoped exactly like authenticated reads.
+   */
+  return tenantStorage.run({ tenantId, userId: user._id?.toString() }, async () =>
+    performEntraGroupMembershipSync(user, accessToken, session),
+  );
+};
+
+const performEntraGroupMembershipSync = async (user, accessToken, session = null) => {
   try {
     if (!entraIdPrincipalFeatureEnabled(user) || !accessToken || !user.idOnTheSource) {
       return;

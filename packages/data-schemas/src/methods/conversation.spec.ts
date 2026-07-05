@@ -1110,7 +1110,7 @@ describe('Conversation Operations', () => {
       expect(tag?.count).toBe(2);
     });
 
-    it('should still decrement tag counts when message deletion fails after the delete', async () => {
+    it('still decrements tag counts AND returns the deleted ids when message deletion fails', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
       const convoId = uuidv4();
       await Conversation.create({
@@ -1122,9 +1122,13 @@ describe('Conversation Operations', () => {
 
       deleteMessages.mockRejectedValueOnce(new Error('message cleanup failed'));
 
-      await expect(deleteConvos('user123', { conversationId: convoId })).rejects.toThrow(
-        'message cleanup failed',
-      );
+      // Post-delete cleanup is best-effort: the conversations are already gone, so the
+      // caller must still receive the deleted ids (downstream cleanup — e.g. agent
+      // checkpoint pruning — depends on them, and a retry would find nothing).
+      const result = await deleteConvos('user123', { conversationId: convoId });
+      expect(result.deletedCount).toBe(1);
+      expect(result.conversationIds).toEqual([convoId]);
+      expect(result.messages.deletedCount).toBe(0);
 
       const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
       expect(tag?.count).toBe(1);

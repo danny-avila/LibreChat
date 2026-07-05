@@ -6,7 +6,7 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
-import type { IRole, IUser } from '~/types';
+import type { CacheStore, IRole, IUser } from '~/types';
 import { scopedCacheKey, getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -27,10 +27,7 @@ export class RoleConflictError extends Error {
 
 export interface RoleDeps {
   /** Returns a cache store for the given key. Injected from getLogStores. */
-  getCache?: (key: string) => {
-    get: (k: string) => Promise<unknown>;
-    set: (k: string, v: unknown) => Promise<void>;
-  };
+  getCache?: (key: string) => CacheStore | undefined;
 }
 
 export function createRoleMethods(

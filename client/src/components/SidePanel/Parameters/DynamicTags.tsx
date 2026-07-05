@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger, Tag, useToastContext } from '@librechat/client';
+import type { DynamicSettingProps } from 'librechat-data-provider';
 import { TranslationKeys, useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
@@ -155,7 +155,8 @@ function DynamicTags({
                   if (e.key === 'Backspace' && !tagText) {
                     onTagRemove(currentTags.length - 1);
                   }
-                  if (e.key === 'Enter') {
+                  // Ignore the Enter that commits an IME composition (see useTextarea.ts).
+                  if (e.key === 'Enter' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
                     onTagAdd();
                   }
                 }}

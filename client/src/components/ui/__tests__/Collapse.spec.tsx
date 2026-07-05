@@ -1,0 +1,28 @@
+import '@testing-library/jest-dom/extend-expect';
+import { render, screen } from '@testing-library/react';
+import Collapse from '../Collapse';
+
+describe('Collapse', () => {
+  test('reveals its content when open', () => {
+    const { container } = render(
+      <Collapse open={true}>
+        <span data-testid="child" />
+      </Collapse>,
+    );
+    expect(screen.getByTestId('child')).toBeInTheDocument();
+    const root = container.firstChild as HTMLElement;
+    expect(root).toHaveClass('grid-rows-[1fr]');
+    expect(root).not.toHaveAttribute('aria-hidden');
+  });
+
+  test('collapses and hides from assistive tech when closed', () => {
+    const { container } = render(
+      <Collapse open={false}>
+        <span data-testid="child" />
+      </Collapse>,
+    );
+    const root = container.firstChild as HTMLElement;
+    expect(root).toHaveClass('grid-rows-[0fr]');
+    expect(root).toHaveAttribute('aria-hidden', 'true');
+  });
+});

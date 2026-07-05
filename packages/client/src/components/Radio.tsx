@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, useEffect, useCallback, memo } from 'react';
+import React, { useState, useRef, useLayoutEffect, useCallback, memo } from 'react';
 import { useLocalize } from '~/hooks';
 
 interface Option {
@@ -29,6 +29,7 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
   'aria-labelledby': ariaLabelledBy,
 }: RadioProps) {
   const localize = useLocalize();
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [isMounted, setIsMounted] = useState(false);
   const [currentValue, setCurrentValue] = useState<string>(value ?? '');
@@ -41,36 +42,33 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
 
   const updateBackgroundStyle = useCallback(() => {
     const selectedIndex = options.findIndex((opt) => opt.value === currentValue);
-    if (selectedIndex >= 0 && buttonRefs.current[selectedIndex]) {
-      const selectedButton = buttonRefs.current[selectedIndex];
-      const container = selectedButton?.parentElement;
-      if (selectedButton && container) {
-        const containerRect = container.getBoundingClientRect();
-        const buttonRect = selectedButton.getBoundingClientRect();
-        const offsetLeft = buttonRect.left - containerRect.left;
-        setBackgroundStyle({
-          width: `${buttonRect.width}px`,
-          transform: `translateX(${offsetLeft}px)`,
-        });
-      }
+    const selectedButton = buttonRefs.current[selectedIndex];
+    if (selectedIndex < 0 || !selectedButton) {
+      return;
     }
+    // offsetWidth/offsetLeft are layout metrics: unlike getBoundingClientRect they
+    // are not distorted by the dialog's open transform (scale), and they resolve to
+    // whole pixels, so the indicator matches its segment and keeps crisp borders.
+    setBackgroundStyle({
+      width: `${selectedButton.offsetWidth}px`,
+      transform: `translateX(${selectedButton.offsetLeft}px)`,
+    });
   }, [currentValue, options]);
 
-  // Mark as mounted after dialog animations settle
-  // Timeout ensures we wait for CSS transitions to complete
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setIsMounted(true);
-    }, 50);
-
-    return () => clearTimeout(timeout);
-  }, []);
-
+  // Measure before paint and re-measure on any later layout change (the dialog's
+  // open animation settling, a window resize). A fixed timeout previously raced
+  // the dialog transition and left the indicator mis-sized.
   useLayoutEffect(() => {
-    if (isMounted) {
-      updateBackgroundStyle();
+    const container = containerRef.current;
+    if (!container) {
+      return;
     }
-  }, [isMounted, updateBackgroundStyle]);
+    updateBackgroundStyle();
+    setIsMounted(true);
+    const observer = new ResizeObserver(() => updateBackgroundStyle());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [updateBackgroundStyle]);
 
   useLayoutEffect(() => {
     if (value !== undefined) {
@@ -96,13 +94,14 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
 
   return (
     <div
-      className={`relative ${fullWidth ? 'flex' : 'inline-flex'} items-center rounded-lg bg-muted ${className}`}
+      ref={containerRef}
+      className={`relative ${fullWidth ? 'flex' : 'inline-flex'} items-center rounded-lg bg-muted px-1 ${className}`}
       role="radiogroup"
       aria-labelledby={ariaLabelledBy}
     >
       {selectedIndex >= 0 && isMounted && (
         <div
-          className="pointer-events-none absolute inset-y-0 rounded-md border border-border/50 bg-background shadow-sm transition-all duration-300 ease-out"
+          className="pointer-events-none absolute inset-y-1 left-0 rounded-md border border-border bg-background shadow-sm transition-all duration-300 ease-out"
           style={backgroundStyle}
         />
       )}
@@ -118,7 +117,7 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
           onClick={() => handleChange(option.value)}
           disabled={disabled}
           className={`relative z-10 flex h-[34px] items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-            currentValue === option.value ? 'text-foreground' : 'text-foreground'
+            currentValue === option.value ? 'text-text-primary' : 'text-text-secondary'
           } ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${fullWidth ? 'flex-1' : ''} ${buttonClassName}`}
         >
           {option.icon && (

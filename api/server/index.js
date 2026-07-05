@@ -9,7 +9,7 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
@@ -21,8 +21,10 @@ const {
   GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   createStreamServices,
+  deleteAgentCheckpoint,
   initializeFileStorage,
   initializeDeploymentSkills,
+  loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
@@ -83,6 +85,19 @@ const configureGenerationStreams = () => {
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
   GenerationJobManager.initialize();
+  // Prune the paused run's durable checkpoint when its approval EXPIRES (periodic sweeper
+  // or a stale submit) instead of leaving it until the Mongo TTL. streamId === conversationId
+  // === the LangGraph thread_id. Config is resolved lazily per expiry so the prune always
+  // targets the currently configured checkpoint collections.
+  GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
+    // Resolve config in the PAUSED JOB's tenant/user scope — the expiry runs outside any
+    // request context. Passing ids to getAppConfig only keys the cache; the Config query
+    // itself is ALS-scoped by the tenant-isolation plugin, so ENTER the tenant context.
+    await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
+      const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
+      await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
+    });
+  });
 };
 
 const startServer = async () => {
@@ -124,6 +139,16 @@ const startServer = async () => {
   await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
+  // Register any programmatic tool-approval policy hooks declared in
+  // `endpoints.agents.toolApproval.hooks`. Honor the `enabled` kill switch: when tool
+  // approval is off we pass no hooks, so a disabled endpoint imports/runs nothing (and any
+  // previously loaded batch is unregistered). Hooks are read from the BASE config only —
+  // they register once, process-wide; per-user/tenant differences belong inside the hook
+  // (via its context), not in per-override module lists.
+  const toolApproval = appConfig?.endpoints?.agents?.toolApproval;
+  await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
+    basePath: path.resolve(__dirname, '../..'),
+  });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
