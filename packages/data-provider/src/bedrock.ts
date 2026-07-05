@@ -2,6 +2,7 @@ import { z } from 'zod';
 import * as s from './schemas';
 
 const DEFAULT_THINKING_BUDGET = 2000;
+const BEDROCK_CLAUDE_SONNET_4_6_MAX_OUTPUT = 64000;
 export const BEDROCK_OUTPUT_128K_BETA = 'output-128k-2025-02-19';
 export const BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
 
@@ -683,6 +684,10 @@ function toFamilyFirstClaudeId(model: string): string {
   return model.replace(/claude-(\d+(?:[-.]\d+)?)-(sonnet|opus|haiku)/, 'claude-$2-$1');
 }
 
+function isBedrockClaudeSonnet46(model: string): boolean {
+  return /claude-sonnet[-.]?4[-.]?6(?=$|[^0-9])/.test(toFamilyFirstClaudeId(model));
+}
+
 /**
  * Thinking tokens share the `maxTokens` output budget with tool-call arguments
  * (e.g. a `create_file` `content`), so a low default truncates large authored
@@ -695,6 +700,9 @@ function resolveThinkingMaxTokens(data: AnthropicInput): number {
     return explicit;
   }
   const model = typeof data.model === 'string' ? data.model : '';
+  if (isBedrockClaudeSonnet46(model)) {
+    return BEDROCK_CLAUDE_SONNET_4_6_MAX_OUTPUT;
+  }
   return s.anthropicSettings.maxOutputTokens.reset(toFamilyFirstClaudeId(model));
 }
 

@@ -1222,6 +1222,17 @@ describe('bedrockInputParser', () => {
       expect(output.maxOutputTokens).toBeUndefined();
     });
 
+    test('defaults Bedrock Claude Sonnet 4.6 adaptive maxTokens to its Bedrock max output when unset', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-sonnet-4-6',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(output.maxTokens).toBe(64000);
+      expect(output.maxOutputTokens).toBeUndefined();
+    });
+
     test('should respect user-provided maxTokens for adaptive model', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
