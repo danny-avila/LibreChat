@@ -173,8 +173,7 @@ const anthropicModels = {
 
 const ANTHROPIC_SONNET_4_6_PLUS_CONTEXT = 1000000;
 const ANTHROPIC_SONNET_4_6_PLUS_OUTPUT = 128000;
-const ANTHROPIC_SONNET_4_6_PLUS_PATTERN =
-  /claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})(?=$|[^0-9])/;
+const ANTHROPIC_SONNET_4_6_PLUS_PATTERN = /claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})(?=$|[^0-9])/;
 
 function usesAnthropicContextMap(endpoint: EModelEndpoint): boolean {
   return (
@@ -190,10 +189,7 @@ function getAnthropicSonnet46PlusContext(
   modelName: string,
   endpoint: EModelEndpoint,
 ): number | undefined {
-  if (
-    !usesAnthropicContextMap(endpoint) ||
-    !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)
-  ) {
+  if (!usesAnthropicContextMap(endpoint) || !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)) {
     return undefined;
   }
   return ANTHROPIC_SONNET_4_6_PLUS_CONTEXT;
@@ -203,10 +199,7 @@ function getAnthropicSonnet46PlusOutput(
   modelName: string,
   endpoint: EModelEndpoint,
 ): number | undefined {
-  if (
-    endpoint !== EModelEndpoint.anthropic ||
-    !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)
-  ) {
+  if (endpoint !== EModelEndpoint.anthropic || !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)) {
     return undefined;
   }
   return ANTHROPIC_SONNET_4_6_PLUS_OUTPUT;
