@@ -408,7 +408,7 @@ const anthropicMaxOutputs = {
   'claude-3-opus': 4096,
   'claude-haiku-4-5': 64000,
   'claude-sonnet-4': 64000,
-  'claude-sonnet-4-6': 64000,
+  'claude-sonnet-4-6': 128000,
   'claude-sonnet-5': 128000,
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,

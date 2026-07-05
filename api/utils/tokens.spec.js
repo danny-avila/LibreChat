@@ -1595,7 +1595,7 @@ describe('Claude Model Tests', () => {
     );
   });
 
-  it('should return correct max output tokens for Claude Sonnet 4.6 (64K)', () => {
+  it('should return correct max output tokens for Claude Sonnet 4.6 (128K)', () => {
     const { getModelMaxOutputTokens } = require('@librechat/api');
     expect(getModelMaxOutputTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
       maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
@@ -1650,7 +1650,7 @@ describe('Claude Model Tests', () => {
     expect(getModelMaxOutputTokens('claude-sonnet-5', EModelEndpoint.anthropic)).toBe(
       maxOutputTokensMap[EModelEndpoint.anthropic]['claude-sonnet-5'],
     );
-    expect(getModelMaxOutputTokens('claude-sonnet-5', EModelEndpoint.anthropic)).toBeGreaterThan(
+    expect(getModelMaxOutputTokens('claude-sonnet-5', EModelEndpoint.anthropic)).toBe(
       getModelMaxOutputTokens('claude-sonnet-4-6', EModelEndpoint.anthropic),
     );
   });

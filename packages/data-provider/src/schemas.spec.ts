@@ -10,7 +10,7 @@ describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
     const { reset } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet 4.x models (64K limit)', () => {
+    describe('Claude Sonnet 4/4.5 models (64K limit)', () => {
       it('should return 64K for claude-sonnet-4', () => {
         expect(reset('claude-sonnet-4')).toBe(64000);
       });
@@ -18,9 +18,23 @@ describe('anthropicSettings', () => {
       it('should return 64K for claude-sonnet-4-5', () => {
         expect(reset('claude-sonnet-4-5')).toBe(64000);
       });
+    });
 
-      it('should return 64K for claude-sonnet-4-6', () => {
-        expect(reset('claude-sonnet-4-6')).toBe(64000);
+    describe('Claude Sonnet 4.6+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-4-6', () => {
+        expect(reset('claude-sonnet-4-6')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4.6', () => {
+        expect(reset('claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-7', () => {
+        expect(reset('claude-sonnet-4-7')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-10', () => {
+        expect(reset('claude-sonnet-4-10')).toBe(128000);
       });
     });
 
@@ -261,7 +275,7 @@ describe('anthropicSettings', () => {
   describe('maxOutputTokens.set()', () => {
     const { set } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet and Haiku 4+ models (64K cap)', () => {
+    describe('Claude Sonnet 4/4.5 and Haiku 4+ models (64K cap)', () => {
       it('should cap at 64K for claude-sonnet-4 when value exceeds', () => {
         expect(set(100000, 'claude-sonnet-4')).toBe(64000);
       });
@@ -275,7 +289,23 @@ describe('anthropicSettings', () => {
       });
     });
 
-    describe('Claude Sonnet 5+ models (128K cap)', () => {
+    describe('Claude Sonnet 4.6+ models (128K cap)', () => {
+      it('should allow 100K for claude-sonnet-4-6', () => {
+        expect(set(100000, 'claude-sonnet-4-6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4-6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4-6')).toBe(128000);
+      });
+
+      it('should allow 100K for claude-sonnet-4.6', () => {
+        expect(set(100000, 'claude-sonnet-4.6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4.6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4.6')).toBe(128000);
+      });
+
       it('should allow 100K for claude-sonnet-5', () => {
         expect(set(100000, 'claude-sonnet-5')).toBe(100000);
       });
