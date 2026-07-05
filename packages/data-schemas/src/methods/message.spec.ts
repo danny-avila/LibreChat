@@ -1893,6 +1893,47 @@ describe('Message Operations', () => {
       expect(parent?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
     });
 
+    it('aligns referenced attachment files that carry no conversationId', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const messageFileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'with attachment',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+        files: [{ file_id: messageFileId, filename: 'doc.pdf' }],
+      });
+      await File().collection.insertOne({
+        file_id: messageFileId,
+        user: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+      });
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+      expect(result).toEqual({ conversations: 0, aligned: 1, errors: 0, projects: [] });
+
+      const file = await File().findOne({ file_id: messageFileId }).lean();
+      expect(file?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+    });
+
     it('collects converted project memberships so callers can refresh project stats', async () => {
       const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const chatProjectId = new mongoose.Types.ObjectId().toString();
@@ -2072,6 +2113,48 @@ describe('Message Operations', () => {
       await Conversation().deleteMany({});
       await SharedLink().deleteMany({});
       await File().deleteMany({});
+    });
+
+    it('caps referenced attachment files that carry no conversationId when converting', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const messageFileId = uuidv4();
+      const convoFileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+        files: [convoFileId],
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'with attachment',
+        files: [{ file_id: messageFileId, filename: 'doc.pdf' }],
+      });
+      await File().collection.insertMany([
+        { file_id: messageFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
+        { file_id: convoFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
+      ]);
+
+      await cascadeForcedConversationRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        'user123',
+        conversationId,
+        forcedExpiredAt,
+      );
+
+      const messageFile = await File().findOne({ file_id: messageFileId }).lean();
+      expect(messageFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const convoFile = await File().findOne({ file_id: convoFileId }).lean();
+      expect(convoFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
     });
 
     it('caps lagging children even when the parent conversation already conforms', async () => {

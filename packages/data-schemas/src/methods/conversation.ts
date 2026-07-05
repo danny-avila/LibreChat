@@ -15,6 +15,8 @@ import {
   capConversationFiles,
   capConversationSharedLinks,
   capForcedRetentionExpiry,
+  collectConversationFileIds,
+  conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
 } from '~/utils/retention';
@@ -255,15 +257,20 @@ export function createConversationMethods(
         Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
         Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
       let previousChatProjectId: string | null = null;
-      let parentRetention: { isTemporary?: boolean | null; expiredAt?: Date | null } | null = null;
+      let parentRetention: {
+        isTemporary?: boolean | null;
+        expiredAt?: Date | null;
+        files?: string[];
+      } | null = null;
       if (mayChangeProjectMembership || isForcedRetention) {
         const existing = await Conversation.findOne(
           { conversationId, user: userId },
-          'chatProjectId isTemporary expiredAt',
+          'chatProjectId isTemporary expiredAt files',
         ).lean<{
           chatProjectId?: string | null;
           isTemporary?: boolean | null;
           expiredAt?: Date | null;
+          files?: string[];
         } | null>();
         previousChatProjectId = existing?.chatProjectId ?? null;
         parentRetention = existing;
@@ -326,9 +333,22 @@ export function createConversationMethods(
         const Message = mongoose.models.Message as Model<IMessage>;
         const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
         const File = mongoose.models.File as Model<IMongoFile>;
+        /**
+         * Referenced file ids (message-attachment rows carry no conversationId) are collected
+         * only at conversion time: post-conversion uploads always receive a deadline at upload,
+         * so the id scan over the chat's messages is not needed on every conforming save.
+         */
+        const fileIds = conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
+          ? await collectConversationFileIds(
+              Message,
+              userId,
+              [conversationId],
+              parentRetention.files,
+            )
+          : [];
         await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
         await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
-        await capConversationFiles(File, conversationId, forcedExpiredAt);
+        await capConversationFiles(File, conversationId, forcedExpiredAt, fileIds);
       }
 
       const createdAtOnInsert =

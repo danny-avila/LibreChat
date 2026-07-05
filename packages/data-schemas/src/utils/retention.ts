@@ -162,6 +162,46 @@ export const capConversationSharedLinks = async (
 };
 
 /**
+ * Collects the file ids a set of conversations references. Message-attachment uploads create
+ * File rows without a `conversationId` — they are referenced only from `Message.files[].file_id`
+ * and the conversation's own `files` array — so conversation-scoped file caps must also target
+ * these ids. `seedFileIds` takes the conversations' `files` arrays; message references are read
+ * in one pass over the conversations' messages.
+ */
+export const collectConversationFileIds = async (
+  Message: Model<IMessage>,
+  userId: string,
+  conversationIds: string[],
+  seedFileIds?: Iterable<string | null | undefined>,
+): Promise<string[]> => {
+  const fileIds = new Set<string>();
+  for (const fileId of seedFileIds ?? []) {
+    if (typeof fileId === 'string' && fileId.length > 0) {
+      fileIds.add(fileId);
+    }
+  }
+  if (conversationIds.length > 0) {
+    const messages = await Message.find(
+      {
+        user: userId,
+        conversationId: { $in: conversationIds },
+        files: { $exists: true, $ne: null },
+      },
+      'files',
+    ).lean<Array<{ files?: Array<{ file_id?: unknown } | null> }>>();
+    for (const message of messages) {
+      for (const file of message.files ?? []) {
+        const fileId = file?.file_id;
+        if (typeof fileId === 'string' && fileId.length > 0) {
+          fileIds.add(fileId);
+        }
+      }
+    }
+  }
+  return [...fileIds];
+};
+
+/**
  * Caps a conversation's uploaded files to the forced deadline. Files use a retention-scoped
  * `expiredAt` swept by application code (`getExpiredFiles` only sweeps files whose own `expiredAt`
  * is set), so a permanent file (`expiredAt: null`) uploaded before forced retention would linger
@@ -170,20 +210,27 @@ export const capConversationSharedLinks = async (
  * already expires sooner. Under ephemeral retention every conversation-scoped file is meant to
  * expire (persistent agent files are not retained), so no agent-file exclusion is needed here.
  *
- * Scoped by `conversationId` alone: it is a globally unique per-conversation id, and unlike the
- * message/share caps the `File.user` field is an `ObjectId` rather than the string user id, so
- * filtering by user would require a cast the callers cannot guarantee.
+ * Matches by `conversationId` (a globally unique per-conversation id; unlike the message/share
+ * caps the `File.user` field is an `ObjectId` rather than the string user id, so filtering by
+ * user would require a cast the callers cannot guarantee) plus any referenced `fileIds` —
+ * message-attachment rows carry no `conversationId`, so conversion-time callers collect the ids
+ * via {@link collectConversationFileIds}. A shared file referenced from several chats is capped
+ * to the earliest converting chat's deadline, consistent with cap-don't-extend.
  */
 export const capConversationFiles = async (
   File: Model<IMongoFile>,
   conversationId: string,
   forcedExpiredAt: Date,
+  fileIds: string[] = [],
 ): Promise<number> => {
+  const scope =
+    fileIds.length > 0
+      ? { $or: [{ conversationId }, { file_id: { $in: fileIds } }] }
+      : { conversationId };
   const result = await File.updateMany(
     {
-      conversationId,
-      $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }],
-    },
+      $and: [scope, { $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }] }],
+    } as FilterQuery<IMongoFile>,
     { $set: { expiredAt: forcedExpiredAt } },
   );
   return result.modifiedCount ?? 0;
@@ -239,12 +286,21 @@ export const cascadeForcedConversationRetention = async (
 ): Promise<boolean> => {
   const parent = await Conversation.findOne(
     { conversationId, user: userId },
-    'isTemporary expiredAt',
-  ).lean<RetentionFilterDocument | null>();
+    'isTemporary expiredAt files',
+  ).lean<(RetentionFilterDocument & { files?: string[] }) | null>();
   if (parent == null) {
     return false;
   }
   const expiredAt = capForcedRetentionExpiry(parent.expiredAt, forcedExpiredAt);
+  const needsConversion = conversationNeedsForcedRetention(parent, expiredAt);
+  /**
+   * Referenced file ids (message-attachment rows carry no conversationId) are collected only at
+   * conversion time: post-conversion uploads always receive a deadline at upload, so the id
+   * scan over the chat's messages is not needed on every conforming-parent write.
+   */
+  const fileIds = needsConversion
+    ? await collectConversationFileIds(Message, userId, [conversationId], parent.files)
+    : [];
   /**
    * Cap the dependent messages, shares, and files independently of the parent gap check, and
    * before the parent conversion. An already-conforming parent can still own lagging children
@@ -255,8 +311,8 @@ export const cascadeForcedConversationRetention = async (
    */
   await forceConversationMessagesTemporary(Message, userId, conversationId, expiredAt);
   await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
-  await capConversationFiles(File, conversationId, expiredAt);
-  if (!conversationNeedsForcedRetention(parent, expiredAt)) {
+  await capConversationFiles(File, conversationId, expiredAt, fileIds);
+  if (!needsConversion) {
     return false;
   }
   const convoResult = await Conversation.updateOne(
@@ -286,13 +342,16 @@ const cascadeForcedRetentionForConversationSet = async (
 ): Promise<void> => {
   const conversations = await Conversation.find(
     { user: userId, ...conversationMatch } as FilterQuery<IConversation>,
-    'conversationId isTemporary expiredAt',
-  ).lean<Array<RetentionFilterDocument & { conversationId?: string }>>();
+    'conversationId isTemporary expiredAt files',
+  ).lean<Array<RetentionFilterDocument & { conversationId?: string; files?: string[] }>>();
   if (conversations.length === 0) {
     return;
   }
 
-  const retentionBuckets = new Map<number, { expiredAt: Date; conversationIds: string[] }>();
+  const retentionBuckets = new Map<
+    number,
+    { expiredAt: Date; conversationIds: string[]; seedFileIds: string[] }
+  >();
   for (const convo of conversations) {
     if (typeof convo.conversationId !== 'string' || convo.conversationId.length === 0) {
       continue;
@@ -300,15 +359,19 @@ const cascadeForcedRetentionForConversationSet = async (
 
     const expiredAt = capForcedRetentionExpiry(convo.expiredAt, forcedExpiredAt);
     const key = expiredAt.getTime();
-    const bucket = retentionBuckets.get(key);
-    if (bucket) {
-      bucket.conversationIds.push(convo.conversationId);
-      continue;
+    const bucket = retentionBuckets.get(key) ?? {
+      expiredAt,
+      conversationIds: [],
+      seedFileIds: [],
+    };
+    bucket.conversationIds.push(convo.conversationId);
+    for (const fileId of convo.files ?? []) {
+      bucket.seedFileIds.push(fileId);
     }
-    retentionBuckets.set(key, { expiredAt, conversationIds: [convo.conversationId] });
+    retentionBuckets.set(key, bucket);
   }
 
-  for (const { expiredAt, conversationIds } of retentionBuckets.values()) {
+  for (const { expiredAt, conversationIds, seedFileIds } of retentionBuckets.values()) {
     await Conversation.updateMany(
       {
         user: userId,
@@ -340,11 +403,15 @@ const cascadeForcedRetentionForConversationSet = async (
       },
       { $set: { expiredAt } },
     );
+    const fileIds = await collectConversationFileIds(Message, userId, conversationIds, seedFileIds);
+    const fileScope =
+      fileIds.length > 0
+        ? { $or: [{ conversationId: { $in: conversationIds } }, { file_id: { $in: fileIds } }] }
+        : { conversationId: { $in: conversationIds } };
     await File.updateMany(
       {
-        conversationId: { $in: conversationIds },
-        $or: [{ expiredAt: null }, { expiredAt: { $gt: expiredAt } }],
-      },
+        $and: [fileScope, { $or: [{ expiredAt: null }, { expiredAt: { $gt: expiredAt } }] }],
+      } as FilterQuery<IMongoFile>,
       { $set: { expiredAt } },
     );
   }
@@ -447,7 +514,7 @@ export const sweepForcedRetention = async (
     isTemporary: true,
     expiredAt: { $ne: null, $lte: forcedExpiredAt },
   } as FilterQuery<IConversation>)
-    .select('conversationId user expiredAt')
+    .select('conversationId user expiredAt files')
     .lean()
     .cursor();
 
@@ -462,10 +529,16 @@ export const sweepForcedRetention = async (
       continue;
     }
     try {
+      const fileIds = await collectConversationFileIds(
+        Message,
+        user,
+        [conversationId],
+        convo.files,
+      );
       const changed =
         (await forceConversationMessagesTemporary(Message, user, conversationId, expiredAt)) +
         (await capConversationSharedLinks(SharedLink, user, conversationId, expiredAt)) +
-        (await capConversationFiles(File, conversationId, expiredAt));
+        (await capConversationFiles(File, conversationId, expiredAt, fileIds));
       if (changed > 0) {
         result.aligned += 1;
       }
@@ -475,7 +548,7 @@ export const sweepForcedRetention = async (
   }
 
   const cursor = Conversation.find(forcedRetentionGapFilter<IConversation>(forcedExpiredAt))
-    .select('_id conversationId user expiredAt chatProjectId')
+    .select('_id conversationId user expiredAt chatProjectId files')
     .lean()
     .cursor();
 
@@ -486,6 +559,12 @@ export const sweepForcedRetention = async (
     }
     try {
       const expiredAt = capForcedRetentionExpiry(convo.expiredAt, forcedExpiredAt);
+      const fileIds = await collectConversationFileIds(
+        Message,
+        user,
+        [conversationId],
+        convo.files,
+      );
       /**
        * Convert the dependent messages, shares, and files before marking the conversation itself
        * conforming. If a child backfill throws, the conversation stays non-conforming so the
@@ -493,7 +572,7 @@ export const sweepForcedRetention = async (
        */
       await forceConversationMessagesTemporary(Message, user, conversationId, expiredAt);
       await capConversationSharedLinks(SharedLink, user, conversationId, expiredAt);
-      await capConversationFiles(File, conversationId, expiredAt);
+      await capConversationFiles(File, conversationId, expiredAt, fileIds);
       await Conversation.updateOne({ _id: convo._id }, { $set: { isTemporary: true, expiredAt } });
       result.conversations += 1;
       if (typeof chatProjectId === 'string' && chatProjectId.length > 0) {
