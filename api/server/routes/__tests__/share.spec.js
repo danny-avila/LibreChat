@@ -374,7 +374,7 @@ describe('share routes', () => {
     );
   });
 
-  it('does not convert the source conversation when the share is not created', async () => {
+  it('converts the source conversation before creating the share so retries stay covered', async () => {
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     createSharedLink.mockResolvedValue(null);
 
@@ -383,7 +383,19 @@ describe('share routes', () => {
       .send({ targetMessageId: 'msg-123' });
 
     expect(response.status).toBe(404);
-    expect(applyForcedRetention).not.toHaveBeenCalled();
+    /**
+     * Retention runs before createSharedLink: a share attempt that fails (or hits an existing
+     * active share on retry) must still convert the touched conversation, otherwise a live
+     * share could outlast a source chat that never converts.
+     */
+    expect(applyForcedRetention).toHaveBeenCalledWith(
+      { userId: 'user-123', interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
+      { conversationId: 'convo-123' },
+      expect.objectContaining({ context: expect.any(String) }),
+    );
+    expect(applyForcedRetention.mock.invocationCallOrder[0]).toBeLessThan(
+      createSharedLink.mock.invocationCallOrder[0],
+    );
   });
 
   it('converts the source conversation under forced retention when updating a share', async () => {
