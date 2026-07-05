@@ -15,6 +15,12 @@ export const ENCRYPTED_CONFIG_FIELD_PATHS = new Set<string>(['langfuse.secretKey
 const FINGERPRINT_PATHS: Record<string, string> = {
   'langfuse.secretKey': 'langfuse.secretKeyFingerprint',
 };
+const SECRET_PATHS_BY_FINGERPRINT = Object.fromEntries(
+  Object.entries(FINGERPRINT_PATHS).map(([secretPath, fingerprintPath]) => [
+    fingerprintPath,
+    secretPath,
+  ]),
+);
 
 const FINGERPRINT_LENGTH = 12;
 const ENCRYPTED_PREFIX = 'v3:';
@@ -54,6 +60,18 @@ export function decryptConfigSecret(value: unknown): string | undefined {
 
 export function getConfigSecretFingerprintPath(fieldPath: string): string | undefined {
   return FINGERPRINT_PATHS[fieldPath];
+}
+
+export function getConfigSecretMutationPaths(fieldPath: string): string[] {
+  const fingerprintPath = FINGERPRINT_PATHS[fieldPath];
+  if (fingerprintPath) {
+    return [fieldPath, fingerprintPath];
+  }
+  const secretPath = SECRET_PATHS_BY_FINGERPRINT[fieldPath];
+  if (secretPath) {
+    return [secretPath, fieldPath];
+  }
+  return [fieldPath];
 }
 
 export function isConfigSecretDescendantPath(fieldPath: string): boolean {

@@ -15,7 +15,7 @@ import type { ServerRequest } from '~/types/http';
 import {
   encryptConfigSecretFields,
   encryptConfigSecrets,
-  getConfigSecretFingerprintPath,
+  getConfigSecretMutationPaths,
   isConfigSecretAncestorPath,
   isConfigSecretDescendantPath,
   preserveConfigSecrets,
@@ -698,24 +698,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
 
-      let config = await writeConfigTombstone(
-        principalType,
-        principalId,
-        principalModel(principalType),
-        fieldPath,
-        requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
-      );
-      const fingerprintPath = getConfigSecretFingerprintPath(fieldPath);
-      if (fingerprintPath) {
-        const fingerprintConfig = await writeConfigTombstone(
+      let config: IConfig | null = null;
+      for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const fieldConfig = await writeConfigTombstone(
           principalType,
           principalId,
           principalModel(principalType),
-          fingerprintPath,
+          path,
           requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
         );
-        if (fingerprintConfig) {
-          config = fingerprintConfig;
+        if (fieldConfig) {
+          config = fieldConfig;
         }
       }
 
@@ -779,20 +772,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
-      let config = await unsetConfigField(principalType, principalId, fieldPath);
+      let config: IConfig | null = null;
+      for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const fieldConfig = await unsetConfigField(principalType, principalId, path);
+        if (fieldConfig) {
+          config = fieldConfig;
+        }
+      }
       if (!config) {
         return res.status(404).json({ error: 'Config not found' });
-      }
-      const fingerprintPath = getConfigSecretFingerprintPath(fieldPath);
-      if (fingerprintPath) {
-        const fingerprintConfig = await unsetConfigField(
-          principalType,
-          principalId,
-          fingerprintPath,
-        );
-        if (fingerprintConfig) {
-          config = fingerprintConfig;
-        }
       }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>

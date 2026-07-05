@@ -629,6 +629,25 @@ describe('createAdminConfigHandlers', () => {
       );
     });
 
+    it('also deletes the secret when deleting its displayed fingerprint', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        query: { fieldPath: 'langfuse.secretKeyFingerprint' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'langfuse.secretKey');
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'langfuse.secretKeyFingerprint',
+      );
+    });
+
     it('returns 400 when fieldPath query param is missing', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
@@ -704,6 +723,33 @@ describe('createAdminConfigHandlers', () => {
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: { fieldPath: 'langfuse.secretKey' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'langfuse.secretKey',
+        10,
+      );
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'langfuse.secretKeyFingerprint',
+        10,
+      );
+    });
+
+    it('also tombstones the secret when tombstoning its displayed fingerprint', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'langfuse.secretKeyFingerprint' },
       });
       const res = mockRes();
 
