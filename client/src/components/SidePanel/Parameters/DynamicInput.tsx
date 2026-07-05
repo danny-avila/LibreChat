@@ -1,4 +1,4 @@
-import { OptionTypes } from 'librechat-data-provider';
+import { OptionTypes, SettingTypes } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger } from '@librechat/client';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
@@ -8,6 +8,8 @@ import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 
 function DynamicInput({
+  type,
+  range,
   label = '',
   settingKey,
   defaultValue,
@@ -15,8 +17,6 @@ function DynamicInput({
   columnSpan,
   setOption,
   optionType,
-  type,
-  range,
   placeholder = '',
   readonly = false,
   showDefault = false,
@@ -45,7 +45,7 @@ function DynamicInput({
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (type === 'number') {
+    if (type === SettingTypes.Number) {
       // Integer params: strip thousands separators so "120,000" / "120.000"
       // become 120000 instead of being truncated to 120 downstream by parseInt.
       // Keep a leading minus for fields whose range permits negatives (e.g.
@@ -58,7 +58,7 @@ function DynamicInput({
       setInputValue(sanitized, sanitized !== '-');
       return;
     }
-    setInputValue(e, !isNaN(Number(e.target.value)));
+    setInputValue(e, type === SettingTypes.String ? false : !isNaN(Number(e.target.value)));
   };
 
   const placeholderText = placeholderCode
