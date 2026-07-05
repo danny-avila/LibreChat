@@ -15,7 +15,6 @@ import {
   capConversationFiles,
   capConversationSharedLinks,
   capForcedRetentionExpiry,
-  conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
 } from '~/utils/retention';
@@ -316,16 +315,14 @@ export function createConversationMethods(
 
       const forcedExpiredAt = update.expiredAt;
       /**
-       * Backfill the dependent messages, shares, and files before converting the parent. The
-       * findOneAndUpdate below writes isTemporary/expiredAt on the conversation, so if a child
-       * update failed after it, a retried save would reload an already-conforming parent
-       * (conversationNeedsForcedRetention false) and permanently skip the child rows.
+       * Cap the dependent messages, shares, and files whenever forced retention resolves an
+       * active deadline for a pre-existing conversation, before converting the parent. Running
+       * before the findOneAndUpdate keeps a failed child from leaving an already-conforming
+       * parent behind (a retried save would skip the child rows), and running for conforming
+       * parents too heals children that lag from before the mode switch or a partial earlier
+       * backfill — each cap is an indexed no-op once the chat's children conform.
        */
-      if (
-        isForcedRetention &&
-        forcedExpiredAt instanceof Date &&
-        conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
-      ) {
+      if (isForcedRetention && forcedExpiredAt instanceof Date && parentRetention != null) {
         const Message = mongoose.models.Message as Model<IMessage>;
         const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
         const File = mongoose.models.File as Model<IMongoFile>;
