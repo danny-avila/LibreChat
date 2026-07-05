@@ -89,8 +89,10 @@ const configureGenerationStreams = () => {
   // or a stale submit) instead of leaving it until the Mongo TTL. streamId === conversationId
   // === the LangGraph thread_id. Config is resolved lazily per expiry so the prune always
   // targets the currently configured checkpoint collections.
-  GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
-    const appConfig = await getAppConfig();
+  GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
+    // Resolve config in the PAUSED JOB's tenant/user scope — the expiry runs outside any
+    // request context, and a tenant override may change the checkpointer config.
+    const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
     await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
   });
 };

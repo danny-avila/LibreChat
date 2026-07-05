@@ -212,7 +212,9 @@ class GenerationJobManagerClass {
    * e.g. prune the paused run's durable checkpoint eagerly instead of letting it sit
    * until its store TTL. Best-effort: failures are logged, never break the expiry.
    */
-  private _onApprovalExpired: ((streamId: string) => void | Promise<void>) | null = null;
+  private _onApprovalExpired:
+    | ((streamId: string, job?: SerializableJobData | null) => void | Promise<void>)
+    | null = null;
 
   constructor(options?: GenerationJobManagerOptions) {
     this.jobStore =
@@ -294,7 +296,9 @@ class GenerationJobManagerClass {
    * to call from any startup path (including ones that run on constructor defaults). The
    * `streamId` argument equals the LangGraph `thread_id` (LibreChat's conversationId).
    */
-  setApprovalExpiredHandler(handler: ((streamId: string) => void | Promise<void>) | null): void {
+  setApprovalExpiredHandler(
+    handler: ((streamId: string, job?: SerializableJobData | null) => void | Promise<void>) | null,
+  ): void {
     this._onApprovalExpired = handler;
   }
 
@@ -1708,15 +1712,36 @@ class GenerationJobManagerClass {
     } catch (err) {
       logger.error(`[GenerationJobManager] Failed to notify expired approval ${streamId}`, err);
     }
-    if (this._onApprovalExpired) {
-      try {
-        await this._onApprovalExpired(streamId);
-      } catch (err) {
-        logger.warn(`[GenerationJobManager] Approval-expired cleanup failed for ${streamId}`, err);
-      }
-    }
+    await this.runApprovalExpiredHandler(streamId);
     this.runningJobs.delete(streamId);
     return true;
+  }
+
+  /**
+   * Invoke the host approval-expired cleanup, passing the job so the host can resolve
+   * tenant/user-scoped config (the expiry runs outside any request context). Best-effort:
+   * the job read and the handler itself may fail without breaking the expiry.
+   */
+  private async runApprovalExpiredHandler(
+    streamId: string,
+    job?: SerializableJobData | null,
+  ): Promise<void> {
+    if (!this._onApprovalExpired) {
+      return;
+    }
+    let resolvedJob = job;
+    if (resolvedJob === undefined) {
+      try {
+        resolvedJob = await this.jobStore.getJob(streamId);
+      } catch {
+        resolvedJob = null;
+      }
+    }
+    try {
+      await this._onApprovalExpired(streamId, resolvedJob);
+    } catch (err) {
+      logger.warn(`[GenerationJobManager] Approval-expired cleanup failed for ${streamId}`, err);
+    }
   }
 
   private async expireStaleApprovals(): Promise<void> {
@@ -1750,6 +1775,9 @@ class GenerationJobManagerClass {
         } catch (err) {
           logger.error(`[GenerationJobManager] Failed to relay expired approval ${streamId}`, err);
         }
+        // The winning store cleanup (`cleanupRequiresActionIndex`) transitions status
+        // directly and can't run host cleanup — do it on relay (prune is idempotent).
+        await this.runApprovalExpiredHandler(streamId, job);
         changed = this.runningJobs.delete(streamId) || changed;
         continue;
       }

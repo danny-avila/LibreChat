@@ -318,8 +318,9 @@ if (cluster.isMaster) {
     // TTL. Mirrors api/server/index.js's configureGenerationStreams wiring; safe here even
     // though this startup runs the manager on constructor defaults (the setter never resets
     // services). streamId === conversationId === the LangGraph thread_id.
-    GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
-      const currentConfig = await getAppConfig();
+    GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
+      // Resolve config in the PAUSED JOB's tenant/user scope (mirrors index.js).
+      const currentConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
       await deleteAgentCheckpoint(conversationId, currentConfig?.endpoints?.agents?.checkpointer);
     });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };

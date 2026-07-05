@@ -212,7 +212,31 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
 
       expect(await manager.expireApproval(streamId, 'action-A')).toBe(true);
       expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(streamId);
+      // The expired job rides along so the host can resolve tenant/user-scoped config.
+      expect(handler).toHaveBeenCalledWith(streamId, expect.objectContaining({ userId: 'user-1' }));
+    });
+
+    test('relays a store-won expiry through the handler (multi-replica path)', async () => {
+      const streamId = 'stream-expire-relay';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId));
+
+      // Another replica's store cleanup wins the expiry CAS: the status flips via the
+      // lifecycle primitive with NO emit, NO handler, and no errorEvent on this replica.
+      expect(await manager.approvals.expire(streamId)).toBe(true);
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+      // This replica's sweep observes the already-aborted expiry and relays it.
+      await (
+        manager as unknown as { expireStaleApprovals(): Promise<void> }
+      ).expireStaleApprovals();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({ userId: 'user-1', status: 'aborted' }),
+      );
     });
 
     test('does NOT fire when nothing was expired (failed CAS)', async () => {
