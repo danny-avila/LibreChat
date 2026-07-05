@@ -41,11 +41,26 @@ const stringify = (value: unknown): string => JSON.stringify(value ?? null);
 const hasFormattedContent = (content: MessageContentExport): content is [string, string] =>
   content.length > 0;
 
-const formatReasoning = (reasoning: string, format: ExportFormat): string => {
+const stripThinkTags = (reasoning: string): string =>
+  reasoning
+    .replace(/^<think>\s*/, '')
+    .replace(/\s*<\/think>$/, '')
+    .trim();
+
+const formatReasoning = ({
+  reasoning,
+  format,
+  localize,
+}: {
+  reasoning: string;
+  format: ExportFormat;
+  localize: LocalizeFunction;
+}): string => {
+  const label = localize('com_endpoint_thinking');
   if (format === 'md') {
-    return `<details>\n<summary>Thinking</summary>\n\n${reasoning}\n</details>`;
+    return `<details>\n<summary>${label}</summary>\n\n${reasoning}\n</details>`;
   }
-  return `Thinking:\n${reasoning}`;
+  return `${label}:\n${reasoning}`;
 };
 
 const getUrlText = (value: string | { url?: string } | undefined): string => {
@@ -83,11 +98,11 @@ export function formatMessageContent({
   }
 
   if (content.type === ContentTypes.THINK) {
-    const reasoning = getTextValue(content.think);
+    const reasoning = stripThinkTags(getTextValue(content.think));
     if (reasoning.trim().length === 0) {
       return [];
     }
-    return [sender, formatReasoning(reasoning, format)];
+    return [sender, formatReasoning({ reasoning, format, localize })];
   }
 
   if (content.type === ContentTypes.TEXT_DELTA) {
@@ -139,7 +154,7 @@ export function formatMessageContent({
     const summary = content.content
       ?.map((part) => getTextValue(part.text))
       .filter((text) => text.length > 0)
-      .join('\n\n');
+      .join('');
     return ['Summary', summary ?? stringify(content)];
   }
 

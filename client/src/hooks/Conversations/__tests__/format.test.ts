@@ -5,7 +5,11 @@ import type { LocalizeFunction } from '~/common';
 import { formatMessageText, formatMessageContent, handledExportContentTypes } from '../format';
 
 const localize: LocalizeFunction = ((key: string) =>
-  key === 'com_ui_run_code' ? 'Run code' : key) as LocalizeFunction;
+  key === 'com_ui_run_code'
+    ? 'Run code'
+    : key === 'com_endpoint_thinking'
+      ? 'Thinking'
+      : key) as LocalizeFunction;
 
 const imageFile = {
   file_id: 'file-1',
@@ -137,6 +141,37 @@ describe('formatMessageContent', () => {
         localize,
       }),
     ).toEqual(['Assistant', 'Thinking:\nCheck assumptions']);
+  });
+
+  it('strips THINK delimiters before formatting reasoning exports', () => {
+    expect(
+      formatMessageContent({
+        sender: 'Assistant',
+        content: { type: ContentTypes.THINK, think: '<think>\nCheck assumptions\n</think>' },
+        format: 'md',
+        localize,
+      }),
+    ).toEqual([
+      'Assistant',
+      '<details>\n<summary>Thinking</summary>\n\nCheck assumptions\n</details>',
+    ]);
+  });
+
+  it('concatenates summary chunks without inserted paragraphs', () => {
+    expect(
+      formatMessageContent({
+        sender: 'Assistant',
+        content: {
+          type: ContentTypes.SUMMARY,
+          content: [
+            { type: ContentTypes.TEXT, text: 'The ' },
+            { type: ContentTypes.TEXT, text: 'answer' },
+          ],
+        },
+        format: 'md',
+        localize,
+      }),
+    ).toEqual(['Summary', 'The answer']);
   });
 });
 
