@@ -1289,7 +1289,7 @@ describe('bedrockInputParser', () => {
     // thinking models here but are not matched by the family-first reset()
     // regex; they must still resolve to the real ceiling, not the 8192 fallback.
     test.each([
-      ['anthropic.claude-4-7-sonnet', 64000],
+      ['anthropic.claude-4-7-sonnet', 128000],
       ['claude-5-sonnet', 128000],
       ['anthropic.claude-4-8-opus', 128000],
     ])('defaults number-first adaptive alias %s to its real max output', (model, expected) => {
