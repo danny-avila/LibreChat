@@ -1587,6 +1587,9 @@ describe('Claude Model Tests', () => {
     expect(getModelMaxTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
       maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
     );
+    expect(getModelMaxTokens('claude-sonnet-4.6', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4.6'],
+    );
     expect(getModelMaxTokens('claude-sonnet-4-6')).toBe(
       maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
     );

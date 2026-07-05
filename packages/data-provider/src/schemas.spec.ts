@@ -37,8 +37,8 @@ describe('anthropicSettings', () => {
         expect(reset('claude-sonnet-4-7')).toBe(128000);
       });
 
-      it('should return 128K for claude-sonnet-4-10', () => {
-        expect(reset('claude-sonnet-4-10')).toBe(128000);
+      it('should return 128K for claude-sonnet-4-9', () => {
+        expect(reset('claude-sonnet-4-9')).toBe(128000);
       });
     });
 
