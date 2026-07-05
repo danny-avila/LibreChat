@@ -729,6 +729,9 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   });
 
   schema.post('updateOne', function (doc: DocumentWithMeiliIndex, next) {
+    if (!doc) {
+      return next();
+    }
     doc.postUpdateHook?.(next);
   });
 
@@ -793,7 +796,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   // Post-findOneAndUpdate hook
   schema.post('findOneAndUpdate', async function (doc: DocumentWithMeiliIndex, next) {
-    if (!meiliEnabled) {
+    if (!meiliEnabled || !doc) {
       return next();
     }
 

@@ -34,7 +34,9 @@ describe('migrate-orphaned-agent-files (issue #12776)', () => {
   const userId = () => new mongoose.Types.ObjectId();
 
   beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
+    mongoServer = await MongoMemoryServer.create({
+      instance: { launchTimeout: 60000 },
+    });
     await mongoose.connect(mongoServer.getUri());
     Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
     File = mongoose.models.File || mongoose.model('File', fileSchema);

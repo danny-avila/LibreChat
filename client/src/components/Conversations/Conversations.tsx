@@ -5,8 +5,17 @@ import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
+import {
+  useLocalize,
+  TranslationKeys,
+  useFavorites,
+  useShowMarketplace,
+  useActiveAgentJobs,
+  useHasAccess,
+} from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+import { ActiveJobsList } from '~/components/Nav/Jobs';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useActiveJobs } from '~/data-provider';
 import { groupConversationsByDate, cn } from '~/utils';
 import Convo from './Convo';
@@ -114,6 +123,7 @@ DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
   | { type: 'favorites' }
+  | { type: 'active-jobs' }
   | { type: 'chats-header' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
@@ -167,8 +177,15 @@ const Conversations: FC<ConversationsProps> = ({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+  const hasAgentAccess = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.USE,
+  });
+  const { data: activeAgentJobsData, isLoading: isActiveAgentJobsLoading } =
+    useActiveAgentJobs(hasAgentAccess);
 
   const favoritesContentKeyRef = useRef('');
+  const activeJobsContentKeyRef = useRef('');
 
   // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs();
@@ -181,7 +198,13 @@ const Conversations: FC<ConversationsProps> = ({
   const shouldShowFavorites =
     !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
 
+  const shouldShowActiveJobs =
+    !search.query &&
+    hasAgentAccess &&
+    (isActiveAgentJobsLoading || (activeAgentJobsData?.jobs?.length ?? 0) > 0);
+
   favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
+  activeJobsContentKeyRef.current = `${activeAgentJobsData?.jobs?.length ?? 0}-${isActiveAgentJobsLoading ? 1 : 0}`;
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -199,6 +222,9 @@ const Conversations: FC<ConversationsProps> = ({
     if (shouldShowFavorites) {
       items.push({ type: 'favorites' });
     }
+    if (shouldShowActiveJobs) {
+      items.push({ type: 'active-jobs' });
+    }
     items.push({ type: 'chats-header' });
 
     if (isChatsExpanded) {
@@ -212,7 +238,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
+  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites, shouldShowActiveJobs]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -231,6 +257,9 @@ const Conversations: FC<ConversationsProps> = ({
           }
           if (item.type === 'favorites') {
             return `favorites-${favoritesContentKeyRef.current}`;
+          }
+          if (item.type === 'active-jobs') {
+            return `active-jobs-${activeJobsContentKeyRef.current}`;
           }
           if (item.type === 'chats-header') {
             return 'chats-header';
@@ -264,7 +293,14 @@ const Conversations: FC<ConversationsProps> = ({
       clearFavoritesCache();
     });
     return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
+  }, [
+    favorites.length,
+    isFavoritesLoading,
+    showAgentMarketplace,
+    activeAgentJobsData?.jobs?.length,
+    isActiveAgentJobsLoading,
+    clearFavoritesCache,
+  ]);
 
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
@@ -297,6 +333,14 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
 
+      if (item.type === 'active-jobs') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <ActiveJobsList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
+          </MeasuredRow>
+        );
+      }
+
       if (item.type === 'chats-header') {
         return (
           <MeasuredRow key={key} {...rowProps}>
@@ -309,10 +353,8 @@ const Conversations: FC<ConversationsProps> = ({
       }
 
       if (item.type === 'header') {
-        // First date header index depends on whether favorites row is included
-        // With favorites: [favorites, chats-header, first-header] → index 2
-        // Without favorites: [chats-header, first-header] → index 1
-        const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
+        const leadingRows = (shouldShowFavorites ? 1 : 0) + (shouldShowActiveJobs ? 1 : 0) + 1;
+        const firstHeaderIndex = leadingRows;
         return (
           <MeasuredRow key={key} {...rowProps}>
             <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
@@ -345,6 +387,7 @@ const Conversations: FC<ConversationsProps> = ({
       isChatsExpanded,
       setIsChatsExpanded,
       shouldShowFavorites,
+      shouldShowActiveJobs,
       activeJobIds,
     ],
   );

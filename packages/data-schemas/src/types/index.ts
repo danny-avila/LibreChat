@@ -26,6 +26,8 @@ export * from './prompts';
 /* Skills */
 export * from './skill';
 export * from './skillSchedule';
+/* Agent Jobs */
+export * from './agentJob';
 /* Access Control */
 export * from './accessRole';
 export * from './aclEntry';

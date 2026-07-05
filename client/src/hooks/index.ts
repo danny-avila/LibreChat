@@ -8,6 +8,8 @@ export * from './Nav';
 export * from './Files';
 export * from './Generic';
 export * from './Input';
+export * from './Jobs';
+export * from './LocalFiles';
 export * from './MCP';
 export * from './integrations';
 export * from './Mermaid';

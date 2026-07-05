@@ -70,7 +70,13 @@ jest.mock('~/hooks', () => ({
   useFavorites: () => mockFavoritesState,
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => mockShowMarketplace,
+  useActiveAgentJobs: () => ({ data: undefined, isLoading: false }),
+  useHasAccess: () => false,
   TranslationKeys: {},
+}));
+
+jest.mock('~/components/Nav/Jobs', () => ({
+  ActiveJobsList: () => null,
 }));
 
 jest.mock('@librechat/client', () => ({

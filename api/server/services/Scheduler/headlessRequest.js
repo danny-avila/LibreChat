@@ -1,4 +1,9 @@
-const { Constants, EModelEndpoint, EndpointURLs } = require('librechat-data-provider');
+const {
+  Constants,
+  EModelEndpoint,
+  EndpointURLs,
+  isEphemeralAgentId,
+} = require('librechat-data-provider');
 
 /**
  * Forces `buildEndpointOption` down the agents builder (which handles both
@@ -108,11 +113,16 @@ function buildHeadlessRes() {
  * @returns {{ agent_id?: string, endpoint: string, endpointType?: string, model?: string, spec?: string }}
  */
 function resolveRunTarget(schedule, appConfig) {
-  if (schedule.agent_id) {
+  const hasSavedAgent =
+    typeof schedule.agent_id === 'string' &&
+    schedule.agent_id.length > 0 &&
+    !isEphemeralAgentId(schedule.agent_id);
+
+  if (hasSavedAgent) {
     return { agent_id: schedule.agent_id, endpoint: EModelEndpoint.agents };
   }
 
-  if (schedule.endpoint) {
+  if (schedule.endpoint || schedule.spec) {
     return {
       endpoint: schedule.endpoint,
       endpointType: schedule.endpointType,

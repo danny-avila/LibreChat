@@ -22,6 +22,7 @@ import { createPromptGroupModel } from './promptGroup';
 import { createSkillModel } from './skill';
 import { createSkillFileModel } from './skillFile';
 import { createSkillScheduleModel } from './skillSchedule';
+import { createAgentJobModel } from './agentJob';
 import { createConversationTagModel } from './conversationTag';
 import { createSharedLinkModel } from './sharedLink';
 import { createToolCallModel } from './toolCall';
@@ -63,6 +64,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Skill: createSkillModel(mongoose),
     SkillFile: createSkillFileModel(mongoose),
     SkillSchedule: createSkillScheduleModel(mongoose),
+    AgentJob: createAgentJobModel(mongoose),
     ConversationTag: createConversationTagModel(mongoose),
     SharedLink: createSharedLinkModel(mongoose),
     ToolCall: createToolCallModel(mongoose),

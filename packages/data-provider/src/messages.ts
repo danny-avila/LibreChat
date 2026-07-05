@@ -1,7 +1,53 @@
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
+import { Constants } from './config';
 
 export type ParentMessage = TMessage & { children: TMessage[]; depth: number };
+
+function isRootParent(parentId: string | null | undefined): boolean {
+  return parentId == null || parentId === '' || parentId === Constants.NO_PARENT;
+}
+
+function applyFileMap(message: TMessage, fileMap?: Record<string, TFile>): TMessage {
+  if (!message.files || !fileMap) {
+    return message;
+  }
+  return {
+    ...message,
+    files: message.files.map((file) => fileMap[file.file_id ?? ''] ?? file),
+  };
+}
+
+/**
+ * Re-attaches orphan assistant roots under a lone user root — a pattern left
+ * by long-running job steps that persisted the assistant before the user bubble.
+ */
+function healOrphanAssistantRoots(rootMessages: ParentMessage[]): ParentMessage[] {
+  const userRoots = rootMessages.filter((message) => message.isCreatedByUser);
+  const orphanAssistants = rootMessages.filter(
+    (message) => !message.isCreatedByUser && isRootParent(message.parentMessageId),
+  );
+
+  if (userRoots.length !== 1 || orphanAssistants.length === 0) {
+    return rootMessages;
+  }
+
+  const [userRoot] = userRoots;
+  const remainingRoots = rootMessages.filter(
+    (message) => message !== userRoot && !orphanAssistants.includes(message),
+  );
+
+  for (let index = 0; index < orphanAssistants.length; index++) {
+    const assistant = orphanAssistants[index];
+    assistant.parentMessageId = userRoot.messageId;
+    assistant.depth = userRoot.depth + 1;
+    assistant.siblingIndex = index;
+    userRoot.children.push(assistant);
+  }
+
+  return [userRoot, ...remainingRoots];
+}
+
 export function buildTree({
   messages,
   fileMap,
@@ -14,37 +60,41 @@ export function buildTree({
   }
 
   const messageMap: Record<string, ParentMessage> = {};
-  const rootMessages: TMessage[] = [];
+  const rootMessages: ParentMessage[] = [];
   const childrenCount: Record<string, number> = {};
 
-  messages.forEach((message) => {
+  for (const message of messages) {
     if (!message) {
-      return;
+      continue;
     }
-    const parentId = message.parentMessageId ?? '';
-    childrenCount[parentId] = (childrenCount[parentId] || 0) + 1;
 
-    const extendedMessage: ParentMessage = {
-      ...message,
+    messageMap[message.messageId] = {
+      ...applyFileMap(message, fileMap),
       children: [],
       depth: 0,
-      siblingIndex: childrenCount[parentId] - 1,
+      siblingIndex: 0,
     };
+  }
 
-    if (message.files && fileMap) {
-      extendedMessage.files = message.files.map((file) => fileMap[file.file_id ?? ''] ?? file);
+  for (const message of messages) {
+    if (!message) {
+      continue;
     }
 
-    messageMap[message.messageId] = extendedMessage;
+    const node = messageMap[message.messageId];
+    const parentId = message.parentMessageId ?? '';
 
-    const parentMessage = messageMap[parentId];
-    if (parentMessage) {
-      parentMessage.children.push(extendedMessage);
-      extendedMessage.depth = parentMessage.depth + 1;
-    } else {
-      rootMessages.push(extendedMessage);
+    if (!isRootParent(parentId) && messageMap[parentId]) {
+      const parentMessage = messageMap[parentId];
+      childrenCount[parentId] = (childrenCount[parentId] ?? 0) + 1;
+      node.siblingIndex = childrenCount[parentId] - 1;
+      node.depth = parentMessage.depth + 1;
+      parentMessage.children.push(node);
+      continue;
     }
-  });
 
-  return rootMessages;
+    rootMessages.push(node);
+  }
+
+  return healOrphanAssistantRoots(rootMessages);
 }

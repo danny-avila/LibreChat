@@ -101,8 +101,11 @@ describe('Conversation Structure Tests', () => {
     // Build tree
     const tree = buildTree({ messages: retrievedMessages as TMessage[] });
 
-    // Check if the tree is incorrect (folded/corrupted)
-    expect(tree!.length).toBeGreaterThan(1); // Should have multiple root messages, indicating corruption
+    // buildTree links by parentMessageId in two passes, so order/timestamp
+    // quirks no longer produce multiple roots.
+    expect(tree!.length).toBe(1);
+    expect(tree![0].messageId).toBe('message0');
+    expect(tree![0].children!.length).toBeGreaterThan(0);
   });
 
   test('Fix: Conversation structure maintained with more than 16 messages', async () => {
@@ -130,7 +133,7 @@ describe('Conversation Structure Tests', () => {
 
     // Check if the tree is correct
     expect(tree!.length).toBe(1); // Should have only one root message
-    let currentNode = tree![0];
+    let currentNode: TMessage = tree![0];
     for (let i = 1; i < 20; i++) {
       expect(currentNode.children!.length).toBe(1);
       currentNode = currentNode.children![0];
@@ -161,7 +164,13 @@ describe('Conversation Structure Tests', () => {
     await bulkSaveMessages(messages, true);
     const retrievedMessages = await getMessages({ conversationId, user: userId });
     const tree = buildTree({ messages: retrievedMessages as TMessage[] });
-    expect(tree!.length).toBeGreaterThan(1);
+    expect(tree!.length).toBe(1);
+    let currentNode: TMessage = tree![0];
+    for (let i = 1; i < 20; i++) {
+      expect(currentNode.children!.length).toBe(1);
+      currentNode = currentNode.children![0];
+      expect(currentNode.text).toBe(`Message ${i}`);
+    }
   });
 
   test('Fix: Preserve order with more than 16 messages by maintaining original timestamps', async () => {
@@ -194,7 +203,7 @@ describe('Conversation Structure Tests', () => {
 
     // Check if the tree is correct
     expect(tree!.length).toBe(1); // Should have only one root message
-    let currentNode = tree![0];
+    let currentNode: TMessage = tree![0];
     for (let i = 1; i < 20; i++) {
       expect(currentNode.children!.length).toBe(1);
       currentNode = currentNode.children![0];

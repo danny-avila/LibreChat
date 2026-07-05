@@ -5,6 +5,7 @@ module.exports = {
   roots: ['<rootDir>'],
   coverageDirectory: 'coverage',
   maxWorkers: '50%',
+  workerIdleMemoryLimit: process.env.CI ? '1GB' : undefined,
   testTimeout: 30000, // 30 seconds timeout for all tests
   setupFiles: ['./test/jestSetup.js', './test/__mocks__/logger.js'],
   moduleNameMapper: {
