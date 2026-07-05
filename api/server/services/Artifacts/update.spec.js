@@ -297,6 +297,21 @@ ${ARTIFACT_END}`;
     expect(result).toContain('````markdown');
   });
 
+  test('should normalize editor trailing newlines before longer closing fences', () => {
+    const original = '# Notes';
+    const artifactText = `${ARTIFACT_START}{identifier="notes" type="text/markdown" title="Notes"}
+\`\`\`\`markdown
+${original}
+\`\`\`\`
+${ARTIFACT_END}`;
+    const message = { text: artifactText };
+    const artifacts = findAllArtifacts(message);
+
+    const result = replaceArtifactContent(artifactText, artifacts[0], original, `${original}\n`);
+
+    expect(result).toBe(artifactText);
+  });
+
   test('should replace unclosed artifacts with internal markers in fenced content', () => {
     const original = `before
 \`\`\`markdown
