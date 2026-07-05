@@ -1,4 +1,4 @@
-import { OptionTypes } from 'librechat-data-provider';
+import { OptionTypes, SettingTypes } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger } from '@librechat/client';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
@@ -8,6 +8,7 @@ import { ESide } from '~/common';
 import { cn } from '~/utils';
 
 function DynamicInput({
+  type,
   label = '',
   settingKey,
   defaultValue,
@@ -43,7 +44,12 @@ function DynamicInput({
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e, !isNaN(Number(e.target.value)));
+    const { value } = e.target;
+    const parsesAsNumber = !isNaN(Number(value));
+    if (type === SettingTypes.Number && value !== '' && !parsesAsNumber) {
+      return;
+    }
+    setInputValue(e, type === SettingTypes.String ? false : parsesAsNumber);
   };
 
   const placeholderText = placeholderCode
