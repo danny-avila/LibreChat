@@ -237,6 +237,39 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         streamId,
         expect.objectContaining({ userId: 'user-1', status: 'aborted' }),
       );
+
+      // Repeated sweeps must not re-run the (idempotent but not free) cleanup.
+      await (
+        manager as unknown as { expireStaleApprovals(): Promise<void> }
+      ).expireStaleApprovals();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    test('relay cleanup still runs when the terminal error is already cached (reconnect)', async () => {
+      const streamId = 'stream-expire-relay-cached';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      expect(await manager.approvals.expire(streamId)).toBe(true); // store-won CAS
+
+      // A reconnect seeds runtime.errorEvent from the aborted job BEFORE any sweep —
+      // that must gate the relay emit, not the checkpoint cleanup.
+      const internals = manager as unknown as {
+        runtimeState: Map<string, { errorEvent?: string }>;
+        expireStaleApprovals(): Promise<void>;
+      };
+      const runtime = internals.runtimeState.get(streamId);
+      expect(runtime).toBeDefined();
+      runtime!.errorEvent = 'cached-terminal-error';
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+      await internals.expireStaleApprovals();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({ status: 'aborted' }),
+      );
     });
 
     test('does NOT fire when nothing was expired (failed CAS)', async () => {

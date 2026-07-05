@@ -9,7 +9,7 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
@@ -91,9 +91,12 @@ const configureGenerationStreams = () => {
   // targets the currently configured checkpoint collections.
   GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
     // Resolve config in the PAUSED JOB's tenant/user scope — the expiry runs outside any
-    // request context, and a tenant override may change the checkpointer config.
-    const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
-    await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
+    // request context. Passing ids to getAppConfig only keys the cache; the Config query
+    // itself is ALS-scoped by the tenant-isolation plugin, so ENTER the tenant context.
+    await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
+      const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
+      await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
+    });
   });
 };
 

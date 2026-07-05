@@ -152,6 +152,8 @@ interface RuntimeJobState {
   resolveReady: () => void;
   finalEvent?: t.ServerSentEvent;
   errorEvent?: string;
+  /** Approval-expired host cleanup already ran for this runtime (relay path is swept repeatedly). */
+  approvalCleanupRan?: boolean;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
   hasSubscriber: boolean;
@@ -1765,19 +1767,25 @@ class GenerationJobManagerClass {
       // expiry* and we haven't emitted here, relay the terminal error to our subscriber.
       // The `errorEvent` flag (set by emitError) keeps this idempotent vs the win path.
       const runtime = this.runtimeState.get(streamId);
-      if (
-        job?.status === 'aborted' &&
-        job.error === APPROVAL_EXPIRED_ERROR &&
-        !runtime?.errorEvent
-      ) {
-        try {
-          await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
-        } catch (err) {
-          logger.error(`[GenerationJobManager] Failed to relay expired approval ${streamId}`, err);
+      if (job?.status === 'aborted' && job.error === APPROVAL_EXPIRED_ERROR) {
+        if (!runtime?.errorEvent) {
+          try {
+            await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
+          } catch (err) {
+            logger.error(
+              `[GenerationJobManager] Failed to relay expired approval ${streamId}`,
+              err,
+            );
+          }
         }
         // The winning store cleanup (`cleanupRequiresActionIndex`) transitions status
-        // directly and can't run host cleanup — do it on relay (prune is idempotent).
-        await this.runApprovalExpiredHandler(streamId, job);
+        // directly and can't run host cleanup — do it on relay. Deliberately NOT gated on
+        // `errorEvent`: a reconnect seeds that flag from the aborted job, which must not
+        // suppress the (idempotent) prune. Once per runtime lifetime.
+        if (runtime && !runtime.approvalCleanupRan) {
+          runtime.approvalCleanupRan = true;
+          await this.runApprovalExpiredHandler(streamId, job);
+        }
         changed = this.runningJobs.delete(streamId) || changed;
         continue;
       }
