@@ -300,19 +300,19 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     );
   }
 
-  function forceConversationRetention(
+  async function forceConversationRetention(
     user: string,
     conversationId: string,
     interfaceConfig?: AppConfig['interfaceConfig'],
   ): Promise<void> {
     if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
-      return Promise.resolve();
+      return;
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const Message = mongoose.models.Message as Model<IMessage>;
     const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
     const File = mongoose.models.File as Model<IMongoFile>;
-    return cascadeForcedConversationRetention(
+    await cascadeForcedConversationRetention(
       Conversation,
       Message,
       SharedLink,

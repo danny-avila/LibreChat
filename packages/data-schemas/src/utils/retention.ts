@@ -224,7 +224,9 @@ export const capForcedRetentionToParent = async (
  * Converts or re-caps a parent conversation to the forced deadline and, when that first
  * brings the conversation into the forced window, backfills its lagging messages, shares, and
  * files. Shared by every forced-retention message-write path so a single conversation/message
- * rule is enforced regardless of which save touched the chat.
+ * rule is enforced regardless of which save touched the chat. Returns whether the parent row
+ * was converted, so callers can refresh caches (e.g. project stats) that a visibility flip
+ * invalidates.
  */
 export const cascadeForcedConversationRetention = async (
   Conversation: Model<IConversation>,
@@ -234,13 +236,13 @@ export const cascadeForcedConversationRetention = async (
   userId: string,
   conversationId: string,
   forcedExpiredAt: Date,
-): Promise<void> => {
+): Promise<boolean> => {
   const parent = await Conversation.findOne(
     { conversationId, user: userId },
     'isTemporary expiredAt',
   ).lean<RetentionFilterDocument | null>();
   if (parent == null) {
-    return;
+    return false;
   }
   const expiredAt = capForcedRetentionExpiry(parent.expiredAt, forcedExpiredAt);
   /**
@@ -255,12 +257,13 @@ export const cascadeForcedConversationRetention = async (
   await capConversationSharedLinks(SharedLink, userId, conversationId, expiredAt);
   await capConversationFiles(File, conversationId, expiredAt);
   if (!conversationNeedsForcedRetention(parent, expiredAt)) {
-    return;
+    return false;
   }
-  await Conversation.updateOne(
+  const convoResult = await Conversation.updateOne(
     { conversationId, user: userId, ...forcedRetentionGapFilter<IConversation>(expiredAt) },
     { $set: { isTemporary: true, expiredAt } },
   );
+  return (convoResult.modifiedCount ?? 0) > 0;
 };
 
 /**

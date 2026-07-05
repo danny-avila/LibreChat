@@ -1455,6 +1455,41 @@ describe('Message Operations', () => {
       expect(refreshed?.lastConversationId ?? null).toBeNull();
     });
 
+    it('refreshes owning project stats when a message-only save converts a project chat', async () => {
+      const ChatProject = mongoose.models.ChatProject as mongoose.Model<IChatProject>;
+      await ChatProject.deleteMany({});
+      const conversationId = uuidv4();
+      const project = await ChatProject.create({
+        name: 'Ephemeral Project',
+        user: 'user123',
+        conversationCount: 1,
+        lastConversationId: conversationId,
+        lastConversationAt: new Date(),
+      });
+      const projectId = project._id!.toString();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Project chat',
+        isTemporary: false,
+        chatProjectId: projectId,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      const refreshed = await ChatProject.findById(projectId).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId ?? null).toBeNull();
+    });
+
     it('converts a permanent conversation and its messages without a messageId (tag write)', async () => {
       const conversationId = uuidv4();
       await Conversation().create({
