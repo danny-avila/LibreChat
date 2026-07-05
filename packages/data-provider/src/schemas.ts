@@ -487,6 +487,8 @@ const CLAUDE_4_64K_MAX_OUTPUT = 64000 as const;
 const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
+const CLAUDE_SONNET_128K_OUTPUT_PATTERN =
+  /claude-sonnet[-.]?(?:4[-.]?(?:[6-9]|\d{2})|[5-9]|\d{2,})(?=$|[^0-9])/;
 
 /**
  * Claude "Mythos-class" model families — new top-level classes (peers of
@@ -547,7 +549,7 @@ export const anthropicSettings = {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
-      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
+      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -580,7 +582,7 @@ export const anthropicSettings = {
         return value;
       }
 
-      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
+      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
         if (value > ANTHROPIC_MAX_OUTPUT) {
           return ANTHROPIC_MAX_OUTPUT;
         }
