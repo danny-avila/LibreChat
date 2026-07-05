@@ -1896,12 +1896,14 @@ describe('Message Operations', () => {
     it('aligns referenced attachment files that carry no conversationId', async () => {
       const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
       const conversationId = uuidv4();
       const messageFileId = uuidv4();
 
       await Conversation().create({
         conversationId,
-        user: 'user123',
+        user: owner,
         endpoint: 'openAI',
         isTemporary: true,
         expiredAt: parentDeadline,
@@ -1909,7 +1911,7 @@ describe('Message Operations', () => {
       await Message.create({
         messageId: uuidv4(),
         conversationId,
-        user: 'user123',
+        user: owner,
         text: 'with attachment',
         isTemporary: true,
         expiredAt: parentDeadline,
@@ -1917,7 +1919,7 @@ describe('Message Operations', () => {
       });
       await File().collection.insertOne({
         file_id: messageFileId,
-        user: new mongoose.Types.ObjectId(),
+        user: ownerObjectId,
         expiredAt: null,
       });
 
@@ -2117,30 +2119,40 @@ describe('Message Operations', () => {
 
     it('caps referenced attachment files that carry no conversationId when converting', async () => {
       const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
       const conversationId = uuidv4();
       const messageFileId = uuidv4();
       const toolOutputFileId = uuidv4();
       const convoFileId = uuidv4();
+      const threadFileId = uuidv4();
+      const foreignFileId = uuidv4();
 
       await Conversation().create({
         conversationId,
-        user: 'user123',
+        user: owner,
         endpoint: 'openAI',
         isTemporary: false,
         files: [convoFileId],
+        file_ids: [threadFileId],
       });
       await Message.create({
         messageId: uuidv4(),
         conversationId,
-        user: 'user123',
+        user: owner,
         text: 'with attachment',
-        files: [{ file_id: messageFileId, filename: 'doc.pdf' }],
+        files: [
+          { file_id: messageFileId, filename: 'doc.pdf' },
+          { file_id: foreignFileId, filename: 'crafted.pdf' },
+        ],
         attachments: [{ file_id: toolOutputFileId, filename: 'chart.png' }],
       });
       await File().collection.insertMany([
-        { file_id: messageFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
-        { file_id: toolOutputFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
-        { file_id: convoFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
+        { file_id: messageFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: toolOutputFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: convoFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: threadFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: foreignFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
       ]);
 
       await cascadeForcedConversationRetention(
@@ -2148,7 +2160,7 @@ describe('Message Operations', () => {
         Message,
         SharedLink(),
         File(),
-        'user123',
+        owner,
         conversationId,
         forcedExpiredAt,
       );
@@ -2161,6 +2173,16 @@ describe('Message Operations', () => {
 
       const convoFile = await File().findOne({ file_id: convoFileId }).lean();
       expect(convoFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const threadFile = await File().findOne({ file_id: threadFileId }).lean();
+      expect(threadFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      /**
+       * A crafted reference to another user's file must never shorten that file's retention:
+       * the referenced-id cap is owner-scoped, so the foreign row stays permanent.
+       */
+      const foreignFile = await File().findOne({ file_id: foreignFileId }).lean();
+      expect(foreignFile?.expiredAt ?? null).toBeNull();
     });
 
     it('caps lagging children even when the parent conversation already conforms', async () => {
