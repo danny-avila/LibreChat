@@ -12,8 +12,16 @@ type TextDeltaContentPart = {
   text?: TextValue;
   text_delta?: TextValue;
 };
+type SummaryContentPart = Extract<TMessageContentParts, { type: ContentTypes.SUMMARY }>;
+type ExportSummaryContentPart = Omit<SummaryContentPart, 'content'> & {
+  content?: Array<{ type: ContentTypes.TEXT; text?: TextValue }> | string;
+  text?: TextValue;
+};
 
-export type ExportableContentPart = TMessageContentParts | TextDeltaContentPart;
+export type ExportableContentPart =
+  | Exclude<TMessageContentParts, SummaryContentPart>
+  | ExportSummaryContentPart
+  | TextDeltaContentPart;
 
 export const handledExportContentTypes = [
   ContentTypes.TEXT,
@@ -40,6 +48,17 @@ const stringify = (value: unknown): string => JSON.stringify(value ?? null);
 
 const hasFormattedContent = (content: MessageContentExport): content is [string, string] =>
   content.length > 0;
+
+const exportLabelKeys = {
+  tool: 'com_ui_export_tool',
+  image: 'com_ui_export_image',
+  audio: 'com_ui_export_audio',
+  video: 'com_ui_export_video',
+  summary: 'com_ui_export_summary',
+  retrieval: 'com_ui_export_retrieval',
+  fileSearch: 'com_ui_export_file_search',
+  agentUpdate: 'com_ui_export_agent_update',
+} satisfies Record<string, Parameters<LocalizeFunction>[0]>;
 
 const stripThinkTags = (reasoning: string): string =>
   reasoning
@@ -68,6 +87,20 @@ const getUrlText = (value: string | { url?: string } | undefined): string => {
     return value;
   }
   return value?.url ?? stringify(value);
+};
+
+const getSummaryText = (content: ExportSummaryContentPart): string | undefined => {
+  if (Array.isArray(content.content)) {
+    return content.content.map((part) => getTextValue(part.text)).join('');
+  }
+  if (typeof content.content === 'string') {
+    return content.content;
+  }
+  const text = getTextValue(content.text);
+  if (text.length > 0) {
+    return text;
+  }
+  return undefined;
 };
 
 export function formatMessageContent({
@@ -116,46 +149,43 @@ export function formatMessageContent({
   if (content.type === ContentTypes.TOOL_CALL) {
     const toolCall = content.tool_call;
     if (!toolCall) {
-      return ['Tool', stringify(toolCall)];
+      return [localize(exportLabelKeys.tool), stringify(toolCall)];
     }
     if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
       return [localize('com_ui_run_code'), stringify(toolCall.code_interpreter)];
     }
     if (toolCall.type === ToolCallTypes.RETRIEVAL) {
-      return ['Retrieval', stringify(toolCall)];
+      return [localize(exportLabelKeys.retrieval), stringify(toolCall)];
     }
     if (toolCall.type === ToolCallTypes.FILE_SEARCH) {
-      return ['File Search', stringify(toolCall)];
+      return [localize(exportLabelKeys.fileSearch), stringify(toolCall)];
     }
-    return ['Tool', stringify(toolCall)];
+    return [localize(exportLabelKeys.tool), stringify(toolCall)];
   }
 
   if (content.type === ContentTypes.IMAGE_FILE) {
-    return ['Image', stringify(content.image_file)];
+    return [localize(exportLabelKeys.image), stringify(content.image_file)];
   }
 
   if (content.type === ContentTypes.IMAGE_URL) {
-    return ['Image', getUrlText(content.image_url)];
+    return [localize(exportLabelKeys.image), getUrlText(content.image_url)];
   }
 
   if (content.type === ContentTypes.VIDEO_URL) {
-    return ['Video', getUrlText(content.video_url)];
+    return [localize(exportLabelKeys.video), getUrlText(content.video_url)];
   }
 
   if (content.type === ContentTypes.INPUT_AUDIO) {
-    return ['Audio', stringify(content.input_audio)];
+    return [localize(exportLabelKeys.audio), stringify(content.input_audio)];
   }
 
   if (content.type === ContentTypes.AGENT_UPDATE) {
-    return ['Agent Update', stringify(content.agent_update)];
+    return [localize(exportLabelKeys.agentUpdate), stringify(content.agent_update)];
   }
 
   if (content.type === ContentTypes.SUMMARY) {
-    const summary = content.content
-      ?.map((part) => getTextValue(part.text))
-      .filter((text) => text.length > 0)
-      .join('');
-    return ['Summary', summary ?? stringify(content)];
+    const summary = getSummaryText(content);
+    return [localize(exportLabelKeys.summary), summary ?? stringify(content)];
   }
 
   return [sender, stringify(content)];

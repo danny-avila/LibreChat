@@ -6,6 +6,14 @@ import { formatMessageText, formatMessageContent, handledExportContentTypes } fr
 
 const translations: Record<string, string> = {
   com_endpoint_thinking: 'Thinking',
+  com_ui_export_agent_update: 'Agent Update',
+  com_ui_export_audio: 'Audio',
+  com_ui_export_file_search: 'File Search',
+  com_ui_export_image: 'Image',
+  com_ui_export_retrieval: 'Retrieval',
+  com_ui_export_summary: 'Summary',
+  com_ui_export_tool: 'Tool',
+  com_ui_export_video: 'Video',
   com_ui_run_code: 'Run code',
 };
 
@@ -172,6 +180,45 @@ describe('formatMessageContent', () => {
         localize,
       }),
     ).toEqual(['Summary', 'The answer']);
+  });
+
+  it('formats legacy summary string content', () => {
+    expect(
+      formatMessageContent({
+        sender: 'Assistant',
+        content: {
+          type: ContentTypes.SUMMARY,
+          content: 'Legacy summary text',
+        },
+        format: 'md',
+        localize,
+      }),
+    ).toEqual(['Summary', 'Legacy summary text']);
+  });
+
+  it('localizes export section labels', () => {
+    const localized = ((key: string) => `localized:${key}`) as LocalizeFunction;
+
+    expect(
+      formatMessageContent({
+        sender: 'Assistant',
+        content: contentByType[ContentTypes.VIDEO_URL],
+        format: 'md',
+        localize: localized,
+      }),
+    ).toEqual(['localized:com_ui_export_video', 'https://example.com/video.mp4']);
+
+    expect(
+      formatMessageContent({
+        sender: 'Assistant',
+        content: contentByType[ContentTypes.AGENT_UPDATE],
+        format: 'md',
+        localize: localized,
+      }),
+    ).toEqual([
+      'localized:com_ui_export_agent_update',
+      '{"index":0,"runId":"run-1","agentId":"agent-1"}',
+    ]);
   });
 });
 
