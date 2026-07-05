@@ -4,12 +4,12 @@ import type { ExportableContentPart, MessageContentExport } from '../format';
 import type { LocalizeFunction } from '~/common';
 import { formatMessageText, formatMessageContent, handledExportContentTypes } from '../format';
 
-const localize: LocalizeFunction = ((key: string) =>
-  key === 'com_ui_run_code'
-    ? 'Run code'
-    : key === 'com_endpoint_thinking'
-      ? 'Thinking'
-      : key) as LocalizeFunction;
+const translations: Record<string, string> = {
+  com_endpoint_thinking: 'Thinking',
+  com_ui_run_code: 'Run code',
+};
+
+const localize: LocalizeFunction = ((key: string) => translations[key] ?? key) as LocalizeFunction;
 
 const imageFile = {
   file_id: 'file-1',
