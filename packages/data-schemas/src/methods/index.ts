@@ -7,6 +7,12 @@ import { createRoleMethods, RoleConflictError } from './role';
 import { createKeyMethods, type KeyMethods } from './key';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
+/* Tool Favorites */
+import {
+  createToolFavoriteMethods,
+  MAX_TOOL_FAVORITES,
+  type ToolFavoriteMethods,
+} from './favorite';
 /* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
 /* Agent API Keys */
@@ -110,6 +116,7 @@ export {
   inferSkillFileCategory,
 };
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
+export { MAX_TOOL_FAVORITES };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -118,6 +125,7 @@ export type AllMethods = UserMethods &
   KeyMethods &
   FileMethods &
   MemoryMethods &
+  ToolFavoriteMethods &
   AgentCategoryMethods &
   AgentApiKeyMethods &
   MCPServerMethods &
@@ -246,6 +254,7 @@ export function createMethods(
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
     ...createMemoryMethods(mongoose),
+    ...createToolFavoriteMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
@@ -291,6 +300,7 @@ export type {
   FileMethods,
   FileOwnerScope,
   MemoryMethods,
+  ToolFavoriteMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,
   MCPServerMethods,

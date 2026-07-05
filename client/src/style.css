@@ -66,6 +66,73 @@
   --font-size-xl: 1.25rem;
   --markdown-font-size: 1rem;
 }
+
+/* transitions-dev tokens — semantic names shared by every t-* class below. */
+:root {
+  --resize-dur: 300ms;
+  --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --icon-swap-dur: 200ms;
+  --icon-swap-blur: 2px;
+  --icon-swap-start-scale: 0.25;
+  --icon-swap-ease: ease-in-out;
+  --avatar-lift: -3px;
+  --avatar-dur: 280ms;
+  --avatar-scale: 1.04;
+  --avatar-falloff: 0.45;
+  --avatar-ease-in: cubic-bezier(0.22, 1, 0.36, 1);
+  --avatar-ease-out: cubic-bezier(0.34, 3.85, 0.64, 1);
+}
+
+/* Icon swap — cross-fade two icons sharing a slot. */
+.t-icon-swap {
+  position: relative;
+  display: inline-grid;
+}
+.t-icon-swap .t-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity   var(--icon-swap-dur) var(--icon-swap-ease),
+    filter    var(--icon-swap-dur) var(--icon-swap-ease),
+    transform var(--icon-swap-dur) var(--icon-swap-ease);
+  will-change: opacity, filter, transform;
+}
+.t-icon-swap[data-state='a'] .t-icon[data-icon='a'],
+.t-icon-swap[data-state='b'] .t-icon[data-icon='b'] {
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+}
+.t-icon-swap[data-state='a'] .t-icon[data-icon='b'],
+.t-icon-swap[data-state='b'] .t-icon[data-icon='a'] {
+  opacity: 0;
+  filter: blur(var(--icon-swap-blur));
+  transform: scale(var(--icon-swap-start-scale));
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-icon-swap .t-icon {
+    transition: none !important;
+  }
+}
+
+/* Avatar group hover — distance-falloff lift on a horizontal row. */
+.t-avatar {
+  transform-origin: center;
+  transform: translateY(var(--shift, 0px)) scale(var(--scale-active, 1));
+  transition:
+    transform var(--avatar-dur) var(--avatar-ease-in),
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-avatar {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
 html {
   --brand-purple: #ab68ff;
   --presentation: var(--white);
@@ -2646,13 +2713,12 @@ html {
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.1),
     0 4px 6px -4px rgb(0 0 0 / 0.1);
-  transform-origin: top;
+  transform-origin: var(--popover-transform-origin, top);
   opacity: 0;
-  transition-property: opacity, scale, translate;
+  transition-property: opacity, scale;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
   scale: 0.95;
-  translate: 0 -0.5rem;
   margin-top: 4px;
   margin-right: -2px;
 }
@@ -2706,7 +2772,6 @@ html {
 .popover-ui[data-enter] {
   opacity: 1;
   scale: 1;
-  translate: 0;
 }
 
 .popover-ui.popover-from-left {
