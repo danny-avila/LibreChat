@@ -5,6 +5,11 @@ USER root
 COPY mcp-servers/qwen-image/package.json /app/mcp-servers/qwen-image/package.json
 COPY mcp-servers/qwen-image/index.js /app/mcp-servers/qwen-image/index.js
 
+COPY mcp-servers/document-generator/package.json /app/mcp-servers/document-generator/package.json
+COPY mcp-servers/document-generator/index.js /app/mcp-servers/document-generator/index.js
+COPY mcp-servers/document-generator/generators /app/mcp-servers/document-generator/generators
+
 RUN cd /app/mcp-servers/qwen-image && npm install --production
+RUN cd /app/mcp-servers/document-generator && npm install --production
 
 USER node
