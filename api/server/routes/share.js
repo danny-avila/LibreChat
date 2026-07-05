@@ -548,6 +548,19 @@ router.post(
         return res.status(400).json({ message: 'snapshotFiles must be a boolean' });
       }
 
+      /**
+       * Convert the source conversation before creating the link. createSharedLink rejects
+       * when an active share already exists, so a retention failure after creation would
+       * leave a live share whose source chat never converts, and no retry could reach the
+       * cascade again. Converting first also lets the share expiration below read the
+       * converted conversation's deadline.
+       */
+      await enforceForcedRetention(
+        req,
+        req.params.conversationId,
+        'POST /api/share/:conversationId',
+      );
+
       const expiredAt = await resolveSharedLinkExpiration(req, req.params.conversationId);
       if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
         return res.status(404).end();
@@ -569,11 +582,6 @@ router.post(
       );
       if (created) {
         await grantCreationPermissions(created._id, req.user.id, grantPublic, expiredAt);
-        await enforceForcedRetention(
-          req,
-          req.params.conversationId,
-          'POST /api/share/:conversationId',
-        );
         res.status(200).json(created);
       } else {
         res.status(404).end();
