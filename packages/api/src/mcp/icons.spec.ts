@@ -239,8 +239,8 @@ describe('sanitizeMcpIconPath', () => {
 
   it('never stores an icon over the length cap even when sanitizing grows it', () => {
     // A base64 input under the cap whose many self-closing tags expand under
-    // sanitization (explicit close tags) past the cap; it must be dropped, not
-    // stored over-limit where the next edit's re-validation would reject it.
+    // sanitization (explicit close tags) past the cap; it must be dropped rather
+    // than stored over-limit.
     const cell = '<rect x="1" y="1" width="2" height="2" fill="#abc"/>';
     const raw = `<svg>${cell.repeat(3400)}</svg>`;
     const input = `data:image/svg+xml;base64,${Buffer.from(raw, 'utf-8').toString('base64')}`;
@@ -248,5 +248,16 @@ describe('sanitizeMcpIconPath', () => {
     const out = sanitizeMcpIconPath(input);
     expect(out.length).toBeLessThanOrEqual(MAX_MCP_ICON_PATH_LENGTH);
     expect(out).toBe('');
+  });
+
+  it('drops an over-cap non-SVG value (raster data URI) that cannot be compacted', () => {
+    const huge = `data:image/png;base64,${'A'.repeat(MAX_MCP_ICON_PATH_LENGTH)}`;
+    expect(huge.length).toBeGreaterThan(MAX_MCP_ICON_PATH_LENGTH);
+    expect(sanitizeMcpIconPath(huge)).toBe('');
+  });
+
+  it('passes an under-cap non-SVG value through unchanged', () => {
+    const ok = `data:image/png;base64,${'A'.repeat(1000)}`;
+    expect(sanitizeMcpIconPath(ok)).toBe(ok);
   });
 });

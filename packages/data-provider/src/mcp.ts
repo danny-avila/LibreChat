@@ -6,6 +6,11 @@ import { extractEnvVariable } from './utils';
  * Upper bound on a stored MCP `iconPath` string (URL or inlined data URI).
  * A legitimate icon is a few KB; this caps a malicious or accidental multi-MB
  * data URI that would otherwise be persisted and shipped in every server list.
+ *
+ * Enforced server-side by `sanitizeMcpIconPath` (which drops or compacts an
+ * over-limit value), NOT as a schema `.max()`. A parse-time cap would reject the
+ * whole update when the edit dialog re-submits a pre-existing over-limit icon,
+ * locking the user out of editing other fields or clearing the bad icon.
  */
 export const MAX_MCP_ICON_PATH_LENGTH = 256 * 1024;
 
@@ -176,7 +181,7 @@ const BaseOptionsSchema = z.object({
    *   requiring manual authentication (e.g., GitHub PAT tokens) that need to be configured through the UI after startup
    */
   startup: z.boolean().optional(),
-  iconPath: z.string().max(MAX_MCP_ICON_PATH_LENGTH).optional(),
+  iconPath: z.string().optional(),
   timeout: z.number().int().nonnegative().optional(),
   /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
   sseReadTimeout: z.number().int().positive().optional(),
