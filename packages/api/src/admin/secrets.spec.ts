@@ -3,9 +3,10 @@ process.env.CREDS_KEY =
 
 // Loaded via dynamic import in beforeAll so encryption initializes after
 // CREDS_KEY is set above (encryptV3 reads the key at module load).
+let decryptConfigSecret: typeof import('./secrets').decryptConfigSecret;
 let encryptConfigSecretFields: typeof import('./secrets').encryptConfigSecretFields;
 let encryptConfigSecrets: typeof import('./secrets').encryptConfigSecrets;
-let decryptConfigSecret: typeof import('./secrets').decryptConfigSecret;
+let getConfigSecretInputError: typeof import('./secrets').getConfigSecretInputError;
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
 let decryptV3: typeof import('@librechat/data-schemas').decryptV3;
@@ -15,16 +16,16 @@ beforeAll(async () => {
     decryptConfigSecret,
     encryptConfigSecretFields,
     encryptConfigSecrets,
+    getConfigSecretInputError,
     preserveConfigSecrets,
     redactConfigSecrets,
   } = await import('./secrets'));
   ({ decryptV3 } = await import('@librechat/data-schemas'));
 });
 
-describe('encryptConfigSecretFields', () => {
-  it('encrypts a registered secret field and stores a display secret key', () => {
+describe('Langfuse config secrets', () => {
+  it('encrypts direct field writes and stores a display secret key', () => {
     const out = encryptConfigSecretFields({
-      'langfuse.enabled': true,
       'langfuse.publicKey': 'pk-lf-1',
       'langfuse.secretKey': 'sk-lf-secret',
     });
@@ -32,145 +33,58 @@ describe('encryptConfigSecretFields', () => {
     expect(out['langfuse.secretKey']).toMatch(/^v3:/);
     expect(decryptV3(out['langfuse.secretKey'] as string)).toBe('sk-lf-secret');
     expect(out['langfuse.displaySecretKey']).toBe('sk-lf-...cret');
-    expect(out['langfuse.enabled']).toBe(true);
     expect(out['langfuse.publicKey']).toBe('pk-lf-1');
   });
 
-  it('resets already-encrypted API values and stale display secret keys', () => {
-    const second = encryptConfigSecretFields({
-      'langfuse.secretKey': 'v3:attacker-controlled',
-      'langfuse.displaySecretKey': 'sk-old...-old',
-    });
-
-    expect(second['langfuse.secretKey']).toBe('');
-    expect(second['langfuse.displaySecretKey']).toBe('');
-  });
-
-  it('resets the secret and displaySecretKey for an empty secret', () => {
-    const out = encryptConfigSecretFields({ 'langfuse.secretKey': '' });
-    expect(out['langfuse.secretKey']).toBe('');
-    expect(out['langfuse.displaySecretKey']).toBe('');
-  });
-
-  it('encrypts registered secrets inside object-valued ancestor patches', () => {
-    const out = encryptConfigSecretFields({
+  it('encrypts object writes and removes client-supplied display secret keys', () => {
+    const out = encryptConfigSecrets({
       langfuse: {
         publicKey: 'pk-lf-1',
         secretKey: 'sk-lf-secret',
+        displaySecretKey: 'spoofed',
       },
     });
 
-    const langfuse = out.langfuse as Record<string, string>;
-    expect(langfuse.secretKey).toMatch(/^v3:/);
-    expect(decryptV3(langfuse.secretKey)).toBe('sk-lf-secret');
-    expect(langfuse.displaySecretKey).toBe('sk-lf-...cret');
+    expect(out.langfuse.secretKey).toMatch(/^v3:/);
+    expect(decryptV3(out.langfuse.secretKey)).toBe('sk-lf-secret');
+    expect(out.langfuse.displaySecretKey).toBe('sk-lf-...cret');
+    expect(out.langfuse.publicKey).toBe('pk-lf-1');
   });
 
-  it('drops array-valued ancestor patches for registered secrets', () => {
-    const out = encryptConfigSecretFields({
-      langfuse: [{ secretKey: 'sk-lf-secret' }],
+  it('clears empty or non-string secret values', () => {
+    expect(encryptConfigSecretFields({ 'langfuse.secretKey': '' })).toEqual({
+      'langfuse.secretKey': '',
+      'langfuse.displaySecretKey': '',
     });
 
-    expect(out).not.toHaveProperty('langfuse');
-  });
-
-  it('ignores direct displaySecretKey writes when no secret is patched', () => {
-    const out = encryptConfigSecretFields({
-      'langfuse.displaySecretKey': 'spoofed',
-    });
-
-    expect(out).not.toHaveProperty('langfuse.displaySecretKey');
-  });
-
-  it('resets non-string secret values and ignores spoofed display secret keys', () => {
-    const out = encryptConfigSecretFields({
-      'langfuse.secretKey': { hidden: 'sk-lf-secret' },
-      'langfuse.displaySecretKey': 'spoofed',
-    });
-
-    expect(out['langfuse.secretKey']).toBe('');
-    expect(out['langfuse.displaySecretKey']).toBe('');
-  });
-});
-
-describe('encryptConfigSecrets', () => {
-  it('encrypts a nested registered secret field and stores a display secret key', () => {
-    const out = encryptConfigSecrets({
-      langfuse: {
-        enabled: true,
-        publicKey: 'pk-lf-1',
-        secretKey: 'sk-lf-secret',
-      },
-    });
-
-    const langfuse = out.langfuse as Record<string, string | boolean>;
-    expect(langfuse.secretKey).toMatch(/^v3:/);
-    expect(decryptV3(langfuse.secretKey as string)).toBe('sk-lf-secret');
-    expect(langfuse.displaySecretKey).toBe('sk-lf-...cret');
-    expect(langfuse.publicKey).toBe('pk-lf-1');
-  });
-
-  it('resets a nested empty secret and stale displaySecretKey', () => {
-    const out = encryptConfigSecrets({
+    expect(
+      encryptConfigSecrets({
+        langfuse: {
+          secretKey: null,
+          displaySecretKey: 'spoofed',
+        },
+      }),
+    ).toEqual({
       langfuse: {
         secretKey: '',
-        displaySecretKey: 'sk-old...-old',
+        displaySecretKey: '',
       },
     });
-
-    expect(out.langfuse.secretKey).toBe('');
-    expect(out.langfuse.displaySecretKey).toBe('');
   });
 
-  it('removes orphaned nested display secret keys when the secret is absent', () => {
-    const out = encryptConfigSecrets({
-      langfuse: {
-        publicKey: 'pk-lf-1',
-        displaySecretKey: 'spoofed',
-      },
-    });
-
-    expect(out.langfuse).toEqual({ publicKey: 'pk-lf-1' });
+  it('rejects protected display-key writes and encrypted secret submissions', () => {
+    expect(getConfigSecretInputError('langfuse.displaySecretKey', 'spoofed')).toContain(
+      'protected display secret path',
+    );
+    expect(getConfigSecretInputError('langfuse.secretKey', 'v3:attacker-controlled')).toContain(
+      'Encrypted config secret values',
+    );
+    expect(
+      getConfigSecretInputError('langfuse', { secretKey: 'v3:attacker-controlled' }),
+    ).toContain('Encrypted config secret values');
+    expect(getConfigSecretInputError('langfuse.secretKey', 'sk-lf-secret')).toBeNull();
   });
 
-  it('resets nested non-string secret values and stale display secret keys', () => {
-    const out = encryptConfigSecrets({
-      langfuse: {
-        secretKey: null,
-        displaySecretKey: 'spoofed',
-      },
-    });
-
-    expect(out.langfuse).toEqual({
-      secretKey: '',
-      displaySecretKey: '',
-    });
-  });
-
-  it('drops literal dotted secret keys on full-object writes', () => {
-    const out = encryptConfigSecrets({
-      'langfuse.secretKey': 'sk-lf-secret',
-      'langfuse.displaySecretKey': 'spoofed',
-      langfuse: {
-        publicKey: 'pk-lf-1',
-      },
-    });
-
-    expect(out).not.toHaveProperty('langfuse.secretKey');
-    expect(out).not.toHaveProperty('langfuse.displaySecretKey');
-    expect(out.langfuse).toEqual({ publicKey: 'pk-lf-1' });
-  });
-
-  it('drops array-shaped ancestors for registered secret paths', () => {
-    const out = encryptConfigSecrets({
-      langfuse: [{ secretKey: 'sk-lf-secret' }],
-    });
-
-    expect(out).not.toHaveProperty('langfuse');
-  });
-});
-
-describe('decryptConfigSecret', () => {
   it('decrypts encrypted config secrets and rejects plaintext runtime values', () => {
     const encrypted = encryptConfigSecrets({
       langfuse: { secretKey: 'sk-lf-secret' },
@@ -179,15 +93,10 @@ describe('decryptConfigSecret', () => {
     expect(decryptConfigSecret(encrypted)).toBe('sk-lf-secret');
     expect(decryptConfigSecret(' sk-plaintext ')).toBeUndefined();
     expect(decryptConfigSecret('')).toBeUndefined();
-  });
-
-  it('returns undefined for undecryptable encrypted values', () => {
     expect(decryptConfigSecret('v3:not-valid-ciphertext')).toBeUndefined();
   });
-});
 
-describe('preserveConfigSecrets', () => {
-  it('preserves an existing encrypted secret when a full object omits it', () => {
+  it('preserves existing encrypted secrets when object writes omit them', () => {
     const existing = encryptConfigSecrets({
       langfuse: {
         publicKey: 'pk-old',
@@ -209,51 +118,32 @@ describe('preserveConfigSecrets', () => {
     expect(preserved.langfuse.publicKey).toBe('pk-new');
   });
 
-  it('does not preserve existing plaintext secrets from stored config', () => {
+  it('does not preserve plaintext existing secrets or explicitly cleared secrets', () => {
     const next = encryptConfigSecrets({
       langfuse: {
         publicKey: 'pk-new',
       },
     });
 
-    const preserved = preserveConfigSecrets(next, {
+    const fromPlaintext = preserveConfigSecrets(next, {
       langfuse: {
         publicKey: 'pk-old',
         secretKey: 'sk-plain-existing',
       },
     });
-    const preservedLangfuse = preserved.langfuse as Record<string, string>;
+    expect(fromPlaintext.langfuse).toEqual({ publicKey: 'pk-new' });
 
-    expect(preservedLangfuse).not.toHaveProperty('secretKey');
-    expect(preservedLangfuse).not.toHaveProperty('displaySecretKey');
-    expect(preservedLangfuse.publicKey).toBe('pk-new');
-  });
-
-  it('does not preserve when the secret section is absent', () => {
     const existing = encryptConfigSecrets({
       langfuse: {
         secretKey: 'sk-old',
       },
     });
-
-    expect(preserveConfigSecrets({ interface: { modelSelect: false } }, existing)).toEqual({
-      interface: { modelSelect: false },
-    });
-  });
-
-  it('does not preserve when the secret is explicitly cleared', () => {
-    const existing = encryptConfigSecrets({
-      langfuse: {
-        secretKey: 'sk-old',
-      },
-    });
-    const next = encryptConfigSecrets({
+    const cleared = encryptConfigSecrets({
       langfuse: {
         secretKey: '',
       },
     });
-
-    expect(preserveConfigSecrets(next, existing)).toEqual({
+    expect(preserveConfigSecrets(cleared, existing)).toEqual({
       langfuse: {
         secretKey: '',
         displaySecretKey: '',
@@ -277,11 +167,11 @@ describe('preserveConfigSecrets', () => {
     expect(preservedLangfuse.displaySecretKey).toBe(existingLangfuse.displaySecretKey);
     expect(preserved.publicKey).toBe('pk-new');
   });
-});
 
-describe('redactConfigSecrets', () => {
-  it('removes the secret but keeps the displaySecretKey and other fields', () => {
+  it('redacts secret values while preserving display secret keys', () => {
     const redacted = redactConfigSecrets({
+      'langfuse.secretKey': 'literal',
+      'langfuse.displaySecretKey': 'literal-display',
       langfuse: {
         enabled: true,
         destination: 'eu',
@@ -291,30 +181,13 @@ describe('redactConfigSecrets', () => {
       },
     });
 
-    expect(redacted.langfuse).not.toHaveProperty('secretKey');
-    expect(redacted.langfuse.displaySecretKey).toBe('sk-lf-...cret');
-    expect(redacted.langfuse.publicKey).toBe('pk-lf-1');
-    expect(redacted.langfuse.enabled).toBe(true);
-  });
-
-  it('is a no-op when the secret path is absent', () => {
-    const input = { langfuse: { enabled: false } };
-    expect(redactConfigSecrets(input)).toEqual({ langfuse: { enabled: false } });
-  });
-
-  it('removes literal dotted secret keys and array-shaped secret containers', () => {
-    const redacted = redactConfigSecrets({
-      'langfuse.secretKey': 'sk-lf-secret',
-      'langfuse.displaySecretKey': 'spoofed',
-      langfuseArray: true,
-      langfuse: [{ secretKey: 'sk-lf-secret' }],
+    expect(redacted['langfuse.secretKey']).toBeUndefined();
+    expect(redacted['langfuse.displaySecretKey']).toBeUndefined();
+    expect(redacted.langfuse).toEqual({
+      enabled: true,
+      destination: 'eu',
+      publicKey: 'pk-lf-1',
+      displaySecretKey: 'sk-lf-...cret',
     });
-
-    expect(redacted).toEqual({ langfuseArray: true });
-  });
-
-  it('handles null/non-object roots', () => {
-    expect(redactConfigSecrets(null)).toBeNull();
-    expect(redactConfigSecrets(undefined)).toBeUndefined();
   });
 });

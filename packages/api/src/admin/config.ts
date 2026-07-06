@@ -16,6 +16,7 @@ import {
   encryptConfigSecretFields,
   encryptConfigSecrets,
   getConfigSecretMutationPaths,
+  getConfigSecretInputError,
   isConfigSecretAncestorPath,
   isConfigSecretDescendantPath,
   preserveConfigSecrets,
@@ -191,7 +192,7 @@ function redactConfigForResponse(config: IConfig): IConfig {
 }
 
 function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
-  const safeConfig = structuredClone(appConfig) as AppConfig & { config?: unknown };
+  const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
   redactConfigSecrets(safeConfig);
   if (safeConfig.config != null && typeof safeConfig.config === 'object') {
     redactConfigSecrets(safeConfig.config);
@@ -199,7 +200,7 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   return safeConfig;
 }
 
-function isObjectValuedSecretAncestor(fieldPath: string, value: unknown): boolean {
+function isObjectValuedLangfusePatch(fieldPath: string, value: unknown): boolean {
   return (
     isConfigSecretAncestorPath(fieldPath) &&
     value != null &&
@@ -214,7 +215,7 @@ function preservePatchedConfigSecretFields(
 ): Record<string, unknown> {
   const result = { ...fields };
   for (const [fieldPath, value] of Object.entries(result)) {
-    if (isObjectValuedSecretAncestor(fieldPath, value)) {
+    if (isObjectValuedLangfusePatch(fieldPath, value)) {
       result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
     }
   }
@@ -453,11 +454,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         ? { expectEmpty: false }
         : { expectEmpty: true, preservePriority: true };
 
+      const langfuseInputError = getConfigSecretInputError(
+        'langfuse',
+        (filteredOverrides as Record<string, unknown>).langfuse,
+      );
+      if (langfuseInputError) {
+        return res.status(400).json({ error: langfuseInputError });
+      }
+
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const needsSecretPreservation = Object.entries(
-        encryptedOverrides as Record<string, unknown>,
-      ).some(([fieldPath, value]) => isObjectValuedSecretAncestor(fieldPath, value));
-      const existingForSecrets = needsSecretPreservation
+      const existingForSecrets = isObjectValuedLangfusePatch(
+        'langfuse',
+        (filteredOverrides as Record<string, unknown>).langfuse,
+      )
         ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
         : null;
       const preservedOverrides = preserveConfigSecrets(
@@ -533,6 +542,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             .status(400)
             .json({ error: `Cannot patch inside protected secret path: ${entry.fieldPath}` });
         }
+        const secretInputError = getConfigSecretInputError(entry.fieldPath, entry.value);
+        if (secretInputError) {
+          return res.status(400).json({ error: secretInputError });
+        }
         if (Array.isArray(entry.value) && isConfigSecretAncestorPath(entry.fieldPath)) {
           return res.status(400).json({
             error: `Cannot patch protected secret ancestor as an array: ${entry.fieldPath}`,
@@ -599,12 +612,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
-      const needsSecretPreservation = Object.entries(fields).some(([fieldPath, value]) =>
-        isObjectValuedSecretAncestor(fieldPath, value),
-      );
 
+      const hasObjectValuedLangfusePatch = Object.entries(fields).some(([fieldPath, value]) =>
+        isObjectValuedLangfusePatch(fieldPath, value),
+      );
       const existing =
-        requestedPriority == null || needsSecretPreservation
+        requestedPriority == null || hasObjectValuedLangfusePatch
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
       const encryptedFields = encryptConfigSecretFields(fields);
@@ -660,6 +673,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!isValidFieldPath(fieldPath)) {
         return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
+      }
+      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
+      if (secretInputError) {
+        return res.status(400).json({ error: secretInputError });
       }
 
       const user = getCapabilityUser(req);
@@ -743,6 +760,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!isValidFieldPath(fieldPath)) {
         return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
+      }
+      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
+      if (secretInputError) {
+        return res.status(400).json({ error: secretInputError });
       }
 
       const user = getCapabilityUser(req);
