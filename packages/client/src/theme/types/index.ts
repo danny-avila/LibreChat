@@ -55,12 +55,6 @@ export interface IThemeRGB {
 
   // Presentation
   'rgb-presentation'?: string;
-
-  // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
-  'rgb-background'?: string;
-  'rgb-primary'?: string;
-  'rgb-primary-foreground'?: string;
-  'rgb-ring'?: string;
 }
 
 /**
@@ -106,12 +100,6 @@ export interface IThemeVariables {
   '--border-xheavy': string;
   '--brand-purple': string;
   '--presentation': string;
-
-  // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
-  '--background': string;
-  '--primary': string;
-  '--primary-foreground': string;
-  '--ring': string;
 }
 
 /**

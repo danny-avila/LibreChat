@@ -57,10 +57,4 @@ export const defaultTheme: IThemeRGB = {
 
   // Presentation
   'rgb-presentation': '255 255 255', // #fff (white)
-
-  // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
-  'rgb-background': '255 255 255', // 0 0% 100%
-  'rgb-primary': '23 23 23', // 0 0% 9%
-  'rgb-primary-foreground': '250 250 250', // 0 0% 98%
-  'rgb-ring': '10 10 10', // 0 0% 3.9%
 };

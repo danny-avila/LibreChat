@@ -65,12 +65,6 @@ function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
     'rgb-border-xheavy': '--border-xheavy',
     'rgb-brand-purple': '--brand-purple',
     'rgb-presentation': '--presentation',
-
-    // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
-    'rgb-background': '--background',
-    'rgb-primary': '--primary',
-    'rgb-primary-foreground': '--primary-foreground',
-    'rgb-ring': '--ring',
   };
 
   Object.entries(mappings).forEach(([rgbKey, cssVar]) => {
