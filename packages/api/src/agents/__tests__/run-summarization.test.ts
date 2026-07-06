@@ -1196,7 +1196,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
           fanout: {
             enabled: true,
           },
@@ -1229,7 +1229,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1270,7 +1270,7 @@ describe('Langfuse run config', () => {
     });
   });
 
-  it('routes tenant fanout traces to the configured destination for the tenant base URL', async () => {
+  it('routes tenant fanout traces to the configured tenant destination', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
@@ -1280,7 +1280,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://us.cloud.langfuse.com',
+          destination: 'us',
         },
       } as AppConfig,
     });
@@ -1307,7 +1307,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1329,7 +1329,7 @@ describe('Langfuse run config', () => {
           langfuse: {
             publicKey: 'pk-tenant-1',
             secretKey: 'sk-tenant-1',
-            baseUrl: 'https://us.cloud.langfuse.com',
+            destination: 'us',
           },
         } as AppConfig,
       });
@@ -1361,7 +1361,7 @@ describe('Langfuse run config', () => {
           langfuse: {
             publicKey: 'pk-tenant-1',
             secretKey: 'sk-tenant-1',
-            baseUrl: 'https://cloud.langfuse.com',
+            destination: 'eu',
           },
         } as AppConfig,
       });
@@ -1390,7 +1390,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1418,7 +1418,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1433,7 +1433,7 @@ describe('Langfuse run config', () => {
     });
   });
 
-  it('uses deployment fanout collector URL without auth when the tenant base URL is not a configured destination', async () => {
+  it('uses deployment fanout collector URL without auth when the tenant destination is not configured', async () => {
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
     process.env.LANGFUSE_SECRET_KEY = 'sk-central';
     process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
@@ -1447,7 +1447,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://unconfigured-langfuse.example.com',
+          destination: 'unconfigured',
         },
       } as AppConfig,
     });
@@ -1540,7 +1540,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1574,7 +1574,7 @@ describe('Langfuse run config', () => {
           langfuse: {
             publicKey: 'pk-tenant-1',
             secretKey: 'sk-tenant-1',
-            baseUrl: 'https://cloud.langfuse.com',
+            destination: 'eu',
           },
         } as AppConfig,
       });
@@ -1603,7 +1603,7 @@ describe('Langfuse run config', () => {
           langfuse: {
             publicKey: 'pk-tenant-1',
             secretKey: 'sk-tenant-1',
-            baseUrl: 'https://cloud.langfuse.com',
+            destination: 'eu',
           },
         } as AppConfig,
       });
@@ -1636,7 +1636,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
           fanout: {
             enabled: false,
           },
@@ -1667,7 +1667,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
           fanout: {
             enabled: 'false',
           },

@@ -43,7 +43,7 @@ describe('buildLangfuseConfig', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
           fanout: {
             enabled: true,
           },
@@ -73,7 +73,7 @@ describe('buildLangfuseConfig', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
           fanout: {
             enabled: true,
             collectorUrl: 'http://collector-from-db:4318',
@@ -100,7 +100,7 @@ describe('buildLangfuseConfig', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'v3:not-valid-ciphertext',
-          baseUrl: 'https://cloud.langfuse.com',
+          destination: 'eu',
         },
       } as unknown as AppConfig,
     });

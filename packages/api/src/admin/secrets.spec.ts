@@ -284,7 +284,7 @@ describe('redactConfigSecrets', () => {
     const redacted = redactConfigSecrets({
       langfuse: {
         enabled: true,
-        baseUrl: 'https://cloud.langfuse.com',
+        destination: 'eu',
         publicKey: 'pk-lf-1',
         secretKey: 'v3:abc:def',
         displaySecretKey: 'sk-lf-...cret',

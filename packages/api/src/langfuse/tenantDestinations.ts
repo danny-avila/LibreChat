@@ -97,15 +97,17 @@ export function getLangfuseTenantDestinations(): LangfuseTenantDestination[] {
 }
 
 export function resolveLangfuseTenantDestination(
-  baseUrl: unknown,
+  destinationKey: unknown,
 ): LangfuseTenantDestination | undefined {
-  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
-
-  if (!normalizedBaseUrl) {
+  const normalizedKey = normalizeString(destinationKey);
+  if (!normalizedKey) {
     return undefined;
   }
 
-  return getLangfuseTenantDestinations().find(
-    (destination) => destination.baseUrl === normalizedBaseUrl,
-  );
+  const key = normalizeDestinationKey(normalizedKey);
+  if (!key) {
+    return undefined;
+  }
+
+  return getLangfuseTenantDestinations().find((destination) => destination.key === key);
 }

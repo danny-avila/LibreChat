@@ -88,7 +88,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   if (!tenantCredentials) {
     return undefined;
   }
-  const destination = resolveLangfuseTenantDestination(config?.baseUrl);
+  const destination = resolveLangfuseTenantDestination(config?.destination);
   if (!destination) {
     return undefined;
   }

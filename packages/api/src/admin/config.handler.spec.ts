@@ -331,7 +331,7 @@ describe('createAdminConfigHandlers', () => {
           overrides: {
             langfuse: {
               publicKey: 'pk-new',
-              baseUrl: 'https://cloud.langfuse.com',
+              destination: 'eu',
             },
           },
         },
@@ -344,7 +344,7 @@ describe('createAdminConfigHandlers', () => {
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
       expect(savedOverrides.langfuse).toEqual({
         publicKey: 'pk-new',
-        baseUrl: 'https://cloud.langfuse.com',
+        destination: 'eu',
         secretKey: 'v3:test:sk-old',
         displaySecretKey: 'sk-old...-old',
       });
@@ -353,7 +353,7 @@ describe('createAdminConfigHandlers', () => {
       };
       expect(responseConfig.overrides.langfuse).toEqual({
         publicKey: 'pk-new',
-        baseUrl: 'https://cloud.langfuse.com',
+        destination: 'eu',
         displaySecretKey: 'sk-old...-old',
       });
     });
@@ -928,7 +928,7 @@ describe('createAdminConfigHandlers', () => {
               fieldPath: 'langfuse',
               value: {
                 publicKey: 'pk-new',
-                baseUrl: 'https://cloud.langfuse.com',
+                destination: 'eu',
               },
             },
           ],
@@ -942,7 +942,7 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields.langfuse).toEqual({
         publicKey: 'pk-new',
-        baseUrl: 'https://cloud.langfuse.com',
+        destination: 'eu',
         secretKey: 'v3:test:sk-old',
         displaySecretKey: 'sk-old...-old',
       });

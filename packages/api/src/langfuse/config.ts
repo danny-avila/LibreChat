@@ -95,7 +95,7 @@ export function buildLangfuseConfig({
   const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
   const fanoutEnabled = isLangfuseFanoutEnabled(fanout);
   const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
-  const tenantDestination = resolveLangfuseTenantDestination(config?.baseUrl);
+  const tenantDestination = resolveLangfuseTenantDestination(config?.destination);
   const tenantExportDestination = hasTenantCredentials ? tenantDestination : undefined;
   const tenantExportCollectorUrl = fanoutCollectorUrl;
   const tenantExportEnabled =
