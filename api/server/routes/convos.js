@@ -24,6 +24,9 @@ const db = require('~/models');
 const router = express.Router();
 router.use(requireJwtAuth);
 
+const isValidProjectFilter = (projectId) =>
+  !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
+
 router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
@@ -31,6 +34,13 @@ router.get('/', async (req, res) => {
   const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
   const sortDirection = req.query.sortDirection || 'desc';
+  const projectId = Array.isArray(req.query.projectId)
+    ? req.query.projectId[0]
+    : req.query.projectId;
+
+  if (!isValidProjectFilter(projectId)) {
+    return res.status(400).json({ error: 'projectId must be a valid project id or unassigned' });
+  }
 
   let tags;
   if (req.query.tags) {
@@ -46,6 +56,7 @@ router.get('/', async (req, res) => {
       search,
       sortBy,
       sortDirection,
+      projectId,
     });
     res.status(200).json(result);
   } catch (error) {
