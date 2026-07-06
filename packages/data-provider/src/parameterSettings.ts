@@ -112,7 +112,7 @@ export const librechat = {
     labelCode: true,
     type: 'number',
     component: 'input',
-    placeholder: 'com_nav_theme_system',
+    placeholder: 'com_endpoint_default',
     placeholderCode: true,
     description: 'com_endpoint_context_info',
     descriptionCode: true,
@@ -149,7 +149,7 @@ export const librechat = {
     labelCode: true,
     description: 'com_ui_file_token_limit_desc',
     descriptionCode: true,
-    placeholder: 'com_nav_theme_system',
+    placeholder: 'com_endpoint_default',
     placeholderCode: true,
     type: 'number',
     component: 'input',
@@ -222,7 +222,7 @@ const openAIParams: Record<string, SettingDefinition> = {
     component: 'input',
     description: 'com_endpoint_openai_max_tokens',
     descriptionCode: true,
-    placeholder: 'com_nav_theme_system',
+    placeholder: 'com_endpoint_default',
     placeholderCode: true,
     optionType: 'model',
     columnSpan: 2,
@@ -350,7 +350,7 @@ const anthropic: Record<string, SettingDefinition> = {
     component: 'input',
     description: 'com_endpoint_anthropic_maxoutputtokens',
     descriptionCode: true,
-    placeholder: 'com_nav_theme_system',
+    placeholder: 'com_endpoint_default',
     placeholderCode: true,
     range: {
       min: anthropicSettings.maxOutputTokens.min,
@@ -404,6 +404,22 @@ const anthropic: Record<string, SettingDefinition> = {
     component: 'switch',
     optionType: 'conversation',
     showDefault: false,
+    columnSpan: 2,
+  },
+  promptCacheTtl: {
+    key: 'promptCacheTtl',
+    label: 'com_endpoint_prompt_cache_ttl',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_prompt_cache_ttl',
+    descriptionCode: true,
+    type: 'enum',
+    default: anthropicSettings.promptCacheTtl.default,
+    options: ['5m', '1h'],
+    component: 'combobox',
+    optionType: 'conversation',
+    showDefault: false,
+    selectPlaceholder: 'com_endpoint_prompt_cache_ttl_default',
+    selectPlaceholderCode: true,
     columnSpan: 2,
   },
   thinking: {
@@ -523,7 +539,7 @@ const bedrock: Record<string, SettingDefinition> = {
     component: 'input',
     description: 'com_endpoint_anthropic_maxoutputtokens',
     descriptionCode: true,
-    placeholder: 'com_nav_theme_system',
+    placeholder: 'com_endpoint_default',
     placeholderCode: true,
     optionType: 'model',
     columnSpan: 2,
@@ -550,6 +566,22 @@ const bedrock: Record<string, SettingDefinition> = {
     component: 'switch',
     optionType: 'conversation',
     showDefault: false,
+    columnSpan: 2,
+  },
+  promptCacheTtl: {
+    key: 'promptCacheTtl',
+    label: 'com_endpoint_prompt_cache_ttl',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_prompt_cache_ttl',
+    descriptionCode: true,
+    type: 'enum',
+    default: undefined,
+    options: ['5m', '1h'],
+    component: 'combobox',
+    optionType: 'conversation',
+    showDefault: false,
+    selectPlaceholder: 'com_endpoint_prompt_cache_ttl_default',
+    selectPlaceholderCode: true,
     columnSpan: 2,
   },
   reasoning_effort: {
@@ -652,7 +684,7 @@ const google: Record<string, SettingDefinition> = {
     component: 'input',
     description: 'com_endpoint_google_maxoutputtokens',
     descriptionCode: true,
-    placeholder: 'com_nav_theme_system',
+    placeholder: 'com_endpoint_default',
     placeholderCode: true,
     default: googleSettings.maxOutputTokens.default,
     range: {
@@ -733,6 +765,19 @@ const google: Record<string, SettingDefinition> = {
     showDefault: false,
     columnSpan: 2,
   },
+  url_context: {
+    key: 'url_context',
+    label: 'com_endpoint_use_url_context',
+    labelCode: true,
+    description: 'com_endpoint_google_use_url_context',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
 };
 
 const googleConfig: SettingsConfiguration = [
@@ -748,6 +793,7 @@ const googleConfig: SettingsConfiguration = [
   google.thinkingBudget,
   google.thinkingLevel,
   google.web_search,
+  google.url_context,
   librechat.fileTokenLimit,
 ];
 
@@ -768,6 +814,7 @@ const googleCol2: SettingsConfiguration = [
   google.thinkingBudget,
   google.thinkingLevel,
   google.web_search,
+  google.url_context,
   librechat.fileTokenLimit,
 ];
 
@@ -792,7 +839,11 @@ const openAI: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
-const openRouter: SettingsConfiguration = [...openAI, anthropic.promptCache];
+const openRouter: SettingsConfiguration = [
+  ...openAI,
+  anthropic.promptCache,
+  anthropic.promptCacheTtl,
+];
 
 const openAICol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
@@ -829,6 +880,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.topK,
   librechat.resendFiles,
   anthropic.promptCache,
+  anthropic.promptCacheTtl,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
@@ -851,6 +903,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.topK,
   librechat.resendFiles,
   anthropic.promptCache,
+  anthropic.promptCacheTtl,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
@@ -871,6 +924,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   librechat.resendFiles,
   bedrock.region,
   bedrock.promptCache,
+  bedrock.promptCacheTtl,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
@@ -911,6 +965,7 @@ const bedrockGeneral: SettingsConfiguration = [
   librechat.resendFiles,
   bedrock.region,
   bedrock.promptCache,
+  bedrock.promptCacheTtl,
   librechat.fileTokenLimit,
 ];
 
@@ -930,6 +985,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   librechat.resendFiles,
   bedrock.region,
   bedrock.promptCache,
+  bedrock.promptCacheTtl,
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
@@ -982,6 +1038,7 @@ const bedrockGeneralCol2: SettingsConfiguration = [
   librechat.resendFiles,
   bedrock.region,
   bedrock.promptCache,
+  bedrock.promptCacheTtl,
   librechat.fileTokenLimit,
 ];
 
@@ -1092,7 +1149,7 @@ export const presetSettings: Record<
   [EModelEndpoint.custom]: openAIColumns,
   [Providers.OPENROUTER]: {
     col1: openAICol1,
-    col2: [...openAICol2, anthropic.promptCache],
+    col2: [...openAICol2, anthropic.promptCache, anthropic.promptCacheTtl],
   },
   [EModelEndpoint.anthropic]: {
     col1: anthropicCol1,

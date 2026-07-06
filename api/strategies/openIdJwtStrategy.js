@@ -117,6 +117,8 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
+          /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
+          user.idOnTheSource ??= null;
 
           const updateData = {};
           if (migration) {

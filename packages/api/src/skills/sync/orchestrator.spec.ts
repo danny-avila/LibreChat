@@ -250,6 +250,83 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     );
   });
 
+  it('filters admin base skillSync status sources without rewriting unscoped sources', async () => {
+    const config = skillSync({
+      sources: [
+        {
+          ...source,
+          id: 'tenant-a-source',
+          tenantId: 'tenant-a',
+        },
+        {
+          ...source,
+          id: 'tenant-b-source',
+          tenantId: 'tenant-b',
+        },
+        {
+          id: 'shared-source',
+          owner: 'LibreChat',
+          repo: 'skills',
+          ref: 'main',
+          paths: ['skills'],
+          token: '${GITHUB_SKILLS_TOKEN}',
+        },
+      ],
+    });
+    const { orchestrator, runners } = createHarness();
+
+    orchestrator.getRunnerForAdminRequest({
+      config: { skillSync: config, config: { skillSync: config } },
+      user: { tenantId: 'tenant-a' },
+      skillSyncAllowServerCredentials: false,
+    });
+    const runnerConfig = await runners[0].input.getConfig();
+
+    expect(runnerConfig?.github?.sources).toEqual([
+      expect.objectContaining({ id: 'tenant-a-source', tenantId: 'tenant-a' }),
+      expect.objectContaining({ id: 'shared-source', tenantId: undefined }),
+    ]);
+  });
+
+  it('filters inherited base sources when admin override changes non-source fields', async () => {
+    const baseSources = [
+      {
+        ...source,
+        id: 'tenant-a-source',
+        tenantId: 'tenant-a',
+      },
+      {
+        ...source,
+        id: 'tenant-b-source',
+        tenantId: 'tenant-b',
+      },
+      {
+        id: 'shared-source',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        paths: ['skills'],
+        token: '${GITHUB_SKILLS_TOKEN}',
+      },
+    ];
+    const base = skillSync({ intervalMinutes: 60, sources: baseSources });
+    const resolved = skillSync({ intervalMinutes: 30, sources: baseSources });
+    const { orchestrator, runners } = createHarness();
+
+    orchestrator.getRunnerForAdminRequest({
+      config: { skillSync: resolved, config: { skillSync: base } },
+      user: { tenantId: 'tenant-a' },
+      skillSyncAllowServerCredentials: false,
+    });
+    const runnerConfig = await runners[0].input.getConfig();
+
+    expect(runnerConfig?.github?.intervalMinutes).toBe(30);
+    expect(runnerConfig?.github?.sources).toEqual([
+      expect.objectContaining({ id: 'tenant-a-source', tenantId: 'tenant-a' }),
+      expect.objectContaining({ id: 'shared-source', tenantId: undefined }),
+    ]);
+  });
+
   it('does not allow admin override runners to use server credentials by default', async () => {
     const config = skillSync();
     const { orchestrator, runners } = createHarness();

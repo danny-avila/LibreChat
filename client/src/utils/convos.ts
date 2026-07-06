@@ -88,7 +88,11 @@ export const groupConversationsByDate = (
   const now = new Date(Date.now());
 
   conversations.forEach((conversation) => {
-    if (!conversation || seenConversationIds.has(conversation.conversationId)) {
+    if (
+      !conversation ||
+      seenConversationIds.has(conversation.conversationId) ||
+      conversation.pinned
+    ) {
       return;
     }
     seenConversationIds.add(conversation.conversationId);

@@ -6,7 +6,7 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
-import type { IRole, IUser } from '~/types';
+import type { CacheStore, IRole, IUser } from '~/types';
 import { scopedCacheKey, getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -27,10 +27,7 @@ export class RoleConflictError extends Error {
 
 export interface RoleDeps {
   /** Returns a cache store for the given key. Injected from getLogStores. */
-  getCache?: (key: string) => {
-    get: (k: string) => Promise<unknown>;
-    set: (k: string, v: unknown) => Promise<void>;
-  };
+  getCache?: (key: string) => CacheStore | undefined;
 }
 
 export function createRoleMethods(
@@ -75,6 +72,30 @@ export function createRoleMethods(
     const Role = mongoose.models.Role;
 
     for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
+      // Strict mode hides off-schema SHARED_GLOBAL and won't $unset it on save; migrate it via the raw driver.
+      // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw read is required to see the off-schema field.
+      const legacyDoc = await Role.collection.findOne({ name: roleName });
+      if (legacyDoc?.permissions) {
+        const set: Record<string, unknown> = {};
+        const unset: Record<string, ''> = {};
+        for (const permType of ['PROMPTS', 'AGENTS']) {
+          const block = legacyDoc.permissions[permType];
+          if (block && 'SHARED_GLOBAL' in block) {
+            if (!('SHARE' in block)) {
+              set[`permissions.${permType}.SHARE`] = block.SHARED_GLOBAL;
+            }
+            unset[`permissions.${permType}.SHARED_GLOBAL`] = '';
+          }
+        }
+        if (Object.keys(unset).length) {
+          const update: Record<string, unknown> = { $unset: unset };
+          if (Object.keys(set).length) {
+            update.$set = set;
+          }
+          // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw $unset is required to drop the off-schema field.
+          await Role.collection.updateOne({ name: roleName }, update);
+        }
+      }
       let role = await Role.findOne({ name: roleName });
       const defaultPerms = roleDefaults[roleName].permissions;
 
@@ -87,9 +108,22 @@ export function createRoleMethods(
         const permissions = role.toObject()?.permissions ?? {};
         role.permissions = role.permissions || {};
         for (const permType of Object.keys(defaultPerms)) {
-          if (permissions[permType] == null || Object.keys(permissions[permType]).length === 0) {
-            role.permissions[permType] = defaultPerms[permType as keyof typeof defaultPerms];
+          const defaultBlock = defaultPerms[permType as keyof typeof defaultPerms] as Record<
+            string,
+            unknown
+          >;
+          const existingBlock = permissions[permType] as Record<string, unknown> | null | undefined;
+          if (existingBlock == null) {
+            role.permissions[permType] = defaultBlock;
+            continue;
           }
+          const mergedBlock: Record<string, unknown> = { ...existingBlock };
+          for (const field of Object.keys(defaultBlock)) {
+            if (mergedBlock[field] == null) {
+              mergedBlock[field] = defaultBlock[field];
+            }
+          }
+          role.permissions[permType] = mergedBlock;
         }
       }
       await role.save();

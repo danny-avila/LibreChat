@@ -264,7 +264,7 @@ describe('AgentFooter', () => {
 
   describe('Main Functionality', () => {
     test('renders with standard components based on default state', () => {
-      render(<AgentFooter {...defaultProps} />);
+      const { container } = render(<AgentFooter {...defaultProps} />);
       expect(screen.getByText('Save')).toBeInTheDocument();
       expect(screen.getByTestId('advanced-button')).toBeInTheDocument();
       expect(screen.getByTestId('version-button')).toBeInTheDocument();
@@ -272,15 +272,17 @@ describe('AgentFooter', () => {
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
       expect(screen.getByTestId('grant-access-dialog-agent')).toBeInTheDocument();
       expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
-      expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
+      // The icon-swap always renders both label and spinner; the visible state
+      // is driven by data-state ('a' = idle/label, 'b' = saving/spinner).
+      expect(container.querySelector('.t-icon-swap')).toHaveAttribute('data-state', 'a');
     });
 
     test('handles loading states for createMutation', () => {
-      const { unmount } = render(
+      const { container, unmount } = render(
         <AgentFooter {...defaultProps} createMutation={createBaseMutation(true)} />,
       );
       expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+      expect(container.querySelector('.t-icon-swap')).toHaveAttribute('data-state', 'b');
       // Find the submit button (the one with aria-busy attribute)
       const buttons = screen.getAllByRole('button');
       const submitButton = buttons.find((button) => button.getAttribute('type') === 'submit');
@@ -290,9 +292,11 @@ describe('AgentFooter', () => {
     });
 
     test('handles loading states for updateMutation', () => {
-      render(<AgentFooter {...defaultProps} updateMutation={createBaseMutation(true)} />);
+      const { container } = render(
+        <AgentFooter {...defaultProps} updateMutation={createBaseMutation(true)} />,
+      );
       expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+      expect(container.querySelector('.t-icon-swap')).toHaveAttribute('data-state', 'b');
     });
 
     test('handles loading state when avatar upload is in progress', () => {

@@ -40,6 +40,7 @@ jest.mock('~/models', () => {
     deleteConvos: jest.fn().mockResolvedValue(undefined),
     deleteFiles: jest.fn().mockResolvedValue(undefined),
     updateUser: jest.fn(),
+    acceptTerms: jest.fn(),
     getUserById: jest.fn().mockResolvedValue(null),
     findToken: jest.fn(),
     getFiles: jest.fn().mockResolvedValue([]),
@@ -111,11 +112,12 @@ afterEach(async () => {
 const {
   deleteUserController,
   getUserController,
+  acceptTermsController,
   resendVerificationController,
   verifyEmailController,
 } = require('./UserController');
 const { Group } = require('~/db/models');
-const { deleteConvos } = require('~/models');
+const { deleteConvos, acceptTerms } = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 
 describe('verifyEmailController', () => {
@@ -253,6 +255,50 @@ describe('getUserController', () => {
     expect(sentUser).not.toHaveProperty('openidTokens');
     expect(sentUser).not.toHaveProperty('tokenset');
     expect(sentUser).not.toHaveProperty('safeLookingRuntimeField');
+  });
+});
+
+describe('acceptTermsController', () => {
+  const mockRes = {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns 404 when the user does not exist', async () => {
+    acceptTerms.mockResolvedValueOnce(null);
+
+    await acceptTermsController({ user: { id: 'missing-user' } }, mockRes);
+
+    expect(acceptTerms).toHaveBeenCalledWith('missing-user');
+    expect(mockRes.status).toHaveBeenCalledWith(404);
+    expect(mockRes.json).toHaveBeenCalledWith({ message: 'User not found' });
+  });
+
+  it('returns the recorded acceptance timestamp on success', async () => {
+    const acceptedAt = new Date('2026-06-14T10:00:00.000Z');
+    acceptTerms.mockResolvedValueOnce({ termsAccepted: true, termsAcceptedAt: acceptedAt });
+
+    await acceptTermsController({ user: { id: 'user-id' } }, mockRes);
+
+    expect(acceptTerms).toHaveBeenCalledWith('user-id');
+    expect(mockRes.status).toHaveBeenCalledWith(200);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      message: 'Terms accepted successfully',
+      termsAcceptedAt: acceptedAt,
+    });
+  });
+
+  it('returns 500 when the update throws', async () => {
+    acceptTerms.mockRejectedValueOnce(new Error('db down'));
+
+    await acceptTermsController({ user: { id: 'user-id' } }, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(mockRes.json).toHaveBeenCalledWith({ message: 'Error accepting terms' });
   });
 });
 

@@ -18,6 +18,7 @@ export default memo(function StopButton({
       render={
         <button
           type="button"
+          data-testid="stop-generation-button"
           className={cn(
             'rounded-full bg-text-primary p-1.5 text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
           )}

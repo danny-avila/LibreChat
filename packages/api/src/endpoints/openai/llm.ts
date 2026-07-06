@@ -454,10 +454,13 @@ export function getOpenAILLMConfig({
     verbosity,
     web_search,
     promptCache,
+    promptCacheTtl,
     frequency_penalty,
     presence_penalty,
     ...modelOptions
-  } = cleanedModelOptions as Partial<t.OpenAIParameters & { promptCache?: boolean }>;
+  } = cleanedModelOptions as Partial<
+    t.OpenAIParameters & { promptCache?: boolean; promptCacheTtl?: '5m' | '1h' }
+  >;
 
   const llmConfig = Object.assign(
     {
@@ -488,6 +491,7 @@ export function getOpenAILLMConfig({
 
   let enableWebSearch = web_search;
   let enablePromptCache = promptCache;
+  let promptCacheTtlValue = promptCacheTtl;
 
   /** Apply defaultParams first - only if fields are undefined */
   if (defaultParams && typeof defaultParams === 'object') {
@@ -501,6 +505,12 @@ export function getOpenAILLMConfig({
       if (key === 'promptCache') {
         if (enablePromptCache === undefined && typeof value === 'boolean') {
           enablePromptCache = value;
+        }
+        continue;
+      }
+      if (key === 'promptCacheTtl') {
+        if (promptCacheTtlValue === undefined && (value === '5m' || value === '1h')) {
+          promptCacheTtlValue = value;
         }
         continue;
       }
@@ -552,6 +562,12 @@ export function getOpenAILLMConfig({
       if (key === 'promptCache') {
         if (typeof value === 'boolean') {
           enablePromptCache = value;
+        }
+        continue;
+      }
+      if (key === 'promptCacheTtl') {
+        if (value === '5m' || value === '1h') {
+          promptCacheTtlValue = value;
         }
         continue;
       }
@@ -617,6 +633,9 @@ export function getOpenAILLMConfig({
   if (dropParams && dropParams.includes('promptCache')) {
     enablePromptCache = false;
   }
+  if (dropParams && dropParams.includes('promptCacheTtl')) {
+    promptCacheTtlValue = undefined;
+  }
 
   if (useOpenRouter && enableWebSearch) {
     /** OpenRouter expects web search as a plugins parameter */
@@ -629,6 +648,10 @@ export function getOpenAILLMConfig({
   }
   if (useOpenRouter && enablePromptCache === true) {
     llmConfig.promptCache = true;
+    /** Pass an explicit TTL when configured; otherwise the agents SDK defaults to 1h */
+    if (promptCacheTtlValue != null) {
+      llmConfig.promptCacheTtl = promptCacheTtlValue;
+    }
   }
 
   if (!useOpenRouter) {
@@ -644,10 +667,10 @@ export function getOpenAILLMConfig({
   }
 
   /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
-  if (
+  const isDeepSeekModel =
     typeof modelOptions.model === 'string' &&
-    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
-  ) {
+    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''));
+  if (isDeepSeekModel) {
     llmConfig.includeReasoningContent = true;
   }
 

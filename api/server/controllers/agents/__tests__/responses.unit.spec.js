@@ -54,6 +54,9 @@ const mockCanAuthorSkillFiles = jest.fn(
     scopedEditableSkillIds.length > 0 || skillCreateAllowed === true,
 );
 const mockGetSkillToolDeps = jest.fn(() => ({}));
+const mockBuildAgentScopedContext = jest.fn().mockResolvedValue(new Map());
+const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new Map());
+const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -84,7 +87,11 @@ jest.mock('@librechat/api', () => ({
   createRun: jest.fn().mockResolvedValue({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
+  applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
+  buildAgentContextAttachmentsByAgentId: (...args) =>
+    mockBuildAgentContextAttachmentsByAgentId(...args),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   resolveAgentScopedSkillIds: jest
     .fn()
@@ -97,12 +104,21 @@ jest.mock('@librechat/api', () => ({
     model_parameters: {},
     toolRegistry: {},
     edges: [],
+    agentContextAttachments: [],
   }),
-  discoverConnectedAgents: jest.fn().mockResolvedValue({
-    agentConfigs: new Map(),
-    edges: [],
-    skippedAgentIds: new Set(),
-    userMCPAuthMap: undefined,
+  discoverConnectedAgents: jest.fn().mockImplementation(async (computedParams, deps) => {
+    // Call onAgentInitialized for each agent config if provided by the mock setup
+    if (deps?.onAgentInitialized && mockGlobalDiscoveredAgentConfigs) {
+      for (const [agentId, config] of mockGlobalDiscoveredAgentConfigs) {
+        deps.onAgentInitialized(agentId, config, config);
+      }
+    }
+    return {
+      agentConfigs: mockGlobalDiscoveredAgentConfigs ?? new Map(),
+      edges: [],
+      skippedAgentIds: new Set(),
+      userMCPAuthMap: undefined,
+    };
   }),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
@@ -196,6 +212,14 @@ jest.mock('~/server/controllers/ModelController', () => ({
   getModelsConfig: jest.fn().mockResolvedValue({}),
 }));
 
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/config', () => ({
+  getMCPManager: jest.fn().mockReturnValue({}),
+}));
+
 jest.mock('~/server/services/Files/permissions', () => ({
   filterFilesByAgentAccess: jest.fn(),
 }));
@@ -253,12 +277,15 @@ jest.mock('~/models', () => ({
   getConvo: jest.fn().mockResolvedValue(null),
 }));
 
+let mockGlobalDiscoveredAgentConfigs = null;
+
 describe('createResponse controller', () => {
   let createResponse;
   let req, res;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGlobalDiscoveredAgentConfigs = null;
 
     const controller = require('../responses');
     createResponse = controller.createResponse;
@@ -444,6 +471,89 @@ describe('createResponse controller', () => {
         expect.any(Object),
         expect.objectContaining({
           model: 'claude-3',
+        }),
+      );
+    });
+  });
+
+  describe('agent context parity with UI path', () => {
+    it('applies agent-scoped attachment context before createRun', async () => {
+      const api = require('@librechat/api');
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [{ file_id: 'file-1', filename: 'ocr_file.pdf' }],
+      });
+      mockBuildAgentContextAttachmentsByAgentId.mockReturnValueOnce(
+        new Map([['agent-123', [{ file_id: 'file-1', filename: 'ocr_file.pdf' }]]]),
+      );
+      mockBuildAgentScopedContext.mockResolvedValueOnce(
+        new Map([['agent-123', 'PDF context: ocr_file.pdf']]),
+      );
+
+      await createResponse(req, res);
+
+      expect(mockBuildAgentContextAttachmentsByAgentId).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 'agent-123' }),
+      ]);
+      expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentIds: ['agent-123'],
+          attachmentsByAgentId: expect.any(Map),
+          req,
+        }),
+      );
+      expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: expect.objectContaining({ id: 'agent-123' }),
+          agentId: 'agent-123',
+          sharedRunContext: 'PDF context: ocr_file.pdf',
+        }),
+      );
+    });
+
+    it('applies context to primary and discovered handoff agents', async () => {
+      const api = require('@librechat/api');
+      const handoffConfig = {
+        id: 'agent-handoff',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [{ file_id: 'file-2', filename: 'handoff_context.pdf' }],
+      };
+
+      // Set primary agent to have edges pointing to handoff agent
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [{ source: 'agent-123', target: 'agent-handoff' }],
+        agentContextAttachments: [{ file_id: 'file-1', filename: 'primary_context.pdf' }],
+      });
+
+      // Set global config so discoverConnectedAgents mock can invoke onAgentInitialized
+      mockGlobalDiscoveredAgentConfigs = new Map([['agent-handoff', handoffConfig]]);
+
+      mockBuildAgentScopedContext.mockResolvedValueOnce(
+        new Map([
+          ['agent-123', 'Primary context'],
+          ['agent-handoff', 'Handoff context'],
+        ]),
+      );
+
+      await createResponse(req, res);
+
+      const appliedAgentIds = mockApplyContextToAgent.mock.calls.map((call) => call[0].agentId);
+      expect(appliedAgentIds).toEqual(expect.arrayContaining(['agent-123', 'agent-handoff']));
+      expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'agent-handoff',
+          sharedRunContext: 'Handoff context',
         }),
       );
     });

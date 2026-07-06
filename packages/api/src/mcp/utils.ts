@@ -247,11 +247,19 @@ export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
  *
- * URLs are returned as-is: DB-stored configs reject ${VAR} patterns at validation time
- * (MCPServerUserInputSchema), and YAML configs are admin-managed. Env variable resolution
- * is handled at the schema/input boundary, not the output boundary.
+ * `url` and the oauth flow URLs (`authorization_url`, `token_url`, `revocation_endpoint`) can
+ * encode internal infrastructure, so they are stripped unless `canEdit` is set: the same
+ * disclosure threshold the PATCH route enforces. Callers derive `canEdit` per server (operator
+ * YAML/config-tier servers from the MANAGE_MCP_SERVERS capability, user-sourced servers from
+ * per-resource ACL EDIT), so a user-sourced config shared view-only does not disclose its URL
+ * to the viewer.
+ * DB-stored configs reject ${VAR} patterns at validation time (MCPServerUserInputSchema);
+ * env variable resolution is handled at the schema/input boundary.
  */
-export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedServerConfig> {
+export function redactServerSecrets(
+  config: ParsedServerConfig,
+  options?: { canEdit?: boolean },
+): Partial<ParsedServerConfig> {
   const safe: Partial<ParsedServerConfig> = {
     type: config.type,
     url: config.url,
@@ -291,6 +299,19 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     safe.obo = config.obo;
   }
 
+  if (!options?.canEdit) {
+    delete safe.url;
+    if (safe.oauth) {
+      const {
+        authorization_url: _au,
+        token_url: _tu,
+        revocation_endpoint: _re,
+        ...restOAuth
+      } = safe.oauth;
+      safe.oauth = restOAuth;
+    }
+  }
+
   return Object.fromEntries(
     Object.entries(safe).filter(([, v]) => v !== undefined),
   ) as Partial<ParsedServerConfig>;
@@ -299,10 +320,12 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
 /** Applies allowlist-based sanitization to a map of server configs. */
 export function redactAllServerSecrets(
   configs: Record<string, ParsedServerConfig>,
+  options?: { canEditByServer?: ReadonlyMap<string, boolean> },
 ): Record<string, Partial<ParsedServerConfig>> {
   const result: Record<string, Partial<ParsedServerConfig>> = {};
   for (const [key, config] of Object.entries(configs)) {
-    result[key] = redactServerSecrets(config);
+    const canEdit = options?.canEditByServer?.get(key) ?? false;
+    result[key] = redactServerSecrets(config, { canEdit });
   }
   return result;
 }

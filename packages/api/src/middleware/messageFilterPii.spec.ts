@@ -89,6 +89,47 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  const SK = 'sk-proj-FAKE1234567890ABCDEF';
+
+  it('rejects a resume ask-user answer containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware({}, { answer: `the key is ${SK}` });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a tool-approval decision responseText containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'respond', responseText: `use ${SK}` }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a reject-reason containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'reject', reason: `leaked ${SK}` }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects edited tool arguments containing a blocked token (stringified)', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'edit', editedArguments: { token: SK } }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('passes a clean resume answer through', () => {
+    const { capturedRes, nextCalls } = runMiddleware({}, { answer: 'name it report.pdf' });
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
   it('honors a starterPatterns subset (sk passes when only bearer is enabled)', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       { starterPatterns: ['bearer_header'] },
@@ -132,6 +173,52 @@ describe('messageFilterPii middleware', () => {
     );
     expect(nextCalls).toBe(0);
     expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects with 400 when a quoted excerpt contains a blocked token (clean text)', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'explain this', quotes: ['leaked sk-proj-FAKE1234567890ABCDEF here'] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('scans quotes even when req.body.text is empty', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: '', quotes: ['api-key: foo123bar'] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a secret split across a quote and the typed text (merged scan)', () => {
+    // Neither piece matches the api-key pattern alone, but the merged
+    // `> api-key:\n\nsecret` the model receives does (the pattern allows whitespace).
+    const { capturedRes, nextCalls } = runMiddleware({}, { text: 'secret', quotes: ['api-key:'] });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('passes through when neither text nor quotes match', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'hello world', quotes: ['a clean excerpt', 'another clean one'] },
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('ignores non-string quote entries without throwing', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'hello world', quotes: [null, 42, '', 'clean'] },
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
   });
 
   it('returns the same compiled pattern array for repeat calls with the same config (memoization)', () => {

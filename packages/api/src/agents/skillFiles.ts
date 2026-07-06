@@ -6,6 +6,7 @@ import type { CodeEnvRef } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types';
 import { extractInvokedSkillsFromPayload } from './run';
+import { SKILL_FILE_PREFIX } from './skills';
 import { logAxiosError } from '~/utils';
 
 export interface SkillFileRecord {
@@ -151,7 +152,7 @@ export async function primeSkillFiles(
               id: ref.file_id,
               resource_id: ref.id,
               storage_session_id: ref.storage_session_id,
-              name: `${skill.name}/${sf.relativePath}`,
+              name: `${SKILL_FILE_PREFIX}${skill.name}/${sf.relativePath}`,
               kind: ref.kind,
               ...(ref.kind === 'skill' ? { version: ref.version } : {}),
             });
@@ -175,7 +176,10 @@ export async function primeSkillFiles(
 
   // SKILL.md from the skill body
   const bodyBuffer = Buffer.from(skill.body, 'utf-8');
-  filesToUpload.push({ stream: Readable.from(bodyBuffer), filename: `${skill.name}/SKILL.md` });
+  filesToUpload.push({
+    stream: Readable.from(bodyBuffer),
+    filename: `${SKILL_FILE_PREFIX}${skill.name}/SKILL.md`,
+  });
 
   // Bundled files from storage (parallel stream acquisition)
   const streamResults = await Promise.allSettled(
@@ -188,7 +192,7 @@ export async function primeSkillFiles(
         return null;
       }
       const stream = await strategy.getDownloadStream(req, file.filepath);
-      return { stream, filename: `${skill.name}/${file.relativePath}` };
+      return { stream, filename: `${SKILL_FILE_PREFIX}${skill.name}/${file.relativePath}` };
     }),
   );
   for (const result of streamResults) {
@@ -269,6 +273,12 @@ export async function primeSkillFiles(
      * returned to the caller are still valid.
      */
     if (updateSkillFileCodeEnvIds) {
+      /* Uploaded filenames are namespaced `skills/{skillName}/{relativePath}`
+       * so the sandbox mount mirrors the model-facing skill namespace. The
+       * persisted `relativePath` is the bare path (e.g. `references/style.md`),
+       * so strip the `skills/{skillName}/` prefix rather than just the first
+       * segment. */
+      const sandboxPrefix = `${SKILL_FILE_PREFIX}${skill.name}/`;
       const updates = result.files
         .filter((f) => !f.filename.endsWith('/SKILL.md'))
         .map((f) => {
@@ -281,7 +291,9 @@ export async function primeSkillFiles(
           };
           return {
             skillId: skill._id,
-            relativePath: f.filename.slice(f.filename.indexOf('/') + 1),
+            relativePath: f.filename.startsWith(sandboxPrefix)
+              ? f.filename.slice(sandboxPrefix.length)
+              : f.filename.slice(f.filename.indexOf('/') + 1),
             codeEnvRef: ref,
           };
         });
@@ -443,7 +455,7 @@ export async function primeInvokedSkills(
           const cachedFiles = resolvedWithRef.map(({ skillName, file, ref }) => ({
             id: ref!.file_id,
             resource_id: ref!.id,
-            name: `${skillName}/${file.relativePath}`,
+            name: `${SKILL_FILE_PREFIX}${skillName}/${file.relativePath}`,
             storage_session_id: ref!.storage_session_id,
             kind: ref!.kind,
             ...(ref!.kind === 'skill' ? { version: ref!.version } : {}),

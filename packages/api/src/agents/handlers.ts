@@ -21,9 +21,9 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { logAxiosError, runOutsideTracing } from '~/utils';
 import { parseFrontmatter } from '../skills/import';
-import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
 
@@ -260,7 +260,6 @@ const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
-const SKILL_FILE_PREFIX = 'skills/';
 const SKILL_MD = 'SKILL.md';
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -794,14 +793,31 @@ function getAuthorInfo(req: ServerRequest): {
   };
 }
 
+/* Models often stringify nested JSON (JSON-in-JSON) instead of passing a
+   real array/object, which would otherwise fail validation and cost a retry
+   round-trip. Parse a JSON string back to its value; leave non-strings and
+   unparseable strings untouched so the explicit errors below still fire. */
+function coerceJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 function normalizeEditArgs(args: {
   old_text?: unknown;
   new_text?: unknown;
   edits?: unknown;
 }): TextEdit[] | string {
-  if (Array.isArray(args.edits) && args.edits.length > 0) {
+  const coercedEdits = coerceJsonValue(args.edits);
+  if (Array.isArray(coercedEdits) && coercedEdits.length > 0) {
     const edits: TextEdit[] = [];
-    for (const edit of args.edits) {
+    for (const rawEdit of coercedEdits) {
+      const edit = coerceJsonValue(rawEdit);
       if (!edit || typeof edit !== 'object') {
         return 'Each edit must be an object with old_text and new_text.';
       }
@@ -1374,10 +1390,10 @@ function isSandboxMissingFileError(error: unknown): boolean {
 
 function invalidSandboxAuthoringPath(filePath: string): string | null {
   if (filePath.length === 0) {
-    return 'file_path is required';
+    return 'path is required';
   }
   if (filePath.includes('\0')) {
-    return 'file_path cannot contain NUL bytes';
+    return 'path cannot contain NUL bytes';
   }
   if (filePath.endsWith('/')) {
     return `File path "${filePath}" points to a directory. Provide a file path.`;
@@ -2270,37 +2286,42 @@ async function handleCreateFileCall(
   sourceConfigurable?: Record<string, unknown>,
   sandboxContext?: SandboxSessionContext,
 ): AuthoringResult {
-  const args = tc.args as { file_path?: unknown; content?: unknown; overwrite?: unknown };
-  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
-    return errorResult(tc, 'file_path is required');
+  const args = tc.args as { path?: unknown; content?: unknown; overwrite?: unknown };
+  if (typeof args.path !== 'string' || args.path.length === 0) {
+    return errorResult(tc, 'path is required');
   }
   if (typeof args.content !== 'string') {
-    return errorResult(tc, 'content is required');
+    return errorResult(
+      tc,
+      'content is required. If the file is large, your response may have been cut off at the ' +
+        'output token limit before content finished. Keep the main file lean and move bulky ' +
+        'sections (templates, schemas, long docs) into separate files written in their own calls.',
+    );
   }
   if (Buffer.byteLength(args.content, 'utf8') > MAX_AUTHORING_BYTES) {
     return errorResult(tc, `content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
   }
 
   const overwrite = args.overwrite === true;
-  if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
+  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
         tc,
-        `Path "${args.file_path}" is not a skill file, and this agent does not have code execution enabled.`,
+        `Path "${args.path}" is not a skill file, and this agent does not have code execution enabled.`,
       );
     }
     return await handleSandboxCreateFileCall({
       tc,
       options,
       req,
-      filePath: args.file_path,
+      filePath: args.path,
       content: args.content,
       overwrite,
       sandboxContext,
     });
   }
 
-  const parsed = parseSkillAuthoringPath(args.file_path);
+  const parsed = parseSkillAuthoringPath(args.path);
   if (typeof parsed === 'string') {
     return errorResult(tc, parsed);
   }
@@ -2378,13 +2399,13 @@ async function handleEditFileCall(
   sandboxContext?: SandboxSessionContext,
 ): AuthoringResult {
   const args = tc.args as {
-    file_path?: unknown;
+    path?: unknown;
     old_text?: unknown;
     new_text?: unknown;
     edits?: unknown;
   };
-  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
-    return errorResult(tc, 'file_path is required');
+  if (typeof args.path !== 'string' || args.path.length === 0) {
+    return errorResult(tc, 'path is required');
   }
 
   const edits = normalizeEditArgs(args);
@@ -2392,24 +2413,24 @@ async function handleEditFileCall(
     return errorResult(tc, edits);
   }
 
-  if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
+  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
         tc,
-        `Path "${args.file_path}" is not a skill file, and this agent does not have code execution enabled.`,
+        `Path "${args.path}" is not a skill file, and this agent does not have code execution enabled.`,
       );
     }
     return await handleSandboxEditFileCall({
       tc,
       options,
       req,
-      filePath: args.file_path,
+      filePath: args.path,
       edits,
       sandboxContext,
     });
   }
 
-  const parsed = parseSkillAuthoringPath(args.file_path);
+  const parsed = parseSkillAuthoringPath(args.path);
   if (typeof parsed === 'string') {
     return errorResult(tc, parsed);
   }
@@ -2511,13 +2532,13 @@ async function handleReadFileCall(
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
-  const args = tc.args as { file_path?: string };
-  if (!args.file_path) {
+  const args = tc.args as { path?: string };
+  if (!args.path) {
     return {
       toolCallId: tc.id,
       status: 'error',
       content: '',
-      errorMessage: 'file_path is required',
+      errorMessage: 'path is required',
     };
   }
 
@@ -2529,23 +2550,23 @@ async function handleReadFileCall(
    * reference (skill paths are relative `{skillName}/...`), and consulting
    * `getSkillByName` would just burn a DB round-trip on a guaranteed miss.
    */
-  if (args.file_path.startsWith('/mnt/data/')) {
+  if (args.path.startsWith('/mnt/data/')) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+      return handleSandboxFileFallback(tc, args.path, options, req);
     }
     return {
       toolCallId: tc.id,
       status: 'error',
       content: '',
-      errorMessage: `Path "${args.file_path}" is a code-execution sandbox path, but this agent does not have code execution enabled.`,
+      errorMessage: `Path "${args.path}" is a code-execution sandbox path, but this agent does not have code execution enabled.`,
     };
   }
 
   let skillName: string;
   let relativePath: string;
-  const explicitSkillNamespace = args.file_path.startsWith(SKILL_FILE_PREFIX);
+  const explicitSkillNamespace = args.path.startsWith(SKILL_FILE_PREFIX);
   if (explicitSkillNamespace) {
-    const parsed = parseSkillAuthoringPath(args.file_path);
+    const parsed = parseSkillAuthoringPath(args.path);
     if (typeof parsed === 'string') {
       return {
         toolCallId: tc.id,
@@ -2557,21 +2578,21 @@ async function handleReadFileCall(
     skillName = parsed.skillName;
     relativePath = parsed.relativePath;
   } else {
-    const slashIdx = args.file_path.indexOf('/');
+    const slashIdx = args.path.indexOf('/');
     if (slashIdx < 1) {
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.file_path, options, req);
+        return handleSandboxFileFallback(tc, args.path, options, req);
       }
       return {
         toolCallId: tc.id,
         status: 'error',
         content: '',
-        errorMessage: `Invalid file path "${args.file_path}". Use format: {skillName}/{path}`,
+        errorMessage: `Invalid file path "${args.path}". Use format: {skillName}/{path}`,
       };
     }
 
-    skillName = args.file_path.slice(0, slashIdx);
-    relativePath = args.file_path.slice(slashIdx + 1);
+    skillName = args.path.slice(0, slashIdx);
+    relativePath = args.path.slice(slashIdx + 1);
     if (!relativePath) {
       /**
        * `read_file("output/")`: a malformed-but-unambiguously-not-a-skill
@@ -2580,7 +2601,7 @@ async function handleReadFileCall(
        * dead-ending with a skill-centric error message.
        */
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.file_path, options, req);
+        return handleSandboxFileFallback(tc, args.path, options, req);
       }
       return {
         toolCallId: tc.id,
@@ -2642,7 +2663,7 @@ async function handleReadFileCall(
    */
   if (!skillsEffectivelyEnabled) {
     if (codeEnvAvailable && !explicitSkillNamespace) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+      return handleSandboxFileFallback(tc, args.path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -2681,7 +2702,7 @@ async function handleReadFileCall(
     const recovered = await recoverAuthorSkill();
     if (!recovered) {
       if (codeEnvAvailable && !explicitSkillNamespace) {
-        return handleSandboxFileFallback(tc, args.file_path, options, req);
+        return handleSandboxFileFallback(tc, args.path, options, req);
       }
       return {
         toolCallId: tc.id,
@@ -2763,9 +2784,17 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File: ${args.file_path}\n\n${addLineNumbers(skill.body)}`,
+      content: `File: ${args.path}\n\n${addLineNumbers(skill.body)}`,
     };
   }
+
+  /* Bundled skill files are primed into the sandbox under the `skills/`
+   * namespace (see `primeSkillFiles`), so the on-disk path is always
+   * `/mnt/data/skills/{skillName}/{relativePath}` regardless of whether the
+   * model addressed the file with or without the explicit prefix. Use this
+   * canonical path in the bash-fallback hints below so they never echo a
+   * prefix-less `args.path` that points nowhere on disk. */
+  const sandboxFilePath = `/mnt/data/${SKILL_FILE_PREFIX}${skillName}/${relativePath}`;
 
   if (!getSkillFileByPath) {
     return {
@@ -2794,7 +2823,7 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: ${sandboxFilePath}`,
       };
     }
   }
@@ -2804,7 +2833,7 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File: ${args.file_path} (${file.bytes} bytes)\n\n${addLineNumbers(file.content)}`,
+      content: `File: ${args.path} (${file.bytes} bytes)\n\n${addLineNumbers(file.content)}`,
     };
   }
 
@@ -2814,14 +2843,14 @@ async function handleReadFileCall(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File "${args.file_path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
+      content: `File "${args.path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at ${sandboxFilePath}.`,
     };
   }
   if (isImage && file.bytes > MAX_BINARY_BYTES) {
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: /mnt/data/${args.file_path}`,
+      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: ${sandboxFilePath}`,
     };
   }
 
@@ -2865,7 +2894,7 @@ async function handleReadFileCall(
         return {
           toolCallId: tc.id,
           status: 'success',
-          content: `File "${args.file_path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
+          content: `File "${args.path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at ${sandboxFilePath}.`,
         };
       }
       chunks.push(chunk);
@@ -2903,7 +2932,7 @@ async function handleReadFileCall(
         return {
           toolCallId: tc.id,
           status: 'success',
-          content: `Image: ${args.file_path} (${buffer.length} bytes, ${file.mimeType})`,
+          content: `Image: ${args.path} (${buffer.length} bytes, ${file.mimeType})`,
           artifact: {
             content: [
               { type: 'image_url', image_url: { url: `data:${file.mimeType};base64,${base64}` } },
@@ -2919,7 +2948,7 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: ${sandboxFilePath}`,
       };
     }
 
@@ -2941,14 +2970,14 @@ async function handleReadFileCall(
       return {
         toolCallId: tc.id,
         status: 'success',
-        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.file_path}`,
+        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat ${sandboxFilePath}`,
       };
     }
 
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `File: ${args.file_path} (${buffer.length} bytes)\n\n${addLineNumbers(text)}`,
+      content: `File: ${args.path} (${buffer.length} bytes)\n\n${addLineNumbers(text)}`,
     };
   } catch (error) {
     return {
@@ -3126,16 +3155,16 @@ function getFileAuthoringQueueKey(
   if (!isHostFileAuthoringToolCall(tc.name, mergedConfigurable)) {
     return undefined;
   }
-  const args = tc.args as { file_path?: unknown };
-  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
+  const args = tc.args as { path?: unknown };
+  if (typeof args.path !== 'string' || args.path.length === 0) {
     return undefined;
   }
-  if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
-    return `sandbox:${args.file_path}`;
+  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+    return `sandbox:${args.path}`;
   }
-  const parsed = parseSkillAuthoringPath(args.file_path);
+  const parsed = parseSkillAuthoringPath(args.path);
   if (typeof parsed === 'string') {
-    return `skill:${args.file_path}`;
+    return `skill:${args.path}`;
   }
   return `skill:${parsed.skillName}`;
 }
@@ -3199,8 +3228,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   );
                   const isSandboxFileAuthoringCall =
                     isFileAuthoringCall &&
-                    typeof (tc.args as { file_path?: unknown }).file_path === 'string' &&
-                    !(tc.args as { file_path: string }).file_path.startsWith(SKILL_FILE_PREFIX);
+                    typeof (tc.args as { path?: unknown }).path === 'string' &&
+                    !(tc.args as { path: string }).path.startsWith(SKILL_FILE_PREFIX);
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||

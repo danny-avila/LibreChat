@@ -1,5 +1,9 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { createAppConfigService, _resetOverrideStrictCache } from './service';
+import {
+  createAppConfigService,
+  _resetOverrideStrictCache,
+  getAppConfigOptionsFromUser,
+} from './service';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 interface TestConfig extends AppConfig {
@@ -415,6 +419,33 @@ describe('createAppConfigService', () => {
       });
     });
 
+    it('passes local identity through to getUserPrincipals when provided', async () => {
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'USER', userId: 'uid1', idOnTheSource: null });
+
+      expect(deps.getUserPrincipals).toHaveBeenCalledWith({
+        userId: 'uid1',
+        role: 'USER',
+        idOnTheSource: null,
+      });
+    });
+
+    it('uses the same override cache entry when source identity changes for a user', async () => {
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({ role: 'USER', userId: 'uid1', idOnTheSource: null });
+      await getAppConfig({ role: 'USER', userId: 'uid1', idOnTheSource: 'source-user-1' });
+
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(1);
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
+      expect([...deps._cache._store.keys()]).toEqual(
+        expect.arrayContaining(['app_config:_OVERRIDE_:__default__:USER:uid1']),
+      );
+    });
+
     it('does not call getUserPrincipals when only role is provided', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);
@@ -502,6 +533,51 @@ describe('createAppConfigService', () => {
 
       // Should not throw — logs warning and relies on TTL expiry
       await expect(clearOverrideCache()).resolves.toBeUndefined();
+    });
+  });
+});
+
+describe('getAppConfigOptionsFromUser', () => {
+  it('maps resolved request users to app config principal options', () => {
+    expect(
+      getAppConfigOptionsFromUser({
+        id: 'uid1',
+        role: 'USER',
+        tenantId: 'tenant-a',
+        idOnTheSource: 'source-user-1',
+      }),
+    ).toEqual({
+      role: 'USER',
+      userId: 'uid1',
+      idOnTheSource: 'source-user-1',
+      tenantId: 'tenant-a',
+    });
+  });
+
+  it('preserves omitted source identity for partial users so fallback lookup can run', () => {
+    expect(getAppConfigOptionsFromUser({ id: 'uid1', role: 'USER' })).toEqual({
+      role: 'USER',
+      userId: 'uid1',
+      idOnTheSource: undefined,
+      tenantId: undefined,
+    });
+  });
+
+  it('marks explicitly normalized local users with null idOnTheSource', () => {
+    expect(getAppConfigOptionsFromUser({ id: 'uid1', role: 'USER', idOnTheSource: null })).toEqual({
+      role: 'USER',
+      userId: 'uid1',
+      idOnTheSource: null,
+      tenantId: undefined,
+    });
+  });
+
+  it('omits source identity when no user id is available', () => {
+    expect(getAppConfigOptionsFromUser({ role: 'USER', tenantId: 'tenant-a' })).toEqual({
+      role: 'USER',
+      userId: undefined,
+      idOnTheSource: undefined,
+      tenantId: 'tenant-a',
     });
   });
 });

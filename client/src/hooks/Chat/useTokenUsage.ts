@@ -6,6 +6,8 @@ import type { TMessage, TConversation, TModelTokenomics } from 'librechat-data-p
 import type { BranchTotals, BranchUsage } from '~/utils/tokens';
 import type { ContextSnapshot } from '~/store/usage';
 import {
+  overheadKey,
+  getModelOverhead,
   liveTokensFamily,
   totalUsageFamily,
   removeUsageAtoms,
@@ -21,6 +23,7 @@ import {
   clearIndex,
   mergeUsage,
   sumTotalUsage,
+  prunedBranchTokens,
   findBranchSnapshotAnchor,
 } from '~/utils';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
@@ -53,6 +56,18 @@ export interface TokenUsageView {
   /** Authoritative cost across all branches (shown when it differs from branch) */
   totalCost: number;
   liveTokens: number;
+  /** Estimated tokens for count-less messages (in-flight tail excluded while
+   *  streaming); 0 on snapshots. Rendered as its own breakdown row. */
+  estimatedTokens: number;
+  /** Cached instruction + tool overhead applied to a snapshot-less estimate; 0 on
+   *  snapshots (which carry their own breakdown) and until the agent has run. */
+  overheadTokens: number;
+  /** Final message-token portion of a snapshot-less estimate (pruned when over
+   *  window, excludes live); 0 on snapshots. */
+  messageTokens: number;
+  /** True when over-window pruning replaced the raw message sum, so the breakdown
+   *  shows a single pruned Messages row instead of input/output/estimated. */
+  messagesPruned: boolean;
   rates?: TModelTokenomics;
 }
 
@@ -78,6 +93,21 @@ export default function useTokenUsage({
   const setBranchTotals = useSetAtom(branchTotalsFamily(conversationKey));
   const setTotalUsage = useSetAtom(totalUsageFamily(conversationKey));
   const limits = useTokenLimits(conversation);
+
+  /** Deepest persisted/live snapshot on the viewed branch (present only for
+   *  turns generated with the feature on). Gates the projection fetch and is a
+   *  render source. */
+  const branchSnapshot = useMemo(() => {
+    if (snapshotsByAnchor.size === 0) {
+      return null;
+    }
+    const anchor = findBranchSnapshotAnchor(
+      conversationKey,
+      branchTotals.tailId,
+      snapshotsByAnchor,
+    );
+    return anchor != null ? (snapshotsByAnchor.get(anchor) ?? null) : null;
+  }, [conversationKey, branchTotals.tailId, snapshotsByAnchor]);
 
   /** Branch/total provider usage is index-derived; the in-flight response is
    *  the only live add (the pending holder), counted into both — it sits on the
@@ -186,40 +216,31 @@ export default function useTokenUsage({
       snapshot != null &&
       (isSubmitting || (snapshot.anchorMessageId != null && branchTotals.containsAnchor));
 
-    /** When the live snapshot belongs to another branch, recover this branch's
-     *  own finalized snapshot (if it was generated this session) by walking the
-     *  branch for its deepest stored anchor — keeps the granular rows on switch
-     *  instead of dropping to coarse totals. */
-    let activeSnapshot: ContextSnapshot | null = currentActive ? snapshot : null;
-    if (activeSnapshot == null && !isSubmitting && snapshotsByAnchor.size > 0) {
-      const anchor = findBranchSnapshotAnchor(
-        conversationKey,
-        branchTotals.tailId,
-        snapshotsByAnchor,
-      );
-      activeSnapshot = anchor != null ? (snapshotsByAnchor.get(anchor) ?? null) : null;
-    }
+    /** Precedence: live/active snapshot → persisted branch snapshot →
+     *  per-message estimate. The first two are authoritative (real runs with the
+     *  feature on); the estimate covers snapshot-less branches (pre-feature
+     *  history, imports, never-generated branches) entirely client-side. */
+    const effective: ContextSnapshot | null = currentActive ? snapshot : branchSnapshot;
 
-    if (activeSnapshot != null) {
-      const breakdown = activeSnapshot.breakdown;
-      const maxTokens = activeSnapshot.contextBudget ?? breakdown.maxContextTokens;
-      const instructionTokens =
-        activeSnapshot.effectiveInstructionTokens ?? breakdown.instructionTokens;
+    if (effective != null) {
+      const breakdown = effective.breakdown;
+      const maxTokens = effective.contextBudget ?? breakdown.maxContextTokens;
+      const instructionTokens = effective.effectiveInstructionTokens ?? breakdown.instructionTokens;
       const baseUsed =
-        activeSnapshot.remainingContextTokens != null
-          ? maxTokens - activeSnapshot.remainingContextTokens
+        effective.remainingContextTokens != null
+          ? maxTokens - effective.remainingContextTokens
           : instructionTokens + breakdown.messageTokens;
-      /** The snapshot is pre-invoke: in-flight output rides on `liveTokens`
-       *  (0 unless streaming this branch), the last call's finalized output on
+      /** The snapshot is pre-invoke: in-flight output rides on `liveTokens` (0
+       *  unless streaming this branch), the last call's finalized output on
        *  `completedOutputTokens`. */
       const usedTokens =
-        Math.max(0, baseUsed) + liveTokens + (activeSnapshot.completedOutputTokens ?? 0);
+        Math.max(0, baseUsed) + liveTokens + (effective.completedOutputTokens ?? 0);
       return {
         usedTokens,
         maxTokens,
         percent: maxTokens > 0 ? Math.min((usedTokens / maxTokens) * 100, 100) : 0,
         isEstimate: false,
-        snapshot: activeSnapshot,
+        snapshot: effective,
         snapshotActive: true,
         branchTotals,
         branchUsage,
@@ -228,18 +249,74 @@ export default function useTokenUsage({
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
         liveTokens,
+        estimatedTokens: 0,
+        overheadTokens: 0,
+        messageTokens: 0,
+        messagesPruned: false,
         rates: limits.rates,
       };
     }
 
-    /** `summaryBaseline` is the compacted-context size from the deepest
-     *  summarized response on the branch (0 if none). The branch walk stops
-     *  there, so input/output are post-summary only — adding the baseline keeps
-     *  the estimate from re-summing the discarded pre-summary history (which
-     *  otherwise pins the gauge at 100% forever after a compaction). */
-    const usedTokens =
-      branchTotals.input + branchTotals.output + branchTotals.summaryBaseline + liveTokens;
+    /** Snapshot-less estimate, computed from the in-memory message index — no
+     *  server round-trip. All terms are local per-message counts / char estimates
+     *  (uncalibrated): the learned calibration ratio reconciles provider-injected
+     *  context that isn't present in this visible text, so applying it here would
+     *  over-inflate. `summaryBaseline` is the compacted-context size from the
+     *  deepest summarized response on the branch (0 if none); the walk stops
+     *  there, so input/output are post-summary only — adding it keeps the estimate
+     *  from re-summing the discarded pre-summary history (which otherwise pins the
+     *  gauge at 100% after a compaction). */
     const maxTokens = limits.maxContextTokens;
+    const liveOnTail = liveTokens > 0;
+    /** Fixed instruction + tool-schema overhead for this agent/model (the latter is
+     *  already folded into `instructionTokens`), cached from live usage events. The
+     *  client can't otherwise know it for a snapshot-less branch, so reserve it from
+     *  the prune budget and add it to used — making over-window pruning faithful and
+     *  the gauge consistent with snapshots. Skipped when a summary baseline exists:
+     *  `computeSummaryUsedTokens` already folds the overhead into that marker, so
+     *  adding it again would double-count. 0 until the agent has run once this
+     *  session (then falls back to message-only, as before). */
+    const overheadTokens =
+      branchTotals.summaryBaseline > 0
+        ? 0
+        : getModelOverhead(
+            overheadKey(
+              limits.endpoint ?? conversation?.endpoint,
+              limits.model ?? conversation?.model,
+              conversation?.agent_id,
+            ),
+          );
+    /** When a stream is live the tail is the in-flight response, already counted
+     *  by `liveTokens`; drop its static estimate so a resumed/partial response
+     *  isn't double-counted on the estimate path. */
+    const estimatedTokens = Math.max(
+      0,
+      branchTotals.estTokens - (liveOnTail ? branchTotals.tailEstTokens : 0),
+    );
+    const rawMessageTokens = branchTotals.input + branchTotals.output + estimatedTokens;
+    let messageTokens = rawMessageTokens;
+    /** The send path prunes an over-window branch oldest-first before calling the
+     *  model, so the next call can sit well under the window even when the full
+     *  branch exceeds it. Mirror that: when the raw sum overflows the message window
+     *  (max minus the always-sent summary baseline and instruction overhead), report
+     *  the newest messages that actually fit instead of clamping the whole branch to
+     *  100%. */
+    if (maxTokens != null && maxTokens > 0) {
+      const messageBudget = Math.max(0, maxTokens - branchTotals.summaryBaseline - overheadTokens);
+      if (messageTokens > messageBudget) {
+        messageTokens = prunedBranchTokens(
+          conversationKey,
+          branchTotals.tailId,
+          messageBudget,
+          liveOnTail,
+        );
+      }
+    }
+    /** When pruning replaced the raw sum, the per-category input/output/estimated
+     *  rows no longer describe what's sent, so the breakdown collapses them into a
+     *  single pruned Messages row to stay consistent with the gauge. */
+    const messagesPruned = messageTokens < rawMessageTokens;
+    const usedTokens = overheadTokens + branchTotals.summaryBaseline + messageTokens + liveTokens;
     return {
       usedTokens,
       maxTokens,
@@ -255,6 +332,10 @@ export default function useTokenUsage({
       branchCost: branchUsage.cost,
       totalCost: totalUsage.cost,
       liveTokens,
+      estimatedTokens,
+      overheadTokens,
+      messageTokens,
+      messagesPruned,
       rates: limits.rates,
     };
   }, [
@@ -266,7 +347,8 @@ export default function useTokenUsage({
     hasUsage,
     liveTokens,
     limits,
-    snapshotsByAnchor,
+    branchSnapshot,
     conversationKey,
+    conversation,
   ]);
 }

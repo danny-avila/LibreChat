@@ -2060,6 +2060,20 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     expect(groups[2].memberIds).toContain(userEntraId);
   });
 
+  it('establishes the user tenant context for the sync when tenantId is present', async () => {
+    const { getTenantId } = require('@librechat/data-schemas');
+    const observed = [];
+    getUserEntraGroups.mockImplementation(async () => {
+      observed.push(getTenantId());
+      return [];
+    });
+
+    await syncUserEntraGroupMemberships({ ...user, tenantId: 'tenant-42' }, 'fake-token');
+    await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    expect(observed).toEqual(['tenant-42', undefined]);
+  });
+
   it('should not modify groups when API returns empty list (early return)', async () => {
     await Group.create([
       {

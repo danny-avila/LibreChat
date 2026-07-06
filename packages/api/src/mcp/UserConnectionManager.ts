@@ -453,8 +453,8 @@ export abstract class UserConnectionManager {
         graphTokenResolver,
       });
       const registry = MCPServersRegistry.getInstance();
-      const allowedDomains = registry.getAllowedDomains();
-      const allowedAddresses = registry.getAllowedAddresses();
+      const { allowedDomains, allowedAddresses, useSSRFProtection } =
+        await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
       await this.assertResolvedRuntimeConfigAllowed({
         config: runtimeConfig,
         user,
@@ -469,7 +469,7 @@ export abstract class UserConnectionManager {
         serverConfig: runtimeConfig,
         serverName: serverName,
         dbSourced: isUserSourced(runtimeConfig),
-        useSSRFProtection: registry.shouldEnableSSRFProtection(),
+        useSSRFProtection,
         allowedDomains,
         allowedAddresses,
         ephemeralConnection,
@@ -643,7 +643,7 @@ export abstract class UserConnectionManager {
   }): Promise<t.ParsedServerConfig> {
     if (
       config.requiresOAuth != null ||
-      config.apiKey?.source === 'admin' ||
+      (config.apiKey != null && config.oauth == null) ||
       !hasRuntimeUrlPlaceholders(config)
     ) {
       return config;
@@ -665,8 +665,10 @@ export abstract class UserConnectionManager {
     }
 
     const registry = MCPServersRegistry.getInstance();
-    const allowedDomains = registry.getAllowedDomains();
-    const allowedAddresses = registry.getAllowedAddresses();
+    const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
+      userId: user?.id,
+      role: user?.role,
+    });
     const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
     if (!allowed) {
       throw new McpError(

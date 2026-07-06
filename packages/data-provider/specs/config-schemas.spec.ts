@@ -991,6 +991,20 @@ describe('interfaceSchema', () => {
     expect(result.retentionMode).toBe(RetentionMode.ALL);
     expect(result.retainAgentFiles).toBe(true);
   });
+
+  it('accepts defaultPinnedTools as a string array', () => {
+    const result = interfaceSchema.parse({
+      defaultPinnedTools: ['artifacts', 'execute_code', 'mcp'],
+    });
+
+    expect(result.defaultPinnedTools).toEqual(['artifacts', 'execute_code', 'mcp']);
+  });
+
+  it('leaves defaultPinnedTools undefined when not provided', () => {
+    const result = interfaceSchema.parse({ modelSelect: true });
+
+    expect(result.defaultPinnedTools).toBeUndefined();
+  });
 });
 
 describe('summarizationTriggerSchema', () => {
@@ -1162,5 +1176,34 @@ describe('specsConfigSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('configSchema langfuse', () => {
+  it('accepts tenant Langfuse fanout config', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        publicKey: 'pk-lf-tenant',
+        secretKey: 'sk-lf-tenant',
+        fanout: {
+          enabled: true,
+          collectorUrl: 'http://langfuse-fanout-collector:4318',
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an explicit tenant Langfuse opt-out', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: false,
+      },
+    });
+
+    expect(result.success).toBe(true);
   });
 });

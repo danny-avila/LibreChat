@@ -3,6 +3,7 @@ const setTwoFactorTempUser = require('./setTwoFactorTempUser');
 const validateRegistration = require('./validateRegistration');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateMessageReq = require('./validateMessageReq');
+const { prepareMessageRequestValidation, sendValidationResponse } = require('./messageValidation');
 const checkDomainAllowed = require('./checkDomainAllowed');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
@@ -11,6 +12,7 @@ const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
+const { requireRumProxyAuth } = require('./requireJwtAuth');
 const configMiddleware = require('./config/app');
 const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
@@ -37,6 +39,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
+  requireRumProxyAuth,
   setTwoFactorTempUser,
   checkInviteUser,
   requireLdapAuth,
@@ -45,6 +48,8 @@ module.exports = {
   configMiddleware,
   checkDomainAllowed,
   validateMessageReq,
+  sendValidationResponse,
+  prepareMessageRequestValidation,
   buildEndpointOption,
   validateRegistration,
   validatePasswordReset,

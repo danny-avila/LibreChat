@@ -18,6 +18,7 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { getScopedTokenConfigKey } from '~/endpoints/keys';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
@@ -25,24 +26,42 @@ import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
 
+function getTenantTokenScope(tenantId?: string | null): string {
+  const normalizedTenantId = typeof tenantId === 'string' ? tenantId.trim() : '';
+  return normalizedTenantId;
+}
+
 /**
  * Cache key for an endpoint's fetched token config. User-scoped when the
  * model fetch can resolve per-user: user-provided key/URL, or header
  * templates forwarded against an admin-trusted base URL — making the
- * response, and therefore the derived token config, user-specific.
+ * response, and therefore the derived token config, user-specific. Otherwise
+ * tenant-scoped when a tenant id is available because custom endpoint config
+ * is resolved per tenant.
  */
 export function getTokenConfigKey(
   endpointConfig: Partial<TEndpoint>,
   endpoint: string,
   userId: string,
+  tenantId?: string | null,
 ): string {
   const hasTokenConfig = endpointConfig.tokenConfig != null;
+  if (hasTokenConfig) {
+    return endpoint;
+  }
+
   const userProvidesKey = isUserProvided(extractEnvVariable(endpointConfig.apiKey ?? ''));
   const userProvidesURL = isUserProvided(extractEnvVariable(endpointConfig.baseURL ?? ''));
   const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
-  return !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
-    ? `${endpoint}:${userId}`
-    : endpoint;
+  const tenantScope = getTenantTokenScope(tenantId);
+
+  if (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders) {
+    return tenantScope
+      ? getScopedTokenConfigKey('tenant-user', [tenantScope, endpoint, userId])
+      : `${endpoint}:${userId}`;
+  }
+
+  return tenantScope ? getScopedTokenConfigKey('tenant', [tenantScope, endpoint]) : endpoint;
 }
 
 /**
@@ -75,9 +94,9 @@ function buildCustomOptions(
   endpointConfig: Partial<TEndpoint>,
   appConfig?: AppConfig,
   endpointTokenConfig?: Record<string, unknown>,
+  forwardHeaders = true,
 ) {
   const customOptions: Record<string, unknown> = {
-    headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
@@ -90,6 +109,10 @@ function buildCustomOptions(
     streamRate: endpointConfig.streamRate,
     endpointTokenConfig,
   };
+
+  if (forwardHeaders) {
+    customOptions.headers = endpointConfig.headers;
+  }
 
   const allConfig = appConfig?.endpoints?.all;
   if (allConfig) {
@@ -111,17 +134,23 @@ function buildAnthropicCustomConfig({
   baseURL,
   modelOptions,
   endpointConfig,
+  userProvidesURL,
+  allowedAddresses,
 }: {
   apiKey: string;
   baseURL: string;
   modelOptions: AnthropicModelOptions;
   endpointConfig: Partial<TEndpoint>;
+  userProvidesURL: boolean;
+  allowedAddresses?: string[] | null;
 }): InitializeResultBase {
   const result = getAnthropicLLMConfig(apiKey, {
     modelOptions,
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL,
-    headers: endpointConfig.headers,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses,
+    headers: userProvidesURL ? undefined : endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     /** Apply admin `customParams.paramDefinitions` defaults (e.g. promptCache,
@@ -188,10 +217,10 @@ export async function initializeCustom({
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
-  const apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
+  const apiKey = userProvidesKey || userProvidesURL ? userValues?.apiKey : CUSTOM_API_KEY;
   const baseURL = userProvidesURL ? userValues?.baseURL : CUSTOM_BASE_URL;
 
-  if (userProvidesKey && !apiKey) {
+  if ((userProvidesKey || userProvidesURL) && !apiKey) {
     throw new Error(
       JSON.stringify({
         type: ErrorTypes.NO_USER_KEY,
@@ -222,10 +251,11 @@ export async function initializeCustom({
   let endpointTokenConfig: EndpointTokenConfig | undefined;
 
   const userId = req.user?.id ?? '';
+  const tenantId = req.user?.tenantId;
 
   const cache = tokenConfigCache();
   const hasTokenConfig = endpointConfig.tokenConfig != null;
-  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId);
+  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId, tenantId);
 
   if (hasTokenConfig) {
     /** A static override is authoritative — use it for the agent's billing
@@ -251,6 +281,8 @@ export async function initializeCustom({
     await fetchModels({
       apiKey,
       baseURL,
+      baseURLIsUserProvided: userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
       name: endpoint,
       user: userId,
       tokenKey,
@@ -269,10 +301,17 @@ export async function initializeCustom({
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
-  const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig);
+  const customOptions = buildCustomOptions(
+    endpointConfig,
+    appConfig,
+    endpointTokenConfig,
+    !userProvidesURL,
+  );
 
   const clientOptions: Record<string, unknown> = {
     reverseProxyUrl: baseURL ?? null,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     proxy: PROXY ?? null,
     ...customOptions,
   };
@@ -289,6 +328,8 @@ export async function initializeCustom({
       baseURL,
       modelOptions: modelOptions as AnthropicModelOptions,
       endpointConfig,
+      userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     });
     options.endpointTokenConfig = endpointTokenConfig;
   } else {

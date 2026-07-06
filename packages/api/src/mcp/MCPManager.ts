@@ -157,9 +157,8 @@ export class MCPManager extends UserConnectionManager {
     }
 
     const registry = MCPServersRegistry.getInstance();
-    const useSSRFProtection = registry.shouldEnableSSRFProtection();
-    const allowedDomains = registry.getAllowedDomains();
-    const allowedAddresses = registry.getAllowedAddresses();
+    const { allowedDomains, allowedAddresses, useSSRFProtection } =
+      await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
       config: serverConfig,
       user,
@@ -485,15 +484,17 @@ Please follow these instructions when using tools from the respective MCP server
         resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
       }
       if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
+        const { allowedDomains, allowedAddresses, useSSRFProtection } =
+          await registry.resolveAllowlists({ userId, role: user?.role });
         cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
           {
             serverName,
             serverConfig: currentOptions,
             dbSourced: isDbSourced,
             skipEnvProcessing: true,
-            useSSRFProtection: registry.shouldEnableSSRFProtection(),
-            allowedDomains: registry.getAllowedDomains(),
-            allowedAddresses: registry.getAllowedAddresses(),
+            useSSRFProtection,
+            allowedDomains,
+            allowedAddresses,
           },
           {
             useOAuth: true,

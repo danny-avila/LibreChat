@@ -6,7 +6,9 @@ import type {
   UsageMetadata,
   IJobStore,
   JobStatus,
+  JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
+import { isPendingActionStale } from '~/stream/interfaces/IJobStore';
 
 /**
  * Content state for a job - volatile, in-memory only.
@@ -134,7 +136,33 @@ export class InMemoryJobStore implements IJobStore {
     if (!job) {
       return;
     }
+    // Plain field writer. Membership-aware status transitions
+    // (running ⇄ requires_action) go solely through transitionStatus.
     Object.assign(job, updates);
+  }
+
+  /**
+   * Atomic in-memory: the single-threaded event loop makes the
+   * read-check-write sequence indivisible, so the status guard is exact.
+   * Membership/counts derive from `job.status` directly, so there are no
+   * sets to reconcile here.
+   */
+  async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (!job || job.status !== args.from) {
+      return false;
+    }
+    if (args.expectActionId != null && job.pendingActionId !== args.expectActionId) {
+      return false;
+    }
+    job.status = args.to;
+    if (args.patch) {
+      Object.assign(job, args.patch);
+    }
+    for (const field of args.clear ?? []) {
+      delete job[field];
+    }
+    return true;
   }
 
   async deleteJob(streamId: string): Promise<void> {
@@ -181,14 +209,32 @@ export class InMemoryJobStore implements IJobStore {
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
           toDelete.push(streamId);
         }
+      } else if (job.status === 'requires_action' && isPendingActionStale(job)) {
+        // Stale approval (expired, or missing/malformed pendingAction):
+        // finalize it (aborted) so it stops occupying the user slot and its
+        // content state is reclaimed, mirroring ApprovalLifecycle.expire().
+        // Skipping it (active-list filter) alone would leave it resident.
+        job.status = 'aborted';
+        job.completedAt = now;
+        job.error = 'Approval expired before a decision was made';
+        delete job.pendingAction;
+        delete job.pendingActionId;
+        if (this.ttlAfterComplete === 0) {
+          toDelete.push(streamId);
+        }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
         // longer than the stale timeout. These are crashed/hung generations that
         // never reached a terminal state; without this they accumulate their
-        // content state in memory until the process OOMs. Reaping keys off last
-        // activity (not creation time) so a long but live stream is never reaped,
-        // mirroring RedisJobStore refreshing the running TTL on each chunk.
-        const lastActive = this.lastActivity.get(streamId) ?? job.createdAt;
+        // content state in memory until the process OOMs. Reaping keys off the
+        // most recent liveness signal (not creation time) so a long but live
+        // stream is never reaped, and a just-resumed approval (fresh
+        // `lastActiveAt`) wins over a stale per-chunk `lastActivity` entry.
+        const lastActive = Math.max(
+          this.lastActivity.get(streamId) ?? 0,
+          job.lastActiveAt ?? 0,
+          job.createdAt,
+        );
         if (now - lastActive > this.staleJobTimeout) {
           toDelete.push(streamId);
           staleRunning++;
@@ -295,8 +341,14 @@ export class InMemoryJobStore implements IJobStore {
 
     for (const streamId of trackedIds) {
       const job = this.jobs.get(streamId);
-      // Only include if job exists AND is still running
-      if (job && job.status === 'running') {
+      // Include running jobs and jobs paused for human review (e.g. tool approval).
+      // A pending-approval job still occupies the user's conversation slot — but
+      // only while its prompt is live: a past-`expiresAt` approval no longer
+      // counts as active (cleanup/expiry will finalize it).
+      if (job && (job.status === 'running' || job.status === 'requires_action')) {
+        if (job.status === 'requires_action' && isPendingActionStale(job)) {
+          continue;
+        }
         activeIds.push(streamId);
       } else {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - fix it now

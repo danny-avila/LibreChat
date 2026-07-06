@@ -1,8 +1,13 @@
-import { getTenantId, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { ResourceType, PermissionBits } from 'librechat-data-provider';
+import {
+  getTenantId,
+  runAsSystem,
+  tenantStorage,
+  activeExpirationFilter,
+} from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
-import type { Types, Model } from 'mongoose';
 import type { IUser } from '@librechat/data-schemas';
+import type { Types, Model } from 'mongoose';
 import { AccessControlService } from '~/acl/accessControlService';
 import { autoMigrateLegacyLink } from './service';
 import { isEnabled } from '~/utils';
@@ -53,8 +58,20 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
 
     const SharedLink = mg.models.SharedLink as Model<RawSharedLink>;
     const findShare = async () =>
-      (await SharedLink.findOne({ shareId }).lean()) as RawSharedLink | null;
-    const rawShare = getTenantId() ? await findShare() : await runAsSystem(findShare);
+      (await SharedLink.findOne({
+        shareId,
+        ...activeExpirationFilter<RawSharedLink>(),
+      }).lean()) as RawSharedLink | null;
+    // Resolve by the (globally unique, secret) shareId under the viewer's tenant
+    // first, then fall back to a system-wide lookup so a share owned by another
+    // tenant — e.g. a public link opened by an authenticated user from a
+    // different tenant — still resolves. Access remains gated by the ACL check
+    // below, which runs under the share's own tenant, so this only broadens the
+    // lookup, never the authorization.
+    let rawShare = getTenantId() ? await findShare() : await runAsSystem(findShare);
+    if (!rawShare && getTenantId()) {
+      rawShare = await runAsSystem(findShare);
+    }
 
     if (!rawShare) {
       res.status(404).json({ message: 'Shared link not found' });

@@ -5,8 +5,8 @@ import {
   ReasoningSummary,
   ReasoningParameterFormat,
 } from 'librechat-data-provider';
-import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
 import type * as t from '~/types';
+import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
 
 describe('getOpenAILLMConfig', () => {
   describe('Basic Configuration', () => {
@@ -1098,6 +1098,44 @@ describe('getOpenAILLMConfig', () => {
       expect(enabled.llmConfig).toHaveProperty('promptCache', true);
       expect(disabled.llmConfig).not.toHaveProperty('promptCache');
       expect(dropped.llmConfig).not.toHaveProperty('promptCache');
+    });
+
+    it('should resolve OpenRouter promptCacheTtl default/add/drop params', () => {
+      const fromDefault = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true, promptCacheTtl: '1h' },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+      const overridden = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true, promptCacheTtl: '1h' },
+        addParams: { promptCacheTtl: '5m' },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+      const dropped = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true, promptCacheTtl: '1h' },
+        dropParams: ['promptCacheTtl'],
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+
+      expect((fromDefault.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('1h');
+      expect((overridden.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('5m');
+      /** promptCache stays on, but the TTL is dropped so the SDK applies its default */
+      expect(dropped.llmConfig).toHaveProperty('promptCache', true);
+      expect((dropped.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
     });
 
     it('should set includeReasoningContent for DeepSeek models via OpenRouter', () => {
