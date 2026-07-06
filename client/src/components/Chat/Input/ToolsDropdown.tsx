@@ -52,10 +52,8 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
-  const canUseFileSearch = useHasAccess({
-    permissionType: PermissionTypes.FILE_SEARCH,
-    permission: Permissions.USE,
-  });
+  // NJ: We don't want users accessing the file search tool in chat
+  const canUseFileSearch = false;
 
   const canUseMcp = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
