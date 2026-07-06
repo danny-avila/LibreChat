@@ -2056,8 +2056,11 @@ describe('ask_user_question run wiring', () => {
     expect(config).not.toHaveProperty('humanInTheLoop');
     expect(config).not.toHaveProperty('hooks');
     expect(getCheckpointer(config)).toBeDefined();
-    // The tool itself survives on the HITL-capable path.
-    expect((firstAgent(config).tools as Array<{ name: string }>).map((t) => t.name)).toContain(ASK);
+    const agent = firstAgent(config);
+    // The tool rides the in-graph direct path (graphTools) — never the
+    // event-dispatched surfaces, where interrupt() cannot pause the run.
+    expect((agent.graphTools as Array<{ name: string }>).map((t) => t.name)).toEqual([ASK]);
+    expect((agent.tools as Array<{ name: string }>).map((t) => t.name)).not.toContain(ASK);
   });
 
   it('detects the tool via toolRegistry / toolDefinitions too', async () => {
@@ -2115,15 +2118,18 @@ describe('ask_user_question run wiring', () => {
       subagentAgentConfigs: [child],
     });
     const config = await runAndGetConfig(parent, { hitlCapable: true });
-    // Parent keeps the tool (and gets the checkpointer)…
-    expect((firstAgent(config).tools as Array<{ name: string }>).map((t) => t.name)).toContain(ASK);
+    // Parent keeps the tool — as an in-graph direct tool — and gets the checkpointer…
+    expect((firstAgent(config).graphTools as Array<{ name: string }>).map((t) => t.name)).toEqual([
+      ASK,
+    ]);
     expect(getCheckpointer(config)).toBeDefined();
-    // …the child copy is stripped everywhere.
+    // …the child copy is stripped everywhere, with no graphTools replacement.
     const subagentConfigs = firstAgent(config).subagentConfigs as Array<{
       agentInputs: Record<string, unknown>;
     }>;
     expect(subagentConfigs).toHaveLength(1);
     const childInputs = subagentConfigs[0].agentInputs;
+    expect(childInputs.graphTools).toBeUndefined();
     expect((childInputs.tools as Array<{ name: string }>).map((t) => t.name)).not.toContain(ASK);
     expect((childInputs.toolDefinitions as Array<{ name: string }>).map((d) => d.name)).toEqual([]);
     expect((childInputs.toolRegistry as Map<string, unknown>).has(ASK)).toBe(false);
@@ -2143,6 +2149,72 @@ describe('ask_user_question run wiring', () => {
     const config = await runAndGetConfig(makeAgent(), { hitlCapable: true });
     const eager = config.eagerEventToolExecution as { excludeToolNames: string[] };
     expect(eager.excludeToolNames).toContain(ASK);
+  });
+
+  it('admin filteredTools is a real kill switch: strips the tool and blocks the checkpointer even on an HITL-capable run', async () => {
+    const filteredConfig = {
+      ...(plainAppConfig as unknown as Record<string, unknown>),
+      filteredTools: [ASK],
+    } as unknown as AppConfig;
+    await createRun({
+      agents: [
+        makeAgent({
+          tools: [askToolInstance],
+          toolDefinitions: [{ name: ASK }],
+          toolRegistry: new Map([[ASK, { name: ASK }]]),
+        }),
+      ] as never,
+      signal: new AbortController().signal,
+      appConfig: filteredConfig,
+      streaming: true,
+      streamUsage: true,
+      hitlCapable: true,
+    });
+    const config = (Run.create as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
+    expect(getCheckpointer(config)).toBeUndefined();
+    const agent = firstAgent(config);
+    expect((agent.tools as Array<{ name: string }>).map((t) => t.name)).toEqual([]);
+    expect((agent.toolDefinitions as Array<{ name: string }>).map((d) => d.name)).toEqual([]);
+    expect((agent.toolRegistry as Map<string, unknown>).has(ASK)).toBe(false);
+  });
+
+  it('an includedTools allowlist disables the tool unless listed (allowlist precedence)', async () => {
+    const withoutTool = {
+      ...(plainAppConfig as unknown as Record<string, unknown>),
+      includedTools: ['calculator'],
+    } as unknown as AppConfig;
+    await createRun({
+      agents: [makeAgent({ tools: [askToolInstance] })] as never,
+      signal: new AbortController().signal,
+      appConfig: withoutTool,
+      streaming: true,
+      streamUsage: true,
+      hitlCapable: true,
+    });
+    let config = (Run.create as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
+    expect(getCheckpointer(config)).toBeUndefined();
+    expect((firstAgent(config).tools as Array<{ name: string }>).map((t) => t.name)).toEqual([]);
+
+    jest.clearAllMocks();
+    const withTool = {
+      ...(plainAppConfig as unknown as Record<string, unknown>),
+      // includedTools wins over filteredTools — same precedence as loadAndFormatTools.
+      includedTools: [ASK],
+      filteredTools: [ASK],
+    } as unknown as AppConfig;
+    await createRun({
+      agents: [makeAgent({ tools: [askToolInstance] })] as never,
+      signal: new AbortController().signal,
+      appConfig: withTool,
+      streaming: true,
+      streamUsage: true,
+      hitlCapable: true,
+    });
+    config = (Run.create as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
+    expect(getCheckpointer(config)).toBeDefined();
+    expect((firstAgent(config).graphTools as Array<{ name: string }>).map((t) => t.name)).toEqual([
+      ASK,
+    ]);
   });
 
   it('composes with the approval policy: both humanInTheLoop and the checkpointer attach', async () => {

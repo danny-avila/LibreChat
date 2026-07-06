@@ -121,6 +121,44 @@ async function buildAskRun({ saver, responses, toolCalls, runId }) {
   return run;
 }
 
+/**
+ * Build a REAL run in the PRODUCTION shape: the agents endpoint loads tools
+ * definitions-only, so the run is EVENT-DRIVEN (`toolDefinitions` non-empty flips
+ * the SDK ToolNode to event dispatch) and the ask tool rides `graphTools` — the
+ * SDK's in-graph direct-tool seam (agents#289, > 3.2.57) — because an event-
+ * dispatched tool body executes in the host handler outside the Pregel task
+ * frame, where `interrupt()` throws instead of pausing. This is the mode
+ * `createRun` produces via `buildAgentInput`; the traditional-mode harness above
+ * covers runs with zero toolDefinitions.
+ */
+async function buildAskRunEventMode({ saver, responses, toolCalls, runId }) {
+  const run = await Run.create({
+    runId,
+    graphConfig: {
+      type: 'standard',
+      agents: [
+        {
+          agentId: 'agent-ask-event',
+          provider: Providers.OPENAI,
+          clientOptions: { model: 'gpt-4o-mini', streaming: true, streamUsage: false },
+          instructions: 'You are a helpful assistant.',
+          maxContextTokens: 8000,
+          toolDefinitions: [{ name: 'dummy_event_tool', description: 'host-executed event tool' }],
+          graphTools: [askTool],
+        },
+      ],
+      compileOptions: { checkpointer: saver },
+    },
+    returnContent: true,
+    customHandlers: {},
+    tokenCounter: (text) => String(text ?? '').length,
+    indexTokenCountMap: {},
+    eagerEventToolExecution: { enabled: true, excludeToolNames: [ASK_TOOL] },
+  });
+  run.Graph.overrideModel = new FakeChatModel({ responses, toolCalls });
+  return run;
+}
+
 const runConfig = (conversationId) => ({
   runName: 'AgentRun',
   configurable: { thread_id: conversationId, user_id: USER_ID },
@@ -306,6 +344,101 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
     // Terminal state: the checkpoint was pruned by the REAL finalize path.
     await waitFor(async () => (await checkpointCounts(conversationId)).checkpoints === 0);
     expect(await checkpointCounts(conversationId)).toEqual({ checkpoints: 0, writes: 0 });
+  });
+
+  test('EVENT-DRIVEN mode (production shape): the graphTools ask tool pauses and resumes over the REAL /resume controller', async () => {
+    const conversationId = `ask-e2e-event-${Date.now()}`;
+    const responseMessageId = 'resp-ask-event-1';
+
+    const run = await buildAskRunEventMode({
+      saver,
+      responses: ['Let me check with you.'],
+      toolCalls: [
+        {
+          name: ASK_TOOL,
+          args: { question: 'Proceed with the migration?' },
+          id: 'tc_ask_ev1',
+          type: 'tool_call',
+        },
+      ],
+      runId: responseMessageId,
+    });
+    await run.processStream(
+      { messages: [new HumanMessage('run the migration')] },
+      runConfig(conversationId),
+    );
+
+    const interrupt = run.getInterrupt();
+    expect(interrupt?.payload?.type).toBe('ask_user_question');
+    expect(interrupt.payload.question).toEqual({ question: 'Proceed with the migration?' });
+    expect(bodyRuns).toBe(1);
+    expect((await checkpointCounts(conversationId)).checkpoints).toBeGreaterThan(0);
+
+    await GenerationJobManager.createJob(conversationId, USER_ID, conversationId);
+    await GenerationJobManager.updateMetadata(conversationId, {
+      endpoint: 'agents',
+      agent_id: 'agent-ask-e2e',
+      responseMessageId,
+    });
+    const pendingAction = buildPendingAction(interrupt.payload, {
+      streamId: conversationId,
+      conversationId,
+      runId: responseMessageId,
+      responseMessageId,
+      ttlMs: 60_000,
+    });
+    expect(await GenerationJobManager.approvals.pause(conversationId, pendingAction)).toBe(true);
+
+    const thinClient = {
+      contentParts: [],
+      artifactPromises: [],
+      conversationId,
+      responseMessageId,
+      pendingApproval: null,
+      async resumeCompletion({ resumeValue, abortController }) {
+        const resumed = await buildAskRunEventMode({
+          saver,
+          responses: ['Migration underway.'],
+          runId: responseMessageId,
+        });
+        await resumed.resume(resumeValue, {
+          ...runConfig(conversationId),
+          signal: (abortController ?? new AbortController()).signal,
+        });
+        this.contentParts.push({ type: 'text', text: 'Migration underway.' });
+        return resumed;
+      },
+    };
+    const initializeClient = jest.fn(async () => ({ client: thinClient }));
+
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = { id: USER_ID };
+      req.config = { endpoints: { agents: { checkpointer: MONGO_CFG } }, interfaceConfig: {} };
+      next();
+    });
+    app.post('/api/agents/chat/resume', (req, res, next) =>
+      ResumeAgentController(req, res, next, initializeClient, jest.fn()),
+    );
+
+    const response = await request(app).post('/api/agents/chat/resume').send({
+      conversationId,
+      actionId: pendingAction.actionId,
+      agent_id: 'agent-ask-e2e',
+      endpoint: 'agents',
+      answer: 'yes, proceed',
+    });
+
+    expect(response.status).toBe(200);
+    await waitFor(async () => {
+      const liveJob = await GenerationJobManager.getJob(conversationId);
+      return liveJob?.status !== 'requires_action' && liveJob?.status !== 'running';
+    });
+
+    expect(bodyRuns).toBe(2);
+    expect(resolvedAnswers).toEqual(['yes, proceed']);
+    await waitFor(async () => (await checkpointCounts(conversationId)).checkpoints === 0);
   });
 
   test('a second question raised after resume re-pauses with a fresh ask_user_question interrupt', async () => {

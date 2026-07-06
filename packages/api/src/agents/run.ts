@@ -34,8 +34,11 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
+import {
+  ASK_USER_QUESTION_TOOL_NAME,
+  createAskUserQuestionTool,
+} from '~/agents/hitl/askUserQuestionTool';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
-import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
@@ -738,8 +741,16 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
  * Checked against TOP-LEVEL agents only (not subagents — the tool is stripped from
  * child configs in `buildAgentInput`, since a child graph executing outside the parent
  * run's stream cannot pause the parent).
+ *
+ * Exported for AgentClient's pre-turn orphan-checkpoint prune gate: the prune must
+ * fire whenever THIS turn may attach a checkpointer, which since the ask tool is no
+ * longer coupled to `toolApproval.enabled` includes ask-capable runs.
  */
-function agentRequestsAskUserQuestion(agent: RunAgent): boolean {
+export function agentRequestsAskUserQuestion(agent: {
+  tools?: unknown[];
+  toolRegistry?: Map<string, unknown>;
+  toolDefinitions?: Array<{ name: string }>;
+}): boolean {
   return (
     agent.tools?.some(
       (tool) => (tool as { name?: string } | undefined)?.name === ASK_USER_QUESTION_TOOL_NAME,
@@ -747,6 +758,22 @@ function agentRequestsAskUserQuestion(agent: RunAgent): boolean {
     agent.toolRegistry?.has(ASK_USER_QUESTION_TOOL_NAME) === true ||
     agent.toolDefinitions?.some((def) => def.name === ASK_USER_QUESTION_TOOL_NAME) === true
   );
+}
+
+/**
+ * Whether the admin tool filter (`includedTools` allowlist, else `filteredTools`
+ * exclude list — same precedence as `loadAndFormatTools`) disables
+ * `ask_user_question`. Enforced at RUN BUILD, not just in the tools-dialog listing:
+ * agents saved before an admin filtered the tool out would otherwise keep exposing
+ * it to the model, attaching checkpointers, and pausing runs — for a run-pausing
+ * tool the filter must be an actual kill switch.
+ */
+function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
+  const included = appConfig?.includedTools;
+  if (included != null && included.length > 0) {
+    return !included.includes(ASK_USER_QUESTION_TOOL_NAME);
+  }
+  return appConfig?.filteredTools?.includes(ASK_USER_QUESTION_TOOL_NAME) === true;
 }
 
 /**
@@ -990,6 +1017,9 @@ export async function createRun({
     }
   }
 
+  /** Admin kill switch for the ask tool — see {@link isAskUserQuestionAdminDisabled}. */
+  const askToolAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
+
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     const isSubagent = opts.isSubagent === true;
     const provider =
@@ -1112,17 +1142,24 @@ export async function createRun({
     }
 
     /**
-     * `ask_user_question` can only pause on runs whose caller implements the HITL
-     * pause/resume lifecycle, so strip it fail-closed everywhere else: non-HITL
-     * callers (the OpenAI-compatible + Responses controllers) have no pending-action
-     * surface or resume endpoint, and subagent child graphs execute outside the
-     * parent run's stream, so an interrupt raised inside one could not pause the
-     * parent (v1: stripped; revisit with subagent HITL). Clone-before-mutate,
-     * matching the registry-clone discipline above — `agent.toolRegistry` may be
-     * shared with other builds of the same agent.
+     * `ask_user_question` pauses via a LangGraph `interrupt()` raised from its own
+     * tool body, so it must execute IN-PROCESS inside the graph's ToolNode — the
+     * event-dispatched path runs tool bodies in the host handler outside the Pregel
+     * task frame, where `interrupt()` throws and becomes an error ToolMessage. The
+     * tool therefore never rides the schema-only `toolDefinitions`/`toolRegistry`
+     * surfaces: on every path it is REMOVED from them (clone-before-mutate,
+     * matching the registry-clone discipline above), and on the one path where it
+     * can actually work — an HITL-capable caller's top-level agent, with the admin
+     * filter allowing it — a real instance is supplied via `graphTools`, the SDK's
+     * in-graph direct-tool seam (bound to the model, executed inside the task
+     * frame; requires `@librechat/agents` > 3.2.57, older versions ignore the
+     * field). Everywhere else (OpenAI-compatible + Responses controllers with no
+     * resume surface, subagent child graphs that compile without a checkpointer,
+     * admin-disabled) it is stripped fail-closed with no replacement.
      */
     let tools = agent.tools;
-    if ((!hitlCapable || isSubagent) && agentRequestsAskUserQuestion(agent)) {
+    let askGraphTools: GenericTool[] | undefined;
+    if (agentRequestsAskUserQuestion(agent)) {
       tools = tools?.filter(
         (tool) => (tool as { name?: string } | undefined)?.name !== ASK_USER_QUESTION_TOOL_NAME,
       );
@@ -1130,6 +1167,9 @@ export async function createRun({
       if (toolRegistry?.has(ASK_USER_QUESTION_TOOL_NAME)) {
         toolRegistry = new Map(toolRegistry);
         toolRegistry.delete(ASK_USER_QUESTION_TOOL_NAME);
+      }
+      if (hitlCapable && !isSubagent && !askToolAdminDisabled) {
+        askGraphTools = [createAskUserQuestionTool() as unknown as GenericTool];
       }
     }
 
@@ -1140,7 +1180,7 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
-    return {
+    const agentInput: AgentInputs = {
       provider,
       reasoningKey,
       toolDefinitions,
@@ -1161,6 +1201,16 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
+    if (askGraphTools) {
+      /**
+       * Typed structurally — not as `AgentInputs['graphTools']` — because the
+       * field ships in `@librechat/agents` > 3.2.57 (agents#289); older SDK
+       * versions ignore it at runtime (the tool is then simply absent, never
+       * broken). Inline the field in the literal once the dependency is bumped.
+       */
+      (agentInput as AgentInputs & { graphTools?: GenericTool[] }).graphTools = askGraphTools;
+    }
+    return agentInput;
   };
 
   const agentInputs: AgentInputs[] = [];
@@ -1253,7 +1303,8 @@ export async function createRun({
    * above, so a checkpointer here always has a resume surface. The LazyMongoSaver only
    * persists when a run actually pauses, so attaching it is near-zero overhead.
    */
-  const asksUserQuestions = hitlCapable && agents.some(agentRequestsAskUserQuestion);
+  const asksUserQuestions =
+    hitlCapable && !askToolAdminDisabled && agents.some(agentRequestsAskUserQuestion);
   if (hitl || asksUserQuestions) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };

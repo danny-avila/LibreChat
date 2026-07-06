@@ -298,9 +298,12 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
     // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
     // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when
-    // HITL is off or nothing was written.
+    // HITL is off or nothing was written. The pendingAction check covers ask-only
+    // pauses (ask_user_question attaches a checkpointer WITHOUT the approval policy):
+    // a job aborted while paused still carries its pendingAction in metadata, which is
+    // exactly the case whose checkpoint would otherwise go stale.
     const agentsCfg = req.config?.endpoints?.agents;
-    if (isHITLEnabled(agentsCfg?.toolApproval)) {
+    if (isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null) {
       await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer).catch((err) =>
         logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
       );

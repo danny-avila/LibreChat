@@ -42,6 +42,7 @@ const {
   getApprovalTtlMs,
   isHITLEnabled,
   deleteAgentCheckpoint,
+  agentRequestsAskUserQuestion,
   getRequestMemories,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
@@ -1625,7 +1626,14 @@ class AgentClient extends BaseClient {
         // a Redis flag) can go stale across replicas/restarts and skip the prune
         // exactly when an orphan exists, while these are two indexed, usually-empty
         // deleteMany ops — correctness over a micro-optimization.
-        if (streamId && isHITLEnabled(agentsEConfig?.toolApproval)) {
+        // The gate mirrors createRun's checkpointer condition: the approval policy
+        // OR an ask_user_question-capable agent (which attaches a checkpointer
+        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
+        // or Stop would otherwise rehydrate here and silently duplicate context.
+        if (
+          streamId &&
+          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion))
+        ) {
           await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
         }
 

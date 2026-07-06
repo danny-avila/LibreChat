@@ -95,6 +95,7 @@
     "pluginKey": "ask_user_question",
     "description": "Let the agent pause mid-run to ask you a clarifying question and wait for your answer.",
     "icon": "assets/ask-user-question.svg",
+    "agentsOnly": true,
     "authConfig": []
   },
   {
