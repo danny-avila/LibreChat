@@ -961,7 +961,7 @@ class AgentClient extends BaseClient {
      *   thoughtSignatures?: Record<string, string>,
      *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
      *   usage?: import('librechat-data-provider').TResponseUsage,
-     *   annotations?: Array<Annotation>,
+     *   annotations?: Array<Object>,
      * }} */
     const metadata = {};
     const signatures = this.collectedThoughtSignatures;

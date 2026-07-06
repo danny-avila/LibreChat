@@ -66,7 +66,6 @@ function isCodeArtifactToolOutput(output) {
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
-   * @param {Array<Object>} [collectedAnnotations]
    * @param {Record<string, string> | null} [collectedThoughtSignatures] Map of
    *   `tool_call_id → thoughtSignature` accumulated across `chat_model_end`
    *   events. Used to persist Vertex Gemini 3 thought signatures across DB
@@ -80,6 +79,7 @@ class ModelEndHandler {
    *   a no-op for them even when the map is provided.
    * @param {(data: Record<string, unknown>) => Promise<void> | void} [emitUsage] Optional
    *   callback to stream per-call token usage to the client.
+   * @param {Array<Object>} [collectedAnnotations]
    */
   constructor(
     collectedUsage,
@@ -92,7 +92,7 @@ class ModelEndHandler {
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
-    this.collectedAnnotations = collectedAnnotations || [];
+    this.collectedAnnotations = Array.isArray(collectedAnnotations) ? collectedAnnotations : null;
     this.emitUsage = emitUsage;
   }
 

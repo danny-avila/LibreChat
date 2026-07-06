@@ -1,4 +1,5 @@
 const { Tools } = require('librechat-data-provider');
+const { ModelEndHandler } = require('~/server/controllers/agents/callbacks');
 
 // Mock all dependencies before requiring the module
 jest.mock('nanoid', () => ({
@@ -471,6 +472,55 @@ describe('createToolEndCallback', () => {
       expect(phase2.type).toBe('text/csv');
       expect(phase2.conversationId).toBe('thread789');
       expect(phase2.textFormat).toBe('html');
+    });
+
+    it('collects annotations from output and enriches them with provider and model', () => {
+      const collectedAnnotations = [];
+      const collectedUsage = []; // Ensure this is an array
+
+      const handler = new ModelEndHandler(collectedUsage, null, null, collectedAnnotations);
+
+      const agentContext = {
+        provider: 'openai',
+        clientOptions: { model: 'gpt-5.5' },
+      };
+
+      const metadata = {};
+
+      handler.handle(
+        'model_end',
+        {
+          output: {
+            content: [
+              {
+                type: 'text',
+                text: 'Hello',
+                annotations: [
+                  {
+                    type: 'url_citation',
+                    url: 'https://example.com',
+                    title: 'Example',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        metadata,
+        {
+          getAgentContext: () => agentContext,
+        },
+      );
+
+      expect(collectedAnnotations).toEqual([
+        {
+          type: 'url_citation',
+          url: 'https://example.com',
+          title: 'Example',
+          provider: 'openai',
+          model: 'gpt-5.5',
+        },
+      ]);
     });
 
     it('the preview update emit is skipped when finalize resolves to null (no DB update happened)', async () => {
