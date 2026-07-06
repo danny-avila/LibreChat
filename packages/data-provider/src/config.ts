@@ -1834,9 +1834,9 @@ export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
   secretKey: z.string().optional(),
-  /** Non-secret SHA-256 fingerprint of the secret key, stored at write time so
-   * admin reads can show which key is configured without returning the secret. */
-  secretKeyFingerprint: z.string().optional(),
+  /** Non-secret display value of the secret key, stored at write time so
+   * admin reads can show which secret key is configured without returning the secret. */
+  displaySecretKey: z.string().optional(),
   baseUrl: z.string().optional(),
   fanout: z
     .object({

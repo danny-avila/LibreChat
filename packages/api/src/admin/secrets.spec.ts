@@ -1,7 +1,7 @@
 process.env.CREDS_KEY =
   process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
-// Loaded via dynamic import in beforeAll so the crypto module initializes after
+// Loaded via dynamic import in beforeAll so encryption initializes after
 // CREDS_KEY is set above (encryptV3 reads the key at module load).
 let encryptConfigSecretFields: typeof import('./secrets').encryptConfigSecretFields;
 let encryptConfigSecrets: typeof import('./secrets').encryptConfigSecrets;
@@ -22,7 +22,7 @@ beforeAll(async () => {
 });
 
 describe('encryptConfigSecretFields', () => {
-  it('encrypts a registered secret field and stores a fingerprint', () => {
+  it('encrypts a registered secret field and stores a display secret key', () => {
     const out = encryptConfigSecretFields({
       'langfuse.enabled': true,
       'langfuse.publicKey': 'pk-lf-1',
@@ -31,25 +31,25 @@ describe('encryptConfigSecretFields', () => {
 
     expect(out['langfuse.secretKey']).toMatch(/^v3:/);
     expect(decryptV3(out['langfuse.secretKey'] as string)).toBe('sk-lf-secret');
-    expect(out['langfuse.secretKeyFingerprint']).toMatch(/^[a-f0-9]{12}$/);
+    expect(out['langfuse.displaySecretKey']).toBe('sk-lf-...cret');
     expect(out['langfuse.enabled']).toBe(true);
     expect(out['langfuse.publicKey']).toBe('pk-lf-1');
   });
 
-  it('resets already-encrypted API values and stale fingerprints', () => {
+  it('resets already-encrypted API values and stale display secret keys', () => {
     const second = encryptConfigSecretFields({
       'langfuse.secretKey': 'v3:attacker-controlled',
-      'langfuse.secretKeyFingerprint': 'oldfingerprint',
+      'langfuse.displaySecretKey': 'sk-old...-old',
     });
 
     expect(second['langfuse.secretKey']).toBe('');
-    expect(second['langfuse.secretKeyFingerprint']).toBe('');
+    expect(second['langfuse.displaySecretKey']).toBe('');
   });
 
-  it('resets the secret and fingerprint for an empty secret', () => {
+  it('resets the secret and displaySecretKey for an empty secret', () => {
     const out = encryptConfigSecretFields({ 'langfuse.secretKey': '' });
     expect(out['langfuse.secretKey']).toBe('');
-    expect(out['langfuse.secretKeyFingerprint']).toBe('');
+    expect(out['langfuse.displaySecretKey']).toBe('');
   });
 
   it('encrypts registered secrets inside object-valued ancestor patches', () => {
@@ -63,7 +63,7 @@ describe('encryptConfigSecretFields', () => {
     const langfuse = out.langfuse as Record<string, string>;
     expect(langfuse.secretKey).toMatch(/^v3:/);
     expect(decryptV3(langfuse.secretKey)).toBe('sk-lf-secret');
-    expect(langfuse.secretKeyFingerprint).toMatch(/^[a-f0-9]{12}$/);
+    expect(langfuse.displaySecretKey).toBe('sk-lf-...cret');
   });
 
   it('drops array-valued ancestor patches for registered secrets', () => {
@@ -74,27 +74,27 @@ describe('encryptConfigSecretFields', () => {
     expect(out).not.toHaveProperty('langfuse');
   });
 
-  it('ignores direct fingerprint writes when no secret is patched', () => {
+  it('ignores direct displaySecretKey writes when no secret is patched', () => {
     const out = encryptConfigSecretFields({
-      'langfuse.secretKeyFingerprint': 'spoofed',
+      'langfuse.displaySecretKey': 'spoofed',
     });
 
-    expect(out).not.toHaveProperty('langfuse.secretKeyFingerprint');
+    expect(out).not.toHaveProperty('langfuse.displaySecretKey');
   });
 
-  it('resets non-string secret values and ignores spoofed fingerprints', () => {
+  it('resets non-string secret values and ignores spoofed display secret keys', () => {
     const out = encryptConfigSecretFields({
       'langfuse.secretKey': { hidden: 'sk-lf-secret' },
-      'langfuse.secretKeyFingerprint': 'spoofed',
+      'langfuse.displaySecretKey': 'spoofed',
     });
 
     expect(out['langfuse.secretKey']).toBe('');
-    expect(out['langfuse.secretKeyFingerprint']).toBe('');
+    expect(out['langfuse.displaySecretKey']).toBe('');
   });
 });
 
 describe('encryptConfigSecrets', () => {
-  it('encrypts a nested registered secret field and stores a fingerprint', () => {
+  it('encrypts a nested registered secret field and stores a display secret key', () => {
     const out = encryptConfigSecrets({
       langfuse: {
         enabled: true,
@@ -106,58 +106,58 @@ describe('encryptConfigSecrets', () => {
     const langfuse = out.langfuse as Record<string, string | boolean>;
     expect(langfuse.secretKey).toMatch(/^v3:/);
     expect(decryptV3(langfuse.secretKey as string)).toBe('sk-lf-secret');
-    expect(langfuse.secretKeyFingerprint).toMatch(/^[a-f0-9]{12}$/);
+    expect(langfuse.displaySecretKey).toBe('sk-lf-...cret');
     expect(langfuse.publicKey).toBe('pk-lf-1');
   });
 
-  it('resets a nested empty secret and stale fingerprint', () => {
+  it('resets a nested empty secret and stale displaySecretKey', () => {
     const out = encryptConfigSecrets({
       langfuse: {
         secretKey: '',
-        secretKeyFingerprint: 'oldfingerprint',
+        displaySecretKey: 'sk-old...-old',
       },
     });
 
     expect(out.langfuse.secretKey).toBe('');
-    expect(out.langfuse.secretKeyFingerprint).toBe('');
+    expect(out.langfuse.displaySecretKey).toBe('');
   });
 
-  it('removes orphaned nested fingerprints when the secret is absent', () => {
+  it('removes orphaned nested display secret keys when the secret is absent', () => {
     const out = encryptConfigSecrets({
       langfuse: {
         publicKey: 'pk-lf-1',
-        secretKeyFingerprint: 'spoofed',
+        displaySecretKey: 'spoofed',
       },
     });
 
     expect(out.langfuse).toEqual({ publicKey: 'pk-lf-1' });
   });
 
-  it('resets nested non-string secret values and stale fingerprints', () => {
+  it('resets nested non-string secret values and stale display secret keys', () => {
     const out = encryptConfigSecrets({
       langfuse: {
         secretKey: null,
-        secretKeyFingerprint: 'spoofed',
+        displaySecretKey: 'spoofed',
       },
     });
 
     expect(out.langfuse).toEqual({
       secretKey: '',
-      secretKeyFingerprint: '',
+      displaySecretKey: '',
     });
   });
 
   it('drops literal dotted secret keys on full-object writes', () => {
     const out = encryptConfigSecrets({
       'langfuse.secretKey': 'sk-lf-secret',
-      'langfuse.secretKeyFingerprint': 'spoofed',
+      'langfuse.displaySecretKey': 'spoofed',
       langfuse: {
         publicKey: 'pk-lf-1',
       },
     });
 
     expect(out).not.toHaveProperty('langfuse.secretKey');
-    expect(out).not.toHaveProperty('langfuse.secretKeyFingerprint');
+    expect(out).not.toHaveProperty('langfuse.displaySecretKey');
     expect(out.langfuse).toEqual({ publicKey: 'pk-lf-1' });
   });
 
@@ -205,7 +205,7 @@ describe('preserveConfigSecrets', () => {
     const existingLangfuse = existing.langfuse as Record<string, string>;
 
     expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-old');
-    expect(preservedLangfuse.secretKeyFingerprint).toBe(existingLangfuse.secretKeyFingerprint);
+    expect(preservedLangfuse.displaySecretKey).toBe(existingLangfuse.displaySecretKey);
     expect(preserved.langfuse.publicKey).toBe('pk-new');
   });
 
@@ -226,7 +226,7 @@ describe('preserveConfigSecrets', () => {
 
     expect(preservedLangfuse.secretKey).toMatch(/^v3:/);
     expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-legacy-plaintext');
-    expect(preservedLangfuse.secretKeyFingerprint).toMatch(/^[a-f0-9]{12}$/);
+    expect(preservedLangfuse.displaySecretKey).toBe('sk-leg...text');
   });
 
   it('does not preserve when the secret section is absent', () => {
@@ -256,7 +256,7 @@ describe('preserveConfigSecrets', () => {
     expect(preserveConfigSecrets(next, existing)).toEqual({
       langfuse: {
         secretKey: '',
-        secretKeyFingerprint: '',
+        displaySecretKey: '',
       },
     });
   });
@@ -274,25 +274,27 @@ describe('preserveConfigSecrets', () => {
     const existingLangfuse = existing.langfuse as Record<string, string>;
 
     expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-old');
-    expect(preservedLangfuse.secretKeyFingerprint).toBe(existingLangfuse.secretKeyFingerprint);
+    expect(preservedLangfuse.displaySecretKey).toBe(existingLangfuse.displaySecretKey);
     expect(preserved.publicKey).toBe('pk-new');
   });
 });
 
 describe('redactConfigSecrets', () => {
-  it('removes the secret but keeps the fingerprint and other fields', () => {
+  it('removes the secret but keeps the displaySecretKey and other fields', () => {
     const redacted = redactConfigSecrets({
       langfuse: {
         enabled: true,
         baseUrl: 'https://cloud.langfuse.com',
         publicKey: 'pk-lf-1',
         secretKey: 'v3:abc:def',
-        secretKeyFingerprint: 'abc123def456',
+        displaySecretKey: 'sk-lf-...cret',
+        secretKeyFingerprint: 'legacy-fingerprint',
       },
     });
 
     expect(redacted.langfuse).not.toHaveProperty('secretKey');
-    expect(redacted.langfuse.secretKeyFingerprint).toBe('abc123def456');
+    expect(redacted.langfuse).not.toHaveProperty('secretKeyFingerprint');
+    expect(redacted.langfuse.displaySecretKey).toBe('sk-lf-...cret');
     expect(redacted.langfuse.publicKey).toBe('pk-lf-1');
     expect(redacted.langfuse.enabled).toBe(true);
   });
@@ -305,7 +307,7 @@ describe('redactConfigSecrets', () => {
   it('removes literal dotted secret keys and array-shaped secret containers', () => {
     const redacted = redactConfigSecrets({
       'langfuse.secretKey': 'sk-lf-secret',
-      'langfuse.secretKeyFingerprint': 'spoofed',
+      'langfuse.displaySecretKey': 'spoofed',
       langfuseArray: true,
       langfuse: [{ secretKey: 'sk-lf-secret' }],
     });

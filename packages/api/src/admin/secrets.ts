@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 
 /**
@@ -9,36 +8,30 @@ import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 export const ENCRYPTED_CONFIG_FIELD_PATHS = new Set<string>(['langfuse.secretKey']);
 
 /**
- * For each secret path, a sibling path holding a short non-secret fingerprint so
- * reads can show whether (and which) key is configured without exposing it.
+ * For each secret path, a sibling path holding a short non-secret display value.
+ * This mirrors Langfuse's API key UI: keep the first six and last four
+ * characters, and never return the full secret on reads.
  */
-const FINGERPRINT_PATHS: Record<string, string> = {
-  'langfuse.secretKey': 'langfuse.secretKeyFingerprint',
+const DISPLAY_SECRET_PATHS: Record<string, string> = {
+  'langfuse.secretKey': 'langfuse.displaySecretKey',
 };
-const SECRET_PATHS_BY_FINGERPRINT = Object.fromEntries(
-  Object.entries(FINGERPRINT_PATHS).map(([secretPath, fingerprintPath]) => [
-    fingerprintPath,
+const LEGACY_CONFIG_SECRET_COMPANION_PATHS: Record<string, string[]> = {
+  'langfuse.secretKey': ['langfuse.secretKeyFingerprint'],
+};
+const SECRET_PATHS_BY_DISPLAY_SECRET: Record<string, string> = Object.fromEntries([
+  ...Object.entries(DISPLAY_SECRET_PATHS).map(([secretPath, displaySecretPath]) => [
+    displaySecretPath,
     secretPath,
   ]),
-);
+  ...Object.entries(LEGACY_CONFIG_SECRET_COMPANION_PATHS).flatMap(([secretPath, paths]) =>
+    paths.map((companionPath) => [companionPath, secretPath]),
+  ),
+]);
 
-const FINGERPRINT_LENGTH = 12;
 const ENCRYPTED_PREFIX = 'v3:';
 
-function fingerprint(secret: string): string {
-  const key = process.env.CREDS_KEY;
-  if (!key) {
-    throw new Error('CREDS_KEY is required to fingerprint config secrets');
-  }
-  const keyBytes = Buffer.from(key, 'hex');
-  if (keyBytes.length !== 32) {
-    throw new Error(`Invalid CREDS_KEY length: expected 32 bytes, got ${keyBytes.length} bytes`);
-  }
-  return crypto
-    .createHmac('sha256', keyBytes)
-    .update(secret)
-    .digest('hex')
-    .slice(0, FINGERPRINT_LENGTH);
+export function getDisplaySecretKey(secret: string): string {
+  return secret.slice(0, 6) + '...' + secret.slice(-4);
 }
 
 function normalizeSecretString(value: unknown): string | undefined {
@@ -58,16 +51,12 @@ export function decryptConfigSecret(value: unknown): string | undefined {
   }
 }
 
-export function getConfigSecretFingerprintPath(fieldPath: string): string | undefined {
-  return FINGERPRINT_PATHS[fieldPath];
-}
-
 export function getConfigSecretMutationPaths(fieldPath: string): string[] {
-  const fingerprintPath = FINGERPRINT_PATHS[fieldPath];
-  if (fingerprintPath) {
-    return [fieldPath, fingerprintPath];
+  const displaySecretPath = DISPLAY_SECRET_PATHS[fieldPath];
+  if (displaySecretPath) {
+    return [fieldPath, displaySecretPath];
   }
-  const secretPath = SECRET_PATHS_BY_FINGERPRINT[fieldPath];
+  const secretPath = SECRET_PATHS_BY_DISPLAY_SECRET[fieldPath];
   if (secretPath) {
     return [secretPath, fieldPath];
   }
@@ -75,7 +64,11 @@ export function getConfigSecretMutationPaths(fieldPath: string): string[] {
 }
 
 export function isConfigSecretDescendantPath(fieldPath: string): boolean {
-  const protectedPaths = [...ENCRYPTED_CONFIG_FIELD_PATHS, ...Object.values(FINGERPRINT_PATHS)];
+  const protectedPaths = [
+    ...ENCRYPTED_CONFIG_FIELD_PATHS,
+    ...Object.values(DISPLAY_SECRET_PATHS),
+    ...Object.values(LEGACY_CONFIG_SECRET_COMPANION_PATHS).flat(),
+  ];
   return protectedPaths.some((path) => fieldPath.startsWith(`${path}.`));
 }
 
@@ -166,9 +159,15 @@ function getRelativeSecretPath(secretPath: string, basePath = ''): string | null
   return null;
 }
 
+function getRelativeLegacyCompanionPaths(secretPath: string, basePath = ''): string[] {
+  return (LEGACY_CONFIG_SECRET_COMPANION_PATHS[secretPath] ?? [])
+    .map((path) => getRelativeSecretPath(path, basePath))
+    .filter((path): path is string => path != null && path.length > 0);
+}
+
 /**
  * Returns a new field map with secret-registered entries encrypted and their
- * fingerprint companions set. Empty values reset the secret and fingerprint.
+ * displaySecretKey companions set. Empty values reset the secret and displaySecretKey.
  */
 export function encryptConfigSecretFields(
   fields: Record<string, unknown>,
@@ -189,16 +188,20 @@ export function encryptConfigSecretFields(
 
   for (const path of ENCRYPTED_CONFIG_FIELD_PATHS) {
     const value = result[path];
-    const fingerprintPath = FINGERPRINT_PATHS[path];
+    const displaySecretPath = DISPLAY_SECRET_PATHS[path];
+    const legacyCompanionPaths = LEGACY_CONFIG_SECRET_COMPANION_PATHS[path] ?? [];
 
-    if (!(path in result) && fingerprintPath && fingerprintPath in result) {
-      delete result[fingerprintPath];
+    if (!(path in result) && displaySecretPath && displaySecretPath in result) {
+      delete result[displaySecretPath];
+    }
+    for (const legacyPath of legacyCompanionPaths) {
+      delete result[legacyPath];
     }
 
     if (value !== undefined && typeof value !== 'string') {
       result[path] = '';
-      if (fingerprintPath) {
-        result[fingerprintPath] = '';
+      if (displaySecretPath) {
+        result[displaySecretPath] = '';
       }
       continue;
     }
@@ -207,21 +210,21 @@ export function encryptConfigSecretFields(
     }
     if (value.length === 0) {
       result[path] = '';
-      if (fingerprintPath) {
-        result[fingerprintPath] = '';
+      if (displaySecretPath) {
+        result[displaySecretPath] = '';
       }
       continue;
     }
     if (value.startsWith(ENCRYPTED_PREFIX)) {
       result[path] = '';
-      if (fingerprintPath) {
-        result[fingerprintPath] = '';
+      if (displaySecretPath) {
+        result[displaySecretPath] = '';
       }
       continue;
     }
     result[path] = encryptV3(value);
-    if (fingerprintPath) {
-      result[fingerprintPath] = fingerprint(value);
+    if (displaySecretPath) {
+      result[displaySecretPath] = getDisplaySecretKey(value);
     }
   }
   return result;
@@ -229,7 +232,7 @@ export function encryptConfigSecretFields(
 
 /**
  * Returns a cloned config override object with registered nested secret values
- * encrypted before full-document writes. Empty secrets reset their fingerprint.
+ * encrypted before full-document writes. Empty secrets reset their displaySecretKey.
  */
 export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
   if (root == null || typeof root !== 'object') {
@@ -242,26 +245,33 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
     if (relativePath == null || relativePath.length === 0) {
       continue;
     }
-    const fingerprintPath = FINGERPRINT_PATHS[path];
-    const relativeFingerprintPath = fingerprintPath
-      ? getRelativeSecretPath(fingerprintPath, basePath)
+    const displaySecretPath = DISPLAY_SECRET_PATHS[path];
+    const relativeDisplaySecretPath = displaySecretPath
+      ? getRelativeSecretPath(displaySecretPath, basePath)
       : null;
+    const relativeLegacyCompanionPaths = getRelativeLegacyCompanionPaths(path, basePath);
     deleteLiteralDottedKey(result, relativePath);
-    if (relativeFingerprintPath) {
-      deleteLiteralDottedKey(result, relativeFingerprintPath);
+    if (relativeDisplaySecretPath) {
+      deleteLiteralDottedKey(result, relativeDisplaySecretPath);
+    }
+    for (const companionPath of relativeLegacyCompanionPaths) {
+      deleteLiteralDottedKey(result, companionPath);
     }
     deleteArrayAncestor(result, relativePath);
     const value = getNestedValue(result, relativePath);
     if (value === undefined) {
-      if (relativeFingerprintPath) {
-        deleteNestedValue(result, relativeFingerprintPath);
+      if (relativeDisplaySecretPath) {
+        deleteNestedValue(result, relativeDisplaySecretPath);
+      }
+      for (const companionPath of relativeLegacyCompanionPaths) {
+        deleteNestedValue(result, companionPath);
       }
       continue;
     }
     if (value !== undefined && typeof value !== 'string') {
       setNestedValue(result, relativePath, '');
-      if (relativeFingerprintPath) {
-        setNestedValue(result, relativeFingerprintPath, '');
+      if (relativeDisplaySecretPath) {
+        setNestedValue(result, relativeDisplaySecretPath, '');
       }
       continue;
     }
@@ -270,21 +280,21 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
     }
     if (value.length === 0) {
       setNestedValue(result, relativePath, '');
-      if (relativeFingerprintPath) {
-        setNestedValue(result, relativeFingerprintPath, '');
+      if (relativeDisplaySecretPath) {
+        setNestedValue(result, relativeDisplaySecretPath, '');
       }
       continue;
     }
     if (value.startsWith(ENCRYPTED_PREFIX)) {
       setNestedValue(result, relativePath, '');
-      if (relativeFingerprintPath) {
-        setNestedValue(result, relativeFingerprintPath, '');
+      if (relativeDisplaySecretPath) {
+        setNestedValue(result, relativeDisplaySecretPath, '');
       }
       continue;
     }
     setNestedValue(result, relativePath, encryptV3(value));
-    if (relativeFingerprintPath) {
-      setNestedValue(result, relativeFingerprintPath, fingerprint(value));
+    if (relativeDisplaySecretPath) {
+      setNestedValue(result, relativeDisplaySecretPath, getDisplaySecretKey(value));
     }
   }
   return result;
@@ -326,20 +336,25 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
       continue;
     }
 
-    const fingerprintPath = FINGERPRINT_PATHS[path];
-    const relativeFingerprintPath = fingerprintPath
-      ? getRelativeSecretPath(fingerprintPath, basePath)
+    const displaySecretPath = DISPLAY_SECRET_PATHS[path];
+    const relativeDisplaySecretPath = displaySecretPath
+      ? getRelativeSecretPath(displaySecretPath, basePath)
       : null;
     const encryptedValue = existingValue.startsWith(ENCRYPTED_PREFIX)
       ? existingValue
       : encryptV3(existingValue);
     setNestedValue(result, relativePath, encryptedValue);
-    if (relativeFingerprintPath) {
-      const existingFingerprint = getNestedValue(existing, fingerprintPath);
-      if (existingValue.startsWith(ENCRYPTED_PREFIX) && typeof existingFingerprint === 'string') {
-        setNestedValue(result, relativeFingerprintPath, existingFingerprint);
+    if (relativeDisplaySecretPath) {
+      const existingDisplaySecret = getNestedValue(existing, displaySecretPath);
+      if (typeof existingDisplaySecret === 'string') {
+        setNestedValue(result, relativeDisplaySecretPath, existingDisplaySecret);
       } else {
-        setNestedValue(result, relativeFingerprintPath, fingerprint(existingValue));
+        const plaintext = existingValue.startsWith(ENCRYPTED_PREFIX)
+          ? decryptConfigSecret(existingValue)
+          : existingValue;
+        if (plaintext) {
+          setNestedValue(result, relativeDisplaySecretPath, getDisplaySecretKey(plaintext));
+        }
       }
     }
   }
@@ -348,7 +363,7 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
 
 /**
  * Deletes secret-registered fields from `root` in place so admin reads never
- * return secret values (encrypted or otherwise). Fingerprint companions are
+ * return secret values (encrypted or otherwise). Display companions are
  * preserved. The caller passes a cloned object.
  */
 export function redactConfigSecrets<T>(root: T): T {
@@ -357,12 +372,18 @@ export function redactConfigSecrets<T>(root: T): T {
   }
   for (const path of ENCRYPTED_CONFIG_FIELD_PATHS) {
     deleteLiteralDottedKey(root, path);
-    const fingerprintPath = FINGERPRINT_PATHS[path];
-    if (fingerprintPath) {
-      deleteLiteralDottedKey(root, fingerprintPath);
+    const displaySecretPath = DISPLAY_SECRET_PATHS[path];
+    if (displaySecretPath) {
+      deleteLiteralDottedKey(root, displaySecretPath);
+    }
+    for (const companionPath of LEGACY_CONFIG_SECRET_COMPANION_PATHS[path] ?? []) {
+      deleteLiteralDottedKey(root, companionPath);
     }
     deleteArrayAncestor(root, path);
     deleteNestedValue(root, path);
+    for (const companionPath of LEGACY_CONFIG_SECRET_COMPANION_PATHS[path] ?? []) {
+      deleteNestedValue(root, companionPath);
+    }
   }
   return root;
 }

@@ -92,7 +92,7 @@ describe('createAdminConfigHandlers', () => {
               langfuse: {
                 publicKey: 'pk-lf-1',
                 secretKey: 'v3:encrypted',
-                secretKeyFingerprint: 'abc123def456',
+                displaySecretKey: 'sk-lf-...cret',
               },
             },
           },
@@ -109,7 +109,7 @@ describe('createAdminConfigHandlers', () => {
       }>;
       expect(configs[0].overrides.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyFingerprint: 'abc123def456',
+        displaySecretKey: 'sk-lf-...cret',
       });
     });
   });
@@ -295,13 +295,13 @@ describe('createAdminConfigHandlers', () => {
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
       expect(savedOverrides.langfuse.secretKey).toMatch(/^v3:/);
       expect(savedOverrides.langfuse.secretKey).not.toBe('sk-lf-secret');
-      expect(savedOverrides.langfuse.secretKeyFingerprint).toMatch(/^[a-f0-9]{12}$/);
+      expect(savedOverrides.langfuse.displaySecretKey).toBe('sk-lf-...cret');
       const responseConfig = res.body!.config as {
         overrides: { langfuse: Record<string, string> };
       };
       expect(responseConfig.overrides.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyFingerprint: savedOverrides.langfuse.secretKeyFingerprint,
+        displaySecretKey: savedOverrides.langfuse.displaySecretKey,
       });
     });
 
@@ -313,7 +313,7 @@ describe('createAdminConfigHandlers', () => {
           langfuse: {
             publicKey: 'pk-old',
             secretKey: 'v3:test:sk-old',
-            secretKeyFingerprint: 'oldfinger123',
+            displaySecretKey: 'sk-old...-old',
           },
         },
       };
@@ -346,7 +346,7 @@ describe('createAdminConfigHandlers', () => {
         publicKey: 'pk-new',
         baseUrl: 'https://cloud.langfuse.com',
         secretKey: 'v3:test:sk-old',
-        secretKeyFingerprint: 'oldfinger123',
+        displaySecretKey: 'sk-old...-old',
       });
       const responseConfig = res.body!.config as {
         overrides: { langfuse: Record<string, string> };
@@ -354,7 +354,7 @@ describe('createAdminConfigHandlers', () => {
       expect(responseConfig.overrides.langfuse).toEqual({
         publicKey: 'pk-new',
         baseUrl: 'https://cloud.langfuse.com',
-        secretKeyFingerprint: 'oldfinger123',
+        displaySecretKey: 'sk-old...-old',
       });
     });
 
@@ -365,7 +365,7 @@ describe('createAdminConfigHandlers', () => {
           overrides: {
             langfuse: {
               secretKey: 'v3:test:sk-old',
-              secretKeyFingerprint: 'oldfinger123',
+              displaySecretKey: 'sk-old...-old',
             },
           },
         }),
@@ -395,7 +395,7 @@ describe('createAdminConfigHandlers', () => {
       expect(savedOverrides.langfuse).toEqual({
         publicKey: 'pk-new',
         secretKey: '',
-        secretKeyFingerprint: '',
+        displaySecretKey: '',
       });
     });
 
@@ -412,7 +412,7 @@ describe('createAdminConfigHandlers', () => {
         body: {
           overrides: {
             'langfuse.secretKey': 'sk-lf-secret',
-            'langfuse.secretKeyFingerprint': 'spoofed',
+            'langfuse.displaySecretKey': 'spoofed',
             langfuse: { publicKey: 'pk-lf-1' },
           },
         },
@@ -424,7 +424,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
       expect(savedOverrides).not.toHaveProperty('langfuse.secretKey');
-      expect(savedOverrides).not.toHaveProperty('langfuse.secretKeyFingerprint');
+      expect(savedOverrides).not.toHaveProperty('langfuse.displaySecretKey');
       expect(savedOverrides.langfuse).toEqual({ publicKey: 'pk-lf-1' });
       const responseConfig = res.body!.config as {
         overrides: { langfuse: Record<string, string> };
@@ -610,7 +610,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
     });
 
-    it('also deletes the fingerprint companion when deleting a secret field', async () => {
+    it('also deletes the display secret key companion when deleting a secret field', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -625,15 +625,15 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         'admin',
-        'langfuse.secretKeyFingerprint',
+        'langfuse.displaySecretKey',
       );
     });
 
-    it('also deletes the secret when deleting its displayed fingerprint', async () => {
+    it('also deletes the secret when deleting its displayed secret key', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        query: { fieldPath: 'langfuse.secretKeyFingerprint' },
+        query: { fieldPath: 'langfuse.displaySecretKey' },
       });
       const res = mockRes();
 
@@ -644,7 +644,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         'admin',
-        'langfuse.secretKeyFingerprint',
+        'langfuse.displaySecretKey',
       );
     });
 
@@ -718,7 +718,7 @@ describe('createAdminConfigHandlers', () => {
       );
     });
 
-    it('also tombstones the fingerprint companion when tombstoning a secret field', async () => {
+    it('also tombstones the display secret key companion when tombstoning a secret field', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -740,16 +740,16 @@ describe('createAdminConfigHandlers', () => {
         'role',
         'admin',
         expect.anything(),
-        'langfuse.secretKeyFingerprint',
+        'langfuse.displaySecretKey',
         10,
       );
     });
 
-    it('also tombstones the secret when tombstoning its displayed fingerprint', async () => {
+    it('also tombstones the secret when tombstoning its displayed secret key', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        body: { fieldPath: 'langfuse.secretKeyFingerprint' },
+        body: { fieldPath: 'langfuse.displaySecretKey' },
       });
       const res = mockRes();
 
@@ -767,7 +767,7 @@ describe('createAdminConfigHandlers', () => {
         'role',
         'admin',
         expect.anything(),
-        'langfuse.secretKeyFingerprint',
+        'langfuse.displaySecretKey',
         10,
       );
     });
@@ -860,7 +860,7 @@ describe('createAdminConfigHandlers', () => {
       expect(patchedFields['interface.modelSelect']).toBe(false);
     });
 
-    it('clears stale Langfuse secret fingerprints when clearing a secret', async () => {
+    it('clears stale Langfuse display secret keys when clearing a secret', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -875,7 +875,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['langfuse.secretKey']).toBe('');
-      expect(patchedFields['langfuse.secretKeyFingerprint']).toBe('');
+      expect(patchedFields['langfuse.displaySecretKey']).toBe('');
     });
 
     it('encrypts Langfuse secret keys inside object-valued patch entries', async () => {
@@ -902,7 +902,7 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields.langfuse.secretKey).toMatch(/^v3:/);
       expect(patchedFields.langfuse.secretKey).not.toBe('sk-lf-secret');
-      expect(patchedFields.langfuse.secretKeyFingerprint).toMatch(/^[a-f0-9]{12}$/);
+      expect(patchedFields.langfuse.displaySecretKey).toBe('sk-lf-...cret');
     });
 
     it('preserves existing encrypted Langfuse secrets on object-valued patch entries when omitted', async () => {
@@ -914,7 +914,7 @@ describe('createAdminConfigHandlers', () => {
             langfuse: {
               publicKey: 'pk-old',
               secretKey: 'v3:test:sk-old',
-              secretKeyFingerprint: 'oldfinger123',
+              displaySecretKey: 'sk-old...-old',
             },
           },
         }),
@@ -944,7 +944,7 @@ describe('createAdminConfigHandlers', () => {
         publicKey: 'pk-new',
         baseUrl: 'https://cloud.langfuse.com',
         secretKey: 'v3:test:sk-old',
-        secretKeyFingerprint: 'oldfinger123',
+        displaySecretKey: 'sk-old...-old',
       });
       expect(deps.findConfigByPrincipal).toHaveBeenCalled();
     });
@@ -957,7 +957,7 @@ describe('createAdminConfigHandlers', () => {
           overrides: {
             langfuse: {
               secretKey: 'v3:test:sk-old',
-              secretKeyFingerprint: 'oldfinger123',
+              displaySecretKey: 'sk-old...-old',
             },
           },
         }),
@@ -985,7 +985,7 @@ describe('createAdminConfigHandlers', () => {
       expect(patchedFields.langfuse).toEqual({
         publicKey: 'pk-new',
         secretKey: '',
-        secretKeyFingerprint: '',
+        displaySecretKey: '',
       });
     });
 
@@ -1017,7 +1017,7 @@ describe('createAdminConfigHandlers', () => {
         body: {
           entries: [
             { fieldPath: 'langfuse.secretKey', value: { hidden: 'sk-lf-secret' } },
-            { fieldPath: 'langfuse.secretKeyFingerprint', value: 'spoofed' },
+            { fieldPath: 'langfuse.displaySecretKey', value: 'spoofed' },
           ],
         },
       });
@@ -1028,7 +1028,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['langfuse.secretKey']).toBe('');
-      expect(patchedFields['langfuse.secretKeyFingerprint']).toBe('');
+      expect(patchedFields['langfuse.displaySecretKey']).toBe('');
     });
 
     it('rejects patch entries below protected Langfuse secret paths', async () => {
@@ -1047,12 +1047,12 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
-    it('rejects patch entries below protected Langfuse fingerprint paths', async () => {
+    it('rejects patch entries below protected Langfuse displaySecretKey paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: {
-          entries: [{ fieldPath: 'langfuse.secretKeyFingerprint.hidden', value: 'spoofed' }],
+          entries: [{ fieldPath: 'langfuse.displaySecretKey.hidden', value: 'spoofed' }],
         },
       });
       const res = mockRes();
@@ -2069,13 +2069,13 @@ describe('createAdminConfigHandlers', () => {
           langfuse: {
             publicKey: 'pk-lf-1',
             secretKey: 'sk-lf-secret',
-            secretKeyFingerprint: 'abc123def456',
+            displaySecretKey: 'sk-lf-...cret',
           },
           config: {
             langfuse: {
               publicKey: 'pk-lf-1',
               secretKey: 'sk-lf-raw-secret',
-              secretKeyFingerprint: 'rawfingerprint',
+              displaySecretKey: 'sk-lf-...cret',
             },
           },
         }),
@@ -2092,11 +2092,11 @@ describe('createAdminConfigHandlers', () => {
       };
       expect(responseConfig.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyFingerprint: 'abc123def456',
+        displaySecretKey: 'sk-lf-...cret',
       });
       expect(responseConfig.config.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyFingerprint: 'rawfingerprint',
+        displaySecretKey: 'sk-lf-...cret',
       });
     });
 
