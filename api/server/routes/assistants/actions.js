@@ -2,7 +2,13 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { isActionDomainAllowed, validateActionOAuthMetadata } = require('@librechat/api');
-const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
+const {
+  actionDelimiter,
+  EModelEndpoint,
+  removeNullishValues,
+  validateActionDomain,
+  validateAndParseOpenAPISpec,
+} = require('librechat-data-provider');
 const {
   legacyDomainEncode,
   encryptMetadata,
@@ -34,6 +40,32 @@ router.post('/:assistant_id', async (req, res) => {
     }
 
     let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
+
+    // SECURITY: Validate the OpenAPI spec and extract the server URL
+    if (metadata.raw_spec) {
+      const validationResult = validateAndParseOpenAPISpec(metadata.raw_spec);
+      if (!validationResult.status || !validationResult.serverUrl) {
+        return res.status(400).json({
+          message: validationResult.message || 'Invalid OpenAPI specification',
+        });
+      }
+
+      // SECURITY: Validate the client-provided domain matches the spec's server URL domain
+      // This prevents SSRF attacks where an attacker provides a whitelisted domain
+      // but uses a different (potentially internal) URL in the raw_spec
+      const domainValidation = validateActionDomain(metadata.domain, validationResult.serverUrl);
+      if (!domainValidation.isValid) {
+        logger.warn(`Domain mismatch detected: ${domainValidation.message}`, {
+          userId: req.user.id,
+          assistant_id,
+        });
+        return res.status(400).json({
+          message:
+            'Domain mismatch: The domain in the OpenAPI spec does not match the provided domain',
+        });
+      }
+    }
+
     const isDomainAllowed = await isActionDomainAllowed(
       metadata.domain,
       appConfig?.actions?.allowedDomains,

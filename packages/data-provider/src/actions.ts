@@ -3,11 +3,24 @@ import { URL } from 'url';
 import _axios from 'axios';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
+import type { OpenAPIV3 } from 'openapi-types';
 import type { ActionMetadata, ActionMetadataRuntime } from './types/agents';
 import type { FunctionTool, Schema, Reference } from './types/assistants';
 import { AuthTypeEnum, AuthorizationTypeEnum } from './types/agents';
-import type { OpenAPIV3 } from 'openapi-types';
 import { Tools } from './types/assistants';
+
+/**
+ * Header names that must never be set from user-supplied OpenAPI parameters,
+ * to prevent overriding authentication/proxy headers set by the action config.
+ */
+const RESERVED_ACTION_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'host',
+  'content-length',
+  'connection',
+]);
 
 export type ParametersSchema = {
   type: string;
@@ -325,7 +338,20 @@ class RequestExecutor {
         if (loc === 'query') {
           queryParams[key] = val;
         } else if (loc === 'header') {
-          headers[key] = String(val);
+          // SECURITY: Drop header params that would override reserved/auth headers
+          // (e.g. Authorization) or inject additional headers via CR/LF sequences.
+          const headerName = key.toLowerCase();
+          const value = String(val);
+          const collidesWithExisting = Object.keys(headers).some(
+            (existing) => existing.toLowerCase() === headerName,
+          );
+          if (
+            !RESERVED_ACTION_HEADERS.has(headerName) &&
+            !collidesWithExisting &&
+            !/[\r\n]/.test(value)
+          ) {
+            headers[key] = value;
+          }
         } else if (loc === 'body') {
           bodyParams[key] = val;
         }
