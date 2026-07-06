@@ -80,6 +80,9 @@ async function buildEndpointOption(req, res, next) {
         defaultParamsEndpoint,
         includePresetDefaults: true,
       });
+      // The enforce branch rebuilds parsedBody from the spec's static preset, discarding
+      // any conversation-level field the preset doesn't define. chatProjectId is the only
+      // such field today; a future one would need the same explicit carry-over.
       parsedBody = { ...result.parsedBody, chatProjectId };
       appliedModelSpecPrivateFields = result.appliedPrivateFields;
     } catch (error) {
