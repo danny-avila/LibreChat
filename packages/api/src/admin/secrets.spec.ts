@@ -219,14 +219,14 @@ describe('preserveConfigSecrets', () => {
     const preserved = preserveConfigSecrets(next, {
       langfuse: {
         publicKey: 'pk-old',
-        secretKey: 'sk-legacy-plaintext',
+        secretKey: 'sk-plain-existing',
       },
     });
     const preservedLangfuse = preserved.langfuse as Record<string, string>;
 
     expect(preservedLangfuse.secretKey).toMatch(/^v3:/);
-    expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-legacy-plaintext');
-    expect(preservedLangfuse.displaySecretKey).toBe('sk-leg...text');
+    expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-plain-existing');
+    expect(preservedLangfuse.displaySecretKey).toBe('sk-pla...ting');
   });
 
   it('does not preserve when the secret section is absent', () => {
@@ -288,12 +288,10 @@ describe('redactConfigSecrets', () => {
         publicKey: 'pk-lf-1',
         secretKey: 'v3:abc:def',
         displaySecretKey: 'sk-lf-...cret',
-        secretKeyFingerprint: 'legacy-fingerprint',
       },
     });
 
     expect(redacted.langfuse).not.toHaveProperty('secretKey');
-    expect(redacted.langfuse).not.toHaveProperty('secretKeyFingerprint');
     expect(redacted.langfuse.displaySecretKey).toBe('sk-lf-...cret');
     expect(redacted.langfuse.publicKey).toBe('pk-lf-1');
     expect(redacted.langfuse.enabled).toBe(true);

@@ -15,18 +15,12 @@ export const ENCRYPTED_CONFIG_FIELD_PATHS = new Set<string>(['langfuse.secretKey
 const DISPLAY_SECRET_PATHS: Record<string, string> = {
   'langfuse.secretKey': 'langfuse.displaySecretKey',
 };
-const LEGACY_CONFIG_SECRET_COMPANION_PATHS: Record<string, string[]> = {
-  'langfuse.secretKey': ['langfuse.secretKeyFingerprint'],
-};
-const SECRET_PATHS_BY_DISPLAY_SECRET: Record<string, string> = Object.fromEntries([
-  ...Object.entries(DISPLAY_SECRET_PATHS).map(([secretPath, displaySecretPath]) => [
+const SECRET_PATHS_BY_DISPLAY_SECRET: Record<string, string> = Object.fromEntries(
+  Object.entries(DISPLAY_SECRET_PATHS).map(([secretPath, displaySecretPath]) => [
     displaySecretPath,
     secretPath,
   ]),
-  ...Object.entries(LEGACY_CONFIG_SECRET_COMPANION_PATHS).flatMap(([secretPath, paths]) =>
-    paths.map((companionPath) => [companionPath, secretPath]),
-  ),
-]);
+);
 
 const ENCRYPTED_PREFIX = 'v3:';
 
@@ -64,11 +58,7 @@ export function getConfigSecretMutationPaths(fieldPath: string): string[] {
 }
 
 export function isConfigSecretDescendantPath(fieldPath: string): boolean {
-  const protectedPaths = [
-    ...ENCRYPTED_CONFIG_FIELD_PATHS,
-    ...Object.values(DISPLAY_SECRET_PATHS),
-    ...Object.values(LEGACY_CONFIG_SECRET_COMPANION_PATHS).flat(),
-  ];
+  const protectedPaths = [...ENCRYPTED_CONFIG_FIELD_PATHS, ...Object.values(DISPLAY_SECRET_PATHS)];
   return protectedPaths.some((path) => fieldPath.startsWith(`${path}.`));
 }
 
@@ -159,12 +149,6 @@ function getRelativeSecretPath(secretPath: string, basePath = ''): string | null
   return null;
 }
 
-function getRelativeLegacyCompanionPaths(secretPath: string, basePath = ''): string[] {
-  return (LEGACY_CONFIG_SECRET_COMPANION_PATHS[secretPath] ?? [])
-    .map((path) => getRelativeSecretPath(path, basePath))
-    .filter((path): path is string => path != null && path.length > 0);
-}
-
 /**
  * Returns a new field map with secret-registered entries encrypted and their
  * displaySecretKey companions set. Empty values reset the secret and displaySecretKey.
@@ -189,13 +173,9 @@ export function encryptConfigSecretFields(
   for (const path of ENCRYPTED_CONFIG_FIELD_PATHS) {
     const value = result[path];
     const displaySecretPath = DISPLAY_SECRET_PATHS[path];
-    const legacyCompanionPaths = LEGACY_CONFIG_SECRET_COMPANION_PATHS[path] ?? [];
 
     if (!(path in result) && displaySecretPath && displaySecretPath in result) {
       delete result[displaySecretPath];
-    }
-    for (const legacyPath of legacyCompanionPaths) {
-      delete result[legacyPath];
     }
 
     if (value !== undefined && typeof value !== 'string') {
@@ -249,22 +229,15 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
     const relativeDisplaySecretPath = displaySecretPath
       ? getRelativeSecretPath(displaySecretPath, basePath)
       : null;
-    const relativeLegacyCompanionPaths = getRelativeLegacyCompanionPaths(path, basePath);
     deleteLiteralDottedKey(result, relativePath);
     if (relativeDisplaySecretPath) {
       deleteLiteralDottedKey(result, relativeDisplaySecretPath);
-    }
-    for (const companionPath of relativeLegacyCompanionPaths) {
-      deleteLiteralDottedKey(result, companionPath);
     }
     deleteArrayAncestor(result, relativePath);
     const value = getNestedValue(result, relativePath);
     if (value === undefined) {
       if (relativeDisplaySecretPath) {
         deleteNestedValue(result, relativeDisplaySecretPath);
-      }
-      for (const companionPath of relativeLegacyCompanionPaths) {
-        deleteNestedValue(result, companionPath);
       }
       continue;
     }
@@ -376,14 +349,8 @@ export function redactConfigSecrets<T>(root: T): T {
     if (displaySecretPath) {
       deleteLiteralDottedKey(root, displaySecretPath);
     }
-    for (const companionPath of LEGACY_CONFIG_SECRET_COMPANION_PATHS[path] ?? []) {
-      deleteLiteralDottedKey(root, companionPath);
-    }
     deleteArrayAncestor(root, path);
     deleteNestedValue(root, path);
-    for (const companionPath of LEGACY_CONFIG_SECRET_COMPANION_PATHS[path] ?? []) {
-      deleteNestedValue(root, companionPath);
-    }
   }
   return root;
 }
