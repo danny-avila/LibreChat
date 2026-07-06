@@ -135,7 +135,7 @@ function ShortcutRow({
           <button
             type="button"
             onClick={() => resetBinding(info.id)}
-            className="text-[11.5px] text-text-secondary opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
+            className="text-[11.5px] text-text-secondary opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-hover:opacity-100"
           >
             {localize('com_shortcut_reset')}
           </button>
@@ -146,7 +146,7 @@ function ShortcutRow({
             onClick={() => onStartEdit(info.id)}
             aria-label={editAriaLabel}
             data-testid={`edit-shortcut-${info.id}`}
-            className="inline-flex h-[22px] items-center gap-1 rounded-md border border-dashed border-border-medium bg-transparent px-2 text-[11px] font-medium text-text-secondary transition-colors hover:border-border-heavy hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-surface-secondary-alt"
+            className="inline-flex h-[22px] items-center gap-1 rounded-md border border-dashed border-border-medium bg-transparent px-2 text-[11px] font-medium text-text-secondary transition-colors hover:border-border-heavy hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary dark:hover:bg-surface-secondary-alt"
           >
             <Plus className="h-3 w-3" aria-hidden="true" />
             {localize('com_shortcut_set')}
@@ -157,7 +157,7 @@ function ShortcutRow({
             onClick={() => onStartEdit(info.id)}
             aria-label={editAriaLabel}
             data-testid={`edit-shortcut-${info.id}`}
-            className="rounded-md px-1 py-0.5 transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-surface-secondary-alt"
+            className="rounded-md px-1 py-0.5 transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary dark:hover:bg-surface-secondary-alt"
           >
             <ShortcutKeyCombo keys={displayKeys} />
           </button>
@@ -239,7 +239,7 @@ function PanelsSection({
         <h3 className="text-[12px] font-medium text-text-secondary">
           {localize('com_shortcut_group_panels')}
         </h3>
-        <p className="text-text-secondary/80 text-[11.5px]">
+        <p className="text-[11.5px] text-text-secondary/80">
           {localize('com_shortcut_group_panels_hint')}
         </p>
       </div>
@@ -329,7 +329,7 @@ function KeyboardShortcutsDialog() {
           <OGDialogTitle className="text-[16px] font-semibold text-text-primary">
             {localize('com_shortcut_keyboard_shortcuts')}
           </OGDialogTitle>
-          <OGDialogClose className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-surface-secondary-alt">
+          <OGDialogClose className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary dark:hover:bg-surface-secondary-alt">
             <X className="h-4 w-4" />
             <span className="sr-only">{localize('com_ui_close')}</span>
           </OGDialogClose>
@@ -389,7 +389,7 @@ function KeyboardShortcutsDialog() {
             <button
               type="button"
               onClick={resetAll}
-              className="text-[12px] text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="text-[12px] text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
             >
               {localize('com_shortcut_reset_all')}
             </button>

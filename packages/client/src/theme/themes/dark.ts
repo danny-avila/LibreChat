@@ -57,10 +57,4 @@ export const darkTheme: IThemeRGB = {
 
   // Presentation
   'rgb-presentation': '33 33 33', // #212121 (gray-800)
-
-  // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
-  'rgb-background': '18 18 18', // 0 0% 7%
-  'rgb-primary': '250 250 250', // 0 0% 98%
-  'rgb-primary-foreground': '23 23 23', // 0 0% 9%
-  'rgb-ring': '212 212 212', // 0 0% 83.1%
 };

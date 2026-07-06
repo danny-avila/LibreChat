@@ -53,7 +53,7 @@ export default function MCPToolItem({
             aria-hidden="true"
             className={cn(
               'flex size-4 shrink-0 items-center justify-center rounded border border-border-medium transition-colors',
-              isSelected && 'bg-primary text-primary-foreground',
+              isSelected && 'bg-surface-inverted text-text-inverted',
             )}
           >
             {isSelected && <Check className="size-4" />}

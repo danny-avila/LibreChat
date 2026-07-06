@@ -129,14 +129,6 @@ function createTailwindColors() {
     'status-neutral-border': cssVar('--status-neutral-border'),
 
     'switch-unchecked': hslVar('--switch-unchecked'),
-
-    // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
-    background: hslVar('--background'),
-    ring: hslVar('--ring'),
-    primary: {
-      DEFAULT: hslVar('--primary'),
-      foreground: hslVar('--primary-foreground'),
-    },
   };
 }
 

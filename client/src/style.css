@@ -207,17 +207,7 @@ html {
   --surface-fixed: var(--white);
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
-  /* Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration) */
-  --background: 0 0% 100%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --ring: 0 0% 3.9%;
   --radius: 0.5rem;
-  --chart-1: 12 76% 61%;
-  --chart-2: 173 58% 39%;
-  --chart-3: 197 37% 24%;
-  --chart-4: 43 74% 66%;
-  --chart-5: 27 87% 67%;
   --switch-unchecked: 0 0% 58%;
 }
 .dark {
@@ -282,16 +272,6 @@ html {
   --surface-fixed: var(--white);
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
-  /* Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration) */
-  --background: 0 0% 7%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 9%;
-  --ring: 0 0% 83.1%;
-  --chart-1: 220 70% 50%;
-  --chart-2: 160 60% 45%;
-  --chart-3: 30 80% 55%;
-  --chart-4: 280 65% 60%;
-  --chart-5: 340 75% 55%;
   --switch-unchecked: 0 0% 40%;
 }
 .gizmo {

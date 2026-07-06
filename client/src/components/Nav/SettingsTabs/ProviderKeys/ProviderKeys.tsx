@@ -32,7 +32,7 @@ export default function ProviderKeys() {
           </Button>
         </OGDialogTrigger>
         <OGDialogContent
-          className="w-11/12 max-w-2xl bg-background text-text-primary shadow-2xl"
+          className="w-11/12 max-w-2xl bg-surface-primary text-text-primary shadow-2xl"
           aria-describedby={undefined}
         >
           <OGDialogHeader className="space-y-0 pr-8 text-left">
