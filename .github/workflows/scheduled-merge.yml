@@ -1,0 +1,139 @@
+name: Scheduled maintenance-window merge
+
+on:
+  schedule:
+    # 02:00 UTC daily = 22:00 US Eastern (EDT, summer) / 21:00 US Eastern (EST, winter).
+    # Both times sit inside the 9 PM – 7 AM ET maintenance window.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — list matching PRs without merging'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: scheduled-merge
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List PRs labeled 'deploy-tonight'
+        id: list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr list \
+            --label deploy-tonight \
+            --state open \
+            --json number,title,mergeable,mergeStateStatus,headRefName,url \
+            --jq 'sort_by(.number)' > prs.json
+          COUNT=$(jq 'length' prs.json)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT PR(s) labeled 'deploy-tonight':"
+          jq -r '.[] | "  #\(.number)  \(.title)  [\(.mergeable)/\(.mergeStateStatus)]  \(.url)"' prs.json
+
+      - name: Nothing to do
+        if: steps.list.outputs.count == '0'
+        run: echo "No PRs labeled 'deploy-tonight'. Exiting cleanly."
+
+      - name: Dry run — stop here
+        if: steps.list.outputs.count != '0' && inputs.dry_run == 'true'
+        run: |
+          echo "=== DRY RUN — no merges will be performed ==="
+          jq -r '.[] | "#\(.number)  \(.title)"' prs.json
+
+      - name: Merge each labeled PR
+        if: steps.list.outputs.count != '0' && inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          FAILED=()
+          MERGED=()
+          while IFS= read -r pr_json; do
+            NUMBER=$(echo "$pr_json" | jq -r '.number')
+            TITLE=$(echo "$pr_json" | jq -r '.title')
+            MERGEABLE=$(echo "$pr_json" | jq -r '.mergeable')
+            STATE=$(echo "$pr_json" | jq -r '.mergeStateStatus')
+
+            echo ""
+            echo "=== PR #$NUMBER: $TITLE ==="
+            echo "    mergeable=$MERGEABLE  state=$STATE"
+
+            if [ "$MERGEABLE" != "MERGEABLE" ]; then
+              echo "    SKIP — not mergeable ($MERGEABLE)"
+              FAILED+=("$NUMBER:not-mergeable:$MERGEABLE")
+              continue
+            fi
+
+            # GitHub mergeStateStatus values that indicate 'safe to merge now':
+            #   CLEAN     — all checks passed, no conflicts, up to date with base
+            #   HAS_HOOKS — clean but has hooks configured (still safe)
+            #   UNSTABLE  — checks failed OR non-required checks pending (proceed with caution)
+            # We refuse anything else: BLOCKED (branch protection), BEHIND (needs update),
+            # DIRTY (conflicts), UNKNOWN, DRAFT.
+            case "$STATE" in
+              CLEAN|HAS_HOOKS)
+                ;;
+              UNSTABLE)
+                echo "    WARNING — mergeStateStatus=UNSTABLE (a non-required check failed). Skipping."
+                FAILED+=("$NUMBER:unstable")
+                continue
+                ;;
+              *)
+                echo "    SKIP — mergeStateStatus=$STATE"
+                FAILED+=("$NUMBER:state-$STATE")
+                continue
+                ;;
+            esac
+
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            if gh pr merge "$NUMBER" --squash --delete-branch --admin=false; then
+              echo "    MERGED"
+              MERGED+=("$NUMBER")
+              gh pr comment "$NUMBER" \
+                --body "Auto-merged by scheduled-merge workflow at ${TIMESTAMP} (run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}))." \
+                || true
+            else
+              echo "    FAILED — gh pr merge exited non-zero"
+              FAILED+=("$NUMBER:merge-cmd-failed")
+              gh pr comment "$NUMBER" \
+                --body ":warning: Scheduled auto-merge failed at ${TIMESTAMP}. Manual attention needed. See run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})." \
+                || true
+            fi
+          done < <(jq -c '.[]' prs.json)
+
+          echo ""
+          echo "=== SUMMARY ==="
+          echo "Merged: ${#MERGED[@]} PR(s) — ${MERGED[*]:-none}"
+          echo "Failed/skipped: ${#FAILED[@]} PR(s) — ${FAILED[*]:-none}"
+
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            gh issue create \
+              --title "Scheduled auto-merge — $(date -u +%Y-%m-%d): ${#FAILED[@]} PR(s) not merged" \
+              --body "The scheduled-merge workflow could not merge some PRs labeled \`deploy-tonight\`.
+
+**Skipped / failed:**
+$(printf -- '- %s\n' "${FAILED[@]}")
+
+**Merged successfully:**
+$(printf -- '- #%s\n' "${MERGED[@]:-(none)}")
+
+Investigate in the run: ${RUN_URL}" \
+              --label auto-merge-failure \
+              || true
+            exit 1
+          fi
