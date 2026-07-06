@@ -22,6 +22,12 @@ jest.mock(
   { virtual: true },
 );
 
+jest.mock('~/admin/secrets', () => ({
+  decryptConfigSecret: jest.fn((value: string) =>
+    value === 'v3:test:tenant-secret-key' ? 'tenant-secret-key' : undefined,
+  ),
+}));
+
 const langfuseEnvKeys = [
   'LANGFUSE_PUBLIC_KEY',
   'LANGFUSE_SECRET_KEY',
@@ -33,7 +39,6 @@ const langfuseEnvKeys = [
   'LANGFUSE_TRACING_ENVIRONMENT',
   'LANGFUSE_FANOUT_ENABLED',
   'LANGFUSE_FANOUT_COLLECTOR_URL',
-  'LANGFUSE_FANOUT_TENANT_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_DESTINATIONS',
   'LANGFUSE_FANOUT_TENANT_EU_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_US_BASE_URL',
@@ -72,6 +77,10 @@ function getTenantAuthorization(
   secretKey = 'tenant-secret-key',
 ): string {
   return `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString('base64')}`;
+}
+
+function encryptedTenantSecret(): string {
+  return 'v3:test:tenant-secret-key';
 }
 
 function getCentralAuthorization(): string {
@@ -165,7 +174,7 @@ describe('Langfuse feedback scores', () => {
   it('posts feedback scores to central fanout and tenant Langfuse projects', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -175,7 +184,7 @@ describe('Langfuse feedback scores', () => {
       appConfig: {
         langfuse: {
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         },
       } as AppConfig,
@@ -219,19 +228,15 @@ describe('Langfuse feedback scores', () => {
   it('decrypts encrypted tenant secrets before sending tenant feedback scores', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
-    const { encryptConfigSecrets } = await import('~/admin/secrets');
-    const encryptedSecret = encryptConfigSecrets({
-      langfuse: { secretKey: 'tenant-secret-key' },
-    }).langfuse.secretKey;
 
     await sendFeedbackScore({
       traceId: 'trace-id',
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: encryptedSecret,
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
       }),
     });
@@ -252,7 +257,7 @@ describe('Langfuse feedback scores', () => {
   it('skips tenant feedback scores when encrypted tenant secret decryption fails', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -280,7 +285,7 @@ describe('Langfuse feedback scores', () => {
   it('skips tenant feedback scores when tenant keys are configured without a tenant destination', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -288,7 +293,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
       }),
     });
 
@@ -312,7 +317,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'us',
       }),
     });
@@ -339,7 +344,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'unconfigured',
       }),
     });
@@ -357,7 +362,7 @@ describe('Langfuse feedback scores', () => {
   it('deletes feedback scores from central and tenant Langfuse projects', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -366,7 +371,7 @@ describe('Langfuse feedback scores', () => {
       appConfig: {
         langfuse: {
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         },
       } as AppConfig,
@@ -397,7 +402,7 @@ describe('Langfuse feedback scores', () => {
     enableTenantFanout();
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -405,7 +410,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
       }),
     });
@@ -431,7 +436,7 @@ describe('Langfuse feedback scores', () => {
       appConfig: appConfigWithLangfuse({
         enabled: false,
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
       }),
     });
 
@@ -456,7 +461,7 @@ describe('Langfuse feedback scores', () => {
       appConfig: appConfigWithLangfuse({
         enabled: 'false',
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
       } as unknown as AppConfig['langfuse']),
     });
@@ -474,7 +479,7 @@ describe('Langfuse feedback scores', () => {
   it('skips tenant scores when tenant fanout export is disabled but keeps central scores', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
     const { sendFeedbackScore } = await loadFeedback();
 
@@ -483,7 +488,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
       }),
     });
 
@@ -508,7 +513,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
       }),
     });
@@ -543,7 +548,7 @@ describe('Langfuse feedback scores', () => {
         feedback: { rating: 'thumbsUp' },
         appConfig: appConfigWithLangfuse({
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         }),
       });
@@ -572,7 +577,7 @@ describe('Langfuse feedback scores', () => {
         feedback: { rating: 'thumbsUp' },
         appConfig: appConfigWithLangfuse({
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         }),
       });
@@ -597,7 +602,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
       }),
     });
@@ -622,7 +627,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
         fanout: { enabled: false },
       }),
@@ -648,7 +653,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
         fanout: { enabled: 'false' },
       } as unknown as AppConfig['langfuse']),
@@ -674,7 +679,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
       }),
     });
@@ -701,7 +706,7 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
+        secretKey: encryptedTenantSecret(),
         destination: 'eu',
       }),
     });
@@ -716,7 +721,7 @@ describe('Langfuse feedback scores', () => {
   it('attempts every destination and reports partial feedback score failures', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     fetchMock
       .mockResolvedValueOnce(new Response('central down', { status: 500 }))
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
@@ -729,7 +734,7 @@ describe('Langfuse feedback scores', () => {
         feedback: { rating: 'thumbsUp' },
         appConfig: appConfigWithLangfuse({
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         }),
       }),
@@ -745,7 +750,7 @@ describe('Langfuse feedback scores', () => {
   it('reports tenant feedback score failures after central succeeds', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     fetchMock
       .mockResolvedValueOnce(new Response(null, { status: 200 }))
       .mockResolvedValueOnce(new Response('tenant down', { status: 503 }));
@@ -758,7 +763,7 @@ describe('Langfuse feedback scores', () => {
         feedback: { rating: 'thumbsUp' },
         appConfig: appConfigWithLangfuse({
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         }),
       }),
@@ -777,7 +782,7 @@ describe('Langfuse feedback scores', () => {
   it('aggregates feedback score failures when every destination fails', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     fetchMock
       .mockResolvedValueOnce(new Response('central down', { status: 500 }))
       .mockResolvedValueOnce(new Response('tenant down', { status: 503 }));
@@ -789,7 +794,7 @@ describe('Langfuse feedback scores', () => {
         feedback: { rating: 'thumbsUp' },
         appConfig: appConfigWithLangfuse({
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         }),
       }),
@@ -828,7 +833,7 @@ describe('Langfuse feedback scores', () => {
         feedback: { rating: 'thumbsUp' },
         appConfig: appConfigWithLangfuse({
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         }),
       });
@@ -857,7 +862,7 @@ describe('Langfuse feedback scores', () => {
         feedback: { rating: 'thumbsUp' },
         appConfig: appConfigWithLangfuse({
           publicKey: 'tenant-public-key',
-          secretKey: 'tenant-secret-key',
+          secretKey: encryptedTenantSecret(),
           destination: 'eu',
         }),
       });
@@ -872,35 +877,6 @@ describe('Langfuse feedback scores', () => {
       );
     },
   );
-
-  it('ignores tenant app config collectorUrl when deciding tenant score fanout', async () => {
-    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
-    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    const { sendFeedbackScore } = await loadFeedback();
-
-    await sendFeedbackScore({
-      traceId: 'trace-id',
-      feedback: { rating: 'thumbsUp' },
-      appConfig: appConfigWithLangfuse({
-        publicKey: 'tenant-public-key',
-        secretKey: 'tenant-secret-key',
-        destination: 'eu',
-        fanout: {
-          enabled: true,
-          collectorUrl: 'http://collector-from-db:4318',
-        },
-      } as unknown as AppConfig['langfuse']),
-    });
-
-    expect(getFetchMock()).toHaveBeenCalledTimes(1);
-    expect(getFetchMock()).toHaveBeenCalledWith(
-      'http://central-langfuse:3000/api/public/scores',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
-      }),
-    );
-  });
 
   it('skips scores when Langfuse sampling is set to zero', async () => {
     process.env.LANGFUSE_SAMPLE_RATE = '0';

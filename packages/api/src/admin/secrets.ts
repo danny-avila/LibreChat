@@ -35,7 +35,7 @@ function normalizeSecretString(value: unknown): string | undefined {
 export function decryptConfigSecret(value: unknown): string | undefined {
   const normalized = normalizeSecretString(value);
   if (!normalized || !normalized.startsWith(ENCRYPTED_PREFIX)) {
-    return normalized;
+    return undefined;
   }
   try {
     return decryptV3(normalized);
@@ -305,7 +305,7 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
     }
 
     const existingValue = normalizeSecretString(getNestedValue(existing, path));
-    if (!existingValue) {
+    if (!existingValue || !existingValue.startsWith(ENCRYPTED_PREFIX)) {
       continue;
     }
 
@@ -313,18 +313,13 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
     const relativeDisplaySecretPath = displaySecretPath
       ? getRelativeSecretPath(displaySecretPath, basePath)
       : null;
-    const encryptedValue = existingValue.startsWith(ENCRYPTED_PREFIX)
-      ? existingValue
-      : encryptV3(existingValue);
-    setNestedValue(result, relativePath, encryptedValue);
+    setNestedValue(result, relativePath, existingValue);
     if (relativeDisplaySecretPath) {
       const existingDisplaySecret = getNestedValue(existing, displaySecretPath);
       if (typeof existingDisplaySecret === 'string') {
         setNestedValue(result, relativeDisplaySecretPath, existingDisplaySecret);
       } else {
-        const plaintext = existingValue.startsWith(ENCRYPTED_PREFIX)
-          ? decryptConfigSecret(existingValue)
-          : existingValue;
+        const plaintext = decryptConfigSecret(existingValue);
         if (plaintext) {
           setNestedValue(result, relativeDisplaySecretPath, getDisplaySecretKey(plaintext));
         }

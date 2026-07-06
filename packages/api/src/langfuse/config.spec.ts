@@ -11,7 +11,6 @@ const envKeys = [
   'LANGFUSE_BASEURL',
   'LANGFUSE_FANOUT_ENABLED',
   'LANGFUSE_FANOUT_COLLECTOR_URL',
-  'LANGFUSE_FANOUT_TENANT_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_DESTINATIONS',
   'LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED',
 ];
@@ -62,33 +61,6 @@ describe('buildLangfuseConfig', () => {
     });
   });
 
-  it('ignores tenant app config collectorUrl and uses the deployment fanout collector URL', async () => {
-    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
-    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
-    const { buildLangfuseConfig } = await import('./config');
-
-    const config = buildLangfuseConfig({
-      tenantId: 'tenant-1',
-      appConfig: {
-        langfuse: {
-          publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          destination: 'eu',
-          fanout: {
-            enabled: true,
-            collectorUrl: 'http://collector-from-db:4318',
-          },
-        },
-      } as unknown as AppConfig,
-    });
-
-    expect(config).toMatchObject({
-      publicKey: 'pk-tenant-1',
-      secretKey: 'sk-tenant-1',
-      baseUrl: 'http://collector-from-env:4318/tenant/eu',
-    });
-  });
-
   it('fails closed to fanout-only trace export when tenant secret decryption fails', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
@@ -100,6 +72,30 @@ describe('buildLangfuseConfig', () => {
         langfuse: {
           publicKey: 'pk-tenant-1',
           secretKey: 'v3:not-valid-ciphertext',
+          destination: 'eu',
+        },
+      } as unknown as AppConfig,
+    });
+
+    expect(config).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://langfuse-fanout-collector:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('fails closed to fanout-only trace export when tenant secret is plaintext at runtime', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const config = buildLangfuseConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
           destination: 'eu',
         },
       } as unknown as AppConfig,

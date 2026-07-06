@@ -7,7 +7,6 @@ const DEFAULT_TENANT_DESTINATIONS: Array<[string, string]> = [
 ];
 
 const DESTINATIONS_ENV = 'LANGFUSE_FANOUT_TENANT_DESTINATIONS';
-const LEGACY_TENANT_BASE_URL_ENV = 'LANGFUSE_FANOUT_TENANT_BASE_URL';
 
 export type LangfuseTenantDestination = {
   key: string;
@@ -84,13 +83,9 @@ export function getLangfuseTenantDestinations(): LangfuseTenantDestination[] {
     return uniqueDestinations(configured);
   }
 
-  const legacyBaseUrl = normalizeBaseUrl(process.env[LEGACY_TENANT_BASE_URL_ENV]);
   const defaults = DEFAULT_TENANT_DESTINATIONS.map(([key, defaultBaseUrl]) => ({
     key,
-    baseUrl:
-      normalizeBaseUrl(process.env[destinationEnvName(key)]) ??
-      (key === 'eu' ? legacyBaseUrl : undefined) ??
-      defaultBaseUrl,
+    baseUrl: normalizeBaseUrl(process.env[destinationEnvName(key)]) ?? defaultBaseUrl,
   }));
 
   return uniqueDestinations(defaults);

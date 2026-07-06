@@ -171,13 +171,13 @@ describe('encryptConfigSecrets', () => {
 });
 
 describe('decryptConfigSecret', () => {
-  it('decrypts encrypted config secrets and passes plaintext through', () => {
+  it('decrypts encrypted config secrets and rejects plaintext runtime values', () => {
     const encrypted = encryptConfigSecrets({
       langfuse: { secretKey: 'sk-lf-secret' },
     }).langfuse.secretKey;
 
     expect(decryptConfigSecret(encrypted)).toBe('sk-lf-secret');
-    expect(decryptConfigSecret(' sk-plaintext ')).toBe('sk-plaintext');
+    expect(decryptConfigSecret(' sk-plaintext ')).toBeUndefined();
     expect(decryptConfigSecret('')).toBeUndefined();
   });
 
@@ -209,7 +209,7 @@ describe('preserveConfigSecrets', () => {
     expect(preserved.langfuse.publicKey).toBe('pk-new');
   });
 
-  it('encrypts preserved plaintext secrets from existing stored config', () => {
+  it('does not preserve existing plaintext secrets from stored config', () => {
     const next = encryptConfigSecrets({
       langfuse: {
         publicKey: 'pk-new',
@@ -224,9 +224,9 @@ describe('preserveConfigSecrets', () => {
     });
     const preservedLangfuse = preserved.langfuse as Record<string, string>;
 
-    expect(preservedLangfuse.secretKey).toMatch(/^v3:/);
-    expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-plain-existing');
-    expect(preservedLangfuse.displaySecretKey).toBe('sk-pla...ting');
+    expect(preservedLangfuse).not.toHaveProperty('secretKey');
+    expect(preservedLangfuse).not.toHaveProperty('displaySecretKey');
+    expect(preservedLangfuse.publicKey).toBe('pk-new');
   });
 
   it('does not preserve when the secret section is absent', () => {
