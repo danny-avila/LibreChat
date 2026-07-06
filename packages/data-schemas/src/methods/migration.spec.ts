@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { EModelEndpoint, PrincipalModel, PrincipalType } from 'librechat-data-provider';
+import type { IAclEntry, IBalance, IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels } from '../models';
 import { runAsSystem } from '~/config/tenantContext';
@@ -120,7 +121,7 @@ describe('migration methods', () => {
       }),
     ]);
 
-    const moved = await Conversation.findOne({ conversationId: convoId }).lean();
+    const moved = await Conversation.findOne({ conversationId: convoId }).lean<IConversation>();
     expect(moved?.user).toBe(targetUserId);
     expect(moved?.tenantId).toBe(targetTenantId);
 
@@ -150,7 +151,7 @@ describe('migration methods', () => {
       }),
     );
 
-    const moved = await Conversation.findOne({ conversationId: convoId }).lean();
+    const moved = await Conversation.findOne({ conversationId: convoId }).lean<IConversation>();
     expect(moved?.user).toBe(targetUserId);
     expect(moved?.createdAt?.toISOString()).toBe(pastDate.toISOString());
     expect(moved?.updatedAt?.toISOString()).toBe(pastDate.toISOString());
@@ -261,7 +262,7 @@ describe('migration methods', () => {
 
     const targetBalance = await Balance.findOne({
       user: new mongoose.Types.ObjectId(targetUserId),
-    }).lean();
+    }).lean<IBalance>();
     expect(targetBalance?.tokenCredits).toBe(150);
 
     const sourceBalance = await Balance.findOne({
@@ -301,7 +302,7 @@ describe('migration methods', () => {
     const targetEntries = await AclEntry.findOne({
       principalType: PrincipalType.USER,
       principalId: new mongoose.Types.ObjectId(targetUserId),
-    }).lean();
+    }).lean<IAclEntry>();
     expect(targetEntries?.resourceId?.toString()).toBe(resourceId.toString());
     expect(targetEntries?.tenantId).toBe(targetTenantId);
   });
