@@ -53,7 +53,6 @@ const {
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
   isSkillPrimeMessage,
-  createResponseMetadataCallback,
   collectFileIds,
   processTextWithTokenLimit,
   buildAgentScopedContext,
@@ -1353,7 +1352,6 @@ class AgentClient extends BaseClient {
         },
         recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
         signal: abortController.signal,
-        callbacks: [createResponseMetadataCallback()],
         streamMode: 'values',
         version: 'v2',
       };
