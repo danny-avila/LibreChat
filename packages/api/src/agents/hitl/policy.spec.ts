@@ -313,6 +313,7 @@ describe('sanitizeResumeModelParameters', () => {
         defaultHeaders: { Authorization: 'Bearer server-secret' },
       },
       clientOptions: { defaultHeaders: { 'x-api-key': 'anthropic-secret' } },
+      customHeaders: { 'Ocp-Apim-Subscription-Key': 'gateway-secret' },
       authOptions: { credentials: { private_key: 'google-secret' } },
       credentials: { accessKeyId: 'aws-id', secretAccessKey: 'aws-secret' },
       endpointHost: 'vpce.internal.example',
