@@ -67,6 +67,30 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     test('returns false when the job does not exist', async () => {
       expect(await manager.approvals.pause('nonexistent', buildAction('nonexistent'))).toBe(false);
     });
+
+    test('client-facing copies omit resumeContext/requestFingerprint; the stored record keeps them', async () => {
+      const streamId = 'stream-redact';
+      await manager.createJob(streamId, 'user-1');
+
+      const action = buildAction(streamId, {
+        requestFingerprint: 'fp-hash',
+        resumeContext: {
+          endpoint: 'agents',
+          model_parameters: { temperature: 0.7 },
+        },
+      });
+      expect(await manager.approvals.pause(streamId, action)).toBe(true);
+
+      const resumeState = await manager.getResumeState(streamId);
+      expect(resumeState?.pendingAction?.actionId).toBe(action.actionId);
+      expect(resumeState?.pendingAction?.resumeContext).toBeUndefined();
+      expect(resumeState?.pendingAction?.requestFingerprint).toBeUndefined();
+
+      // The resume route replays from the job store, which must retain the full record.
+      const job = await manager.getJob(streamId);
+      expect(job?.metadata.pendingAction?.resumeContext).toEqual(action.resumeContext);
+      expect(job?.metadata.pendingAction?.requestFingerprint).toBe('fp-hash');
+    });
   });
 
   describe('peek', () => {

@@ -34,8 +34,10 @@ const {
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
+  toClientPendingAction,
   computeAgentRequestFingerprint,
   extractDiscoveredToolsFromHistory,
+  sanitizeResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
@@ -1222,9 +1224,13 @@ class AgentClient extends BaseClient {
     // paused on. The resume payload omits them and they aren't part of the fingerprint, so
     // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
     // these from the DB record server-side, so this is belt-and-suspenders for them.)
+    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
     const resumeContext = pickResumeContext(this.options.req?.body);
-    const resolvedModelParameters = this.options.agent?.model_parameters;
-    if (resolvedModelParameters && typeof resolvedModelParameters === 'object') {
+    const resolvedModelParameters = sanitizeResumeModelParameters(
+      this.options.agent?.model_parameters,
+    );
+    if (resolvedModelParameters) {
       resumeContext.model_parameters = resolvedModelParameters;
     }
     const pendingAction = buildPendingAction(interrupt.payload, {
@@ -1311,7 +1317,7 @@ class AgentClient extends BaseClient {
     }
     await GenerationJobManager.emitChunk(streamId, {
       event: ApprovalEvents.ON_PENDING_ACTION,
-      data: pendingAction,
+      data: toClientPendingAction(pendingAction),
     });
     logger.debug(
       `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
