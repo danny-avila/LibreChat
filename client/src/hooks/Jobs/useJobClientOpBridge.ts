@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { TAgentJob, TAgentJobClientOp } from 'librechat-data-provider';
+import type { LocalFileReadResult } from '~/hooks/LocalFiles/types';
 import { useSubmitClientOpResultMutation } from '~/data-provider/Jobs/mutations';
 import { useActiveAgentJobs } from '~/hooks/Jobs/useConversationJob';
 import useLocalFilesContext from '~/hooks/LocalFiles/LocalFilesContext';
@@ -12,7 +13,7 @@ async function executeClientOp(
   op: TAgentJobClientOp,
   handlers: {
     listDir: (path: string) => Promise<unknown>;
-    readFile: (path: string) => Promise<string>;
+    readFile: (path: string) => Promise<LocalFileReadResult>;
     writeFile: (path: string, content: string) => Promise<void>;
   },
 ): Promise<unknown> {

@@ -10,6 +10,22 @@ export type LocalDirEntry = {
   kind: FileSystemHandleKind;
 };
 
+export type LocalFileTextResult = {
+  kind: 'text';
+  name: string;
+  content: string;
+};
+
+export type LocalFileImageResult = {
+  kind: 'image';
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
+
+export type LocalFileReadResult = LocalFileTextResult | LocalFileImageResult;
+
 export type StoredLocalFolder = {
   handle: FileSystemDirectoryHandle;
   folderName: string;
@@ -24,6 +40,6 @@ export type LocalFilesContextValue = {
   reconnectFolder: () => Promise<void>;
   disconnectFolder: () => Promise<void>;
   listDir: (path: string) => Promise<LocalDirEntry[]>;
-  readFile: (path: string) => Promise<string>;
+  readFile: (path: string) => Promise<LocalFileReadResult>;
   writeFile: (path: string, content: string) => Promise<void>;
 };

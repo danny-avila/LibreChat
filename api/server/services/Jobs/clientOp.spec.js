@@ -38,6 +38,19 @@ describe('Jobs clientOp parser', () => {
     });
   });
 
+  it('parses readFile with spaces in the filename', () => {
+    expect(
+      parseClientOp(
+        'CLIENT_OP: {"op":"readFile","path":"Screenshot 2026-05-07 at 8.56.21 AM.png"}',
+      ),
+    ).toEqual({
+      op: 'readFile',
+      path: 'Screenshot 2026-05-07 at 8.56.21 AM.png',
+      content: undefined,
+      contentRef: undefined,
+    });
+  });
+
   it('rejects invalid operations', () => {
     expect(parseClientOp('CLIENT_OP: {"op":"deleteFile","path":"x"}')).toBeNull();
     expect(parseClientOp('CLIENT_OP: not-json')).toBeNull();

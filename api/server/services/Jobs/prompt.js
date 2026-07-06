@@ -53,7 +53,7 @@ function buildStepPrompt({ goal, stepSummaries = [], stepIndex, maxSteps, lastCl
     const serialized =
       typeof lastClientOpResult.result === 'string'
         ? lastClientOpResult.result
-        : JSON.stringify(lastClientOpResult.result ?? null, null, 2);
+        : serializeClientOpResultForPrompt(lastClientOpResult.result);
     lines.push(serialized.slice(0, 8000));
     lines.push('');
   }
@@ -80,10 +80,18 @@ function buildStepPrompt({ goal, stepSummaries = [], stepIndex, maxSteps, lastCl
   lines.push(`CLIENT_OP: {"op":"listDir","path":""}`);
   lines.push(`CLIENT_OP: {"op":"listDir","path":"relative/subfolder"}`);
   lines.push(`CLIENT_OP: {"op":"readFile","path":"relative/file.txt"}`);
+  lines.push(
+    `CLIENT_OP: {"op":"readFile","path":"Screenshot 2026-05-07 at 8.56.21 AM.png"} ` +
+      `(use the exact filename from listDir, including spaces)`,
+  );
   lines.push(`CLIENT_OP: {"op":"writeFile","path":"relative/file.txt","content":"file body"}`);
   lines.push(
     `When you emit CLIENT_OP, do not also emit STATUS on that step — the job will pause until ` +
       `the browser completes the operation.`,
+  );
+  lines.push(
+    `For images (.png, .jpg, …), readFile attaches the image for vision/OCR on the next step — ` +
+      `copy the filename exactly from the listDir result.`,
   );
   lines.push('');
   lines.push(
@@ -184,6 +192,47 @@ function formatStepResponseForDisplay(responseText) {
 }
 
 /**
+ * @param {{ op?: { op?: string, path?: string }, result?: unknown }} [lastClientOpResult]
+ * @returns {{ name?: string, mimeType?: string, dataUrl: string } | null}
+ */
+function extractLocalImageForVision(lastClientOpResult) {
+  const result = lastClientOpResult?.result;
+  if (!result || typeof result !== 'object' || result.kind !== 'image') {
+    return null;
+  }
+  const { name, mimeType, dataUrl } = result;
+  if (typeof dataUrl !== 'string' || dataUrl.length === 0) {
+    return null;
+  }
+  return { name, mimeType, dataUrl };
+}
+
+/**
+ * @param {unknown} result
+ * @returns {string}
+ */
+function serializeClientOpResultForPrompt(result) {
+  if (result && typeof result === 'object' && result.kind === 'image') {
+    const { name, mimeType, size } = result;
+    const payload = {
+      kind: 'image',
+      name,
+      mimeType,
+      size,
+      visionAttached: true,
+      note: 'The full image is attached to this step for vision/OCR. Use it to read text in the image.',
+    };
+    return JSON.stringify(payload, null, 2);
+  }
+
+  if (result && typeof result === 'object' && result.kind === 'text') {
+    return JSON.stringify(result, null, 2);
+  }
+
+  return JSON.stringify(result ?? null, null, 2);
+}
+
+/**
  * @param {unknown} result
  * @param {{ goal?: string }} [options]
  * @returns {string}
@@ -234,6 +283,12 @@ function formatClientOpResultForDisplay(lastClientOpResult, options = {}) {
     case 'listDir':
       return formatListDirResultForDisplay(result, options);
     case 'readFile':
+      if (result && typeof result === 'object' && result.kind === 'image') {
+        return `Read image **${result.name}** (${result.mimeType}, ${result.size} bytes) for OCR/vision analysis.`;
+      }
+      if (result && typeof result === 'object' && result.kind === 'text') {
+        return `**${result.name}:**\n\n${result.content}`;
+      }
       if (typeof result === 'string') {
         return op.path ? `**${op.path}:**\n\n${result}` : result;
       }
@@ -333,5 +388,6 @@ module.exports = {
   formatStepResponseForDisplay,
   buildDisplayResponseText,
   formatClientOpResultForDisplay,
+  extractLocalImageForVision,
   patchMessageTextFields,
 };
