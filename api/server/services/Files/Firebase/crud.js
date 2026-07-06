@@ -173,8 +173,10 @@ function extractFirebaseFilePath(urlString) {
 }
 
 /**
- * Deletes a file from Firebase storage. This function determines the filepath from the
- * Firebase storage URL via regex for deletion. Validated by the user's ID.
+ * Deletes a file from Firebase storage. The storage path is parsed from the
+ * persisted URL and validated against the file record's structured owner
+ * (`file.user`) as an exact path segment — not a substring of the URL — so a
+ * crafted filepath cannot be used to delete another user's object.
  *
  * @param {ServerRequest} req - The request object from Express.
  * It should contain a `user` object with an `id` property.
@@ -187,9 +189,14 @@ function extractFirebaseFilePath(urlString) {
 const deleteFirebaseFile = async (req, file) => {
   await deleteRagFile({ userId: req.user.id, file });
 
+  const ownerId = file.user?.toString?.();
+  if (!ownerId) {
+    throw new Error('[deleteFirebaseFile] File record has no owner');
+  }
+
   const fileName = extractFirebaseFilePath(file.filepath);
-  if (!fileName.includes(req.user.id)) {
-    throw new Error('Invalid file path');
+  if (!fileName || !fileName.split('/').includes(ownerId)) {
+    throw new Error('[deleteFirebaseFile] File owner mismatch');
   }
   try {
     await deleteFile('', fileName);
