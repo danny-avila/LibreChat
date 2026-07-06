@@ -124,6 +124,7 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "ts-md5": "^1.3.1",
+    "web-vitals": "^3.5.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {

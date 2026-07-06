@@ -787,6 +787,29 @@ export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
  *   HITL machinery for this endpoint (no checkpointer, no hooks, no prompts).
  *   This is admin-level; users toggle prompting via `mode: 'bypass'` instead.
  */
+/**
+ * A programmatic tool-approval hook loaded from a module at startup.
+ *
+ * The referenced module's default export must be a builder
+ * `(options?) => ToolApprovalHookFactory` (see `@librechat/api`'s `registerToolApprovalHook`).
+ * Hooks compose with the static `allow`/`deny`/`ask` policy above and can only TIGHTEN it
+ * (the SDK folds decisions `deny → ask → allow`). This is admin-level config — the module is
+ * dynamically imported and executed in-process, so only reference trusted code.
+ */
+export const toolApprovalHookConfigSchema = z.object({
+  /**
+   * Module specifier to import: a bare package name (e.g. `@acme/approval-hooks`) or a path —
+   * absolute, or relative to the app root. Its default export is the hook builder.
+   */
+  module: z.string().min(1),
+  /** Optional regex matched against the tool name; omit to run for every tool. */
+  matcher: z.string().optional(),
+  /** Static options forwarded to the module's builder; the hook's own per-call config. */
+  options: z.record(z.unknown()).optional(),
+});
+
+export type TToolApprovalHookConfig = z.infer<typeof toolApprovalHookConfigSchema>;
+
 export const toolApprovalPolicySchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -796,6 +819,17 @@ export const toolApprovalPolicySchema = z
     ask: z.array(z.string()).optional(),
     /** Optional reason template surfaced in the prompt; `{tool}` is interpolated. */
     reason: z.string().optional(),
+    /**
+     * Programmatic policy hooks loaded from modules at startup. They layer on top of the
+     * static lists above for dynamic, context-aware decisions the lists can't express
+     * (per-args, per-agent, per-user). See {@link toolApprovalHookConfigSchema}.
+     *
+     * BASE-CONFIG ONLY: hooks are imported + registered once, process-wide, at server
+     * startup — they are NOT reloaded from per-role/user/tenant admin overrides. Encode
+     * per-user/tenant behavior INSIDE the hook (via its runtime context), not by varying the
+     * module list per override. Honored only when `enabled` is true.
+     */
+    hooks: z.array(toolApprovalHookConfigSchema).optional(),
   })
   .optional();
 
@@ -2249,6 +2283,10 @@ export enum CacheKeys {
    * Key for the roles cache.
    */
   ROLES = 'ROLES',
+  /**
+   * Key for cached group memberships used to resolve ACL user principals.
+   */
+  USER_PRINCIPALS = 'USER_PRINCIPALS',
   /**
    * Key for the title generation cache.
    */
