@@ -12,6 +12,8 @@ const {
   SET_MEMORY_TOOL_NAME,
   buildWebSearchContext,
   DELETE_MEMORY_TOOL_NAME,
+  createAskUserQuestionTool,
+  ASK_USER_QUESTION_TOOL_NAME,
   buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
@@ -359,6 +361,9 @@ const loadTools = async ({
           logger,
         });
       };
+      continue;
+    } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
+      requestedTools[tool] = () => createAskUserQuestionTool();
       continue;
     } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {
       requestedTools[tool] = () =>

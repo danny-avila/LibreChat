@@ -35,6 +35,7 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
@@ -731,6 +732,24 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
 }
 
 /**
+ * Whether a single agent's tool surface includes the `ask_user_question` tool, in any
+ * of the three places a tool can live on a `RunAgent`: loaded instances (`tools`), the
+ * schema-only registry (`toolRegistry`), or serialized definitions (`toolDefinitions`).
+ * Checked against TOP-LEVEL agents only (not subagents — the tool is stripped from
+ * child configs in `buildAgentInput`, since a child graph executing outside the parent
+ * run's stream cannot pause the parent).
+ */
+function agentRequestsAskUserQuestion(agent: RunAgent): boolean {
+  return (
+    agent.tools?.some(
+      (tool) => (tool as { name?: string } | undefined)?.name === ASK_USER_QUESTION_TOOL_NAME,
+    ) === true ||
+    agent.toolRegistry?.has(ASK_USER_QUESTION_TOOL_NAME) === true ||
+    agent.toolDefinitions?.some((def) => def.name === ASK_USER_QUESTION_TOOL_NAME) === true
+  );
+}
+
+/**
  * Whether any agent reachable in the run — primary, handoff/parallel, or a
  * nested subagent — opts into cross-turn `reasoning_content` reconstruction.
  * Walks `subagentAgentConfigs` like {@link anyAgentHasCodeEnv}, since an
@@ -1092,6 +1111,28 @@ export async function createRun({
       toolDefinitions = toolDefinitions.map((def) => ({ ...def }));
     }
 
+    /**
+     * `ask_user_question` can only pause on runs whose caller implements the HITL
+     * pause/resume lifecycle, so strip it fail-closed everywhere else: non-HITL
+     * callers (the OpenAI-compatible + Responses controllers) have no pending-action
+     * surface or resume endpoint, and subagent child graphs execute outside the
+     * parent run's stream, so an interrupt raised inside one could not pause the
+     * parent (v1: stripped; revisit with subagent HITL). Clone-before-mutate,
+     * matching the registry-clone discipline above — `agent.toolRegistry` may be
+     * shared with other builds of the same agent.
+     */
+    let tools = agent.tools;
+    if ((!hitlCapable || isSubagent) && agentRequestsAskUserQuestion(agent)) {
+      tools = tools?.filter(
+        (tool) => (tool as { name?: string } | undefined)?.name !== ASK_USER_QUESTION_TOOL_NAME,
+      );
+      toolDefinitions = toolDefinitions.filter((def) => def.name !== ASK_USER_QUESTION_TOOL_NAME);
+      if (toolRegistry?.has(ASK_USER_QUESTION_TOOL_NAME)) {
+        toolRegistry = new Map(toolRegistry);
+        toolRegistry.delete(ASK_USER_QUESTION_TOOL_NAME);
+      }
+    }
+
     const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
       summarization.reserveRatio,
       agent.baseContextTokens,
@@ -1104,7 +1145,7 @@ export async function createRun({
       reasoningKey,
       toolDefinitions,
       agentId: agent.id,
-      tools: agent.tools,
+      tools,
       clientOptions: llmConfig,
       instructions: systemContent,
       additional_instructions: additionalInstructions || undefined,
@@ -1202,7 +1243,18 @@ export async function createRun({
         appConfig,
       })
     : undefined;
-  if (hitl) {
+  /**
+   * The `ask_user_question` tool pauses via LangGraph `interrupt()` from inside its own
+   * body, which needs only a durable checkpointer — NOT the tool-approval policy
+   * (`humanInTheLoop`/hooks stay off unless approval is separately enabled; verified
+   * end-to-end in `api/.../agents/__tests__/askUserQuestion.e2e.spec.js`). Top-level
+   * check only: subagent copies of the tool are stripped in `buildAgentInput`. Gated on
+   * `hitlCapable` like approval, and the tool itself was stripped from non-HITL callers
+   * above, so a checkpointer here always has a resume surface. The LazyMongoSaver only
+   * persists when a run actually pauses, so attaching it is near-zero overhead.
+   */
+  const asksUserQuestions = hitlCapable && agents.some(agentRequestsAskUserQuestion);
+  if (hitl || asksUserQuestions) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
   }
@@ -1231,7 +1283,9 @@ export async function createRun({
     // commits. create_file/edit_file write files; execute_code/bash_tool run
     // code with large `code`/`command` args. `excludeToolNames` requires
     // @librechat/agents with the eager-exclusion support (agents#281); older
-    // versions ignore the field.
+    // versions ignore the field. ask_user_question raises a LangGraph
+    // `interrupt()` from its tool body, which must run inside the Pregel task
+    // frame — a speculative eager execution could never pause the run.
     eagerEventToolExecution: {
       enabled: true,
       excludeToolNames: [
@@ -1239,6 +1293,7 @@ export async function createRun({
         EDIT_FILE_TOOL_NAME,
         Constants.EXECUTE_CODE,
         Constants.BASH_TOOL,
+        ASK_USER_QUESTION_TOOL_NAME,
       ],
     },
     // Let host file-authoring tools share the code-execution sandbox session so

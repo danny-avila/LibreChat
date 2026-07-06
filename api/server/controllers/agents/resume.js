@@ -23,6 +23,13 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
+/**
+ * Upper bound on an `ask_user_question` answer (characters). Generous for any real
+ * reply typed into the question card while still bounding what a crafted POST can
+ * inject into the resumed run's ToolMessage.
+ */
+const MAX_ASK_ANSWER_LENGTH = 16_000;
+
 /** De-duplicate a merged attachment list by a stable artifact identity. */
 function mergeAttachments(existing, incoming) {
   const seen = new Set();
@@ -168,6 +175,11 @@ function resolveResumeValue(pendingAction, body) {
   if (payload?.type === 'ask_user_question') {
     if (typeof body.answer !== 'string' || body.answer.length === 0) {
       return { status: 400, error: 'An answer is required' };
+    }
+    // The answer becomes a ToolMessage the model must ingest — bound it like any
+    // other user-controlled wire field rather than trusting the client.
+    if (body.answer.length > MAX_ASK_ANSWER_LENGTH) {
+      return { status: 400, error: 'Answer exceeds the maximum length' };
     }
     return { resumeValue: mapAskUserAnswer({ answer: body.answer }) };
   }

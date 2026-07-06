@@ -2006,3 +2006,162 @@ describe('HITL wiring is gated on hitlCapable', () => {
     expect(config).not.toHaveProperty('humanInTheLoop');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite: ask_user_question run wiring
+//
+// The ask tool pauses via a LangGraph `interrupt()` raised from its own body, so it
+// needs a durable checkpointer but NOT the tool-approval policy. It must be stripped
+// fail-closed from non-HITL callers (no resume surface) and from subagent child
+// configs (a child graph cannot pause the parent run).
+// ---------------------------------------------------------------------------
+describe('ask_user_question run wiring', () => {
+  const ASK = 'ask_user_question';
+  const askToolInstance = { name: ASK };
+  /** Approval policy NOT enabled — the ask tool must work without it. */
+  const plainAppConfig = {
+    config: {},
+    fileStrategy: FileSources.local,
+    imageOutputType: 'png',
+    endpoints: { [EModelEndpoint.agents]: {} },
+  } as unknown as AppConfig;
+
+  const runAndGetConfig = async (
+    agent: Record<string, unknown>,
+    extra: Record<string, unknown>,
+  ) => {
+    await createRun({
+      agents: [agent] as never,
+      signal: new AbortController().signal,
+      appConfig: plainAppConfig,
+      streaming: true,
+      streamUsage: true,
+      ...extra,
+    });
+    const createMock = Run.create as jest.Mock;
+    return createMock.mock.calls[0][0] as Record<string, unknown>;
+  };
+
+  const getCheckpointer = (config: Record<string, unknown>) =>
+    (config.graphConfig as { compileOptions?: { checkpointer?: unknown } }).compileOptions
+      ?.checkpointer;
+
+  const firstAgent = (config: Record<string, unknown>) =>
+    (config.graphConfig as { agents: Array<Record<string, unknown>> }).agents[0];
+
+  it('attaches the checkpointer WITHOUT humanInTheLoop when hitlCapable and the ask tool is present (approval disabled)', async () => {
+    const config = await runAndGetConfig(makeAgent({ tools: [askToolInstance] }), {
+      hitlCapable: true,
+    });
+    expect(config).not.toHaveProperty('humanInTheLoop');
+    expect(config).not.toHaveProperty('hooks');
+    expect(getCheckpointer(config)).toBeDefined();
+    // The tool itself survives on the HITL-capable path.
+    expect((firstAgent(config).tools as Array<{ name: string }>).map((t) => t.name)).toContain(ASK);
+  });
+
+  it('detects the tool via toolRegistry / toolDefinitions too', async () => {
+    const viaRegistry = await runAndGetConfig(
+      makeAgent({ toolRegistry: new Map([[ASK, { name: ASK }]]) }),
+      { hitlCapable: true },
+    );
+    expect(getCheckpointer(viaRegistry)).toBeDefined();
+    jest.clearAllMocks();
+    const viaDefinitions = await runAndGetConfig(makeAgent({ toolDefinitions: [{ name: ASK }] }), {
+      hitlCapable: true,
+    });
+    expect(getCheckpointer(viaDefinitions)).toBeDefined();
+  });
+
+  it('strips the tool and attaches no checkpointer for a non-HITL caller', async () => {
+    const config = await runAndGetConfig(
+      makeAgent({
+        tools: [askToolInstance, { name: 'other_tool' }],
+        toolDefinitions: [{ name: ASK }, { name: 'other_tool' }],
+        toolRegistry: new Map([
+          [ASK, { name: ASK }],
+          ['other_tool', { name: 'other_tool' }],
+        ]),
+      }),
+      { hitlCapable: false },
+    );
+    expect(getCheckpointer(config)).toBeUndefined();
+    const agent = firstAgent(config);
+    expect((agent.tools as Array<{ name: string }>).map((t) => t.name)).toEqual(['other_tool']);
+    expect((agent.toolDefinitions as Array<{ name: string }>).map((d) => d.name)).toEqual([
+      'other_tool',
+    ]);
+    expect((agent.toolRegistry as Map<string, unknown>).has(ASK)).toBe(false);
+    expect((agent.toolRegistry as Map<string, unknown>).has('other_tool')).toBe(true);
+  });
+
+  it('does not mutate the caller-owned toolRegistry when stripping (clone-before-mutate)', async () => {
+    const sharedRegistry = new Map([[ASK, { name: ASK }]]);
+    await runAndGetConfig(makeAgent({ toolRegistry: sharedRegistry }), { hitlCapable: false });
+    expect(sharedRegistry.has(ASK)).toBe(true);
+  });
+
+  it('strips the tool from subagent child configs even on an HITL-capable run', async () => {
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Child',
+      tools: [askToolInstance],
+      toolDefinitions: [{ name: ASK }],
+      toolRegistry: new Map([[ASK, { name: ASK }]]),
+    });
+    const parent = makeAgent({
+      tools: [askToolInstance],
+      subagents: { enabled: true, allowSelf: false },
+      subagentAgentConfigs: [child],
+    });
+    const config = await runAndGetConfig(parent, { hitlCapable: true });
+    // Parent keeps the tool (and gets the checkpointer)…
+    expect((firstAgent(config).tools as Array<{ name: string }>).map((t) => t.name)).toContain(ASK);
+    expect(getCheckpointer(config)).toBeDefined();
+    // …the child copy is stripped everywhere.
+    const subagentConfigs = firstAgent(config).subagentConfigs as Array<{
+      agentInputs: Record<string, unknown>;
+    }>;
+    expect(subagentConfigs).toHaveLength(1);
+    const childInputs = subagentConfigs[0].agentInputs;
+    expect((childInputs.tools as Array<{ name: string }>).map((t) => t.name)).not.toContain(ASK);
+    expect((childInputs.toolDefinitions as Array<{ name: string }>).map((d) => d.name)).toEqual([]);
+    expect((childInputs.toolRegistry as Map<string, unknown>).has(ASK)).toBe(false);
+  });
+
+  it('a subagent-only ask tool attaches no checkpointer (top-level agents decide)', async () => {
+    const child = makeAgent({ id: 'agent_child', name: 'Child', tools: [askToolInstance] });
+    const parent = makeAgent({
+      subagents: { enabled: true, allowSelf: false },
+      subagentAgentConfigs: [child],
+    });
+    const config = await runAndGetConfig(parent, { hitlCapable: true });
+    expect(getCheckpointer(config)).toBeUndefined();
+  });
+
+  it('excludes ask_user_question from eager event tool execution', async () => {
+    const config = await runAndGetConfig(makeAgent(), { hitlCapable: true });
+    const eager = config.eagerEventToolExecution as { excludeToolNames: string[] };
+    expect(eager.excludeToolNames).toContain(ASK);
+  });
+
+  it('composes with the approval policy: both humanInTheLoop and the checkpointer attach', async () => {
+    const approvalConfig = {
+      config: {},
+      fileStrategy: FileSources.local,
+      imageOutputType: 'png',
+      endpoints: { [EModelEndpoint.agents]: { toolApproval: { enabled: true } } },
+    } as unknown as AppConfig;
+    await createRun({
+      agents: [makeAgent({ tools: [askToolInstance] })] as never,
+      signal: new AbortController().signal,
+      appConfig: approvalConfig,
+      streaming: true,
+      streamUsage: true,
+      hitlCapable: true,
+    });
+    const config = (Run.create as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
+    expect(config.humanInTheLoop).toBeDefined();
+    expect(getCheckpointer(config)).toBeDefined();
+  });
+});
