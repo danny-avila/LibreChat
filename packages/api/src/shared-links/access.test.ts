@@ -290,7 +290,7 @@ describe('canAccessSharedLink', () => {
 
       const req = createReq({
         params: { shareId: link.shareId },
-        user: { id: viewer.toString(), _id: viewer, role: 'USER' },
+        user: { id: viewer.toString(), _id: viewer, role: 'USER', tenantId: 'tenant-b' },
       });
       const res = createRes();
       const next = jest.fn();
@@ -320,13 +320,43 @@ describe('canAccessSharedLink', () => {
 
       const req = createReq({
         params: { shareId: link.shareId },
-        user: { id: viewer.toString(), _id: viewer, role: 'USER' },
+        user: { id: viewer.toString(), _id: viewer, role: 'USER', tenantId: 'tenant-a' },
       });
       const res = createRes();
       const next = jest.fn();
       await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
         canAccessSharedLink(req, res, next as unknown as NextFunction),
       );
+
+      expect(next).toHaveBeenCalled();
+      expect((req as unknown as Record<string, unknown>).shareResourceId).toBe(link._id.toString());
+      expect(mockGetUserPrincipals).toHaveBeenCalledWith({
+        userId: viewer.toString(),
+        role: 'USER',
+      });
+    });
+
+    test('honors a same-tenant ROLE grant when no ALS tenant context is set (cookie-auth file request)', async () => {
+      // Share file routes (<img>/download) authenticate via optionalShareFileAuth,
+      // which sets req.user from the refresh cookie but establishes no tenant ALS
+      // context, so getTenantId() is undefined here. The comparison must use the
+      // authenticated user's own tenantId, else a same-tenant viewer is wrongly denied
+      // their ROLE grant. No tenantStorage.run wrapper mirrors the file route.
+      const link = await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        const tenantLink = await createTestLink();
+        await grantRoleViewer(tenantLink._id, 'USER');
+        return tenantLink;
+      });
+      const viewer = new Types.ObjectId();
+      mockPrincipalsWithRole(viewer);
+
+      const req = createReq({
+        params: { shareId: link.shareId },
+        user: { id: viewer.toString(), _id: viewer, role: 'USER', tenantId: 'tenant-a' },
+      });
+      const res = createRes();
+      const next = jest.fn();
+      await canAccessSharedLink(req, res, next as unknown as NextFunction);
 
       expect(next).toHaveBeenCalled();
       expect((req as unknown as Record<string, unknown>).shareResourceId).toBe(link._id.toString());

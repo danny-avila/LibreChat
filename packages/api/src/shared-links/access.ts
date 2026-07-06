@@ -137,10 +137,10 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
 
       const hasAccess = await aclService.checkPermission({
         userId,
-        // Role principals are unqualified name strings, so only trust the viewer's
-        // role for same-tenant views; null suppresses the ROLE principal so a
-        // cross-tenant role name can't match a ROLE ACL in the share owner's tenant.
-        role: rawShare.tenantId === viewerTenantId ? user.role : null,
+        // Trust the viewer's role only for a same-tenant view, comparing the share
+        // tenant to the user's own tenantId (the ALS context is absent on cookie-auth
+        // file requests). null suppresses the ROLE principal for cross-tenant views.
+        role: rawShare.tenantId === user.tenantId ? user.role : null,
         resourceType: ResourceType.SHARED_LINK,
         resourceId,
         requiredPermission: PermissionBits.VIEW,
