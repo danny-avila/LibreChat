@@ -111,9 +111,8 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
 
   const applySkillsSelection = useCallback(
     (next: string[]) => {
-      const current = (getValues('skills') ?? []) as string[];
       setValue('skills', next, { shouldDirty: true });
-      const flag = skillsEnabledTransition(current, next, getValues('skills_enabled'));
+      const flag = skillsEnabledTransition(next, getValues('skills_enabled'));
       if (flag !== undefined) {
         setValue('skills_enabled', flag, { shouldDirty: true });
       }
