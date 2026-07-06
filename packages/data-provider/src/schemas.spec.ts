@@ -1,4 +1,9 @@
-import { AnthropicEffort, anthropicSettings, eAnthropicEffortSchema } from './schemas';
+import {
+  AnthropicEffort,
+  anthropicSettings,
+  compactGoogleSchema,
+  eAnthropicEffortSchema,
+} from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
@@ -375,6 +380,16 @@ describe('anthropicSettings', () => {
         expect(set(128000, 'claude-3-opus')).toBe(128000);
       });
     });
+  });
+});
+
+describe('compactGoogleSchema', () => {
+  it('preserves chat project membership metadata', () => {
+    const result = compactGoogleSchema.parse({
+      model: 'gemini-2.5-pro',
+      chatProjectId: 'project-1',
+    });
+    expect(result.chatProjectId).toBe('project-1');
   });
 });
 
