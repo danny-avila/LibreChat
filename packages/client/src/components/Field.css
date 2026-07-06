@@ -5,7 +5,7 @@
    attribute is absent and the ring always shows — the safe fallback. */
 html[data-input-modality='pointer'] .lc-field:focus,
 html[data-input-modality='pointer'] .lc-field:focus-visible {
-  border-color: var(--border-light);
+  border-color: rgb(var(--border-light));
   box-shadow: none;
   outline: none;
 }
