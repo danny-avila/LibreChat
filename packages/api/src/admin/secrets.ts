@@ -5,7 +5,7 @@ import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
  * before being written and are never returned by admin config reads. Add paths
  * here to extend per-field encryption to other config sections.
  */
-export const ENCRYPTED_CONFIG_FIELD_PATHS = new Set<string>(['langfuse.secretKey']);
+const ENCRYPTED_CONFIG_FIELD_PATHS = new Set<string>(['langfuse.secretKey']);
 
 /**
  * For each secret path, a sibling path holding a short non-secret display value.
@@ -139,9 +139,6 @@ function deleteNestedValue(root: unknown, path: string): void {
 function getRelativeSecretPath(secretPath: string, basePath = ''): string | null {
   if (basePath.length === 0) {
     return secretPath;
-  }
-  if (secretPath === basePath) {
-    return '';
   }
   if (secretPath.startsWith(`${basePath}.`)) {
     return secretPath.slice(basePath.length + 1);
@@ -318,11 +315,6 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
       const existingDisplaySecret = getNestedValue(existing, displaySecretPath);
       if (typeof existingDisplaySecret === 'string') {
         setNestedValue(result, relativeDisplaySecretPath, existingDisplaySecret);
-      } else {
-        const plaintext = decryptConfigSecret(existingValue);
-        if (plaintext) {
-          setNestedValue(result, relativeDisplaySecretPath, getDisplaySecretKey(plaintext));
-        }
       }
     }
   }
