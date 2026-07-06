@@ -1781,6 +1781,11 @@ export const contextPruningSchema = z.object({
   minPrunableToolChars: z.number().min(0).optional(),
 });
 
+export const retainRecentConfigSchema = z.object({
+  turns: z.number().min(0).max(20).optional(),
+  tokens: z.number().positive().optional(),
+});
+
 export const summarizationConfigSchema = z.object({
   enabled: z.boolean().optional(),
   provider: z.string().optional(),
@@ -1792,6 +1797,7 @@ export const summarizationConfigSchema = z.object({
   reserveRatio: z.number().min(0).max(1).optional(),
   maxSummaryTokens: z.number().positive().optional(),
   contextPruning: contextPruningSchema.optional(),
+  retainRecent: retainRecentConfigSchema.optional(),
 });
 
 export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
