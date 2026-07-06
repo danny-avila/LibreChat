@@ -56,7 +56,7 @@ async function buildEndpointOption(req, res, next) {
   if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = appConfig.modelSpecs;
-    const { spec } = parsedBody;
+    const { spec, chatProjectId } = parsedBody;
 
     if (!spec) {
       return handleError(res, { text: 'No model spec selected' });
@@ -80,7 +80,7 @@ async function buildEndpointOption(req, res, next) {
         defaultParamsEndpoint,
         includePresetDefaults: true,
       });
-      parsedBody = result.parsedBody;
+      parsedBody = { ...result.parsedBody, chatProjectId };
       appliedModelSpecPrivateFields = result.appliedPrivateFields;
     } catch (error) {
       logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
