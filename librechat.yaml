@@ -70,14 +70,12 @@ interface:
   fileSearch: true
   # Privacy policy settings
   privacyPolicy:
-    # Replace with your organization's privacy policy URL before production deployment
-    externalUrl: 'https://example.com/privacy-policy'
+    externalUrl: 'https://smbteam.com/ai-workforce-pro-privacy-policy/'
     openNewTab: true
 
   # Terms of service
   termsOfService:
-    # Replace with your organization's terms of service URL before production deployment
-    externalUrl: 'https://example.com/terms-of-service'
+    externalUrl: 'https://smbteam.com/ai-workforce-pro-terms-of-service/'
     openNewTab: true
     modalAcceptance: true
     modalTitle: 'Terms of Service for AI Workforce Pro'
