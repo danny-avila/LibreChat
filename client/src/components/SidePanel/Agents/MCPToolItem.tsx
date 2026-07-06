@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button } from '@librechat/client';
 import { Check, Clock, Code2, Captions, Info, Zap } from 'lucide-react';
 import type { AgentToolType } from 'librechat-data-provider';
 import OptionToggle from './OptionToggle';
@@ -26,8 +27,7 @@ interface MCPToolItemProps {
   onToggleIntent: () => void;
 }
 
-const iconButton =
-  'flex size-6 items-center justify-center rounded-md transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary';
+const iconButton = 'size-6 rounded-md';
 
 export default function MCPToolItem({
   tool,
@@ -123,8 +123,9 @@ export default function MCPToolItem({
               onToggle={onToggleIntent}
             />
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
             aria-controls={detailsId}
@@ -135,7 +136,7 @@ export default function MCPToolItem({
             )}
           >
             <Info className="size-4" aria-hidden="true" />
-          </button>
+          </Button>
         </div>
       </div>
       {/* Auto-height reveal via grid-template-rows 0fr -> 1fr so the panel — and
