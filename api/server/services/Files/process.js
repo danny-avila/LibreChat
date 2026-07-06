@@ -40,7 +40,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
-const { determineFileType } = require('~/server/utils');
+const { determineFileType, detectFileTypeFromFile } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
 
@@ -1249,6 +1249,37 @@ async function saveBase64Image(
 }
 
 /**
+ * Guards against MIME spoofing by verifying the file's real magic-byte type is
+ * permitted for the endpoint. A browser-supplied `mimetype` and filename are
+ * attacker-controlled, so an allowed claimed type is not sufficient on its own.
+ *
+ * Files without a detectable signature (plain text, code, csv, svg) fall through
+ * to the claimed-type gate already applied by the caller; binary uploads whose
+ * true type is not on the endpoint allow-list are rejected.
+ *
+ * @param {Object} params
+ * @param {Express.Multer.File} params.file - The uploaded file (disk storage).
+ * @param {import('librechat-data-provider').FileConfig} params.fileConfig
+ * @param {import('librechat-data-provider').EndpointFileConfig} params.endpointFileConfig
+ * @returns {Promise<void>}
+ * @throws {Error} When the sniffed content type is not permitted for the endpoint.
+ */
+const assertContentMatchesType = async ({ file, fileConfig, endpointFileConfig }) => {
+  if (!file.path) {
+    return;
+  }
+
+  const detected = await detectFileTypeFromFile(file.path);
+  if (!detected) {
+    return;
+  }
+
+  if (!fileConfig.checkType(detected.mime, endpointFileConfig.supportedMimeTypes)) {
+    throw new Error('File content does not match its file type');
+  }
+};
+
+/**
  * Filters a file based on its size and the endpoint origin.
  *
  * @param {Object} params - The parameters for the function.
@@ -1260,11 +1291,11 @@ async function saveBase64Image(
  * @param {number} [params.req.version]
  * @param {boolean} [params.image] - Whether the file expected is an image.
  * @param {boolean} [params.isAvatar] - Whether the file expected is a user or entity avatar.
- * @returns {void}
+ * @returns {Promise<void>}
  *
  * @throws {Error} If a file exception is caught (invalid file size or type, lack of metadata).
  */
-function filterFile({ req, image, isAvatar }) {
+async function filterFile({ req, image, isAvatar }) {
   const { file } = req;
   const { endpoint, endpointType, file_id, width, height } = req.body;
 
@@ -1312,6 +1343,8 @@ function filterFile({ req, image, isAvatar }) {
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');
   }
+
+  await assertContentMatchesType({ file, fileConfig, endpointFileConfig });
 
   if (!image || isAvatar === true) {
     return;

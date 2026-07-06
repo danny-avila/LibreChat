@@ -19,7 +19,7 @@ router.post('/', async (req, res) => {
   const appConfig = req.config;
 
   try {
-    filterFile({ req, image: true });
+    await filterFile({ req, image: true });
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;

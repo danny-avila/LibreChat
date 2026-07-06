@@ -614,7 +614,7 @@ router.post('/', async (req, res) => {
   let cleanup = true;
 
   try {
-    filterFile({ req });
+    await filterFile({ req });
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;

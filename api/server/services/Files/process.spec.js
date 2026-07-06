@@ -119,6 +119,7 @@ jest.mock('./VectorDB/crud', () => ({
 
 jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn(),
+  detectFileTypeFromFile: jest.fn(),
 }));
 
 jest.mock('~/server/services/Files/Audio/STTService', () => ({
@@ -143,7 +144,9 @@ const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadVectors } = require('./VectorDB/crud');
 const db = require('~/models');
+const { detectFileTypeFromFile } = require('~/server/utils');
 const {
+  filterFile,
   processAgentFileUpload,
   processDeleteRequest,
   processFileURL,
@@ -1334,5 +1337,51 @@ describe('startExpiredFileSweep', () => {
       }),
     );
     expect(interval).toBe('sweep-interval');
+  });
+});
+
+describe('filterFile — content sniffing (MIME spoofing guard)', () => {
+  const VALID_UUID = '11111111-1111-4111-8111-111111111111';
+  const imageOnlyConfig = () => ({
+    checkType: (mime, types) => (types ?? []).some((regex) => regex.test(mime)),
+    endpoints: { openAI: { supportedMimeTypes: [/^image\/(png|jpeg|gif|webp)$/] } },
+    avatarSizeLimit: 2 * 1024 * 1024,
+  });
+
+  const makeUploadReq = ({ mimetype = 'image/png', path = '/tmp/upload.bin' } = {}) => ({
+    user: { id: 'user-123', tenantId: 'tenant-a' },
+    file: { path, originalname: 'upload.png', filename: 'upload.png', mimetype, size: 1024 },
+    body: { endpoint: 'openAI', file_id: VALID_UUID },
+    config: { fileConfig: {}, fileStrategy: 'local' },
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mergeFileConfig.mockReturnValue(imageOnlyConfig());
+  });
+
+  test('rejects a file whose real content type is not allowed for the endpoint (claimed image, real PDF)', async () => {
+    detectFileTypeFromFile.mockResolvedValue({ mime: 'application/pdf', ext: 'pdf' });
+
+    await expect(filterFile({ req: makeUploadReq({ mimetype: 'image/png' }) })).rejects.toThrow(
+      'File content does not match its file type',
+    );
+    expect(detectFileTypeFromFile).toHaveBeenCalledWith('/tmp/upload.bin');
+  });
+
+  test('accepts a file whose sniffed content type matches an allowed type', async () => {
+    detectFileTypeFromFile.mockResolvedValue({ mime: 'image/png', ext: 'png' });
+
+    await expect(
+      filterFile({ req: makeUploadReq({ mimetype: 'image/png' }) }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('accepts non-sniffable content (no magic bytes) via the claimed-type gate — no false positives', async () => {
+    detectFileTypeFromFile.mockResolvedValue(undefined);
+
+    await expect(
+      filterFile({ req: makeUploadReq({ mimetype: 'image/png' }) }),
+    ).resolves.toBeUndefined();
   });
 });
