@@ -1,9 +1,16 @@
+const mockProcessStream = jest.fn();
+const mockCreateRun = jest.fn();
+const mockResponseMetadataCallback = { handleLLMEnd: jest.fn() };
+const mockCreateResponseMetadataCallback = jest.fn(() => mockResponseMetadataCallback);
+const mockFormatAgentMessages = jest.fn();
+
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const AgentClient = require('./client');
 
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
+  formatAgentMessages: mockFormatAgentMessages,
   createMetadataAggregator: () => ({
     handleLLMEnd: jest.fn(),
     collected: [],
@@ -13,8 +20,16 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   checkAccess: jest.fn(),
+  createRun: mockCreateRun,
+  createResponseMetadataCallback: mockCreateResponseMetadataCallback,
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
+  buildToolSet: jest.fn(() => ({})),
+  createTokenCounter: jest.fn(() => jest.fn(() => 0)),
+  hydrateMissingIndexTokenCounts: jest.fn(({ indexTokenCountMap }) => indexTokenCountMap ?? {}),
+  resolveRecursionLimit: jest.fn(() => 25),
+  buildInitialToolSessions: jest.fn(() => undefined),
+  isDeepSeekReasoningProvider: jest.fn(() => false),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
   isMemoryAgentEnabled: jest.fn((config) => {
@@ -2874,6 +2889,63 @@ describe('AgentClient - titleConvo', () => {
         expect.any(Object),
       );
     });
+  });
+});
+
+describe('AgentClient - chatCompletion', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFormatAgentMessages.mockReturnValue({
+      messages: [],
+      indexTokenCountMap: {},
+      summary: undefined,
+      boundaryTokenAdjustment: undefined,
+    });
+    mockCreateResponseMetadataCallback.mockReturnValue(mockResponseMetadataCallback);
+    mockCreateRun.mockResolvedValue({
+      processStream: mockProcessStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockProcessStream.mockResolvedValue(undefined);
+  });
+
+  it('passes the response metadata normalizer through the runnable config', async () => {
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: {
+          endpoints: {
+            [EModelEndpoint.agents]: {},
+          },
+        },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model: 'gpt-4',
+        model_parameters: { model: 'gpt-4' },
+      },
+      eventHandlers: {},
+      endpointTokenConfig: {},
+    });
+    client.conversationId = 'convo-123';
+    client.responseMessageId = 'response-123';
+    client.parentMessageId = 'parent-123';
+    client.contentParts = [];
+    client.recordCollectedUsage = jest.fn().mockResolvedValue(undefined);
+
+    await client.chatCompletion({
+      payload: [{ role: 'user', content: 'Hello' }],
+      abortController: new AbortController(),
+    });
+
+    expect(mockCreateResponseMetadataCallback).toHaveBeenCalledTimes(1);
+    expect(mockProcessStream).toHaveBeenCalledTimes(1);
+    const [, runnableConfig] = mockProcessStream.mock.calls[0];
+    expect(runnableConfig.callbacks).toEqual([mockResponseMetadataCallback]);
   });
 });
 

@@ -24,6 +24,10 @@ interface LLMEndOutput {
   generations?: Array<Array<GenerationWithMessage | undefined> | undefined>;
 }
 
+interface ResponseMetadataCallback {
+  handleLLMEnd(output: LLMEndOutput): void;
+}
+
 function collapseRepeatedString(value: string): string {
   for (let size = 1; size <= value.length / 2; size++) {
     if (value.length % size !== 0) {
@@ -57,7 +61,7 @@ export function normalizeLangChainResponseMetadata(output: LLMEndOutput): void {
   }
 }
 
-export function createResponseMetadataCallback() {
+export function createResponseMetadataCallback(): ResponseMetadataCallback {
   return {
     handleLLMEnd: normalizeLangChainResponseMetadata,
   };

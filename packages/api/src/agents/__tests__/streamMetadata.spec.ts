@@ -1,6 +1,5 @@
-import { AIMessageChunk } from '@langchain/core/messages';
 import { concat } from '@langchain/core/utils/stream';
-
+import { AIMessageChunk } from '@langchain/core/messages';
 import { normalizeLangChainResponseMetadata } from '../metadata';
 
 describe('agent stream response metadata aggregation', () => {
