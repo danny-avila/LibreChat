@@ -8,6 +8,7 @@ export * from './Images';
 export * from './Memories';
 export * from './Messages';
 export * from './Misc';
+export * from './Projects';
 export * from './Tools';
 export * from './connection';
 export * from './Favorites';
