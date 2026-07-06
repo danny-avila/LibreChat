@@ -202,6 +202,39 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(enforcedResult.maxContextTokens).toBe(50000);
   });
 
+  it('should preserve chatProjectId through an enforced model spec preset', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const modelSpec = {
+      name: 'gemini-2.5-flash',
+      preset: {
+        endpoint: 'Gemini',
+        model: 'gemini-2.5-flash',
+      },
+    };
+
+    const req = createReq(
+      {
+        endpoint: 'Gemini',
+        endpointType: EModelEndpoint.custom,
+        spec: 'gemini-2.5-flash',
+        model: 'gemini-2.5-flash',
+        chatProjectId: '6a4b39c7b6ac2418193a6c30',
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [modelSpec],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.chatProjectId).toBe('6a4b39c7b6ac2418193a6c30');
+  });
+
   it('should restore private model spec preset fields in non-enforced mode', async () => {
     mockGetEndpointsConfig.mockResolvedValue({});
 
