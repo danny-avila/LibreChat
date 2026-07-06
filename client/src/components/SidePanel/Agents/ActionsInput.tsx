@@ -8,10 +8,12 @@ import {
   AuthTypeEnum,
 } from 'librechat-data-provider';
 import {
+  Label,
   Button,
   Spinner,
   Textarea,
   OGDialog,
+  TooltipAnchor,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
@@ -243,15 +245,20 @@ export default function ActionsInput({
           >
             {localize('com_ui_schema')}
           </label>
-          <button
-            type="button"
-            onClick={() => setIsSchemaDialogOpen(true)}
-            aria-label={localize('com_ui_expand_editor')}
-            title={localize('com_ui_expand_editor')}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-          >
-            <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
-          </button>
+          <TooltipAnchor
+            side="top"
+            description={localize('com_ui_expand_editor')}
+            render={
+              <button
+                type="button"
+                onClick={() => setIsSchemaDialogOpen(true)}
+                aria-label={localize('com_ui_expand_editor')}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+              >
+                <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
+              </button>
+            }
+          />
         </div>
         <Textarea
           id="schemaInput"
@@ -271,9 +278,9 @@ export default function ActionsInput({
       </div>
       {(data || showSkeleton) && (
         <div className="mt-4 flex min-h-0 flex-1 flex-col">
-          <label className="mb-1 block shrink-0 text-sm font-medium text-text-primary">
+          <Label className="mb-1 shrink-0 font-medium">
             {localize('com_assistants_available_actions')}
-          </label>
+          </Label>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {data ? <ActionsTable columns={columns} data={data} /> : <ActionsTableSkeleton />}
           </div>

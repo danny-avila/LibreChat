@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import {
+  Button,
   Checkbox,
   HoverCard,
   HoverCardContent,
@@ -44,13 +45,13 @@ function Memory() {
           {localize('com_agents_enable_memory')}
         </label>
         <HoverCardTrigger asChild className="ml-2">
-          <button
-            type="button"
-            className="inline-flex items-center"
+          <Button
+            variant="ghost"
             aria-label={localize('com_agents_memory_info')}
+            className="inline-flex h-4 w-4 items-center justify-center rounded p-0 text-text-tertiary hover:bg-transparent"
           >
-            <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
-          </button>
+            <CircleHelpIcon className="h-4 w-4" aria-hidden={true} />
+          </Button>
         </HoverCardTrigger>
         <HoverCardPortal>
           <HoverCardContent side={ESide.Top} className="w-80">

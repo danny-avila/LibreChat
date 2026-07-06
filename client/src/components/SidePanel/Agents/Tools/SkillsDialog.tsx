@@ -5,6 +5,7 @@ import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Radio,
   Input,
+  Label,
   Button,
   OGDialog,
   OGDialogTitle,
@@ -193,9 +194,9 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
                 />
               </div>
               <CategoryFilter options={categoryOptions} value={category} onChange={setCategory} />
-              <label id="skills-view-label" className="sr-only">
+              <Label id="skills-view-label" className="sr-only">
                 {localize('com_ui_skills_filter')}
-              </label>
+              </Label>
               <Radio
                 options={viewOptions}
                 value={view}

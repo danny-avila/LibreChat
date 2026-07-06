@@ -70,6 +70,16 @@ jest.mock('../ItemDialog/ItemDialog', () => ({
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...rest
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button type="button" {...rest}>
+      {children}
+    </button>
+  ),
   Label: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
   OGDialog: ({ open, children }: { open?: boolean; children?: React.ReactNode }) =>
     open ? <div>{children}</div> : null,

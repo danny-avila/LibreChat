@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { ChevronLeft } from 'lucide-react';
-import { useToastContext } from '@librechat/client';
+import { Button, useToastContext } from '@librechat/client';
 import type { AgentWithVersions, VersionContext, VersionRecord } from './types';
 import {
   useGetAgentVersionsQuery,
@@ -141,14 +141,15 @@ export default function VersionPanel() {
   return (
     <div className="scrollbar-gutter-stable h-full min-h-[40vh] overflow-auto pb-12 text-sm">
       <header className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-2 pb-2 pt-1">
-        <button
-          type="button"
+        <Button
+          variant="subtle"
+          size="icon"
           onClick={() => setActivePanel(Panel.builder)}
           aria-label={localize('com_ui_back_to_builder')}
-          className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          className="flex-shrink-0 text-text-secondary hover:text-text-primary"
         >
           <ChevronLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
-        </button>
+        </Button>
         <div className="flex flex-col items-center">
           <h2 className="text-base font-semibold text-text-primary">
             {localize('com_ui_agent_version_history')}

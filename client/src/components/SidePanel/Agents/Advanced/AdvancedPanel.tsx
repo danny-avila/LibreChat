@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { useToastContext } from '@librechat/client';
 import { ChevronLeft, Check, Copy } from 'lucide-react';
+import { Button, TooltipAnchor, useToastContext } from '@librechat/client';
 import type { AgentForm } from '~/common';
 import { sectionLabelClass, groupHeadingClass } from './ui';
 import { useAgentPanelContext } from '~/Providers';
@@ -34,14 +34,15 @@ export default function AdvancedPanel() {
   return (
     <div className="mb-1 flex w-full flex-col gap-4 text-sm">
       <header className="grid grid-cols-[auto_1fr_auto] items-center gap-2 pt-1">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => setActivePanel(Panel.builder)}
           aria-label={localize('com_ui_back_to_builder')}
-          className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          className="h-10 w-10 flex-shrink-0 rounded-xl border border-border-light text-text-secondary hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
         >
           <ChevronLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
-        </button>
+        </Button>
         <h2 className="text-center text-base font-semibold text-text-primary">
           {localize('com_ui_advanced_settings')}
         </h2>
@@ -59,23 +60,27 @@ export default function AdvancedPanel() {
         {currentAgentId && (
           <div className="flex items-center justify-between gap-2 border-t border-border-light pt-3">
             <span className={sectionLabelClass}>{localize('com_ui_agent_id')}</span>
-            <button
-              type="button"
-              onClick={handleCopyAgentId}
-              title={currentAgentId}
-              aria-label={localize('com_ui_agent_id_copy')}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-            >
-              <code className="max-w-[150px] truncate font-mono text-xs">{currentAgentId}</code>
-              <span className="t-icon-swap" data-state={copied ? 'b' : 'a'} aria-hidden="true">
-                <span className="t-icon" data-icon="a">
-                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                </span>
-                <span className="t-icon" data-icon="b">
-                  <Check className="h-3.5 w-3.5 text-green-500" aria-hidden="true" />
-                </span>
-              </span>
-            </button>
+            <TooltipAnchor
+              description={currentAgentId}
+              render={
+                <Button
+                  variant="ghost"
+                  onClick={handleCopyAgentId}
+                  aria-label={localize('com_ui_agent_id_copy')}
+                  className="h-auto gap-1.5 rounded-lg px-2 py-1 text-text-secondary hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                >
+                  <code className="max-w-[150px] truncate font-mono text-xs">{currentAgentId}</code>
+                  <span className="t-icon-swap" data-state={copied ? 'b' : 'a'} aria-hidden="true">
+                    <span className="t-icon" data-icon="a">
+                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
+                    <span className="t-icon" data-icon="b">
+                      <Check className="h-3.5 w-3.5 text-green-500" aria-hidden="true" />
+                    </span>
+                  </span>
+                </Button>
+              }
+            />
           </div>
         )}
       </div>

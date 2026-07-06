@@ -3,6 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { Check, RotateCcw, Circle } from 'lucide-react';
 import {
   Label,
+  Button,
   OGDialog,
   OGDialogTrigger,
   OGDialogTemplate,
@@ -159,13 +160,14 @@ export default function VersionItem({
                   description={localize('com_ui_agent_version_restore')}
                   side="left"
                   render={
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       aria-label={localize('com_ui_agent_version_restore')}
-                      className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-border-light text-text-secondary opacity-0 transition-all hover:border-border-medium hover:bg-surface-hover hover:text-text-primary focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary group-hover:opacity-100"
+                      className="size-7 flex-shrink-0 rounded-lg border border-border-light text-text-secondary opacity-0 transition-all hover:border-border-medium focus:outline-none focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-                    </button>
+                    </Button>
                   }
                 />
               </OGDialogTrigger>

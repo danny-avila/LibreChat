@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { useToastContext } from '@librechat/client';
+import { Button, useToastContext } from '@librechat/client';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import type { TError, TPluginAction } from 'librechat-data-provider';
 import type { ToolItem } from '../../items/types';
@@ -74,13 +74,13 @@ export default function ToolSection({ item }: Props) {
             <CheckCircle2 className="size-4 text-emerald-500" aria-hidden="true" />
             {localize('com_ui_tools_info_configured')}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => setEditing(true)}
-            className="rounded-md px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className="h-auto rounded-md px-2 py-1 text-xs font-medium text-text-secondary"
           >
             {localize('com_ui_edit')}
-          </button>
+          </Button>
         </div>
       )}
       {showForm && (
