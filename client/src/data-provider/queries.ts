@@ -29,6 +29,7 @@ import type {
   TCheckUserKeyResponse,
   SharedLinksListParams,
   SharedLinksResponse,
+  SharedImagesResponse,
 } from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite, isNotFoundError } from '~/utils';
@@ -162,6 +163,20 @@ export const useSharedLinksQuery = (
     cacheTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
+};
+
+export const useSharedImagesQuery = (
+  config?: UseQueryOptions<SharedImagesResponse>,
+): QueryObserverResult<SharedImagesResponse> => {
+  return useQuery<SharedImagesResponse>(
+    [QueryKeys.sharedImages],
+    () => dataService.listSharedImages(),
+    {
+      staleTime: 5 * 60 * 1000,
+      cacheTime: 30 * 60 * 1000,
+      ...config,
+    },
+  );
 };
 
 export const useConversationTagsQuery = (

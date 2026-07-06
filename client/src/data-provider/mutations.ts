@@ -317,6 +317,24 @@ export const useDeleteSharedLinkMutation = (
   });
 };
 
+export const useRevokeSharedImageMutation = (
+  options?: t.MutationOptions<t.TRevokeSharedImageResponse, { shareId: string; file_id: string }>,
+): UseMutationResult<
+  t.TRevokeSharedImageResponse,
+  unknown,
+  { shareId: string; file_id: string },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((vars) => dataService.revokeSharedImage(vars.shareId, vars.file_id), {
+    ...(options || {}),
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedImages] });
+      options?.onSuccess?.(...args);
+    },
+  });
+};
+
 // Add a tag or update tag information (tag, description, position, etc.)
 export const useConversationTagMutation = ({
   context,

@@ -225,6 +225,68 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
   return fileStream.pipe(res);
 };
 
+/**
+ * Shared images — flattens the image-type fileSnapshots embedded across all of
+ * the user's active shared links into one list, so they can see and revoke
+ * exposure without hunting through each conversation's share settings. Images
+ * aren't shared independently (see ISharedLink.fileSnapshots) -- this reads
+ * the same data the share-file routes already serve, just from the owner's
+ * side and across every share at once.
+ *
+ * Registered before the `/:shareId`-shaped routes below (inside
+ * `if (allowSharedLinks)`) so literal `/images` isn't swallowed by that
+ * wildcard segment.
+ */
+router.get('/images', requireJwtAuth, async (req, res) => {
+  try {
+    const SharedLink = mongoose.models.SharedLink;
+    const shares = await SharedLink.find(
+      { user: req.user.id, fileSnapshots: { $exists: true, $ne: [] } },
+      'shareId title conversationId fileSnapshots createdAt',
+    )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const images = shares.flatMap((share) =>
+      (share.fileSnapshots || [])
+        .filter((f) => typeof f.type === 'string' && f.type.startsWith('image/'))
+        .map((f) => ({
+          file_id: f.file_id,
+          filename: f.filename,
+          width: f.width,
+          height: f.height,
+          shareId: share.shareId,
+          shareTitle: share.title,
+          conversationId: share.conversationId,
+          createdAt: share.createdAt,
+        })),
+    );
+
+    res.status(200).json({ images });
+  } catch (error) {
+    logger.error('Error listing shared images:', error);
+    res.status(500).json({ message: 'Error listing shared images' });
+  }
+});
+
+/** Revoke a single image from a share without deleting the rest of the share. */
+router.delete('/images/:shareId/:file_id', requireJwtAuth, async (req, res) => {
+  try {
+    const SharedLink = mongoose.models.SharedLink;
+    const result = await SharedLink.updateOne(
+      { shareId: req.params.shareId, user: req.user.id },
+      { $pull: { fileSnapshots: { file_id: req.params.file_id } } },
+    );
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: 'Share not found' });
+    }
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('Error revoking shared image:', error);
+    res.status(500).json({ message: 'Error revoking shared image' });
+  }
+});
+
 if (allowSharedLinks) {
   const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 

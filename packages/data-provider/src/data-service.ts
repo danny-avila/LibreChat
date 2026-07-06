@@ -102,6 +102,17 @@ export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkRe
   return request.delete(endpoints.shareMessages(shareId));
 }
 
+export function listSharedImages(): Promise<q.SharedImagesResponse> {
+  return request.get(endpoints.sharedImages());
+}
+
+export function revokeSharedImage(
+  shareId: string,
+  fileId: string,
+): Promise<m.TRevokeSharedImageResponse> {
+  return request.delete(endpoints.revokeSharedImage(shareId, fileId));
+}
+
 export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
   const { value } = payload;
   if (!value) {

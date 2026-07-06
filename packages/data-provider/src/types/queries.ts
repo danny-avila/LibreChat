@@ -100,6 +100,21 @@ export interface SharedLinkQueryData {
   pageParams: (string | null)[];
 }
 
+export type SharedImageItem = {
+  file_id: string;
+  filename: string;
+  width?: number;
+  height?: number;
+  shareId: string;
+  shareTitle: string;
+  conversationId: string;
+  createdAt: Date;
+};
+
+export interface SharedImagesResponse {
+  images: SharedImageItem[];
+}
+
 export type AllPromptGroupsFilterRequest = {
   category: string;
   pageNumber: string;

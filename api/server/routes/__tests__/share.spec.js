@@ -67,6 +67,8 @@ jest.mock('mongoose', () => ({
     },
     SharedLink: {
       findOne: jest.fn(),
+      find: jest.fn(),
+      updateOne: jest.fn(),
     },
   },
 }));
@@ -518,6 +520,110 @@ describe('share routes', () => {
     expect(response.status).toBe(200);
     expect(mockSharedLinksAccess).not.toHaveBeenCalled();
     expect(deleteSharedLinkWithCleanup).toHaveBeenCalledWith('user-123', 'share-123');
+  });
+});
+
+const findChain = (value) => ({ sort: jest.fn().mockReturnValue(lean(value)) });
+
+describe('shared images (owner-side view across all shares)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('flattens image-type file snapshots from every share into one list', async () => {
+    mongoose.models.SharedLink.find.mockReturnValue(
+      findChain([
+        {
+          shareId: 'share-1',
+          title: 'Conversation A',
+          conversationId: 'convo-1',
+          createdAt: new Date('2030-01-01T00:00:00.000Z'),
+          fileSnapshots: [
+            {
+              file_id: 'file-1',
+              filename: 'diagram.png',
+              type: 'image/png',
+              width: 100,
+              height: 80,
+            },
+            { file_id: 'file-2', filename: 'notes.pdf', type: 'application/pdf' },
+          ],
+        },
+        {
+          shareId: 'share-2',
+          title: 'Conversation B',
+          conversationId: 'convo-2',
+          createdAt: new Date('2030-01-02T00:00:00.000Z'),
+          fileSnapshots: [{ file_id: 'file-3', filename: 'photo.jpg', type: 'image/jpeg' }],
+        },
+      ]),
+    );
+
+    const response = await request(buildApp()).get('/api/share/images');
+
+    expect(response.status).toBe(200);
+    expect(response.body.images).toHaveLength(2);
+    expect(response.body.images.map((img) => img.file_id)).toEqual(['file-1', 'file-3']);
+    expect(response.body.images[0]).toMatchObject({
+      shareId: 'share-1',
+      shareTitle: 'Conversation A',
+      conversationId: 'convo-1',
+      filename: 'diagram.png',
+    });
+    expect(mongoose.models.SharedLink.find).toHaveBeenCalledWith(
+      { user: 'user-123', fileSnapshots: { $exists: true, $ne: [] } },
+      'shareId title conversationId fileSnapshots createdAt',
+    );
+  });
+
+  it('returns an empty list when the user has no shares with snapshotted files', async () => {
+    mongoose.models.SharedLink.find.mockReturnValue(findChain([]));
+
+    const response = await request(buildApp()).get('/api/share/images');
+
+    expect(response.status).toBe(200);
+    expect(response.body.images).toEqual([]);
+  });
+
+  it('500s when listing shared images throws', async () => {
+    mongoose.models.SharedLink.find.mockImplementation(() => {
+      throw new Error('db down');
+    });
+
+    const response = await request(buildApp()).get('/api/share/images');
+
+    expect(response.status).toBe(500);
+    expect(logger.error).toHaveBeenCalledWith('Error listing shared images:', expect.any(Error));
+  });
+
+  it('revokes a single image without touching the rest of the share', async () => {
+    mongoose.models.SharedLink.updateOne.mockResolvedValue({ matchedCount: 1 });
+
+    const response = await request(buildApp()).delete('/api/share/images/share-1/file-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true });
+    expect(mongoose.models.SharedLink.updateOne).toHaveBeenCalledWith(
+      { shareId: 'share-1', user: 'user-123' },
+      { $pull: { fileSnapshots: { file_id: 'file-1' } } },
+    );
+  });
+
+  it('404s revoking an image from a share the user does not own', async () => {
+    mongoose.models.SharedLink.updateOne.mockResolvedValue({ matchedCount: 0 });
+
+    const response = await request(buildApp()).delete('/api/share/images/share-1/file-1');
+
+    expect(response.status).toBe(404);
+  });
+
+  it('500s when revoking a shared image throws', async () => {
+    mongoose.models.SharedLink.updateOne.mockRejectedValue(new Error('db down'));
+
+    const response = await request(buildApp()).delete('/api/share/images/share-1/file-1');
+
+    expect(response.status).toBe(500);
+    expect(logger.error).toHaveBeenCalledWith('Error revoking shared image:', expect.any(Error));
   });
 });
 
