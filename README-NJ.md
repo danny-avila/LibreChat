@@ -72,6 +72,23 @@ for
 `/packages`, you'll need to run `build:watch` in their respective directories as so:
 `npm run build:watch --prefix packages/[directory]`
 
+### Building & Running Agents Library
+
+Most of LibreChat is contained within this repo, but some functionality (such as agent tools) is located in a
+separate [agents repository](https://github.com/danny-avila/agents).
+
+If you're developing in the `agents` repository and want to test it here, you can use the
+[`npm link`](https://docs.npmjs.com/cli/v8/commands/npm-link) tool. Essentially, it puts a symlink to the package in
+your local global node_modules folder, which other projects can access via `npm link`.
+
+There are three steps to setting it up:
+
+1. Run `npm link` in the `agents` repo.
+2. Run `npm link @librechat/agents` in the `LibreChat` repo.
+3. Run `npm run build:dev` in the `agents` repo (every time you want to test new code).
+
+To go back to normal, run `npm run reinstall`, which resets `node_modules`.
+
 ### Running E2E tests
 
 Our E2E tests live in `./nj/e2e/\*` and can be run on their own with the following command:
