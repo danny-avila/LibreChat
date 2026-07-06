@@ -78,6 +78,16 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 import { createConfigMethods, type ConfigMethods } from './config';
 import { createTenantMethods, type TenantMethods } from './tenant';
 import { createNangoConnectionMethods, type NangoConnectionMethods } from './nangoConnection';
+import {
+  createMigrationMethods,
+  type MigrationMethods,
+  type CollectionMigrationResult,
+} from './migration';
+import {
+  createAuditLogMethods,
+  type AuditLogMethods,
+  type CreateAuditEntryInput,
+} from './auditLog';
 
 export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate };
@@ -118,7 +128,9 @@ export type AllMethods = UserMethods &
   AgentMethods &
   ConfigMethods &
   TenantMethods &
-  NangoConnectionMethods;
+  NangoConnectionMethods &
+  MigrationMethods &
+  AuditLogMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -214,6 +226,12 @@ export function createMethods(
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
 
+  const migrationMethods = createMigrationMethods(mongoose, {
+    getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+  });
+
+  const auditLogMethods = createAuditLogMethods(mongoose);
+
   return {
     ...createUserMethods(mongoose),
     ...createSessionMethods(mongoose),
@@ -256,6 +274,8 @@ export function createMethods(
     ...createConfigMethods(mongoose),
     ...createTenantMethods(mongoose),
     ...createNangoConnectionMethods(mongoose),
+    ...migrationMethods,
+    ...auditLogMethods,
   };
 }
 
@@ -311,4 +331,8 @@ export type {
   ConfigMethods,
   TenantMethods,
   NangoConnectionMethods,
+  MigrationMethods,
+  AuditLogMethods,
+  CollectionMigrationResult,
+  CreateAuditEntryInput,
 };

@@ -210,6 +210,7 @@ const startServer = async () => {
   app.use('/api/admin/tenants', routes.adminTenants);
   app.use('/api/admin/platform-admins', routes.adminPlatformAdmins);
   app.use('/api/admin/integrations', routes.adminIntegrations);
+  app.use('/api/admin/migrations', routes.adminMigrations);
   app.use('/api/integrations', routes.integrations);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);

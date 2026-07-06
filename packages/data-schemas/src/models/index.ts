@@ -34,6 +34,7 @@ import { createGroupModel } from './group';
 import { createConfigModel } from './config';
 import { createTenantModel } from './tenant';
 import { createNangoConnectionModel } from './nangoConnection';
+import { createAuditLogModel } from './auditLog';
 
 /**
  * Creates all database models for all collections
@@ -76,5 +77,6 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Config: createConfigModel(mongoose),
     Tenant: createTenantModel(mongoose),
     NangoConnection: createNangoConnectionModel(mongoose),
+    AuditLog: createAuditLogModel(mongoose),
   };
 }
