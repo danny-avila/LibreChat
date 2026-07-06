@@ -351,7 +351,7 @@ export class AccessControlService {
     requiredPermission,
   }: {
     userId: string;
-    role?: string;
+    role?: string | null;
     resourceType: ResourceType;
     resourceId: string | Types.ObjectId;
     requiredPermission: number;
