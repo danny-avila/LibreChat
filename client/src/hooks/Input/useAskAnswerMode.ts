@@ -1,7 +1,11 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { atom, useRecoilState } from 'recoil';
+import {
+  ASK_USER_DECLINED_ANSWER,
+  findLiveAskUserQuestion,
+  splitOtherOption,
+} from '~/utils/approval';
 import { useResumeSubmit } from '~/components/Chat/Messages/Content/ApprovalContext';
-import { findLiveAskUserQuestion, splitOtherOption } from '~/utils/approval';
 import { useGetMessagesByConvoId } from '~/data-provider';
 
 /** Dismissed action ids — recoil so every consumer reacts. */
@@ -10,16 +14,10 @@ const dismissedAskActionsAtom = atom<string[]>({
   default: [],
 });
 
-/** Current selection: an option index, the inline free-form row, or nothing. */
-const askAnswerSelectionAtom = atom<number | 'other' | null>({
+/** Currently highlighted option row, or nothing. */
+const askAnswerSelectionAtom = atom<number | null>({
   key: 'askAnswerModeSelection',
   default: null,
-});
-
-/** Text typed into the popover's inline "Other" input. */
-const askAnswerOtherTextAtom = atom<string>({
-  key: 'askAnswerModeOtherText',
-  default: '',
 });
 
 /**
@@ -43,7 +41,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   );
   const [dismissedIds, setDismissedIds] = useRecoilState(dismissedAskActionsAtom);
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
-  const [otherText, setOtherText] = useRecoilState(askAnswerOtherTextAtom);
   const { submitAskAnswer } = useResumeSubmit();
 
   const dismissed = liveAsk != null && dismissedIds.includes(liveAsk.actionId);
@@ -53,6 +50,12 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     [liveAsk],
   );
 
+  /** Selection is per-question: a new pause must never inherit a stale
+   *  highlight whose Enter would submit the previous question's choice. */
+  useEffect(() => {
+    setSelected(null);
+  }, [liveAsk?.actionId, setSelected]);
+
   const dismiss = useCallback(() => {
     if (liveAsk) {
       setDismissedIds((prev) =>
@@ -61,32 +64,17 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     }
   }, [liveAsk, setDismissedIds]);
 
-  const canSubmit =
-    active &&
-    (typeof selected === 'number'
-      ? options[selected] != null
-      : selected === 'other' && otherText.trim().length > 0);
+  const canSubmit = active && typeof selected === 'number' && options[selected] != null;
 
   /** Fires the confirmed selection; returns true when an answer was sent. */
   const submit = useCallback((): boolean => {
-    if (!liveAsk || !canSubmit) {
+    if (!liveAsk || !canSubmit || typeof selected !== 'number') {
       return false;
     }
-    const answer = typeof selected === 'number' ? options[selected].value : otherText.trim();
-    submitAskAnswer(liveAsk.actionId, answer);
+    submitAskAnswer(liveAsk.actionId, options[selected].value);
     setSelected(null);
-    setOtherText('');
     return true;
-  }, [
-    liveAsk,
-    canSubmit,
-    selected,
-    options,
-    otherText,
-    submitAskAnswer,
-    setSelected,
-    setOtherText,
-  ]);
+  }, [liveAsk, canSubmit, selected, options, submitAskAnswer, setSelected]);
 
   /** Composer text answers the question directly; true when consumed. */
   const submitText = useCallback(
@@ -98,12 +86,25 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       if (trimmed.length > 0) {
         submitAskAnswer(liveAsk.actionId, trimmed);
         setSelected(null);
-        setOtherText('');
       }
       return true;
     },
-    [active, liveAsk, submitAskAnswer, setSelected, setOtherText],
+    [active, liveAsk, submitAskAnswer, setSelected],
   );
+
+  /**
+   * Explicitly decline: resumes the run with a canned notice so the model
+   * knows the user chose not to answer. A client-side dismiss alone would
+   * leave the run paused until expiry — a hung turn.
+   */
+  const skip = useCallback((): boolean => {
+    if (!active || !liveAsk) {
+      return false;
+    }
+    submitAskAnswer(liveAsk.actionId, ASK_USER_DECLINED_ANSWER);
+    setSelected(null);
+    return true;
+  }, [active, liveAsk, submitAskAnswer, setSelected]);
 
   /** Selection steering from the empty composer; true when consumed. */
   const handleComposerKeyDown = useCallback(
@@ -121,25 +122,27 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         }
         return false;
       }
-      const rowCount = options.length + 1; // + the inline Other row
-      const asIndex = (value: number | 'other' | null): number =>
-        value === 'other' ? options.length : (value ?? -1);
-      const fromIndex = (index: number): number | 'other' =>
-        index >= options.length ? 'other' : index;
+      if (options.length === 0) {
+        if (e.key === 'Escape') {
+          dismiss();
+          return true;
+        }
+        return false;
+      }
       const digit = Number.parseInt(e.key, 10);
-      if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(rowCount, 9)) {
+      if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(options.length, 9)) {
         e.preventDefault();
-        setSelected(fromIndex(digit - 1));
+        setSelected(digit - 1);
         return true;
       }
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelected(fromIndex((asIndex(selected) + 1) % rowCount));
+        setSelected(((selected ?? -1) + 1) % options.length);
         return true;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelected(fromIndex((asIndex(selected) - 1 + rowCount) % rowCount));
+        setSelected(((selected ?? 0) - 1 + options.length) % options.length);
         return true;
       }
       if (e.key === 'Enter' && !e.shiftKey && canSubmit) {
@@ -164,11 +167,10 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     dismiss,
     selected,
     setSelected,
-    otherText,
-    setOtherText,
     canSubmit,
     submit,
     submitText,
+    skip,
     handleComposerKeyDown,
     /** Model-supplied "Other"-style label, folded into the inline input. */
     otherLabel,

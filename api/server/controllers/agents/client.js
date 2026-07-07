@@ -1920,7 +1920,7 @@ class AgentClient extends BaseClient {
         // type mismatch, is silently dropped against) the pre-pause content.
         customHandlers: createContentIndexOffsetHandlers(
           this.options.eventHandlers,
-          Array.isArray(seedContent) ? seedContent.length : 0,
+          Array.isArray(seedContent) ? seedContent : [],
         ),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),

@@ -8,6 +8,7 @@ const {
   toClientPendingAction,
   isHITLEnabled,
   deleteAgentCheckpoint,
+  attachAskUserQuestionArgs,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -318,7 +319,15 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       abortResult.jobData?.responseMessageId &&
       hasPersistableAbortContent(abortResult.content)
     ) {
-      const { jobData, content, text } = abortResult;
+      const { jobData, text } = abortResult;
+      let { content } = abortResult;
+      // Redis reconstructs abort content from the graph/chunk log, which never saw
+      // the pause-time args stamp applied to the in-process contentParts — re-stamp
+      // here so a question abandoned via Stop persists with its question intact.
+      const abortedPayload = job.metadata?.pendingAction?.payload;
+      if (abortedPayload?.type === 'ask_user_question' && Array.isArray(content)) {
+        content = attachAskUserQuestionArgs(content, abortedPayload.question);
+      }
       const responseMessage = {
         messageId: jobData.responseMessageId,
         parentMessageId: jobData.userMessage.messageId,

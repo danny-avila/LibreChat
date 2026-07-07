@@ -174,6 +174,7 @@ describe('findIncompleteDecisions', () => {
 });
 
 describe('createContentIndexOffsetHandlers', () => {
+  const textSeed = (n: number) => Array.from({ length: n }, () => ({ type: 'text' }));
   const makeRecorder = () => {
     const calls: Array<{ event: string; data: unknown }> = [];
     const handler = { handle: (event: string, data: unknown) => void calls.push({ event, data }) };
@@ -183,13 +184,13 @@ describe('createContentIndexOffsetHandlers', () => {
   it('returns the input untouched for offset 0 / undefined handlers', () => {
     const { handler } = makeRecorder();
     const handlers = { on_run_step: handler };
-    expect(createContentIndexOffsetHandlers(handlers, 0)).toBe(handlers);
-    expect(createContentIndexOffsetHandlers(undefined, 3)).toBeUndefined();
+    expect(createContentIndexOffsetHandlers(handlers, [])).toBe(handlers);
+    expect(createContentIndexOffsetHandlers(undefined, textSeed(3))).toBeUndefined();
   });
 
   it('shifts ON_RUN_STEP index by the offset without mutating the original payload', () => {
     const { calls, handler } = makeRecorder();
-    const wrapped = createContentIndexOffsetHandlers({ on_run_step: handler }, 3)!;
+    const wrapped = createContentIndexOffsetHandlers({ on_run_step: handler }, textSeed(3))!;
     const runStep = { id: 'step_1', index: 0, stepDetails: { type: 'message_creation' } };
     wrapped.on_run_step.handle('on_run_step', runStep as never);
     expect((calls[0].data as { index: number }).index).toBe(3);
@@ -198,7 +199,7 @@ describe('createContentIndexOffsetHandlers', () => {
 
   it('shifts ON_AGENT_UPDATE nested index', () => {
     const { calls, handler } = makeRecorder();
-    const wrapped = createContentIndexOffsetHandlers({ on_agent_update: handler }, 2)!;
+    const wrapped = createContentIndexOffsetHandlers({ on_agent_update: handler }, textSeed(2))!;
     wrapped.on_agent_update.handle('on_agent_update', {
       agent_update: { index: 1, runId: 'r' },
     } as never);
@@ -210,7 +211,7 @@ describe('createContentIndexOffsetHandlers', () => {
     const deltaHandler = { handle: jest.fn() };
     const wrapped = createContentIndexOffsetHandlers(
       { on_run_step: handler, on_message_delta: deltaHandler },
-      5,
+      textSeed(5),
     )!;
     expect(wrapped.on_message_delta).toBe(deltaHandler);
     // Deltas carry no index — they resolve through the (shifted) stepMap entry.
@@ -218,9 +219,43 @@ describe('createContentIndexOffsetHandlers', () => {
     expect(deltaHandler.handle).toHaveBeenCalledTimes(1);
   });
 
+  it('rebinds a resumed tool step to its seeded unresolved slot by tool_call id', () => {
+    const { calls, handler } = makeRecorder();
+    const seed = [
+      { type: 'text' },
+      { type: 'tool_call', tool_call: { id: 'tc_paused', output: '' } },
+      { type: 'tool_call', tool_call: { id: 'tc_done', output: 'already resolved' } },
+    ];
+    const wrapped = createContentIndexOffsetHandlers({ on_run_step: handler }, seed)!;
+
+    // The paused call's re-execution must land on its seeded slot (1), not 0+3.
+    wrapped.on_run_step.handle('on_run_step', {
+      id: 'step_t',
+      index: 0,
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'tc_paused' }] },
+    } as never);
+    expect((calls[0].data as { index: number }).index).toBe(1);
+
+    // A resolved seeded call is NOT a rebind target — a fresh same-id step offsets.
+    wrapped.on_run_step.handle('on_run_step', {
+      id: 'step_u',
+      index: 1,
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'tc_done' }] },
+    } as never);
+    expect((calls[1].data as { index: number }).index).toBe(4);
+
+    // Message steps always offset.
+    wrapped.on_run_step.handle('on_run_step', {
+      id: 'step_m',
+      index: 2,
+      stepDetails: { type: 'message_creation' },
+    } as never);
+    expect((calls[2].data as { index: number }).index).toBe(5);
+  });
+
   it('leaves a runStep without a numeric index unshifted (defensive)', () => {
     const { calls, handler } = makeRecorder();
-    const wrapped = createContentIndexOffsetHandlers({ on_run_step: handler }, 4)!;
+    const wrapped = createContentIndexOffsetHandlers({ on_run_step: handler }, textSeed(4))!;
     const weird = { id: 'step_x' };
     wrapped.on_run_step.handle('on_run_step', weird as never);
     expect(calls[0].data).toBe(weird);

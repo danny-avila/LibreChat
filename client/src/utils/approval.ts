@@ -10,6 +10,13 @@ import type { Agents, TMessage, TMessageContentParts } from 'librechat-data-prov
  */
 export const ASK_USER_QUESTION = 'ask_user_question' as const;
 
+/**
+ * Answer sent when the user explicitly skips a question: the run must resume
+ * (a client-side dismiss would leave it paused until expiry — a hung turn),
+ * and the model needs to know the user declined rather than answered.
+ */
+export const ASK_USER_DECLINED_ANSWER = 'The user chose not to answer this question.';
+
 /** Shape of the synthetic content part carrying an ask-user pending action. */
 export interface AskUserQuestionPart {
   type: typeof ASK_USER_QUESTION;
@@ -203,7 +210,22 @@ export function parseAskUserQuestionArgs(
   ) {
     return null;
   }
-  return parsed as unknown as Agents.AskUserQuestionRequest;
+  const request = parsed as { question: string; description?: unknown; options?: unknown };
+  /** Model/persisted args are untrusted — normalize instead of crashing the
+   *  message render on shapes like `options: {}` or non-string entries. */
+  const options = Array.isArray(request.options)
+    ? request.options.filter(
+        (option): option is Agents.AskUserQuestionOption =>
+          option != null &&
+          typeof (option as { label?: unknown }).label === 'string' &&
+          typeof (option as { value?: unknown }).value === 'string',
+      )
+    : undefined;
+  return {
+    question: request.question,
+    description: typeof request.description === 'string' ? request.description : undefined,
+    options: options && options.length > 0 ? options : undefined,
+  };
 }
 
 /**

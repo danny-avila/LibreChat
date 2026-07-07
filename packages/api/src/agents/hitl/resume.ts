@@ -143,11 +143,30 @@ export function findIncompleteDecisions(
  */
 export function createContentIndexOffsetHandlers(
   handlers: Record<string, EventHandler> | undefined,
-  offset: number,
+  seedContent: Array<{ type?: string; tool_call?: { id?: string; output?: unknown } }> = [],
 ): Record<string, EventHandler> | undefined {
+  const offset = seedContent.length;
   if (handlers == null || !(offset > 0)) {
     return handlers;
   }
+
+  /**
+   * Resumed tool steps for calls the PAUSED turn already rendered must land
+   * back on their seeded slot — not a fresh offset slot — or the original
+   * part stays unresolved while a duplicate completed one appears after the
+   * seed (and its output never attaches). Map unresolved seeded tool_calls by
+   * id so the resume pass's re-execution (approval flows re-run the approved
+   * tool; ask re-runs its body) rebinds to the right index.
+   */
+  const seededToolCallIndex = new Map<string, number>();
+  seedContent.forEach((part, index) => {
+    const toolCall = part?.tool_call;
+    const unresolved =
+      typeof toolCall?.output !== 'string' || (toolCall.output as string).length === 0;
+    if (part?.type === 'tool_call' && typeof toolCall?.id === 'string' && unresolved) {
+      seededToolCallIndex.set(toolCall.id, index);
+    }
+  });
 
   const wrapped: Record<string, EventHandler> = { ...handlers };
 
@@ -155,11 +174,25 @@ export function createContentIndexOffsetHandlers(
   if (runStepHandler) {
     wrapped[GraphEvents.ON_RUN_STEP] = {
       handle: (event, data, metadata, graph) => {
-        const runStep = data as { index?: number } | undefined;
-        const shifted =
-          runStep != null && typeof runStep.index === 'number'
-            ? { ...runStep, index: runStep.index + offset }
-            : data;
+        const runStep = data as
+          | {
+              index?: number;
+              stepDetails?: { type?: string; tool_calls?: Array<{ id?: string }> };
+            }
+          | undefined;
+        if (runStep == null || typeof runStep.index !== 'number') {
+          return runStepHandler.handle(event, data, metadata, graph);
+        }
+        const seededIndex =
+          runStep.stepDetails?.type === 'tool_calls'
+            ? runStep.stepDetails.tool_calls
+                ?.map((call) => (call.id ? seededToolCallIndex.get(call.id) : undefined))
+                .find((index) => index != null)
+            : undefined;
+        const shifted = {
+          ...runStep,
+          index: seededIndex ?? runStep.index + offset,
+        };
         return runStepHandler.handle(event, shifted as typeof data, metadata, graph);
       },
     };

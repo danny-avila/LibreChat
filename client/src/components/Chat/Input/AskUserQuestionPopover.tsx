@@ -14,7 +14,7 @@ import { cn } from '~/utils';
  */
 function AskUserQuestionPopoverContent({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();
-  const { liveAsk, active, options, selected, setSelected, canSubmit, submit, dismiss } =
+  const { liveAsk, active, options, selected, setSelected, canSubmit, submit, skip, dismiss } =
     useAskAnswerMode(conversationId);
 
   if (!active || !liveAsk) {
@@ -61,7 +61,7 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
           </button>
         ))}
         <div className="flex items-center justify-end gap-2 p-2">
-          <Button size="sm" variant="outline" onClick={dismiss}>
+          <Button size="sm" variant="outline" onClick={() => skip()}>
             {localize('com_ui_skip')}
           </Button>
           <Button size="sm" variant="submit" disabled={!canSubmit} onClick={() => submit()}>
