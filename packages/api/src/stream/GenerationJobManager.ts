@@ -33,6 +33,7 @@ import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobS
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
+import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle } from './ApprovalLifecycle';
 
 /** Terminal error surfaced to a client still attached when its approval window lapses. */
@@ -1107,7 +1108,10 @@ class GenerationJobManagerClass {
           ...pendingEvents,
           {
             event: ApprovalEvents.ON_PENDING_ACTION,
-            data: liveJob.pendingAction as unknown as Record<string, unknown>,
+            data: toClientPendingAction(liveJob.pendingAction) as unknown as Record<
+              string,
+              unknown
+            >,
           },
         ];
       }
@@ -1612,10 +1616,11 @@ class GenerationJobManagerClass {
       collectedUsage,
       contextUsage,
       // Carry the live pending approval in the resume contract so a reloading /
-      // cross-replica client can rebuild the prompt from resumeState.
+      // cross-replica client can rebuild the prompt from resumeState. Client-safe
+      // projection: the stored record's resumeContext/requestFingerprint stay server-only.
       pendingAction:
         jobData.status === 'requires_action' && !isPendingActionStale(jobData)
-          ? jobData.pendingAction
+          ? toClientPendingAction(jobData.pendingAction)
           : undefined,
     };
   }
