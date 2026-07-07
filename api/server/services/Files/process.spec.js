@@ -1383,6 +1383,12 @@ describe('filterFile — content sniffing (MIME spoofing guard)', () => {
   reject('image/png', 'application/zip');
   reject('audio/mpeg', 'image/png');
 
+  // Unsupported same-category content is rejected (claim already passed the
+  // endpoint allow-list, but the sniffed bytes are a different application type).
+  reject('application/pdf', 'application/zip');
+  reject('application/pdf', 'application/x-cfb');
+  reject('application/zip', 'application/pdf');
+
   // Executable/active content is rejected even under a same-category claim.
   reject('image/png', 'application/x-elf');
   reject('application/pdf', 'application/x-elf');
@@ -1394,7 +1400,17 @@ describe('filterFile — content sniffing (MIME spoofing guard)', () => {
   accept('audio/x-wav', 'audio/wav'); // WAV vendor alias
   accept('video/avi', 'video/vnd.avi'); // AVI vendor alias
   accept('audio/mp4', 'video/mp4'); // shared media container (m4a)
-  accept('application/vnd.ms-excel', 'application/x-cfb'); // legacy Office compound file
+
+  // Container families: sniffer reports OOXML/ODF as application/zip and legacy
+  // Office as application/x-cfb — genuine uploads must not be falsely rejected.
+  accept('application/vnd.ms-excel', 'application/x-cfb');
+  accept('application/msword', 'application/x-cfb');
+  accept(
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/zip',
+  );
+  accept('application/vnd.oasis.opendocument.text', 'application/zip');
+  accept('application/zip', 'application/zip');
 
   // No detectable signature (plain text, code, csv, svg) — no false positives.
   accept('text/plain', undefined);

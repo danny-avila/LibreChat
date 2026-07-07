@@ -1262,31 +1262,89 @@ const EXECUTABLE_MIME_TYPES = new Set([
 ]);
 
 /**
- * Collapses a MIME type to a comparison category. Audio and video share
- * container formats (mp4, ogg, webm), so a sniffed `video/mp4` for a claimed
- * `audio/mp4` (m4a) is legitimate — treat both as one category to avoid false
- * rejections while still separating e.g. `application/*` from `image/*`.
+ * ZIP-based container formats. `file-type` reports the real bytes of OOXML
+ * (docx/xlsx/pptx), OpenDocument and epub files as `application/zip` (or the
+ * specific OOXML type), so these are treated as equivalent to each other.
+ */
+const ZIP_CONTAINER_MIME_TYPES = new Set([
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/epub+zip',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.graphics',
+]);
+
+/**
+ * OLE/CFB compound-document formats. `file-type` reports legacy Office files
+ * (.doc/.xls/.ppt) as `application/x-cfb`, so these are treated as equivalent.
+ */
+const OLE_CONTAINER_MIME_TYPES = new Set([
+  'application/x-cfb',
+  'application/x-ole-storage',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/x-ms-excel',
+  'application/x-msexcel',
+  'application/msexcel',
+  'application/x-excel',
+  'application/x-dos_ms_excel',
+  'application/xls',
+  'application/x-xls',
+]);
+
+/**
+ * Reduces a MIME type to a token for equivalence comparison. Image, audio and
+ * video collapse to their (executable-free) top-level type — audio and video
+ * together, since they share containers (mp4/ogg/webm) — which tolerates the
+ * vendor/subtype aliases `file-type` emits (`audio/x-wav`, `video/vnd.avi`).
+ * `application/*` is kept fine-grained (so `application/zip` never matches
+ * `application/pdf`), with the ZIP and OLE container families each mapped to a
+ * single token so genuine Office/OpenDocument uploads are not falsely rejected.
  *
  * @param {string} mimeType
  * @returns {string}
  */
-const contentCategory = (mimeType) => {
-  const topLevel = mimeType.split('/')[0];
-  return topLevel === 'video' ? 'audio' : topLevel;
+const contentSignature = (mimeType) => {
+  const base = mimeType.split(';')[0].trim();
+  const topLevel = base.split('/')[0];
+
+  if (topLevel === 'image' || topLevel === 'text') {
+    return topLevel;
+  }
+  if (topLevel === 'audio' || topLevel === 'video') {
+    return 'media';
+  }
+  if (ZIP_CONTAINER_MIME_TYPES.has(base)) {
+    return 'application/zip-container';
+  }
+  if (OLE_CONTAINER_MIME_TYPES.has(base)) {
+    return 'application/ole-container';
+  }
+  return base;
 };
 
 /**
  * Guards against MIME spoofing by comparing the file's real magic-byte type
  * against the claimed `file.mimetype`. A browser-supplied mimetype/filename is
- * attacker-controlled, so an allowed claimed type is not sufficient on its own.
+ * attacker-controlled, so an allowed claimed type is not sufficient on its own;
+ * `filterFile` already validates the claimed type against the endpoint allow-list,
+ * so requiring the sniffed content to be equivalent to the claim also enforces
+ * the allow-list against the real bytes.
  *
- * Executable signatures are always rejected; otherwise the sniffed and claimed
- * content categories must agree (e.g. a PDF or ELF uploaded as `image/png` is
- * rejected). Comparing categories — rather than exact MIME strings — tolerates
- * benign subtype/vendor aliases the sniffer reports for legitimate files
- * (`audio/x-wav` vs `audio/wav`, `video/vnd.avi` vs `video/avi`, legacy Office
- * as `application/x-cfb`). Files with no detectable signature (plain text, code,
- * csv, svg) fall through to the claimed-type gate already applied by the caller.
+ * Executable signatures are always rejected. Otherwise the sniffed and claimed
+ * content signatures must match, which rejects both cross-category spoofs (a PDF
+ * as `image/png`) and unsupported same-category content (a ZIP as
+ * `application/pdf`), while tolerating the container/vendor aliases the sniffer
+ * reports for legitimate files (`audio/x-wav`, legacy Office as
+ * `application/x-cfb`, OOXML as `application/zip`). Files with no detectable
+ * signature (plain text, code, csv, svg) fall through to the claimed-type gate
+ * already applied by the caller.
  *
  * @param {Object} params
  * @param {Express.Multer.File} params.file - The uploaded file (disk storage).
@@ -1313,7 +1371,7 @@ const assertContentMatchesType = async ({ file }) => {
     return;
   }
 
-  if (contentCategory(detectedMime) !== contentCategory(claimedMime)) {
+  if (contentSignature(detectedMime) !== contentSignature(claimedMime)) {
     throw new Error('File content does not match its file type');
   }
 };
