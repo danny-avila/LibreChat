@@ -65,8 +65,8 @@ export type AdminConfigDeleteResponse = {
   success: boolean;
 };
 
-/** Audit action types for grant changes. */
-export type AuditAction = 'grant_assigned' | 'grant_removed';
+/** Audit action types for grant changes and admin operations. */
+export type AuditAction = 'grant_assigned' | 'grant_removed' | 'user_migrated';
 
 /** SystemGrant document as returned by the admin API. */
 export type AdminSystemGrant = {
@@ -85,12 +85,39 @@ export type AdminAuditLogEntry = {
   action: AuditAction;
   actorId: string;
   actorName: string;
-  targetPrincipalType: PrincipalType;
-  targetPrincipalId: string;
-  targetName: string;
-  capability: string;
+  targetPrincipalType?: PrincipalType;
+  targetPrincipalId?: string;
+  targetName?: string;
+  capability?: string;
   timestamp: string;
+  metadata?: UserMigratedAuditMetadata;
 };
+
+/** Extra fields written for `user_migrated` audit entries. */
+export type UserMigratedAuditMetadata = {
+  sourceUserId: string;
+  sourceEmail?: string;
+  targetUserId: string;
+  targetEmail?: string;
+  crossTenant: boolean;
+  counts: Record<string, number>;
+  skipped: Record<string, number>;
+};
+
+/** Persisted audit log document (admin panel + migration). */
+export interface IAuditLog {
+  _id?: import('mongoose').Types.ObjectId;
+  action: AuditAction;
+  actorId: import('mongoose').Types.ObjectId;
+  targetPrincipalType?: PrincipalType;
+  targetPrincipalId?: string;
+  targetName?: string;
+  capability?: string;
+  metadata?: UserMigratedAuditMetadata;
+  tenantId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
 /** Group as returned by the admin API. */
 export type AdminGroup = {

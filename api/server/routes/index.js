@@ -10,6 +10,7 @@ const adminUsers = require('./admin/users');
 const adminTenants = require('./admin/tenants');
 const adminPlatformAdmins = require('./admin/platformAdmins');
 const adminIntegrations = require('./admin/integrations');
+const adminMigrations = require('./admin/migrations');
 const integrations = require('./integrations');
 const nangoWebhooks = require('./webhooks/nango');
 const endpoints = require('./endpoints');
@@ -52,6 +53,7 @@ module.exports = {
   adminTenants,
   adminPlatformAdmins,
   adminIntegrations,
+  adminMigrations,
   integrations,
   nangoWebhooks,
   keys,

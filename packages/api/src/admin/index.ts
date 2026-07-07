@@ -5,6 +5,7 @@ export { createAdminPlatformAdminsHandlers } from './platformAdmins';
 export { createAdminRolesHandlers } from './roles';
 export { createAdminUsersHandlers } from './users';
 export { createAdminTenantsHandlers } from './tenants';
+export { createAdminMigrationsHandlers } from './migrations';
 export {
   isPlatformAdminInvite,
   isPlatformAdminInviteMetadata,
@@ -16,4 +17,5 @@ export type { AdminGroupsDeps } from './groups';
 export type { AdminRolesDeps } from './roles';
 export type { AdminUsersDeps } from './users';
 export type { AdminTenantsDeps } from './tenants';
+export type { AdminMigrationsDeps } from './migrations';
 export type { AdminPlatformAdminsDeps } from './platformAdmins';
