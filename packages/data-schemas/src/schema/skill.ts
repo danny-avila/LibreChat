@@ -184,16 +184,17 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
      *
      * - `inline` — authored directly inside LibreChat.
      * - `github` — mirrored from a configured GitHub skill sync source.
+     * - `gitlab` — mirrored from a configured GitLab skill sync source.
      * - `notion` — reserved for future external sync integrations.
      */
     source: {
       type: String,
-      enum: ['inline', 'github', 'notion'],
+      enum: ['inline', 'github', 'gitlab', 'notion'],
       default: 'inline',
     },
     /**
-     * Arbitrary JSON provenance payload keyed by `source`. GitHub sync stores
-     * source id, upstream path, commit/blob SHAs, and sync status here.
+     * Arbitrary JSON provenance payload keyed by `source`. Git-based sync stores
+     * source id, upstream path, commit/blob identifiers, and sync status here.
      */
     sourceMetadata: {
       type: Schema.Types.Mixed,

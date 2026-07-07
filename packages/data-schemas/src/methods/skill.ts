@@ -480,7 +480,7 @@ export type CreateSkillInput = {
   category?: string;
   author: Types.ObjectId;
   authorName: string;
-  source?: 'inline' | 'github' | 'notion';
+  source?: 'inline' | 'github' | 'gitlab' | 'notion';
   sourceMetadata?: Record<string, unknown>;
   /**
    * When `true`, the skill is auto-primed into every turn. Callers pass this
@@ -499,7 +499,7 @@ export type UpdateSkillInput = {
   frontmatter?: Record<string, unknown>;
   category?: string;
   alwaysApply?: boolean;
-  source?: 'inline' | 'github' | 'notion';
+  source?: 'inline' | 'github' | 'gitlab' | 'notion';
   sourceMetadata?: Record<string, unknown>;
 };
 
@@ -936,12 +936,12 @@ export function createSkillMethods(
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
   findSkillBySourceIdentity: (params: {
-    source: 'github' | 'notion';
+    source: 'github' | 'gitlab' | 'notion';
     upstreamId: string;
     tenantId?: string;
   }) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   listSkillsBySource: (params: {
-    source: 'github' | 'notion';
+    source: 'github' | 'gitlab' | 'notion';
     sourceId: string;
   }) => Promise<Array<ISkill & { _id: Types.ObjectId }>>;
   listSkillFiles: (
@@ -1592,7 +1592,7 @@ export function createSkillMethods(
   }
 
   async function findSkillBySourceIdentity(params: {
-    source: 'github' | 'notion';
+    source: 'github' | 'gitlab' | 'notion';
     upstreamId: string;
     tenantId?: string;
   }): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
@@ -1609,7 +1609,7 @@ export function createSkillMethods(
   }
 
   async function listSkillsBySource(params: {
-    source: 'github' | 'notion';
+    source: 'github' | 'gitlab' | 'notion';
     sourceId: string;
   }): Promise<Array<ISkill & { _id: Types.ObjectId }>> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
