@@ -57,6 +57,30 @@ describe('buildCatalog', () => {
     expect(systemDefined?.kind === 'builtin' && systemDefined.userProvidedAuth).toBe(false);
   });
 
+  test('surfaces ask_user_question as a BUILTIN (not a plugin) when the server lists it', () => {
+    const askPlugin = makePlugin({ pluginKey: 'ask_user_question', name: 'Ask User' });
+    const items = buildCatalog({ ...toolInputs, regularTools: [askPlugin] });
+    const builtin = items.find((i) => i.kind === 'builtin' && i.id === 'ask_user_question');
+    expect(builtin).toBeDefined();
+    expect(builtin?.iconKey).toBe('ask_user_question');
+    // never double-listed in the plugin section
+    expect(items.find((i) => i.kind === 'tool' && i.id === 'ask_user_question')).toBeUndefined();
+  });
+
+  test('omits the ask_user_question builtin when the server filtered it or tools are off', () => {
+    const askPlugin = makePlugin({ pluginKey: 'ask_user_question', name: 'Ask User' });
+    // admin filtered (not in regularTools)
+    expect(
+      buildCatalog(toolInputs).find((i) => i.kind === 'builtin' && i.id === 'ask_user_question'),
+    ).toBeUndefined();
+    // tools capability off
+    expect(
+      buildCatalog({ ...emptyInputs, regularTools: [askPlugin] }).find(
+        (i) => i.kind === 'builtin' && i.id === 'ask_user_question',
+      ),
+    ).toBeUndefined();
+  });
+
   test('hides MCP items when the user lacks MCP permission', () => {
     const map = new Map();
     map.set('srv', { serverName: 'srv', isConfigured: true, tools: [] });

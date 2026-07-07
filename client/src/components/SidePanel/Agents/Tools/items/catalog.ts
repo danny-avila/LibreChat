@@ -118,6 +118,27 @@ export function buildCatalog(inputs: BuildCatalogInputs): AgentItem[] {
     });
   }
 
+  /**
+   * Native tool presented with the builtins (it ships with the app and pauses
+   * the run like a first-class feature), while remaining an `agent.tools`
+   * entry mechanically. Availability = the plugin listing itself: it appears
+   * only when the `tools` capability is on AND the server lists the plugin
+   * (i.e. the admin didn't filter it) — the same gates as the plugin section
+   * it graduated from.
+   */
+  if (
+    enabled.has(AgentCapabilities.tools) &&
+    inputs.regularTools.some((plugin) => plugin.pluginKey === 'ask_user_question')
+  ) {
+    items.push({
+      kind: 'builtin',
+      id: 'ask_user_question',
+      iconKey: 'ask_user_question',
+      name: 'com_ui_ask_user',
+      description: 'com_agents_ask_user_info',
+    });
+  }
+
   if (inputs.showMemory) {
     items.push({
       kind: 'builtin',
@@ -150,6 +171,9 @@ export function buildCatalog(inputs: BuildCatalogInputs): AgentItem[] {
 
   if (enabled.has(AgentCapabilities.tools)) {
     for (const plugin of inputs.regularTools) {
+      if (plugin.pluginKey === 'ask_user_question') {
+        continue; // surfaced as a builtin above — don't double-list as a plugin
+      }
       items.push({
         kind: 'tool',
         id: plugin.pluginKey,

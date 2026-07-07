@@ -152,3 +152,24 @@ describe('skillsEnabledTransition', () => {
     expect(skillsEnabledTransition([], undefined)).toBeUndefined();
   });
 });
+
+describe('computeToggleAction — ask_user_question builtin', () => {
+  const item = {
+    kind: 'builtin',
+    id: 'ask_user_question',
+    iconKey: 'ask_user_question',
+    name: 'com_ui_ask_user',
+    description: 'com_agents_ask_user_info',
+  } as const;
+
+  test('toggles agent.tools, never a capability field', () => {
+    expect(computeToggleAction(item as never, { selected: false })).toEqual({
+      type: 'tool-add',
+      id: 'ask_user_question',
+    });
+    expect(computeToggleAction(item as never, { selected: true })).toEqual({
+      type: 'tool-remove',
+      id: 'ask_user_question',
+    });
+  });
+});
