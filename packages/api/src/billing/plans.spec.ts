@@ -9,14 +9,16 @@ describe('PLANS', () => {
       expect(PLANS[code].code).toBe(code);
     }
   });
-  test('free only allows cheap tier with 3-message limit', () => {
+  test('free only allows cheap tier with a lifetime 3-message limit', () => {
     expect(PLANS.free.allowed_cost_tiers).toEqual(['cheap']);
-    expect(PLANS.free.monthly_message_limit).toBe(3);
+    expect(PLANS.free.quota_period).toBe('lifetime');
+    expect(PLANS.free.message_limit).toBe(3);
     expect(PLANS.free.features.image_gen).toBe(false);
   });
-  test('pro plans allow all tiers + all features', () => {
+  test('pro plans allow all tiers + all features with a daily quota period', () => {
     for (const code of ['pro_m', 'pro_q', 'pro_h'] as const) {
       expect(PLANS[code].allowed_cost_tiers).toEqual(['cheap', 'mid', 'expensive']);
+      expect(PLANS[code].quota_period).toBe('daily');
       expect(Object.values(PLANS[code].features).every(Boolean)).toBe(true);
     }
   });

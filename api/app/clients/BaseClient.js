@@ -5,6 +5,7 @@ const {
   countTokens,
   checkBalance,
   getBalanceConfig,
+  checkBillingAccess,
   buildMessageFiles,
   extractFileContext,
   encodeAndFormatAudios,
@@ -567,6 +568,14 @@ class BaseClient {
         },
       );
     }
+
+    await checkBillingAccess(
+      { userId: this.user, modelId: this.modelOptions?.model ?? this.model },
+      {
+        getActiveSubscriptionRecord: db.getActiveSubscriptionRecord,
+        incrementQuota: db.incrementQuota,
+      },
+    );
 
     const { completion, metadata } = await this.sendCompletion(payload, opts);
     if (this.abortController) {

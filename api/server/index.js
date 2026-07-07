@@ -26,6 +26,7 @@ const {
   updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
+const { Quota } = require('~/db/models');
 const {
   updateAccessPermissions,
   sweepOrphanedPreviews,
@@ -68,6 +69,12 @@ const startServer = async () => {
   await connectDb();
 
   logger.info('Connected to MongoDB');
+  /* Quota's unique { user_id, period_start } index is load-bearing: the atomic
+   * check-and-increment in incrementQuota() relies on it to fail a duplicate
+   * upsert once the quota is exhausted, rather than silently inserting a second
+   * quota document. autoIndex is disabled in most deployments (MONGO_AUTO_INDEX),
+   * so this index can't be left to Mongoose's automatic, connection-level sync. */
+  await Quota.syncIndexes();
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });

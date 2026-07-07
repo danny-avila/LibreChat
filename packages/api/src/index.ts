@@ -3,6 +3,8 @@ export * from './app';
 export * from './billing/plans';
 export * from './billing/applyPlanChange';
 export * from './billing/modelPricing';
+export * from './billing/modelRegistry';
+export * from './billing/gating';
 /* Admin */
 export * from './admin';
 export * from './cdn';

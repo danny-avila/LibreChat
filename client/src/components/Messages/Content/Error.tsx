@@ -32,6 +32,20 @@ type TExpiredKey = {
   endpoint: string;
 };
 
+type TUpgradeRequiredModel = {
+  current_plan: string;
+  required_tier: string;
+};
+
+type TFeatureNotAvailable = {
+  feature: string;
+};
+
+type TUpgradeRequiredQuota = {
+  used: number;
+  limit: number;
+};
+
 type TGenericError = {
   info: string;
 };
@@ -99,6 +113,18 @@ const errorMessages = {
     return `You hit the message limit. You have a cap of ${max} message${plural} per ${
       windowInMinutes > 1 ? `${windowInMinutes} minutes` : 'minute'
     }.`;
+  },
+  upgrade_required_model: (json: TUpgradeRequiredModel, localize: LocalizeFunction) => {
+    const { required_tier } = json;
+    return localize('com_error_upgrade_required_model', { 0: required_tier });
+  },
+  feature_not_available: (json: TFeatureNotAvailable, localize: LocalizeFunction) => {
+    const { feature } = json;
+    return localize('com_error_feature_not_available', { 0: feature });
+  },
+  upgrade_required_quota: (json: TUpgradeRequiredQuota, localize: LocalizeFunction) => {
+    const { limit } = json;
+    return localize('com_error_upgrade_required_quota', { 0: String(limit) });
   },
   token_balance: (json: TTokenBalance) => {
     const { balance, tokenCost, promptTokens, generations } = json;

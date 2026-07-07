@@ -22,6 +22,7 @@ const {
   preAuthTenantMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
+const { Quota } = require('~/db/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
@@ -274,6 +275,13 @@ if (cluster.isMaster) {
     /** Connect to MongoDB */
     await connectDb();
     logger.info(`Worker ${process.pid}: Connected to MongoDB`);
+
+    /* Quota's unique { user_id, period_start } index is load-bearing: the atomic
+     * check-and-increment in incrementQuota() relies on it to fail a duplicate
+     * upsert once the quota is exhausted, rather than silently inserting a second
+     * quota document. autoIndex is disabled in most deployments (MONGO_AUTO_INDEX),
+     * so this index can't be left to Mongoose's automatic, connection-level sync. */
+    await Quota.syncIndexes();
 
     /** Background index sync (non-blocking) */
     indexSync().catch((err) => {
