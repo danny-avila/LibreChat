@@ -2,7 +2,7 @@ import { useContext, useMemo, useState } from 'react';
 import { ChevronUp, TriangleAlert } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
-import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
+import { useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { ChatContext } from '~/Providers/ChatContext';
 import { splitOtherOption } from '~/utils/approval';
@@ -25,7 +25,7 @@ export default function AskUserQuestion({
   question: Agents.AskUserQuestionRequest;
 }) {
   const localize = useLocalize();
-  const { getStatus } = useApprovalContext();
+  const { getAskStatus } = useAskSubmitStatus();
   const { submitAskAnswer } = useResumeSubmit();
   const [answer, setAnswer] = useState('');
   const [localChecked, setLocalChecked] = useState<number[]>([]);
@@ -48,7 +48,7 @@ export default function AskUserQuestion({
     [question.options],
   );
 
-  const status = getStatus(actionId);
+  const status = getAskStatus(actionId);
   if (popoverVisible && isLivePause) {
     return null;
   }

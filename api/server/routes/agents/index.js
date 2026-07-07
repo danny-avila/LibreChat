@@ -289,7 +289,18 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     }
 
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
-    const abortResult = await GenerationJobManager.abortJob(jobStreamId);
+    // Re-attach a paused ask_user_question's args to the abort content BEFORE
+    // abortJob emits the final SSE. Redis reconstructs abort content from the
+    // chunk log, which never saw the pause-time stamp applied to the in-process
+    // contentParts — stamping inside abortJob (not after) means the LIVE client
+    // gets the question too, not just the saved message on reload.
+    const abortedAskPayload = job.metadata?.pendingAction?.payload;
+    const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
+      transformAbortContent: (content) =>
+        abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
+          ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
+          : content,
+    });
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
@@ -320,14 +331,10 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       hasPersistableAbortContent(abortResult.content)
     ) {
       const { jobData, text } = abortResult;
-      let { content } = abortResult;
-      // Redis reconstructs abort content from the graph/chunk log, which never saw
-      // the pause-time args stamp applied to the in-process contentParts — re-stamp
-      // here so a question abandoned via Stop persists with its question intact.
-      const abortedPayload = job.metadata?.pendingAction?.payload;
-      if (abortedPayload?.type === 'ask_user_question' && Array.isArray(content)) {
-        content = attachAskUserQuestionArgs(content, abortedPayload.question);
-      }
+      // `abortResult.content` is already stamped by `transformAbortContent`
+      // above (same content the final SSE carried), so the saved message and
+      // the live client agree.
+      const { content } = abortResult;
       const responseMessage = {
         messageId: jobData.responseMessageId,
         parentMessageId: jobData.userMessage.messageId,

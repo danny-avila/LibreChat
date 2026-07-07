@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { atom, useRecoilState, useRecoilValue } from 'recoil';
 import {
-  useApprovalContext,
+  useAskSubmitStatus,
   useResumeSubmit,
 } from '~/components/Chat/Messages/Content/ApprovalContext';
 import {
@@ -74,14 +74,16 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const [checked, setChecked] = useRecoilState(askAnswerCheckedAtom);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
   const { submitAskAnswer } = useResumeSubmit();
-  const { getStatus } = useApprovalContext();
+  /** Recoil-backed so the lock/status works from the composer, which renders
+   *  outside `ApprovalProvider` (where the context status would be inert). */
+  const { getAskStatus } = useAskSubmitStatus();
   /** Absent outside ChatView (Share/search render the answer card without the
    *  composer form) — resets are simply skipped there. */
   const resetComposer = useOptionalChatFormContext()?.reset;
 
   /** The answer is in flight (or terminal): every submit path must become a
    *  no-op so a double-click or a stray Skip can't race a second resume. */
-  const status = liveAsk != null ? getStatus(liveAsk.actionId) : 'idle';
+  const status = liveAsk != null ? getAskStatus(liveAsk.actionId) : 'idle';
   const locked = status === 'submitting' || status === 'submitted' || status === 'expired';
   const dismissed = liveAsk != null && dismissedIds.includes(liveAsk.actionId);
   /**
