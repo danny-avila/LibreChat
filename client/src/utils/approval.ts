@@ -235,6 +235,76 @@ export function removeAskUserQuestionPart(message: TMessage, actionId: string): 
 }
 
 /**
+ * Resolve an answered ask-user-question pause on the client, mirroring the
+ * server's resume-time stamp so the durable Q&A card shows the answer the
+ * moment the user submits (the server-patched part otherwise only arrives at
+ * finalize): removes the synthetic card part for `actionId` AND patches the
+ * newest unanswered `ask_user_question` tool_call with `output = answer`
+ * (seeding `args` from the synthetic part's question when the streamed args
+ * were lost). Pure — returns the input message when nothing matched.
+ */
+export function resolveAskUserQuestionPart(
+  message: TMessage,
+  actionId: string,
+  answer: string,
+): TMessage {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return message;
+  }
+  const syntheticPart = content.find(
+    (part) =>
+      isAskUserQuestionPart(part) &&
+      (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].actionId === actionId,
+  ) as unknown as AskUserQuestionPart | undefined;
+  if (!syntheticPart) {
+    return message;
+  }
+
+  let patched = false;
+  const nextContent: TMessageContentParts[] = [];
+  for (const part of content) {
+    if (
+      isAskUserQuestionPart(part) &&
+      (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].actionId === actionId
+    ) {
+      continue; // strip the pause-scoped card
+    }
+    nextContent.push(part);
+  }
+  for (let i = nextContent.length - 1; i >= 0; i--) {
+    const part = nextContent[i] as { type?: string; tool_call?: Agents.ToolCall } | undefined;
+    const toolCall = part?.tool_call;
+    if (
+      part?.type !== ContentTypes.TOOL_CALL ||
+      toolCall?.name !== ASK_USER_QUESTION ||
+      (typeof toolCall.output === 'string' && toolCall.output.length > 0)
+    ) {
+      continue;
+    }
+    const hasArgs =
+      (typeof toolCall.args === 'string' && toolCall.args.trim().length > 0) ||
+      (toolCall.args != null && typeof toolCall.args === 'object');
+    nextContent[i] = {
+      ...(part as object),
+      tool_call: {
+        ...toolCall,
+        ...(hasArgs ? {} : { args: JSON.stringify(syntheticPart[ASK_USER_QUESTION].question) }),
+        output: answer,
+        progress: 1,
+      },
+    } as TMessageContentParts;
+    patched = true;
+    break;
+  }
+
+  if (!patched && nextContent.length === content.length) {
+    return message;
+  }
+  return { ...message, content: nextContent };
+}
+
+/**
  * Applies a {@link Agents.PendingAction} onto the target response message,
  * dispatching on the interrupt type. Pure — returns a new message only when the
  * mapping actually changed something.

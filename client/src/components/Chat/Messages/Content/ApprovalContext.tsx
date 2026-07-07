@@ -6,7 +6,7 @@ import {
   useSubmitAskAnswerMutation,
   type ResumeAgentFields,
 } from '~/data-provider';
-import { removeAskUserQuestionPart } from '~/utils/approval';
+import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
 
@@ -296,11 +296,11 @@ export function useResumeSubmit() {
             if (messages && chatContext?.setMessages) {
               let changed = false;
               const next = messages.map((message) => {
-                const stripped = removeAskUserQuestionPart(message, actionId);
-                if (stripped !== message) {
+                const resolved = resolveAskUserQuestionPart(message, actionId, answer);
+                if (resolved !== message) {
                   changed = true;
                 }
-                return stripped;
+                return resolved;
               });
               if (changed) {
                 chatContext.setMessages(next);

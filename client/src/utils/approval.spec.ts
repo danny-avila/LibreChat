@@ -8,6 +8,7 @@ import {
   findPendingActionMessageIndex,
   removeAskUserQuestionPart,
   parseAskUserQuestionArgs,
+  resolveAskUserQuestionPart,
 } from './approval';
 
 const toolCallPart = (id: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
@@ -266,6 +267,60 @@ describe('removeAskUserQuestionPart', () => {
   it('tolerates non-array content', () => {
     const weird = msg({ content: undefined as unknown as TMessageContentParts[] });
     expect(removeAskUserQuestionPart(weird, 'a1')).toBe(weird);
+  });
+});
+
+describe('resolveAskUserQuestionPart', () => {
+  const withCardAndToolCall = () => {
+    const base = msg({
+      content: [
+        textPart('pre-pause'),
+        {
+          type: 'tool_call',
+          tool_call: { id: 'tc1', name: 'ask_user_question', args: '', type: 'tool_call' },
+        } as unknown as TMessageContentParts,
+      ],
+    });
+    return applyPendingAction(base, askAction());
+  };
+
+  it('strips the card and stamps the answer (seeding args from the synthetic question)', () => {
+    const resolved = resolveAskUserQuestionPart(withCardAndToolCall(), 'a1', 'green');
+    const content = resolved.content as Array<{
+      type?: string;
+      tool_call?: Record<string, unknown>;
+    }>;
+    expect(content.some((part) => part?.type === 'ask_user_question')).toBe(false);
+    const toolCall = content[1]?.tool_call as Record<string, unknown>;
+    expect(toolCall.output).toBe('green');
+    expect(toolCall.progress).toBe(1);
+    expect(JSON.parse(toolCall.args as string)).toMatchObject({ question: 'What name?' });
+  });
+
+  it('keeps streamed args when the part already has them', () => {
+    const base = msg({
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: {
+            id: 'tc1',
+            name: 'ask_user_question',
+            args: '{"question":"streamed"}',
+            type: 'tool_call',
+          },
+        } as unknown as TMessageContentParts,
+      ],
+    });
+    const resolved = resolveAskUserQuestionPart(applyPendingAction(base, askAction()), 'a1', 'x');
+    const toolCall = (resolved.content as Array<{ tool_call?: Record<string, unknown> }>)[0]
+      ?.tool_call as Record<string, unknown>;
+    expect(toolCall.args).toBe('{"question":"streamed"}');
+    expect(toolCall.output).toBe('x');
+  });
+
+  it('returns the same reference when the message has no matching synthetic part', () => {
+    const plain = msg({ content: [textPart('hi')] });
+    expect(resolveAskUserQuestionPart(plain, 'a1', 'x')).toBe(plain);
   });
 });
 

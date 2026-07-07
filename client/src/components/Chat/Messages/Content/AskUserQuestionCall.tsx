@@ -12,13 +12,27 @@ import { useLocalize } from '~/hooks';
 export default function AskUserQuestionCall({
   args,
   output,
+  isSubmitting = false,
 }: {
   args: string | Record<string, unknown> | undefined;
   output: string;
+  isSubmitting?: boolean;
 }) {
   const localize = useLocalize();
   const question = parseAskUserQuestionArgs(args);
   const answered = output.length > 0;
+
+  /**
+   * While the turn is live and unanswered, the INTERACTIVE card (rendered from
+   * the pendingAction's synthetic part) owns the question UI — rendering the
+   * durable record too would duplicate it with a misleading "no answer" line.
+   * Once the user answers, the submit handler stamps `output` onto this part,
+   * so the record takes over immediately; an abandoned pause only shows its
+   * "no answer" state after the turn is no longer submitting.
+   */
+  if (!answered && isSubmitting) {
+    return null;
+  }
 
   /** Prefer the picked option's label over its wire value when they differ. */
   const answerLabel = question?.options?.find((option) => option.value === output)?.label ?? output;

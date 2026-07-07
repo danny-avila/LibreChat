@@ -204,6 +204,7 @@ const Part = memo(function Part({
             <AskUserQuestionCall
               args={toolCall.args}
               output={typeof toolCall.output === 'string' ? toolCall.output : ''}
+              isSubmitting={isSubmitting}
             />
           );
         } else if (toolCall.name === 'skill') {
