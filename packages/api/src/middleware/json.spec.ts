@@ -1,5 +1,5 @@
-import { handleJsonParseError } from './json';
 import type { Request, Response, NextFunction } from 'express';
+import { handleJsonParseError } from './json';
 
 describe('handleJsonParseError', () => {
   let req: Partial<Request>;
