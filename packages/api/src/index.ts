@@ -43,6 +43,8 @@ export * from './modelSpecs';
 export * from './agents';
 /* Prompts */
 export * from './prompts';
+/* Projects */
+export * from './projects';
 /* Skills */
 export * from './skills';
 /* Endpoints */

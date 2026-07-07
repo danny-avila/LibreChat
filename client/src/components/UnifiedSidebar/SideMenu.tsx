@@ -7,11 +7,12 @@ import {
   Sun,
   Moon,
   Image,
+  Folder,
   Search,
+  Bookmark,
   Telescope,
   SquarePen,
   LayoutGrid,
-  FolderPlus,
   MessageCircleHeart,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -53,14 +54,6 @@ const NavRow = memo(function NavRow({
       <Icon className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
       <span className="truncate">{label}</span>
     </button>
-  );
-});
-
-const SectionHeader = memo(function SectionHeader({ children }: { children: string }) {
-  return (
-    <div className="px-3 pb-1 pt-3 text-xs font-medium uppercase tracking-wider text-text-tertiary">
-      {children}
-    </div>
   );
 });
 
@@ -153,7 +146,21 @@ function SideMenu({ onCollapse }: { onCollapse?: () => void }) {
           label={localize('com_ui_search')}
           onClick={() => navigate('/search')}
         />
-        <NavRow icon={Image} label={localize('com_ui_images')} onClick={() => navigate('/images')} />
+        <NavRow
+          icon={Folder}
+          label={localize('com_ui_projects')}
+          onClick={() => navigate('/projects')}
+        />
+        <NavRow
+          icon={Bookmark}
+          label={localize('com_ui_bookmarks')}
+          onClick={() => navigate('/bookmarks')}
+        />
+        <NavRow
+          icon={Image}
+          label={localize('com_ui_images')}
+          onClick={() => navigate('/images')}
+        />
         <NavRow
           icon={LayoutGrid}
           label={localize('com_ui_apps')}
@@ -164,11 +171,6 @@ function SideMenu({ onCollapse }: { onCollapse?: () => void }) {
           label={localize('com_ui_deep_research')}
           onClick={() => navigate('/c/new')}
         />
-      </div>
-
-      <div className="flex flex-shrink-0 flex-col px-2">
-        <SectionHeader>{localize('com_nav_my_projects')}</SectionHeader>
-        <NavRow icon={FolderPlus} label={localize('com_nav_new_project')} disabled />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">

@@ -41,6 +41,26 @@ const loadSkillsView = () =>
 const loadImagesView = () =>
   import('~/components/Images/layouts/ImagesView').then((m) => ({ Component: m.default }));
 
+const loadProjectsView = () =>
+  import('~/components/Projects').then((m) => ({
+    Component: m.ProjectsView,
+  }));
+
+const loadProjectWorkspace = () =>
+  import('~/components/Projects').then((m) => ({
+    Component: m.ProjectWorkspace,
+  }));
+
+const loadBookmarksView = () =>
+  import('~/components/Bookmarks').then((m) => ({
+    Component: m.BookmarksView,
+  }));
+
+const loadBookmarkWorkspace = () =>
+  import('~/components/Bookmarks').then((m) => ({
+    Component: m.BookmarkWorkspace,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -151,6 +171,22 @@ export const router = createBrowserRouter(
             {
               path: 'skills/:skillId/edit',
               lazy: loadSkillsView,
+            },
+            {
+              path: 'projects',
+              lazy: loadProjectsView,
+            },
+            {
+              path: 'projects/:projectId',
+              lazy: loadProjectWorkspace,
+            },
+            {
+              path: 'bookmarks',
+              lazy: loadBookmarksView,
+            },
+            {
+              path: 'bookmarks/:tag',
+              lazy: loadBookmarkWorkspace,
             },
             {
               path: 'agents',

@@ -19,6 +19,7 @@ import {
   POLL_TIMEOUT_COUNT,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import { applyStyleToPrompt, DEFAULT_IMAGE_STYLE } from './styles';
 import ImageControls from './ImageControls';
 import ImageGallery from './ImageGallery';
@@ -41,6 +42,7 @@ export default function ImageWorkspace() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
   const pollCountRef = useRef(0);
 
   // Sync model/aspect-ratio defaults once config loads
@@ -157,7 +159,12 @@ export default function ImageWorkspace() {
         </p>
 
         {/* Composer card */}
-        <div className="rounded-2xl border border-border-light bg-surface-primary p-3 shadow-sm">
+        <div
+          className={cn(
+            'rounded-3xl border border-border-light bg-surface-chat p-3 transition-all duration-200',
+            isFocused ? 'shadow-lg' : 'shadow-md',
+          )}
+        >
           <div className="flex items-start gap-2">
             <ImageIcon
               className="mt-2.5 h-5 w-5 flex-shrink-0 text-text-tertiary"
@@ -166,6 +173,8 @@ export default function ImageWorkspace() {
             <TextareaAutosize
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               placeholder={localize('com_ui_image_prompt_placeholder')}
               aria-label={localize('com_ui_image_prompt_placeholder')}
               className="min-h-[40px] w-full resize-none bg-transparent py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
@@ -195,6 +204,7 @@ export default function ImageWorkspace() {
 
             <Button
               type="button"
+              variant="submit"
               onClick={handleGenerate}
               disabled={isGenerating || !prompt.trim() || isUploading}
               className="flex-shrink-0 rounded-full"
