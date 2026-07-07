@@ -165,16 +165,21 @@ const ChatForm = memo(function ChatForm({
     setIsTextAreaFocused(false);
   }, []);
 
+  const answerMode = useAskAnswerMode(conversationId);
+
   useAutoSave({
     files,
     setFiles,
     textAreaRef,
     conversationId,
     isSubmitting,
+    // While a question pause is live the composer is the answer box: drafts
+    // swap to the answer's own key, and the conversation draft is restored
+    // when the question resolves.
+    draftId: answerMode.draftId,
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
-  const answerMode = useAskAnswerMode(conversationId);
 
   const handleKeyUp = useHandleKeyUp({
     index,
@@ -253,9 +258,9 @@ const ChatForm = memo(function ChatForm({
     <form
       onSubmit={methods.handleSubmit((data) => {
         // Answer mode: composer text answers the paused run instead of
-        // starting a new turn. Dismissing the popover restores normal sends.
+        // starting a new turn (submitText resets the composer itself).
+        // Dismissing the popover restores normal sends.
         if (answerMode.active && answerMode.submitText(data.text)) {
-          methods.reset();
           return;
         }
         return submitMessage(data);

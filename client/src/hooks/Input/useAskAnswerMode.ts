@@ -7,6 +7,8 @@ import {
 } from '~/utils/approval';
 import { useResumeSubmit } from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import { useOptionalChatFormContext } from '~/Providers';
+import { getAskAnswerDraftId } from '~/utils';
 
 /** Dismissed action ids — recoil so every consumer reacts. */
 const dismissedAskActionsAtom = atom<string[]>({
@@ -23,9 +25,12 @@ const askAnswerSelectionAtom = atom<number | null>({
 /**
  * First-class "answer mode" for a live `ask_user_question` pause, with
  * select-then-confirm semantics (borrowed from Claude Code's AskUserQuestion
- * UI): rows highlight on click/arrow/digit, free-form goes in the popover's
- * OWN inline input (the composer stays a normal composer — Stop keeps meaning
- * stop), and an explicit Submit (or Enter) fires the answer. `Skip` == dismiss.
+ * UI): rows highlight on click/arrow/digit and an explicit Submit (or Enter)
+ * fires the answer. The composer IS the free-form answer box — its placeholder
+ * swaps, Enter submits the typed text, and its autosave drafts under `draftId`
+ * (the question's own key) so the conversation draft is stashed on entry and
+ * restored once the question resolves. `Skip` resumes the run with a canned
+ * decline notice; only the × dismiss leaves the pause standing.
  *
  * `handleComposerKeyDown` only steers selection from the EMPTY composer and
  * reports whether it consumed the key.
@@ -42,9 +47,16 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const [dismissedIds, setDismissedIds] = useRecoilState(dismissedAskActionsAtom);
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
   const { submitAskAnswer } = useResumeSubmit();
+  /** Absent outside ChatView (Share/search render the answer card without the
+   *  composer form) — resets are simply skipped there. */
+  const resetComposer = useOptionalChatFormContext()?.reset;
 
   const dismissed = liveAsk != null && dismissedIds.includes(liveAsk.actionId);
   const active = liveAsk != null && !dismissed;
+  /** Answer-phase draft key: handed to useAutoSave so the composer drafts
+   *  under the question's own key while answer mode is live, leaving the
+   *  conversation draft untouched until the swap-back restores it. */
+  const draftId = active && liveAsk != null ? getAskAnswerDraftId(liveAsk.actionId) : null;
   const { choices: options, otherLabel } = useMemo(
     () => splitOtherOption(liveAsk?.question.options),
     [liveAsk],
@@ -73,8 +85,12 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     }
     submitAskAnswer(liveAsk.actionId, options[selected].value);
     setSelected(null);
+    // Anything left in the composer was a dead answer draft: clear it so the
+    // key swap stores nothing under the ask key and the conversation draft
+    // comes back into an empty box.
+    resetComposer?.();
     return true;
-  }, [liveAsk, canSubmit, selected, options, submitAskAnswer, setSelected]);
+  }, [liveAsk, canSubmit, selected, options, submitAskAnswer, setSelected, resetComposer]);
 
   /** Composer text answers the question directly; true when consumed. */
   const submitText = useCallback(
@@ -86,10 +102,11 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       if (trimmed.length > 0) {
         submitAskAnswer(liveAsk.actionId, trimmed);
         setSelected(null);
+        resetComposer?.();
       }
       return true;
     },
-    [active, liveAsk, submitAskAnswer, setSelected],
+    [active, liveAsk, submitAskAnswer, setSelected, resetComposer],
   );
 
   /**
@@ -103,8 +120,9 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     }
     submitAskAnswer(liveAsk.actionId, ASK_USER_DECLINED_ANSWER);
     setSelected(null);
+    resetComposer?.();
     return true;
-  }, [active, liveAsk, submitAskAnswer, setSelected]);
+  }, [active, liveAsk, submitAskAnswer, setSelected, resetComposer]);
 
   /** Selection steering from the empty composer; true when consumed. */
   const handleComposerKeyDown = useCallback(
@@ -174,5 +192,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     handleComposerKeyDown,
     /** Model-supplied "Other"-style label, folded into the inline input. */
     otherLabel,
+    draftId,
   };
 }
