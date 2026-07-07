@@ -177,6 +177,34 @@ function applyAskUserQuestion(
 }
 
 /**
+ * Removes the synthetic ask-user-question part for `actionId` from a message.
+ * Pure — returns the same message reference when nothing matched.
+ *
+ * Called when the answer submits successfully: the card is pause-scoped UI, and
+ * once the run resumes the server streams new content parts at ABSOLUTE indices
+ * continuing after the pre-pause parts — exactly the slot the appended synthetic
+ * part occupies. Left in place, it blocks the incoming part at that index and
+ * the resumed segment doesn't render until finalize replaces the message.
+ */
+export function removeAskUserQuestionPart(message: TMessage, actionId: string): TMessage {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return message;
+  }
+  const nextContent = content.filter(
+    (part) =>
+      !(
+        isAskUserQuestionPart(part) &&
+        (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].actionId === actionId
+      ),
+  );
+  if (nextContent.length === content.length) {
+    return message;
+  }
+  return { ...message, content: nextContent };
+}
+
+/**
  * Applies a {@link Agents.PendingAction} onto the target response message,
  * dispatching on the interrupt type. Pure — returns a new message only when the
  * mapping actually changed something.

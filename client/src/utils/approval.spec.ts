@@ -6,6 +6,7 @@ import {
   countTaggedApprovalParts,
   getAskUserQuestionPart,
   findPendingActionMessageIndex,
+  removeAskUserQuestionPart,
 } from './approval';
 
 const toolCallPart = (id: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
@@ -222,6 +223,27 @@ describe('applyPendingAction — ask_user_question', () => {
     const message = msg({ content: undefined as unknown as TMessageContentParts[] });
     const result = applyPendingAction(message, askAction());
     expect(result.content).toHaveLength(1);
+  });
+});
+
+describe('removeAskUserQuestionPart', () => {
+  it('strips the synthetic part for the matching actionId and keeps everything else', () => {
+    const withCard = applyPendingAction(msg({ content: [textPart('hello')] }), askAction());
+    const stripped = removeAskUserQuestionPart(withCard, 'a1');
+    expect(stripped.content).toHaveLength(1);
+    expect(stripped.content?.[0]).toMatchObject({ type: 'text' });
+  });
+
+  it('returns the same reference when no matching part exists (different actionId / none)', () => {
+    const plain = msg({ content: [textPart('hi')] });
+    expect(removeAskUserQuestionPart(plain, 'a1')).toBe(plain);
+    const withCard = applyPendingAction(plain, askAction());
+    expect(removeAskUserQuestionPart(withCard, 'other-action')).toBe(withCard);
+  });
+
+  it('tolerates non-array content', () => {
+    const weird = msg({ content: undefined as unknown as TMessageContentParts[] });
+    expect(removeAskUserQuestionPart(weird, 'a1')).toBe(weird);
   });
 });
 

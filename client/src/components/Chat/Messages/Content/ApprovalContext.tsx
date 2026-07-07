@@ -6,6 +6,7 @@ import {
   useSubmitAskAnswerMutation,
   type ResumeAgentFields,
 } from '~/data-provider';
+import { removeAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
 
@@ -226,7 +227,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
  * than crashing.
  */
 export function useResumeSubmit() {
-  const conversation = useContext(ChatContext)?.conversation;
+  const chatContext = useContext(ChatContext);
+  const conversation = chatContext?.conversation;
   const getEphemeralAgent = useGetEphemeralAgent();
   const approvalMutation = useSubmitToolApprovalMutation();
   const askMutation = useSubmitAskAnswerMutation();
@@ -280,12 +282,36 @@ export function useResumeSubmit() {
       askMutation.mutate(
         { ...fields, actionId, answer },
         {
-          onSuccess: () => setStatus(actionId, 'submitted'),
+          onSuccess: () => {
+            setStatus(actionId, 'submitted');
+            /**
+             * Drop the synthetic question part now that the run is resuming: the
+             * server streams the resumed segment at ABSOLUTE content indices
+             * continuing after the pre-pause parts — the exact slot this appended
+             * part occupies. Left in place it blocks that index and the resumed
+             * output doesn't render until finalize. The Q&A's durable record is
+             * the ask_user_question tool call itself.
+             */
+            const messages = chatContext?.getMessages?.();
+            if (messages && chatContext?.setMessages) {
+              let changed = false;
+              const next = messages.map((message) => {
+                const stripped = removeAskUserQuestionPart(message, actionId);
+                if (stripped !== message) {
+                  changed = true;
+                }
+                return stripped;
+              });
+              if (changed) {
+                chatContext.setMessages(next);
+              }
+            }
+          },
           onError: (error) => setStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
         },
       );
     },
-    [askMutation, buildResumeFields, setStatus],
+    [askMutation, buildResumeFields, setStatus, chatContext],
   );
 
   return { submitToolApproval, submitAskAnswer };
