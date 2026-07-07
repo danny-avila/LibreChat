@@ -21,9 +21,9 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
-import AskUserQuestionPopover, { useLiveAskUserQuestion } from './AskUserQuestionPopover';
-import { useResumeSubmit } from '../Messages/Content/ApprovalContext';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
+import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
+import AskUserQuestionPopover from './AskUserQuestionPopover';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -174,9 +174,7 @@ const ChatForm = memo(function ChatForm({
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
-  const { liveAsk, dismissed: askDismissed } = useLiveAskUserQuestion(conversationId);
-  const { submitAskAnswer } = useResumeSubmit();
-  const askActive = liveAsk != null && !askDismissed;
+  const answerMode = useAskAnswerMode(conversationId);
 
   const handleKeyUp = useHandleKeyUp({
     index,
@@ -195,7 +193,7 @@ const ChatForm = memo(function ChatForm({
     disabled: disableInputs,
     // While a question pause is live, the composer doubles as the free-form
     // answer box (the popover's option list covers the curated choices).
-    placeholder: askActive ? localize('com_ui_something_else') : placeholder,
+    placeholder: answerMode.active ? localize('com_ui_something_else') : placeholder,
   });
 
   useQueryParams({ textAreaRef });
@@ -253,15 +251,11 @@ const ChatForm = memo(function ChatForm({
   return (
     <form
       onSubmit={methods.handleSubmit((data) => {
-        // A live question routes the composer's text to the paused run as the
+        // Answer mode routes the composer's text to the paused run as the
         // free-form answer instead of starting a new turn (which would replace
         // the paused job). Dismissing the popover restores normal sends.
-        if (askActive && liveAsk) {
-          const text = data.text.trim();
-          if (text.length > 0) {
-            submitAskAnswer(liveAsk.actionId, text);
-            methods.reset();
-          }
+        if (answerMode.submitText(data.text)) {
+          methods.reset();
           return;
         }
         return submitMessage(data);
@@ -297,9 +291,7 @@ const ChatForm = memo(function ChatForm({
             textAreaRef={textAreaRef}
           />
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          {index === 0 && (
-            <AskUserQuestionPopover conversationId={conversationId} textAreaRef={textAreaRef} />
-          )}
+          {index === 0 && <AskUserQuestionPopover conversationId={conversationId} />}
           <SkillsCommand
             index={index}
             textAreaRef={textAreaRef}
@@ -354,7 +346,14 @@ const ChatForm = memo(function ChatForm({
                     }}
                     disabled={disableInputs || isNotAppendable}
                     onPaste={handlePaste}
-                    onKeyDown={handleKeyDown}
+                    onKeyDown={(e) => {
+                      // Answer mode consumes option-navigation keys from the
+                      // empty composer; everything else follows the normal path.
+                      if (answerMode.handleKeyDown(e)) {
+                        return;
+                      }
+                      handleKeyDown(e);
+                    }}
                     onKeyUp={handleKeyUp}
                     onCompositionStart={handleCompositionStart}
                     onCompositionEnd={handleCompositionEnd}
