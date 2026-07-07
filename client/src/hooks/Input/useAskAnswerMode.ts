@@ -79,17 +79,26 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    *  composer form) — resets are simply skipped there. */
   const resetComposer = useOptionalChatFormContext()?.reset;
 
+  /** The answer is in flight (or terminal): every submit path must become a
+   *  no-op so a double-click or a stray Skip can't race a second resume. */
+  const status = liveAsk != null ? getStatus(liveAsk.actionId) : 'idle';
+  const locked = status === 'submitting' || status === 'submitted' || status === 'expired';
   const dismissed = liveAsk != null && dismissedIds.includes(liveAsk.actionId);
-  const active = liveAsk != null && !dismissed;
+  /**
+   * An EXPIRED question can no longer be answered, so it drops out of answer
+   * mode entirely: the popover closes, the composer reverts to a normal
+   * composer, and the chat card (always mounted for the live pause) becomes
+   * the sole surface — it carries the only "this action expired" message, so
+   * suppressing it behind an open popover would strand the user at a locked
+   * card with no explanation. (`error`, unlike `expired`, stays active: it is
+   * retryable — see the composer-preserving submit path.)
+   */
+  const active = liveAsk != null && !dismissed && status !== 'expired';
   const collapsed = active && collapsedIds.includes(liveAsk.actionId);
   /** The popover renders only while expanded; collapse keeps `active` (and the
    *  composer's answer role) but hands the question display to the chat card. */
   const popoverVisible = active && !collapsed;
   const multiSelect = liveAsk != null && liveAsk.question.multiSelect === true;
-  /** The answer is in flight (or terminal): every submit path must become a
-   *  no-op so a double-click or a stray Skip can't race a second resume. */
-  const status = liveAsk != null ? getStatus(liveAsk.actionId) : 'idle';
-  const locked = status === 'submitting' || status === 'submitted' || status === 'expired';
   /** Answer-phase draft key: handed to useAutoSave so the composer drafts
    *  under the question's own key while answer mode is live, leaving the
    *  conversation draft untouched until the swap-back restores it. */
