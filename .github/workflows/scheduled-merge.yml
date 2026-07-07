@@ -2,9 +2,11 @@ name: Scheduled maintenance-window merge
 
 on:
   schedule:
-    # 02:00 UTC daily = 22:00 US Eastern (EDT, summer) / 21:00 US Eastern (EST, winter).
+    # 05:00 UTC daily = 01:00 US Eastern (EDT, summer) / 00:00 US Eastern (EST, winter).
+    # Chosen so the container restart lands ~1:25 AM ET / ~10:25 PM PT, well after
+    # West Coast clients (Nashville-workshop tenant, etc.) have signed off for the day.
     # Both times sit inside the 9 PM – 7 AM ET maintenance window.
-    - cron: '0 2 * * *'
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
