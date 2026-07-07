@@ -278,6 +278,18 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       if (!active) {
         return false;
       }
+      /**
+       * Let IME composition commit normally: with a CJK keyboard, Enter
+       * commits the in-progress composition rather than submitting, and the
+       * composition buffer can leave `value` empty mid-compose — so bail
+       * before ANY Enter-submit or digit/arrow steering. Mirrors the composer
+       * guard in `useTextarea` (Safari reports `isComposing` inconsistently,
+       * hence the `key`/`keyCode` fallbacks); this handler runs first, so the
+       * guard must live here too.
+       */
+      if (e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229) {
+        return false;
+      }
       const composerText = e.currentTarget.value;
       if (composerText.trim().length > 0) {
         // The composer IS the free-form answer box: Enter submits the typed
