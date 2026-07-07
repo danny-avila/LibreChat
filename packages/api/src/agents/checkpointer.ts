@@ -143,13 +143,14 @@ const CHECKPOINT_SIZE_HEADROOM_BYTES = 1024 * 1024;
  * way (the document can't be written), so failing here as a typed {@link CheckpointTooLargeError}
  * turns an opaque `BSONObjectTooLarge` crash into an actionable one.
  */
-export const CHECKPOINT_HARD_LIMIT_BYTES = MAX_BSON_DOCUMENT_BYTES - CHECKPOINT_SIZE_HEADROOM_BYTES;
+export const CHECKPOINT_HARD_LIMIT_BYTES: number =
+  MAX_BSON_DOCUMENT_BYTES - CHECKPOINT_SIZE_HEADROOM_BYTES;
 
 /**
  * Warn once a persisted checkpoint crosses this soft threshold (~50% of the ceiling), so a
  * conversation's checkpoint growth is visible in logs well before it reaches the hard limit.
  */
-export const CHECKPOINT_WARN_BYTES = 8 * 1024 * 1024;
+export const CHECKPOINT_WARN_BYTES: number = 8 * 1024 * 1024;
 
 /**
  * A HITL checkpoint whose serialized state exceeds {@link CHECKPOINT_HARD_LIMIT_BYTES} — more
