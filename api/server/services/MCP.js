@@ -414,11 +414,21 @@ function createElicitationStart({ res, stepId, streamId = null }) {
     // `on_elicitation_resolved` onto this stream. `elicitationId` is retained
     // for future `notifications/elicitation/complete` correlation; it is not
     // part of the client-facing `on_elicitation` payload below.
+    // Schedule TTL-based cleanup so an abandoned flow (tab closed, timed out, or
+    // a completion that 404'd/never arrived) can't retain its `res`/context
+    // entry indefinitely — `evictStale` only sweeps on insertion once the map
+    // grows past MAX_CACHE_SIZE, which may never happen under low/medium traffic.
+    // Cleared in `resolveElicitationFlow` on normal resolution.
+    const cleanupTimer = setTimeout(() => {
+      elicitationFlowContext.delete(flowId);
+    }, ELICITATION_CONTEXT_TTL_MS);
+    cleanupTimer.unref?.();
     elicitationFlowContext.set(flowId, {
       res,
       streamId,
       stepId,
       elicitationId,
+      cleanupTimer,
       createdAt: Date.now(),
     });
     evictStale(elicitationFlowContext, ELICITATION_CONTEXT_TTL_MS);
@@ -467,6 +477,7 @@ async function resolveElicitationFlow({ flowId, action, content }) {
   if (!context) {
     return false;
   }
+  clearTimeout(context.cleanupTimer);
   elicitationFlowContext.delete(flowId);
 
   const eventData = {

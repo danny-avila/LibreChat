@@ -1030,9 +1030,23 @@ router.post('/elicitation/:flowId', requireJwtAuth, async (req, res) => {
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
 
-    const flowState = await flowManager.getFlowState(flowId, 'mcp_elicit');
+    let flowState = await flowManager.getFlowState(flowId, 'mcp_elicit');
+    if (!flowState) {
+      // Race recovery: the card can reach the user a beat before the tool call's
+      // handler persists the PENDING flow state; retry once (mirrors the
+      // race-recovery in FlowStateManager.monitorFlow) before giving up.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      flowState = await flowManager.getFlowState(flowId, 'mcp_elicit');
+    }
     if (!flowState) {
       return res.status(404).json({ error: 'Flow not found' });
+    }
+    if (flowState.status !== 'PENDING') {
+      // Already resolved (e.g. the same card open in a second tab, or a retried
+      // request). `completeFlow` returns ok for a COMPLETED flow without changing
+      // the stored result, so a late/second action would mislead that client
+      // while the waiting tool call already used the first action. Reject instead.
+      return res.status(409).json({ error: 'Elicitation already resolved' });
     }
 
     const ok = await flowManager.completeFlow(flowId, 'mcp_elicit', { action, content });

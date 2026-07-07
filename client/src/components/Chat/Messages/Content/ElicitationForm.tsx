@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Spinner } from '@librechat/client';
 import { ContentTypes, dataService } from 'librechat-data-provider';
 import {
@@ -148,6 +148,15 @@ export default function ElicitationForm({
   const [resolvedAction, setResolvedAction] = useState<ElicitationAction | undefined>(
     initialAction,
   );
+  // `initialAction` can arrive/change after mount when resolution comes in via
+  // the `on_elicitation_resolved` SSE event (or a history replay) — which patches
+  // the message's content part — rather than this component's own `submitAction`.
+  // Sync it so the card reflects the resolved state instead of staying interactive.
+  useEffect(() => {
+    if (initialAction != null) {
+      setResolvedAction(initialAction);
+    }
+  }, [initialAction]);
 
   const submitting = pendingAction != null;
   const identity = [serverName, toolName].filter(Boolean).join(' · ') || undefined;
