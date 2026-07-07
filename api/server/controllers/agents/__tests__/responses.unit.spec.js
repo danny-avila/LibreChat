@@ -1071,6 +1071,45 @@ describe('createResponse controller', () => {
       expect(createRun).not.toHaveBeenCalled();
     });
 
+    it('should use custom endpoint policy for custom-backed inline files', async () => {
+      const {
+        convertInputToMessages,
+        filterFilesByEndpointConfig,
+        getEndpointFileLimit,
+        initializeAgent,
+      } = require('@librechat/api');
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-4',
+        endpoint: 'My Custom Endpoint',
+        provider: 'openAI',
+        model_parameters: { useResponsesApi: true },
+        toolRegistry: {},
+        edges: [],
+      });
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'input_file', filename: 'document.pdf', file_data: 'data' }],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(getEndpointFileLimit).toHaveBeenCalledWith(req, {
+        endpoint: 'My Custom Endpoint',
+        endpointType: 'custom',
+      });
+      expect(filterFilesByEndpointConfig).toHaveBeenCalledWith(req, {
+        files: [inlineFile],
+        endpoint: 'My Custom Endpoint',
+        endpointType: 'custom',
+      });
+    });
+
     it('should return 400 when inline files exceed the configured file limit', async () => {
       const {
         createRun,

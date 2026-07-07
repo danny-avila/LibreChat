@@ -80,6 +80,22 @@ const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
+const standardFilePolicyEndpoints = new Set([
+  EModelEndpoint.agents,
+  EModelEndpoint.openAI,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.anthropic,
+  EModelEndpoint.google,
+  EModelEndpoint.bedrock,
+]);
+
+function resolveFilePolicyEndpointType(endpoint, provider) {
+  if (endpoint && !standardFilePolicyEndpoints.has(endpoint)) {
+    return EModelEndpoint.custom;
+  }
+  return provider ?? endpoint;
+}
+
 /**
  * Creates a tool loader function for the agent.
  * @param {AbortSignal} signal - The abort signal
@@ -661,8 +677,8 @@ const createResponse = async (req, res) => {
 
     if (inlineProviderFiles.length > 0) {
       const endpoint = primaryConfig.endpoint ?? agent.provider;
-      const endpointType = primaryConfig.provider ?? agent.provider;
       const provider = primaryConfig.provider ?? agent.provider;
+      const endpointType = resolveFilePolicyEndpointType(endpoint, provider);
       const modelUsesResponsesApi = primaryConfig.model_parameters?.useResponsesApi === true;
 
       /** Enforce the UI-facing count limit here because the shared file filter does not. */
