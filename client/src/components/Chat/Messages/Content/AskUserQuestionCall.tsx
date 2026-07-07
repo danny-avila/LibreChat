@@ -67,10 +67,10 @@ export default function AskUserQuestionCall({
     <div className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3">
       <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
         <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
-        {localize('com_ui_asked_a_question')}
+        {answered ? localize('com_ui_asked') : localize('com_ui_asking')}
       </div>
       <p className="text-sm font-medium text-text-primary">
-        {question?.question ?? localize('com_ui_asked_a_question')}
+        {question?.question ?? (answered ? localize('com_ui_asked') : localize('com_ui_asking'))}
       </p>
       {question?.description != null && question.description.length > 0 && (
         <p className="text-sm text-text-secondary">{question.description}</p>
