@@ -17,6 +17,7 @@ import type {
 import { RemoteAgentFileError, remoteInlineFileSource } from '~/agents/files';
 import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
+import { runGuardedEncode } from './memoryGuard';
 
 const ANTHROPIC_CITATION_TYPES = new Set([
   'application/pdf',
@@ -173,7 +174,9 @@ export async function encodeAndFormatDocuments(
         } satisfies ProcessedFile;
       }
 
-      return getFileStream(req, file, encodingMethods, getStrategyFunctions);
+      return runGuardedEncode(file.bytes ?? 0, () =>
+        getFileStream(req, file, encodingMethods, getStrategyFunctions),
+      );
     }),
   );
 

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { createSearchParams } from 'react-router-dom';
+import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'librechat-data-provider';
 import {
   atom,
   selector,
@@ -10,7 +11,6 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'librechat-data-provider';
 import type { EModelEndpoint, TConversation, TSubmission, TPreset } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
@@ -286,6 +286,20 @@ const pendingManualSkillsByConvoId = atomFamily<string[], string>({
   default: [],
 });
 
+/**
+ * Per-conversation queue of verbatim excerpts the user quoted via the
+ * "Add to chat" selection popup for the next submission. The submit pipeline
+ * (`useChatFunctions.ask`) drains this onto the user message's `quotes` field
+ * (which the backend merges into the model-facing text and persists for the
+ * `MessageQuotes` UI), then resets to `[]`. Compose-time chips above the
+ * textarea read this atom directly so users can see and dismiss each quote
+ * before sending.
+ */
+const pendingQuotesByConvoId = atomFamily<string[], string>({
+  key: 'pendingQuotesByConvoId',
+  default: [],
+});
+
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
   key: 'globalAudioURLByIndex',
   default: null,
@@ -451,5 +465,6 @@ export default {
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,
   pendingManualSkillsByConvoId,
+  pendingQuotesByConvoId,
   updateConversationSelector,
 };

@@ -12,6 +12,7 @@ import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/t
 import type { FetchModelsParams } from '~/endpoints/models';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
 import { getTokenConfigKey } from '~/endpoints/custom/initialize';
+import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
 import { isUserProvided } from '~/utils';
 
@@ -102,6 +103,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
      *  sharing the fetch can be backfilled with the same config afterward */
     const uniqueKeyToTokenKey: Record<string, string> = {};
     const endpointsMap: Record<string, TEndpoint> = {};
+    const tenantId = req.user?.tenantId;
 
     const resolved: ResolvedEndpoint[] = [];
     const userKeyEndpoints: ResolvedEndpoint[] = [];
@@ -182,12 +184,14 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         if (!fetchPromisesMap[uniqueKey]) {
           /** User-scoped when configured headers resolve per user — the
            *  derived token config must not be cached under the shared name */
-          const tokenKey = getTokenConfigKey(endpoint, name, req.user?.id ?? '');
+          const tokenKey = getTokenConfigKey(endpoint, name, req.user?.id ?? '', tenantId);
           uniqueKeyToTokenKey[uniqueKey] = tokenKey;
           fetchPromisesMap[uniqueKey] = fetchModels({
             name,
             apiKey: API_KEY,
             baseURL: BASE_URL,
+            baseURLIsUserProvided: false,
+            allowedAddresses: appConfig.endpoints?.allowedAddresses,
             user: req.user?.id,
             userObject: req.user,
             headers: endpointHeaders,
@@ -203,32 +207,44 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
 
       if (models?.fetch && userKeyMap.has(name)) {
         const userKeyValues = userKeyMap.get(name);
-        const resolvedApiKey = apiKeyIsUserProvided ? userKeyValues?.apiKey : API_KEY;
+        const resolvedApiKey =
+          apiKeyIsUserProvided || baseURLIsUserProvided ? userKeyValues?.apiKey : API_KEY;
         const resolvedBaseURL = baseURLIsUserProvided ? userKeyValues?.baseURL : BASE_URL;
 
         if (resolvedApiKey && resolvedBaseURL) {
           const userFetchKey = `user:${req.user?.id}:${name}`;
           fetchPromisesMap[userFetchKey] =
             fetchPromisesMap[userFetchKey] ||
-            fetchModels({
-              name,
-              apiKey: resolvedApiKey,
-              baseURL: resolvedBaseURL,
-              user: req.user?.id,
-              userObject: req.user,
-              // Do not forward header overrides when the base URL is
-              // user-supplied: configured templates such as
-              // {{LIBRECHAT_OPENID_ID_TOKEN}} would otherwise resolve and be
-              // sent to a destination the user controls, leaking the user's
-              // identity token. Header overrides are only safe for endpoints
-              // whose base URL is admin-trusted.
-              headers: baseURLIsUserProvided ? undefined : endpointHeaders,
-              direct: endpoint.directEndpoint,
-              userIdQuery: models.userIdQuery,
-              skipCache: true,
-              /** Fetched with the user's key/URL — always user-scoped */
-              tokenKey: getTokenConfigKey(endpoint, name, req.user?.id ?? ''),
-            });
+            (async () => {
+              if (baseURLIsUserProvided) {
+                await validateEndpointURL(
+                  resolvedBaseURL,
+                  name,
+                  appConfig.endpoints?.allowedAddresses,
+                );
+              }
+              return fetchModels({
+                name,
+                apiKey: resolvedApiKey,
+                baseURL: resolvedBaseURL,
+                baseURLIsUserProvided,
+                allowedAddresses: appConfig.endpoints?.allowedAddresses,
+                user: req.user?.id,
+                userObject: req.user,
+                // Do not forward header overrides when the base URL is
+                // user-supplied: configured templates such as
+                // {{LIBRECHAT_OPENID_ID_TOKEN}} would otherwise resolve and be
+                // sent to a destination the user controls, leaking the user's
+                // identity token. Header overrides are only safe for endpoints
+                // whose base URL is admin-trusted.
+                headers: baseURLIsUserProvided ? undefined : endpointHeaders,
+                direct: endpoint.directEndpoint,
+                userIdQuery: models.userIdQuery,
+                skipCache: true,
+                /** Fetched with the user's key/URL — always user-scoped */
+                tokenKey: getTokenConfigKey(endpoint, name, req.user?.id ?? '', tenantId),
+              });
+            })();
           uniqueKeyToEndpointsMap[userFetchKey] = uniqueKeyToEndpointsMap[userFetchKey] || [];
           uniqueKeyToEndpointsMap[userFetchKey].push(name);
           continue;
@@ -271,7 +287,12 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         const config = await cache.get(winnerTokenKey);
         if (config != null) {
           for (const name of associatedNames) {
-            const siblingKey = getTokenConfigKey(endpointsMap[name], name, req.user?.id ?? '');
+            const siblingKey = getTokenConfigKey(
+              endpointsMap[name],
+              name,
+              req.user?.id ?? '',
+              tenantId,
+            );
             if (siblingKey !== winnerTokenKey) {
               await cache.set(siblingKey, config);
             }

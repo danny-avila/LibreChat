@@ -11,6 +11,8 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   unescapeLaTeX: jest.fn((x) => x),
   countTokens: jest.fn().mockResolvedValue(10),
+  sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
+  traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -49,6 +51,7 @@ jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next()
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
   validateMessageReq: (req, res, next) => next(),
+  configMiddleware: (req, res, next) => next(),
 }));
 
 jest.mock('~/db/models', () => ({

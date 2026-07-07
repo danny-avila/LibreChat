@@ -1,6 +1,18 @@
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
-import { Constants, UsageEvents, parseTextParts } from 'librechat-data-provider';
-import type { Agents, TMessageContentParts } from 'librechat-data-provider';
+import {
+  Constants,
+  UsageEvents,
+  ApprovalEvents,
+  parseTextParts,
+  reconcileContextUsage,
+  promptTokensFromUsage,
+} from 'librechat-data-provider';
+import type {
+  TMessageContentParts,
+  TContextUsageEvent,
+  TTokenUsageEvent,
+  Agents,
+} from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
@@ -12,14 +24,19 @@ import type {
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
-  recordGenerationJob,
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
+  recordGenerationJob,
 } from '~/app/metrics';
+import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
+import { ApprovalLifecycle } from './ApprovalLifecycle';
+
+/** Terminal error surfaced to a client still attached when its approval window lapses. */
+const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
@@ -135,6 +152,8 @@ interface RuntimeJobState {
   resolveReady: () => void;
   finalEvent?: t.ServerSentEvent;
   errorEvent?: string;
+  /** Approval-expired host cleanup already ran for this runtime (relay path is swept repeatedly). */
+  approvalCleanupRan?: boolean;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
   hasSubscriber: boolean;
@@ -165,6 +184,8 @@ interface RuntimeJobState {
 class GenerationJobManagerClass {
   /** Job metadata + content state storage - swappable for Redis, etc. */
   private jobStore: IJobStore;
+  /** Guarded human-review lifecycle (pause / resolve / expire) over the store. */
+  private _approvals: ApprovalLifecycle;
   /** Event pub/sub transport - swappable for Redis Pub/Sub, etc. */
   private eventTransport: IEventTransport;
 
@@ -188,9 +209,19 @@ class GenerationJobManagerClass {
   /** Whether to cleanup event transport immediately on job completion */
   private _cleanupOnComplete = true;
 
+  /**
+   * Host cleanup fired after an approval EXPIRES (periodic sweeper or a stale submit) —
+   * e.g. prune the paused run's durable checkpoint eagerly instead of letting it sit
+   * until its store TTL. Best-effort: failures are logged, never break the expiry.
+   */
+  private _onApprovalExpired:
+    | ((streamId: string, job?: SerializableJobData | null) => void | Promise<void>)
+    | null = null;
+
   constructor(options?: GenerationJobManagerOptions) {
     this.jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
+    this._approvals = new ApprovalLifecycle(this.jobStore);
     this.eventTransport = options?.eventTransport ?? new InMemoryEventTransport();
     this._cleanupOnComplete = options?.cleanupOnComplete ?? true;
   }
@@ -249,6 +280,7 @@ class GenerationJobManagerClass {
     setGenerationJobsInFlight(previousStore, 0);
 
     this.jobStore = services.jobStore;
+    this._approvals = new ApprovalLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
@@ -257,6 +289,19 @@ class GenerationJobManagerClass {
     logger.info(
       `[GenerationJobManager] Configured with ${this._isRedis ? 'Redis' : 'in-memory'} stores`,
     );
+  }
+
+  /**
+   * Register a host callback fired after an approval EXPIRES — from the periodic sweeper or
+   * a stale submit — e.g. to prune the paused run's durable checkpoint eagerly instead of
+   * waiting out its TTL. Unlike {@link configure} this never resets services, so it is safe
+   * to call from any startup path (including ones that run on constructor defaults). The
+   * `streamId` argument equals the LangGraph `thread_id` (LibreChat's conversationId).
+   */
+  setApprovalExpiredHandler(
+    handler: ((streamId: string, job?: SerializableJobData | null) => void | Promise<void>) | null,
+  ): void {
+    this._onApprovalExpired = handler;
   }
 
   /**
@@ -475,6 +520,17 @@ class GenerationJobManagerClass {
         iconURL: jobData.iconURL,
         model: jobData.model,
         promptTokens: jobData.promptTokens,
+        // Surface the originating agent so the resume route can refuse to rebuild a
+        // paused run on a different agent.
+        agent_id: jobData.agent_id,
+        // Surface whether the turn was temporary so a resume keeps it non-persisted.
+        isTemporary: jobData.isTemporary,
+        // Surface deferred tools discovered before the pause so the resume route can
+        // replay them into createRun (the rebuilt graph passes `messages: []`).
+        discoveredTools: jobData.discoveredTools,
+        // Surface the pending review so status/resume routes built on the
+        // facade can render the prompt for a `requires_action` job.
+        pendingAction: jobData.pendingAction,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,
@@ -767,6 +823,7 @@ class GenerationJobManagerClass {
             parentMessageId: jobData.userMessage.parentMessageId,
             conversationId: jobData.conversationId,
             text: jobData.userMessage.text ?? '',
+            quotes: jobData.userMessage.quotes,
             isCreatedByUser: true,
           }
         : null,
@@ -1031,6 +1088,31 @@ class GenerationJobManagerClass {
       skipBufferReplay: true,
     });
 
+    // Close the snapshot→subscribe race: getResumeState() snapshots BEFORE we attach the
+    // subscription, so a pause that becomes durable in that window is in neither
+    // resumeState.pendingAction nor (Redis mode) pendingEvents — and trackReplayEvent does
+    // not persist approval events — leaving the client attached to a paused job with no
+    // approval UI. Re-read the live job AFTER subscribing; if it is now requires_action and
+    // the snapshot didn't already carry the action, surface it as a pending event so the
+    // approval prompt renders. Idempotent: a pause landing AFTER attach is delivered live
+    // too, and the client's handler just sets the current action, so a duplicate is benign.
+    if (!resumeState?.pendingAction) {
+      const liveJob = await this.jobStore.getJob(streamId);
+      if (
+        liveJob?.status === 'requires_action' &&
+        liveJob.pendingAction != null &&
+        !isPendingActionStale(liveJob)
+      ) {
+        pendingEvents = [
+          ...pendingEvents,
+          {
+            event: ApprovalEvents.ON_PENDING_ACTION,
+            data: liveJob.pendingAction as unknown as Record<string, unknown>,
+          },
+        ];
+      }
+    }
+
     return { subscription, resumeState, pendingEvents };
   }
 
@@ -1167,9 +1249,17 @@ class GenerationJobManagerClass {
       return;
     }
 
-    await this.jobStore.updateJob(streamId, {
-      contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
-    });
+    /** Share the token-usage queue so snapshot + usage writes are serialized per
+     *  stream: `persistTokenUsage` reconciles the stored snapshot (read-modify-
+     *  write), and a snapshot landing between its read and write — or a stale
+     *  reconciled write landing after a newer snapshot — would clobber the newer
+     *  run's gauge when visible calls interleave. FIFO ordering keeps each call's
+     *  pre-invoke snapshot ahead of its own usage and behind the next snapshot. */
+    await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
+      this.jobStore.updateJob(streamId, {
+        contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
+      }),
+    );
   }
 
   /**
@@ -1244,9 +1334,32 @@ class GenerationJobManagerClass {
     }
     tokenUsage.push(event.data);
 
-    await this.jobStore.updateJob(streamId, {
-      tokenUsage: JSON.stringify(tokenUsage),
-    });
+    const update: Partial<SerializableJobData> = { tokenUsage: JSON.stringify(tokenUsage) };
+
+    /** Reconcile the resume snapshot to this call's ACTUAL prompt tokens. A primary
+     *  usage is the post-invoke truth for the call the latest stored snapshot
+     *  precedes (no snapshot is captured between a call's pre-invoke dispatch and
+     *  its usage), so a resuming client restores the real context instead of the
+     *  calibration-inflated estimate — and a mid-call resume (no usage yet) simply
+     *  keeps the raw snapshot rather than mis-applying an earlier call's tokens. */
+    const usage = event.data as TTokenUsageEvent;
+    if (usage.usage_type == null && jobData.contextUsage) {
+      try {
+        const snapshot = JSON.parse(jobData.contextUsage) as TContextUsageEvent | null;
+        if (
+          snapshot != null &&
+          (snapshot.runId == null || usage.runId == null || snapshot.runId === usage.runId)
+        ) {
+          update.contextUsage = JSON.stringify(
+            reconcileContextUsage(snapshot, promptTokensFromUsage(usage)),
+          );
+        }
+      } catch {
+        /* leave the stored snapshot as-is on parse failure */
+      }
+    }
+
+    await this.jobStore.updateJob(streamId, update);
   }
 
   private async persistReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
@@ -1299,6 +1412,11 @@ class GenerationJobManagerClass {
     }
 
     const { message } = event;
+    const extra = message as {
+      manualSkills?: string[];
+      alwaysAppliedSkills?: string[];
+      files?: unknown[];
+    };
     const updates: Partial<SerializableJobData> = {
       createdEventEmitted: true,
       userMessage: {
@@ -1306,6 +1424,20 @@ class GenerationJobManagerClass {
         parentMessageId: message.parentMessageId,
         conversationId: message.conversationId,
         text: message.text,
+        quotes: message.quotes,
+        // Persist the turn's uploaded files so a HITL resume sources them from the job
+        // (this authoritative writer), not a user DB row whose save can still be racing
+        // the approval prompt.
+        ...(Array.isArray(extra.files) && extra.files.length > 0 && { files: extra.files }),
+        // Carry skill selections so a HITL resume's reconstructed requestMessage keeps
+        // its pills — this is the authoritative writer of job.metadata.userMessage and
+        // would otherwise drop them (the emitted created message includes them).
+        ...(Array.isArray(extra.manualSkills) &&
+          extra.manualSkills.length > 0 && { manualSkills: extra.manualSkills }),
+        ...(Array.isArray(extra.alwaysAppliedSkills) &&
+          extra.alwaysAppliedSkills.length > 0 && {
+            alwaysAppliedSkills: extra.alwaysAppliedSkills,
+          }),
       },
     };
 
@@ -1345,8 +1477,17 @@ class GenerationJobManagerClass {
     if (metadata.model) {
       updates.model = metadata.model;
     }
+    if (metadata.agent_id) {
+      updates.agent_id = metadata.agent_id;
+    }
+    if (metadata.isTemporary !== undefined) {
+      updates.isTemporary = metadata.isTemporary;
+    }
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;
+    }
+    if (metadata.discoveredTools) {
+      updates.discoveredTools = metadata.discoveredTools;
     }
     await this.jobStore.updateJob(streamId, updates);
   }
@@ -1383,6 +1524,21 @@ class GenerationJobManagerClass {
       return;
     }
     this.jobStore.setGraph(streamId, graph);
+  }
+
+  /**
+   * The guarded human-review lifecycle for paused runs:
+   * `approvals.pause()` / `peek()` / `resolve()` / `expire()`.
+   *
+   * This is the seam approval routes, the status endpoint, and the run wiring
+   * cross — it owns the legal `requires_action` transitions and is race-safe
+   * against concurrent resumes (a double-resolve would otherwise drive the run
+   * twice). The job's chunks, run steps, and user-active-set membership are
+   * preserved across a pause so the resume path can rebuild context; the store
+   * refreshes the job-hash TTL to give the user the full window to respond.
+   */
+  get approvals(): ApprovalLifecycle {
+    return this._approvals;
   }
 
   /**
@@ -1455,6 +1611,12 @@ class GenerationJobManagerClass {
       replayEvents,
       collectedUsage,
       contextUsage,
+      // Carry the live pending approval in the resume contract so a reloading /
+      // cross-replica client can rebuild the prompt from resumeState.
+      pendingAction:
+        jobData.status === 'requires_action' && !isPendingActionStale(jobData)
+          ? jobData.pendingAction
+          : undefined,
     };
   }
 
@@ -1524,7 +1686,142 @@ class GenerationJobManagerClass {
    * Cleanup expired jobs.
    * Also cleans up any orphaned runtime state, buffers, and event transport entries.
    */
+  /**
+   * Expire any locally-tracked approval whose window has lapsed: drive the atomic
+   * `requires_action → aborted` transition and, if this caller won it, emit a
+   * terminal error so a connected SSE client closes. Only streams this replica has
+   * runtime for are scanned — those are exactly the ones with a client subscribed
+   * here; a paused job on another replica is finalized by that replica's sweep (and
+   * the store's own cleanup). The durable checkpoint is reclaimed by its Mongo TTL
+   * index, which shares the approval window, so no cross-layer delete is needed here.
+   */
+  /**
+   * Expire a single observed-stale pending approval NOW (immediate, not via the periodic
+   * sweep): run the `requires_action → aborted` CAS — pinned to `actionId` so a concurrent
+   * resolve + re-pause on a fresh action isn't aborted — and, on success, emit the terminal
+   * `APPROVAL_EXPIRED_ERROR` so any attached SSE client gets a terminal event instead of a
+   * hung stream. Used by the periodic sweeper and by the resume route, which observes a
+   * just-expired action when the user submits a decision after the TTL lapsed. Returns true
+   * if this call expired the action.
+   */
+  async expireApproval(streamId: string, actionId?: string): Promise<boolean> {
+    const expired = await this._approvals.expire(streamId, actionId);
+    if (!expired) {
+      return false;
+    }
+    try {
+      await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
+    } catch (err) {
+      logger.error(`[GenerationJobManager] Failed to notify expired approval ${streamId}`, err);
+    }
+    await this.runApprovalExpiredHandler(streamId);
+    this.runningJobs.delete(streamId);
+    return true;
+  }
+
+  /**
+   * Invoke the host approval-expired cleanup, passing the job so the host can resolve
+   * tenant/user-scoped config (the expiry runs outside any request context). Best-effort:
+   * the job read and the handler itself may fail without breaking the expiry.
+   */
+  private async runApprovalExpiredHandler(
+    streamId: string,
+    job?: SerializableJobData | null,
+  ): Promise<void> {
+    if (!this._onApprovalExpired) {
+      return;
+    }
+    // Dedup across the expiry paths: a locally expired approval (expireApproval) stays in
+    // the store/runtime for the completed-job TTL, so later sweeps re-enter the relay
+    // branch for the same aborted approval — run the cleanup once per runtime lifetime.
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.approvalCleanupRan) {
+      return;
+    }
+    if (runtime) {
+      runtime.approvalCleanupRan = true;
+    }
+    let resolvedJob = job;
+    if (resolvedJob === undefined) {
+      try {
+        resolvedJob = await this.jobStore.getJob(streamId);
+      } catch {
+        resolvedJob = null;
+      }
+    }
+    try {
+      await this._onApprovalExpired(streamId, resolvedJob);
+    } catch (err) {
+      logger.warn(`[GenerationJobManager] Approval-expired cleanup failed for ${streamId}`, err);
+    }
+  }
+
+  private async expireStaleApprovals(): Promise<void> {
+    let changed = false;
+    for (const streamId of this.runtimeState.keys()) {
+      let job: SerializableJobData | null;
+      try {
+        job = await this.jobStore.getJob(streamId);
+      } catch (err) {
+        logger.error(
+          `[GenerationJobManager] Failed to read job during approval expiry sweep: ${streamId}`,
+          err,
+        );
+        continue;
+      }
+      // Loser-replica relay: in a multi-replica deployment another replica's store
+      // cleanup (`cleanupRequiresActionIndex`) can win the requires_action → aborted
+      // approval-expiry CAS — it sets the hash error but cannot emit (the store has no
+      // event transport). A client subscribed on THIS replica would then never get a
+      // terminal event until the reap path. If the job is already aborted *for approval
+      // expiry* and we haven't emitted here, relay the terminal error to our subscriber.
+      // The `errorEvent` flag (set by emitError) keeps this idempotent vs the win path.
+      const runtime = this.runtimeState.get(streamId);
+      if (job?.status === 'aborted' && job.error === APPROVAL_EXPIRED_ERROR) {
+        if (!runtime?.errorEvent) {
+          try {
+            await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
+          } catch (err) {
+            logger.error(
+              `[GenerationJobManager] Failed to relay expired approval ${streamId}`,
+              err,
+            );
+          }
+        }
+        // The winning store cleanup (`cleanupRequiresActionIndex`) transitions status
+        // directly and can't run host cleanup — do it on relay. Deliberately NOT gated on
+        // `errorEvent`: a reconnect seeds that flag from the aborted job, which must not
+        // suppress the (idempotent) prune. The handler dedups per runtime lifetime, which
+        // also covers approvals expired LOCALLY via expireApproval.
+        await this.runApprovalExpiredHandler(streamId, job);
+        changed = this.runningJobs.delete(streamId) || changed;
+        continue;
+      }
+      if (!job || job.status !== 'requires_action' || !isPendingActionExpired(job)) {
+        continue;
+      }
+      // Pass the OBSERVED action id so the expire CAS only fires for the action we read
+      // as stale. Between this read and the CAS, the user could resolve it and the run
+      // re-pause on a fresh action; without the id, the CAS (status-only) would abort
+      // that valid new pause and leave it terminal.
+      const didExpire = await this.expireApproval(streamId, job.pendingAction?.actionId);
+      if (!didExpire) {
+        continue;
+      }
+      changed = true;
+      logger.debug(`[GenerationJobManager] Expired pending approval: ${streamId}`);
+    }
+    if (changed) {
+      this.syncRunningJobMetrics();
+    }
+  }
+
   private async cleanup(): Promise<void> {
+    // Finalize approvals whose window lapsed before the store's own cleanup, so a
+    // client still attached to a paused stream gets a terminal event instead of a
+    // connection that hangs open until it gives up.
+    await this.expireStaleApprovals();
+
     const count = await this.jobStore.cleanup();
     let runningJobsChanged = false;
 
@@ -1634,13 +1931,14 @@ class GenerationJobManagerClass {
    * Get job count by status.
    */
   async getJobCountByStatus(): Promise<Record<t.GenerationJobStatus, number>> {
-    const [running, complete, error, aborted] = await Promise.all([
+    const [running, complete, error, aborted, requires_action] = await Promise.all([
       this.jobStore.getJobCountByStatus('running'),
       this.jobStore.getJobCountByStatus('complete'),
       this.jobStore.getJobCountByStatus('error'),
       this.jobStore.getJobCountByStatus('aborted'),
+      this.jobStore.getJobCountByStatus('requires_action'),
     ]);
-    return { running, complete, error, aborted };
+    return { running, complete, error, aborted, requires_action };
   }
 
   /**

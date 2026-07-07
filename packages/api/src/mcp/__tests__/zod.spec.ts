@@ -2636,7 +2636,7 @@ describe('sanitizeGeminiSchema', () => {
     expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
   });
 
-  it('strips unsupported keywords (additionalProperties, default, $schema)', () => {
+  it('strips unsupported keywords (additionalProperties, $schema) but keeps Gemini-supported default', () => {
     const schema = {
       $schema: 'http://json-schema.org/draft-07/schema#',
       type: 'object',
@@ -2649,7 +2649,7 @@ describe('sanitizeGeminiSchema', () => {
     const result = sanitizeGeminiSchema(schema);
     expect(result).not.toHaveProperty('$schema');
     expect(result).not.toHaveProperty('additionalProperties');
-    expect(result.properties.name).toEqual({ type: 'string' });
+    expect(result.properties.name).toEqual({ type: 'string', default: 'anon' });
   });
 
   it('folds exclusive bounds into inclusive minimum/maximum', () => {
@@ -2709,5 +2709,202 @@ describe('sanitizeGeminiSchema', () => {
   it('drops a number enum on an integer field', () => {
     const schema = { type: 'integer', enum: [1, 2, 3] } as any;
     expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'integer' });
+  });
+
+  it('strips annotation keywords Gemini rejects (examples, readOnly, writeOnly, deprecated, $comment)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        token: {
+          type: 'string',
+          examples: ['abc'],
+          readOnly: true,
+          writeOnly: false,
+          deprecated: true,
+          $comment: 'internal',
+        },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { token: { type: 'string' } },
+    });
+  });
+
+  it('strips numeric/array validators Gemini rejects (multipleOf, uniqueItems)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        count: { type: 'integer', multipleOf: 2 },
+        tags: { type: 'array', items: { type: 'string' }, uniqueItems: true },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        count: { type: 'integer' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+    });
+  });
+
+  it('strips object-composition keywords Gemini rejects (patternProperties, propertyNames, dependentRequired)', () => {
+    const schema = {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      patternProperties: { '^x': { type: 'string' } },
+      propertyNames: { pattern: '^[a-z]+$' },
+      dependentRequired: { a: ['b'] },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { a: { type: 'string' } },
+    });
+  });
+
+  it('strips tuple/array-extension keywords Gemini rejects (prefixItems, additionalItems)', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string' },
+      prefixItems: [{ type: 'string' }, { type: 'number' }],
+      additionalItems: false,
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
+  it('synthesizes `items` from `prefixItems` when a tuple array has none (Gemini requires items)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'string', readOnly: true }, { type: 'number' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
+  it('preserves an existing `items` over a `prefixItems`-derived one', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'boolean' },
+      prefixItems: [{ type: 'string' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'boolean' },
+    });
+  });
+
+  it('synthesizes `items` from `prefixItems` when `items` is boolean false (Draft 2020 tuple)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'number' }],
+      items: false,
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'number' },
+    });
+  });
+
+  it('falls back to an empty `items` schema for a boolean `items` with no prefixItems', () => {
+    expect(sanitizeGeminiSchema({ type: 'array', items: false } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+    expect(sanitizeGeminiSchema({ type: 'array', items: true } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('falls back to an empty `items` schema for an array missing items entirely', () => {
+    expect(sanitizeGeminiSchema({ type: 'array' } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('drops a tuple-array `items: [...]` form and falls back rather than emit an array items', () => {
+    const schema = { type: 'array', items: [{ type: 'string' }, { type: 'number' }] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'array', items: {} });
+  });
+
+  it('preserves an object `default` verbatim without sanitizing its data keys', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        cfg: {
+          type: 'object',
+          default: { id: 'abc', readOnly: true, deprecated: false, nested: { id: 'x' } },
+          properties: { id: { type: 'string' } },
+        },
+      },
+    } as any;
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.properties.cfg.default).toEqual({
+      id: 'abc',
+      readOnly: true,
+      deprecated: false,
+      nested: { id: 'x' },
+    });
+    expect(result.properties.cfg.properties).toEqual({ id: { type: 'string' } });
+  });
+
+  it('preserves an array `default` verbatim', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    });
+  });
+
+  it('strips content keywords and the bare `id` alias Gemini rejects', () => {
+    const schema = {
+      id: 'urn:example',
+      type: 'object',
+      properties: {
+        blob: { type: 'string', contentEncoding: 'base64', contentMediaType: 'image/png' },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { blob: { type: 'string' } },
+    });
+  });
+
+  it('strips deeply nested unsupported keywords through arrays, items, and properties', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        ranges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { score: { type: 'number', exclusiveMinimum: 0, multipleOf: 0.5 } },
+          },
+        },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        ranges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { score: { type: 'number', minimum: 0 } },
+          },
+        },
+      },
+    });
   });
 });

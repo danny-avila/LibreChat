@@ -10,6 +10,8 @@ import {
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
+  computeSummaryUsedTokens,
+  priorRunOutputTokens,
 } from './usage';
 
 describe('recordCollectedUsage', () => {
@@ -276,13 +278,15 @@ describe('recordCollectedUsage', () => {
       });
 
       expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
+      /** Anthropic input_tokens is cache-inclusive, so cache is subtracted out
+       *  of the billed input: 200 − 60 − 30 = 110 (not double-charged). */
       expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
         expect.objectContaining({
           context: 'subagent',
           model: 'claude-haiku-4-5',
         }),
         {
-          promptTokens: { input: 200, write: 60, read: 30 },
+          promptTokens: { input: 110, write: 60, read: 30 },
           completionTokens: 80,
         },
       );
@@ -477,11 +481,13 @@ describe('recordCollectedUsage', () => {
 
   describe('cache token handling - Anthropic format', () => {
     it('should use spendStructuredTokens for cache tokens (cache_*_input_tokens)', async () => {
+      /** Cache-inclusive input_tokens (140 = 100 fresh + 25 write + 15 read). */
       const collectedUsage: UsageMetadata[] = [
         {
-          input_tokens: 100,
+          input_tokens: 140,
           output_tokens: 50,
           model: 'claude-3',
+          provider: 'anthropic',
           cache_creation_input_tokens: 25,
           cache_read_input_tokens: 15,
         },
@@ -501,7 +507,7 @@ describe('recordCollectedUsage', () => {
           completionTokens: 50,
         },
       );
-      expect(result?.input_tokens).toBe(140); // 100 + 25 + 15
+      expect(result?.input_tokens).toBe(140);
     });
   });
 
@@ -706,23 +712,27 @@ describe('recordCollectedUsage', () => {
     });
 
     it('should handle cache tokens with multiple tool calls', async () => {
+      /** Cache-inclusive Anthropic wire: input_tokens = fresh + write + read. */
       const collectedUsage: UsageMetadata[] = [
         {
-          input_tokens: 788,
+          input_tokens: 31596, // 788 fresh + 30808 write
           output_tokens: 163,
           model: 'claude-opus',
+          provider: 'anthropic',
           input_token_details: { cache_read: 0, cache_creation: 30808 },
         },
         {
-          input_tokens: 3802,
+          input_tokens: 35378, // 3802 fresh + 30808 read + 768 write
           output_tokens: 149,
           model: 'claude-opus',
+          provider: 'anthropic',
           input_token_details: { cache_read: 30808, cache_creation: 768 },
         },
         {
-          input_tokens: 26808,
+          input_tokens: 58384, // 26808 fresh + 31576 read
           output_tokens: 225,
           model: 'claude-opus',
+          provider: 'anthropic',
           input_token_details: { cache_read: 31576, cache_creation: 0 },
         },
       ];
@@ -732,7 +742,7 @@ describe('recordCollectedUsage', () => {
         collectedUsage,
       });
 
-      // input_tokens = 788 + 30808 + 0 = 31596
+      // input_tokens = total prompt of first call (cache-inclusive)
       expect(result?.input_tokens).toBe(31596);
       // output_tokens = 163 + 149 + 225 = 537
       expect(result?.output_tokens).toBe(537);
@@ -1583,10 +1593,13 @@ describe('computeUsageCostUSD', () => {
     expect(cost).toBeCloseTo((300000 * 8 + 1000 * 40) / 1e6);
   });
 
-  it('prices additive cache tokens (Anthropic) at cache rates', () => {
+  it('prices cache-inclusive Anthropic input by subtracting cache, then cache at its own rates', () => {
+    /** input_tokens is cache-inclusive (13000 = 1000 fresh + 2000 write + 10000
+     *  read). The fresh 1000 is billed at the input rate, the cache at its own
+     *  rates — never the cache portion at the input rate too (LibreChat#13795). */
     const cost = computeUsageCostUSD(
       {
-        input_tokens: 1000,
+        input_tokens: 13000,
         output_tokens: 500,
         model: 'claude-haiku-4-5',
         provider: 'anthropic',
@@ -1654,12 +1667,12 @@ describe('aggregateEmittedUsage', () => {
   });
 
   it('normalizes mixed-provider calls per their own provider before summing', () => {
-    /** anthropic is additive (cache separate from input), openAI is subset */
+    /** bedrock is additive (cache separate from input), openAI is subset */
     const rollup = aggregateEmittedUsage([
       {
         input_tokens: 100,
         output_tokens: 20,
-        provider: 'anthropic',
+        provider: 'bedrock',
         input_token_details: { cache_read: 40 },
         cost: 0.01,
       },
@@ -1672,7 +1685,7 @@ describe('aggregateEmittedUsage', () => {
         cost: 0.02,
       },
     ]);
-    /** anthropic input stays 100 (additive); openAI input 90−30=60 → 160 */
+    /** bedrock input stays 100 (additive); openAI input 90−30=60 → 160 */
     expect(rollup?.input).toBe(160);
     expect(rollup?.output).toBe(25);
     expect(rollup?.cacheRead).toBe(70);
@@ -1752,6 +1765,196 @@ describe('buildPersistedContextUsage', () => {
   it('omits completedOutputTokens when there are no primary calls', () => {
     expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
   });
+
+  it('reconciles the inflated estimate to the final call’s real prompt tokens', () => {
+    /** Real web-search + summarization turn: calibration pinned at 5 inflated
+     *  messageTokens to 187471 (used 213375), but the answer call's true prompt was
+     *  55773 (Anthropic input_tokens is cache-inclusive; 2071 of it is cache read).
+     *  The persisted blob must show the real context so a reload isn't stuck
+     *  several× too high. */
+    const inflated: TContextUsageEvent = {
+      runId: 'run-1',
+      breakdown: {
+        maxContextTokens: 250000,
+        instructionTokens: 4205,
+        systemMessageTokens: 384,
+        dynamicInstructionTokens: 1525,
+        toolSchemaTokens: 2296,
+        summaryTokens: 1938,
+        toolCount: 1,
+        messageCount: 2,
+        messageTokens: 187471,
+        availableForMessages: 233295,
+      },
+      contextBudget: 237500,
+      remainingContextTokens: 24125,
+      calibrationRatio: 5,
+    };
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 55773, // cache-inclusive: 53702 fresh + 2071 read
+        output_tokens: 3780,
+        input_token_details: { cache_read: 2071, cache_creation: 0 },
+        provider: 'anthropic',
+        runId: 'run-1',
+      },
+    ];
+    const result = buildPersistedContextUsage(inflated, events);
+    expect(237500 - (result.remainingContextTokens ?? 0)).toBe(55773);
+    expect(result.breakdown.messageTokens).toBe(55773 - 4205 - 1938);
+    expect(result.completedOutputTokens).toBe(3780);
+  });
+
+  it('attributes completedOutputTokens to the snapshot run, not a parallel run', () => {
+    /** Parallel/direct runs interleave: this snapshot is run-1, but run-2 emits a
+     *  later primary usage. The persisted delta must be run-1's own output (40),
+     *  never run-2's trailing output (99). */
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 100,
+        output_tokens: 40,
+        total_tokens: 140,
+        provider: 'openAI',
+        runId: 'run-1',
+      },
+      {
+        input_tokens: 200,
+        output_tokens: 99,
+        total_tokens: 299,
+        provider: 'openAI',
+        runId: 'run-2',
+      },
+    ];
+    const result = buildPersistedContextUsage(baseSnapshot, events);
+    expect(result.completedOutputTokens).toBe(40);
+  });
+
+  it('omits completedOutputTokens when only other runs emitted usage', () => {
+    /** The snapshot run never completed (no matching primary); a sibling run's
+     *  output must not be borrowed — fall back to the per-message estimate. */
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 200,
+        output_tokens: 99,
+        total_tokens: 299,
+        provider: 'openAI',
+        runId: 'run-2',
+      },
+    ];
+    expect(buildPersistedContextUsage(baseSnapshot, events).completedOutputTokens).toBeUndefined();
+  });
+
+  it('matches untagged usage events for back-compat (older lib / resume)', () => {
+    /** Events without a runId predate run tagging; they match any snapshot so the
+     *  last primary (25) is still recorded. */
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 40, total_tokens: 140, provider: 'openAI' },
+      { input_tokens: 200, output_tokens: 25, total_tokens: 225, provider: 'openAI' },
+    ];
+    expect(buildPersistedContextUsage(baseSnapshot, events).completedOutputTokens).toBe(25);
+  });
+});
+
+describe('computeSummaryUsedTokens', () => {
+  const summarized = (over?: Partial<TContextUsageEvent>): TContextUsageEvent => ({
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 1000,
+      instructionTokens: 50,
+      systemMessageTokens: 50,
+      dynamicInstructionTokens: 0,
+      toolSchemaTokens: 0,
+      summaryTokens: 80,
+      toolCount: 0,
+      messageCount: 1,
+      messageTokens: 20,
+      availableForMessages: 900,
+    },
+    contextBudget: 1000,
+    remainingContextTokens: 700,
+    effectiveInstructionTokens: 50,
+    ...over,
+  });
+
+  it('uses contextBudget − remainingContextTokens when available', () => {
+    expect(computeSummaryUsedTokens(summarized())).toBe(300);
+  });
+
+  it('falls back to instructions + summary + messages, including summaryTokens', () => {
+    /** summaryTokens is a separate breakdown field, so the no-remaining fallback
+     *  must add it: 50 + 80 + 20 = 150, not 70. */
+    expect(computeSummaryUsedTokens(summarized({ remainingContextTokens: undefined }))).toBe(150);
+  });
+
+  it('returns undefined when the turn did not summarize', () => {
+    expect(
+      computeSummaryUsedTokens(
+        summarized({ breakdown: { ...summarized().breakdown, summaryTokens: 0 } }),
+      ),
+    ).toBeUndefined();
+    expect(computeSummaryUsedTokens(null)).toBeUndefined();
+    expect(computeSummaryUsedTokens(undefined)).toBeUndefined();
+  });
+
+  it('subtracts the response’s earlier tool-loop outputs from the marker', () => {
+    /** 300 baseUsed − 90 earlier outputs = 210, so the client estimate
+     *  (summaryBaseline + full response tokenCount) doesn’t double-count them. */
+    expect(computeSummaryUsedTokens(summarized(), 90)).toBe(210);
+  });
+
+  it('clamps to undefined when the prior outputs exceed the baseline', () => {
+    expect(computeSummaryUsedTokens(summarized(), 5000)).toBeUndefined();
+  });
+});
+
+describe('priorRunOutputTokens', () => {
+  const ev = (over: Partial<TTokenUsageEvent>): TTokenUsageEvent => ({
+    input_tokens: 10,
+    output_tokens: 0,
+    total_tokens: 10,
+    provider: 'openAI',
+    ...over,
+  });
+
+  it('sums primary outputs before the index for the matching run', () => {
+    const events = [
+      ev({ output_tokens: 20, runId: 'run-1' }),
+      ev({ output_tokens: 30, runId: 'run-1' }),
+      ev({ output_tokens: 99, runId: 'run-1' }), // at/after the index — excluded
+    ];
+    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(50);
+  });
+
+  it('counts run-matched primary + summarization, skips subagent/sequential and other runs', () => {
+    /** Both the primary and the summarization output are in this run's tokenCount
+     *  AND baseline, so both are subtracted; subagent/sequential are excluded from
+     *  the reported output total; a parallel run's primary is not this snapshot's. */
+    const events = [
+      ev({ output_tokens: 20, runId: 'run-1' }), // primary, matches
+      ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }), // counted
+      ev({ output_tokens: 5, runId: 'run-1', usage_type: 'subagent' }), // skipped
+      ev({ output_tokens: 7, runId: 'run-1', usage_type: 'sequential' }), // skipped
+      ev({ output_tokens: 40, runId: 'run-2' }), // other-run primary — skipped
+    ];
+    expect(priorRunOutputTokens(events, 5, 'run-1')).toBe(28);
+  });
+
+  it('does not subtract a parallel sibling run’s summarization output', () => {
+    /** The summarize detour inherits the graph run id (traceConfig), so a sibling
+     *  run's summary carries a DIFFERENT runId; its summary is in the sibling's
+     *  baseline, not this snapshot's, so subtracting it would under-report. */
+    const events = [
+      ev({ output_tokens: 20, runId: 'run-1' }),
+      ev({ output_tokens: 8, runId: 'run-2', usage_type: 'summarization' }), // sibling — skipped
+    ];
+    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(20);
+  });
+
+  it('matches untagged events for back-compat and returns 0 with no prior calls', () => {
+    const events = [ev({ output_tokens: 20 }), ev({ output_tokens: 30 })];
+    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(50);
+    expect(priorRunOutputTokens(events, 0, 'run-1')).toBe(0);
+  });
 });
 
 describe('buildAbortedResponseMetadata', () => {
@@ -1782,6 +1985,65 @@ describe('buildAbortedResponseMetadata', () => {
     const result = buildAbortedResponseMetadata({ tokenUsage: JSON.stringify(events) });
     expect(result).toEqual({ usage: { input: 100, output: 20, cacheWrite: 0, cacheRead: 0 } });
     expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
+  });
+
+  const abortSnapshot: TContextUsageEvent = {
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 1000,
+      instructionTokens: 50,
+      systemMessageTokens: 50,
+      dynamicInstructionTokens: 0,
+      toolSchemaTokens: 0,
+      summaryTokens: 80,
+      toolCount: 0,
+      messageCount: 1,
+      messageTokens: 20,
+      availableForMessages: 900,
+    },
+    contextBudget: 1000,
+    remainingContextTokens: 700,
+  };
+
+  it('persists the summary marker (but not the full snapshot) for a stopped summarized turn', () => {
+    /** A single-call stopped turn: the interrupted call emitted no usage, so the
+     *  marker is the full baseUsed (300) with nothing to subtract. */
+    const result = buildAbortedResponseMetadata({
+      tokenUsage: JSON.stringify([]),
+      contextUsage: JSON.stringify(abortSnapshot),
+    });
+    expect(result?.summaryUsedTokens).toBe(300);
+    /** The full snapshot stays off the abort path (completedOutputTokens ambiguity). */
+    expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
+  });
+
+  it('does not subtract any output from the marker on a stopped turn', () => {
+    /** The abort tokenCount comes from countTokens(text) or is absent — it does
+     *  NOT fold in summarization/earlier-call output the way recordCollectedUsage
+     *  does. So the marker is the full baseUsed (300); subtracting the summarization
+     *  (8) or the primary (20) here would under-report after reload. */
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 120,
+        provider: 'openAI',
+        runId: 'run-1',
+      },
+      {
+        input_tokens: 60,
+        output_tokens: 8,
+        total_tokens: 68,
+        provider: 'openAI',
+        runId: 'run-1',
+        usage_type: 'summarization',
+      },
+    ];
+    const result = buildAbortedResponseMetadata({
+      tokenUsage: JSON.stringify(events),
+      contextUsage: JSON.stringify(abortSnapshot),
+    });
+    expect(result?.summaryUsedTokens).toBe(300);
   });
 });
 

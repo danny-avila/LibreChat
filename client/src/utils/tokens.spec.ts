@@ -10,6 +10,7 @@ import {
   mergeUsage,
   setEntryUsage,
   sumTotalUsage,
+  prunedBranchTokens,
   findBranchSnapshotAnchor,
   estimateTokens,
   normalizeUsageUnits,
@@ -88,6 +89,222 @@ describe('token index', () => {
     expect(altTotals.output).toBe(1019);
   });
 
+  it('estimates count-less messages by text length without inflating counted totals', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 12),
+      /** Imported message with no `tokenCount`: 40 chars of text → ~10 est tokens. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'x'.repeat(40),
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** Known counts feed input/output/counted; the count-less message stays out
+     *  of those and lands in the separate (uncalibrated) estimate bucket. */
+    expect(totals.input).toBe(12);
+    expect(totals.output).toBe(0);
+    expect(totals.counted).toBe(1);
+    expect(totals.total).toBe(2);
+    expect(totals.estTokens).toBe(10);
+  });
+
+  it('estimates object-form content text and merged quote excerpts', () => {
+    buildIndex(CONVO, [
+      /** Assistant body lives only in object-form content (`text.value`). */
+      {
+        messageId: 'a1',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        content: [{ type: 'text', text: { value: 'y'.repeat(20) } }],
+      } as unknown as TMessage,
+      /** User turn whose quotes are merged into the prompt at send time. */
+      {
+        messageId: 'u1',
+        parentMessageId: 'a1',
+        isCreatedByUser: true,
+        conversationId: CONVO,
+        text: 'z'.repeat(16),
+        quotes: ['q'.repeat(8)],
+      } as TMessage,
+    ]);
+
+    /** a1: 20 content chars / 4 = 5; u1: (16 text + 8 quote) / 4 = 6. */
+    const totals = sumBranch(CONVO, 'u1');
+    expect(totals.counted).toBe(0);
+    expect(totals.estTokens).toBe(11);
+  });
+
+  it('recounts quoted user turns (ignoring stale counts), counts tool calls, skips reasoning', () => {
+    buildIndex(CONVO, [
+      /** Quoted user turn with a stale text-only stored count: the send path
+       *  recounts the merged prompt every turn, so the estimate ignores the count
+       *  and recounts from text+quotes. */
+      {
+        messageId: 'u1',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        conversationId: CONVO,
+        tokenCount: 999,
+        text: 'hi',
+        quotes: ['q'.repeat(38)],
+      } as TMessage,
+      /** Count-less assistant turn: tool-call name/args/output count toward the
+       *  estimate (sent back as context); reasoning does not. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        content: [
+          { type: 'think', think: 'r'.repeat(40) },
+          { type: 'tool_call', tool_call: { name: 'sub', args: 'aa', output: 'o'.repeat(11) } },
+        ],
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** u1 quoted: stored 999 ignored; (2 text + 38 quote) / 4 = 10. a1 tool_call
+     *  name 3 + args 2 + output 11 = 16 / 4 = 4 (think skipped). */
+    expect(totals.input).toBe(0);
+    expect(totals.counted).toBe(0);
+    expect(totals.estTokens).toBe(14);
+  });
+
+  it('prefers content over text for count-less messages carrying both', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 8),
+      /** Stopped agent response: saved with both a short `text` and structured
+       *  `content` (a tool call). The send path formats from content, so the
+       *  estimate must use content (tool tokens), not the shorter text. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'hi',
+        content: [
+          { type: 'tool_call', tool_call: { name: 'run', args: 'aa', output: 'o'.repeat(13) } },
+        ],
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** a1 uses content (name 3 + args 2 + output 13 = 18 / 4 = 5), not text 'hi'. */
+    expect(totals.input).toBe(8);
+    expect(totals.estTokens).toBe(5);
+  });
+
+  it('exposes the count-less tail estimate so live output is not double-counted', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 12),
+      /** In-flight / resumed response: count-less, so it lands in estTokens; it is
+       *  also covered by liveTokens, so the estimate path drops tailEstTokens. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'o'.repeat(20),
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** a1 is the tail: 20 / 4 = 5, surfaced both in estTokens and tailEstTokens. */
+    expect(totals.estTokens).toBe(5);
+    expect(totals.tailEstTokens).toBe(5);
+  });
+
+  describe('prunedBranchTokens (over-window mirror of getMessagesWithinTokenLimit)', () => {
+    /** u1 ← a1(huge, old) ← u2 ← a2(tail). */
+    const buildChain = () =>
+      buildIndex(CONVO, [
+        msg('u1', Constants.NO_PARENT, true, 2),
+        msg('a1', 'u1', false, 10),
+        msg('u2', 'a1', true, 2),
+        msg('a2', 'u2', false, 2),
+      ]);
+
+    it('keeps the newest messages that fit and stops at the first overflow', () => {
+      buildChain();
+      /** Budget 8: a2(2)+u2(2)=4 fit; a1(10) would overflow → pruned. */
+      expect(prunedBranchTokens(CONVO, 'a2', 8, false)).toBe(4);
+    });
+
+    it('returns the full branch sum when it fits the budget', () => {
+      buildChain();
+      expect(prunedBranchTokens(CONVO, 'a2', 100, false)).toBe(16);
+    });
+
+    it('skips the in-flight tail when excludeTail is set', () => {
+      buildChain();
+      /** Skip a2; a1(10)+u2(2)+u1(2)=14 all fit under 100. */
+      expect(prunedBranchTokens(CONVO, 'a2', 100, true)).toBe(14);
+    });
+  });
+
+  it('caps the branch at a summary marker instead of re-summing compacted history', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      /** a2's turn compacted the history; pre-invoke context was 500 tokens. */
+      metadata: { summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 100),
+      msg('a1', 'u1', false, 9000) /** huge pre-summary history, now discarded */,
+      msg('u2', 'a1', true, 200),
+      summarized,
+      msg('u3', 'a2', true, 15),
+      msg('a3', 'u3', false, 25),
+    ]);
+
+    const totals = sumBranch(CONVO, 'a3');
+    /** Walk stops at a2: only its output + the post-summary turn are summed. */
+    expect(totals.summaryBaseline).toBe(500);
+    expect(totals.input).toBe(15);
+    expect(totals.output).toBe(65); // a3 (25) + a2 (40)
+    /** Estimate used = post-summary + compacted baseline = 580, not the 9380
+     *  raw history sum that pinned the gauge at 100%. */
+    expect(totals.input + totals.output + totals.summaryBaseline).toBe(580);
+  });
+
+  it('keeps provider usage/cost across the full branch even past a summary marker', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      metadata: { usage: USAGE_B, summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 9000, USAGE_A) /** pre-summary spend */,
+      msg('u2', 'a1', true, 200),
+      summarized,
+      msg('u3', 'a2', true, 15),
+      responseMsg('a3', 'u3', 25, USAGE_A) /** post-summary spend */,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a3');
+    /** Context is capped at the marker... */
+    expect(totals.summaryBaseline).toBe(500);
+    /** ...but cost/usage is cumulative spend and spans the WHOLE branch
+     *  (a1 + a2 + a3 = 0.01 + 0.02 + 0.01), not truncated at the summary boundary. */
+    expect(totals.usage.cost).toBeCloseTo(0.04);
+    expect(totals.usage.input).toBe(400); // 100 + 200 + 100
+  });
+
   it('flags whether the anchor message is on the branch', () => {
     buildIndex(CONVO, [
       msg('u1', Constants.NO_PARENT, true, 10),
@@ -97,6 +314,34 @@ describe('token index', () => {
 
     expect(sumBranch(CONVO, 'a1', 'a1').containsAnchor).toBe(true);
     expect(sumBranch(CONVO, 'a1-alt', 'a1').containsAnchor).toBe(false);
+  });
+
+  it('stops matching the anchor once the context is capped at a summary marker', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      metadata: { summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 100),
+      msg('a1', 'u1', false, 20),
+      msg('u2', 'a1', true, 200),
+      summarized,
+      msg('u3', 'a2', true, 15),
+      msg('a3', 'u3', false, 25),
+    ]);
+    /** a1 is older than the summary marker (a2): a snapshot anchored there is
+     *  pre-summary, so it must NOT count as on-branch — else useTokenUsage revives
+     *  that stale breakdown over the summary-baseline estimate. */
+    expect(sumBranch(CONVO, 'a3', 'a1').containsAnchor).toBe(false);
+    /** The summarized response's own (post-summary) snapshot still matches... */
+    expect(sumBranch(CONVO, 'a3', 'a2').containsAnchor).toBe(true);
+    /** ...as does a snapshot from a newer turn. */
+    expect(sumBranch(CONVO, 'a3', 'a3').containsAnchor).toBe(true);
   });
 
   it('tracks uncounted messages and tolerates missing parents', () => {
@@ -159,6 +404,31 @@ describe('findBranchSnapshotAnchor', () => {
     expect(findBranchSnapshotAnchor(CONVO, 'a1', new Map())).toBeNull();
     expect(findBranchSnapshotAnchor('unknown', 'a1', new Map([['a1', 1]]))).toBeNull();
   });
+
+  it('does not cross a summary marker to recover a stale pre-summary snapshot', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      metadata: { summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      msg('a1', 'u1', false, 20) /** has a snapshot, but pre-summary */,
+      msg('u2', 'a1', true, 30),
+      summarized /** compacted here, no snapshot of its own */,
+      msg('u3', 'a2', true, 15),
+      msg('a3', 'u3', false, 25),
+    ]);
+    /** a1 is the only stored anchor, but it sits before the summary — the walk
+     *  must stop at a2 and return null so the summary-baseline estimate is used. */
+    expect(findBranchSnapshotAnchor(CONVO, 'a3', new Map([['a1', 1]]))).toBeNull();
+    /** When the summarized response itself has a snapshot, return it. */
+    expect(findBranchSnapshotAnchor(CONVO, 'a3', new Map([['a2', 1]]))).toBe('a2');
+  });
 });
 
 describe('estimateTokens', () => {
@@ -171,14 +441,25 @@ describe('estimateTokens', () => {
 });
 
 describe('normalizeUsageUnits', () => {
-  it('keeps cache additive for Anthropic even when cache <= input', () => {
-    /** Magnitude heuristic would wrongly treat this as inclusive and drop
-     *  cache from input; the provider says additive (input is uncached-only) */
+  it('subtracts cache from input for Anthropic (input_tokens is cache-inclusive)', () => {
+    /** The agents SDK folds cache into Anthropic input_tokens, so cache is a
+     *  subset of input and must be subtracted: 900 − 100 read = 800. */
     expect(
       normalizeUsageUnits({
         input_tokens: 900,
         output_tokens: 100,
         provider: Providers.ANTHROPIC,
+        input_token_details: { cache_read: 100 },
+      }),
+    ).toEqual({ input: 800, output: 100, cacheWrite: 0, cacheRead: 100 });
+  });
+
+  it('keeps cache additive for Bedrock (Converse input_tokens excludes cache)', () => {
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 900,
+        output_tokens: 100,
+        provider: Providers.BEDROCK,
         input_token_details: { cache_read: 100 },
       }),
     ).toEqual({ input: 900, output: 100, cacheWrite: 0, cacheRead: 100 });
@@ -218,14 +499,28 @@ describe('normalizeUsageUnits', () => {
     ).toBe(500);
   });
 
-  it('does not mistake additive cache for missing completion tokens', () => {
-    /** Anthropic total includes cache; without the cache adjustment the repair
-     *  would falsely inflate completion */
+  it('does not mistake additive cache for missing completion tokens (Bedrock)', () => {
+    /** Bedrock keeps cache separate, so total = input + output + cache (1700).
+     *  Without the cache adjustment the repair would falsely inflate completion. */
     expect(
       normalizeUsageUnits({
         input_tokens: 1000,
         output_tokens: 200,
         total_tokens: 1700,
+        provider: Providers.BEDROCK,
+        input_token_details: { cache_creation: 300, cache_read: 200 },
+      }).output,
+    ).toBe(200);
+  });
+
+  it('does not inflate completion for cache-inclusive Anthropic totals', () => {
+    /** Anthropic total already includes cache (input 1000 covers the 500 cache),
+     *  so total 1200 leaves output at 200 — no false repair. */
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 1000,
+        output_tokens: 200,
+        total_tokens: 1200,
         provider: Providers.ANTHROPIC,
         input_token_details: { cache_creation: 300, cache_read: 200 },
       }).output,

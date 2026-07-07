@@ -9,6 +9,7 @@ const {
   refreshListAvatars,
   collectEdgeAgentIds,
   mergeAgentOcrConversion,
+  sanitizeModelParameters,
   MAX_AVATAR_REFRESH_AGENTS,
   collectToolResourceFileIds,
   convertOcrToContextInPlace,
@@ -48,6 +49,7 @@ const {
   resolveConfigServers,
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
+const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -56,6 +58,7 @@ const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
   [Tools.web_search]: true,
+  [Tools.memory]: true,
 };
 
 const MAX_SEARCH_LEN = 100;
@@ -305,10 +308,14 @@ const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPr
   const ownerIdStr = ownerId.toString();
 
   try {
-    const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
-      file_id: 1,
-      user: 1,
-    });
+    const ownerFiles = await db.getFiles(
+      { file_id: { $in: referencedFileIds }, user: ownerIdStr },
+      null,
+      {
+        file_id: 1,
+        user: 1,
+      },
+    );
     const allowedIds = new Set(
       (ownerFiles ?? [])
         .filter((file) => file.user && file.user.toString() === ownerIdStr)
@@ -342,7 +349,10 @@ const createAgentHandler = async (req, res) => {
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
 
     if (agentData.model_parameters && typeof agentData.model_parameters === 'object') {
-      agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
+      agentData.model_parameters = removeNullishValues(
+        sanitizeModelParameters(agentData.model_parameters),
+        true,
+      );
     }
 
     const { id: userId, role: userRole } = req.user;
@@ -481,15 +491,14 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     const id = req.params.id;
     const author = req.user.id;
 
-    // Permissions are validated by middleware before calling this function
-    // Simply load the agent by ID
-    const agent = await db.getAgent({ id });
+    // Permissions are validated by middleware before calling this function.
+    // Load the agent with a `version` count but without the heavy `versions`
+    // array; version history is fetched lazily via GET /agents/:id/versions.
+    const agent = await db.getAgentWithVersionCount({ id });
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-
-    agent.version = agent.versions ? agent.versions.length : 0;
 
     if (agent.avatar && agent.avatar?.source === FileSources.s3) {
       try {
@@ -512,13 +521,15 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     });
     agent.isPublic = isPublic;
 
+    await attachOwnerContacts([agent]);
+
     if (agent.author !== author) {
       delete agent.author;
     }
 
     if (!expandProperties) {
       // VIEW permission: Basic agent info only
-      return res.status(200).json({
+      const responseAgent = {
         _id: agent._id,
         id: agent.id,
         name: agent.name,
@@ -533,13 +544,48 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         // Safe metadata
         createdAt: agent.createdAt,
         updatedAt: agent.updatedAt,
-      });
+      };
+
+      if (agent.support_contact !== undefined) {
+        responseAgent.support_contact = agent.support_contact;
+      }
+      if (agent.owner_contact !== undefined) {
+        responseAgent.owner_contact = agent.owner_contact;
+      }
+
+      return res.status(200).json(responseAgent);
     }
 
     // EDIT permission: Full agent details including sensitive configuration
     return res.status(200).json(agent);
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Retrieves an agent's version history.
+ * Loaded lazily so the editor doesn't transfer large histories up front.
+ * @route GET /agents/:id/versions
+ * @param {object} req - Express Request
+ * @param {object} req.params - Request params
+ * @param {string} req.params.id - Agent identifier.
+ * @returns {Promise<Agent[]>} 200 - The agent's version history - application/json
+ * @returns {Error} 404 - Agent not found
+ */
+const getAgentVersionsHandler = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const versions = await db.getAgentVersions({ id });
+
+    if (versions == null) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    return res.status(200).json(versions);
+  } catch (error) {
+    logger.error('[/Agents/:id/versions] Error retrieving agent versions', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -562,7 +608,10 @@ const updateAgentHandler = async (req, res) => {
     const updateData = removeNullishValues(rest);
 
     if (updateData.model_parameters && typeof updateData.model_parameters === 'object') {
-      updateData.model_parameters = removeNullishValues(updateData.model_parameters, true);
+      updateData.model_parameters = removeNullishValues(
+        sanitizeModelParameters(updateData.model_parameters),
+        true,
+      );
     }
 
     if (avatarField === null) {
@@ -704,6 +753,8 @@ const updateAgentHandler = async (req, res) => {
     if (updatedAgent.author) {
       updatedAgent.author = updatedAgent.author.toString();
     }
+
+    await attachOwnerContacts([updatedAgent]);
 
     if (updatedAgent.author !== req.user.id) {
       delete updatedAgent.author;
@@ -1040,9 +1091,10 @@ const getListAgentsHandler = async (req, res) => {
     }
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
+    const agentsWithContacts = await attachOwnerContacts(agents);
 
     const urlCache = cachedRefresh?.urlCache;
-    data.data = agents.map((agent) => {
+    data.data = agentsWithContacts.map((agent) => {
       if (accessibleSkillSet) {
         sanitizeViewerSkillScope(agent, accessibleSkillSet);
       }
@@ -1148,6 +1200,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     const updatedAgent = await db.updateAgent({ id: agent_id }, data, {
       updatingUserId: req.user.id,
     });
+    await attachOwnerContacts([updatedAgent]);
 
     try {
       const avatarCache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
@@ -1252,6 +1305,8 @@ const revertAgentVersionHandler = async (req, res) => {
       updatedAgent.author = updatedAgent.author.toString();
     }
 
+    await attachOwnerContacts([updatedAgent]);
+
     if (updatedAgent.author !== req.user.id) {
       delete updatedAgent.author;
     }
@@ -1307,6 +1362,7 @@ const getAgentCategories = async (_req, res) => {
 module.exports = {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
+  getAgentVersions: getAgentVersionsHandler,
   updateAgent: updateAgentHandler,
   duplicateAgent: duplicateAgentHandler,
   deleteAgent: deleteAgentHandler,

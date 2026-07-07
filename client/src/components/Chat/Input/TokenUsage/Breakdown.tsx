@@ -46,7 +46,12 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
     snapshot?.effectiveInstructionTokens ?? breakdown?.instructionTokens ?? 0;
   const systemTokens =
     (breakdown?.systemMessageTokens ?? 0) + (breakdown?.dynamicInstructionTokens ?? 0);
-  const messageTokens = Math.max(0, usedTokens - instructionTokens);
+  /** Summary has its own row, so exclude it (it's part of `usedTokens`) to avoid
+   *  double-counting it inside the Messages row on a summarized turn. */
+  const messageTokens = Math.max(
+    0,
+    usedTokens - instructionTokens - (breakdown?.summaryTokens ?? 0),
+  );
   const freeTokens = maxTokens != null ? Math.max(0, maxTokens - usedTokens) : null;
 
   const groups =
@@ -133,11 +138,36 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
           </>
         ) : (
           <>
-            <Row label={localize('com_ui_input')} value={view.branchTotals.input} />
-            <Row
-              label={localize('com_ui_output')}
-              value={view.branchTotals.output + view.liveTokens}
-            />
+            {view.branchTotals.summaryBaseline > 0 && (
+              <Row
+                label={localize('com_ui_context_summary')}
+                value={view.branchTotals.summaryBaseline}
+                max={maxTokens}
+              />
+            )}
+            {view.messagesPruned ? (
+              /** Over-window: the per-category split no longer describes what's
+               *  sent, so show the pruned message total (incl. in-flight). */
+              <Row
+                label={localize('com_ui_context_messages')}
+                value={view.messageTokens + view.liveTokens}
+                max={maxTokens}
+              />
+            ) : (
+              <>
+                <Row label={localize('com_ui_input')} value={view.branchTotals.input} />
+                <Row
+                  label={localize('com_ui_output')}
+                  value={view.branchTotals.output + view.liveTokens}
+                />
+                {view.estimatedTokens > 0 && (
+                  <Row label={localize('com_ui_context_estimated')} value={view.estimatedTokens} />
+                )}
+              </>
+            )}
+            {view.overheadTokens > 0 && (
+              <Row label={localize('com_ui_context_system')} value={view.overheadTokens} />
+            )}
             {maxTokens == null && (
               <p className="text-xs text-text-secondary">{localize('com_ui_context_unknown')}</p>
             )}
