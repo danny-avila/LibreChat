@@ -36,6 +36,8 @@ jest.mock('~/models', () => ({
   deleteFiles: jest.fn(),
   getFiles: jest.fn(),
   updateFileUsage: jest.fn(),
+  getActiveSubscriptionRecord: jest.fn().mockResolvedValue({ plan_code: 'pro_m', status: 'active' }),
+  incrementQuota: jest.fn().mockResolvedValue({ messages_used: 1 }),
 }));
 
 const { getConvo, getMessages, saveConvo, saveMessage } = require('~/models');
