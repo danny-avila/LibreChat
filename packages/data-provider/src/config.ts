@@ -991,6 +991,7 @@ export const endpointSchema = baseEndpointSchema.merge(
       .strict()
       .optional(),
     directEndpoint: z.boolean().optional(),
+    freeOfCharge: z.boolean().optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
     /** Static per-model token config: context window and per-million-token rates */
     tokenConfig: z
