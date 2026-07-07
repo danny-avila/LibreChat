@@ -1077,6 +1077,34 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       expect(result.documents).toHaveLength(0);
       expect(result.files).toHaveLength(0);
     });
+
+    it('should format Azure Responses API documents as input_file blocks', async () => {
+      const req = createMockRequest(15, Providers.AZURE) as ServerRequest;
+      const file = createMockDocFile(1, 'text/plain', 'azure.txt');
+      const mockContent = Buffer.from('azure content').toString('base64');
+
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.AZURE, useResponsesApi: true },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toEqual([
+        {
+          type: 'input_file',
+          filename: 'azure.txt',
+          file_data: `data:text/plain;base64,${mockContent}`,
+        },
+      ]);
+      expect(result.files).toEqual([file]);
+    });
   });
 
   describe('Inline remote provider-upload files', () => {

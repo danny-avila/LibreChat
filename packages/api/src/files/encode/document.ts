@@ -139,7 +139,8 @@ export async function encodeAndFormatDocuments(
   const result: DocumentResult = { documents: [], files: [] };
 
   const isBedrock = provider === Providers.BEDROCK;
-  const isDocSupported = isDocumentSupportedProvider(provider);
+  const isDocSupported =
+    isDocumentSupportedProvider(provider) || (provider === Providers.AZURE && useResponsesApi);
 
   if (!isDocSupported && !isBedrock) {
     return result;

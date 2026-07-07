@@ -750,6 +750,40 @@ describe('OpenAIChatCompletionController', () => {
       expect(mockProcessStream).not.toHaveBeenCalled();
     });
 
+    it('should allow Azure OpenAI inline files when Use Responses API is enabled', async () => {
+      const { encodeAndFormatDocuments, initializeAgent } = require('@librechat/api');
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-4',
+        provider: 'azureOpenAI',
+        model_parameters: { useResponsesApi: true },
+        toolRegistry: {},
+        edges: [],
+      });
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: 'Files attached' }],
+        files: [inlineFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'input_file', filename: 'document.pdf', file_data: 'data' }],
+        files: [],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(encodeAndFormatDocuments).toHaveBeenCalledWith(
+        req,
+        [inlineFile],
+        expect.objectContaining({
+          provider: 'azureOpenAI',
+          useResponsesApi: true,
+        }),
+        expect.any(Function),
+      );
+      expect(res.status).not.toHaveBeenCalledWith(400);
+      expect(mockProcessStream).toHaveBeenCalled();
+    });
+
     it('should return 400 when file upload settings reject an inline file', async () => {
       const { filterFilesByEndpointConfig } = require('@librechat/api');
       mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
