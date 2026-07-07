@@ -323,6 +323,35 @@ export function resolveAskUserQuestionPart(
 }
 
 /**
+ * Finds the live (unanswered) ask-user-question pause across a conversation's
+ * messages — the newest synthetic part wins. Drives the composer popover: the
+ * part exists exactly while a pause is live (applied on `on_pending_action`,
+ * stripped when the answer submits), so its presence IS the popover signal.
+ */
+export function findLiveAskUserQuestion(
+  messages: TMessage[] | null | undefined,
+): { actionId: string; question: Agents.AskUserQuestionRequest; messageId: string } | null {
+  if (!Array.isArray(messages)) {
+    return null;
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    const content = message?.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (let j = content.length - 1; j >= 0; j--) {
+      const part = content[j];
+      if (isAskUserQuestionPart(part)) {
+        const ask = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION];
+        return { actionId: ask.actionId, question: ask.question, messageId: message.messageId };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Applies a {@link Agents.PendingAction} onto the target response message,
  * dispatching on the interrupt type. Pure — returns a new message only when the
  * mapping actually changed something.

@@ -10,6 +10,7 @@ import {
   parseAskUserQuestionArgs,
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
+  findLiveAskUserQuestion,
 } from './approval';
 
 const toolCallPart = (id: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
@@ -329,6 +330,26 @@ describe('resolveAskUserQuestionPart', () => {
     expect(getSubmittedAskAnswer('tc1')).toBe('purple');
     expect(getSubmittedAskAnswer('unknown')).toBeUndefined();
     expect(getSubmittedAskAnswer(undefined)).toBeUndefined();
+  });
+});
+
+describe('findLiveAskUserQuestion', () => {
+  it('returns the newest live question across messages', () => {
+    const older = applyPendingAction(msg({ content: [] }), askAction());
+    const newer = applyPendingAction(
+      { ...msg({ content: [] }), messageId: 'm2' },
+      askAction({ actionId: 'a2' }),
+    );
+    const found = findLiveAskUserQuestion([older, newer]);
+    expect(found?.actionId).toBe('a2');
+    expect(found?.messageId).toBe('m2');
+    expect(found?.question.question).toBe('What name?');
+  });
+
+  it('returns null with no live question or non-array input', () => {
+    expect(findLiveAskUserQuestion([msg({ content: [textPart('hi')] })])).toBeNull();
+    expect(findLiveAskUserQuestion(null)).toBeNull();
+    expect(findLiveAskUserQuestion(undefined)).toBeNull();
   });
 });
 

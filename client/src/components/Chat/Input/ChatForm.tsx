@@ -21,6 +21,8 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
+import AskUserQuestionPopover, { useLiveAskUserQuestion } from './AskUserQuestionPopover';
+import { useResumeSubmit } from '../Messages/Content/ApprovalContext';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
@@ -172,6 +174,9 @@ const ChatForm = memo(function ChatForm({
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
+  const { liveAsk, dismissed: askDismissed } = useLiveAskUserQuestion(conversationId);
+  const { submitAskAnswer } = useResumeSubmit();
+  const askActive = liveAsk != null && !askDismissed;
 
   const handleKeyUp = useHandleKeyUp({
     index,
@@ -188,7 +193,9 @@ const ChatForm = memo(function ChatForm({
     submitButtonRef,
     setIsScrollable,
     disabled: disableInputs,
-    placeholder,
+    // While a question pause is live, the composer doubles as the free-form
+    // answer box (the popover's option list covers the curated choices).
+    placeholder: askActive ? localize('com_ui_something_else') : placeholder,
   });
 
   useQueryParams({ textAreaRef });
@@ -245,7 +252,20 @@ const ChatForm = memo(function ChatForm({
 
   return (
     <form
-      onSubmit={methods.handleSubmit(submitMessage)}
+      onSubmit={methods.handleSubmit((data) => {
+        // A live question routes the composer's text to the paused run as the
+        // free-form answer instead of starting a new turn (which would replace
+        // the paused job). Dismissing the popover restores normal sends.
+        if (askActive && liveAsk) {
+          const text = data.text.trim();
+          if (text.length > 0) {
+            submitAskAnswer(liveAsk.actionId, text);
+            methods.reset();
+          }
+          return;
+        }
+        return submitMessage(data);
+      })}
       className={cn(
         'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
@@ -277,6 +297,9 @@ const ChatForm = memo(function ChatForm({
             textAreaRef={textAreaRef}
           />
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
+          {index === 0 && (
+            <AskUserQuestionPopover conversationId={conversationId} textAreaRef={textAreaRef} />
+          )}
           <SkillsCommand
             index={index}
             textAreaRef={textAreaRef}
