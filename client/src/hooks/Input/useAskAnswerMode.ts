@@ -148,22 +148,32 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    * Shared answer dispatch: sends the run's resume and clears the phase.
    * Gated on the live pause (NOT `active` — the chat card must still answer a
    * dismissed question) and on `locked` (no duplicate resumes while one is in
-   * flight). The composer only resets when its text was consumed by the answer
-   * or when the draft machinery will restore the stashed conversation draft —
-   * with drafts disabled (or answer mode already exited) the composer text is
-   * the user's only copy, so it is left alone.
+   * flight).
+   *
+   * The selection/composer cleanup runs ONLY after the resume is accepted (in
+   * `submitAskAnswer`'s success path): a failed resume — the 16k answer-cap
+   * 400, an expired action, a network error — leaves `status` re-answerable,
+   * so wiping the composer (the user's only copy of a free-form answer) up
+   * front would lose it. The composer only resets when its text was consumed
+   * by the answer or when the draft machinery will restore the stashed
+   * conversation draft; with drafts disabled and an option-click answer the
+   * typed text is left alone.
    */
   const submitValues = useCallback(
     (values: string[], consumedComposerText = false): boolean => {
       if (!liveAsk || locked || values.length === 0) {
         return false;
       }
-      submitAskAnswer(liveAsk.actionId, values.join(', '));
-      setSelected(null);
-      setChecked([]);
-      if (consumedComposerText || (active && saveDrafts)) {
-        resetComposer?.();
-      }
+      const wasActive = active;
+      submitAskAnswer(liveAsk.actionId, values.join(', '), {
+        onSuccess: () => {
+          setSelected(null);
+          setChecked([]);
+          if (consumedComposerText || (wasActive && saveDrafts)) {
+            resetComposer?.();
+          }
+        },
+      });
       return true;
     },
     [liveAsk, locked, active, saveDrafts, submitAskAnswer, setSelected, setChecked, resetComposer],

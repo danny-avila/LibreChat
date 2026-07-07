@@ -719,6 +719,62 @@ describe('loadAgent', () => {
     expect(result?.subagents).toEqual(subagents);
   });
 
+  test('should equip ask_user_question for added agents from a model spec', async () => {
+    const result = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            modelSpecs: {
+              list: [
+                {
+                  name: 'added-asks',
+                  label: 'Added Asks',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  askUserQuestion: true,
+                },
+              ],
+            },
+          },
+        },
+        conversation: {
+          endpoint: 'openai',
+          model: 'gpt-4',
+          spec: 'added-asks',
+        } as unknown as TConversation,
+      },
+      deps,
+    );
+
+    expect(result?.tools).toContain('ask_user_question');
+  });
+
+  test('should equip ask_user_question for added agents from the ephemeralAgent flag', async () => {
+    const result = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+          },
+        },
+        conversation: {
+          endpoint: 'openai',
+          model: 'gpt-4',
+          ephemeralAgent: { ask_user_question: true },
+        } as unknown as TConversation,
+      },
+      deps,
+    );
+
+    expect(result?.tools).toContain('ask_user_question');
+  });
+
   test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 

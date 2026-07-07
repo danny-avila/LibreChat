@@ -273,7 +273,7 @@ export function useResumeSubmit() {
   );
 
   const submitAskAnswer = useCallback(
-    (actionId: string, answer: string) => {
+    (actionId: string, answer: string, opts?: { onSuccess?: () => void }) => {
       const fields = buildResumeFields();
       if (!fields || answer.length === 0) {
         return;
@@ -306,6 +306,13 @@ export function useResumeSubmit() {
                 chatContext.setMessages(next);
               }
             }
+            /**
+             * Caller cleanup (clearing the composer / selection) runs ONLY on
+             * success: the composer is the user's sole copy of a free-form
+             * answer, so a failed resume (400 on the answer cap, expiry, a
+             * network error) must leave it intact for the user to trim/retry.
+             */
+            opts?.onSuccess?.();
           },
           onError: (error) => setStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
         },
