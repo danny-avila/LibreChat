@@ -9,6 +9,7 @@ import {
   Image,
   Folder,
   Search,
+  Bookmark,
   Telescope,
   SquarePen,
   LayoutGrid,
@@ -149,6 +150,11 @@ function SideMenu({ onCollapse }: { onCollapse?: () => void }) {
           icon={Folder}
           label={localize('com_ui_projects')}
           onClick={() => navigate('/projects')}
+        />
+        <NavRow
+          icon={Bookmark}
+          label={localize('com_ui_bookmarks')}
+          onClick={() => navigate('/bookmarks')}
         />
         <NavRow
           icon={Image}

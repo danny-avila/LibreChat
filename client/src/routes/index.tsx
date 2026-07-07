@@ -51,6 +51,16 @@ const loadProjectWorkspace = () =>
     Component: m.ProjectWorkspace,
   }));
 
+const loadBookmarksView = () =>
+  import('~/components/Bookmarks').then((m) => ({
+    Component: m.BookmarksView,
+  }));
+
+const loadBookmarkWorkspace = () =>
+  import('~/components/Bookmarks').then((m) => ({
+    Component: m.BookmarkWorkspace,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -169,6 +179,14 @@ export const router = createBrowserRouter(
             {
               path: 'projects/:projectId',
               lazy: loadProjectWorkspace,
+            },
+            {
+              path: 'bookmarks',
+              lazy: loadBookmarksView,
+            },
+            {
+              path: 'bookmarks/:tag',
+              lazy: loadBookmarkWorkspace,
             },
             {
               path: 'agents',
