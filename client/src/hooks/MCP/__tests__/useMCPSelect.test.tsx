@@ -3,7 +3,7 @@ import { Provider, createStore } from 'jotai';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { RecoilRoot, useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import { MCPServerDefinition } from '../useMCPServerManager';
+import type { MCPServerDefinition } from '../useMCPServerManager';
 import { ephemeralAgentByConvoId } from '~/store';
 import { setTimestamp } from '~/utils/timestamps';
 import { useMCPSelect } from '../useMCPSelect';
@@ -182,6 +182,32 @@ describe('useMCPSelect', () => {
   });
 
   describe('Race Conditions and Infinite Loops Prevention', () => {
+    it('should not prune MCP values before servers finish loading', async () => {
+      const { Wrapper } = createWrapper();
+
+      const { result, rerender } = renderHook(
+        ({ isServersLoaded, servers }) => useMCPSelect({ servers, isServersLoaded }),
+        {
+          initialProps: { isServersLoaded: false, servers: [] as MCPServerDefinition[] },
+          wrapper: Wrapper,
+        },
+      );
+
+      act(() => {
+        result.current.setMCPValues(['server1']);
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['server1']);
+      });
+
+      rerender({ isServersLoaded: true, servers: createMCPServers(['server1']) });
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['server1']);
+      });
+    });
+
     it('should not create infinite loop when syncing between Jotai and Recoil states', async () => {
       const { Wrapper, servers } = createWrapper();
       const { result, rerender } = renderHook(() => useMCPSelect({ servers }), {
@@ -339,7 +365,8 @@ describe('useMCPSelect', () => {
       const TestComponent = () => {
         const mcpHook = useMCPSelect({ servers });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
-        return { mcpHook, setEphemeralAgent };
+        const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, ephemeralAgent, setEphemeralAgent };
       };
 
       const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
@@ -352,6 +379,7 @@ describe('useMCPSelect', () => {
 
       await waitFor(() => {
         expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+        expect(result.current.ephemeralAgent?.mcp).toEqual(['server1', 'server2']);
       });
     });
 
@@ -361,7 +389,8 @@ describe('useMCPSelect', () => {
       const TestComponent = () => {
         const mcpHook = useMCPSelect({ servers });
         const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
-        return { mcpHook, setEphemeralAgent };
+        const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, ephemeralAgent, setEphemeralAgent };
       };
 
       const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
@@ -374,6 +403,31 @@ describe('useMCPSelect', () => {
 
       await waitFor(() => {
         expect(result.current.mcpHook.mcpValues).toEqual([]);
+        expect(result.current.ephemeralAgent?.mcp).toEqual([]);
+      });
+    });
+
+    it('should clear MCPs when all configured servers are hidden after loading', async () => {
+      const { Wrapper, servers } = createWrapper([]);
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({ servers, isServersLoaded: true });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, ephemeralAgent, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
+
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: ['hidden-server'],
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual([]);
+        expect(result.current.ephemeralAgent?.mcp).toEqual([]);
       });
     });
 
