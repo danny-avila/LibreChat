@@ -10,6 +10,7 @@ import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import BookmarkEditDialog from './BookmarkEditDialog';
+import BookmarkActionsMenu from './BookmarkActionsMenu';
 
 type BookmarkSort = 'name' | 'createdAt' | 'count';
 
@@ -158,27 +159,35 @@ export default function BookmarksView() {
           ) : (
             <div className="grid gap-3 md:grid-cols-2 md:gap-4">
               {sortedTags.map((tag) => (
-                <button
-                  key={tag._id}
-                  type="button"
-                  className={cn(
-                    'flex min-h-[8.5rem] flex-col rounded-xl border border-border-medium bg-surface-secondary p-4 text-left transition-colors',
-                    'hover:border-border-heavy hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                  )}
-                  onClick={() => navigate(`/bookmarks/${encodeURIComponent(tag.tag)}`)}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Bookmark className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
-                    <span className="truncate text-base font-semibold text-text-primary">
-                      {tag.tag}
+                <div key={tag._id} className="group/bookmark relative">
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex min-h-[8.5rem] w-full flex-col rounded-xl border border-border-medium bg-surface-secondary p-4 text-left transition-colors',
+                      'hover:border-border-heavy hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                    )}
+                    onClick={() => navigate(`/bookmarks/${encodeURIComponent(tag.tag)}`)}
+                  >
+                    <span className="flex min-w-0 items-center gap-2 pr-8">
+                      <Bookmark
+                        className="h-4 w-4 shrink-0 text-text-secondary"
+                        aria-hidden="true"
+                      />
+                      <span className="truncate text-base font-semibold text-text-primary">
+                        {tag.tag}
+                      </span>
                     </span>
-                  </span>
-                  <span className="mt-auto flex items-center gap-2 pt-4 text-xs text-text-secondary">
-                    {tag.count === 1
-                      ? `1 ${localize('com_ui_conversation')}`
-                      : `${tag.count} ${localize('com_ui_conversations')}`}
-                  </span>
-                </button>
+                    <span className="mt-auto flex items-center gap-2 pt-4 text-xs text-text-secondary">
+                      {tag.count === 1
+                        ? `1 ${localize('com_ui_conversation')}`
+                        : `${tag.count} ${localize('com_ui_conversations')}`}
+                    </span>
+                  </button>
+                  <BookmarkActionsMenu
+                    bookmark={tag}
+                    className="absolute right-3 top-3 opacity-0 focus:opacity-100 group-focus-within/bookmark:opacity-100 group-hover/bookmark:opacity-100"
+                  />
+                </div>
               ))}
             </div>
           )}

@@ -7,6 +7,7 @@ import { DropdownPopup } from '@librechat/client';
 import type { MenuItemProps, RenderProp } from '~/common';
 import ConversationListVirtual from '~/components/Conversations/ConversationListVirtual';
 import { useConversationsInfiniteQuery, useConversationTagsQuery } from '~/data-provider';
+import BookmarkActionsMenu from './BookmarkActionsMenu';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -108,6 +109,7 @@ export default function BookmarkWorkspace() {
               {tag}
             </h1>
           </div>
+          {currentTag && <BookmarkActionsMenu bookmark={currentTag} className="mt-0.5 shrink-0" />}
         </header>
 
         <section className="mt-8 flex min-h-0 flex-1 flex-col">
