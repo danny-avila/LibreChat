@@ -10,7 +10,7 @@ on:
       dry_run:
         description: 'Dry run — list matching PRs without merging'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 concurrency:
@@ -48,13 +48,13 @@ jobs:
         run: echo "No PRs labeled 'deploy-tonight'. Exiting cleanly."
 
       - name: Dry run — stop here
-        if: steps.list.outputs.count != '0' && inputs.dry_run == 'true'
+        if: steps.list.outputs.count != '0' && inputs.dry_run
         run: |
           echo "=== DRY RUN — no merges will be performed ==="
           jq -r '.[] | "#\(.number)  \(.title)"' prs.json
 
       - name: Merge each labeled PR
-        if: steps.list.outputs.count != '0' && inputs.dry_run != 'true'
+        if: steps.list.outputs.count != '0' && !inputs.dry_run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
