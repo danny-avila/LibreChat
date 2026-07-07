@@ -7,16 +7,23 @@ import {
   UsageEvents,
   StepEvents,
   createPayload,
+  ApprovalEvents,
   removeNullishValues,
 } from 'librechat-data-provider';
-import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
+import type {
+  Agents,
+  TMessage,
+  TPayload,
+  TSubmission,
+  EventSubmission,
+} from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
+import { clearAllDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
-import { clearAllDrafts } from '~/utils';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -137,6 +144,18 @@ export default function useSSE(
         contextHandler(data.data, { ...submission, userMessage });
       } else if (data.event === UsageEvents.ON_TOKEN_USAGE) {
         usageHandler(data.data, { ...submission, userMessage });
+      } else if (data.event === ApprovalEvents.ON_PENDING_ACTION) {
+        const pendingAction = data.data as Agents.PendingAction;
+        const messages = getMessages() ?? [];
+        const index = findPendingActionMessageIndex(messages, pendingAction);
+        if (index >= 0) {
+          const updated = applyPendingAction(messages[index], pendingAction);
+          if (updated !== messages[index]) {
+            const nextMessages = [...messages];
+            nextMessages[index] = updated;
+            setMessages(nextMessages);
+          }
+        }
       } else if (data.event != null) {
         if (
           data.event === StepEvents.ON_MESSAGE_DELTA ||

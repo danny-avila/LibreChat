@@ -4,7 +4,14 @@ const mime = require('mime');
 const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
-const { getAzureContainerClient, deleteRagFile } = require('@librechat/api');
+const {
+  deleteRagFile,
+  assertRemoteFileURL,
+  getAzureContainerClient,
+  getRemoteFileFetchMaxBytes,
+  getRemoteFileFetchTimeoutMs,
+  assertRemoteFileContentLength,
+} = require('@librechat/api');
 
 const defaultBasePath = 'images';
 const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
@@ -63,8 +70,20 @@ async function saveURLToAzure({
   containerName,
 }) {
   try {
-    const response = await fetch(URL);
+    const maxBytes = getRemoteFileFetchMaxBytes();
+    const response = await fetch(assertRemoteFileURL(URL), {
+      timeout: getRemoteFileFetchTimeoutMs(),
+      size: maxBytes,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+    }
+    assertRemoteFileContentLength(response.headers, maxBytes);
     const buffer = await response.buffer();
+    if (buffer.length > maxBytes) {
+      throw new Error(`Remote file response too large: ${buffer.length} bytes`);
+    }
+
     return await saveBufferToAzure({ userId, buffer, fileName, basePath, containerName });
   } catch (error) {
     logger.error('[saveURLToAzure] Error uploading file from URL:', error);

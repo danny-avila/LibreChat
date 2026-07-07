@@ -1,4 +1,5 @@
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
 import type { GoogleAIToolType } from '@librechat/agents/langchain/google-common';
@@ -133,6 +134,30 @@ function isGemini35Flash(model: string) {
   const normalized = model.toLowerCase();
   const modelId = normalized.split('/').pop() ?? normalized;
   return modelId === GEMINI_3_5_FLASH || modelId.startsWith(`${GEMINI_3_5_FLASH}-`);
+}
+
+const urlContextModelRegex = /gemini-(\d+)(?:\.(\d+))?/i;
+const urlContextExcludedModalityRegex = /(?:^|-)(?:image|live|tts|audio)(?:-|$)/;
+
+/**
+ * The native URL Context tool is supported only on text Gemini 2.5+ and 3.x models
+ * (https://ai.google.dev/gemini-api/docs/url-context#supported_models). Modality-specific
+ * variants (image, live, TTS) do not accept it, mirroring the Google tool-combination exclusion.
+ * Enabling it on an unsupported model returns a provider-side error, so we skip the tool there.
+ */
+function supportsUrlContext(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  const modelId = normalized.split('/').pop() ?? normalized;
+  if (urlContextExcludedModalityRegex.test(modelId)) {
+    return false;
+  }
+  const match = urlContextModelRegex.exec(modelId);
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? '0');
+  return major > 2 || (major === 2 && minor >= 5);
 }
 
 function getVertexMultiRegionEndpoint(location: string): string | undefined {
@@ -361,6 +386,7 @@ export function getGoogleConfig(
 
   const {
     web_search,
+    url_context,
     thinkingLevel,
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
@@ -368,6 +394,7 @@ export function getGoogleConfig(
   } = sanitizeModelOptions(options.modelOptions);
 
   let enableWebSearch = web_search;
+  let enableUrlContext = url_context;
 
   const llmConfig = removeNullishValues(
     {
@@ -514,6 +541,14 @@ export function getGoogleConfig(
         continue;
       }
 
+      /** Handle url_context separately - resolved to a native tool, not config */
+      if (key === 'url_context') {
+        if (enableUrlContext === undefined && typeof value === 'boolean') {
+          enableUrlContext = value;
+        }
+        continue;
+      }
+
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig only if undefined */
         applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
@@ -536,6 +571,14 @@ export function getGoogleConfig(
         continue;
       }
 
+      /** Handle url_context separately - resolved to a native tool, not config */
+      if (key === 'url_context') {
+        if (typeof value === 'boolean') {
+          enableUrlContext = value;
+        }
+        continue;
+      }
+
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig */
         (llmConfig as Record<string, unknown>)[key] = value;
@@ -552,6 +595,11 @@ export function getGoogleConfig(
     options.dropParams.forEach((param) => {
       if (param === 'web_search') {
         enableWebSearch = false;
+        return;
+      }
+
+      if (param === 'url_context') {
+        enableUrlContext = false;
         return;
       }
 
@@ -601,6 +649,17 @@ export function getGoogleConfig(
 
   if (enableWebSearch) {
     tools.push({ googleSearch: {} });
+  }
+
+  if (enableUrlContext) {
+    const urlContextModel = ((llmConfig as { model?: string }).model || modelName) ?? '';
+    if (supportsUrlContext(urlContextModel)) {
+      tools.push({ urlContext: {} });
+    } else {
+      logger.debug(
+        `[getGoogleConfig] url_context enabled but model "${urlContextModel}" does not support the URL Context tool (Gemini 2.5+ only); skipping.`,
+      );
+    }
   }
 
   // Return the final shape

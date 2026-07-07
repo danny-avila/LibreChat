@@ -20,6 +20,7 @@ const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
 const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
+const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
@@ -31,6 +32,7 @@ const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
+const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const SLOW_REPLY_CHUNKS = 160;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
@@ -232,6 +234,37 @@ function providerFileAssertionResponses({ messages, text }) {
   };
 }
 
+/**
+ * Verifies the quote feature end to end: scans every user message in the prompt
+ * the model actually received for a Markdown blockquote line containing the
+ * expected token. Passing proves the excerpt was merged into the model-facing
+ * turn — covering both the current turn and durable re-merge of a prior quoted
+ * turn from history (the merge runs in `AgentClient.buildMessages`).
+ */
+function quoteAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_QUOTE_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const found = (messages ?? []).some((message) => {
+    const type = messageType(message);
+    if (type !== 'human' && type !== 'user') {
+      return false;
+    }
+    return getContentText(message.content)
+      .split('\n')
+      .some((line) => line.startsWith('> ') && line.includes(expected));
+  });
+
+  if (found) {
+    return { responses: [`${QUOTE_ASSERTION_FINAL_TEXT}: ${expected}`] };
+  }
+  return {
+    responses: [`E2E quote assertion failed: no blockquote containing "${expected}" in the prompt`],
+  };
+}
+
 function replyResponses(text) {
   if (text.includes(MARKDOWN_REPLY_MARKER)) {
     return {
@@ -427,7 +460,7 @@ Created by the Playwright mock e2e suite to verify host file authoring without c
 
 function buildCreateSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     content: buildSkillBody(skillName),
     overwrite: false,
   };
@@ -435,7 +468,7 @@ function buildCreateSkillArgs(skillName) {
 
 function buildEditSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     old_text: `description: ${SKILL_DESCRIPTION}`,
     new_text: `description: ${EDITED_SKILL_DESCRIPTION}`,
   };
@@ -481,6 +514,11 @@ function resolveResponses({ agents, messages, text, toolNames }) {
   const providerFileAssertion = providerFileAssertionResponses({ messages, text });
   if (providerFileAssertion) {
     return providerFileAssertion;
+  }
+
+  const quoteAssertion = quoteAssertionResponses({ messages, text });
+  if (quoteAssertion) {
+    return quoteAssertion;
   }
 
   if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {

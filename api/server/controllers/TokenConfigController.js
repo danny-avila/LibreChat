@@ -14,7 +14,12 @@ async function tokenConfigController(req, res) {
   try {
     const modelsConfig = await getModelsConfig(req);
     const tokenConfigMap = await resolveTokenConfigMap(
-      { appConfig: req.config, modelsConfig, userId: req.user.id },
+      {
+        appConfig: req.config,
+        modelsConfig,
+        userId: req.user.id,
+        tenantId: req.user.tenantId,
+      },
       { getValueKey, getMultiplier, getCacheMultiplier },
     );
     res.json(tokenConfigMap);

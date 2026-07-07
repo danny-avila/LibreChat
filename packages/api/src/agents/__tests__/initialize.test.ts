@@ -11,7 +11,7 @@ jest.mock('@librechat/agents', () => ({
     parameters: {
       type: 'object',
       properties: {
-        file_path: {
+        path: {
           type: 'string',
           description: 'For skill files: "{skillName}/{path}".',
         },
@@ -241,6 +241,13 @@ function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | un
   return (
     toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
     0
+  );
+}
+
+function countUrlContextTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => tool != null && typeof tool === 'object' && 'urlContext' in tool)
+      .length ?? 0
   );
 }
 
@@ -635,6 +642,62 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(countNamedWebSearchTools(result.tools)).toBe(1);
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
+
+  it('treats the Google urlContext tool as a native provider tool', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-1.5-flash',
+      providerTools: [{ urlContext: {} }],
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
+  });
+
+  it('preserves the Google urlContext tool when LibreChat web_search is also enabled', async () => {
+    /**
+     * url_context is unrelated to web search, so the LibreChat web_search conflict
+     * resolver must not strip the native urlContext tool. The combination of a
+     * provider tool with an agent tool requires a combination-capable Gemini model.
+     */
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [{ urlContext: {} }],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
 });
 
 describe('initializeAgent — stable and dynamic instruction fields', () => {
@@ -662,6 +725,31 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
 
     expect(result.instructions).toBeUndefined();
     expect(result.additional_instructions).toBe('Conversation opened at 2023-12-31T23:59:58.000Z');
+  });
+
+  it('resolves temporal special vars in the request timezone', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'It is currently {{current_datetime}}.';
+    req.conversationCreatedAt = '2024-01-15T18:30:00.000Z';
+    req.body = { timezone: 'America/New_York' };
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.instructions).toBeUndefined();
+    expect(result.additional_instructions).toBe(
+      'It is currently 2024-01-15 13:30:00 -05:00 (Monday).',
+    );
   });
 
   it('keeps non-temporal special vars in stable instructions', async () => {
@@ -784,10 +872,19 @@ describe('initializeAgent — attachment scoping', () => {
       db,
     );
 
+    expect(db.getToolFilesByIds).toHaveBeenCalledWith(
+      [toolFile.file_id],
+      new Set([EToolResources.file_search]),
+      { userId: 'user-1', tenantId: undefined },
+    );
     expect(db.updateFilesUsage).toHaveBeenNthCalledWith(1, [requestFile], undefined, {
       user: 'user-1',
+      tenantId: undefined,
     });
-    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(2, [toolFile]);
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(2, [toolFile], undefined, {
+      user: 'user-1',
+      tenantId: undefined,
+    });
   });
 });
 
@@ -1967,13 +2064,17 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     );
 
     expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
-    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [
-      'file-pptx-skill',
-      'file-output-csv',
-    ]);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith(
+      'conv-1',
+      ['file-pptx-skill', 'file-output-csv'],
+      { userId: 'user-1', tenantId: undefined },
+    );
     /* Both functions now share the same primary anchor — symmetric
      * design that closes the sibling-branch hole. */
-    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv']);
+    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv'], {
+      userId: 'user-1',
+      tenantId: undefined,
+    });
   });
 
   it('selects messages.attachments alongside messages.files (regression)', async () => {
@@ -2061,7 +2162,10 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       { ...db, getMessages, getCodeGeneratedFiles, getUserCodeFiles },
     );
 
-    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', []);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [], {
+      userId: 'user-1',
+      tenantId: undefined,
+    });
     /* `getUserCodeFiles` is gated on a non-empty array at the call site,
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */

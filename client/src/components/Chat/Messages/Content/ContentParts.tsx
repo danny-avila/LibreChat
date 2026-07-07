@@ -12,6 +12,7 @@ import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import { EditTextPart, EmptyText } from './Parts';
+import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
@@ -373,7 +374,7 @@ const ContentParts = memo(function ContentParts({
   const hasParallelContent = safeContent.some((part) => part?.groupId != null);
   if (hasParallelContent) {
     return (
-      <>
+      <ApprovalProvider>
         {renderPendingSkills()}
         <ParallelContentRenderer
           content={content}
@@ -385,41 +386,43 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={effectiveIsSubmitting}
           renderPart={renderPart}
         />
-      </>
+      </ApprovalProvider>
     );
   }
 
   // Sequential content: render parts in order (90% of cases)
   return (
-    <SearchContext.Provider value={{ searchResults }}>
-      <MemoryArtifacts attachments={attachments} />
-      {renderPendingSkills()}
-      {showEmptyCursor && (
-        <Container>
-          <EmptyText />
-        </Container>
-      )}
-      {groupedParts.map((group) => {
-        if (group.type === 'single') {
-          const { part, idx } = group.part;
-          return renderPart(part, idx, idx === lastContentIdx);
-        }
-        const { groupId } = group;
-        return (
-          <ToolCallGroup
-            key={`tool-group-${groupId}`}
-            parts={group.parts}
-            isSubmitting={effectiveIsSubmitting}
-            isLast={group.parts.some((p) => p.idx === lastContentIdx)}
-            renderPart={renderGroupedPart}
-            lastContentIdx={lastContentIdx}
-            groupAttachments={group.groupAttachments}
-            initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
-            onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
-          />
-        );
-      })}
-    </SearchContext.Provider>
+    <ApprovalProvider>
+      <SearchContext.Provider value={{ searchResults }}>
+        <MemoryArtifacts attachments={attachments} />
+        {renderPendingSkills()}
+        {showEmptyCursor && (
+          <Container>
+            <EmptyText />
+          </Container>
+        )}
+        {groupedParts.map((group) => {
+          if (group.type === 'single') {
+            const { part, idx } = group.part;
+            return renderPart(part, idx, idx === lastContentIdx);
+          }
+          const { groupId } = group;
+          return (
+            <ToolCallGroup
+              key={`tool-group-${groupId}`}
+              parts={group.parts}
+              isSubmitting={effectiveIsSubmitting}
+              isLast={group.parts.some((p) => p.idx === lastContentIdx)}
+              renderPart={renderGroupedPart}
+              lastContentIdx={lastContentIdx}
+              groupAttachments={group.groupAttachments}
+              initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
+              onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
+            />
+          );
+        })}
+      </SearchContext.Provider>
+    </ApprovalProvider>
   );
 });
 

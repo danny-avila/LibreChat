@@ -8,6 +8,7 @@ jest.mock('~/cache', () => ({
 }));
 
 import { resolveTokenConfigMap } from './tokenConfig';
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from './keys';
 
 const deps: TokenomicsDeps = {
   getValueKey: () => 'value-key',
@@ -54,6 +55,60 @@ describe('resolveTokenConfigMap', () => {
     expect(mockCacheGet).toHaveBeenCalled();
     expect(map.MyProxy['custom-model'].context).toBe(8000);
     expect(map.MyProxy['custom-model'].prompt).toBe(2);
+  });
+
+  it('uses a tenant-scoped cache key for fetched custom endpoint token config', async () => {
+    mockCacheGet.mockImplementation(async (key: string) => {
+      if (key.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)) {
+        return { 'custom-model': { prompt: 2, completion: 6, context: 16000 } };
+      }
+      if (key === 'MyProxy') {
+        return { 'custom-model': { prompt: 12, completion: 24, context: 111111 } };
+      }
+      return null;
+    });
+    const appConfig = appConfigWith([{ name: 'MyProxy', models: { fetch: true } }]);
+
+    const map = await resolveTokenConfigMap(
+      {
+        appConfig,
+        modelsConfig: { MyProxy: ['custom-model'] },
+        userId: 'user-2',
+        tenantId: 'tenant-b',
+      },
+      deps,
+    );
+
+    const tokenKey = mockCacheGet.mock.calls[0][0];
+    expect(tokenKey.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)).toBe(true);
+    expect(tokenKey).not.toBe('tenant:tenant-b:MyProxy');
+    expect(tokenKey).not.toContain('tenant-b');
+    expect(tokenKey).not.toContain('MyProxy');
+    expect(map.MyProxy['custom-model'].context).toBe(16000);
+    expect(map.MyProxy['custom-model'].prompt).toBe(2);
+  });
+
+  it('uses the legacy cache key when tenant context is unavailable or empty', async () => {
+    mockCacheGet.mockResolvedValue({ 'custom-model': { prompt: 2, completion: 6, context: 8000 } });
+    const appConfig = appConfigWith([{ name: 'MyProxy', models: { fetch: true } }]);
+    const tenantIds = [undefined, null, '', '   '] as Array<string | null | undefined>;
+
+    for (const tenantId of tenantIds) {
+      mockCacheGet.mockClear();
+      const map = await resolveTokenConfigMap(
+        {
+          appConfig,
+          modelsConfig: { MyProxy: ['custom-model'] },
+          userId: 'user-1',
+          tenantId,
+        },
+        deps,
+      );
+
+      expect(mockCacheGet).toHaveBeenCalledWith('MyProxy');
+      expect(mockCacheGet.mock.calls.every(([key]) => key === 'MyProxy')).toBe(true);
+      expect(map.MyProxy['custom-model'].context).toBe(8000);
+    }
   });
 
   it('omits pricing when contextCost is disabled', async () => {

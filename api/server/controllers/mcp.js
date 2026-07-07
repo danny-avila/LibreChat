@@ -5,9 +5,10 @@
  * @import { MCPServerRegistry } from '@librechat/api'
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
-const { logger } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
+  isUserSourced,
   MCPErrorCodes,
   redactServerSecrets,
   redactAllServerSecrets,
@@ -17,9 +18,11 @@ const {
 const {
   Constants,
   Permissions,
+  ResourceType,
+  PermissionBits,
   PermissionTypes,
-  MCPServerUserInputSchema,
   MCP_USER_INPUT_FIELDS,
+  MCPServerUserInputSchema,
 } = require('librechat-data-provider');
 const {
   resolveConfigServers,
@@ -27,6 +30,8 @@ const {
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const db = require('~/models');
 
@@ -197,6 +202,63 @@ const getMCPTools = async (req, res) => {
   }
 };
 /**
+ * Mirrors canAccessResource's capability bypass plus per-resource ACL EDIT check.
+ * `skipCapabilityWithoutDbIds` lets the list path skip the MANAGE_MCP_SERVERS probe
+ * when no DB-backed server is present; no list consumer reads the edit-gated fields
+ * the bypass would disclose. The detail route must not set it.
+ */
+async function computeCanEditByServer(req, serverConfigs, { skipCapabilityWithoutDbIds } = {}) {
+  const canEditByServer = new Map();
+  const dbIdsToCheck = [];
+  const dbIdToServerName = new Map();
+  for (const [name, config] of Object.entries(serverConfigs)) {
+    if (config.dbId) {
+      dbIdsToCheck.push(config.dbId);
+      dbIdToServerName.set(String(config.dbId), name);
+      continue;
+    }
+    canEditByServer.set(name, isUserSourced(config));
+  }
+  if (skipCapabilityWithoutDbIds === true && dbIdsToCheck.length === 0) {
+    return canEditByServer;
+  }
+  let bypass = false;
+  try {
+    bypass = await hasCapability(req.user, SystemCapabilities.MANAGE_MCP_SERVERS);
+  } catch (err) {
+    logger.warn(`[computeCanEditByServer] Capability bypass check failed: ${err.message}`);
+  }
+  if (bypass) {
+    for (const name of Object.keys(serverConfigs)) {
+      canEditByServer.set(name, true);
+    }
+    return canEditByServer;
+  }
+  if (dbIdsToCheck.length > 0) {
+    try {
+      const permsMap = await getResourcePermissionsMap({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: ResourceType.MCPSERVER,
+        resourceIds: dbIdsToCheck,
+      });
+      for (const [dbIdStr, name] of dbIdToServerName) {
+        const bits = permsMap.get(dbIdStr) ?? 0;
+        canEditByServer.set(name, (bits & PermissionBits.EDIT) !== 0);
+      }
+    } catch (err) {
+      logger.warn(
+        `[computeCanEditByServer] ACL lookup failed, defaulting to no edit: ${err.message}`,
+      );
+      for (const name of dbIdToServerName.values()) {
+        canEditByServer.set(name, false);
+      }
+    }
+  }
+  return canEditByServer;
+}
+
+/**
  * Get all MCP servers with permissions
  * @route GET /api/mcp/servers
  */
@@ -208,7 +270,10 @@ const getMCPServersList = async (req, res) => {
     }
 
     const serverConfigs = await resolveAllMcpConfigs(userId, req.user);
-    return res.json(redactAllServerSecrets(serverConfigs));
+    const canEditByServer = await computeCanEditByServer(req, serverConfigs, {
+      skipCapabilityWithoutDbIds: true,
+    });
+    return res.json(redactAllServerSecrets(serverConfigs, { canEditByServer }));
   } catch (error) {
     logger.error('[getMCPServersList]', error);
     res.status(500).json({ error: error.message });
@@ -306,7 +371,7 @@ const createMCPServerController = async (req, res) => {
     );
     res.status(201).json({
       serverName: result.serverName,
-      ...redactServerSecrets(result.config),
+      ...redactServerSecrets(result.config, { canEdit: true }),
     });
   } catch (error) {
     logger.error('[createMCPServer]', error);
@@ -339,7 +404,9 @@ const getMCPServerById = async (req, res) => {
       return res.status(404).json({ message: 'MCP server not found' });
     }
 
-    res.status(200).json(redactServerSecrets(parsedConfig));
+    const canEditMap = await computeCanEditByServer(req, { [serverName]: parsedConfig });
+    const canEdit = canEditMap.get(serverName) ?? false;
+    res.status(200).json(redactServerSecrets(parsedConfig, { canEdit }));
   } catch (error) {
     logger.error('[getMCPServerById]', error);
     res.status(500).json({ message: error.message });
@@ -400,7 +467,7 @@ const updateMCPServerController = async (req, res) => {
       userId,
     );
 
-    res.status(200).json(redactServerSecrets(parsedConfig));
+    res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
   } catch (error) {
     logger.error('[updateMCPServer]', error);
     const mcpErrorResponse = handleMCPError(error, res);

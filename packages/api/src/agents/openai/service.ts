@@ -31,6 +31,7 @@ import type {
   ToolCall,
 } from './types';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { ToolExecuteOptions } from '../handlers';
 import {
   createOpenAIContentAggregator,
   createOpenAIStreamTracker,
@@ -40,7 +41,6 @@ import {
   writeSSE,
 } from './handlers';
 import { createSafeUser } from '~/utils';
-import type { ToolExecuteOptions } from '../handlers';
 
 /**
  * Dependencies for the chat completion service
@@ -69,15 +69,17 @@ export interface ChatCompletionDependencies {
   /** Create agent run */
   createRun?: CreateRunFn;
   /**
-   * App config. Optional, but required for agents with `execute_code` in
-   * their tools: the helper derives `codeEnvAvailable` from
+   * App config. Optional for basic chat, but required for tenant-scoped
+   * Langfuse fanout and for agents with `execute_code` in their tools:
+   * tenant Langfuse keys are forwarded to `createRun`, and the helper derives
+   * `codeEnvAvailable` from
    * `appConfig?.endpoints?.agents?.capabilities` and forwards it into
    * `deps.initializeAgent`. When `appConfig` is omitted, the resolved
    * `codeEnvAvailable` is `undefined`, so `initializeAgent` skips the
    * `execute_code` → `bash_tool` + `read_file` expansion entirely and
    * code-requesting agents silently lose sandbox tools. Pass `appConfig`
    * (even a minimal shape with just `endpoints.agents.capabilities`) to
-   * keep code execution working.
+   * keep tenant tracing and code execution working.
    */
   appConfig?: AppConfig;
   /** Tool execute options for event-driven tool execution */
@@ -175,6 +177,8 @@ type CreateRunFn = (params: {
   customHandlers: Record<string, EventHandler>;
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
+  tenantId?: string;
+  appConfig?: Pick<AppConfig, 'endpoints' | 'langfuse'>;
   tokenCounter?: (message: unknown) => number;
 }) => Promise<{
   Graph?: unknown;
@@ -524,6 +528,13 @@ export async function createAgentChatCompletion(
           conversationId,
         },
         user: safeUser,
+        tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
+        appConfig: deps.appConfig
+          ? {
+              endpoints: deps.appConfig.endpoints,
+              langfuse: deps.appConfig.langfuse,
+            }
+          : undefined,
       });
 
       if (run) {

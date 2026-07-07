@@ -11,6 +11,7 @@ export interface ResolveTokenConfigParams {
   /** endpoint → model list, from the resolved models config */
   modelsConfig: TModelsConfig;
   userId: string;
+  tenantId?: string | null;
 }
 
 /**
@@ -21,7 +22,7 @@ export interface ResolveTokenConfigParams {
  * Lives in TypeScript so the `/api` controller stays a thin wrapper.
  */
 export async function resolveTokenConfigMap(
-  { appConfig, modelsConfig, userId }: ResolveTokenConfigParams,
+  { appConfig, modelsConfig, userId, tenantId }: ResolveTokenConfigParams,
   deps: TokenomicsDeps,
 ): Promise<TTokenConfigMap> {
   const includePricing = appConfig?.interfaceConfig?.contextCost === true;
@@ -41,7 +42,7 @@ export async function resolveTokenConfigMap(
     }
     /** Model fetches and chat initialization both store under this key —
      *  user-scoped whenever the fetched config can be user-specific */
-    const tokenKey = getTokenConfigKey(endpointConfig, name, userId);
+    const tokenKey = getTokenConfigKey(endpointConfig, name, userId, tenantId);
     const cached = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
     if (cached) {
       endpointTokenConfigs[name] = cached;

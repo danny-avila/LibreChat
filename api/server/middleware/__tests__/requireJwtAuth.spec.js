@@ -213,6 +213,7 @@ jest.mock('@librechat/api', () => {
     normalizeContextValue(req.headers?.['x-correlation-id']);
   return {
     isEnabled: jest.fn(() => false),
+    recordRumProxyRequest: jest.fn(),
     getAuthFailureReason,
     getAuthFailureErrorName,
     buildSafeAuthLogContext,
@@ -235,8 +236,13 @@ jest.mock('@librechat/api', () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 const requireJwtAuth = require('../requireJwtAuth');
+const { requireRumProxyAuth } = requireJwtAuth;
 const { getTenantId, getUserId, logger } = require('@librechat/data-schemas');
-const { isEnabled, maybeRefreshCloudFrontAuthCookiesMiddleware } = require('@librechat/api');
+const {
+  isEnabled,
+  maybeRefreshCloudFrontAuthCookiesMiddleware,
+  recordRumProxyRequest,
+} = require('@librechat/api');
 const passport = require('passport');
 
 const jwtSecret = 'test-refresh-secret';
@@ -250,7 +256,11 @@ function signedOpenIdUserCookie(userId = 'user-openid') {
 }
 
 function mockRes() {
-  return { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+  return {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+    end: jest.fn().mockReturnThis(),
+  };
 }
 
 /** Runs requireJwtAuth and returns the tenantId observed inside next(). */
@@ -282,6 +292,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     logger.info.mockClear();
     logger.warn.mockClear();
     logger.error.mockClear();
+    recordRumProxyRequest.mockClear();
     passport.authenticate.mockClear();
     passport._strategy.mockClear();
     if (originalJwtSecret === undefined) {
@@ -834,5 +845,143 @@ describe('requireJwtAuth tenant context chaining', () => {
 
   it('ALS context is not set at top-level scope (outside any request)', () => {
     expect(getTenantId()).toBeUndefined();
+  });
+});
+
+describe('requireRumProxyAuth', () => {
+  const originalJwtSecret = process.env.JWT_REFRESH_SECRET;
+
+  beforeEach(() => {
+    process.env.JWT_REFRESH_SECRET = jwtSecret;
+  });
+
+  afterEach(() => {
+    mockPassportError = null;
+    mockRegisteredStrategies = new Set(['jwt']);
+    isEnabled.mockReturnValue(false);
+    maybeRefreshCloudFrontAuthCookiesMiddleware.mockClear();
+    logger.debug.mockClear();
+    logger.info.mockClear();
+    logger.warn.mockClear();
+    logger.error.mockClear();
+    recordRumProxyRequest.mockClear();
+    passport.authenticate.mockClear();
+    passport._strategy.mockClear();
+    if (originalJwtSecret === undefined) {
+      delete process.env.JWT_REFRESH_SECRET;
+    } else {
+      process.env.JWT_REFRESH_SECRET = originalJwtSecret;
+    }
+  });
+
+  it('authenticates telemetry with the LibreChat JWT strategy without tenant or cookie refresh middleware', () => {
+    const req = mockReq({ id: 'user-jwt', tenantId: 'tenant-jwt', role: 'user' });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireRumProxyAuth(req, res, next);
+
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(req.authStrategy).toBe('jwt');
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+    // Success is recorded by the proxy.
+    expect(recordRumProxyRequest).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('authenticates telemetry with OpenID JWT reuse when the reuse cookie is present', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie()}` },
+      _mockStrategies: {
+        openidJwt: { user: { id: 'user-openid', tenantId: 'tenant-openid', role: 'user' } },
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireRumProxyAuth(req, res, next);
+
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'openidJwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(req.authStrategy).toBe('openidJwt');
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+    expect(recordRumProxyRequest).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('falls back to LibreChat JWT when OpenID JWT telemetry auth fails', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie()}` },
+      _mockStrategies: {
+        openidJwt: {
+          user: false,
+          info: { message: 'jwt expired', name: 'TokenExpiredError' },
+          status: 401,
+        },
+        jwt: { user: { id: 'user-openid', tenantId: 'tenant-jwt', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireRumProxyAuth(req, res, next);
+
+    expect(passport.authenticate).toHaveBeenCalledTimes(2);
+    expect(req.authStrategy).toBe('jwt');
+    expect(recordRumProxyRequest).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('drops invalid telemetry auth with 204 instead of returning an app auth error', () => {
+    const req = mockReq(undefined, {
+      path: '/v1/traces',
+      _mockStrategies: {
+        jwt: {
+          user: false,
+          info: { message: 'invalid signature', name: 'JsonWebTokenError' },
+          status: 401,
+        },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireRumProxyAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('traces', 'auth_drop');
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('records passport errors separately from ordinary telemetry auth drops', () => {
+    mockPassportError = new Error('passport unavailable');
+    const req = mockReq(undefined, { path: '/v1/logs' });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireRumProxyAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('logs', 'auth_error');
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalled();
   });
 });

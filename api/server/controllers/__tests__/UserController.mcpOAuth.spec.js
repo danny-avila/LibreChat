@@ -40,6 +40,16 @@ jest.mock('@librechat/api', () => ({
   },
   normalizeHttpError: jest.fn((error) => error),
   extractWebSearchEnvVars: jest.fn((params) => params.keys),
+  getAppConfigOptionsFromUser: jest.fn((user) => {
+    const hasSourceIdentity =
+      user != null && Object.prototype.hasOwnProperty.call(user, 'idOnTheSource');
+    return {
+      role: user?.role,
+      userId: user?.id,
+      idOnTheSource: user?.id && hasSourceIdentity ? (user.idOnTheSource ?? null) : undefined,
+      tenantId: user?.tenantId,
+    };
+  }),
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
 }));
@@ -132,7 +142,10 @@ function setupMCPMocks() {
     getAllowedAddresses: jest.fn().mockReturnValue(null),
   };
 
-  mockGetAppConfig.mockResolvedValue({});
+  // Revocation reads the merged config's mcpSettings allowlists (not the registry getters).
+  mockGetAppConfig.mockResolvedValue({
+    mcpSettings: { allowedDomains: [], allowedAddresses: null },
+  });
   mockUpdateUserPlugins.mockResolvedValue();
   mockDeleteUserPluginAuth.mockResolvedValue();
   mockInvalidateCachedTools.mockResolvedValue();

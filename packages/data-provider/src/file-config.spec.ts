@@ -23,6 +23,10 @@ describe('inferMimeType', () => {
     expect(inferMimeType('test.md', 'text/x-markdown')).toBe('text/markdown');
   });
 
+  it('should normalize application/x-zip-compressed to application/zip', () => {
+    expect(inferMimeType('archive.zip', 'application/x-zip-compressed')).toBe('application/zip');
+  });
+
   it('should return a type that matches textMimeTypes after normalization', () => {
     const normalized = inferMimeType('test.py', 'text/x-python-script');
     expect(textMimeTypes.test(normalized)).toBe(true);
@@ -36,6 +40,7 @@ describe('inferMimeType', () => {
   it('should infer from extension when browser type is empty', () => {
     expect(inferMimeType('test.py', '')).toBe('text/x-python');
     expect(inferMimeType('code.js', '')).toBe('text/javascript');
+    expect(inferMimeType('archive.zip', '')).toBe('application/zip');
     expect(inferMimeType('photo.heic', '')).toBe('image/heic');
     expect(inferMimeType('Main.java', '')).toBe('text/x-java');
   });
@@ -61,6 +66,19 @@ describe('inferMimeType', () => {
   it('should reject raw text/x-markdown without normalization', () => {
     expect(baseFileConfig.checkType('text/x-markdown')).toBe(false);
   });
+
+  it('should infer message/rfc822 from extension when browser type is empty', () => {
+    expect(inferMimeType('email.eml', '')).toBe('message/rfc822');
+  });
+
+  it('should pass through message/rfc822 when browser reports it', () => {
+    expect(inferMimeType('email.eml', 'message/rfc822')).toBe('message/rfc822');
+  });
+
+  it('should produce a type accepted by checkType for .eml files', () => {
+    const normalized = inferMimeType('test.eml', '');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
 });
 
 describe('applicationMimeTypes', () => {
@@ -82,6 +100,7 @@ describe('applicationMimeTypes', () => {
     'application/msword',
     'application/xml',
     'application/zip',
+    'application/x-zip-compressed',
     'application/epub+zip',
     'application/x-tar',
     'application/x-sh',
@@ -141,6 +160,10 @@ describe('supportedMimeTypes', () => {
     'application/vnd.oasis.opendocument.graphics',
   ])('ODF type flows through supportedMimeTypes: %s', (mimeType) => {
     expect(checkSupported(mimeType)).toBe(true);
+  });
+
+  it('message/rfc822 (.eml) flows through supportedMimeTypes', () => {
+    expect(checkSupported('message/rfc822')).toBe(true);
   });
 });
 

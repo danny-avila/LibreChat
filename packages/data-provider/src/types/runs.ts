@@ -1,3 +1,5 @@
+import { inputTokensIncludesCache } from '../schemas';
+
 export enum ContentTypes {
   TEXT = 'text',
   THINK = 'think',
@@ -44,6 +46,15 @@ export enum StepEvents {
 export enum UsageEvents {
   ON_CONTEXT_USAGE = 'on_context_usage',
   ON_TOKEN_USAGE = 'on_token_usage',
+}
+
+/**
+ * Human-in-the-loop event names. Streamed to live clients when a run pauses for
+ * tool approval (or an ask-user question). Reconnecting clients instead read the
+ * same record from `resumeState.pendingAction` on the sync event / status route.
+ */
+export enum ApprovalEvents {
+  ON_PENDING_ACTION = 'on_pending_action',
 }
 
 /** Mirrors TokenBudgetBreakdown from @librechat/agents (data-provider cannot import it). */
@@ -124,6 +135,57 @@ export type TTokenUsageEvent = {
    *  rates); present only when `interface.contextCost` is enabled. Clients sum
    *  this rather than re-deriving cost from base rates. */
   cost?: number;
+};
+
+/**
+ * Full prompt token count for one completed model call — the EXACT context the
+ * model saw, provider-aware: additive providers (Bedrock) report `input_tokens`
+ * excluding cache, so cache reads/writes are added back; subset providers
+ * (Anthropic, OpenAI, …) already fold cache into `input_tokens`. When the
+ * provider is absent (custom/OpenAI-compatible payloads), fall back to the same
+ * magnitude heuristic `normalizeUsageUnits` uses — cache ≤ input means it's
+ * already included — so cached events aren't re-inflated. The ground truth the
+ * gauge reconciles its calibrated estimate to.
+ */
+export const promptTokensFromUsage = (event: TTokenUsageEvent): number => {
+  const input = event.input_tokens ?? 0;
+  const details = event.input_token_details ?? {};
+  const cacheRead = details.cache_read ?? 0;
+  const cacheCreation = details.cache_creation ?? 0;
+  const includesCache =
+    event.provider != null
+      ? inputTokensIncludesCache(event.provider)
+      : cacheRead + cacheCreation <= input;
+  return includesCache ? input : input + cacheRead + cacheCreation;
+};
+
+/**
+ * Reconciles a pre-invoke context snapshot's CALIBRATED estimate to a call's
+ * ACTUAL prompt tokens. The SDK's calibration multiplier scales only
+ * `messageTokens` (instructions/summary are raw tiktoken counts), and it can
+ * over-shoot badly when a provider injects server-side content the SDK never
+ * counted (e.g. Anthropic web search) — pinning the gauge several× too high and
+ * persisting it. Trust the provider's own prompt count: keep the raw
+ * instruction/summary rows, set `messageTokens` to the remainder, and recompute
+ * the free space. No-op when `promptTokens` is unusable.
+ */
+export const reconcileContextUsage = (
+  snapshot: TContextUsageEvent,
+  promptTokens: number,
+): TContextUsageEvent => {
+  if (!Number.isFinite(promptTokens) || promptTokens <= 0) {
+    return snapshot;
+  }
+  const { breakdown } = snapshot;
+  const budget = snapshot.contextBudget ?? breakdown.maxContextTokens;
+  const nonMessageTokens = (breakdown.instructionTokens ?? 0) + (breakdown.summaryTokens ?? 0);
+  const messageTokens = Math.max(0, promptTokens - nonMessageTokens);
+  return {
+    ...snapshot,
+    breakdown: { ...breakdown, messageTokens },
+    remainingContextTokens:
+      budget != null ? Math.max(0, budget - promptTokens) : snapshot.remainingContextTokens,
+  };
 };
 
 /** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */

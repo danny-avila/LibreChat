@@ -2473,6 +2473,54 @@ describe('Claude Model Tests', () => {
       cacheTokenValues['claude-mythos-5'].read,
     );
   });
+
+  it('should return correct prompt and completion rates for Claude Sonnet 5', () => {
+    expect(getMultiplier({ model: 'claude-sonnet-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-sonnet-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-sonnet-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-sonnet-5'].completion,
+    );
+  });
+
+  it('should pin Claude Sonnet 5 to introductory $2 / $10 per MTok (through 2026-08-31)', () => {
+    expect(tokenValues['claude-sonnet-5']).toEqual({ prompt: 2, completion: 10 });
+  });
+
+  it('should apply introductory cache rates ($2.50 / $0.20) for Claude Sonnet 5', () => {
+    expect(cacheTokenValues['claude-sonnet-5']).toEqual({ write: 2.5, read: 0.2 });
+  });
+
+  it('should handle Claude Sonnet 5 model name variations without matching Sonnet 4', () => {
+    const modelVariations = [
+      'claude-sonnet-5',
+      'claude-sonnet-5-20260101',
+      'claude-sonnet-5-latest',
+      'anthropic/claude-sonnet-5',
+      'claude-sonnet-5/anthropic',
+      'anthropic.claude-sonnet-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-sonnet-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-sonnet-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-sonnet-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Sonnet 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-sonnet-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-sonnet-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-sonnet-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-sonnet-5'].read,
+    );
+  });
 });
 
 describe('Premium Token Pricing', () => {
@@ -2500,6 +2548,7 @@ describe('Premium Token Pricing', () => {
       'claude-fable-5',
       'claude-mythos-5',
       'claude-sonnet-4-6',
+      'claude-sonnet-5',
     ];
     claudeModels.forEach((model) => {
       expect(premiumTokenValues[model]).toBeUndefined();

@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { createMulterInstance, storage, importFileFilter } = require('./multer');
+const { createMulterInstance, storage, importFileFilter, createFileFilter } = require('./multer');
 
 // Mock only the config service that requires external dependencies
 jest.mock('~/server/services/Config', () => ({
@@ -279,6 +279,25 @@ describe('Multer Configuration', () => {
         // Restore original function
         require('librechat-data-provider').fileConfig.checkType = originalCheckType;
       }
+    });
+
+    it('should infer ZIP MIME type when multipart upload omits it', (done) => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(mergeFileConfig());
+      const zipFile = {
+        ...mockFile,
+        originalname: 'archive.zip',
+        mimetype: '',
+      };
+
+      const cb = jest.fn((err, result) => {
+        expect(err).toBeNull();
+        expect(result).toBe(true);
+        expect(zipFile.mimetype).toBe('application/zip');
+        done();
+      });
+
+      fileFilter(mockReq, zipFile, cb);
     });
 
     it('should use real mergeFileConfig function', async () => {

@@ -348,6 +348,51 @@ describe('openIdJwtStrategy – token source handling', () => {
   });
 });
 
+describe('openIdJwtStrategy – idOnTheSource boundary coercion', () => {
+  const payload = {
+    sub: 'oidc-123',
+    email: 'test@example.com',
+    iss: 'https://issuer.example.com',
+    exp: 9999999999,
+  };
+  const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    updateUser.mockResolvedValue({});
+    openIdJwtLogin(mockOpenIdConfig);
+  });
+
+  it('coerces missing idOnTheSource to null', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: { _id: { toString: () => 'user-abc' }, role: SystemRoles.USER, provider: 'openid' },
+      error: null,
+      migration: false,
+    });
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.idOnTheSource).toBeNull();
+  });
+
+  it('preserves a stored idOnTheSource', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: {
+        _id: { toString: () => 'user-abc' },
+        role: SystemRoles.USER,
+        provider: 'openid',
+        idOnTheSource: 'entra-oid-123',
+      },
+      error: null,
+      migration: false,
+    });
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.idOnTheSource).toBe('entra-oid-123');
+  });
+});
+
 describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
   const payload = {
     sub: 'oidc-123',

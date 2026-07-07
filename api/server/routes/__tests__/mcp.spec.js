@@ -24,6 +24,11 @@ const mockRegistryInstance = {
   removeServer: jest.fn(),
   getAllowedDomains: jest.fn().mockReturnValue(null),
   getAllowedAddresses: jest.fn().mockReturnValue(null),
+  resolveAllowlists: jest.fn().mockResolvedValue({
+    allowedDomains: null,
+    allowedAddresses: null,
+    useSSRFProtection: true,
+  }),
 };
 let mockMCPUseAllowed = true;
 
@@ -2600,11 +2605,13 @@ describe('MCP Routes', () => {
           type: 'sse',
           url: 'http://server1.com/sse',
           title: 'Server 1',
+          source: 'user',
         },
         'server-2': {
           type: 'sse',
           url: 'http://server2.com/sse',
           title: 'Server 2',
+          source: 'user',
         },
       };
 
@@ -2676,7 +2683,7 @@ describe('MCP Routes', () => {
 
       mockRegistryInstance.addServer.mockResolvedValue({
         serverName: 'test-sse-server',
-        config: validConfig,
+        config: { ...validConfig, source: 'user' },
       });
 
       const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
@@ -3096,6 +3103,7 @@ describe('MCP Routes', () => {
         type: 'sse',
         url: 'https://mcp-server.example.com/sse',
         title: 'Test Server',
+        source: 'user',
       };
 
       mockRegistryInstance.getServerConfig.mockResolvedValue(mockConfig);
@@ -3164,7 +3172,7 @@ describe('MCP Routes', () => {
         description: 'Updated description',
       };
 
-      mockRegistryInstance.updateServer.mockResolvedValue(updatedConfig);
+      mockRegistryInstance.updateServer.mockResolvedValue({ ...updatedConfig, source: 'user' });
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')

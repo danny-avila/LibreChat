@@ -98,6 +98,7 @@ export async function loadAddedAgent(
       file_search?: boolean;
       web_search?: boolean;
       artifacts?: unknown;
+      memory?: boolean;
     };
     [key: string]: unknown;
   };
@@ -115,6 +116,7 @@ export async function loadAddedAgent(
         file_search?: boolean;
         web_search?: boolean;
         artifacts?: unknown;
+        memory?: boolean;
       }
     | undefined;
 
@@ -178,6 +180,9 @@ export async function loadAddedAgent(
   }
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
+  }
+  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+    tools.push(Tools.memory);
   }
 
   const addedServers = new Set<string>();

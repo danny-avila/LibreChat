@@ -4,6 +4,29 @@ import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '../config/winston';
 
+export type FileOwnerScope = {
+  userId: string;
+  tenantId?: string | null;
+};
+
+function withOwnerScope<T extends FilterQuery<IMongoFile>>(
+  filter: T,
+  ownerScope?: FileOwnerScope,
+): T & FilterQuery<IMongoFile> {
+  if (!ownerScope) {
+    return filter;
+  }
+
+  const scopedFilter: T & FilterQuery<IMongoFile> = {
+    ...filter,
+    user: ownerScope.userId,
+  };
+  if (ownerScope.tenantId) {
+    scopedFilter.tenantId = ownerScope.tenantId;
+  }
+  return scopedFilter;
+}
+
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')): {
   findFileById: (file_id: string, options?: Record<string, unknown>) => Promise<IMongoFile | null>;
@@ -16,12 +39,14 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   getToolFilesByIds: (
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
+    ownerScope?: FileOwnerScope,
   ) => Promise<IMongoFile[]>;
   getCodeGeneratedFiles: (
     conversationId: string,
     threadFileIds?: string[],
+    ownerScope?: FileOwnerScope,
   ) => Promise<IMongoFile[]>;
-  getUserCodeFiles: (fileIds?: string[]) => Promise<IMongoFile[]>;
+  getUserCodeFiles: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
     filename: string;
     conversationId: string;
@@ -38,6 +63,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_id: string;
     inc?: number;
     user?: string;
+    tenantId?: string | null;
   }) => Promise<IMongoFile | null>;
   deleteFile: (file_id: string) => Promise<IMongoFile | null>;
   deleteFiles: (file_ids: string[], user?: string) => Promise<{ deletedCount?: number }>;
@@ -53,7 +79,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
     fileIds?: string[],
-    options?: { user?: string },
+    options?: { user?: string; tenantId?: string | null },
   ) => Promise<IMongoFile[]>;
   sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
 } {
@@ -116,6 +142,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function getToolFilesByIds(
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
+    ownerScope?: FileOwnerScope,
   ): Promise<IMongoFile[]> {
     if (!fileIds || !fileIds.length || !toolResourceSet?.size) {
       return [];
@@ -136,11 +163,14 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         return [];
       }
 
-      const filter: FilterQuery<IMongoFile> = {
-        file_id: { $in: fileIds },
-        context: { $ne: FileContext.execute_code },
-        $or: orConditions,
-      };
+      const filter = withOwnerScope(
+        {
+          file_id: { $in: fileIds },
+          context: { $ne: FileContext.execute_code },
+          $or: orConditions,
+        },
+        ownerScope,
+      );
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { updatedAt: -1 as SortOrder };
@@ -189,6 +219,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function getCodeGeneratedFiles(
     conversationId: string,
     threadFileIds?: string[],
+    ownerScope?: FileOwnerScope,
   ): Promise<IMongoFile[]> {
     if (!conversationId) {
       return [];
@@ -206,12 +237,15 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
 
     try {
-      const filter: FilterQuery<IMongoFile> = {
-        conversationId,
-        context: FileContext.execute_code,
-        file_id: { $in: threadFileIds },
-        'metadata.codeEnvRef': { $exists: true },
-      };
+      const filter = withOwnerScope(
+        {
+          conversationId,
+          context: FileContext.execute_code,
+          file_id: { $in: threadFileIds },
+          'metadata.codeEnvRef': { $exists: true },
+        },
+        ownerScope,
+      );
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { createdAt: 1 as SortOrder };
@@ -229,19 +263,26 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * These are files with fileIdentifier metadata but context is NOT execute_code (e.g., agents or message_attachment).
    * File IDs should be collected from message.files arrays in the current thread.
    * @param fileIds - Array of file IDs to fetch (from message.files in the thread)
+   * @param ownerScope - Authenticated owner scope used to constrain historical refs
    * @returns User-uploaded execute_code files
    */
-  async function getUserCodeFiles(fileIds?: string[]): Promise<IMongoFile[]> {
+  async function getUserCodeFiles(
+    fileIds: string[],
+    ownerScope: FileOwnerScope,
+  ): Promise<IMongoFile[]> {
     if (!fileIds || fileIds.length === 0) {
       return [];
     }
 
     try {
-      const filter: FilterQuery<IMongoFile> = {
-        file_id: { $in: fileIds },
-        context: { $ne: FileContext.execute_code },
-        'metadata.codeEnvRef': { $exists: true },
-      };
+      const filter = withOwnerScope(
+        {
+          file_id: { $in: fileIds },
+          context: { $ne: FileContext.execute_code },
+          'metadata.codeEnvRef': { $exists: true },
+        },
+        ownerScope,
+      );
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { createdAt: 1 as SortOrder };
@@ -357,15 +398,18 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_id: string;
     inc?: number;
     user?: string;
+    tenantId?: string | null;
   }): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    const { file_id, inc = 1, user } = data;
+    const { file_id, inc = 1, user, tenantId } = data;
     const updateOperation = {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
     };
     // Owner scoping is fail-closed: mismatches leave usage and TTL metadata unchanged.
-    const query: FilterQuery<IMongoFile> = user ? { file_id, user } : { file_id };
+    const query: FilterQuery<IMongoFile> = user
+      ? withOwnerScope({ file_id }, { userId: user, tenantId })
+      : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean<IMongoFile>();
@@ -454,12 +498,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function updateFilesUsage(
     files: Array<{ file_id: string }>,
     fileIds?: string[],
-    options?: { user?: string },
+    options?: { user?: string; tenantId?: string | null },
   ): Promise<IMongoFile[]> {
     const promises: Promise<IMongoFile | null>[] = [];
     const seen = new Set<string>();
     // Preserve the same owner scope for every deduped ID in this batch.
     const user = options?.user;
+    const tenantId = options?.tenantId;
 
     for (const file of files) {
       const { file_id } = file;
@@ -467,7 +512,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id, user }));
+      promises.push(updateFileUsage({ file_id, user, tenantId }));
     }
 
     if (!fileIds) {
@@ -480,7 +525,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id, user }));
+      promises.push(updateFileUsage({ file_id, user, tenantId }));
     }
 
     const results = await Promise.all(promises);

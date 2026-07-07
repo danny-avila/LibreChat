@@ -87,6 +87,9 @@ export const conversationPreset: {
   promptCache: {
     type: BooleanConstructor;
   };
+  promptCacheTtl: {
+    type: StringConstructor;
+  };
   thinking: {
     type: BooleanConstructor;
   };
@@ -161,6 +164,10 @@ export const conversationPreset: {
   };
   /** OpenAI Responses API / Anthropic API / Google API */
   web_search: {
+    type: BooleanConstructor;
+  };
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
     type: BooleanConstructor;
   };
   disableStreaming: {
@@ -256,6 +263,9 @@ export const conversationPreset: {
   promptCache: {
     type: Boolean,
   },
+  promptCacheTtl: {
+    type: String,
+  },
   thinking: {
     type: Boolean,
   },
@@ -320,6 +330,10 @@ export const conversationPreset: {
   },
   /** OpenAI Responses API / Anthropic API / Google API */
   web_search: {
+    type: Boolean,
+  },
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
     type: Boolean,
   },
   disableStreaming: {

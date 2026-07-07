@@ -1,12 +1,13 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FileSources } from 'librechat-data-provider';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LogLink from '../LogLink';
 
 const mockShowToast = jest.fn();
 const mockDownloadFromApi = jest.fn();
 const mockDownloadFromUrl = jest.fn();
 const mockTriggerDownload = jest.fn();
+let mockShareContext: { shareId?: string } = {};
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
@@ -15,6 +16,10 @@ jest.mock('@librechat/client', () => ({
 jest.mock('~/data-provider', () => ({
   useFileDownload: () => ({ refetch: mockDownloadFromApi }),
   useCodeOutputDownload: () => ({ refetch: mockDownloadFromUrl }),
+}));
+
+jest.mock('~/Providers', () => ({
+  useShareContext: () => mockShareContext,
 }));
 
 jest.mock('~/utils', () => ({
@@ -26,6 +31,7 @@ jest.mock('~/utils', () => ({
 describe('LogLink download routing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockShareContext = {};
   });
 
   it('navigates directly to http URLs when no stored file metadata is available', async () => {
@@ -73,6 +79,28 @@ describe('LogLink download routing', () => {
       );
     });
     expect(mockDownloadFromApi).toHaveBeenCalledTimes(1);
+    expect(mockDownloadFromUrl).not.toHaveBeenCalled();
+  });
+
+  it('routes downloads through the share-scoped route in a shared view', async () => {
+    mockShareContext = { shareId: 'share-9' };
+    const filename = 'file.pdf';
+
+    render(
+      <LogLink href="/api/share/share-9/files/file-1" file_id="file-1" filename={filename}>
+        {filename}
+      </LogLink>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: filename }));
+
+    await waitFor(() => {
+      expect(mockTriggerDownload).toHaveBeenCalledWith(
+        '/api/share/share-9/files/file-1/download',
+        'file.pdf',
+      );
+    });
+    expect(mockDownloadFromApi).not.toHaveBeenCalled();
     expect(mockDownloadFromUrl).not.toHaveBeenCalled();
   });
 
