@@ -321,11 +321,9 @@ export async function buildToolClassification(
      * The ToolSearch schema declares `mcp_server` as a string/array union, which
      * `zod_to_gemini_parameters` rejects — collapse it for Gemini/Vertex agents.
      */
-    const toolSearchParameters = (
-      isGoogle
-        ? sanitizeGeminiSchema(ToolSearchToolDefinition.schema as Record<string, unknown>)
-        : ToolSearchToolDefinition.schema
-    ) as unknown as LCTool['parameters'];
+    const toolSearchParameters = (isGoogle
+      ? sanitizeGeminiSchema(ToolSearchToolDefinition.schema as Record<string, unknown>)
+      : ToolSearchToolDefinition.schema) as unknown as LCTool['parameters'];
 
     if (!definitionsOnly) {
       const toolSearchTool = createToolSearch({
