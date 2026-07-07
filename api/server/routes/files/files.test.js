@@ -222,7 +222,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
@@ -264,7 +264,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
@@ -312,6 +312,36 @@ describe('File Routes - Delete with Agent Access', () => {
 
       const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
       expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+    });
+
+    it('rejects invalid agent tool_resource values before unlinking', async () => {
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search.$pullAll',
+          files: [{ file_id: fileId, filepath: '/uploads/test.txt' }],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid agent tool resource');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([fileId]);
     });
 
     it('allows an agent author to unlink an editor-owned attached file', async () => {
@@ -417,7 +447,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(thirdUserFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
@@ -472,7 +502,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unattachedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
@@ -537,7 +567,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unauthorizedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });

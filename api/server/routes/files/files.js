@@ -14,6 +14,7 @@ const {
   FileSources,
   ResourceType,
   EModelEndpoint,
+  EToolResources,
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
@@ -35,6 +36,16 @@ const { Readable } = require('stream');
 const db = require('~/models');
 
 const router = express.Router();
+const AGENT_TOOL_RESOURCE_KEYS = new Set([
+  EToolResources.execute_code,
+  EToolResources.file_search,
+  EToolResources.image_edit,
+  EToolResources.context,
+  EToolResources.ocr,
+]);
+
+const isAgentToolResourceKey = (toolResource) =>
+  typeof toolResource === 'string' && AGENT_TOOL_RESOURCE_KEYS.has(toolResource);
 
 router.get('/', async (req, res) => {
   try {
@@ -156,6 +167,10 @@ router.delete('/', async (req, res) => {
     const dbFiles = await db.getFiles({ file_id: { $in: fileIds } });
 
     if (req.body.agent_id && req.body.tool_resource) {
+      if (!isAgentToolResourceKey(req.body.tool_resource)) {
+        return res.status(400).json({ message: 'Invalid agent tool resource' });
+      }
+
       const agent = await db.getAgent({
         id: req.body.agent_id,
       });
@@ -225,7 +240,7 @@ router.delete('/', async (req, res) => {
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete files you have access to',
+        message: 'You can only delete files you own',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
     }
