@@ -857,6 +857,7 @@
   "com_ui_artifacts_options": "Artifacts Options",
   "com_ui_artifacts_subtext": "Lets the agent render React, HTML, SVG, Markdown, and Mermaid as interactive artifacts in a side panel instead of plain code blocks.",
   "com_ui_ascending": "Asc",
+  "com_ui_ask_type_below": "Or type your answer below",
   "com_ui_ask_user": "Ask User",
   "com_ui_asked_a_question": "Asked a question",
   "com_ui_assistant": "Assistant",

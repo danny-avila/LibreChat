@@ -60,14 +60,19 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
             <span className="flex-1">{option.label}</span>
           </button>
         ))}
-        <div className="flex items-center justify-end gap-2 p-2">
-          <Button size="sm" variant="outline" onClick={() => skip()}>
-            {localize('com_ui_skip')}
-          </Button>
-          <Button size="sm" variant="submit" disabled={!canSubmit} onClick={() => submit()}>
-            {localize('com_ui_submit')}
-            <CornerDownLeft className="ml-1.5 h-4 w-4" aria-hidden="true" />
-          </Button>
+        <div className="flex items-center justify-between gap-2 p-2">
+          <span className="text-xs italic text-text-secondary">
+            {localize('com_ui_ask_type_below')}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => skip()}>
+              {localize('com_ui_skip')}
+            </Button>
+            <Button size="sm" variant="submit" disabled={!canSubmit} onClick={() => submit()}>
+              {localize('com_ui_submit')}
+              <CornerDownLeft className="ml-1.5 h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
