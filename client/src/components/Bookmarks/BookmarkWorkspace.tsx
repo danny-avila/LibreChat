@@ -31,8 +31,7 @@ function renderSortMenuItem(label: string, isSelected: boolean): RenderProp {
 export default function BookmarkWorkspace() {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const { tag: encodedTag = '' } = useParams();
-  const tag = decodeURIComponent(encodedTag);
+  const { tag = '' } = useParams();
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
