@@ -258,6 +258,7 @@ const SENSITIVE_PARAM_KEYS = new Set([
   'sessiontoken',
   'session_token',
   'configuration',
+  'client',
   'clientoptions',
   'client_options',
   'fetchoptions',

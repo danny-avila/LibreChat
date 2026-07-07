@@ -316,6 +316,7 @@ describe('sanitizeResumeModelParameters', () => {
       customHeaders: { 'Ocp-Apim-Subscription-Key': 'gateway-secret' },
       authOptions: { credentials: { private_key: 'google-secret' } },
       credentials: { accessKeyId: 'aws-id', secretAccessKey: 'aws-secret' },
+      client: { config: { token: { token: 'bedrock-bearer' } } },
       endpointHost: 'vpce.internal.example',
       baseURL: 'https://internal-gateway.example',
     });
