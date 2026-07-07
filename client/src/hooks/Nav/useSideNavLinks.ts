@@ -4,12 +4,14 @@ import {
   Bot,
   Brain,
   Bookmark,
+  BarChart3,
   NotebookPen,
   ScrollText,
   ArrowRightToLine,
   SlidersHorizontal,
 } from 'lucide-react';
 import {
+  SystemRoles,
   Permissions,
   EModelEndpoint,
   PermissionTypes,
@@ -20,6 +22,7 @@ import {
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import {
+  useAuthContext,
   useAgentCapabilities,
   useMCPServerManager,
   useGetAgentsConfig,
@@ -32,6 +35,7 @@ import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
+import UsagePanel from '~/components/SidePanel/Usage/UsagePanel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
 
@@ -52,6 +56,8 @@ export default function useSideNavLinks({
   endpointsConfig: TEndpointsConfig;
   includeHidePanel?: boolean;
 }) {
+  const { user } = useAuthContext();
+  const hasAccessToUsage = user?.role === SystemRoles.ADMIN;
   const hasAccessToPrompts = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.USE,
@@ -206,6 +212,16 @@ export default function useSideNavLinks({
       });
     }
 
+    if (hasAccessToUsage) {
+      links.push({
+        title: 'com_ui_admin_usage',
+        label: '',
+        icon: BarChart3,
+        id: 'usage',
+        Component: UsagePanel,
+      });
+    }
+
     if (includeHidePanel && hidePanel) {
       links.push({
         title: 'com_sidepanel_hide_panel',
@@ -234,6 +250,7 @@ export default function useSideNavLinks({
     availableMCPServers,
     hasAccessToUseMCPSettings,
     hasAccessToCreateMCP,
+    hasAccessToUsage,
     includeHidePanel,
     hidePanel,
   ]);
