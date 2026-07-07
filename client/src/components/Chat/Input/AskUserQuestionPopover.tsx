@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { CornerDownLeft, X } from 'lucide-react';
 import { atom, useRecoilState } from 'recoil';
 import { useResumeSubmit } from '../Messages/Content/ApprovalContext';
 import { findLiveAskUserQuestion } from '~/utils/approval';
@@ -76,6 +76,15 @@ function AskUserQuestionPopoverContent({
       if (textarea.value.trim().length > 0) {
         return;
       }
+      // Number keys pick the matching option directly (1-9), mirroring the
+      // row chips — same empty-composer guard as the arrow keys.
+      const digit = Number.parseInt(e.key, 10);
+      if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(options.length, 9)) {
+        e.preventDefault();
+        e.stopPropagation();
+        submitAskAnswer(liveAsk.actionId, options[digit - 1].value);
+        return;
+      }
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setActiveIndex((prev) => (prev + 1) % options.length);
@@ -134,7 +143,10 @@ function AskUserQuestionPopoverContent({
             <span className="flex h-5 w-5 items-center justify-center rounded bg-surface-tertiary text-xs text-text-secondary">
               {index + 1}
             </span>
-            {option.label}
+            <span className="flex-1">{option.label}</span>
+            {index === activeIndex && (
+              <CornerDownLeft className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+            )}
           </button>
         ))}
       </div>
