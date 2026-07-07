@@ -122,17 +122,12 @@ jobs:
 
           if [ ${#FAILED[@]} -gt 0 ]; then
             RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            FAILED_LIST=$(printf -- '- %s\n' "${FAILED[@]}")
+            MERGED_LIST=$(printf -- '- #%s\n' "${MERGED[@]:-(none)}")
+            BODY=$(printf 'The scheduled-merge workflow could not merge some PRs labeled `deploy-tonight`.\n\n**Skipped / failed:**\n%s\n**Merged successfully:**\n%s\nInvestigate in the run: %s\n' "$FAILED_LIST" "$MERGED_LIST" "$RUN_URL")
             gh issue create \
               --title "Scheduled auto-merge — $(date -u +%Y-%m-%d): ${#FAILED[@]} PR(s) not merged" \
-              --body "The scheduled-merge workflow could not merge some PRs labeled \`deploy-tonight\`.
-
-**Skipped / failed:**
-$(printf -- '- %s\n' "${FAILED[@]}")
-
-**Merged successfully:**
-$(printf -- '- #%s\n' "${MERGED[@]:-(none)}")
-
-Investigate in the run: ${RUN_URL}" \
+              --body "$BODY" \
               --label auto-merge-failure \
               || true
             exit 1
