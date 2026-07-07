@@ -5,6 +5,7 @@ import {
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
+  createContentIndexOffsetHandlers,
 } from './resume';
 
 describe('mapToolApprovalResolutions', () => {
@@ -167,5 +168,59 @@ describe('findIncompleteDecisions', () => {
         { tool_call_id: 'd', decision: 'reject', reason: 'no' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('createContentIndexOffsetHandlers', () => {
+  const makeRecorder = () => {
+    const calls: Array<{ event: string; data: unknown }> = [];
+    const handler = { handle: (event: string, data: unknown) => void calls.push({ event, data }) };
+    return { calls, handler };
+  };
+
+  it('returns the input untouched for offset 0 / undefined handlers', () => {
+    const { handler } = makeRecorder();
+    const handlers = { on_run_step: handler };
+    expect(createContentIndexOffsetHandlers(handlers, 0)).toBe(handlers);
+    expect(createContentIndexOffsetHandlers(undefined, 3)).toBeUndefined();
+  });
+
+  it('shifts ON_RUN_STEP index by the offset without mutating the original payload', () => {
+    const { calls, handler } = makeRecorder();
+    const wrapped = createContentIndexOffsetHandlers({ on_run_step: handler }, 3)!;
+    const runStep = { id: 'step_1', index: 0, stepDetails: { type: 'message_creation' } };
+    wrapped.on_run_step.handle('on_run_step', runStep as never);
+    expect((calls[0].data as { index: number }).index).toBe(3);
+    expect(runStep.index).toBe(0); // caller's object untouched
+  });
+
+  it('shifts ON_AGENT_UPDATE nested index', () => {
+    const { calls, handler } = makeRecorder();
+    const wrapped = createContentIndexOffsetHandlers({ on_agent_update: handler }, 2)!;
+    wrapped.on_agent_update.handle('on_agent_update', {
+      agent_update: { index: 1, runId: 'r' },
+    } as never);
+    expect((calls[0].data as { agent_update: { index: number } }).agent_update.index).toBe(3);
+  });
+
+  it('passes every other event handler through by reference (stateful instances intact)', () => {
+    const { handler } = makeRecorder();
+    const deltaHandler = { handle: jest.fn() };
+    const wrapped = createContentIndexOffsetHandlers(
+      { on_run_step: handler, on_message_delta: deltaHandler },
+      5,
+    )!;
+    expect(wrapped.on_message_delta).toBe(deltaHandler);
+    // Deltas carry no index — they resolve through the (shifted) stepMap entry.
+    wrapped.on_message_delta.handle('on_message_delta', { id: 'step_1', delta: {} } as never);
+    expect(deltaHandler.handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a runStep without a numeric index unshifted (defensive)', () => {
+    const { calls, handler } = makeRecorder();
+    const wrapped = createContentIndexOffsetHandlers({ on_run_step: handler }, 4)!;
+    const weird = { id: 'step_x' };
+    wrapped.on_run_step.handle('on_run_step', weird as never);
+    expect(calls[0].data).toBe(weird);
   });
 });

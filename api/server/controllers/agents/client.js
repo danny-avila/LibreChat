@@ -43,6 +43,7 @@ const {
   isHITLEnabled,
   deleteAgentCheckpoint,
   agentRequestsAskUserQuestion,
+  createContentIndexOffsetHandlers,
   getRequestMemories,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
@@ -1901,7 +1902,14 @@ class AgentClient extends BaseClient {
         initialSessions,
         runId: this.responseMessageId,
         signal: abortController.signal,
-        customHandlers: this.options.eventHandlers,
+        // The rebuilt graph numbers content indices from 0, but the aggregator was
+        // just seeded with the pre-pause parts at those same indices — shift every
+        // resumed step index past the seed, or the new output merges into (or, on a
+        // type mismatch, is silently dropped against) the pre-pause content.
+        customHandlers: createContentIndexOffsetHandlers(
+          this.options.eventHandlers,
+          Array.isArray(seedContent) ? seedContent.length : 0,
+        ),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
         tenantId: this.options.req?.user?.tenantId,

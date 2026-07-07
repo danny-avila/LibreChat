@@ -1,7 +1,9 @@
+import { GraphEvents } from '@librechat/agents';
 import type {
   ToolApprovalDecision,
   ToolApprovalDecisionMap,
   AskUserQuestionResolution,
+  EventHandler,
 } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 
@@ -116,4 +118,68 @@ export function findIncompleteDecisions(
       return false;
     })
     .map((r) => r.tool_call_id);
+}
+
+/**
+ * Wrap a resume run's event handlers so every content index the rebuilt graph
+ * emits is shifted past the pre-pause content.
+ *
+ * WHY: a resumed run rebuilds the graph from the checkpoint, and the fresh
+ * graph assigns content indices from its own empty `contentData` — starting at
+ * 0. The host, meanwhile, seeds the (also fresh) content aggregator with the
+ * pre-pause parts, which occupy exactly those low indices. Without an offset
+ * the resumed model turn collides with the seed: when the types match at an
+ * index the new text silently MERGES into a pre-pause part, and when they
+ * don't (e.g. a reasoning/`think` part at index 0 with Anthropic models) every
+ * delta is dropped with `Content type mismatch` — the entire post-resume
+ * output vanishes from both the live stream and the saved message.
+ *
+ * The index enters the pipeline at exactly one point: `ON_RUN_STEP`'s payload
+ * (the `RunStep`, whose `index` every subsequent delta resolves through the
+ * aggregator's `stepMap`). `ON_AGENT_UPDATE` carries its own inline index and
+ * is offset likewise. All other handlers pass through untouched — same object
+ * references, so stateful handler instances keep working.
+ */
+export function createContentIndexOffsetHandlers(
+  handlers: Record<string, EventHandler> | undefined,
+  offset: number,
+): Record<string, EventHandler> | undefined {
+  if (handlers == null || !(offset > 0)) {
+    return handlers;
+  }
+
+  const wrapped: Record<string, EventHandler> = { ...handlers };
+
+  const runStepHandler = handlers[GraphEvents.ON_RUN_STEP];
+  if (runStepHandler) {
+    wrapped[GraphEvents.ON_RUN_STEP] = {
+      handle: (event, data, metadata, graph) => {
+        const runStep = data as { index?: number } | undefined;
+        const shifted =
+          runStep != null && typeof runStep.index === 'number'
+            ? { ...runStep, index: runStep.index + offset }
+            : data;
+        return runStepHandler.handle(event, shifted as typeof data, metadata, graph);
+      },
+    };
+  }
+
+  const agentUpdateHandler = handlers[GraphEvents.ON_AGENT_UPDATE];
+  if (agentUpdateHandler) {
+    wrapped[GraphEvents.ON_AGENT_UPDATE] = {
+      handle: (event, data, metadata, graph) => {
+        const update = data as { agent_update?: { index?: number } } | undefined;
+        const shifted =
+          update?.agent_update != null && typeof update.agent_update.index === 'number'
+            ? {
+                ...update,
+                agent_update: { ...update.agent_update, index: update.agent_update.index + offset },
+              }
+            : data;
+        return agentUpdateHandler.handle(event, shifted as typeof data, metadata, graph);
+      },
+    };
+  }
+
+  return wrapped;
 }
