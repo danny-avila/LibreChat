@@ -28,7 +28,8 @@ const ASK_USER_QUESTION_DESCRIPTION = [
   'you cannot resolve from the conversation or your other tools. Ask exactly ONE question per',
   'turn, and NEVER call this tool in parallel with any other tool call. When the realistic',
   'answers are enumerable, provide 2-6 concise options; the user can always type a free-form',
-  'answer instead.',
+  "answer instead — so do NOT include a catch-all option like 'Other' or 'Something else':",
+  'the answer UI always offers free-form input on its own.',
 ].join(' ');
 
 /**

@@ -323,6 +323,32 @@ export function resolveAskUserQuestionPart(
 }
 
 /**
+ * Splits a model-supplied catch-all "Other"-style option away from the real
+ * choices. The answer UI always renders its own inline free-form row, so a
+ * model option like "Other (type your own)" would duplicate it — instead its
+ * label becomes the inline input's placeholder. Conservative match: value
+ * `other` (the shape the tool description used to suggest) or a label that
+ * reads as a free-form invitation.
+ */
+export function splitOtherOption(options: Agents.AskUserQuestionOption[] | undefined): {
+  choices: Agents.AskUserQuestionOption[];
+  otherLabel?: string;
+} {
+  const list = options ?? [];
+  const isOther = (option: Agents.AskUserQuestionOption): boolean =>
+    option.value.trim().toLowerCase() === 'other' ||
+    /^other\b|something else|type (my|your) own|free[- ]?form/i.test(option.label);
+  const otherOption = [...list].reverse().find(isOther);
+  if (!otherOption) {
+    return { choices: list };
+  }
+  return {
+    choices: list.filter((option) => option !== otherOption),
+    otherLabel: otherOption.label,
+  };
+}
+
+/**
  * Finds the live (unanswered) ask-user-question pause across a conversation's
  * messages — the newest synthetic part wins. Drives the composer popover: the
  * part exists exactly while a pause is live (applied on `on_pending_action`,

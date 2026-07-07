@@ -11,6 +11,7 @@ import {
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
   findLiveAskUserQuestion,
+  splitOtherOption,
 } from './approval';
 
 const toolCallPart = (id: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
@@ -330,6 +331,35 @@ describe('resolveAskUserQuestionPart', () => {
     expect(getSubmittedAskAnswer('tc1')).toBe('purple');
     expect(getSubmittedAskAnswer('unknown')).toBeUndefined();
     expect(getSubmittedAskAnswer(undefined)).toBeUndefined();
+  });
+});
+
+describe('splitOtherOption', () => {
+  it("folds a model-supplied 'Other'-style option into the inline placeholder", () => {
+    const { choices, otherLabel } = splitOtherOption([
+      { label: 'Red', value: 'red' },
+      { label: 'Other (type your own)', value: 'other' },
+    ]);
+    expect(choices.map((o) => o.value)).toEqual(['red']);
+    expect(otherLabel).toBe('Other (type your own)');
+  });
+
+  it('matches by label when the value is not literally other', () => {
+    const { choices, otherLabel } = splitOtherOption([
+      { label: 'Blue', value: 'blue' },
+      { label: 'Something else entirely', value: 'custom_answer' },
+    ]);
+    expect(choices).toHaveLength(1);
+    expect(otherLabel).toBe('Something else entirely');
+  });
+
+  it('leaves real choices untouched (no false positives, undefined input)', () => {
+    const options = [
+      { label: 'Red', value: 'red' },
+      { label: 'Mother of pearl', value: 'pearl' },
+    ];
+    expect(splitOtherOption(options)).toEqual({ choices: options });
+    expect(splitOtherOption(undefined)).toEqual({ choices: [] });
   });
 });
 

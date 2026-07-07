@@ -25,6 +25,7 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
     canSubmit,
     submit,
     dismiss,
+    otherLabel,
   } = useAskAnswerMode(conversationId);
 
   if (!active || !liveAsk) {
@@ -94,7 +95,7 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
                 dismiss();
               }
             }}
-            placeholder={localize('com_ui_something_else')}
+            placeholder={otherLabel ?? localize('com_ui_something_else')}
             className="flex-1 border-0 bg-transparent text-sm text-text-primary placeholder:text-text-secondary focus:outline-none"
             aria-label={localize('com_ui_your_answer')}
           />

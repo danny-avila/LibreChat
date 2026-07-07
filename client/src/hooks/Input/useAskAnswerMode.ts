@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { atom, useRecoilState } from 'recoil';
 import { useResumeSubmit } from '~/components/Chat/Messages/Content/ApprovalContext';
-import { findLiveAskUserQuestion } from '~/utils/approval';
+import { findLiveAskUserQuestion, splitOtherOption } from '~/utils/approval';
 import { useGetMessagesByConvoId } from '~/data-provider';
 
 /** Dismissed action ids — recoil so every consumer reacts. */
@@ -48,7 +48,10 @@ export default function useAskAnswerMode(conversationId?: string | null) {
 
   const dismissed = liveAsk != null && dismissedIds.includes(liveAsk.actionId);
   const active = liveAsk != null && !dismissed;
-  const options = useMemo(() => liveAsk?.question.options ?? [], [liveAsk]);
+  const { choices: options, otherLabel } = useMemo(
+    () => splitOtherOption(liveAsk?.question.options),
+    [liveAsk],
+  );
 
   const dismiss = useCallback(() => {
     if (liveAsk) {
@@ -142,5 +145,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     canSubmit,
     submit,
     handleComposerKeyDown,
+    /** Model-supplied "Other"-style label, folded into the inline input. */
+    otherLabel,
   };
 }
