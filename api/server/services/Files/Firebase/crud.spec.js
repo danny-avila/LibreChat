@@ -56,10 +56,34 @@ describe('deleteFirebaseFile — structured owner validation on delete', () => {
     );
   });
 
-  test('rejects a cross-user path (owner segment points at another user) and never deletes', async () => {
+  test('cleans up RAG storage under the file owner, not the requester (shared-agent editor)', async () => {
+    const editorReq = { user: { id: 'editorX' } };
+    const file = {
+      user: 'ownerA',
+      filepath: firebaseUrl('images/ownerA/file-id__doc.png'),
+    };
+
+    await expect(deleteFirebaseFile(editorReq, file)).resolves.toBeUndefined();
+
+    expect(mockDeleteRagFile).toHaveBeenCalledWith({ userId: 'ownerA', file });
+    expect(mockDeleteObject).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects a cross-user path (owner segment points at another user) and never deletes or cleans RAG', async () => {
     const file = {
       user: 'userA',
       filepath: firebaseUrl('images/userB/file-id__secret.png'),
+    };
+
+    await expect(deleteFirebaseFile(req, file)).rejects.toThrow('File owner mismatch');
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteRagFile).not.toHaveBeenCalled();
+  });
+
+  test('rejects an owner id at the wrong path position (not the segment before the file name)', async () => {
+    const file = {
+      user: 'ownerA',
+      filepath: firebaseUrl('images/victim/ownerA/secret.png'),
     };
 
     await expect(deleteFirebaseFile(req, file)).rejects.toThrow('File owner mismatch');

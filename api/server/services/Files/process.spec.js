@@ -1342,46 +1342,61 @@ describe('startExpiredFileSweep', () => {
 
 describe('filterFile — content sniffing (MIME spoofing guard)', () => {
   const VALID_UUID = '11111111-1111-4111-8111-111111111111';
-  const imageOnlyConfig = () => ({
-    checkType: (mime, types) => (types ?? []).some((regex) => regex.test(mime)),
-    endpoints: { openAI: { supportedMimeTypes: [/^image\/(png|jpeg|gif|webp)$/] } },
+  // Permissive endpoint config so the claimed-type gate always passes and the
+  // sniffing guard (detected vs claimed) is what each case exercises.
+  const permissiveConfig = () => ({
+    checkType: () => true,
+    endpoints: { openAI: { supportedMimeTypes: [/.*/] } },
     avatarSizeLimit: 2 * 1024 * 1024,
   });
 
   const makeUploadReq = ({ mimetype = 'image/png', path = '/tmp/upload.bin' } = {}) => ({
     user: { id: 'user-123', tenantId: 'tenant-a' },
-    file: { path, originalname: 'upload.png', filename: 'upload.png', mimetype, size: 1024 },
+    file: { path, originalname: 'upload.bin', filename: 'upload.bin', mimetype, size: 1024 },
     body: { endpoint: 'openAI', file_id: VALID_UUID },
     config: { fileConfig: {}, fileStrategy: 'local' },
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mergeFileConfig.mockReturnValue(imageOnlyConfig());
+    mergeFileConfig.mockReturnValue(permissiveConfig());
   });
 
-  test('rejects a file whose real content type is not allowed for the endpoint (claimed image, real PDF)', async () => {
-    detectFileTypeFromFile.mockResolvedValue({ mime: 'application/pdf', ext: 'pdf' });
+  const reject = (mimetype, detected) =>
+    test(`rejects claimed ${mimetype} whose bytes are ${detected}`, async () => {
+      detectFileTypeFromFile.mockResolvedValue({ mime: detected, ext: 'bin' });
+      await expect(filterFile({ req: makeUploadReq({ mimetype }) })).rejects.toThrow(
+        'File content does not match its file type',
+      );
+    });
 
-    await expect(filterFile({ req: makeUploadReq({ mimetype: 'image/png' }) })).rejects.toThrow(
-      'File content does not match its file type',
-    );
-    expect(detectFileTypeFromFile).toHaveBeenCalledWith('/tmp/upload.bin');
-  });
+  const accept = (mimetype, detected) =>
+    test(`accepts claimed ${mimetype} whose bytes are ${detected ?? '(undetected)'}`, async () => {
+      detectFileTypeFromFile.mockResolvedValue(
+        detected ? { mime: detected, ext: 'bin' } : undefined,
+      );
+      await expect(filterFile({ req: makeUploadReq({ mimetype }) })).resolves.toBeUndefined();
+    });
 
-  test('accepts a file whose sniffed content type matches an allowed type', async () => {
-    detectFileTypeFromFile.mockResolvedValue({ mime: 'image/png', ext: 'png' });
+  // Cross-category spoofs are rejected.
+  reject('image/png', 'application/pdf');
+  reject('image/png', 'application/zip');
+  reject('audio/mpeg', 'image/png');
 
-    await expect(
-      filterFile({ req: makeUploadReq({ mimetype: 'image/png' }) }),
-    ).resolves.toBeUndefined();
-  });
+  // Executable/active content is rejected even under a same-category claim.
+  reject('image/png', 'application/x-elf');
+  reject('application/pdf', 'application/x-elf');
+  reject('application/pdf', 'application/wasm');
 
-  test('accepts non-sniffable content (no magic bytes) via the claimed-type gate — no false positives', async () => {
-    detectFileTypeFromFile.mockResolvedValue(undefined);
+  // Genuine files pass, including benign subtype/vendor aliases within a category.
+  accept('image/png', 'image/png');
+  accept('application/pdf', 'application/pdf');
+  accept('audio/x-wav', 'audio/wav'); // WAV vendor alias
+  accept('video/avi', 'video/vnd.avi'); // AVI vendor alias
+  accept('audio/mp4', 'video/mp4'); // shared media container (m4a)
+  accept('application/vnd.ms-excel', 'application/x-cfb'); // legacy Office compound file
 
-    await expect(
-      filterFile({ req: makeUploadReq({ mimetype: 'image/png' }) }),
-    ).resolves.toBeUndefined();
-  });
+  // No detectable signature (plain text, code, csv, svg) — no false positives.
+  accept('text/plain', undefined);
+  accept('image/svg+xml', undefined);
 });

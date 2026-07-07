@@ -1249,22 +1249,51 @@ async function saveBase64Image(
 }
 
 /**
- * Guards against MIME spoofing by verifying the file's real magic-byte type is
- * permitted for the endpoint. A browser-supplied `mimetype` and filename are
+ * Executable/active-content signatures that must never be accepted under a
+ * benign claimed type, even when the endpoint's allow-list is broad. `file-type`
+ * reports these from the magic bytes regardless of the upload's filename/mimetype.
+ */
+const EXECUTABLE_MIME_TYPES = new Set([
+  'application/x-elf',
+  'application/x-mach-binary',
+  'application/x-msdownload',
+  'application/java-vm',
+  'application/wasm',
+]);
+
+/**
+ * Collapses a MIME type to a comparison category. Audio and video share
+ * container formats (mp4, ogg, webm), so a sniffed `video/mp4` for a claimed
+ * `audio/mp4` (m4a) is legitimate — treat both as one category to avoid false
+ * rejections while still separating e.g. `application/*` from `image/*`.
+ *
+ * @param {string} mimeType
+ * @returns {string}
+ */
+const contentCategory = (mimeType) => {
+  const topLevel = mimeType.split('/')[0];
+  return topLevel === 'video' ? 'audio' : topLevel;
+};
+
+/**
+ * Guards against MIME spoofing by comparing the file's real magic-byte type
+ * against the claimed `file.mimetype`. A browser-supplied mimetype/filename is
  * attacker-controlled, so an allowed claimed type is not sufficient on its own.
  *
- * Files without a detectable signature (plain text, code, csv, svg) fall through
- * to the claimed-type gate already applied by the caller; binary uploads whose
- * true type is not on the endpoint allow-list are rejected.
+ * Executable signatures are always rejected; otherwise the sniffed and claimed
+ * content categories must agree (e.g. a PDF or ELF uploaded as `image/png` is
+ * rejected). Comparing categories — rather than exact MIME strings — tolerates
+ * benign subtype/vendor aliases the sniffer reports for legitimate files
+ * (`audio/x-wav` vs `audio/wav`, `video/vnd.avi` vs `video/avi`, legacy Office
+ * as `application/x-cfb`). Files with no detectable signature (plain text, code,
+ * csv, svg) fall through to the claimed-type gate already applied by the caller.
  *
  * @param {Object} params
  * @param {Express.Multer.File} params.file - The uploaded file (disk storage).
- * @param {import('librechat-data-provider').FileConfig} params.fileConfig
- * @param {import('librechat-data-provider').EndpointFileConfig} params.endpointFileConfig
  * @returns {Promise<void>}
- * @throws {Error} When the sniffed content type is not permitted for the endpoint.
+ * @throws {Error} When the sniffed content does not match the claimed type.
  */
-const assertContentMatchesType = async ({ file, fileConfig, endpointFileConfig }) => {
+const assertContentMatchesType = async ({ file }) => {
   if (!file.path) {
     return;
   }
@@ -1274,7 +1303,17 @@ const assertContentMatchesType = async ({ file, fileConfig, endpointFileConfig }
     return;
   }
 
-  if (!fileConfig.checkType(detected.mime, endpointFileConfig.supportedMimeTypes)) {
+  const detectedMime = detected.mime.toLowerCase();
+  if (EXECUTABLE_MIME_TYPES.has(detectedMime)) {
+    throw new Error('File content does not match its file type');
+  }
+
+  const claimedMime = (file.mimetype || '').toLowerCase();
+  if (!claimedMime) {
+    return;
+  }
+
+  if (contentCategory(detectedMime) !== contentCategory(claimedMime)) {
     throw new Error('File content does not match its file type');
   }
 };
@@ -1344,7 +1383,7 @@ async function filterFile({ req, image, isAvatar }) {
     throw new Error('Unsupported file type');
   }
 
-  await assertContentMatchesType({ file, fileConfig, endpointFileConfig });
+  await assertContentMatchesType({ file });
 
   if (!image || isAvatar === true) {
     return;

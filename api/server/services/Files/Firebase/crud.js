@@ -187,17 +187,26 @@ function extractFirebaseFilePath(urlString) {
  *          Throws an error if there is an issue with deletion.
  */
 const deleteFirebaseFile = async (req, file) => {
-  await deleteRagFile({ userId: req.user.id, file });
-
   const ownerId = file.user?.toString?.();
   if (!ownerId) {
     throw new Error('[deleteFirebaseFile] File record has no owner');
   }
 
   const fileName = extractFirebaseFilePath(file.filepath);
-  if (!fileName || !fileName.split('/').includes(ownerId)) {
+  const segments = fileName ? fileName.split('/') : [];
+  /**
+   * Firebase objects are written as `${basePath}/${ownerId}/${fileName}` with a
+   * single-segment basePath (`images`/`uploads`), so the owner id is always the
+   * second path segment. Validate that exact position rather than searching all
+   * segments, so a crafted path such as `images/victim/${ownerId}/secret.png`
+   * cannot pass.
+   */
+  if (segments[1] !== ownerId) {
     throw new Error('[deleteFirebaseFile] File owner mismatch');
   }
+
+  await deleteRagFile({ userId: ownerId, file });
+
   try {
     await deleteFile('', fileName);
   } catch (error) {
