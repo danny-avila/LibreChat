@@ -43,9 +43,25 @@ export default function AskUserQuestionCall({
     return null;
   }
 
-  /** Prefer the picked option's label over its wire value when they differ. */
-  const answerLabel =
-    question?.options?.find((option) => option.value === effectiveOutput)?.label ?? effectiveOutput;
+  /**
+   * Prefer the picked option's label over its wire value when they differ.
+   * Multi-select answers are option values joined by ", " — map the segments
+   * back to labels only when EVERY segment matches an option: values may
+   * legally contain ", " themselves, and a partial mapping could mis-split
+   * such a value into fragments that relabel as options the user never
+   * picked. When any segment misses, show the raw answer untouched.
+   */
+  const exactLabel = question?.options?.find((option) => option.value === effectiveOutput)?.label;
+  const mappedMultiLabel = (() => {
+    if (exactLabel != null || question?.multiSelect !== true || question.options == null) {
+      return null;
+    }
+    const labels = effectiveOutput
+      .split(', ')
+      .map((segment) => question.options?.find((option) => option.value === segment)?.label);
+    return labels.every((label) => label != null) ? labels.join(', ') : null;
+  })();
+  const answerLabel = exactLabel ?? mappedMultiLabel ?? effectiveOutput;
 
   return (
     <div className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3">

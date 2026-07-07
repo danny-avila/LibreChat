@@ -27,9 +27,11 @@ const ASK_USER_QUESTION_DESCRIPTION = [
   "returned as this tool's result. Use it only when you are genuinely blocked on a decision",
   'you cannot resolve from the conversation or your other tools. Ask exactly ONE question per',
   'turn, and NEVER call this tool in parallel with any other tool call. When the realistic',
-  'answers are enumerable, provide 2-6 concise options; the user can always type a free-form',
-  "answer instead — so do NOT include a catch-all option like 'Other' or 'Something else':",
-  'the answer UI always offers free-form input on its own.',
+  'answers are enumerable, provide 2-6 concise options; set multiSelect to true only when',
+  'several options may sensibly apply at once (the selected option values are returned joined',
+  'by ", "). The user can always type a free-form answer instead — so do NOT include a',
+  "catch-all option like 'Other' or 'Something else': the answer UI always offers free-form",
+  'input on its own.',
 ].join(' ');
 
 /**
@@ -44,6 +46,7 @@ export const askUserQuestionToolSchema: z.ZodObject<
     options: z.ZodOptional<
       z.ZodArray<z.ZodObject<{ label: z.ZodString; value: z.ZodString }, 'strip'>, 'many'>
     >;
+    multiSelect: z.ZodOptional<z.ZodBoolean>;
   },
   'strip'
 > = z.object({
@@ -77,6 +80,10 @@ export const askUserQuestionToolSchema: z.ZodObject<
     .describe(
       'Optional pre-defined choices (2-6 recommended). Omit to require a free-form answer.',
     ),
+  multiSelect: z
+    .boolean()
+    .optional()
+    .describe('Allow the user to pick several options; their values are returned joined by ", ".'),
 });
 
 export type AskUserQuestionToolInput = z.infer<typeof askUserQuestionToolSchema>;
@@ -103,6 +110,7 @@ export interface AskUserQuestionToolDefinitionShape {
           required: string[];
         };
       };
+      multiSelect: { type: 'boolean'; description: string };
     };
     required: string[];
   };
@@ -153,6 +161,11 @@ export const AskUserQuestionToolDefinition: AskUserQuestionToolDefinitionShape =
           },
           required: ['label', 'value'],
         },
+      },
+      multiSelect: {
+        type: 'boolean',
+        description:
+          'Allow the user to pick several options; their values are returned joined by ", ".',
       },
     },
     required: ['question'],

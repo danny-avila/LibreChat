@@ -70,6 +70,21 @@ describe('ask_user_question tool contract', () => {
         }).success,
       ).toBe(false);
     });
+
+    test('accepts multiSelect as an optional boolean and rejects other types', () => {
+      const input = {
+        question: 'Which apply?',
+        options: [
+          { label: 'A', value: 'a' },
+          { label: 'B', value: 'b' },
+        ],
+        multiSelect: true,
+      };
+      expect(askUserQuestionToolSchema.parse(input)).toEqual(input);
+      expect(
+        askUserQuestionToolSchema.safeParse({ question: 'pick', multiSelect: 'yes' }).success,
+      ).toBe(false);
+    });
   });
 
   describe('registry definition (schema-only twin)', () => {
@@ -79,6 +94,12 @@ describe('ask_user_question tool contract', () => {
         'label',
         'value',
       ]);
+    });
+
+    test('multiSelect is declared as an optional boolean in both schemas', () => {
+      expect(AskUserQuestionToolDefinition.schema.properties.multiSelect.type).toBe('boolean');
+      expect(AskUserQuestionToolDefinition.schema.required).not.toContain('multiSelect');
+      expect(AskUserQuestionToolDefinition.description).toContain('multiSelect');
     });
 
     test('definition caps agree with the zod schema caps', () => {

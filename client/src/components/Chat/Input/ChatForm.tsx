@@ -296,7 +296,9 @@ const ChatForm = memo(function ChatForm({
             textAreaRef={textAreaRef}
           />
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
-          {index === 0 && <AskUserQuestionPopover conversationId={conversationId} />}
+          {index === 0 && (
+            <AskUserQuestionPopover conversationId={conversationId} textAreaRef={textAreaRef} />
+          )}
           <SkillsCommand
             index={index}
             textAreaRef={textAreaRef}

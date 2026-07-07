@@ -210,7 +210,12 @@ export function parseAskUserQuestionArgs(
   ) {
     return null;
   }
-  const request = parsed as { question: string; description?: unknown; options?: unknown };
+  const request = parsed as {
+    question: string;
+    description?: unknown;
+    options?: unknown;
+    multiSelect?: unknown;
+  };
   /** Model/persisted args are untrusted — normalize instead of crashing the
    *  message render on shapes like `options: {}` or non-string entries. */
   const options = Array.isArray(request.options)
@@ -225,6 +230,7 @@ export function parseAskUserQuestionArgs(
     question: request.question,
     description: typeof request.description === 'string' ? request.description : undefined,
     options: options && options.length > 0 ? options : undefined,
+    multiSelect: request.multiSelect === true ? true : undefined,
   };
 }
 

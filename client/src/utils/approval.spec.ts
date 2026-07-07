@@ -250,6 +250,16 @@ describe('parseAskUserQuestionArgs', () => {
     expect(parseAskUserQuestionArgs('{"no_question": true}')).toBeNull();
     expect(parseAskUserQuestionArgs(undefined)).toBeNull();
   });
+
+  it('passes multiSelect through only as a strict boolean true', () => {
+    expect(parseAskUserQuestionArgs({ question: 'Which?', multiSelect: true })?.multiSelect).toBe(
+      true,
+    );
+    expect(
+      parseAskUserQuestionArgs({ question: 'Which?', multiSelect: 'yes' })?.multiSelect,
+    ).toBeUndefined();
+    expect(parseAskUserQuestionArgs({ question: 'Which?' })?.multiSelect).toBeUndefined();
+  });
 });
 
 describe('removeAskUserQuestionPart', () => {
