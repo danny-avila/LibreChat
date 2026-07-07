@@ -30,12 +30,14 @@ export const UI_ONLY_CONTENT_TYPES: ReadonlySet<ContentTypes> = new Set([Content
  * part are shallow-cloned, so the persisted message and UI copy keep the card.
  * String/absent content and non-array inputs pass through untouched.
  */
-export const stripUiOnlyContentParts = <T extends { content?: unknown }>(messages: T[]): T[] => {
+export function stripUiOnlyContentParts<T extends { content?: unknown }>(messages: T[]): T[];
+export function stripUiOnlyContentParts<T>(messages: T): T;
+export function stripUiOnlyContentParts(messages: unknown): unknown {
   if (!Array.isArray(messages)) {
     return messages;
   }
   return messages.map((message) => {
-    const content = message?.content;
+    const content = (message as { content?: unknown } | null | undefined)?.content;
     if (!Array.isArray(content)) {
       return message;
     }
@@ -43,9 +45,11 @@ export const stripUiOnlyContentParts = <T extends { content?: unknown }>(message
       const type = (part as { type?: ContentTypes | string } | null | undefined)?.type;
       return type == null || !UI_ONLY_CONTENT_TYPES.has(type as ContentTypes);
     });
-    return filtered.length === content.length ? message : { ...message, content: filtered };
+    return filtered.length === content.length
+      ? message
+      : { ...(message as object), content: filtered };
   });
-};
+}
 
 export enum StepTypes {
   TOOL_CALLS = 'tool_calls',

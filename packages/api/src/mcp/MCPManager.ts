@@ -699,48 +699,63 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         const flowId = generateElicitationFlowId(userId, serverName, toolName, getTenantId());
-        logger.info(
-          `${logPrefix}[${toolName}] URL elicitation required (-32042), flowId: ${flowId}`,
-        );
-        await elicitationStart({
-          flowId,
-          mode: 'url',
-          message: first.message,
-          serverName,
-          toolName,
-          url: first.url,
-          elicitationId: first.elicitationId,
-        });
-
-        let flowResult: ElicitationFlowResult;
+        // Apply the same per-(user, server) pending-elicitation cap as the
+        // server-initiated `elicitation/create` path, so a gateway that keeps
+        // returning -32042 can't spawn unbounded concurrent flows/cards.
+        if (userId && !this.reserveElicitation(userId, serverName)) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `${first.message} Too many pending authorizations for ${serverName}; complete or cancel one, then retry. Open ${first.url} to authorize.`,
+          );
+        }
         try {
-          flowResult = await elicitationFlowManager.createFlow(
+          logger.info(
+            `${logPrefix}[${toolName}] URL elicitation required (-32042), flowId: ${flowId}`,
+          );
+          await elicitationStart({
             flowId,
-            'mcp_elicit',
-            { elicitationId: first.elicitationId },
-            options?.signal,
-          );
-        } catch (flowError) {
-          const reason = flowError instanceof Error ? flowError.message : String(flowError);
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            `${first.message} Open ${first.url} to authorize, then retry. (${reason})`,
-          );
-        }
+            mode: 'url',
+            message: first.message,
+            serverName,
+            toolName,
+            url: first.url,
+            elicitationId: first.elicitationId,
+          });
 
-        if (!isElicitationSuccess(flowResult.action)) {
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            `${first.message} Authorization was cancelled. Open ${first.url} to authorize, then retry.`,
-          );
-        }
+          let flowResult: ElicitationFlowResult;
+          try {
+            flowResult = await elicitationFlowManager.createFlow(
+              flowId,
+              'mcp_elicit',
+              { elicitationId: first.elicitationId },
+              options?.signal,
+            );
+          } catch (flowError) {
+            const reason = flowError instanceof Error ? flowError.message : String(flowError);
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              `${first.message} Open ${first.url} to authorize, then retry. (${reason})`,
+            );
+          }
 
-        logger.debug(`${logPrefix}[${toolName}] URL elicitation authorized, retrying tools/call`);
-        result = await connection.client.request(
-          requestParams,
-          CallToolResultSchema,
-          requestOptions,
-        );
+          if (!isElicitationSuccess(flowResult.action)) {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              `${first.message} Authorization was cancelled. Open ${first.url} to authorize, then retry.`,
+            );
+          }
+
+          logger.debug(`${logPrefix}[${toolName}] URL elicitation authorized, retrying tools/call`);
+          result = await connection.client.request(
+            requestParams,
+            CallToolResultSchema,
+            requestOptions,
+          );
+        } finally {
+          if (userId) {
+            this.releaseElicitation(userId, serverName);
+          }
+        }
       }
       if (userId) {
         this.updateUserLastActivity(userId);

@@ -1325,8 +1325,11 @@ export class MCPConnection extends EventEmitter {
          *  `elicitation/create` with `mode: 'url'`, or the -32042
          *  `UrlElicitationRequired` exception path on `tools/call` (which doesn't
          *  consult this capability at all). Form-mode elicitation is intentionally
-         *  not declared by this build. */
-        capabilities: { elicitation: { url: {} } },
+         *  not declared by this build. Gated on the per-server `elicitation` flag:
+         *  when a server opts out (`elicitation: false`), the capability is not
+         *  advertised, so the server won't issue `elicitation/create` requests
+         *  the client isn't wired to service. */
+        capabilities: params.serverConfig.elicitation === false ? {} : { elicitation: { url: {} } },
       },
     );
 
