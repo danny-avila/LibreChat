@@ -191,7 +191,10 @@ const ChatForm = memo(function ChatForm({
     submitButtonRef,
     setIsScrollable,
     disabled: disableInputs,
-    placeholder,
+    // The composer IS the free-form answer box while a question pause is live.
+    placeholder: answerMode.active
+      ? (answerMode.otherLabel ?? localize('com_ui_something_else'))
+      : placeholder,
   });
 
   useQueryParams({ textAreaRef });
@@ -248,7 +251,15 @@ const ChatForm = memo(function ChatForm({
 
   return (
     <form
-      onSubmit={methods.handleSubmit(submitMessage)}
+      onSubmit={methods.handleSubmit((data) => {
+        // Answer mode: composer text answers the paused run instead of
+        // starting a new turn. Dismissing the popover restores normal sends.
+        if (answerMode.active && answerMode.submitText(data.text)) {
+          methods.reset();
+          return;
+        }
+        return submitMessage(data);
+      })}
       className={cn(
         'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
@@ -412,14 +423,19 @@ const ChatForm = memo(function ChatForm({
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                {isSubmitting && showStopButton ? (
+                {isSubmitting && showStopButton && !answerMode.active ? (
                   <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
                 ) : (
                   endpoint && (
                     <SendButton
                       ref={submitButtonRef}
                       control={methods.control}
-                      disabled={filesLoading || isSubmitting || disableInputs || isNotAppendable}
+                      disabled={
+                        filesLoading ||
+                        disableInputs ||
+                        isNotAppendable ||
+                        (isSubmitting && !answerMode.active)
+                      }
                     />
                   )
                 )}

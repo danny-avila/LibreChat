@@ -14,19 +14,8 @@ import { cn } from '~/utils';
  */
 function AskUserQuestionPopoverContent({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();
-  const {
-    liveAsk,
-    active,
-    options,
-    selected,
-    setSelected,
-    otherText,
-    setOtherText,
-    canSubmit,
-    submit,
-    dismiss,
-    otherLabel,
-  } = useAskAnswerMode(conversationId);
+  const { liveAsk, active, options, selected, setSelected, canSubmit, submit, dismiss } =
+    useAskAnswerMode(conversationId);
 
   if (!active || !liveAsk) {
     return null;
@@ -71,42 +60,6 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
             <span className="flex-1">{option.label}</span>
           </button>
         ))}
-        <div
-          className={cn(
-            'flex w-full items-center gap-3 rounded-lg p-2 text-sm',
-            selected === 'other' ? 'bg-surface-active' : 'hover:bg-surface-hover',
-          )}
-        >
-          {options.length > 0 && (
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-surface-tertiary text-xs text-text-secondary">
-              {options.length + 1}
-            </span>
-          )}
-          <input
-            value={otherText}
-            onChange={(e) => {
-              setOtherText(e.target.value);
-              setSelected('other');
-            }}
-            onFocus={() => setSelected('other')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && canSubmit) {
-                e.preventDefault();
-                submit();
-              } else if (e.key === 'Escape') {
-                dismiss();
-              }
-            }}
-            placeholder={
-              otherLabel ??
-              (options.length > 0
-                ? localize('com_ui_something_else')
-                : localize('com_ui_your_answer'))
-            }
-            className="flex-1 border-0 bg-transparent text-sm text-text-primary placeholder:text-text-secondary focus:outline-none"
-            aria-label={localize('com_ui_your_answer')}
-          />
-        </div>
         <div className="flex items-center justify-end gap-2 p-2">
           <Button size="sm" variant="outline" onClick={dismiss}>
             {localize('com_ui_skip')}

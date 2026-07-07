@@ -88,13 +88,37 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     setOtherText,
   ]);
 
+  /** Composer text answers the question directly; true when consumed. */
+  const submitText = useCallback(
+    (text: string): boolean => {
+      if (!active || !liveAsk) {
+        return false;
+      }
+      const trimmed = text.trim();
+      if (trimmed.length > 0) {
+        submitAskAnswer(liveAsk.actionId, trimmed);
+        setSelected(null);
+        setOtherText('');
+      }
+      return true;
+    },
+    [active, liveAsk, submitAskAnswer, setSelected, setOtherText],
+  );
+
   /** Selection steering from the empty composer; true when consumed. */
   const handleComposerKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
       if (!active) {
         return false;
       }
-      if (e.currentTarget.value.trim().length > 0) {
+      const composerText = e.currentTarget.value;
+      if (composerText.trim().length > 0) {
+        // The composer IS the free-form answer box: Enter submits the typed
+        // text (before useTextarea's submitting-lock can swallow it).
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          return submitText(composerText);
+        }
         return false;
       }
       const rowCount = options.length + 1; // + the inline Other row
@@ -129,7 +153,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       }
       return false;
     },
-    [active, options, selected, canSubmit, submit, dismiss, setSelected],
+    [active, options, selected, canSubmit, submit, submitText, dismiss, setSelected],
   );
 
   return {
@@ -144,6 +168,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     setOtherText,
     canSubmit,
     submit,
+    submitText,
     handleComposerKeyDown,
     /** Model-supplied "Other"-style label, folded into the inline input. */
     otherLabel,
