@@ -74,6 +74,9 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     end_after_tools: {
       type: Boolean,
     },
+    stateful_code_sessions: {
+      type: Boolean,
+    },
     /** @deprecated Use edges instead */
     agent_ids: {
       type: [String],

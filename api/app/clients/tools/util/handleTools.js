@@ -303,13 +303,12 @@ const loadTools = async ({
           primedCodeFiles = files;
         }
         /* Hedge the execute_code description toward persistence only when the
-         * admin `stateful_code_sessions` capability is on (off by default); the
-         * matching wire hint is set in the run config. Older @librechat/agents
-         * ignore the param. */
-        const statefulSessions = await checkCapability(
-          options.req,
-          AgentCapabilities.stateful_code_sessions,
-        );
+         * admin `stateful_code_sessions` capability is on AND the agent opted
+         * in via the builder (off by default); the matching wire hint is set
+         * in the run config. Older @librechat/agents ignore the param. */
+        const statefulSessions =
+          agent?.stateful_code_sessions === true &&
+          (await checkCapability(options.req, AgentCapabilities.stateful_code_sessions));
         return createCodeExecutionTool({
           user_id: user,
           files,

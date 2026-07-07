@@ -285,6 +285,8 @@ export type Agent = {
   edges?: GraphEdge[];
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
+  /** Per-agent opt-in for stateful code sessions (requires the app-level capability). */
+  stateful_code_sessions?: boolean;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -321,6 +323,7 @@ export type AgentCreateParams = {
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -348,6 +351,7 @@ export type AgentUpdateParams = {
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'

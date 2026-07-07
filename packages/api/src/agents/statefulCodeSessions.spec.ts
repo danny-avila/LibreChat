@@ -1,27 +1,48 @@
-import { AgentCapabilities } from 'librechat-data-provider';
-import { resolveStatefulCodeSessions } from './run';
+import { anyAgentHasStatefulSessions } from './run';
 
-describe('resolveStatefulCodeSessions', () => {
-  const withCap = {
-    capabilities: [AgentCapabilities.execute_code, AgentCapabilities.stateful_code_sessions],
-  };
-  const withoutCap = { capabilities: [AgentCapabilities.execute_code] };
+type WalkInput = Parameters<typeof anyAgentHasStatefulSessions>[0];
 
-  it('enables only when code execution is active AND the capability is present', () => {
-    expect(resolveStatefulCodeSessions(true, withCap)).toBe(true);
+interface TestAgent {
+  id: string;
+  statefulCodeSessions?: boolean;
+  subagentAgentConfigs?: Array<TestAgent | null>;
+}
+
+function agent(
+  id: string,
+  statefulCodeSessions?: boolean,
+  subagentAgentConfigs?: Array<TestAgent | null>,
+): TestAgent {
+  return { id, statefulCodeSessions, subagentAgentConfigs };
+}
+
+function walk(agents: Array<TestAgent | null | undefined>): boolean {
+  return anyAgentHasStatefulSessions(agents as WalkInput);
+}
+
+describe('anyAgentHasStatefulSessions', () => {
+  it('is true when a top-level agent resolved the per-agent flag at initialization', () => {
+    expect(walk([agent('a', true)])).toBe(true);
+    expect(walk([agent('a', false), agent('b', true)])).toBe(true);
   });
 
-  it('stays off when the capability is absent, even with code execution active', () => {
-    expect(resolveStatefulCodeSessions(true, withoutCap)).toBe(false);
+  it('stays off (default) when no agent opted in or the flag is absent', () => {
+    expect(walk([])).toBe(false);
+    expect(walk([agent('a')])).toBe(false);
+    expect(walk([agent('a', false)])).toBe(false);
   });
 
-  it('stays off when code execution is inactive, even with the capability present', () => {
-    expect(resolveStatefulCodeSessions(false, withCap)).toBe(false);
+  it('walks nested subagent configs so a stateful subagent activates the run', () => {
+    const grandchild = agent('c', true);
+    const child = agent('b', false, [grandchild]);
+    expect(walk([agent('a', false, [child])])).toBe(true);
   });
 
-  it('stays off (default) when the endpoint config or capabilities are missing', () => {
-    expect(resolveStatefulCodeSessions(true, undefined)).toBe(false);
-    expect(resolveStatefulCodeSessions(true, {})).toBe(false);
-    expect(resolveStatefulCodeSessions(true, { capabilities: [] })).toBe(false);
+  it('tolerates null entries and cycles in the subagent graph', () => {
+    const a = agent('a', false);
+    const b = agent('b', false);
+    a.subagentAgentConfigs = [b, null];
+    b.subagentAgentConfigs = [a];
+    expect(walk([a, undefined, null])).toBe(false);
   });
 });

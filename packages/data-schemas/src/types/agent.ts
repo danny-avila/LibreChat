@@ -35,6 +35,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   authorName?: string;
   hide_sequential_outputs?: boolean;
   end_after_tools?: boolean;
+  stateful_code_sessions?: boolean;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];

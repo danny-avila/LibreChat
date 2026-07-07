@@ -3,7 +3,6 @@ import { Run, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
   EModelEndpoint,
-  AgentCapabilities,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
   extractEnvVariable,
@@ -340,6 +339,12 @@ type RunAgent = Omit<Agent, 'tools'> & {
    * is actually registered.
    */
   codeEnvAvailable?: boolean;
+  /**
+   * Per-agent stateful-session gate set by `initializeAgent`: the admin
+   * `stateful_code_sessions` capability AND the agent's builder opt-in AND
+   * `codeEnvAvailable`. Walked here to gate `toolExecution.sandbox`.
+   */
+  statefulCodeSessions?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -780,23 +785,36 @@ function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
 }
 
 /**
- * Whether this run opts its remote sandbox tools into best-effort stateful
- * runtime sessions (a warm per-session MicroVM workspace on the Code API).
- * Requires BOTH code execution active in the run (`codeEnvActive`, i.e. some
- * reachable agent has execute_code/bash) AND the admin `stateful_code_sessions`
- * capability — a stateful sandbox session is meaningless without code
- * execution. Off by default: the capability is absent from
- * `defaultAgentCapabilities`, and the SDK derives the session hint from
+ * Whether any agent reachable in the run — primary, handoff/parallel, or a
+ * nested subagent — resolved `statefulCodeSessions` during initialization
+ * (admin `stateful_code_sessions` capability AND the agent's builder opt-in
+ * AND a working code env). Walks `subagentAgentConfigs` like
+ * {@link anyAgentHasCodeEnv}; when true, `createRun` opts the run's remote
+ * sandbox tools into stateful runtime sessions via `toolExecution.sandbox`.
+ * Off by default: the capability is absent from `defaultAgentCapabilities`,
+ * agents opt in individually, and the SDK derives the session hint from
  * `thread_id` (= conversationId), so this is never a trust boundary.
  */
-export function resolveStatefulCodeSessions(
-  codeEnvActive: boolean,
-  agentsEndpointConfig: { capabilities?: AgentCapabilities[] } | undefined,
-): boolean {
-  if (!codeEnvActive) {
-    return false;
+export function anyAgentHasStatefulSessions(agents: Array<RunAgent | null | undefined>): boolean {
+  const visited = new Set<string>();
+  const pending = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (agent.statefulCodeSessions === true) {
+      return true;
+    }
+    for (const child of agent.subagentAgentConfigs ?? []) {
+      if (child != null && !visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
   }
-  return new Set(agentsEndpointConfig?.capabilities).has(AgentCapabilities.stateful_code_sessions);
+  return false;
 }
 
 /**
@@ -1303,12 +1321,9 @@ export async function createRun({
    * and the resume route). When disabled, nothing attaches and the run is identical
    * to before this feature shipped.
    */
-  // `enableToolOutputReferences` (bash present anywhere in the run) doubles as
-  // the "code execution active" signal for the stateful-session gate.
-  const statefulCodeSessions = resolveStatefulCodeSessions(
-    enableToolOutputReferences,
-    agentsEndpointConfig,
-  );
+  // Per-agent truth resolved by initializeAgent (admin capability AND builder
+  // opt-in AND code env) — the run opts in when any reachable agent did.
+  const statefulCodeSessions = anyAgentHasStatefulSessions(agents);
   // Resolve the effective policy through the single seam so per-agent / per-skill
   // sources can layer in later without touching this call site (see
   // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this

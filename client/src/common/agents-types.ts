@@ -25,6 +25,7 @@ export type TAgentCapabilities = {
   [AgentCapabilities.memory]?: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
+  [AgentCapabilities.stateful_code_sessions]?: boolean;
 };
 
 export type AgentForm = {
