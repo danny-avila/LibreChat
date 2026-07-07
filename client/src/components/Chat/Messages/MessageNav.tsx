@@ -150,7 +150,7 @@ const MessageIndicator = memo(function MessageIndicator({
   label: string;
   onSelect: (id: string) => void;
 }) {
-  const baseSize = entry.isEnd ? 'h-1 w-1' : 'h-[3px] w-4';
+  const baseSize = entry.isEnd ? 'mr-1.5 h-1 w-1' : 'h-[3px] w-4';
   return (
     <button
       type="button"
