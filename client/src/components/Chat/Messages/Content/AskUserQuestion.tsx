@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
 import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
+import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
+import { ChatContext } from '~/Providers/ChatContext';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -22,8 +24,19 @@ export default function AskUserQuestion({
   const { getStatus } = useApprovalContext();
   const { submitAskAnswer } = useResumeSubmit();
   const [answer, setAnswer] = useState('');
+  /**
+   * The composer popover is the primary answer surface — while it's up for
+   * this pause, rendering the card too duplicates the question. The card
+   * returns as the fallback surface when the user dismisses the popover (and
+   * in contexts without a ChatContext, where the popover can't exist).
+   */
+  const conversationId = useContext(ChatContext)?.conversation?.conversationId;
+  const { active: popoverActive, liveAsk } = useAskAnswerMode(conversationId);
 
   const status = getStatus(actionId);
+  if (popoverActive && liveAsk?.actionId === actionId) {
+    return null;
+  }
   const locked = status === 'submitting' || status === 'submitted' || status === 'expired';
 
   if (status === 'submitted') {

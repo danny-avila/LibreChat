@@ -77,9 +77,11 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
             selected === 'other' ? 'bg-surface-active' : 'hover:bg-surface-hover',
           )}
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded bg-surface-tertiary text-xs text-text-secondary">
-            {options.length + 1}
-          </span>
+          {options.length > 0 && (
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-surface-tertiary text-xs text-text-secondary">
+              {options.length + 1}
+            </span>
+          )}
           <input
             value={otherText}
             onChange={(e) => {
@@ -95,7 +97,12 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
                 dismiss();
               }
             }}
-            placeholder={otherLabel ?? localize('com_ui_something_else')}
+            placeholder={
+              otherLabel ??
+              (options.length > 0
+                ? localize('com_ui_something_else')
+                : localize('com_ui_your_answer'))
+            }
             className="flex-1 border-0 bg-transparent text-sm text-text-primary placeholder:text-text-secondary focus:outline-none"
             aria-label={localize('com_ui_your_answer')}
           />
