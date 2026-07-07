@@ -34,6 +34,7 @@ import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
+import ElicitationForm from './ElicitationForm';
 import Image from './Image';
 
 type PartProps = {
@@ -388,6 +389,12 @@ const Part = memo(function Part({
         />
       );
     }
+  } else if (part.type === ContentTypes.ELICITATION) {
+    const elicitation = part.elicitation;
+    if (!elicitation) {
+      return null;
+    }
+    return <ElicitationForm {...elicitation} />;
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
     const cached = imageFile.file_id ? getCachedPreview(imageFile.file_id) : undefined;

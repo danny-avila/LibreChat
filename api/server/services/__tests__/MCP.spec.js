@@ -29,7 +29,7 @@ jest.mock('@librechat/api', () => ({
   isMCPDomainAllowed: jest.fn(),
   normalizeServerName: jest.fn((name) => name),
   normalizeJsonSchema: jest.fn((schema) => schema),
-  GenerationJobManager: jest.fn(),
+  GenerationJobManager: { emitChunk: jest.fn() },
   resolveJsonSchemaRefs: jest.fn((schema) => schema),
   buildOAuthToolCallName: jest.fn((name) => name),
 }));
@@ -54,7 +54,15 @@ jest.mock('~/server/services/Tools/mcp', () => ({
 }));
 
 const { getAppConfig } = require('~/server/services/Config');
-const { resolveConfigServers, resolveMcpConfigNames, resolveAllMcpConfigs } = require('../MCP');
+const { sendEvent, GenerationJobManager } = require('@librechat/api');
+const {
+  resolveConfigServers,
+  resolveMcpConfigNames,
+  resolveAllMcpConfigs,
+  createElicitationStart,
+  getElicitationFlowContext,
+  resolveElicitationFlow,
+} = require('../MCP');
 
 describe('resolveConfigServers', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -177,5 +185,147 @@ describe('resolveAllMcpConfigs', () => {
     getAppConfig.mockRejectedValue(new Error('mongo down'));
 
     await expect(resolveAllMcpConfigs('u1', { id: 'u1' })).rejects.toThrow('mongo down');
+  });
+});
+
+describe('createElicitationStart', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('emits the on_elicitation event via sendEvent when no streamId is set', async () => {
+    const res = { write: jest.fn() };
+    const start = createElicitationStart({ res, stepId: 'step-1', streamId: null });
+
+    await start({
+      flowId: 'u:s:t:n1',
+      mode: 'url',
+      message: 'Authorize access',
+      serverName: 'jira',
+      toolName: 'create_issue',
+      url: 'https://auth.example.com/authorize',
+    });
+
+    expect(GenerationJobManager.emitChunk).not.toHaveBeenCalled();
+    expect(sendEvent).toHaveBeenCalledWith(res, {
+      event: 'on_elicitation',
+      data: expect.objectContaining({
+        id: 'step-1',
+        elicitation: expect.objectContaining({
+          flowId: 'u:s:t:n1',
+          mode: 'url',
+          message: 'Authorize access',
+          serverName: 'jira',
+          toolName: 'create_issue',
+          url: 'https://auth.example.com/authorize',
+        }),
+      }),
+    });
+  });
+
+  it('emits the on_elicitation event via emitChunk when a streamId is set', async () => {
+    const start = createElicitationStart({ res: {}, stepId: 'step-2', streamId: 'stream-9' });
+
+    await start({ flowId: 'u:s:t:n2', mode: 'url', message: 'Authorize', url: 'https://x/auth' });
+
+    expect(sendEvent).not.toHaveBeenCalled();
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'stream-9',
+      expect.objectContaining({
+        event: 'on_elicitation',
+        data: expect.objectContaining({
+          elicitation: expect.objectContaining({
+            flowId: 'u:s:t:n2',
+            mode: 'url',
+            url: 'https://x/auth',
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('captures the stream context so the completion route can emit resolution', async () => {
+    const start = createElicitationStart({ res: {}, stepId: 'step-ctx', streamId: 'stream-ctx' });
+
+    await start({ flowId: 'flow-ctx', mode: 'url', message: 'x', url: 'https://x/auth' });
+
+    expect(getElicitationFlowContext('flow-ctx')).toEqual(
+      expect.objectContaining({ streamId: 'stream-ctx', stepId: 'step-ctx' }),
+    );
+  });
+
+  it('retains the server-supplied elicitationId in the flow context without leaking it onto the SSE event', async () => {
+    const start = createElicitationStart({ res: {}, stepId: 'step-eid', streamId: 'stream-eid' });
+
+    await start({
+      flowId: 'flow-eid',
+      mode: 'url',
+      message: 'Authorize',
+      url: 'https://x/auth',
+      elicitationId: 'elicit-9',
+    });
+
+    expect(getElicitationFlowContext('flow-eid')).toEqual(
+      expect.objectContaining({ elicitationId: 'elicit-9' }),
+    );
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'stream-eid',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          elicitation: expect.not.objectContaining({ elicitationId: expect.anything() }),
+        }),
+      }),
+    );
+  });
+});
+
+describe('resolveElicitationFlow', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('emits on_elicitation_resolved onto the captured stream and consumes the context', async () => {
+    const start = createElicitationStart({ res: {}, stepId: 'step-r', streamId: 'stream-r' });
+    await start({ flowId: 'flow-resolve', mode: 'url', message: 'x', url: 'https://x/auth' });
+    GenerationJobManager.emitChunk.mockClear();
+
+    const emitted = await resolveElicitationFlow({
+      flowId: 'flow-resolve',
+      action: 'complete',
+    });
+
+    expect(emitted).toBe(true);
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'stream-r',
+      expect.objectContaining({
+        event: 'on_elicitation_resolved',
+        data: expect.objectContaining({
+          id: 'step-r',
+          flowId: 'flow-resolve',
+          action: 'complete',
+        }),
+      }),
+    );
+
+    // Context is single-use: a second resolution is a no-op.
+    expect(await resolveElicitationFlow({ flowId: 'flow-resolve', action: 'cancel' })).toBe(false);
+    expect(getElicitationFlowContext('flow-resolve')).toBeUndefined();
+  });
+
+  it('returns false when no context exists for the flow', async () => {
+    expect(await resolveElicitationFlow({ flowId: 'never-started', action: 'complete' })).toBe(
+      false,
+    );
+  });
+
+  it('emits via sendEvent for a non-resumable (no streamId) stream', async () => {
+    const res = { write: jest.fn() };
+    const start = createElicitationStart({ res, stepId: 'step-direct', streamId: null });
+    await start({ flowId: 'flow-direct', mode: 'url', message: 'auth', url: 'https://x' });
+    sendEvent.mockClear();
+
+    const emitted = await resolveElicitationFlow({ flowId: 'flow-direct', action: 'complete' });
+
+    expect(emitted).toBe(true);
+    expect(sendEvent).toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({ event: 'on_elicitation_resolved' }),
+    );
   });
 });
