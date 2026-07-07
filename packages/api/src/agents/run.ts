@@ -3,6 +3,7 @@ import { Run, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
   EModelEndpoint,
+  AgentCapabilities,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
   extractEnvVariable,
@@ -779,6 +780,26 @@ function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
 }
 
 /**
+ * Whether this run opts its remote sandbox tools into best-effort stateful
+ * runtime sessions (a warm per-session MicroVM workspace on the Code API).
+ * Requires BOTH code execution active in the run (`codeEnvActive`, i.e. some
+ * reachable agent has execute_code/bash) AND the admin `stateful_code_sessions`
+ * capability — a stateful sandbox session is meaningless without code
+ * execution. Off by default: the capability is absent from
+ * `defaultAgentCapabilities`, and the SDK derives the session hint from
+ * `thread_id` (= conversationId), so this is never a trust boundary.
+ */
+export function resolveStatefulCodeSessions(
+  codeEnvActive: boolean,
+  agentsEndpointConfig: { capabilities?: AgentCapabilities[] } | undefined,
+): boolean {
+  if (!codeEnvActive) {
+    return false;
+  }
+  return new Set(agentsEndpointConfig?.capabilities).has(AgentCapabilities.stateful_code_sessions);
+}
+
+/**
  * Whether any agent reachable in the run — primary, handoff/parallel, or a
  * nested subagent — opts into cross-turn `reasoning_content` reconstruction.
  * Walks `subagentAgentConfigs` like {@link anyAgentHasCodeEnv}, since an
@@ -1282,6 +1303,12 @@ export async function createRun({
    * and the resume route). When disabled, nothing attaches and the run is identical
    * to before this feature shipped.
    */
+  // `enableToolOutputReferences` (bash present anywhere in the run) doubles as
+  // the "code execution active" signal for the stateful-session gate.
+  const statefulCodeSessions = resolveStatefulCodeSessions(
+    enableToolOutputReferences,
+    agentsEndpointConfig,
+  );
   // Resolve the effective policy through the single seam so per-agent / per-skill
   // sources can layer in later without touching this call site (see
   // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
@@ -1377,6 +1404,15 @@ export async function createRun({
     langfuse: buildLangfuseConfig({ appConfig, tenantId: tenantId ?? user?.tenantId }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
+    }),
+    // Best-effort stateful runtime sessions on the remote Code API. The SDK
+    // stamps a per-conversation session hint on execute_code/bash requests and
+    // hedges those tools' descriptions; the transport is otherwise unchanged.
+    // `engine` is omitted (defaults to `sandbox`) and the hint defaults to
+    // thread_id. Requires @librechat/agents with `toolExecution.sandbox`;
+    // older versions ignore the field.
+    ...(statefulCodeSessions && {
+      toolExecution: { sandbox: { statefulSessions: true } },
     }),
     // HITL opt-in: the `humanInTheLoop` switch + the PreToolUse policy hook. Spread
     // here (not just `compileOptions.checkpointer` above) so an `ask` decision raises
