@@ -3,6 +3,8 @@ export enum QueryKeys {
   sharedMessages = 'sharedMessages',
   sharedStartupConfig = 'sharedStartupConfig',
   sharedLinks = 'sharedLinks',
+  adminGroups = 'adminGroups',
+  adminUserSearch = 'adminUserSearch',
   allConversations = 'allConversations',
   archivedConversations = 'archivedConversations',
   searchConversations = 'searchConversations',
@@ -90,6 +92,7 @@ export enum QueryKeys {
 // Dynamic query keys that require parameters
 export const DynamicQueryKeys = {
   agentFiles: (agentId: string) => ['agentFiles', agentId] as const,
+  adminGroupMembers: (groupId: string) => ['adminGroupMembers', groupId] as const,
 } as const;
 
 export enum MutationKeys {
@@ -128,4 +131,9 @@ export enum MutationKeys {
   deleteSkillNode = 'deleteSkillNode',
   updateSkillNodeContent = 'updateSkillNodeContent',
   convoPin = 'convoPin',
+  createAdminGroup = 'createAdminGroup',
+  updateAdminGroup = 'updateAdminGroup',
+  deleteAdminGroup = 'deleteAdminGroup',
+  addAdminGroupMember = 'addAdminGroupMember',
+  removeAdminGroupMember = 'removeAdminGroupMember',
 }

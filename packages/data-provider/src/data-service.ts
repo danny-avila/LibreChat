@@ -1389,3 +1389,48 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* Admin — user search & group management */
+
+export function searchAdminUsers(query: string): Promise<t.TAdminUserSearchResult[]> {
+  return request.get(endpoints.searchAdminUsers(query));
+}
+
+export function listAdminGroups(
+  params?: t.TAdminGroupsListParams,
+): Promise<t.TAdminGroupsListResponse> {
+  return request.get(endpoints.adminGroupsList(params));
+}
+
+export function createAdminGroup(
+  payload: t.TCreateGroupRequest,
+): Promise<{ group: t.TAdminGroup }> {
+  return request.post(endpoints.adminGroupsList(), payload);
+}
+
+export function updateAdminGroup(
+  payload: t.TUpdateGroupRequest,
+): Promise<{ group: t.TAdminGroup }> {
+  const { id, ...body } = payload;
+  return request.patch(endpoints.adminGroup(id), body);
+}
+
+export function deleteAdminGroup(id: string): Promise<{ success: boolean; id: string }> {
+  return request.delete(endpoints.adminGroup(id));
+}
+
+export function getAdminGroupMembers(
+  id: string,
+  limit?: number,
+  offset?: number,
+): Promise<t.TGroupMembersResponse> {
+  return request.get(endpoints.adminGroupMembers(id, limit, offset));
+}
+
+export function addAdminGroupMember(id: string, userId: string): Promise<{ group: t.TAdminGroup }> {
+  return request.post(endpoints.adminGroupMembers(id), { userId });
+}
+
+export function removeAdminGroupMember(id: string, userId: string): Promise<{ success: boolean }> {
+  return request.delete(endpoints.adminGroupMember(id, userId));
+}

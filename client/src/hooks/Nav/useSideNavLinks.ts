@@ -3,6 +3,7 @@ import { MCPIcon, AttachmentIcon, OpenAIMinimalIcon } from '@librechat/client';
 import {
   Bot,
   Brain,
+  Users,
   Bookmark,
   NotebookPen,
   ScrollText,
@@ -25,6 +26,7 @@ import {
   useGetAgentsConfig,
   useHasAccess,
 } from '~/hooks';
+import GroupsPanel from '~/components/SidePanel/Groups/GroupsPanel';
 import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
@@ -87,6 +89,10 @@ export default function useSideNavLinks({
   const hasAccessToCreateMCP = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
+  });
+  const hasAccessToGroups = useHasAccess({
+    permissionType: PermissionTypes.PEOPLE_PICKER,
+    permission: Permissions.VIEW_GROUPS,
   });
   const { availableMCPServers } = useMCPServerManager();
 
@@ -206,6 +212,16 @@ export default function useSideNavLinks({
       });
     }
 
+    if (hasAccessToGroups) {
+      links.push({
+        title: 'com_ui_groups',
+        label: '',
+        icon: Users,
+        id: 'groups',
+        Component: GroupsPanel,
+      });
+    }
+
     if (includeHidePanel && hidePanel) {
       links.push({
         title: 'com_sidepanel_hide_panel',
@@ -234,6 +250,7 @@ export default function useSideNavLinks({
     availableMCPServers,
     hasAccessToUseMCPSettings,
     hasAccessToCreateMCP,
+    hasAccessToGroups,
     includeHidePanel,
     hidePanel,
   ]);

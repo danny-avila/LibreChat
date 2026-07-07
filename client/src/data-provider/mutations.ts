@@ -1,5 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import {
+  dataService,
+  MutationKeys,
+  QueryKeys,
+  DynamicQueryKeys,
+  defaultOrderQuery,
+} from 'librechat-data-provider';
 import {
   Constants,
   defaultAssistantsVersion,
@@ -1167,5 +1173,81 @@ export const useAcceptTermsMutation = (
     },
     onError: options?.onError,
     onMutate: options?.onMutate,
+  });
+};
+
+export const useCreateAdminGroupMutation = (
+  options?: t.MutationOptions<{ group: t.TAdminGroup }, t.TCreateGroupRequest>,
+): UseMutationResult<{ group: t.TAdminGroup }, unknown, t.TCreateGroupRequest, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload) => dataService.createAdminGroup(payload), {
+    ...(options || {}),
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.adminGroups], exact: false });
+      options?.onSuccess?.(...args);
+    },
+  });
+};
+
+export const useUpdateAdminGroupMutation = (
+  options?: t.MutationOptions<{ group: t.TAdminGroup }, t.TUpdateGroupRequest>,
+): UseMutationResult<{ group: t.TAdminGroup }, unknown, t.TUpdateGroupRequest, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload) => dataService.updateAdminGroup(payload), {
+    ...(options || {}),
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.adminGroups], exact: false });
+      options?.onSuccess?.(...args);
+    },
+  });
+};
+
+export const useDeleteAdminGroupMutation = (
+  options?: t.MutationOptions<{ success: boolean; id: string }, { id: string }>,
+): UseMutationResult<{ success: boolean; id: string }, unknown, { id: string }, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation((vars) => dataService.deleteAdminGroup(vars.id), {
+    ...(options || {}),
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.adminGroups], exact: false });
+      options?.onSuccess?.(...args);
+    },
+  });
+};
+
+export const useAddAdminGroupMemberMutation = (
+  options?: t.MutationOptions<{ group: t.TAdminGroup }, { id: string; userId: string }>,
+): UseMutationResult<
+  { group: t.TAdminGroup },
+  unknown,
+  { id: string; userId: string },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((vars) => dataService.addAdminGroupMember(vars.id, vars.userId), {
+    ...(options || {}),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({
+        queryKey: DynamicQueryKeys.adminGroupMembers(variables.id),
+      });
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.adminGroups], exact: false });
+      options?.onSuccess?.(data, variables, context);
+    },
+  });
+};
+
+export const useRemoveAdminGroupMemberMutation = (
+  options?: t.MutationOptions<{ success: boolean }, { id: string; userId: string }>,
+): UseMutationResult<{ success: boolean }, unknown, { id: string; userId: string }, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation((vars) => dataService.removeAdminGroupMember(vars.id, vars.userId), {
+    ...(options || {}),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({
+        queryKey: DynamicQueryKeys.adminGroupMembers(variables.id),
+      });
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.adminGroups], exact: false });
+      options?.onSuccess?.(data, variables, context);
+    },
   });
 };

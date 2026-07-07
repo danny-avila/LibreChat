@@ -3,6 +3,7 @@ import {
   dataService,
   EModelEndpoint,
   isAgentsEndpoint,
+  DynamicQueryKeys,
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
@@ -162,6 +163,50 @@ export const useSharedLinksQuery = (
     cacheTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
+};
+
+export const useAdminGroupsQuery = (
+  params?: t.TAdminGroupsListParams,
+  config?: UseQueryOptions<t.TAdminGroupsListResponse>,
+): QueryObserverResult<t.TAdminGroupsListResponse> => {
+  return useQuery<t.TAdminGroupsListResponse>(
+    [QueryKeys.adminGroups, params],
+    () => dataService.listAdminGroups(params),
+    {
+      staleTime: 60 * 1000,
+      ...config,
+    },
+  );
+};
+
+export const useAdminGroupMembersQuery = (
+  groupId: string,
+  config?: UseQueryOptions<t.TGroupMembersResponse>,
+): QueryObserverResult<t.TGroupMembersResponse> => {
+  return useQuery<t.TGroupMembersResponse>(
+    DynamicQueryKeys.adminGroupMembers(groupId),
+    () => dataService.getAdminGroupMembers(groupId),
+    {
+      enabled: !!groupId,
+      staleTime: 60 * 1000,
+      ...config,
+    },
+  );
+};
+
+export const useSearchAdminUsersQuery = (
+  query: string,
+  config?: UseQueryOptions<t.TAdminUserSearchResult[]>,
+): QueryObserverResult<t.TAdminUserSearchResult[]> => {
+  return useQuery<t.TAdminUserSearchResult[]>(
+    [QueryKeys.adminUserSearch, query],
+    () => dataService.searchAdminUsers(query),
+    {
+      enabled: query.trim().length > 0,
+      staleTime: 30 * 1000,
+      ...config,
+    },
+  );
 };
 
 export const useConversationTagsQuery = (

@@ -830,3 +830,67 @@ export type TUpdateSkillNodeRequest = {
   parentId?: string | null;
   order?: number;
 };
+
+/* Admin — user & group management (GET/POST/PATCH/DELETE /api/admin/*) */
+
+export type TAdminUserSearchResult = {
+  id: string;
+  name: string;
+  email: string;
+  username?: string;
+  avatarUrl?: string;
+};
+
+export type TAdminGroup = {
+  _id: string;
+  name: string;
+  description?: string;
+  email?: string;
+  avatar?: string;
+  memberIds?: string[];
+  source: 'local' | 'entra';
+  idOnTheSource?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type TAdminGroupsListParams = {
+  search?: string;
+  source?: 'local' | 'entra';
+  limit?: number;
+  offset?: number;
+};
+
+export type TAdminGroupsListResponse = {
+  groups: TAdminGroup[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type TCreateGroupRequest = {
+  name: string;
+  description?: string;
+  email?: string;
+};
+
+export type TUpdateGroupRequest = {
+  id: string;
+  name?: string;
+  description?: string;
+  email?: string;
+};
+
+export type TGroupMember = {
+  userId: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+};
+
+export type TGroupMembersResponse = {
+  members: TGroupMember[];
+  total: number;
+  limit: number;
+  offset: number;
+};

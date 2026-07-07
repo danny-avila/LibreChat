@@ -526,3 +526,45 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+/* Admin — user search & group management */
+export const searchAdminUsers = (query: string) =>
+  `${BASE_URL}/api/admin/users/search?q=${encodeURIComponent(query)}`;
+
+const adminGroupsRoot = `${BASE_URL}/api/admin/groups`;
+export const adminGroupsList = (params?: {
+  search?: string;
+  source?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const query = new URLSearchParams();
+  if (params?.search) {
+    query.set('search', params.search);
+  }
+  if (params?.source) {
+    query.set('source', params.source);
+  }
+  if (params?.limit != null) {
+    query.set('limit', String(params.limit));
+  }
+  if (params?.offset != null) {
+    query.set('offset', String(params.offset));
+  }
+  const qs = query.toString();
+  return qs ? `${adminGroupsRoot}?${qs}` : adminGroupsRoot;
+};
+export const adminGroup = (id: string) => `${adminGroupsRoot}/${id}`;
+export const adminGroupMembers = (id: string, limit?: number, offset?: number) => {
+  const query = new URLSearchParams();
+  if (limit != null) {
+    query.set('limit', String(limit));
+  }
+  if (offset != null) {
+    query.set('offset', String(offset));
+  }
+  const qs = query.toString();
+  return qs ? `${adminGroupsRoot}/${id}/members?${qs}` : `${adminGroupsRoot}/${id}/members`;
+};
+export const adminGroupMember = (id: string, userId: string) =>
+  `${adminGroupsRoot}/${id}/members/${encodeURIComponent(userId)}`;
