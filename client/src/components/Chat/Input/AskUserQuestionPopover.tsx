@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { useWatch } from 'react-hook-form';
 import { Button } from '@librechat/client';
-import { Check, ChevronDown, CornerDownLeft, X } from 'lucide-react';
+import { Check, ChevronDown, CornerDownLeft, TriangleAlert, X } from 'lucide-react';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { useChatFormContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -37,6 +37,7 @@ function AskUserQuestionPopoverContent({
     checked,
     multiSelect,
     locked,
+    errored,
     toggleChecked,
     canSubmit,
     submit,
@@ -112,6 +113,15 @@ function AskUserQuestionPopoverContent({
             </button>
           );
         })}
+        {/** A failed submission keeps the question answerable (controls stay
+         *   enabled), but the chat card that would show the error is hidden
+         *   while the popover is up — so surface it here for retry guidance. */}
+        {errored && (
+          <div className="flex items-center gap-1.5 px-2 pt-1 text-xs text-text-warning">
+            <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {localize('com_ui_ask_answer_error')}
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2 p-2">
           <button
             type="button"

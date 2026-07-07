@@ -371,6 +371,10 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     submitAnswer,
     skip,
     handleComposerKeyDown,
+    /** The last submission failed but the question is still answerable — the
+     *  popover surfaces this so a composer/popover answer doesn't fail
+     *  silently (the chat card's error line is hidden while the popover is up). */
+    errored: status === 'error',
     /** Model-supplied "Other"-style label, folded into the inline input. */
     otherLabel,
     draftId,
