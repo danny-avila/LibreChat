@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
-import { ChevronDown, Lightbulb, MessageCircleQuestion, Users } from 'lucide-react';
+import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TAttachment,
@@ -170,8 +170,8 @@ export default function ToolCallGroup({
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
   /** Reasoning interleaved with the tool calls renders inside the body but is
-   *  hidden while collapsed — surface a lightbulb in the header so the summary
-   *  hints that the group also contains thoughts. */
+   *  hidden while collapsed — note it in the header's accessible label so screen
+   *  readers know the group also contains thoughts. */
   const hasReasoning = useMemo(
     () => parts.some((p) => p.part.type === ContentTypes.THINK),
     [parts],
@@ -224,6 +224,13 @@ export default function ToolCallGroup({
     }
     return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3}`;
   }, [toolNames, localize, mcpServerNames]);
+
+  /** For a single-tool group, lead with the tool's own (capitalized) label
+   *  instead of the generic "Used 1 tool — name", which reads awkwardly. */
+  const singleToolLabel = useMemo(() => {
+    const raw = getToolDisplayLabel(toolNames[0] ?? '', localize);
+    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
+  }, [toolNames, localize]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   /** A labeled activity block is summarized by its header, so it collapses
@@ -333,9 +340,10 @@ export default function ToolCallGroup({
         ? localize('com_ui_asked_n_questions', { 0: String(count) })
         : localize('com_ui_asking_n_questions', { 0: String(count) });
     }
-    return count === 1
-      ? localize('com_ui_used_one_tool')
-      : localize('com_ui_used_n_tools', { 0: String(count) });
+    if (count === 1) {
+      return singleToolLabel || localize('com_ui_used_one_tool');
+    }
+    return localize('com_ui_used_n_tools', { 0: String(count) });
   };
   /** The generated line wins over the generic category verb — but only once
    *  it exists. An unfilled label part leaves the block rendering exactly as
@@ -401,14 +409,12 @@ export default function ToolCallGroup({
         </span>
         {/** Hide the tool-name summary for pure-category groups (subagents /
          *   questions) — every entry deduplicates to the same token, which
-         *   adds noise without info. Mixed groups keep the summary. */}
-        {toolNameSummary && !allSubagents && !allAskQuestions && (
+         *   adds noise without info. Single-tool groups already use the tool
+         *   name as their label, while mixed groups keep the summary. */}
+        {toolNameSummary && !allSubagents && !allAskQuestions && count > 1 && (
           <span className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary">
             · {toolNameSummary}
           </span>
-        )}
-        {hasReasoning && (
-          <Lightbulb className="size-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
         )}
         <ChevronDown
           className={cn(
@@ -426,17 +432,22 @@ export default function ToolCallGroup({
       >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
-            <div className="py-0.5 pl-4">
+            <div className="py-0.5">
               {parts.map(({ part, idx }) => {
                 if (part.type === ContentTypes.THINK) {
                   const think = part.think;
                   const reasoning = typeof think === 'string' ? think : (think?.value ?? '');
-                  const label =
-                    isSubmitting && idx === lastContentIdx
-                      ? localize('com_ui_thinking')
-                      : localize('com_ui_thoughts');
+                  const streaming = isSubmitting && idx === lastContentIdx;
+                  const label = streaming
+                    ? localize('com_ui_thinking')
+                    : localize('com_ui_thoughts');
                   return (
-                    <ReasoningCompact key={`reasoning-${idx}`} reasoning={reasoning} label={label} />
+                    <ReasoningCompact
+                      key={`reasoning-${idx}`}
+                      reasoning={reasoning}
+                      label={label}
+                      isStreaming={streaming}
+                    />
                   );
                 }
                 return renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand);

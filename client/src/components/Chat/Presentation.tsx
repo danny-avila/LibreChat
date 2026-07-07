@@ -3,7 +3,9 @@ import { useRecoilValue } from 'recoil';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
+import useResetSubagentOnConversationChange from '~/hooks/useResetSubagentOnConversationChange';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
+import SubagentPanel from '~/components/SidePanel/SubagentPanel';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
 import { useDeleteFilesMutation } from '~/data-provider';
 import Artifacts from '~/components/Artifacts/Artifacts';
@@ -22,8 +24,11 @@ export default function Presentation({ children }: { children: React.ReactNode }
   // arriving via SSE auto-focus through `ToolArtifactCard`'s mount effect
   // (gated on `isSubmitting`), restoring the legacy streaming UX.
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
+  const currentSubagentRunId = useRecoilValue(store.currentSubagentRunId);
+  const subagentPanelVisibility = useRecoilValue(store.subagentPanelVisibility);
 
   useResetArtifactsOnConversationChange();
+  useResetSubagentOnConversationChange();
 
   const setFilesToDelete = useSetFilesToDelete();
 
@@ -75,9 +80,23 @@ export default function Presentation({ children }: { children: React.ReactNode }
     return null;
   }, [artifactsVisibility, artifacts, currentArtifactId]);
 
+  // The subagent run panel and the artifacts panel share one right-side slot.
+  // `useOpenRightPanel` keeps at most one focus atom non-null (opening one
+  // clears the other), so the `??` precedence here is never actually contended.
+  const subagentElement = useMemo(() => {
+    if (subagentPanelVisibility === true && currentSubagentRunId != null) {
+      // Key by run id so switching focused runs remounts the panel, clearing
+      // transient per-run UI state (scroll position, copied flag).
+      return <SubagentPanel key={currentSubagentRunId} />;
+    }
+    return null;
+  }, [subagentPanelVisibility, currentSubagentRunId]);
+
+  const rightPanel = subagentElement ?? artifactsElement;
+
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelGroup artifacts={artifactsElement}>
+      <SidePanelGroup artifacts={rightPanel}>
         <main className="flex h-full flex-col overflow-y-auto" role="main">
           {children}
         </main>
