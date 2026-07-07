@@ -26,6 +26,7 @@ import { getAskUserQuestionPart } from '~/utils/approval';
 import { isBashProgrammaticToolCall } from './routing';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
+import ElicitationForm from './ElicitationForm';
 import RetrievalCall from './RetrievalCall';
 import { getCachedPreview } from '~/utils';
 import ToolApproval from './ToolApproval';
@@ -34,7 +35,6 @@ import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
-import ElicitationForm from './ElicitationForm';
 import Image from './Image';
 
 type PartProps = {

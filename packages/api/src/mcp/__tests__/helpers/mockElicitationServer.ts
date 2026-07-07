@@ -1,6 +1,6 @@
 import * as http from 'http';
-import type { AddressInfo, Socket } from 'net';
 import { randomUUID } from 'crypto';
+import type { AddressInfo, Socket } from 'net';
 
 /** Tracks open sockets so `close()` can force-destroy keep-alive connections;
  *  a plain `server.close()` otherwise hangs until idle clients disconnect. */

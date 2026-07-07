@@ -1,14 +1,14 @@
 import { randomUUID } from 'crypto';
 import type { IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
-import { MCPManager } from '../MCPManager';
-import { MCPConnection } from '../connection';
-import { MCPServersRegistry } from '../registry/MCPServersRegistry';
 import {
   startMockElicitationServer,
   type ElicitationWireShape,
   type MockElicitationServer,
 } from './helpers/mockElicitationServer';
+import { MCPServersRegistry } from '../registry/MCPServersRegistry';
+import { MCPConnection } from '../connection';
+import { MCPManager } from '../MCPManager';
 
 /**
  * Exercises the REAL client stack end to end against a mock AgentCore-style
