@@ -9,6 +9,7 @@ import {
   removeAskUserQuestionPart,
   parseAskUserQuestionArgs,
   resolveAskUserQuestionPart,
+  getSubmittedAskAnswer,
 } from './approval';
 
 const toolCallPart = (id: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
@@ -321,6 +322,13 @@ describe('resolveAskUserQuestionPart', () => {
   it('returns the same reference when the message has no matching synthetic part', () => {
     const plain = msg({ content: [textPart('hi')] });
     expect(resolveAskUserQuestionPart(plain, 'a1', 'x')).toBe(plain);
+  });
+
+  it('records the submitted answer by tool_call id (render-layer fallback for mid-stream copies)', () => {
+    resolveAskUserQuestionPart(withCardAndToolCall(), 'a1', 'purple');
+    expect(getSubmittedAskAnswer('tc1')).toBe('purple');
+    expect(getSubmittedAskAnswer('unknown')).toBeUndefined();
+    expect(getSubmittedAskAnswer(undefined)).toBeUndefined();
   });
 });
 

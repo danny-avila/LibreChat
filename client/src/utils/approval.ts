@@ -235,6 +235,21 @@ export function removeAskUserQuestionPart(message: TMessage, actionId: string): 
 }
 
 /**
+ * Session-scoped record of answers the user has submitted, keyed by the ask
+ * tool_call id. Render-layer fallback for `AskUserQuestionCall`: the SSE
+ * step handler evolves its own cached copy of the streaming message, so a
+ * store-level `output` stamp can be overwritten by the next streamed event —
+ * this survives any message-copy churn until finalize delivers the
+ * server-stamped part. Written by {@link resolveAskUserQuestionPart}.
+ */
+const submittedAskAnswers = new Map<string, string>();
+
+/** The locally-submitted answer for an ask tool_call, if any. */
+export function getSubmittedAskAnswer(toolCallId: string | undefined): string | undefined {
+  return toolCallId ? submittedAskAnswers.get(toolCallId) : undefined;
+}
+
+/**
  * Resolve an answered ask-user-question pause on the client, mirroring the
  * server's resume-time stamp so the durable Q&A card shows the answer the
  * moment the user submits (the server-patched part otherwise only arrives at
@@ -294,6 +309,9 @@ export function resolveAskUserQuestionPart(
         progress: 1,
       },
     } as TMessageContentParts;
+    if (typeof toolCall.id === 'string' && toolCall.id.length > 0) {
+      submittedAskAnswers.set(toolCall.id, answer);
+    }
     patched = true;
     break;
   }
