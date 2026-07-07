@@ -12,10 +12,10 @@ import throttle from 'lodash/throttle';
 import { Spinner } from '@librechat/client';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
-import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
-import ConversationEndpointIcon from '~/components/Conversations/ConversationEndpointIcon';
-import { areConversationRenderPropsEqual } from '~/components/Conversations/utils';
-import { DateLabel } from '~/components/Conversations/Conversations';
+import type { MeasuredCellParent } from './Conversations';
+import ConversationEndpointIcon from './ConversationEndpointIcon';
+import { areConversationRenderPropsEqual } from './utils';
+import { DateLabel } from './Conversations';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
@@ -28,7 +28,7 @@ type FlattenedItem =
   | { type: 'loading' }
   | { type: 'empty' };
 
-interface ProjectChatListProps {
+interface ConversationListVirtualProps {
   conversations: TConversation[];
   isLoading: boolean;
   isFetchingNextPage: boolean;
@@ -59,7 +59,7 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ),
 );
 
-MeasuredRow.displayName = 'ProjectWorkspaceMeasuredRow';
+MeasuredRow.displayName = 'ConversationListVirtualMeasuredRow';
 
 const LoadingRow = memo(() => {
   const localize = useLocalize();
@@ -71,7 +71,7 @@ const LoadingRow = memo(() => {
   );
 });
 
-LoadingRow.displayName = 'ProjectWorkspaceLoadingRow';
+LoadingRow.displayName = 'ConversationListVirtualLoadingRow';
 
 const ConversationRow = memo(
   ({ conversation, isGenerating }: { conversation: TConversation; isGenerating: boolean }) => {
@@ -106,9 +106,9 @@ const ConversationRow = memo(
   areConversationRenderPropsEqual,
 );
 
-ConversationRow.displayName = 'ProjectWorkspaceConversationRow';
+ConversationRow.displayName = 'ConversationListVirtualConversationRow';
 
-const ProjectChatList = ({
+const ConversationListVirtual = ({
   conversations,
   isLoading,
   isFetchingNextPage,
@@ -116,7 +116,7 @@ const ProjectChatList = ({
   sortBy,
   emptyLabel,
   loadMore,
-}: ProjectChatListProps) => {
+}: ConversationListVirtualProps) => {
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
@@ -152,15 +152,15 @@ const ProjectChatList = ({
         keyMapper: (index) => {
           const item = flattenedItemsRef.current[index];
           if (!item) {
-            return `project-workspace-unknown-${index}`;
+            return `conversation-list-unknown-${index}`;
           }
           if (item.type === 'date') {
-            return `project-workspace-date-${item.groupName}`;
+            return `conversation-list-date-${item.groupName}`;
           }
           if (item.type === 'convo') {
-            return `project-workspace-convo-${item.convo.conversationId}`;
+            return `conversation-list-convo-${item.convo.conversationId}`;
           }
-          return `project-workspace-${item.type}`;
+          return `conversation-list-${item.type}`;
         },
       }),
     [],
@@ -258,4 +258,4 @@ const ProjectChatList = ({
   );
 };
 
-export default memo(ProjectChatList);
+export default memo(ConversationListVirtual);

@@ -12,7 +12,7 @@ import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider'
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn, clearMessagesCache } from '~/utils';
 import ProjectActionsMenu from './ProjectActionsMenu';
-import ProjectChatList from './ProjectChatList';
+import ConversationListVirtual from '~/components/Conversations/ConversationListVirtual';
 import store from '~/store';
 
 type ChatSortField = 'updatedAt' | 'createdAt';
@@ -201,7 +201,7 @@ export default function ProjectWorkspace() {
               items={sortMenuItems}
             />
           </div>
-          <ProjectChatList
+          <ConversationListVirtual
             conversations={conversations}
             isLoading={isConversationsLoading}
             isFetchingNextPage={isFetchingNextPage}
