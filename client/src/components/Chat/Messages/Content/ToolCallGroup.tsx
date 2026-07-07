@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ChevronDown, Users, Lightbulb } from 'lucide-react';
+import { ChevronDown, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TAttachment,
@@ -123,8 +123,8 @@ export default function ToolCallGroup({
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
   /** Reasoning interleaved with the tool calls renders inside the body but is
-   *  hidden while collapsed — surface a lightbulb in the header so the summary
-   *  hints that the group also contains thoughts. */
+   *  hidden while collapsed — note it in the header's accessible label so screen
+   *  readers know the group also contains thoughts. */
   const hasReasoning = useMemo(
     () => parts.some((p) => p.part.type === ContentTypes.THINK),
     [parts],
@@ -162,6 +162,13 @@ export default function ToolCallGroup({
       return labels.join(', ');
     }
     return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3}`;
+  }, [toolNames, localize]);
+
+  /** For a single-tool group, lead with the tool's own (capitalized) label
+   *  instead of the generic "Used 1 tool — name", which reads awkwardly. */
+  const singleToolLabel = useMemo(() => {
+    const raw = getToolDisplayLabel(toolNames[0] ?? '', localize);
+    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
   }, [toolNames, localize]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
@@ -238,10 +245,12 @@ export default function ToolCallGroup({
     subagentsDone
       ? localize('com_ui_ran_n_agents', { 0: String(count) })
       : localize('com_ui_running_n_agents', { 0: String(count) });
-  const getToolsLabel = () =>
-    count === 1
-      ? localize('com_ui_used_one_tool')
-      : localize('com_ui_used_n_tools', { 0: String(count) });
+  const getToolsLabel = () => {
+    if (count === 1) {
+      return singleToolLabel || localize('com_ui_used_one_tool');
+    }
+    return localize('com_ui_used_n_tools', { 0: String(count) });
+  };
   const groupLabel = allSubagents ? getSubagentLabel() : getToolsLabel();
 
   const hasActiveToolCall = useMemo(
@@ -291,11 +300,8 @@ export default function ToolCallGroup({
         {/** Hide the tool-name summary for pure-subagent groups — every
          *   entry deduplicates to the same "subagent" token, which adds
          *   noise without info. Mixed groups keep the summary. */}
-        {toolNameSummary && !allSubagents && (
+        {toolNameSummary && !allSubagents && count > 1 && (
           <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
-        )}
-        {hasReasoning && (
-          <Lightbulb className="size-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
         )}
         <ChevronDown
           className={cn(
@@ -308,20 +314,21 @@ export default function ToolCallGroup({
       <div style={expandStyle} onTransitionEnd={handleTransitionEnd} aria-hidden={!isExpanded}>
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
-            <div className="py-0.5 pl-4">
+            <div className="py-0.5">
               {parts.map(({ part, idx }) => {
                 if (part.type === ContentTypes.THINK) {
                   const think = part.think;
                   const reasoning = typeof think === 'string' ? think : (think?.value ?? '');
-                  const label =
-                    isSubmitting && idx === lastContentIdx
-                      ? localize('com_ui_thinking')
-                      : localize('com_ui_thoughts');
+                  const streaming = isSubmitting && idx === lastContentIdx;
+                  const label = streaming
+                    ? localize('com_ui_thinking')
+                    : localize('com_ui_thoughts');
                   return (
                     <ReasoningCompact
                       key={`reasoning-${idx}`}
                       reasoning={reasoning}
                       label={label}
+                      isStreaming={streaming}
                     />
                   );
                 }

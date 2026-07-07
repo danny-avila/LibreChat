@@ -1,12 +1,50 @@
-import { useState, useMemo, memo, useCallback, useRef, useId, type MouseEvent } from 'react';
+import {
+  useState,
+  useMemo,
+  memo,
+  useEffect,
+  useCallback,
+  useRef,
+  useId,
+  type MouseEvent,
+} from 'react';
 import { useAtomValue } from 'jotai';
+import { TooltipAnchor } from '@librechat/client';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { FocusEvent, FC } from 'react';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 import { cn } from '~/utils';
+
+/**
+ * Tracks whether the referenced element is within the viewport. Mirrors the
+ * CodeBlock pattern: the header copy/collapse controls live at the top, and the
+ * floating bottom-right bar only takes over once the header scrolls out of view.
+ */
+export function useInViewport(): {
+  ref: React.RefObject<HTMLDivElement>;
+  inViewport: boolean;
+} {
+  const ref = useRef<HTMLDivElement>(null);
+  const [inViewport, setInViewport] = useState(true);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => setInViewport(entry.isIntersecting), {
+      root: null,
+      threshold: 0,
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, inViewport };
+}
 
 /**
  * ThinkingContent - Displays the actual thinking/reasoning content
@@ -50,17 +88,13 @@ export const ThinkingButton = memo(
 
     const [isCopied, setIsCopied] = useState(false);
 
-    const handleCopy = useCallback(
-      (e: MouseEvent<HTMLButtonElement>) => {
-        e.stopPropagation();
-        if (content) {
-          navigator.clipboard.writeText(content);
-          setIsCopied(true);
-          setTimeout(() => setIsCopied(false), 2000);
-        }
-      },
-      [content],
-    );
+    const handleCopy = useCallback(() => {
+      if (content) {
+        navigator.clipboard.writeText(content);
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000);
+      }
+    }, [content]);
 
     return (
       <div className="group/thinking flex w-full items-center justify-between gap-2">
@@ -89,35 +123,19 @@ export const ThinkingButton = memo(
           </span>
           {label}
         </button>
-        {content && showCopyButton && (
-          <button
-            type="button"
+        {content && showCopyButton && isExpanded && (
+          <CopyButton
+            isCopied={isCopied}
+            iconOnly
             onClick={handleCopy}
-            aria-label={
-              isCopied
-                ? localize('com_ui_copied_to_clipboard')
-                : localize('com_ui_copy_thoughts_to_clipboard')
-            }
+            label={localize('com_ui_copy_thoughts_to_clipboard')}
+            copiedLabel={localize('com_ui_copied_to_clipboard')}
             className={cn(
-              'rounded-lg p-1.5 text-text-secondary-alt',
-              isExpanded
-                ? 'opacity-0 group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100'
-                : 'opacity-0',
-              'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+              'opacity-0 transition-opacity',
+              'group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100',
+              'focus-visible:opacity-100',
             )}
-          >
-            <span className="sr-only">
-              {isCopied
-                ? localize('com_ui_copied_to_clipboard')
-                : localize('com_ui_copy_thoughts_to_clipboard')}
-            </span>
-            {isCopied ? (
-              <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-            ) : (
-              <Clipboard size="19" aria-hidden="true" />
-            )}
-          </button>
+          />
         )}
       </div>
     );
@@ -146,25 +164,17 @@ export const FloatingThinkingBar = memo(
     const localize = useLocalize();
     const [isCopied, setIsCopied] = useState(false);
 
-    const handleCopy = useCallback(
-      (e: MouseEvent<HTMLButtonElement>) => {
-        e.stopPropagation();
-        if (content) {
-          navigator.clipboard.writeText(content);
-          setIsCopied(true);
-          setTimeout(() => setIsCopied(false), 2000);
-        }
-      },
-      [content],
-    );
+    const handleCopy = useCallback(() => {
+      if (content) {
+        navigator.clipboard.writeText(content);
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000);
+      }
+    }, [content]);
 
     const collapseTooltip = isExpanded
       ? localize('com_ui_collapse_thoughts')
       : localize('com_ui_expand_thoughts');
-
-    const copyTooltip = isCopied
-      ? localize('com_ui_copied_to_clipboard')
-      : localize('com_ui_copy_thoughts_to_clipboard');
 
     return (
       <div
@@ -184,7 +194,7 @@ export const FloatingThinkingBar = memo(
               aria-expanded={isExpanded}
               aria-controls={contentId}
               className={cn(
-                'flex items-center justify-center rounded-lg p-1.5 text-text-tertiary',
+                'flex items-center justify-center rounded-lg p-1.5 text-text-secondary',
                 'hover:bg-surface-hover hover:text-text-primary',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
               )}
@@ -198,27 +208,13 @@ export const FloatingThinkingBar = memo(
           }
         />
         {content && (
-          <TooltipAnchor
-            description={copyTooltip}
-            render={
-              <button
-                type="button"
-                tabIndex={isVisible ? 0 : -1}
-                onClick={handleCopy}
-                aria-label={copyTooltip}
-                className={cn(
-                  'flex items-center justify-center rounded-lg p-1.5 text-text-tertiary',
-                  'hover:bg-surface-hover hover:text-text-primary',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-                )}
-              >
-                {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-                ) : (
-                  <Clipboard size="18" aria-hidden="true" />
-                )}
-              </button>
-            }
+          <CopyButton
+            isCopied={isCopied}
+            iconOnly
+            tabIndex={isVisible ? 0 : -1}
+            onClick={handleCopy}
+            label={localize('com_ui_copy_thoughts_to_clipboard')}
+            copiedLabel={localize('com_ui_copied_to_clipboard')}
           />
         )}
       </div>
@@ -247,6 +243,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { ref: headerRef, inViewport: headerInViewport } = useInViewport();
   const contentId = useId();
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
 
@@ -298,7 +295,7 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
       onFocus={handleFocus}
       onBlur={handleBlur}
     >
-      <div className="mb-4 pb-2 pt-2">
+      <div className="mb-4 pb-2 pt-2" ref={headerRef}>
         <ThinkingButton
           isExpanded={isExpanded}
           onClick={handleClick}
@@ -312,18 +309,22 @@ const Thinking: React.ElementType = memo(({ children }: { children: React.ReactN
         role="group"
         aria-label={label}
         aria-hidden={!isExpanded || undefined}
-        className={cn(isExpanded && 'mb-8')}
         style={expandStyle}
       >
-        <div className="relative overflow-hidden" ref={expandRef}>
-          <ThinkingContent>{children}</ThinkingContent>
-          <FloatingThinkingBar
-            isVisible={isBarVisible && isExpanded}
-            isExpanded={isExpanded}
-            onClick={handleClick}
-            content={textContent}
-            contentId={contentId}
-          />
+        {/** Trailing gap lives inside the animated grid track (padding), not as
+         *   an expand-only margin on the grid container, so it grows with the
+         *   height instead of snapping in and jumping the content below. */}
+        <div className="overflow-hidden pb-8" ref={expandRef}>
+          <div className="relative">
+            <ThinkingContent>{children}</ThinkingContent>
+            <FloatingThinkingBar
+              isVisible={isBarVisible && isExpanded && !headerInViewport}
+              isExpanded={isExpanded}
+              onClick={handleClick}
+              content={textContent}
+              contentId={contentId}
+            />
+          </div>
         </div>
       </div>
     </div>

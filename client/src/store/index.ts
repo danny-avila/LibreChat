@@ -1,4 +1,5 @@
 import * as artifacts from './artifacts';
+import * as subagents from './subagents';
 import submission from './submission';
 import isTemporary from './temporary';
 import endpoints from './endpoints';
@@ -20,6 +21,7 @@ export * from './usage';
 
 export default {
   ...artifacts,
+  ...subagents,
   ...families,
   ...endpoints,
   ...user,
