@@ -124,6 +124,68 @@ interface BufferedWriteBatch {
   batches: Array<{ config: RunnableConfig; writes: PendingWrite[]; taskId: string }>;
 }
 
+/**
+ * MongoDB's hard per-document ceiling. A checkpoint whose serialized state pushes its
+ * document past this cannot be stored — the driver throws `BSONObjectTooLarge` (code 10334).
+ */
+const MAX_BSON_DOCUMENT_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Headroom reserved below {@link MAX_BSON_DOCUMENT_BYTES} for a checkpoint document's
+ * non-state fields (ids, metadata, `metadata_search`, BSON framing). The serialized
+ * `checkpoint` blob dominates the document; this margin covers everything else so the guard
+ * rejects before Mongo does — with a legible error instead of a raw driver failure.
+ */
+const CHECKPOINT_SIZE_HEADROOM_BYTES = 1024 * 1024;
+
+/**
+ * Reject a checkpoint whose serialized state exceeds this. The pause is unrecoverable either
+ * way (the document can't be written), so failing here as a typed {@link CheckpointTooLargeError}
+ * turns an opaque `BSONObjectTooLarge` crash into an actionable one.
+ */
+export const CHECKPOINT_HARD_LIMIT_BYTES = MAX_BSON_DOCUMENT_BYTES - CHECKPOINT_SIZE_HEADROOM_BYTES;
+
+/**
+ * Warn once a persisted checkpoint crosses this soft threshold (~50% of the ceiling), so a
+ * conversation's checkpoint growth is visible in logs well before it reaches the hard limit.
+ */
+export const CHECKPOINT_WARN_BYTES = 8 * 1024 * 1024;
+
+/**
+ * A HITL checkpoint whose serialized state exceeds {@link CHECKPOINT_HARD_LIMIT_BYTES} — more
+ * than MongoDB can hold in a single document. Thrown BEFORE the doomed write so the run fails
+ * with a clear, typed message instead of a raw driver `BSONObjectTooLarge`. The pause cannot be
+ * persisted regardless of how it is handled upstream; a durable resume is impossible for this turn.
+ */
+export class CheckpointTooLargeError extends Error {
+  readonly code = 'CHECKPOINT_TOO_LARGE';
+  constructor(
+    readonly bytes: number,
+    readonly limit: number,
+    readonly threadId?: string,
+  ) {
+    const mb = (n: number): string => (n / 1024 / 1024).toFixed(1);
+    super(
+      `Checkpoint state is ${mb(bytes)} MB, over the ${mb(limit)} MB limit for a durable pause. ` +
+        'This conversation carries too much state to pause for input — large tool outputs or ' +
+        'inlined media are the usual cause. Start a new conversation or reduce context.',
+    );
+    this.name = 'CheckpointTooLargeError';
+  }
+}
+
+/**
+ * Construction options for {@link LazyMongoSaver}: the base saver options plus optional
+ * size-guard overrides. The overrides default to the module thresholds and exist so tests can
+ * exercise the guard at small sizes; production always uses the defaults.
+ */
+export type LazyMongoSaverOptions = ConstructorParameters<typeof MongoDBSaver>[0] & {
+  /** Soft warn threshold in bytes. Defaults to {@link CHECKPOINT_WARN_BYTES}. */
+  warnBytes?: number;
+  /** Hard reject limit in bytes. Defaults to {@link CHECKPOINT_HARD_LIMIT_BYTES}. */
+  hardLimitBytes?: number;
+};
+
 export class LazyMongoSaver extends MongoDBSaver {
   /** checkpoint id → time the resumable `putWrites` anchoring it arrived; consumed by `put`. */
   private readonly writeAnchorIds = new Map<string, number>();
@@ -132,6 +194,18 @@ export class LazyMongoSaver extends MongoDBSaver {
   private readonly persistedIds = new Map<string, number>();
   /** checkpoint id → bookkeeping batches parked until the checkpoint persists or is discarded. */
   private readonly bufferedBookkeeping = new Map<string, BufferedWriteBatch>();
+
+  /** Soft threshold (bytes) past which a persisted checkpoint is warned about. */
+  private readonly warnBytes: number;
+  /** Hard limit (bytes) past which a checkpoint is refused with {@link CheckpointTooLargeError}. */
+  private readonly hardLimitBytes: number;
+
+  constructor(options: LazyMongoSaverOptions) {
+    const { warnBytes, hardLimitBytes, ...mongoOptions } = options;
+    super(mongoOptions);
+    this.warnBytes = warnBytes ?? CHECKPOINT_WARN_BYTES;
+    this.hardLimitBytes = hardLimitBytes ?? CHECKPOINT_HARD_LIMIT_BYTES;
+  }
 
   override async putWrites(
     config: RunnableConfig,
@@ -203,6 +277,7 @@ export class LazyMongoSaver extends MongoDBSaver {
       // Carries a resumable write (interrupt / real-channel delta anchor) — persist so resume
       // can read it, and remember the id briefly so any bookkeeping batch dispatched after
       // this `put` is forwarded rather than parked.
+      await this.assertCheckpointFitsDocument(config, checkpoint);
       sweepStale(this.persistedIds, (t) => t);
       this.persistedIds.set(checkpoint.id, Date.now());
       return super.put(config, checkpoint, metadata);
@@ -232,6 +307,42 @@ export class LazyMongoSaver extends MongoDBSaver {
   private recordWriteAnchor(checkpointId: string): void {
     sweepStale(this.writeAnchorIds, (t) => t);
     this.writeAnchorIds.set(checkpointId, Date.now());
+  }
+
+  /**
+   * Measure the checkpoint's serialized size on the persist path and act on it: `debug`-log it,
+   * `warn` past {@link warnBytes}, and throw {@link CheckpointTooLargeError} past
+   * {@link hardLimitBytes} — BEFORE the write, so an oversize pause fails legibly rather than as a
+   * raw `BSONObjectTooLarge`. Serializes with the same `serde` the base `put` uses, so the measured
+   * bytes match what would be stored. The extra serialization runs only on the (rare) HITL pause
+   * path — never the clean-exit common path, which is discarded before reaching here.
+   */
+  private async assertCheckpointFitsDocument(
+    config: RunnableConfig,
+    checkpoint: Checkpoint,
+  ): Promise<void> {
+    const [, serialized] = await this.serde.dumpsTyped(checkpoint);
+    const bytes = serialized.byteLength;
+    const threadId = config.configurable?.thread_id as string | undefined;
+    const mb = (n: number): string => (n / 1024 / 1024).toFixed(1);
+    if (bytes > this.hardLimitBytes) {
+      // The anchoring write row was already persisted by `putWrites`; the pre-run prune and Mongo
+      // TTL reclaim it. Drop any parked bookkeeping so it doesn't linger in memory.
+      this.bufferedBookkeeping.delete(checkpoint.id);
+      logger.error(
+        `[checkpointer] HITL checkpoint for thread ${threadId ?? 'unknown'} is ${mb(bytes)} MB, over the ${mb(this.hardLimitBytes)} MB durable-pause limit; refusing the write (a document past 16 MB cannot be stored in MongoDB).`,
+      );
+      throw new CheckpointTooLargeError(bytes, this.hardLimitBytes, threadId);
+    }
+    if (bytes >= this.warnBytes) {
+      logger.warn(
+        `[checkpointer] HITL checkpoint for thread ${threadId ?? 'unknown'} is ${mb(bytes)} MB, past the ${mb(this.warnBytes)} MB soft threshold (hard limit ${mb(this.hardLimitBytes)} MB) — approaching MongoDB's single-document ceiling.`,
+      );
+      return;
+    }
+    logger.debug(
+      `[checkpointer] Persisting HITL checkpoint for thread ${threadId ?? 'unknown'}: ${bytes} bytes`,
+    );
   }
 }
 

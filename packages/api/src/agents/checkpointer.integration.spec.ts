@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
 import { emptyCheckpoint, ERROR, INTERRUPT } from '@langchain/langgraph-checkpoint';
@@ -6,6 +7,8 @@ import {
   getAgentCheckpointer,
   deleteAgentCheckpoint,
   deleteAgentCheckpoints,
+  LazyMongoSaver,
+  CheckpointTooLargeError,
   __resetCheckpointerForTests,
 } from './checkpointer';
 
@@ -444,5 +447,90 @@ describe('LazyMongoSaver (lazy persistence — mongodb-memory-server)', () => {
     const out = await build().invoke(new Command({ resume: 'YES' }), cfg);
     expect(out.results).toEqual(['b:YES']);
     expect(effects).toEqual({ a: 1, c: 1 }); // siblings did NOT re-execute
+  });
+});
+
+describe('LazyMongoSaver checkpoint size guard (mongodb-memory-server integration)', () => {
+  // Guards the single-document ceiling: a checkpoint embeds the whole message history, so a
+  // large conversation can serialize past MongoDB's 16 MB limit. The guard measures the
+  // serialized state on the persist path, WARNS past a soft threshold, and REJECTS past a hard
+  // limit BEFORE the write — a typed CheckpointTooLargeError instead of a raw BSONObjectTooLarge.
+  // Thresholds are shrunk here so payloads stay tiny while exercising the real serde + Mongo.
+  const clientForSaver = () =>
+    // mongoose vends the live MongoClient; the driver type resolves to a different `mongodb` copy
+    // than checkpoint-mongodb's, so the cast mirrors buildMongoSaver in checkpointer.ts.
+    mongoose.connection.getClient() as unknown as ConstructorParameters<
+      typeof MongoDBSaver
+    >[0]['client'];
+
+  const makeSaver = (overrides?: { warnBytes?: number; hardLimitBytes?: number }) =>
+    new LazyMongoSaver({
+      client: clientForSaver(),
+      checkpointCollectionName: 'agent_checkpoints',
+      checkpointWritesCollectionName: 'agent_checkpoint_writes',
+      ttl: 3600,
+      ...overrides,
+    });
+
+  /** Seed an interrupt anchor for a checkpoint whose serialized state is inflated to ~`payloadBytes`. */
+  async function seedSizedInterrupt(saver: LazyMongoSaver, threadId: string, payloadBytes: number) {
+    const checkpoint = emptyCheckpoint();
+    checkpoint.channel_values = { messages: 'x'.repeat(payloadBytes) };
+    await saver.putWrites(
+      { configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id } },
+      [[INTERRUPT, 'approve?']],
+      'task-1',
+    );
+    const config = { configurable: { thread_id: threadId, checkpoint_ns: '' } };
+    const metadata = { source: 'input' as const, step: -1, writes: null, parents: {} };
+    return { checkpoint, config, metadata };
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('persists a checkpoint under the soft threshold', async () => {
+    const saver = makeSaver({ warnBytes: 5_000, hardLimitBytes: 50_000 });
+    await saver.setup();
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const { checkpoint, config, metadata } = await seedSizedInterrupt(saver, threadId, 100);
+
+    await saver.put(config, checkpoint, metadata);
+
+    expect(await saver.getTuple(readConfig(threadId))).toBeDefined();
+  });
+
+  it('persists but WARNS when a checkpoint crosses the soft threshold', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const saver = makeSaver({ warnBytes: 500, hardLimitBytes: 50_000 });
+    await saver.setup();
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const { checkpoint, config, metadata } = await seedSizedInterrupt(saver, threadId, 2_000);
+
+    await saver.put(config, checkpoint, metadata);
+
+    expect(await saver.getTuple(readConfig(threadId))).toBeDefined();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('soft threshold'));
+  });
+
+  it('REFUSES to persist and throws CheckpointTooLargeError over the hard limit', async () => {
+    jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    const saver = makeSaver({ warnBytes: 500, hardLimitBytes: 2_000 });
+    await saver.setup();
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const { checkpoint, config, metadata } = await seedSizedInterrupt(saver, threadId, 10_000);
+
+    await expect(saver.put(config, checkpoint, metadata)).rejects.toBeInstanceOf(
+      CheckpointTooLargeError,
+    );
+
+    // Nothing durable was written for that thread — getTuple reads the checkpoint document.
+    expect(await saver.getTuple(readConfig(threadId))).toBeUndefined();
+    expect(
+      await mongoose.connection.db!.collection('agent_checkpoints').countDocuments({
+        thread_id: threadId,
+      }),
+    ).toBe(0);
   });
 });
