@@ -321,6 +321,27 @@ describe('GET /api/config', () => {
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
     });
 
+    it('should report mandatoryTwoFactorEnabled false when registration.mandatoryTwoFactor is unset', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.mandatoryTwoFactorEnabled).toBe(false);
+    });
+
+    it('should report mandatoryTwoFactorEnabled true when registration.mandatoryTwoFactor is set', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        registration: { ...baseAppConfig.registration, mandatoryTwoFactor: true },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.mandatoryTwoFactorEnabled).toBe(true);
+    });
+
     it('should strip private prompt fields from model spec presets', async () => {
       mockGetAppConfig.mockResolvedValue({
         ...baseAppConfig,

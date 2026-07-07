@@ -22,6 +22,7 @@ import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import { UnifiedSidebar } from '~/components/UnifiedSidebar';
 import { TermsAndConditionsModal } from '~/components/ui';
+import Mandatory2FAModal from '~/components/Nav/SettingsTabs/Account/Mandatory2FAModal';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 import store from '~/store';
@@ -43,7 +44,7 @@ export default function Root() {
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  const { isAuthenticated, logout } = useAuthContext();
+  const { isAuthenticated, logout, user } = useAuthContext();
 
   useHealthCheck(isAuthenticated);
 
@@ -76,6 +77,9 @@ export default function Root() {
   if (!isAuthenticated) {
     return null;
   }
+
+  const mustSetUpTwoFactor =
+    config?.mandatoryTwoFactorEnabled === true && user?.twoFactorEnabled !== true;
 
   return (
     <SetConvoProvider>
@@ -112,6 +116,7 @@ export default function Root() {
               modalContent={config.interface.termsOfService.modalContent}
             />
           )}
+          {mustSetUpTwoFactor && <Mandatory2FAModal />}
           <KeyboardShortcutsProvider />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>

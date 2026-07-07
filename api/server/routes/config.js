@@ -260,6 +260,7 @@ router.get('/', async function (req, res) {
       ...buildPostLoginPayload(),
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
+      mandatoryTwoFactorEnabled: appConfig?.registration?.mandatoryTwoFactor === true,
       interface: appConfig?.interfaceConfig,
       titleGenerationTiming: resolveTitleTiming({
         appConfig,
