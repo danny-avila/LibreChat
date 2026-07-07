@@ -177,6 +177,36 @@ function applyAskUserQuestion(
 }
 
 /**
+ * Parse an `ask_user_question` tool call's args into the question request shape.
+ * Args arrive as a JSON string on persisted messages (or an object mid-stream);
+ * malformed/empty args degrade to `null` so the caller can render a fallback
+ * label instead of crashing on model output.
+ */
+export function parseAskUserQuestionArgs(
+  args: string | Record<string, unknown> | undefined,
+): Agents.AskUserQuestionRequest | null {
+  let parsed: unknown = args;
+  if (typeof args === 'string') {
+    if (args.trim().length === 0) {
+      return null;
+    }
+    try {
+      parsed = JSON.parse(args);
+    } catch {
+      return null;
+    }
+  }
+  if (
+    parsed == null ||
+    typeof parsed !== 'object' ||
+    typeof (parsed as { question?: unknown }).question !== 'string'
+  ) {
+    return null;
+  }
+  return parsed as unknown as Agents.AskUserQuestionRequest;
+}
+
+/**
  * Removes the synthetic ask-user-question part for `actionId` from a message.
  * Pure — returns the same message reference when nothing matched.
  *

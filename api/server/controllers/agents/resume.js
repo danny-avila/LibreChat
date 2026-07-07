@@ -5,6 +5,7 @@ const {
   isPendingActionStale,
   mapToolApprovalResolutions,
   mapAskUserAnswer,
+  attachAskUserQuestionAnswer,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -612,7 +613,19 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // in-memory store's setContentParts REPLACES the stored array, so reading the
     // resume state afterward would see the new (empty) client array and lose the seed.
     const resumeState = await GenerationJobManager.getResumeState(streamId);
-    const seedContent = resumeState?.aggregatedContent ?? [];
+    let seedContent = resumeState?.aggregatedContent ?? [];
+    // Stamp the answered question onto the paused ask_user_question tool-call part
+    // (args = the pendingAction's authoritative question, output = the user's answer):
+    // the streamed arg chunks carry no tool name so the aggregator dropped them, and
+    // no completion event ever fires for this tool — without this the saved part is
+    // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswer.
+    if (pendingAction.payload?.type === 'ask_user_question') {
+      seedContent = attachAskUserQuestionAnswer(
+        seedContent,
+        pendingAction.payload.question,
+        req.body.answer,
+      );
+    }
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts);
     }

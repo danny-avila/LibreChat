@@ -6,6 +6,7 @@ import {
   findDisallowedDecisions,
   findIncompleteDecisions,
   createContentIndexOffsetHandlers,
+  attachAskUserQuestionAnswer,
 } from './resume';
 
 describe('mapToolApprovalResolutions', () => {
@@ -222,5 +223,42 @@ describe('createContentIndexOffsetHandlers', () => {
     const weird = { id: 'step_x' };
     wrapped.on_run_step.handle('on_run_step', weird as never);
     expect(calls[0].data).toBe(weird);
+  });
+});
+
+describe('attachAskUserQuestionAnswer', () => {
+  const question = { question: 'Which env?', options: [{ label: 'Staging', value: 'staging' }] };
+  const askPart = (output?: string) => ({
+    type: 'tool_call',
+    tool_call: {
+      id: 'tc1',
+      name: 'ask_user_question',
+      args: '',
+      ...(output != null && { output }),
+    },
+  });
+
+  it('stamps args (the authoritative question) and output (the answer) onto the last unanswered ask part', () => {
+    const content = [{ type: 'text' } as never, askPart()];
+    const next = attachAskUserQuestionAnswer(content as never, question as never, 'staging');
+    expect(next).not.toBe(content);
+    const patched = (next[1] as { tool_call: Record<string, unknown> }).tool_call;
+    expect(patched.output).toBe('staging');
+    expect(patched.progress).toBe(1);
+    expect(JSON.parse(patched.args as string)).toEqual(question);
+    // original untouched (pure)
+    expect((content[1] as { tool_call: { output?: string } }).tool_call.output).toBeUndefined();
+  });
+
+  it('skips already-answered ask parts and targets the newest unanswered one', () => {
+    const content = [askPart('earlier answer'), askPart()];
+    const next = attachAskUserQuestionAnswer(content as never, question as never, 'blue');
+    expect((next[0] as { tool_call: { output: string } }).tool_call.output).toBe('earlier answer');
+    expect((next[1] as { tool_call: { output: string } }).tool_call.output).toBe('blue');
+  });
+
+  it('returns the input array untouched when no ask part matches', () => {
+    const content = [{ type: 'text' } as never, askPart('done')];
+    expect(attachAskUserQuestionAnswer(content as never, question as never, 'x')).toBe(content);
   });
 });

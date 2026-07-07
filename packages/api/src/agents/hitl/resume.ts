@@ -6,6 +6,7 @@ import type {
   EventHandler,
 } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
+import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
 
 /**
  * Translate the host-facing approval wire format into the SDK's resume value.
@@ -182,4 +183,48 @@ export function createContentIndexOffsetHandlers(
   }
 
   return wrapped;
+}
+
+/**
+ * Stamp the answered question onto the paused `ask_user_question` tool-call part
+ * before the resume run seeds it back into the content pipeline.
+ *
+ * WHY the part is otherwise empty: the streamed arg CHUNKS carry no tool name, and
+ * the aggregator only accepts name-less arg updates on the completion event — which
+ * never fires for this tool (the first pass interrupts mid-execution, and the
+ * rebuilt resume run has no step id to complete against). Saved messages therefore
+ * showed `args: ""` and no `output`, and the client rendered a "cancelled" tool.
+ * The authoritative data exists anyway: the pendingAction payload carries the full
+ * question, and the resume request carries the user's answer.
+ *
+ * Patches the LAST unanswered ask part (a re-pause targets the newest question;
+ * earlier ones already carry their answers). Pure — returns the input array when
+ * nothing matched.
+ */
+export function attachAskUserQuestionAnswer<
+  TPart extends { type?: string; tool_call?: { name?: string; output?: unknown } },
+>(content: TPart[], question: Agents.AskUserQuestionRequest, answer: string): TPart[] {
+  for (let i = content.length - 1; i >= 0; i--) {
+    const part = content[i];
+    const toolCall = part?.tool_call;
+    if (
+      part?.type !== 'tool_call' ||
+      toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME ||
+      (typeof toolCall.output === 'string' && toolCall.output.length > 0)
+    ) {
+      continue;
+    }
+    const next = [...content];
+    next[i] = {
+      ...part,
+      tool_call: {
+        ...toolCall,
+        args: JSON.stringify(question),
+        output: answer,
+        progress: 1,
+      },
+    };
+    return next;
+  }
+  return content;
 }

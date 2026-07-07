@@ -7,6 +7,7 @@ import {
   getAskUserQuestionPart,
   findPendingActionMessageIndex,
   removeAskUserQuestionPart,
+  parseAskUserQuestionArgs,
 } from './approval';
 
 const toolCallPart = (id: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
@@ -223,6 +224,27 @@ describe('applyPendingAction — ask_user_question', () => {
     const message = msg({ content: undefined as unknown as TMessageContentParts[] });
     const result = applyPendingAction(message, askAction());
     expect(result.content).toHaveLength(1);
+  });
+});
+
+describe('parseAskUserQuestionArgs', () => {
+  it('parses a JSON-string args payload (the persisted wire shape)', () => {
+    const parsed = parseAskUserQuestionArgs(
+      JSON.stringify({ question: 'Which?', options: [{ label: 'A', value: 'a' }] }),
+    );
+    expect(parsed?.question).toBe('Which?');
+    expect(parsed?.options).toHaveLength(1);
+  });
+
+  it('accepts an already-parsed object', () => {
+    expect(parseAskUserQuestionArgs({ question: 'Which?' })?.question).toBe('Which?');
+  });
+
+  it('degrades to null on empty, malformed, or question-less args', () => {
+    expect(parseAskUserQuestionArgs('')).toBeNull();
+    expect(parseAskUserQuestionArgs('not json')).toBeNull();
+    expect(parseAskUserQuestionArgs('{"no_question": true}')).toBeNull();
+    expect(parseAskUserQuestionArgs(undefined)).toBeNull();
   });
 });
 
