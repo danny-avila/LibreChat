@@ -660,7 +660,8 @@ class BaseClient {
     if (
       this.contextMeta?.calibrationRatio > 0 &&
       this.contextMeta.calibrationRatio !== 1 &&
-      userMessage.tokenCount > 0
+      userMessage.tokenCount > 0 &&
+      this.savedMessageIds.has(userMessage.messageId)
     ) {
       const calibrated = Math.round(userMessage.tokenCount * this.contextMeta.calibrationRatio);
       if (calibrated !== userMessage.tokenCount) {

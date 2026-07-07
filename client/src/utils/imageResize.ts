@@ -114,10 +114,17 @@ export function resizeImage(
             opts.maxHeight!,
           );
 
-          // If no resizing needed, return original file
+          const targetFormat = opts.format ?? 'jpeg';
+          const formatChanged =
+            targetFormat === 'jpeg'
+              ? !file.type.includes('jpeg')
+              : file.type !== `image/${targetFormat}`;
+
+          // If no resizing or re-encoding needed, return original file
           if (
             newDimensions.width === originalDimensions.width &&
-            newDimensions.height === originalDimensions.height
+            newDimensions.height === originalDimensions.height &&
+            !formatChanged
           ) {
             resolve({
               file,

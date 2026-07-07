@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { logger, tenantStorage } = require('@librechat/data-schemas');
-const { Constants, isEphemeralAgentId } = require('librechat-data-provider');
+const { Constants, ContentTypes, isEphemeralAgentId } = require('librechat-data-provider');
 const buildEndpointOption = require('~/server/middleware/buildEndpointOption');
 const { initializeClient } = require('~/server/services/Endpoints/agents/initialize');
 const { getAppConfig } = require('~/server/services/Config');
@@ -14,6 +14,7 @@ const {
   buildStepPrompt,
   buildDisplayUserText,
   buildDisplayResponseText,
+  extractLocalImageForVision,
   patchMessageTextFields,
 } = require('./prompt');
 const { detectStepFailure, extractStepResponseText, formatCapturedError } = require('./failure');
@@ -174,6 +175,22 @@ async function executeStep({ owner, job, stepIndex, stepSummaries, parentMessage
     lastClientOpResult: checkpoint.lastClientOpResult,
   });
 
+  const localImage = extractLocalImageForVision(checkpoint.lastClientOpResult);
+  const attachLocalImageToMessage = (message) => {
+    if (!localImage?.dataUrl || !message) {
+      return;
+    }
+    message.image_urls = [
+      {
+        type: ContentTypes.IMAGE_URL,
+        image_url: {
+          url: localImage.dataUrl,
+          detail: 'high',
+        },
+      },
+    ];
+  };
+
   const reqCtx = { userId, interfaceConfig: appConfig?.interfaceConfig };
   const displayUserText = buildDisplayUserText({ stepIndex, goal: job.goal });
 
@@ -192,6 +209,7 @@ async function executeStep({ owner, job, stepIndex, stepSummaries, parentMessage
       { context: 'Jobs.runJobStep - user message (step 0)' },
     );
     req.body.overrideUserMessageId = userMessageId;
+    client.savedMessageIds.add(userMessageId);
   }
 
   let userMessage;
@@ -202,10 +220,12 @@ async function executeStep({ owner, job, stepIndex, stepSummaries, parentMessage
     abortController,
     onStart: (userMsg) => {
       userMessage = userMsg;
+      attachLocalImageToMessage(userMsg);
     },
     getReqData: (data = {}) => {
       if (data.userMessage) {
         userMessage = data.userMessage;
+        attachLocalImageToMessage(userMessage);
       }
     },
     progressOptions: {

@@ -6,6 +6,7 @@ const {
   formatStepResponseForDisplay,
   buildDisplayResponseText,
   formatClientOpResultForDisplay,
+  extractLocalImageForVision,
 } = require('./prompt');
 
 describe('Jobs prompt helpers', () => {
@@ -86,6 +87,46 @@ describe('Jobs prompt helpers', () => {
       ].join('\n');
 
       expect(formatStepResponseForDisplay(raw)).toBe('Here are your files:\n- notes.txt');
+    });
+  });
+
+  describe('local image client op results', () => {
+    it('omits inline base64 from the step prompt and notes vision attachment', () => {
+      const dataUrl = `data:image/png;base64,${'A'.repeat(10_000)}`;
+      const prompt = buildStepPrompt({
+        goal: 'OCR the screenshot',
+        stepIndex: 1,
+        maxSteps: 5,
+        lastClientOpResult: {
+          op: { op: 'readFile', path: 'shot.png' },
+          result: {
+            kind: 'image',
+            name: 'shot.png',
+            mimeType: 'image/png',
+            size: 5000,
+            dataUrl,
+          },
+        },
+      });
+
+      expect(prompt).toContain('shot.png');
+      expect(prompt).toContain('visionAttached');
+      expect(prompt).not.toContain('truncated');
+      expect(prompt).not.toContain('AAAA');
+    });
+
+    it('extractLocalImageForVision returns the dataUrl for vision models', () => {
+      const dataUrl = 'data:image/png;base64,abc';
+      expect(
+        extractLocalImageForVision({
+          op: { op: 'readFile', path: 'x.png' },
+          result: { kind: 'image', name: 'x.png', mimeType: 'image/png', dataUrl },
+        }),
+      ).toEqual({
+        name: 'x.png',
+        mimeType: 'image/png',
+        dataUrl,
+      });
     });
   });
 
