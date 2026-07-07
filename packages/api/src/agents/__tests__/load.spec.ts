@@ -298,6 +298,97 @@ describe('loadAgent', () => {
     expect(result?.model_parameters).not.toHaveProperty('promptPrefix');
   });
 
+  test('should equip ask_user_question from the ephemeralAgent request flag', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const result = await loadAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          body: {
+            ephemeralAgent: { ask_user_question: true } as TEphemeralAgent,
+          },
+        },
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result?.tools).toContain('ask_user_question');
+  });
+
+  test('should equip ask_user_question from a model spec (askUserQuestion: true)', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const result = await loadAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          body: {},
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            modelSpecs: {
+              list: [
+                {
+                  name: 'asks-questions',
+                  label: 'Asks Questions',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  askUserQuestion: true,
+                },
+                {
+                  name: 'no-questions',
+                  label: 'No Questions',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                },
+              ],
+            },
+          },
+        },
+        spec: 'asks-questions',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result?.tools).toContain('ask_user_question');
+
+    const withoutFlag = await loadAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          body: {},
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            modelSpecs: {
+              list: [
+                {
+                  name: 'no-questions',
+                  label: 'No Questions',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                },
+              ],
+            },
+          },
+        },
+        spec: 'no-questions',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(withoutFlag?.tools).not.toContain('ask_user_question');
+  });
+
   test('should enable full skill scope for ephemeral model spec with skills true', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 

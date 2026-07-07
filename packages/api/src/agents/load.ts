@@ -13,6 +13,7 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 
@@ -75,6 +76,12 @@ export async function loadEphemeralAgent(
   }
   if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
     tools.push(Tools.memory);
+  }
+  /** Same downstream gating as persisted agents applies: `createRun` only
+   *  equips the tool when the request is HITL-capable, the agent is not a
+   *  subagent, and the admin hasn't excluded it (filteredTools/includedTools). */
+  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+    tools.push(ASK_USER_QUESTION_TOOL_NAME);
   }
 
   const addedServers = new Set<string>();
