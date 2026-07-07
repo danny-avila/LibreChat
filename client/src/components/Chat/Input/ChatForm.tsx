@@ -191,9 +191,7 @@ const ChatForm = memo(function ChatForm({
     submitButtonRef,
     setIsScrollable,
     disabled: disableInputs,
-    // While a question pause is live, the composer doubles as the free-form
-    // answer box (the popover's option list covers the curated choices).
-    placeholder: answerMode.active ? localize('com_ui_something_else') : placeholder,
+    placeholder,
   });
 
   useQueryParams({ textAreaRef });
@@ -250,16 +248,7 @@ const ChatForm = memo(function ChatForm({
 
   return (
     <form
-      onSubmit={methods.handleSubmit((data) => {
-        // Answer mode routes the composer's text to the paused run as the
-        // free-form answer instead of starting a new turn (which would replace
-        // the paused job). Dismissing the popover restores normal sends.
-        if (answerMode.submitText(data.text)) {
-          methods.reset();
-          return;
-        }
-        return submitMessage(data);
-      })}
+      onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
         'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
@@ -349,7 +338,7 @@ const ChatForm = memo(function ChatForm({
                     onKeyDown={(e) => {
                       // Answer mode consumes option-navigation keys from the
                       // empty composer; everything else follows the normal path.
-                      if (answerMode.handleKeyDown(e)) {
+                      if (answerMode.handleComposerKeyDown(e)) {
                         return;
                       }
                       handleKeyDown(e);

@@ -1,21 +1,31 @@
 import { memo } from 'react';
+import { Button } from '@librechat/client';
 import { CornerDownLeft, X } from 'lucide-react';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 /**
- * Composer popover for a live `ask_user_question` pause, matching the
- * mentions/prompts popovers. Pure rendering: all state (live question,
- * dismissal, option highlight, selection) lives in {@link useAskAnswerMode},
- * which the composer shares for placeholder/keyboard/submit routing. Renders
- * exactly while the pause's synthetic content part exists and disappears the
+ * Composer popover for a live `ask_user_question` pause. Select-then-confirm:
+ * rows highlight on click (or arrows/digits from the empty composer), the last
+ * row is an inline free-form input, and Submit (or Enter) fires the answer.
+ * Skip dismisses. Pure rendering off {@link useAskAnswerMode}; disappears the
  * moment an answer submits from any surface.
  */
 function AskUserQuestionPopoverContent({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();
-  const { liveAsk, active, options, activeIndex, setActiveIndex, selectOption, dismiss } =
-    useAskAnswerMode(conversationId);
+  const {
+    liveAsk,
+    active,
+    options,
+    selected,
+    setSelected,
+    otherText,
+    setOtherText,
+    canSubmit,
+    submit,
+    dismiss,
+  } = useAskAnswerMode(conversationId);
 
   if (!active || !liveAsk) {
     return null;
@@ -46,20 +56,58 @@ function AskUserQuestionPopoverContent({ conversationId }: { conversationId: str
             type="button"
             className={cn(
               'flex w-full items-center gap-3 rounded-lg p-2 text-left text-sm text-text-primary',
-              index === activeIndex ? 'bg-surface-active' : 'hover:bg-surface-hover',
+              selected === index ? 'bg-surface-active' : 'hover:bg-surface-hover',
             )}
-            onMouseEnter={() => setActiveIndex(index)}
-            onClick={() => selectOption(index)}
+            onClick={() => setSelected(index)}
+            onDoubleClick={() => {
+              setSelected(index);
+              submit();
+            }}
           >
             <span className="flex h-5 w-5 items-center justify-center rounded bg-surface-tertiary text-xs text-text-secondary">
               {index + 1}
             </span>
             <span className="flex-1">{option.label}</span>
-            {index === activeIndex && (
-              <CornerDownLeft className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-            )}
           </button>
         ))}
+        <div
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg p-2 text-sm',
+            selected === 'other' ? 'bg-surface-active' : 'hover:bg-surface-hover',
+          )}
+        >
+          <span className="flex h-5 w-5 items-center justify-center rounded bg-surface-tertiary text-xs text-text-secondary">
+            {options.length + 1}
+          </span>
+          <input
+            value={otherText}
+            onChange={(e) => {
+              setOtherText(e.target.value);
+              setSelected('other');
+            }}
+            onFocus={() => setSelected('other')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && canSubmit) {
+                e.preventDefault();
+                submit();
+              } else if (e.key === 'Escape') {
+                dismiss();
+              }
+            }}
+            placeholder={localize('com_ui_something_else')}
+            className="flex-1 border-0 bg-transparent text-sm text-text-primary placeholder:text-text-secondary focus:outline-none"
+            aria-label={localize('com_ui_your_answer')}
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2 p-2">
+          <Button size="sm" variant="outline" onClick={dismiss}>
+            {localize('com_ui_skip')}
+          </Button>
+          <Button size="sm" variant="submit" disabled={!canSubmit} onClick={() => submit()}>
+            {localize('com_ui_submit')}
+            <CornerDownLeft className="ml-1.5 h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
       </div>
     </div>
   );

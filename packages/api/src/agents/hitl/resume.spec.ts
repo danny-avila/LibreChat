@@ -7,6 +7,7 @@ import {
   findIncompleteDecisions,
   createContentIndexOffsetHandlers,
   attachAskUserQuestionAnswer,
+  attachAskUserQuestionArgs,
 } from './resume';
 
 describe('mapToolApprovalResolutions', () => {
@@ -260,5 +261,30 @@ describe('attachAskUserQuestionAnswer', () => {
   it('returns the input array untouched when no ask part matches', () => {
     const content = [{ type: 'text' } as never, askPart('done')];
     expect(attachAskUserQuestionAnswer(content as never, question as never, 'x')).toBe(content);
+  });
+});
+
+describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
+  const question = { question: 'Which env?' };
+  it('stamps args on the newest empty ask part, pure', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
+    ];
+    const next = attachAskUserQuestionArgs(content as never, question as never);
+    expect(next).not.toBe(content);
+    expect(JSON.parse((next[0] as { tool_call: { args: string } }).tool_call.args)).toEqual(
+      question,
+    );
+    expect((content[0] as { tool_call: { args: string } }).tool_call.args).toBe('');
+  });
+  it('skips parts that already have args or an output', () => {
+    const withArgs = [
+      { type: 'tool_call', tool_call: { name: 'ask_user_question', args: '{"question":"x"}' } },
+    ];
+    expect(attachAskUserQuestionArgs(withArgs as never, question as never)).toBe(withArgs);
+    const answered = [
+      { type: 'tool_call', tool_call: { name: 'ask_user_question', args: '', output: 'done' } },
+    ];
+    expect(attachAskUserQuestionArgs(answered as never, question as never)).toBe(answered);
   });
 });

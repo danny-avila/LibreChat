@@ -4,37 +4,33 @@ import { useResumeSubmit } from '~/components/Chat/Messages/Content/ApprovalCont
 import { findLiveAskUserQuestion } from '~/utils/approval';
 import { useGetMessagesByConvoId } from '~/data-provider';
 
-/** Dismissed action ids — recoil so every consumer (popover, composer) reacts. */
+/** Dismissed action ids — recoil so every consumer reacts. */
 const dismissedAskActionsAtom = atom<string[]>({
   key: 'askAnswerModeDismissedActions',
   default: [],
 });
 
-/** Highlighted option row, shared between the popover (render) and the
- *  composer's key handling (navigation). */
-const askAnswerActiveIndexAtom = atom<number>({
-  key: 'askAnswerModeActiveIndex',
-  default: 0,
+/** Current selection: an option index, the inline free-form row, or nothing. */
+const askAnswerSelectionAtom = atom<number | 'other' | null>({
+  key: 'askAnswerModeSelection',
+  default: null,
+});
+
+/** Text typed into the popover's inline "Other" input. */
+const askAnswerOtherTextAtom = atom<string>({
+  key: 'askAnswerModeOtherText',
+  default: '',
 });
 
 /**
- * First-class "answer mode" for the composer. While an `ask_user_question`
- * pause is live (its synthetic content part exists and the user hasn't
- * dismissed the popover), the composer answers the question instead of
- * starting a new turn:
+ * First-class "answer mode" for a live `ask_user_question` pause, with
+ * select-then-confirm semantics (borrowed from Claude Code's AskUserQuestion
+ * UI): rows highlight on click/arrow/digit, free-form goes in the popover's
+ * OWN inline input (the composer stays a normal composer — Stop keeps meaning
+ * stop), and an explicit Submit (or Enter) fires the answer. `Skip` == dismiss.
  *
- *   - `handleKeyDown` owns option navigation from the EMPTY composer
- *     (arrows, 1-9 direct pick, Enter selects, Escape dismisses) and returns
- *     whether it consumed the event — the caller runs its normal key handling
- *     only when it didn't;
- *   - `submitText` routes non-empty composer text to the paused run as the
- *     free-form answer and reports whether it consumed the submission;
- *   - `active` drives the placeholder swap ("Something else…").
- *
- * Deliberately scoped to the composer (not `useSubmitMessage`): other submit
- * surfaces (conversation starters, prompt commands) send canned prompts whose
- * meaning is "new turn", so they keep normal semantics — which also means
- * they inherit the existing job-replacement behavior while paused.
+ * `handleComposerKeyDown` only steers selection from the EMPTY composer and
+ * reports whether it consumed the key.
  */
 export default function useAskAnswerMode(conversationId?: string | null) {
   const enabled = conversationId != null && conversationId !== 'new';
@@ -46,7 +42,8 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     [enabled, messages],
   );
   const [dismissedIds, setDismissedIds] = useRecoilState(dismissedAskActionsAtom);
-  const [activeIndex, setActiveIndex] = useRecoilState(askAnswerActiveIndexAtom);
+  const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
+  const [otherText, setOtherText] = useRecoilState(askAnswerOtherTextAtom);
   const { submitAskAnswer } = useResumeSubmit();
 
   const dismissed = liveAsk != null && dismissedIds.includes(liveAsk.actionId);
@@ -61,60 +58,66 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     }
   }, [liveAsk, setDismissedIds]);
 
-  const selectOption = useCallback(
-    (index: number) => {
-      const option = options[index];
-      if (liveAsk && option) {
-        submitAskAnswer(liveAsk.actionId, option.value);
-      }
-    },
-    [liveAsk, options, submitAskAnswer],
-  );
+  const canSubmit =
+    active &&
+    (typeof selected === 'number'
+      ? options[selected] != null
+      : selected === 'other' && otherText.trim().length > 0);
 
-  /** Non-empty composer text answers the question; returns true when consumed. */
-  const submitText = useCallback(
-    (text: string): boolean => {
-      if (!active || !liveAsk) {
-        return false;
-      }
-      const trimmed = text.trim();
-      if (trimmed.length > 0) {
-        submitAskAnswer(liveAsk.actionId, trimmed);
-      }
-      return true;
-    },
-    [active, liveAsk, submitAskAnswer],
-  );
+  /** Fires the confirmed selection; returns true when an answer was sent. */
+  const submit = useCallback((): boolean => {
+    if (!liveAsk || !canSubmit) {
+      return false;
+    }
+    const answer = typeof selected === 'number' ? options[selected].value : otherText.trim();
+    submitAskAnswer(liveAsk.actionId, answer);
+    setSelected(null);
+    setOtherText('');
+    return true;
+  }, [
+    liveAsk,
+    canSubmit,
+    selected,
+    options,
+    otherText,
+    submitAskAnswer,
+    setSelected,
+    setOtherText,
+  ]);
 
-  /** Option navigation from the composer; returns true when it consumed the key. */
-  const handleKeyDown = useCallback(
+  /** Selection steering from the empty composer; true when consumed. */
+  const handleComposerKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
-      if (!active || options.length === 0) {
+      if (!active) {
         return false;
       }
-      // Keys belong to the user's text once they start typing a free-form answer.
       if (e.currentTarget.value.trim().length > 0) {
         return false;
       }
+      const rowCount = options.length + 1; // + the inline Other row
+      const asIndex = (value: number | 'other' | null): number =>
+        value === 'other' ? options.length : (value ?? -1);
+      const fromIndex = (index: number): number | 'other' =>
+        index >= options.length ? 'other' : index;
       const digit = Number.parseInt(e.key, 10);
-      if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(options.length, 9)) {
+      if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(rowCount, 9)) {
         e.preventDefault();
-        selectOption(digit - 1);
+        setSelected(fromIndex(digit - 1));
         return true;
       }
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setActiveIndex((prev) => (prev + 1) % options.length);
+        setSelected(fromIndex((asIndex(selected) + 1) % rowCount));
         return true;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setActiveIndex((prev) => (prev - 1 + options.length) % options.length);
+        setSelected(fromIndex((asIndex(selected) - 1 + rowCount) % rowCount));
         return true;
       }
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && canSubmit) {
         e.preventDefault();
-        selectOption(activeIndex);
+        submit();
         return true;
       }
       if (e.key === 'Escape') {
@@ -123,7 +126,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       }
       return false;
     },
-    [active, options, activeIndex, selectOption, setActiveIndex, dismiss],
+    [active, options, selected, canSubmit, submit, dismiss, setSelected],
   );
 
   return {
@@ -132,10 +135,12 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     options,
     dismissed,
     dismiss,
-    activeIndex,
-    setActiveIndex,
-    selectOption,
-    submitText,
-    handleKeyDown,
+    selected,
+    setSelected,
+    otherText,
+    setOtherText,
+    canSubmit,
+    submit,
+    handleComposerKeyDown,
   };
 }

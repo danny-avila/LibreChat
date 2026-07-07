@@ -445,3 +445,29 @@ export function toClientPendingAction(
   } = pendingAction;
   return clientSafe;
 }
+
+/**
+ * Exempt `ask_user_question` from the tool-approval prompt unless the admin
+ * mentioned it EXPLICITLY (in `allow`, `ask`, or `deny`). With approval enabled
+ * in its default prompt-everything mode, the ask tool would otherwise trigger
+ * an approval card for the act of asking a question — a double pause with no
+ * safety upside: the tool is side-effect-free by construction (it only asks;
+ * the payload is length-capped and rendered as text). An explicit admin entry
+ * still wins, in either direction.
+ */
+export function exemptAskUserQuestionFromApproval(
+  policy: TToolApprovalPolicy | undefined,
+  toolName: string,
+): TToolApprovalPolicy | undefined {
+  if (!policy) {
+    return policy;
+  }
+  const mentioned =
+    policy.allow?.includes(toolName) === true ||
+    policy.ask?.includes(toolName) === true ||
+    policy.deny?.includes(toolName) === true;
+  if (mentioned) {
+    return policy;
+  }
+  return { ...policy, allow: [...(policy.allow ?? []), toolName] };
+}

@@ -38,10 +38,10 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
+import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
-import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
@@ -1286,12 +1286,18 @@ export async function createRun({
   // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
   // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
   const hitl = hitlCapable
-    ? buildHITLRunWiring(toolApprovalPolicy, {
-        userId: user?.id,
-        conversationId: requestBody?.conversationId,
-        tenantId: tenantId ?? user?.tenantId,
-        appConfig,
-      })
+    ? buildHITLRunWiring(
+        // The ask tool is exempt from the approval prompt (unless explicitly
+        // listed by the admin) — approving the right to ask a question is a
+        // pure double-pause; the tool has no side effects to gate.
+        exemptAskUserQuestionFromApproval(toolApprovalPolicy, ASK_USER_QUESTION_TOOL_NAME),
+        {
+          userId: user?.id,
+          conversationId: requestBody?.conversationId,
+          tenantId: tenantId ?? user?.tenantId,
+          appConfig,
+        },
+      )
     : undefined;
   /**
    * The `ask_user_question` tool pauses via LangGraph `interrupt()` from inside its own

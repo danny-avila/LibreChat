@@ -11,6 +11,7 @@ import {
   sanitizeResumeModelParameters,
   pickResumeContext,
   applyResumeContext,
+  exemptAskUserQuestionFromApproval,
 } from './policy';
 
 describe('resolveToolApprovalPolicy', () => {
@@ -529,5 +530,24 @@ describe('pickResumeContext / applyResumeContext', () => {
     applyResumeContext(reloadedBody, action.resumeContext);
     expect(reloadedBody.ephemeralAgent).toEqual({ execute_code: true });
     expect(reloadedBody.promptPrefix).toBe('p');
+  });
+});
+
+describe('exemptAskUserQuestionFromApproval', () => {
+  const NAME = 'ask_user_question';
+  it('adds the tool to allow when the admin did not mention it', () => {
+    expect(exemptAskUserQuestionFromApproval({ enabled: true }, NAME)?.allow).toEqual([NAME]);
+    expect(
+      exemptAskUserQuestionFromApproval({ enabled: true, allow: ['calculator'] }, NAME)?.allow,
+    ).toEqual(['calculator', NAME]);
+  });
+  it('respects explicit admin entries in any list', () => {
+    const asked = { enabled: true, ask: [NAME] };
+    expect(exemptAskUserQuestionFromApproval(asked, NAME)).toBe(asked);
+    const denied = { enabled: true, deny: [NAME] };
+    expect(exemptAskUserQuestionFromApproval(denied, NAME)).toBe(denied);
+  });
+  it('passes undefined through', () => {
+    expect(exemptAskUserQuestionFromApproval(undefined, NAME)).toBeUndefined();
   });
 });

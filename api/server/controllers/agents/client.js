@@ -43,6 +43,7 @@ const {
   isHITLEnabled,
   deleteAgentCheckpoint,
   agentRequestsAskUserQuestion,
+  attachAskUserQuestionArgs,
   createContentIndexOffsetHandlers,
   getRequestMemories,
   createMemoryProcessor,
@@ -1234,6 +1235,17 @@ class AgentClient extends BaseClient {
     );
     if (resolvedModelParameters) {
       resumeContext.model_parameters = resolvedModelParameters;
+    }
+    // Persist the question onto the paused ask tool_call's args NOW: an
+    // abandoned/expired/stopped pause never reaches the answer-resume stamp,
+    // and the streamed args were dropped (name-less chunks) — without this the
+    // unfinished turn saves an empty ask part the record card can't render.
+    if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
+      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      if (stamped !== this.contentParts) {
+        this.contentParts.length = 0;
+        this.contentParts.push(...stamped);
+      }
     }
     const pendingAction = buildPendingAction(interrupt.payload, {
       streamId,

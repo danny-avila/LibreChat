@@ -228,3 +228,41 @@ export function attachAskUserQuestionAnswer<
   }
   return content;
 }
+
+/**
+ * Stamp the question onto the paused `ask_user_question` tool-call part's args
+ * at PAUSE time (no answer yet). Companion to
+ * {@link attachAskUserQuestionAnswer}: an abandoned/expired/stopped pause never
+ * reaches the answer-resume stamp, and the streamed args were dropped by the
+ * aggregator (name-less chunks), so without this the persisted unfinished turn
+ * carries an empty ask part the record card can't render a question from.
+ * Targets the newest ask part with empty args and no output. Pure.
+ */
+export function attachAskUserQuestionArgs<
+  TPart extends {
+    type?: string;
+    tool_call?: { name?: string; args?: unknown; output?: unknown };
+  },
+>(content: TPart[], question: Agents.AskUserQuestionRequest): TPart[] {
+  for (let i = content.length - 1; i >= 0; i--) {
+    const part = content[i];
+    const toolCall = part?.tool_call;
+    const hasArgs =
+      (typeof toolCall?.args === 'string' && toolCall.args.trim().length > 0) ||
+      (toolCall?.args != null &&
+        typeof toolCall.args === 'object' &&
+        Object.keys(toolCall.args as object).length > 0);
+    if (
+      part?.type !== 'tool_call' ||
+      toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME ||
+      hasArgs ||
+      (typeof toolCall.output === 'string' && toolCall.output.length > 0)
+    ) {
+      continue;
+    }
+    const next = [...content];
+    next[i] = { ...part, tool_call: { ...toolCall, args: JSON.stringify(question) } };
+    return next;
+  }
+  return content;
+}
