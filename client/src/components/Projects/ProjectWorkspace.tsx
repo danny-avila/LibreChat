@@ -11,6 +11,7 @@ import type { MenuItemProps, RenderProp } from '~/common';
 import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn, clearMessagesCache } from '~/utils';
+import ProjectActionsMenu from './ProjectActionsMenu';
 import ProjectChatList from './ProjectChatList';
 import store from '~/store';
 
@@ -151,6 +152,7 @@ export default function ProjectWorkspace() {
               </p>
             ) : null}
           </div>
+          <ProjectActionsMenu project={project} className="mt-0.5 shrink-0" />
         </header>
 
         <button

@@ -8,6 +8,7 @@ import type { MenuItemProps, RenderProp } from '~/common';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { useProjectsInfiniteQuery } from '~/data-provider';
 import ProjectCreateDialog from './ProjectCreateDialog';
+import ProjectActionsMenu from './ProjectActionsMenu';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -185,37 +186,42 @@ export default function ProjectsView() {
             {projects.map((project) => {
               const activity = formatActivity(project);
               return (
-                <button
-                  key={project._id}
-                  type="button"
-                  className={cn(
-                    'group/project flex min-h-[8.5rem] flex-col rounded-xl border border-border-medium bg-surface-secondary p-4 text-left transition-colors',
-                    'hover:border-border-heavy hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                  )}
-                  onClick={() => navigate(`/projects/${project._id}`)}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
-                    <span className="truncate text-base font-semibold text-text-primary">
-                      {project.name}
+                <div key={project._id} className="group/project relative">
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex min-h-[8.5rem] w-full flex-col rounded-xl border border-border-medium bg-surface-secondary p-4 text-left transition-colors',
+                      'hover:border-border-heavy hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                    )}
+                    onClick={() => navigate(`/projects/${project._id}`)}
+                  >
+                    <span className="flex min-w-0 items-center gap-2 pr-8">
+                      <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+                      <span className="truncate text-base font-semibold text-text-primary">
+                        {project.name}
+                      </span>
                     </span>
-                  </span>
-                  {project.description ? (
-                    <span className="mt-2 line-clamp-2 text-sm leading-relaxed text-text-secondary">
-                      {project.description}
+                    {project.description ? (
+                      <span className="mt-2 line-clamp-2 text-sm leading-relaxed text-text-secondary">
+                        {project.description}
+                      </span>
+                    ) : null}
+                    <span className="mt-auto flex items-center justify-between gap-2 pt-4 text-xs text-text-secondary">
+                      <span>
+                        {project.conversationCount === 1
+                          ? localize('com_ui_project_chat_count_single')
+                          : localize('com_ui_project_chat_count', {
+                              count: project.conversationCount,
+                            })}
+                      </span>
+                      {activity ? <span className="shrink-0 truncate">{activity}</span> : null}
                     </span>
-                  ) : null}
-                  <span className="mt-auto flex items-center justify-between gap-2 pt-4 text-xs text-text-secondary">
-                    <span>
-                      {project.conversationCount === 1
-                        ? localize('com_ui_project_chat_count_single')
-                        : localize('com_ui_project_chat_count', {
-                            count: project.conversationCount,
-                          })}
-                    </span>
-                    {activity ? <span className="shrink-0 truncate">{activity}</span> : null}
-                  </span>
-                </button>
+                  </button>
+                  <ProjectActionsMenu
+                    project={project}
+                    className="absolute right-3 top-3 opacity-0 focus:opacity-100 group-focus-within/project:opacity-100 group-hover/project:opacity-100"
+                  />
+                </div>
               );
             })}
           </div>

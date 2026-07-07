@@ -7,6 +7,7 @@ import {
   Sun,
   Moon,
   Image,
+  Folder,
   Search,
   Telescope,
   SquarePen,
@@ -144,7 +145,16 @@ function SideMenu({ onCollapse }: { onCollapse?: () => void }) {
           label={localize('com_ui_search')}
           onClick={() => navigate('/search')}
         />
-        <NavRow icon={Image} label={localize('com_ui_images')} onClick={() => navigate('/images')} />
+        <NavRow
+          icon={Folder}
+          label={localize('com_ui_projects')}
+          onClick={() => navigate('/projects')}
+        />
+        <NavRow
+          icon={Image}
+          label={localize('com_ui_images')}
+          onClick={() => navigate('/images')}
+        />
         <NavRow
           icon={LayoutGrid}
           label={localize('com_ui_apps')}

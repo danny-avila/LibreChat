@@ -4,15 +4,9 @@ import { useMediaQuery } from '@librechat/client';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
-import {
-  useLocalize,
-  useAuthContext,
-  useLocalStorage,
-  useNavScrolling,
-} from '~/hooks';
+import { useLocalize, useAuthContext, useLocalStorage, useNavScrolling } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
-import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import SearchBar from '~/components/Nav/SearchBar';
 import store from '~/store';
 
@@ -103,7 +97,6 @@ const ConversationsSection = memo(() => {
           <SearchBar isSmallScreen={isSmallScreen} />
         </div>
       )}
-      {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}

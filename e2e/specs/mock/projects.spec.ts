@@ -60,14 +60,11 @@ test.describe('chat projects', () => {
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
     await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
 
-    // Expand the project in the sidebar and confirm the chat is filed under it.
-    const projectRow = page.getByRole('button', { name }).first();
-    if ((await projectRow.getAttribute('aria-expanded')) !== 'true') {
-      await projectRow.click();
-    }
-    await expect(
-      page.getByTestId(`project-chats-${projectId}`).getByTestId('convo-item').first(),
-    ).toBeVisible();
+    // Confirm the chat is filed under the project via the workspace's own chat list
+    // (the sidebar no longer expands into a project/chat tree — it's a flat nav button).
+    await page.goto(`/projects/${projectId}`, { timeout: 10000 });
+    await expect(page.getByText('No chats yet')).toBeHidden();
+    await expect(page.getByRole('heading', { name: /Chats/ })).toContainText('1');
   });
 
   test('removes the project scope via the chip ×', async ({ page }) => {
