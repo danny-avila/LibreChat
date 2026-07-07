@@ -56,6 +56,7 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
       return;
     }
 
+    const viewerTenantId = getTenantId();
     const SharedLink = mg.models.SharedLink as Model<RawSharedLink>;
     const findShare = async () =>
       (await SharedLink.findOne({
@@ -68,8 +69,8 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
     // different tenant — still resolves. Access remains gated by the ACL check
     // below, which runs under the share's own tenant, so this only broadens the
     // lookup, never the authorization.
-    let rawShare = getTenantId() ? await findShare() : await runAsSystem(findShare);
-    if (!rawShare && getTenantId()) {
+    let rawShare = viewerTenantId ? await findShare() : await runAsSystem(findShare);
+    if (!rawShare && viewerTenantId) {
       rawShare = await runAsSystem(findShare);
     }
 
@@ -136,7 +137,10 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
 
       const hasAccess = await aclService.checkPermission({
         userId,
-        role: user.role,
+        // Trust the viewer's role only for a same-tenant view, comparing the share
+        // tenant to the user's own tenantId (the ALS context is absent on cookie-auth
+        // file requests). null suppresses the ROLE principal for cross-tenant views.
+        role: rawShare.tenantId === user.tenantId ? user.role : null,
         resourceType: ResourceType.SHARED_LINK,
         resourceId,
         requiredPermission: PermissionBits.VIEW,
