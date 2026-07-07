@@ -3407,6 +3407,11 @@ describe('MCP Routes', () => {
 
     it('should accept a URL-mode complete with no schema and emit resolution', async () => {
       const flowManager = mockFlowManager();
+      // PENDING on the initial check, then the stored COMPLETED result on re-read.
+      flowManager.getFlowState
+        .mockReset()
+        .mockResolvedValueOnce({ status: 'PENDING', metadata: {} })
+        .mockResolvedValue({ status: 'COMPLETED', metadata: {}, result: { action: 'complete' } });
       require('~/config').getFlowStateManager.mockReturnValue(flowManager);
 
       const response = await request(app)
@@ -3424,6 +3429,24 @@ describe('MCP Routes', () => {
         action: 'complete',
         content: undefined,
       });
+    });
+
+    it('rejects the loser of a concurrent submit whose action lost the race', async () => {
+      const flowManager = mockFlowManager();
+      // Initial check passes (PENDING); by re-read, a concurrent 'cancel' has won.
+      flowManager.getFlowState
+        .mockReset()
+        .mockResolvedValueOnce({ status: 'PENDING', metadata: {} })
+        .mockResolvedValue({ status: 'COMPLETED', metadata: {}, result: { action: 'cancel' } });
+      require('~/config').getFlowStateManager.mockReturnValue(flowManager);
+
+      const response = await request(app)
+        .post(`/api/mcp/elicitation/${encodeURIComponent(ownedFlowId)}`)
+        .send({ action: 'complete' });
+
+      expect(response.status).toBe(409);
+      expect(response.body).toEqual({ error: 'Elicitation already resolved' });
+      expect(mockResolveElicitationFlow).not.toHaveBeenCalled();
     });
 
     it('should return 500 when completeFlow throws', async () => {

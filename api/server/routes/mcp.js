@@ -1054,6 +1054,13 @@ router.post('/elicitation/:flowId', requireJwtAuth, async (req, res) => {
       return res.status(404).json({ error: 'Flow not found' });
     }
 
+    // completeFlow returns true even for an already-completed flow, so re-read and
+    // reject if a concurrent submit's action (e.g. from a second tab) won the race.
+    const settledState = await flowManager.getFlowState(flowId, 'mcp_elicit');
+    if (settledState?.result?.action !== action) {
+      return res.status(409).json({ error: 'Elicitation already resolved' });
+    }
+
     /** Notify the originating stream so a resumed/replayed session renders the
      *  resolved card instead of a stale pending one. */
     await resolveElicitationFlow({ flowId, action, content });

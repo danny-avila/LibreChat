@@ -698,6 +698,17 @@ Please follow these instructions when using tools from the respective MCP server
           throw toolCallError;
         }
 
+        // Refuse elicitation on the shared app-level connection: retrying after one
+        // user's auth could leave it authorized as that user for everyone else.
+        const sharedAppConnection = await this.appConnections?.get(serverName);
+        if (sharedAppConnection && sharedAppConnection === connection) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `${first.message} This server requires per-user authorization but is connected at ` +
+              `the app level; configure it to use a user-scoped connection, then retry.`,
+          );
+        }
+
         const flowId = generateElicitationFlowId(userId, serverName, toolName, getTenantId());
         // Apply the same per-(user, server) pending-elicitation cap as the
         // server-initiated `elicitation/create` path, so a gateway that keeps

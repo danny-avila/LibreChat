@@ -169,6 +169,29 @@ describe('URL elicitation (-32042) integration', () => {
     expect(server.state.callCounts['whoami']).toBe(1);
   });
 
+  it('refuses URL elicitation on an app-level shared connection (no cross-user auth bleed)', async () => {
+    server.reset({ authorized: false, wireShape: 'http-401' });
+    const built = await connectToMock(server);
+    connection = built.connection;
+
+    // Resolved connection === the app-level shared one, so the guard refuses.
+    (
+      built.manager as unknown as { appConnections: { get: (s: string) => Promise<unknown> } }
+    ).appConnections = { get: jest.fn(async () => built.connection) };
+
+    const elicitationStart = jest.fn(async () => undefined);
+    const { manager: flowManager, createFlow } = unusedFlowManager();
+
+    await expect(
+      callGetSecret(built.manager, server, built.serverName, { flowManager, elicitationStart }),
+    ).rejects.toThrow(/app level|user-scoped/i);
+
+    // The guard fires before any elicitation/flow machinery, and there is no retry.
+    expect(elicitationStart).not.toHaveBeenCalled();
+    expect(createFlow).not.toHaveBeenCalled();
+    expect(server.state.callCounts['get_secret']).toBe(1);
+  });
+
   describe.each(WIRE_SHAPES)('wire shape: %s', (wireShape) => {
     it('emits the elicitation, retries exactly once, and returns the authorized result', async () => {
       server.reset({ authorized: false, wireShape });
