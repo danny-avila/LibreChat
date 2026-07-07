@@ -3,9 +3,10 @@ import { Copy, CopyCheck } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { Label, Input, Checkbox, SecretInput, Radio, useToastContext } from '@librechat/client';
-import { AuthTypeEnum, AuthorizationTypeEnum } from '../hooks/useMCPServerForm';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
+import { AuthTypeEnum, AuthorizationTypeEnum } from '../hooks/useMCPServerForm';
 import { useLocalize, useCopyToClipboard, useHasAccess } from '~/hooks';
+import { Collapse } from '~/components/ui';
 import { cn } from '~/utils';
 
 interface AuthSectionProps {
@@ -83,7 +84,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
   );
 
   return (
-    <div className="space-y-3">
+    <div>
       {/* Auth Type Radio */}
       <fieldset className="space-y-1.5">
         <legend>
@@ -102,78 +103,82 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
       </fieldset>
 
       {/* API Key Fields */}
-      {authType === AuthTypeEnum.ServiceHttp && (
+      <Collapse open={authType === AuthTypeEnum.ServiceHttp} className="pt-3">
         <div className="space-y-3 rounded-lg border border-border-light p-3">
-          {/* User provides own key checkbox */}
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="user_provides_key"
-              checked={apiKeySource === 'user'}
-              onCheckedChange={(checked) =>
-                setValue('auth.api_key_source', checked ? 'user' : 'admin')
-              }
-              aria-labelledby="user_provides_key_label"
-            />
-            <label
-              id="user_provides_key_label"
-              htmlFor="user_provides_key"
-              className="cursor-pointer text-sm"
-            >
-              {localize('com_ui_user_provides_key')}
-            </label>
+          {/* User provides own key checkbox + admin-provided key */}
+          <div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="user_provides_key"
+                checked={apiKeySource === 'user'}
+                onCheckedChange={(checked) =>
+                  setValue('auth.api_key_source', checked ? 'user' : 'admin')
+                }
+                aria-labelledby="user_provides_key_label"
+              />
+              <label
+                id="user_provides_key_label"
+                htmlFor="user_provides_key"
+                className="cursor-pointer text-sm"
+              >
+                {localize('com_ui_user_provides_key')}
+              </label>
+            </div>
+
+            {/* API Key input - only when admin provides */}
+            <Collapse open={apiKeySource !== 'user'} className="pt-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="api_key" className="text-sm font-medium">
+                  {localize('com_ui_api_key')}
+                </Label>
+                <SecretInput
+                  id="api_key"
+                  placeholder="sk-..."
+                  controlsOnHover
+                  {...register('auth.api_key')}
+                />
+              </div>
+            </Collapse>
           </div>
 
-          {/* API Key input - only when admin provides */}
-          {apiKeySource !== 'user' && (
-            <div className="space-y-1.5">
-              <Label htmlFor="api_key" className="text-sm font-medium">
-                {localize('com_ui_api_key')}
-              </Label>
-              <SecretInput
-                id="api_key"
-                placeholder="sk-..."
-                controlsOnHover
-                {...register('auth.api_key')}
+          {/* Header format + custom header name */}
+          <div>
+            <fieldset className="space-y-1.5">
+              <legend>
+                <Label id="header-format-label" className="text-sm font-medium">
+                  {localize('com_ui_header_format')}
+                </Label>
+              </legend>
+              <Radio
+                options={headerFormatOptions}
+                value={authorizationType || AuthorizationTypeEnum.Bearer}
+                onChange={(val) =>
+                  setValue('auth.api_key_authorization_type', val as AuthorizationTypeEnum)
+                }
+                fullWidth
+                aria-labelledby="header-format-label"
               />
-            </div>
-          )}
+            </fieldset>
 
-          {/* Header Format Radio */}
-          <fieldset className="space-y-1.5">
-            <legend>
-              <Label id="header-format-label" className="text-sm font-medium">
-                {localize('com_ui_header_format')}
-              </Label>
-            </legend>
-            <Radio
-              options={headerFormatOptions}
-              value={authorizationType || AuthorizationTypeEnum.Bearer}
-              onChange={(val) =>
-                setValue('auth.api_key_authorization_type', val as AuthorizationTypeEnum)
-              }
-              fullWidth
-              aria-labelledby="header-format-label"
-            />
-          </fieldset>
-
-          {/* Custom header name */}
-          {authorizationType === AuthorizationTypeEnum.Custom && (
-            <div className="space-y-1.5">
-              <Label htmlFor="custom_header" className="text-sm font-medium">
-                {localize('com_ui_custom_header_name')}
-              </Label>
-              <Input
-                id="custom_header"
-                placeholder="X-Api-Key"
-                {...register('auth.api_key_custom_header')}
-              />
-            </div>
-          )}
+            {/* Custom header name */}
+            <Collapse open={authorizationType === AuthorizationTypeEnum.Custom} className="pt-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="custom_header" className="text-sm font-medium">
+                  {localize('com_ui_custom_header_name')}
+                </Label>
+                <Input
+                  id="custom_header"
+                  placeholder="X-Api-Key"
+                  {...register('auth.api_key_custom_header')}
+                />
+              </div>
+            </Collapse>
+          </div>
         </div>
-      )}
+      </Collapse>
 
       {/* OAuth Fields */}
-      {authType === AuthTypeEnum.OAuth && (
+      <Collapse open={authType === AuthTypeEnum.OAuth} className="pt-3">
         <div className="space-y-3 rounded-lg border border-border-light p-3">
           {/* Client ID & Secret in a grid */}
           <div className="grid grid-cols-2 gap-3">
@@ -200,7 +205,9 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                 aria-describedby={
                   errors.auth?.oauth_client_id ? 'oauth-client-id-error' : undefined
                 }
-                {...register('auth.oauth_client_id', { required: !isEditMode })}
+                {...register('auth.oauth_client_id', {
+                  required: !isEditMode && authType === AuthTypeEnum.OAuth,
+                })}
                 className={cn(errors.auth?.oauth_client_id && 'border-border-destructive')}
               />
               {errors.auth?.oauth_client_id && (
@@ -288,10 +295,10 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
             </div>
           )}
         </div>
-      )}
+      </Collapse>
 
       {/* OBO Fields */}
-      {authType === AuthTypeEnum.OBO && (
+      <Collapse open={authType === AuthTypeEnum.OBO} className="pt-3">
         <div className="space-y-3 rounded-lg border border-border-light p-3">
           <div className="space-y-1.5">
             <Label htmlFor="obo_scopes" className="text-sm font-medium">
@@ -330,7 +337,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
             )}
           </div>
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

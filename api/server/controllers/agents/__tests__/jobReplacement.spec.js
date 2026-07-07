@@ -337,32 +337,11 @@ describe('HITL Terminal-Side-Effect Guards', () => {
     });
   });
 
-  describe('F21 — checkpoint prune is skipped when the generation was replaced', () => {
-    // Mirrors client.js chatCompletion finally: prune only when NOT replaced.
-    const shouldPrune = async ({ resumableStreamId, jobCreatedAt }) => {
-      let replaced = false;
-      if (resumableStreamId && jobCreatedAt != null) {
-        const liveJob = await mockGenerationJobManager.getJob(resumableStreamId);
-        replaced = !liveJob || liveJob.createdAt !== jobCreatedAt;
-      }
-      return !replaced;
-    };
-
-    it('skips the prune when a newer job replaced this one', async () => {
-      mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 2000 });
-      expect(await shouldPrune({ resumableStreamId: 'c1', jobCreatedAt: 1000 })).toBe(false);
-    });
-
-    it('prunes when this is still the live job', async () => {
-      mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000 });
-      expect(await shouldPrune({ resumableStreamId: 'c1', jobCreatedAt: 1000 })).toBe(true);
-    });
-
-    it('prunes without a lookup when there is no resumable stream id', async () => {
-      expect(await shouldPrune({ resumableStreamId: undefined, jobCreatedAt: 1000 })).toBe(true);
-      expect(mockGenerationJobManager.getJob).not.toHaveBeenCalled();
-    });
-  });
+  // (Removed: F21 — the chatCompletion clean-path checkpoint prune + its job-replacement
+  // guard no longer exist. The lazy checkpointer never writes a clean-exit checkpoint, so
+  // there is nothing to prune after a non-paused turn; the pre-run prune (before
+  // processStream) clears any orphaned interrupt checkpoint instead. See
+  // checkpointer.ts LazyMongoSaver and client.js chatCompletion.)
 
   describe('F24 — resume catch-path terminal writes are skipped when replaced', () => {
     // Mirrors resume.js: stillLive gate around emitError/completeJob/deleteAgentCheckpoint.

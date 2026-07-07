@@ -104,6 +104,13 @@ export function createSafeUser(
     }
   }
 
+  // Fall back to `_id` when the mongoose virtual `id` is absent (e.g. lean/plain
+  // user objects), so `{{LIBRECHAT_USER_ID}}` placeholders still resolve.
+  if (!safeUser.id && '_id' in user) {
+    const _id = (user as unknown as { _id: { toString?: () => string } | string })._id;
+    safeUser.id = typeof _id === 'string' ? _id : _id?.toString?.();
+  }
+
   if ('federatedTokens' in user) {
     safeUser.federatedTokens = user.federatedTokens;
   }
