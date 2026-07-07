@@ -25,7 +25,7 @@ export interface AskUserQuestionPart {
  * because `AskUserQuestionPart` isn't assignable to the strict
  * `TMessageContentParts` union).
  */
-const isAskUserQuestionPart = (part: TMessageContentParts | undefined): boolean =>
+export const isAskUserQuestionPart = (part: Partial<TMessageContentParts> | undefined): boolean =>
   (part as { type?: string } | undefined)?.type === ASK_USER_QUESTION &&
   part != null &&
   ASK_USER_QUESTION in part;
