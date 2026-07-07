@@ -236,13 +236,15 @@ describe('createContentIndexOffsetHandlers', () => {
     } as never);
     expect((calls[0].data as { index: number }).index).toBe(1);
 
-    // A resolved seeded call is NOT a rebind target — a fresh same-id step offsets.
+    // Resolved seeded calls rebind too: ids are minted per call, so a same-id
+    // step can only be the interrupted batch re-executing (e.g. an ask part
+    // whose answer the resume controller pre-stamped onto the seed).
     wrapped.on_run_step.handle('on_run_step', {
       id: 'step_u',
       index: 1,
       stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'tc_done' }] },
     } as never);
-    expect((calls[1].data as { index: number }).index).toBe(4);
+    expect((calls[1].data as { index: number }).index).toBe(2);
 
     // Message steps always offset.
     wrapped.on_run_step.handle('on_run_step', {

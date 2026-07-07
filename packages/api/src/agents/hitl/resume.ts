@@ -161,9 +161,14 @@ export function createContentIndexOffsetHandlers(
   const seededToolCallIndex = new Map<string, number>();
   seedContent.forEach((part, index) => {
     const toolCall = part?.tool_call;
-    const unresolved =
-      typeof toolCall?.output !== 'string' || (toolCall.output as string).length === 0;
-    if (part?.type === 'tool_call' && typeof toolCall?.id === 'string' && unresolved) {
+    /**
+     * EVERY seeded id maps — including parts already carrying an output. Tool
+     * call ids are minted per call by the provider, so a resumed step bearing
+     * a seeded id can only be the interrupted batch re-executing (the resume
+     * controller pre-stamps the ask part's answer onto the seed, which must
+     * not exile its re-run step to a duplicate offset slot).
+     */
+    if (part?.type === 'tool_call' && typeof toolCall?.id === 'string') {
       seededToolCallIndex.set(toolCall.id, index);
     }
   });
