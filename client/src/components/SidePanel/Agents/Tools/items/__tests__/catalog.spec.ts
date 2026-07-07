@@ -17,6 +17,11 @@ const toolInputs: BuildCatalogInputs = {
   agentsConfig: { capabilities: [AgentCapabilities.tools] },
 };
 
+const askInputs: BuildCatalogInputs = {
+  ...emptyInputs,
+  agentsConfig: { capabilities: [AgentCapabilities.ask_user_question] },
+};
+
 describe('buildCatalog', () => {
   test('returns empty when nothing is enabled', () => {
     expect(buildCatalog(emptyInputs)).toEqual([]);
@@ -59,7 +64,7 @@ describe('buildCatalog', () => {
 
   test('surfaces ask_user_question as a BUILTIN (not a plugin) when the server lists it', () => {
     const askPlugin = makePlugin({ pluginKey: 'ask_user_question', name: 'Ask User' });
-    const items = buildCatalog({ ...toolInputs, regularTools: [askPlugin] });
+    const items = buildCatalog({ ...askInputs, regularTools: [askPlugin] });
     const builtin = items.find((i) => i.kind === 'builtin' && i.id === 'ask_user_question');
     expect(builtin).toBeDefined();
     expect(builtin?.iconKey).toBe('ask_user_question');
@@ -67,15 +72,15 @@ describe('buildCatalog', () => {
     expect(items.find((i) => i.kind === 'tool' && i.id === 'ask_user_question')).toBeUndefined();
   });
 
-  test('omits the ask_user_question builtin when the server filtered it or tools are off', () => {
+  test('gates the ask_user_question builtin on its OWN capability, not the generic tools one', () => {
     const askPlugin = makePlugin({ pluginKey: 'ask_user_question', name: 'Ask User' });
-    // admin filtered (not in regularTools)
+    // admin filtered (not in regularTools) despite the capability being on
     expect(
-      buildCatalog(toolInputs).find((i) => i.kind === 'builtin' && i.id === 'ask_user_question'),
+      buildCatalog(askInputs).find((i) => i.kind === 'builtin' && i.id === 'ask_user_question'),
     ).toBeUndefined();
-    // tools capability off
+    // ask_user_question capability off — the generic `tools` capability does NOT stand in for it
     expect(
-      buildCatalog({ ...emptyInputs, regularTools: [askPlugin] }).find(
+      buildCatalog({ ...toolInputs, regularTools: [askPlugin] }).find(
         (i) => i.kind === 'builtin' && i.id === 'ask_user_question',
       ),
     ).toBeUndefined();

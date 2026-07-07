@@ -121,13 +121,13 @@ export function buildCatalog(inputs: BuildCatalogInputs): AgentItem[] {
   /**
    * Native tool presented with the builtins (it ships with the app and pauses
    * the run like a first-class feature), while remaining an `agent.tools`
-   * entry mechanically. Availability = the plugin listing itself: it appears
-   * only when the `tools` capability is on AND the server lists the plugin
-   * (i.e. the admin didn't filter it) — the same gates as the plugin section
-   * it graduated from.
+   * entry mechanically. Availability is its OWN capability (like execute_code /
+   * web_search), NOT the generic `tools` one — the admin gates questions
+   * independently via `endpoints.agents.capabilities` — AND the server must
+   * still list the plugin (admin didn't filter it out).
    */
   if (
-    enabled.has(AgentCapabilities.tools) &&
+    enabled.has(AgentCapabilities.ask_user_question) &&
     inputs.regularTools.some((plugin) => plugin.pluginKey === 'ask_user_question')
   ) {
     items.push({
