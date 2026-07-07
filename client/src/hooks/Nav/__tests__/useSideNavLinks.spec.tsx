@@ -9,7 +9,6 @@ import useSideNavLinks from '../useSideNavLinks';
 // Mock all heavy component imports so renderHook doesn't need a full DOM tree
 jest.mock('~/components/SidePanel/MCPBuilder/MCPBuilderPanel', () => () => null);
 jest.mock('~/components/SidePanel/Agents/AgentPanelSwitch', () => () => null);
-jest.mock('~/components/SidePanel/Bookmarks/BookmarkPanel', () => () => null);
 jest.mock('~/components/SidePanel/Builder/PanelSwitch', () => () => null);
 jest.mock('~/components/SidePanel/Parameters/Panel', () => () => null);
 jest.mock('~/components/SidePanel/Memories', () => ({ MemoryPanel: () => null }));
@@ -26,7 +25,6 @@ jest.mock('@librechat/client', () => ({
 jest.mock('lucide-react', () => ({
   Bot: () => null,
   Brain: () => null,
-  Bookmark: () => null,
   NotebookPen: () => null,
   ScrollText: () => null,
   ArrowRightToLine: () => null,
