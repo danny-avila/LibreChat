@@ -212,6 +212,7 @@ export async function loadToolDefinitions(
   const classificationResult = await buildToolClassification({
     userId,
     agentId,
+    provider,
     loadedTools,
     deferredToolsEnabled,
     programmaticToolsEnabled,
