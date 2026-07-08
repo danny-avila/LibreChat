@@ -1342,77 +1342,134 @@ describe('startExpiredFileSweep', () => {
 
 describe('filterFile — content sniffing (MIME spoofing guard)', () => {
   const VALID_UUID = '11111111-1111-4111-8111-111111111111';
-  // Permissive endpoint config so the claimed-type gate always passes and the
-  // sniffing guard (detected vs claimed) is what each case exercises.
-  const permissiveConfig = () => ({
-    checkType: () => true,
-    endpoints: { openAI: { supportedMimeTypes: [/.*/] } },
-    avatarSizeLimit: 2 * 1024 * 1024,
-  });
+  // Representative endpoint allow-list regexes (mirrors data-provider config).
+  const IMAGE = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
+  const PDF = /^application\/pdf$/;
+  const ZIP = /^application\/zip$/;
+  const AUDIO = /^audio\/(mp3|mpeg|wav|wave|x-wav|ogg|mp4|m4a|x-m4a)$/;
+  const VIDEO = /^video\/(mp4|avi|mov|webm)$/;
+  const TEXT = /^text\/plain$/;
+  const SVG = /^image\/svg\+xml$/;
+  const DOCX = /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/;
+  const ODT = /^application\/vnd\.oasis\.opendocument\.text$/;
+  const XLS = /^application\/vnd\.ms-excel$/;
+  const DOC = /^application\/msword$/;
 
-  const makeUploadReq = ({ mimetype = 'image/png', path = '/tmp/upload.bin' } = {}) => ({
-    user: { id: 'user-123', tenantId: 'tenant-a' },
-    file: { path, originalname: 'upload.bin', filename: 'upload.bin', mimetype, size: 1024 },
-    body: { endpoint: 'openAI', file_id: VALID_UUID },
-    config: { fileConfig: {}, fileStrategy: 'local' },
-  });
+  const guard = ({ claimed, detected, allow }) => {
+    mergeFileConfig.mockReturnValue({
+      checkType: (mime, types) => (types ?? []).some((regex) => regex.test(mime)),
+      endpoints: { openAI: { supportedMimeTypes: allow } },
+      avatarSizeLimit: 2 * 1024 * 1024,
+    });
+    detectFileTypeFromFile.mockResolvedValue(detected ? { mime: detected, ext: 'bin' } : undefined);
+    return filterFile({
+      req: {
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+        file: {
+          path: '/tmp/upload.bin',
+          originalname: 'x',
+          filename: 'x',
+          mimetype: claimed,
+          size: 1024,
+        },
+        body: { endpoint: 'openAI', file_id: VALID_UUID },
+        config: { fileConfig: {}, fileStrategy: 'local' },
+      },
+    });
+  };
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mergeFileConfig.mockReturnValue(permissiveConfig());
-  });
+  beforeEach(() => jest.clearAllMocks());
 
-  const reject = (mimetype, detected) =>
-    test(`rejects claimed ${mimetype} whose bytes are ${detected}`, async () => {
-      detectFileTypeFromFile.mockResolvedValue({ mime: detected, ext: 'bin' });
-      await expect(filterFile({ req: makeUploadReq({ mimetype }) })).rejects.toThrow(
-        'File content does not match its file type',
-      );
+  const reject = (label, cfg) =>
+    test(`rejects: ${label}`, async () => {
+      await expect(guard(cfg)).rejects.toThrow('File content does not match its file type');
+    });
+  const accept = (label, cfg) =>
+    test(`accepts: ${label}`, async () => {
+      await expect(guard(cfg)).resolves.toBeUndefined();
     });
 
-  const accept = (mimetype, detected) =>
-    test(`accepts claimed ${mimetype} whose bytes are ${detected ?? '(undetected)'}`, async () => {
-      detectFileTypeFromFile.mockResolvedValue(
-        detected ? { mime: detected, ext: 'bin' } : undefined,
-      );
-      await expect(filterFile({ req: makeUploadReq({ mimetype }) })).resolves.toBeUndefined();
-    });
+  // Cross-category spoof — claim allowed, bytes are a different category.
+  reject('PDF bytes claimed as image/png', {
+    claimed: 'image/png',
+    detected: 'application/pdf',
+    allow: [IMAGE, PDF],
+  });
 
-  // Cross-category spoofs are rejected.
-  reject('image/png', 'application/pdf');
-  reject('image/png', 'application/zip');
-  reject('audio/mpeg', 'image/png');
+  // Sniffed type the endpoint does not allow, hidden behind an allowed claim.
+  reject('BMP bytes claimed as image/png on an image/png-only endpoint', {
+    claimed: 'image/png',
+    detected: 'image/bmp',
+    allow: [IMAGE],
+  });
+  reject('raw ZIP bytes claimed as application/pdf on a PDF-only endpoint', {
+    claimed: 'application/pdf',
+    detected: 'application/zip',
+    allow: [PDF],
+  });
+  reject('raw ZIP bytes claimed as OOXML docx on a docx-only endpoint', {
+    claimed: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    detected: 'application/zip',
+    allow: [DOCX],
+  });
 
-  // Unsupported same-category content is rejected (claim already passed the
-  // endpoint allow-list, but the sniffed bytes are a different application type).
-  reject('application/pdf', 'application/zip');
-  reject('application/pdf', 'application/x-cfb');
-  reject('application/zip', 'application/pdf');
+  // Executable content is always rejected.
+  reject('ELF bytes claimed as image/png', {
+    claimed: 'image/png',
+    detected: 'application/x-elf',
+    allow: [IMAGE],
+  });
+  reject('WASM bytes claimed as application/pdf', {
+    claimed: 'application/pdf',
+    detected: 'application/wasm',
+    allow: [PDF],
+  });
 
-  // Executable/active content is rejected even under a same-category claim.
-  reject('image/png', 'application/x-elf');
-  reject('application/pdf', 'application/x-elf');
-  reject('application/pdf', 'application/wasm');
-
-  // Genuine files pass, including benign subtype/vendor aliases within a category.
-  accept('image/png', 'image/png');
-  accept('application/pdf', 'application/pdf');
-  accept('audio/x-wav', 'audio/wav'); // WAV vendor alias
-  accept('video/avi', 'video/vnd.avi'); // AVI vendor alias
-  accept('audio/mp4', 'video/mp4'); // shared media container (m4a)
-
-  // Container families: sniffer reports OOXML/ODF as application/zip and legacy
-  // Office as application/x-cfb — genuine uploads must not be falsely rejected.
-  accept('application/vnd.ms-excel', 'application/x-cfb');
-  accept('application/msword', 'application/x-cfb');
-  accept(
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/zip',
-  );
-  accept('application/vnd.oasis.opendocument.text', 'application/zip');
-  accept('application/zip', 'application/zip');
+  // Genuine uploads pass — including sniffer vendor/container aliases.
+  accept('real PNG', { claimed: 'image/png', detected: 'image/png', allow: [IMAGE] });
+  accept('real PDF', { claimed: 'application/pdf', detected: 'application/pdf', allow: [PDF] });
+  accept('WAV as audio/x-wav (sniffed audio/wav)', {
+    claimed: 'audio/x-wav',
+    detected: 'audio/wav',
+    allow: [AUDIO],
+  });
+  accept('AVI as video/avi (sniffed video/vnd.avi)', {
+    claimed: 'video/avi',
+    detected: 'video/vnd.avi',
+    allow: [VIDEO],
+  });
+  accept('m4a as audio/mp4 (sniffed video/mp4, shared container)', {
+    claimed: 'audio/mp4',
+    detected: 'video/mp4',
+    allow: [AUDIO, VIDEO],
+  });
+  accept('real DOCX (sniffed as its OOXML type) on a docx endpoint', {
+    claimed: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    detected: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    allow: [DOCX],
+  });
+  accept('real ODT (sniffed as its ODF type) on an ODF endpoint', {
+    claimed: 'application/vnd.oasis.opendocument.text',
+    detected: 'application/vnd.oasis.opendocument.text',
+    allow: [ODT],
+  });
+  accept('legacy XLS (sniffed application/x-cfb) on an ms-excel endpoint', {
+    claimed: 'application/vnd.ms-excel',
+    detected: 'application/x-cfb',
+    allow: [XLS],
+  });
+  accept('legacy DOC (sniffed application/x-cfb) on an msword endpoint', {
+    claimed: 'application/msword',
+    detected: 'application/x-cfb',
+    allow: [DOC],
+  });
+  accept('real ZIP on a zip endpoint', {
+    claimed: 'application/zip',
+    detected: 'application/zip',
+    allow: [ZIP],
+  });
 
   // No detectable signature (plain text, code, csv, svg) — no false positives.
-  accept('text/plain', undefined);
-  accept('image/svg+xml', undefined);
+  accept('plain text (undetected)', { claimed: 'text/plain', detected: undefined, allow: [TEXT] });
+  accept('svg (undetected)', { claimed: 'image/svg+xml', detected: undefined, allow: [SVG] });
 });

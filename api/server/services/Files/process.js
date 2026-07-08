@@ -1330,28 +1330,55 @@ const contentSignature = (mimeType) => {
 };
 
 /**
- * Guards against MIME spoofing by comparing the file's real magic-byte type
- * against the claimed `file.mimetype`. A browser-supplied mimetype/filename is
- * attacker-controlled, so an allowed claimed type is not sufficient on its own;
- * `filterFile` already validates the claimed type against the endpoint allow-list,
- * so requiring the sniffed content to be equivalent to the claim also enforces
- * the allow-list against the real bytes.
+ * Builds the set of MIME strings to test a sniffed type against the endpoint
+ * allow-list. Includes the vendor/`x-` alias the sniffer may emit
+ * (`video/vnd.avi` → `video/avi`).
  *
- * Executable signatures are always rejected. Otherwise the sniffed and claimed
- * content signatures must match, which rejects both cross-category spoofs (a PDF
- * as `image/png`) and unsupported same-category content (a ZIP as
- * `application/pdf`), while tolerating the container/vendor aliases the sniffer
- * reports for legitimate files (`audio/x-wav`, legacy Office as
- * `application/x-cfb`, OOXML as `application/zip`). Files with no detectable
- * signature (plain text, code, csv, svg) fall through to the claimed-type gate
- * already applied by the caller.
+ * ZIP-based formats are NOT expanded: `file-type` reports the specific type of a
+ * genuine OOXML/ODF/epub file (e.g. a real `.docx` → the wordprocessingml type),
+ * so a plain `application/zip` detection is a real ZIP and must only pass where
+ * ZIP itself is allowed. Legacy Office (`.doc/.xls/.ppt`) is the exception — the
+ * sniffer cannot tell those OLE/CFB formats apart (all report `application/x-cfb`),
+ * so the OLE family is expanded so a real legacy Office file is still accepted.
+ *
+ * @param {string} detectedMime
+ * @returns {string[]}
+ */
+const allowListCandidates = (detectedMime) => {
+  const candidates = new Set([detectedMime]);
+  const [type, subtype = ''] = detectedMime.split('/');
+  candidates.add(`${type}/${subtype.replace(/^x-/, '').replace(/^vnd\./, '')}`);
+
+  if (OLE_CONTAINER_MIME_TYPES.has(detectedMime)) {
+    OLE_CONTAINER_MIME_TYPES.forEach((mime) => candidates.add(mime));
+  }
+
+  return [...candidates];
+};
+
+/**
+ * Guards against MIME spoofing by validating the file's real magic-byte type,
+ * which is not covered by the claimed-type allow-list check `filterFile` already
+ * performs (`file.mimetype`/filename are attacker-controlled).
+ *
+ * Rejects, in order: executable/active-content signatures; a sniffed type the
+ * endpoint does not permit (so e.g. `image/bmp` cannot ride in as `image/png`
+ * on an image-only endpoint, nor a raw ZIP as `application/pdf`); and a sniffed
+ * type whose content signature disagrees with the claim (so a PDF claimed as
+ * `image/png` is rejected even on an endpoint that also allows PDFs). Container
+ * and vendor aliases the sniffer reports for legitimate files (`audio/x-wav`,
+ * OOXML as `application/zip`, legacy Office as `application/x-cfb`) are tolerated
+ * by both checks. Files with no detectable signature (plain text, code, csv,
+ * svg) fall through to the claimed-type gate already applied by the caller.
  *
  * @param {Object} params
  * @param {Express.Multer.File} params.file - The uploaded file (disk storage).
+ * @param {import('librechat-data-provider').FileConfig} params.fileConfig
+ * @param {import('librechat-data-provider').EndpointFileConfig} params.endpointFileConfig
  * @returns {Promise<void>}
- * @throws {Error} When the sniffed content does not match the claimed type.
+ * @throws {Error} When the sniffed content is not permitted or does not match the claim.
  */
-const assertContentMatchesType = async ({ file }) => {
+const assertContentMatchesType = async ({ file, fileConfig, endpointFileConfig }) => {
   if (!file.path) {
     return;
   }
@@ -1366,12 +1393,15 @@ const assertContentMatchesType = async ({ file }) => {
     throw new Error('File content does not match its file type');
   }
 
-  const claimedMime = (file.mimetype || '').toLowerCase();
-  if (!claimedMime) {
-    return;
+  const detectedIsSupported = allowListCandidates(detectedMime).some((mime) =>
+    fileConfig.checkType(mime, endpointFileConfig.supportedMimeTypes),
+  );
+  if (!detectedIsSupported) {
+    throw new Error('File content does not match its file type');
   }
 
-  if (contentSignature(detectedMime) !== contentSignature(claimedMime)) {
+  const claimedMime = (file.mimetype || '').toLowerCase();
+  if (claimedMime && contentSignature(detectedMime) !== contentSignature(claimedMime)) {
     throw new Error('File content does not match its file type');
   }
 };
@@ -1441,7 +1471,7 @@ async function filterFile({ req, image, isAvatar }) {
     throw new Error('Unsupported file type');
   }
 
-  await assertContentMatchesType({ file });
+  await assertContentMatchesType({ file, fileConfig, endpointFileConfig });
 
   if (!image || isAvatar === true) {
     return;
