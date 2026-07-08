@@ -360,6 +360,35 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     ],
   );
 
+  /**
+   * Digit shortcuts while the POPOVER itself holds focus (e.g. a row/Skip
+   * button was clicked or tabbed to). A number activates its option exactly
+   * like a click — single-select submits, multi toggles — so numbers work no
+   * matter where focus landed, not only from the empty composer. No
+   * highlight/Enter dance here: on the popover the options are buttons whose
+   * action IS the click, and intercepting Enter would fight the focused
+   * button. Returns whether the key was consumed.
+   */
+  const handlePopoverKeyDown = useCallback(
+    (e: React.KeyboardEvent): boolean => {
+      if (!active || locked || options.length === 0) {
+        return false;
+      }
+      const digit = Number.parseInt(e.key, 10);
+      if (Number.isNaN(digit) || digit < 1 || digit > Math.min(options.length, 9)) {
+        return false;
+      }
+      e.preventDefault();
+      if (multiSelect) {
+        toggleChecked(digit - 1);
+      } else {
+        submitOption(digit - 1);
+      }
+      return true;
+    },
+    [active, locked, options, multiSelect, toggleChecked, submitOption],
+  );
+
   return {
     active,
     liveAsk,
@@ -383,6 +412,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     submitAnswer,
     skip,
     handleComposerKeyDown,
+    handlePopoverKeyDown,
     /** The last submission failed but the question is still answerable — the
      *  popover surfaces this so a composer/popover answer doesn't fail
      *  silently (the chat card's error line is hidden while the popover is up). */

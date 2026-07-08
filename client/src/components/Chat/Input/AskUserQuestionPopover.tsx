@@ -9,8 +9,10 @@ import { cn } from '~/utils';
 
 /**
  * Composer popover for a live `ask_user_question` pause. Single-select rows
- * submit on click (arrows/digits from the empty composer highlight, Enter
- * fires); multi-select rows toggle checks and an explicit Submit confirms —
+ * submit on click; a digit `1..N` activates its row like a click whether
+ * focus is in the composer or on the popover (arrows/Enter highlight+confirm
+ * from the empty composer); multi-select rows toggle checks and an explicit
+ * Submit confirms —
  * folding in any free-form text typed in the composer, exactly like Enter
  * would. The footer hint is a button that focuses the composer — the
  * free-form answer box. Collapse (chevron) hides the popover but keeps
@@ -46,6 +48,7 @@ function AskUserQuestionPopoverContent({
     dismiss,
     collapse,
     popoverVisible,
+    handlePopoverKeyDown,
   } = useAskAnswerMode(conversationId);
 
   if (!popoverVisible || !liveAsk) {
@@ -56,7 +59,13 @@ function AskUserQuestionPopoverContent({
 
   return (
     <div className="absolute bottom-28 z-10 w-full space-y-2">
-      <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
+      {/* Digit shortcuts (1..N) work when focus is inside the popover too, not
+          only from the composer — keydown bubbles here from the focused row/
+          control. */}
+      <div
+        className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700"
+        onKeyDown={handlePopoverKeyDown}
+      >
         <div className="flex items-start justify-between gap-2 p-2">
           <div>
             <p className="text-sm font-medium text-text-primary">{liveAsk.question.question}</p>
