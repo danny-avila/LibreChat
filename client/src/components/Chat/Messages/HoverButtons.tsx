@@ -1,6 +1,14 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
-import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
+import {
+  Button,
+  EditIcon,
+  CheckMark,
+  Clipboard,
+  ContinueIcon,
+  TooltipAnchor,
+  RegenerateIcon,
+} from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
@@ -84,29 +92,35 @@ const HoverButton = memo(
     dataTestId,
   }: HoverButtonProps) => {
     const buttonStyle = cn(
-      'hover-button rounded-lg p-1.5 text-text-secondary-alt',
+      'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
       'hover:text-text-primary hover:bg-surface-hover',
       'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
       !isLast &&
         'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
       !isVisible && 'opacity-0',
-      'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
+      'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
       isActive && isVisible && 'active text-text-primary bg-surface-hover',
       className,
     );
 
     return (
-      <button
-        id={id}
-        data-testid={dataTestId}
-        className={buttonStyle}
-        onClick={onClick}
-        type="button"
-        title={title}
-        disabled={isDisabled}
-      >
-        {icon}
-      </button>
+      <TooltipAnchor
+        description={title}
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            id={id}
+            data-testid={dataTestId}
+            aria-label={title}
+            className={buttonStyle}
+            onClick={onClick}
+            disabled={isDisabled}
+          >
+            {icon}
+          </Button>
+        }
+      />
     );
   },
 );

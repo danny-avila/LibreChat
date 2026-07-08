@@ -2,7 +2,13 @@ import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } 
 import { useRecoilValue } from 'recoil';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
-import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import {
+  Button,
+  OGDialog,
+  OGDialogTitle,
+  OGDialogContent,
+  OGDialogDescription,
+} from '@librechat/client';
 import type { Agents, TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
@@ -465,7 +471,7 @@ export default function SubagentCall({
           <div
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full',
-              running && !subagentAgent && 'animate-pulse text-primary',
+              running && !subagentAgent && 'animate-pulse text-text-primary',
             )}
             aria-hidden="true"
           >
@@ -539,14 +545,15 @@ export default function SubagentCall({
 
           <div className="relative min-h-0 flex-1 border-t border-border-light bg-surface-primary">
             {!isAtBottom && (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={scrollDialogToBottom}
                 aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-                className="absolute bottom-3 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
+                className="absolute bottom-3 right-4 z-10 h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
               >
                 <ArrowDown size={16} aria-hidden="true" />
-              </button>
+              </Button>
             )}
             <div
               ref={scrollRef}
@@ -633,14 +640,15 @@ function SubagentPrompt({
         <h3 id={headingId} className="text-sm font-medium text-text-primary">
           {localize('com_ui_prompt')}
         </h3>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onToggle}
           aria-controls={contentId}
           aria-expanded={expanded}
           aria-label={toggleLabel}
           title={toggleLabel}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-8 gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary"
         >
           {expanded ? (
             <Minimize2 size={14} aria-hidden="true" />
@@ -648,7 +656,7 @@ function SubagentPrompt({
             <Maximize2 size={14} aria-hidden="true" />
           )}
           <span className="hidden sm:inline">{toggleLabel}</span>
-        </button>
+        </Button>
       </div>
       <div
         id={contentId}
@@ -657,7 +665,7 @@ function SubagentPrompt({
           expanded ? 'overflow-visible' : 'max-h-32 overflow-hidden',
         )}
       >
-        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary dark:text-gray-100">
+        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary">
           <MarkdownLite content={prompt} codeExecution={false} />
         </div>
         {!expanded && (

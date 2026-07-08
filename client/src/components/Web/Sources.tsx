@@ -5,6 +5,7 @@ import { VisuallyHidden } from '@ariakit/react';
 import { Tools } from 'librechat-data-provider';
 import { X, Globe, Newspaper, Image, ChevronDown, File, Download } from 'lucide-react';
 import {
+  Button,
   OGDialog,
   AnimatedTabs,
   OGDialogClose,
@@ -81,7 +82,7 @@ function SourceItem({ source, expanded = false }: SourceItemProps) {
               </a>
             }
           />
-          <Ariakit.HovercardDisclosure className="absolute right-2 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-ring">
+          <Ariakit.HovercardDisclosure className="absolute right-2 rounded-full text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary">
             <VisuallyHidden>
               {localize('com_citation_more_details', { label: domain })}
             </VisuallyHidden>
@@ -319,7 +320,9 @@ const FileItem = React.memo(function FileItem({
             </span>
           )}
         </div>
-        {error && <div className="mt-1 text-xs text-red-500">{getErrorMessage(error)}</div>}
+        {error && (
+          <div className="mt-1 text-xs text-text-destructive">{getErrorMessage(error)}</div>
+        )}
       </button>
     );
   }
@@ -353,7 +356,7 @@ const FileItem = React.memo(function FileItem({
           </span>
         )}
       </div>
-      {error && <div className="mt-1 text-xs text-red-500">{getErrorMessage(error)}</div>}
+      {error && <div className="mt-1 text-xs text-text-destructive">{getErrorMessage(error)}</div>}
     </button>
   );
 });
@@ -723,7 +726,7 @@ function SourcesComponent({ messageId, conversationId }: SourcesProps = {}) {
         containerClassName="flex min-w-full mb-4"
         tabListClassName="flex items-center mb-2 border-b border-border-light overflow-x-auto"
         tabPanelClassName="w-full overflow-x-auto scrollbar-none md:mx-0 md:px-0"
-        tabClassName="flex items-center whitespace-nowrap text-xs font-medium text-token-text-secondary px-1 pt-2 pb-1 border-b-2 border-transparent data-[state=active]:text-text-primary outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        tabClassName="flex items-center whitespace-nowrap text-xs font-medium text-token-text-secondary px-1 pt-2 pb-1 border-b-2 border-transparent data-[state=active]:text-text-primary outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2"
       />
     </div>
   );
@@ -750,13 +753,15 @@ export default function Sources(props: SourcesProps) {
       <div className="mb-2 text-sm text-text-secondary">
         {localize('com_sources_error_fallback')}
       </div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => window.location.reload()}
-        className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
+        className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary"
         aria-label={localize('com_sources_reload_page')}
       >
         {localize('com_ui_refresh')}
-      </button>
+      </Button>
     </div>
   );
 

@@ -147,7 +147,7 @@ const CreatePromptForm = ({
                   </label>
                   <div
                     className={cn(
-                      'mt-1 w-56 text-sm text-red-500',
+                      'mt-1 w-56 text-sm text-text-destructive',
                       errors.name ? 'visible h-auto' : 'invisible h-0',
                     )}
                   >
@@ -195,7 +195,7 @@ const CreatePromptForm = ({
                     />
                     <div
                       className={cn(
-                        'mt-1 text-sm text-red-500',
+                        'mt-1 text-sm text-text-destructive',
                         errors.prompt ? 'visible h-auto' : 'invisible h-0',
                       )}
                     >
@@ -214,6 +214,7 @@ const CreatePromptForm = ({
           <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={0} />
           <div className="mt-4 flex justify-end">
             <Button
+              variant="submit"
               aria-label={localize('com_ui_create_prompt')}
               className={cn(
                 'w-full sm:w-auto',

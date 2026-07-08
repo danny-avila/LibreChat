@@ -1,6 +1,6 @@
 import { memo, Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { DelayedRender } from '@librechat/client';
+import { Alert, DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Error from '~/components/Messages/Content/Error';
@@ -28,7 +28,7 @@ const parseThinkingContent = (text: string) => {
 
 const LoadingFallback = () => (
   <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
-    <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-100">
+    <div className="markdown prose dark:prose-invert light w-full break-words">
       <div className="absolute">
         <p className="submitting relative">
           <span className="result-thinking" />
@@ -49,7 +49,7 @@ const ErrorBox = ({
     role="alert"
     aria-live="assertive"
     className={cn(
-      'rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+      'rounded-xl border border-status-error-border bg-status-error-subtle px-3 py-2 text-sm text-text-secondary',
       className,
     )}
   >
@@ -64,9 +64,9 @@ const ConnectionError = ({ message }: { message?: TMessage }) => {
     <Suspense fallback={<LoadingFallback />}>
       <DelayedRender delay={DELAYED_ERROR_TIMEOUT}>
         <Container message={message}>
-          <div className="mt-2 rounded-xl border border-red-500/20 bg-red-50/50 px-4 py-3 text-sm text-red-700 shadow-sm transition-all dark:bg-red-950/30 dark:text-red-100">
+          <Alert variant="error" icon={false} className="mt-2 shadow-sm transition-all">
             {localize('com_ui_error_connection')}
-          </div>
+          </Alert>
         </Container>
       </DelayedRender>
     </Suspense>
@@ -118,7 +118,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
           isSubmitting && 'submitting',
           showCursorState && text.length > 0 && 'result-streaming',
           isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-          isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
+          'text-text-primary',
         )}
       >
         {content}

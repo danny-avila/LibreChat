@@ -13,7 +13,7 @@ export default function Section({ heading, danger, children }: SectionProps) {
       <h3
         className={cn(
           'mb-2 px-1 text-xs font-semibold uppercase tracking-wide',
-          danger ? 'text-red-500' : 'text-text-secondary',
+          danger ? 'text-text-destructive' : 'text-text-secondary',
         )}
       >
         {heading}
@@ -21,7 +21,7 @@ export default function Section({ heading, danger, children }: SectionProps) {
       <div
         className={cn(
           'divide-y divide-border-light overflow-hidden rounded-xl border text-sm text-text-primary',
-          danger ? 'border-red-500/30' : 'border-border-light',
+          danger ? 'border-status-error-border' : 'border-border-light',
         )}
       >
         {children}

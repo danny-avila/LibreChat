@@ -1,16 +1,16 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ScrollText } from 'lucide-react';
 import { AutoSizer, List } from 'react-virtualized';
-import { Spinner, useCombobox } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { Input, Spinner, useCombobox } from '@librechat/client';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { useLocalize, useSkillActiveState } from '~/hooks';
-import { useAgentsMapContext } from '~/Providers';
 import { useSkillsInfiniteQuery } from '~/data-provider';
-import { isEphemeralAgent } from '~/common';
+import { useAgentsMapContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
+import { isEphemeralAgent } from '~/common';
 import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
 import store from '~/store';
@@ -292,10 +292,10 @@ function SkillsCommandContent({
   return (
     <div className="absolute bottom-28 z-10 w-full space-y-2">
       <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
-        <input
+        <Input
           ref={initInputRef}
           placeholder={localize('com_ui_skills_command_placeholder')}
-          className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
+          className="mb-1 h-auto w-full rounded-none border-0 bg-surface-tertiary-alt p-2 text-sm text-text-primary focus:outline-none"
           autoComplete="off"
           value={searchValue}
           onKeyDown={(e) => {

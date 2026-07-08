@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Pencil, Check, Loader2, X } from 'lucide-react';
+import { Input, TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 type Props = {
@@ -98,10 +99,31 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
     };
   }, []);
 
+  const displayButton = (
+    <button
+      type="button"
+      onClick={() => {
+        if (!isLoading && saveStatus !== 'saving') {
+          setIsEditing(true);
+        }
+      }}
+      className="h-8 min-w-0 flex-1 cursor-text truncate pl-2 text-left text-base font-semibold text-text-primary transition-colors hover:text-text-secondary focus:outline-none"
+      aria-label={localize('com_ui_edit') + ': ' + (newName ?? '')}
+    >
+      {newName}
+    </button>
+  );
+
+  const readView = newName ? (
+    <TooltipAnchor description={newName} render={displayButton} />
+  ) : (
+    displayButton
+  );
+
   return (
     <div className="group/title relative mr-2 flex h-8 min-w-0 flex-1 items-center">
       {isEditing ? (
-        <input
+        <Input
           ref={inputRef}
           type="text"
           value={newName ?? ''}
@@ -113,19 +135,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
           aria-label={localize('com_ui_name')}
         />
       ) : (
-        <button
-          type="button"
-          onClick={() => {
-            if (!isLoading && saveStatus !== 'saving') {
-              setIsEditing(true);
-            }
-          }}
-          className="h-8 min-w-0 flex-1 cursor-text truncate pl-2 text-left text-base font-semibold text-text-primary transition-colors hover:text-text-secondary focus:outline-none"
-          title={newName}
-          aria-label={localize('com_ui_edit') + ': ' + (newName ?? '')}
-        >
-          {newName}
-        </button>
+        readView
       )}
       <div className="ml-1.5 flex shrink-0 items-center justify-center">
         {saveStatus === 'saving' && (
@@ -136,13 +146,13 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
         )}
         {saveStatus === 'saved' && (
           <Check
-            className="size-4 text-green-500 transition-opacity duration-300"
+            className="size-4 text-status-success transition-opacity duration-300"
             aria-label={localize('com_ui_saved')}
           />
         )}
         {saveStatus === 'error' && (
           <X
-            className="size-4 text-red-500 transition-opacity duration-300"
+            className="size-4 text-text-destructive transition-opacity duration-300"
             aria-label={localize('com_ui_error')}
           />
         )}

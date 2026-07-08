@@ -178,7 +178,7 @@ export default function ArchivedChatsTable({
                 to={`/c/${conversationId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center gap-1 truncate rounded-sm text-blue-600 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-text-primary"
                 title={title}
                 aria-label={localize('com_ui_open_archived_chat_new_tab_title', { title })}
               >
@@ -258,7 +258,6 @@ export default function ArchivedChatsTable({
                         isArchived: false,
                       })
                     }
-                    title={localize('com_ui_unarchive_conversation')}
                     aria-label={localize('com_ui_unarchive_conversation')}
                     disabled={isUnarchiving}
                   >
@@ -276,7 +275,6 @@ export default function ArchivedChatsTable({
                       setDeleteConversation(row.original);
                       setIsDeleteOpen(true);
                     }}
-                    title={localize('com_ui_delete_conversation_tooltip')}
                     aria-label={localize('com_ui_delete_conversation_tooltip')}
                   >
                     <TrashIcon className="size-4" />
@@ -333,7 +331,11 @@ export default function ArchivedChatsTable({
             </OGDialogTitle>
           </OGDialogHeader>
           <div className="flex justify-end gap-4 pt-4">
-            <Button aria-label="cancel" variant="outline" onClick={() => setIsDeleteOpen(false)}>
+            <Button
+              aria-label={localize('com_ui_cancel')}
+              variant="outline"
+              onClick={() => setIsDeleteOpen(false)}
+            >
               {localize('com_ui_cancel')}
             </Button>
             <Button

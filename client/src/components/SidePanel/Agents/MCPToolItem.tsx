@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { TooltipAnchor } from '@librechat/client';
 import { Check, Clock, Code2, Info } from 'lucide-react';
+import { Button, TooltipAnchor } from '@librechat/client';
 import type { AgentToolType } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -17,8 +17,7 @@ interface MCPToolItemProps {
   onToggleProgrammatic: () => void;
 }
 
-const iconButton =
-  'flex size-6 items-center justify-center rounded-md transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary';
+const iconButton = 'size-6 rounded-md';
 
 export default function MCPToolItem({
   tool,
@@ -54,7 +53,7 @@ export default function MCPToolItem({
             aria-hidden="true"
             className={cn(
               'flex size-4 shrink-0 items-center justify-center rounded border border-border-medium transition-colors',
-              isSelected && 'bg-primary text-primary-foreground',
+              isSelected && 'bg-surface-inverted text-text-inverted',
             )}
           >
             {isSelected && <Check className="size-4" />}
@@ -69,8 +68,8 @@ export default function MCPToolItem({
               description={localize('com_ui_mcp_click_to_defer')}
               side="top"
               render={
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   onClick={onToggleDefer}
                   aria-pressed={isDeferred}
                   aria-label={localize('com_ui_mcp_defer_loading')}
@@ -80,7 +79,7 @@ export default function MCPToolItem({
                   )}
                 >
                   <Clock className="size-4" aria-hidden="true" />
-                </button>
+                </Button>
               }
             />
           )}
@@ -89,8 +88,8 @@ export default function MCPToolItem({
               description={localize('com_ui_mcp_click_to_programmatic')}
               side="top"
               render={
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   onClick={onToggleProgrammatic}
                   aria-pressed={isProgrammatic}
                   aria-label={localize('com_ui_mcp_programmatic')}
@@ -102,12 +101,12 @@ export default function MCPToolItem({
                   )}
                 >
                   <Code2 className="size-4" aria-hidden="true" />
-                </button>
+                </Button>
               }
             />
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
             aria-controls={detailsId}
@@ -118,7 +117,7 @@ export default function MCPToolItem({
             )}
           >
             <Info className="size-4" aria-hidden="true" />
-          </button>
+          </Button>
         </div>
       </div>
       {/* Auto-height reveal via grid-template-rows 0fr -> 1fr so the panel — and

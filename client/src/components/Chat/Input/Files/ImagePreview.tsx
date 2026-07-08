@@ -5,6 +5,7 @@ import { FileSources } from 'librechat-data-provider';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import ProgressCircle from './ProgressCircle';
 import SourceIcon from './SourceIcon';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type styleProps = {
@@ -29,6 +30,7 @@ const ImagePreview = ({
   source?: FileSources;
   alt?: string;
 }) => {
+  const localize = useLocalize();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -115,7 +117,7 @@ const ImagePreview = ({
         type="button"
         className={cn(
           'relative size-14 overflow-hidden rounded-xl transition-shadow',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
           className,
         )}
         style={style}
@@ -179,8 +181,9 @@ const ImagePreview = ({
               ref={closeButtonRef}
               onClick={() => handleOpenChange(false)}
               variant="ghost"
-              className="absolute right-4 top-4 z-20 h-10 w-10 p-0 text-white hover:bg-white/10"
-              aria-label="Close"
+              size="icon"
+              className="absolute right-4 top-4 z-20 text-white hover:bg-white/10"
+              aria-label={localize('com_ui_close')}
             >
               <X className="size-5" aria-hidden="true" />
             </Button>

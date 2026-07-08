@@ -62,7 +62,7 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
           selection={{
             selectHandler: revokeAllUserKeys,
             selectClasses:
-              'bg-destructive text-white transition-all duration-200 hover:bg-destructive/80',
+              'bg-surface-destructive text-white transition-all duration-200 hover:bg-surface-destructive-hover',
             selectText: isLoading ? <Spinner /> : localize('com_ui_delete'),
           }}
         />

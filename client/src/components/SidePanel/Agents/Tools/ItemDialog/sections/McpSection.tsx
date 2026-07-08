@@ -251,8 +251,9 @@ export default function McpSection({ item }: Props) {
                   }
                   side="top"
                   render={
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => toggleDeferAll(tools)}
                       aria-pressed={allDeferred}
                       aria-label={
@@ -261,15 +262,14 @@ export default function McpSection({ item }: Props) {
                           : localize('com_ui_mcp_defer_all')
                       }
                       className={cn(
-                        'flex size-7 items-center justify-center rounded-md transition-colors',
-                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                        'size-7 rounded-md',
                         allDeferred
                           ? 'text-amber-600 dark:text-amber-500'
                           : 'text-text-secondary hover:text-text-primary',
                       )}
                     >
                       <Clock className="size-4" aria-hidden="true" />
-                    </button>
+                    </Button>
                   }
                 />
               )}
@@ -282,8 +282,9 @@ export default function McpSection({ item }: Props) {
                   }
                   side="top"
                   render={
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => toggleProgrammaticAll(tools)}
                       aria-pressed={allProgrammatic}
                       aria-label={
@@ -292,15 +293,14 @@ export default function McpSection({ item }: Props) {
                           : localize('com_ui_mcp_programmatic_all')
                       }
                       className={cn(
-                        'flex size-7 items-center justify-center rounded-md transition-colors',
-                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                        'size-7 rounded-md',
                         allProgrammatic
                           ? 'text-violet-600 dark:text-violet-500'
                           : 'text-text-secondary hover:text-text-primary',
                       )}
                     >
                       <Code2 className="size-4" aria-hidden="true" />
-                    </button>
+                    </Button>
                   }
                 />
               )}

@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import keyBy from 'lodash/keyBy';
 import { RotateCcw } from 'lucide-react';
+import { Button } from '@librechat/client';
 import {
   excludedKeys,
   paramSettings,
@@ -177,23 +178,25 @@ export default function Parameters() {
         })}
       </div>
       <div className="mt-4 flex justify-center">
-        <button
+        <Button
+          variant="outline"
           type="button"
           onClick={resetParameters}
-          className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+          className="flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
           {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-        </button>
+        </Button>
       </div>
       <div className="mt-2 flex justify-center">
-        <button
+        <Button
+          variant="submit"
           onClick={openDialog}
-          className="btn btn-primary focus:shadow-outline flex w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
+          className="flex w-full items-center justify-center px-4 py-2 font-semibold"
           type="button"
         >
           {localize('com_endpoint_save_as_preset')}
-        </button>
+        </Button>
       </div>
       {preset && (
         <SaveAsPresetDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} preset={preset} />

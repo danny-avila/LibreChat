@@ -137,7 +137,7 @@ export default function Settings({
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
@@ -178,7 +178,7 @@ export default function Settings({
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
@@ -220,7 +220,7 @@ export default function Settings({
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
@@ -262,7 +262,7 @@ export default function Settings({
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
@@ -283,18 +283,18 @@ export default function Settings({
         </HoverCard>
         <div className="w-full">
           <div className="mb-2 flex w-full justify-between gap-2">
-            <label
+            <Label
               htmlFor="resend-files"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
               <small>{localize('com_endpoint_plug_resend_files')}</small>
-            </label>
-            <label
+            </Label>
+            <Label
               htmlFor="image-detail-value"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
               <small>{localize('com_endpoint_plug_image_detail')}</small>
-            </label>
+            </Label>
             <Input
               id="image-detail-value"
               disabled={true}
@@ -302,8 +302,8 @@ export default function Settings({
               className={cn(
                 defaultTextProps,
                 optionText,
-                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:border-gray-700',
-                'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-gray-200',
+                'flex rounded-md border-border-light bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2',
+                'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-border-light',
               )}
             />
           </div>

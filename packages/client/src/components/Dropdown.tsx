@@ -137,8 +137,8 @@ const Dropdown: React.FC<DropdownProps> = ({
         store={selectProps}
         disabled={disabled}
         className={cn(
-          'focus:ring-offset-ring-offset relative inline-flex items-center justify-between rounded-xl border border-input bg-background px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground focus:ring-ring-primary',
-          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background disabled:hover:text-text-primary',
+          'relative inline-flex items-center justify-between rounded-xl border border-border-light bg-surface-primary px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-surface-hover hover:text-text-primary',
+          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-surface-primary disabled:hover:text-text-primary',
           iconOnly ? 'size-10' : 'w-fit gap-2',
           className,
         )}
@@ -176,7 +176,7 @@ const Dropdown: React.FC<DropdownProps> = ({
       >
         {searchable ? (
           <>
-            <div className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 bg-surface-primary px-2 pb-1.5 pt-2 dark:bg-surface-secondary">
+            <div className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 bg-inherit px-2 pb-1.5 pt-2">
               <div className="relative">
                 <Search
                   className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary"
@@ -187,7 +187,7 @@ const Dropdown: React.FC<DropdownProps> = ({
                   autoSelect
                   placeholder={searchPlaceholder}
                   aria-label={searchPlaceholder}
-                  className="w-full rounded-lg bg-transparent py-1.5 pl-8 pr-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                  className="w-full rounded-lg border border-border-light bg-inherit py-1.5 pl-8 pr-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none"
                 />
               </div>
             </div>

@@ -4,21 +4,20 @@ import { PlusCircle, Maximize2 } from 'lucide-react';
 import { specialVariables } from 'librechat-data-provider';
 import { Controller, useFormContext } from 'react-hook-form';
 import {
+  Label,
   Button,
-  DropdownPopup,
   OGDialog,
+  Textarea,
+  DropdownPopup,
   OGDialogClose,
-  OGDialogContent,
-  OGDialogHeader,
+  TooltipAnchor,
   OGDialogTitle,
+  OGDialogHeader,
+  OGDialogContent,
 } from '@librechat/client';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
-
-const textareaClass =
-  'lc-field flex w-full rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:border-border-medium focus-visible:ring-2 focus-visible:ring-ring-primary disabled:cursor-not-allowed disabled:opacity-50';
 
 interface VariableOption {
   label: TSpecialVarLabel;
@@ -58,12 +57,12 @@ export default function Instructions() {
   return (
     <div className="mb-3 flex flex-col">
       <div className="mb-1 flex items-center justify-between">
-        <label
+        <Label
           className="block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
           htmlFor="instructions"
         >
           {localize('com_ui_instructions')}
-        </label>
+        </Label>
         <div className="flex items-center gap-0.5">
           <DropdownPopup
             portal={true}
@@ -86,15 +85,19 @@ export default function Instructions() {
             menuId={menuId}
             className="pointer-events-auto z-30"
           />
-          <button
-            type="button"
-            onClick={() => setIsDialogOpen(true)}
-            aria-label={localize('com_ui_expand_editor')}
-            title={localize('com_ui_expand_editor')}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-          >
-            <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
-          </button>
+          <TooltipAnchor
+            description={localize('com_ui_expand_editor')}
+            render={
+              <Button
+                variant="ghost"
+                onClick={() => setIsDialogOpen(true)}
+                aria-label={localize('com_ui_expand_editor')}
+                className="h-7 w-7 p-0 text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+              >
+                <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
+              </Button>
+            }
+          />
         </div>
       </div>
       <Controller
@@ -102,10 +105,10 @@ export default function Instructions() {
         control={control}
         render={({ field, fieldState: { error } }) => (
           <>
-            <textarea
+            <Textarea
               {...field}
               value={field.value ?? ''}
-              className={cn(textareaClass, 'min-h-[88px] resize-y text-sm')}
+              className="min-h-[88px] resize-y"
               id="instructions"
               placeholder={localize('com_agents_instructions_placeholder')}
               rows={3}
@@ -115,7 +118,7 @@ export default function Instructions() {
             />
             {error && (
               <span
-                className="mt-1 text-xs text-red-500 transition duration-300 ease-in-out"
+                className="mt-1 text-xs text-text-destructive transition duration-300 ease-in-out"
                 role="alert"
               >
                 {localize('com_ui_field_required')}
@@ -139,13 +142,10 @@ export default function Instructions() {
             name="instructions"
             control={control}
             render={({ field }) => (
-              <textarea
+              <Textarea
                 {...field}
                 value={field.value ?? ''}
-                className={cn(
-                  textareaClass,
-                  'min-h-0 flex-1 resize-none text-base leading-relaxed',
-                )}
+                className="min-h-0 flex-1 resize-none text-base leading-relaxed"
                 placeholder={localize('com_agents_instructions_placeholder')}
                 aria-label={localize('com_ui_instructions')}
               />

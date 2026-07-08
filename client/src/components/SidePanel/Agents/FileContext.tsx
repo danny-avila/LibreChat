@@ -2,7 +2,7 @@ import { memo, useMemo, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { Folder, Plus, Info } from 'lucide-react';
 import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
-import { DropdownPopup, SharePointIcon, TooltipAnchor } from '@librechat/client';
+import { Button, DropdownPopup, SharePointIcon, TooltipAnchor } from '@librechat/client';
 import type { ExtendedFile } from '~/common';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
@@ -125,8 +125,8 @@ function FileContext({
       unmountOnHide={true}
     />
   ) : (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
       disabled={disabledUploadButton}
       aria-label={addLabel}
       className={addButtonClassName}
@@ -134,7 +134,7 @@ function FileContext({
     >
       <Plus className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
       {localize('com_ui_add')}
-    </button>
+    </Button>
   );
 
   return (

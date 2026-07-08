@@ -27,7 +27,7 @@ export default function AgentContact({ agent, className = '' }: AgentContactProp
       <span className="shrink-0">{localize('com_agents_contact')}:</span>
       <span className="min-w-0 truncate">
         {contact?.email ? (
-          <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
+          <a href={`mailto:${contact.email}`} className="text-text-primary hover:underline">
             {label}
           </a>
         ) : (

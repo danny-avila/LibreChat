@@ -27,6 +27,8 @@ jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   return {
     Label: ({ children, ...rest }: any) => React.createElement('label', rest, children),
+    Button: ({ children, variant: _variant, size: _size, ...rest }: any) =>
+      React.createElement('button', rest, children),
     TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
     OGDialog: ({ children }: any) => React.createElement(React.Fragment, null, children),
     OGDialogTrigger: ({ children }: any) => children,

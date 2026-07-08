@@ -1,17 +1,19 @@
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import {
+  SKILL_NAME_PATTERN,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+} from 'librechat-data-provider';
+import {
+  Input,
+  Label,
   Button,
   OGDialog,
   OGDialogContent,
   TextareaAutosize,
   useToastContext,
 } from '@librechat/client';
-import {
-  SKILL_NAME_PATTERN,
-  SKILL_NAME_MAX_LENGTH,
-  SKILL_DESCRIPTION_MAX_LENGTH,
-} from 'librechat-data-provider';
 import type { TSkill } from 'librechat-data-provider';
 import { useCreateSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -113,10 +115,10 @@ export default function CreateSkillDialog({
 
           {/* Skill name */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="create-skill-name" className="text-sm font-medium text-text-secondary">
+            <Label htmlFor="create-skill-name" className="text-sm font-medium text-text-secondary">
               {localize('com_ui_name')}
-            </label>
-            <input
+            </Label>
+            <Input
               id="create-skill-name"
               placeholder={localize('com_ui_skill_name_placeholder')}
               aria-invalid={errors.name ? 'true' : 'false'}
@@ -136,7 +138,7 @@ export default function CreateSkillDialog({
                 },
               })}
             />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-text-destructive">{errors.name.message}</p>}
           </div>
 
           {/* Description */}

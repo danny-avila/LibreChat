@@ -36,6 +36,12 @@ export interface IThemeRGB {
   'rgb-surface-destructive'?: string;
   'rgb-surface-destructive-hover'?: string;
   'rgb-surface-chat'?: string;
+  'rgb-surface-inverted'?: string;
+  'rgb-surface-inverted-hover'?: string;
+  'rgb-text-inverted'?: string;
+  'rgb-surface-fixed'?: string;
+  'rgb-surface-fixed-hover'?: string;
+  'rgb-text-fixed'?: string;
 
   // Border colors
   'rgb-border-light'?: string;
@@ -49,24 +55,6 @@ export interface IThemeRGB {
 
   // Presentation
   'rgb-presentation'?: string;
-
-  // Utility colors
-  'rgb-background'?: string;
-  'rgb-foreground'?: string;
-  'rgb-primary'?: string;
-  'rgb-primary-foreground'?: string;
-  'rgb-secondary'?: string;
-  'rgb-secondary-foreground'?: string;
-  'rgb-muted'?: string;
-  'rgb-muted-foreground'?: string;
-  'rgb-accent'?: string;
-  'rgb-accent-foreground'?: string;
-  'rgb-destructive-foreground'?: string;
-  'rgb-border'?: string;
-  'rgb-input'?: string;
-  'rgb-ring'?: string;
-  'rgb-card'?: string;
-  'rgb-card-foreground'?: string;
 }
 
 /**
@@ -99,6 +87,12 @@ export interface IThemeVariables {
   '--surface-destructive': string;
   '--surface-destructive-hover': string;
   '--surface-chat': string;
+  '--surface-inverted': string;
+  '--surface-inverted-hover': string;
+  '--text-inverted': string;
+  '--surface-fixed': string;
+  '--surface-fixed-hover': string;
+  '--text-fixed': string;
   '--border-light': string;
   '--border-medium': string;
   '--border-medium-alt': string;
@@ -106,24 +100,6 @@ export interface IThemeVariables {
   '--border-xheavy': string;
   '--brand-purple': string;
   '--presentation': string;
-
-  // Utility variables
-  '--background': string;
-  '--foreground': string;
-  '--primary': string;
-  '--primary-foreground': string;
-  '--secondary': string;
-  '--secondary-foreground': string;
-  '--muted': string;
-  '--muted-foreground': string;
-  '--accent': string;
-  '--accent-foreground': string;
-  '--destructive-foreground': string;
-  '--border': string;
-  '--input': string;
-  '--ring': string;
-  '--card': string;
-  '--card-foreground': string;
 }
 
 /**
@@ -156,6 +132,12 @@ export interface IThemeColors {
   'surface-destructive'?: string;
   'surface-destructive-hover'?: string;
   'surface-chat'?: string;
+  'surface-inverted'?: string;
+  'surface-inverted-hover'?: string;
+  'text-inverted'?: string;
+  'surface-fixed'?: string;
+  'surface-fixed-hover'?: string;
+  'text-fixed'?: string;
   'border-light'?: string;
   'border-medium'?: string;
   'border-medium-alt'?: string;
@@ -164,23 +146,11 @@ export interface IThemeColors {
   'brand-purple'?: string;
   presentation?: string;
 
-  // Utility colors
+  // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
   background?: string;
-  foreground?: string;
   primary?: string;
   'primary-foreground'?: string;
-  secondary?: string;
-  'secondary-foreground'?: string;
-  muted?: string;
-  'muted-foreground'?: string;
-  accent?: string;
-  'accent-foreground'?: string;
-  'destructive-foreground'?: string;
-  border?: string;
-  input?: string;
   ring?: string;
-  card?: string;
-  'card-foreground'?: string;
 }
 
 export interface Theme {

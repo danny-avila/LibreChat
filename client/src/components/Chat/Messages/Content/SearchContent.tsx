@@ -70,7 +70,7 @@ const SearchContent = ({
       className={cn(
         'markdown prose dark:prose-invert light w-full break-words',
         message.isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-        message.isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-70',
+        'text-text-primary',
       )}
       dir="auto"
     >

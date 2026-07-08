@@ -91,11 +91,11 @@ function UnknownIcon({
   const currentEndpoint = endpoint.toLowerCase();
 
   if (currentEndpoint === KnownEndpoints.xai) {
-    return <XAIcon className={cn(className, 'text-black dark:text-white')} />;
+    return <XAIcon className={cn(className, 'text-text-primary')} />;
   }
 
   if (currentEndpoint === KnownEndpoints.moonshot) {
-    return <MoonshotIcon className={cn(className, 'text-black dark:text-white')} />;
+    return <MoonshotIcon className={cn(className, 'text-text-primary')} />;
   }
 
   if (iconURL) {

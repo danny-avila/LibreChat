@@ -38,6 +38,12 @@ export const defaultTheme: IThemeRGB = {
   'rgb-surface-destructive': '185 28 28', // #b91c1c (red-700)
   'rgb-surface-destructive-hover': '153 27 27', // #991b1b (red-800)
   'rgb-surface-chat': '255 255 255', // #fff (white)
+  'rgb-surface-inverted': '23 23 23', // #171717 (gray-850)
+  'rgb-surface-inverted-hover': '47 47 47', // #2f2f2f (gray-700)
+  'rgb-text-inverted': '255 255 255', // #fff (white)
+  'rgb-surface-fixed': '255 255 255', // #fff (white) — same in light + dark
+  'rgb-surface-fixed-hover': '236 236 236', // #ececec (gray-100) — same in light + dark
+  'rgb-text-fixed': '33 33 33', // #212121 (gray-800) — same in light + dark
 
   // Border colors
   'rgb-border-light': '227 227 227', // #e3e3e3 (gray-200)
@@ -51,22 +57,4 @@ export const defaultTheme: IThemeRGB = {
 
   // Presentation
   'rgb-presentation': '255 255 255', // #fff (white)
-
-  // Utility colors (mapped to existing colors for backwards compatibility)
-  'rgb-background': '255 255 255', // Same as surface-primary
-  'rgb-foreground': '17 17 17', // Same as text-primary
-  'rgb-primary': '235 235 235', // Same as surface-active
-  'rgb-primary-foreground': '0 0 0', // Same as surface-primary-contrast
-  'rgb-secondary': '247 247 248', // Same as surface-secondary
-  'rgb-secondary-foreground': '66 66 66', // Same as text-secondary
-  'rgb-muted': '250 250 250', // Same as surface-tertiary
-  'rgb-muted-foreground': '120 120 120', // Same as text-tertiary
-  'rgb-accent': '245 245 245', // Same as surface-active-alt
-  'rgb-accent-foreground': '17 17 17', // Same as text-primary
-  'rgb-destructive-foreground': '17 17 17', // Same as text-primary
-  'rgb-border': '215 215 215', // Same as border-medium
-  'rgb-input': '230 230 230', // Same as border-light
-  'rgb-ring': '180 180 180', // Same as ring-primary
-  'rgb-card': '247 247 248', // Same as surface-secondary
-  'rgb-card-foreground': '17 17 17', // Same as text-primary
 };

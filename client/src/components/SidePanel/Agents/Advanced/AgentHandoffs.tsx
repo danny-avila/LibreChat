@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Waypoints, ChevronDown } from 'lucide-react';
-import { Label, Input, Textarea } from '@librechat/client';
+import { Button, Label, Input, Textarea } from '@librechat/client';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { GraphEdge } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
@@ -118,9 +118,10 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
                     icon={agentIcon(getAgent(targetAgentId))}
                     ariaLabel={localize('com_ui_agent_var', { 0: localize('com_ui_select') })}
                   />
-                  <button
-                    type="button"
-                    className="flex-shrink-0 rounded-lg p-1 text-text-secondary transition hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-auto flex-shrink-0 rounded-lg p-1 text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
                     onClick={() => toggleExpanded(idx)}
                     aria-expanded={isExpanded}
                     aria-label={localize(isExpanded ? 'com_ui_collapse' : 'com_ui_expand')}
@@ -130,7 +131,7 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
                       className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                       aria-hidden="true"
                     />
-                  </button>
+                  </Button>
                 </AgentRow>
 
                 {isExpanded && (

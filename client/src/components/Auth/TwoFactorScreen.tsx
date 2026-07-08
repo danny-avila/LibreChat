@@ -3,7 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { useToastContext } from '@librechat/client';
 import { useForm, Controller } from 'react-hook-form';
 import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
-import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot, Label } from '@librechat/client';
+import {
+  Label,
+  Button,
+  InputOTP,
+  InputOTPSlot,
+  InputOTPGroup,
+  InputOTPSeparator,
+} from '@librechat/client';
 import { useVerifyTwoFactorTempMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -105,7 +112,9 @@ const TwoFactorScreen: React.FC = React.memo(() => {
                 </InputOTP>
               )}
             />
-            {errors.token && <span className="text-sm text-red-500">{errors.token.message}</span>}
+            {errors.token && (
+              <span className="text-sm text-text-destructive">{errors.token.message}</span>
+            )}
           </div>
         )}
         {useBackup && (
@@ -134,38 +143,41 @@ const TwoFactorScreen: React.FC = React.memo(() => {
               )}
             />
             {errors.backupCode && (
-              <span className="text-sm text-red-500">{errors.backupCode.message}</span>
+              <span className="text-sm text-text-destructive">{errors.backupCode.message}</span>
             )}
           </div>
         )}
         <div className="flex items-center justify-between">
-          <button
+          <Button
             type="submit"
+            variant="submit"
             aria-label={localize('com_auth_continue')}
             data-testid="login-button"
             disabled={isLoading}
-            className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-80 dark:bg-green-600 dark:hover:bg-green-700"
+            className="w-full rounded-2xl px-4 py-3 text-sm font-medium disabled:opacity-80"
           >
             {isLoading ? localize('com_auth_email_verifying_ellipsis') : localize('com_ui_verify')}
-          </button>
+          </Button>
         </div>
         <div className="mt-4 flex justify-center">
           {!useBackup ? (
-            <button
+            <Button
               type="button"
+              variant="link"
               onClick={toggleBackupOn}
-              className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+              className="inline-flex p-1 text-sm font-medium text-accent-primary transition-colors hover:text-accent-primary-hover"
             >
               {localize('com_ui_use_backup_code')}
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               type="button"
+              variant="link"
               onClick={toggleBackupOff}
-              className="inline-flex p-1 text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+              className="inline-flex p-1 text-sm font-medium text-accent-primary transition-colors hover:text-accent-primary-hover"
             >
               {localize('com_ui_use_2fa_code')}
-            </button>
+            </Button>
           )}
         </div>
       </form>

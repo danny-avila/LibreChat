@@ -37,7 +37,7 @@ const CollapseChat = ({
             className={cn(
               // 'absolute right-1.5 top-1.5',
               'z-10 size-5 rounded-full transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
             )}
           >
             {isCollapsed ? (
