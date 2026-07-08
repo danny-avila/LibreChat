@@ -565,6 +565,40 @@ describe('LazyMongoSaver checkpoint size guard (mongodb-memory-server integratio
     expect(await saver.getTuple(readConfig(threadId))).toBeUndefined();
   });
 
+  it('counts metadata_search (the raw metadata copy) — refuses when serialized-only would pass', async () => {
+    // MongoDBSaver stores `metadata_search: metadata` — the WHOLE raw metadata a
+    // SECOND time in the same document. Sized so checkpoint + serialized metadata is
+    // UNDER the limit but adding the raw metadata_search copy pushes it over: the guard
+    // must count that copy, else the doc slips the preflight and overflows on the wire.
+    jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    const saver = makeSaver({ warnBytes: 500, hardLimitBytes: 6_000 });
+    await saver.setup();
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+
+    const checkpoint = emptyCheckpoint();
+    checkpoint.channel_values = { messages: 'x'.repeat(200) };
+    await saver.putWrites(
+      { configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id } },
+      [[INTERRUPT, 'approve?']],
+      'task-1',
+    );
+    const config = { configurable: { thread_id: threadId, checkpoint_ns: '' } };
+    // ~3 KB metadata: checkpoint + serialized metadata (~3.2 KB) is under 6 KB, but the
+    // raw metadata_search copy (~another 3 KB) pushes checkpoint+metadata+metadata_search
+    // over 6 KB. The pre-fix guard (checkpoint + serialized metadata only) would pass here.
+    const metadata = {
+      source: 'loop' as const,
+      step: 1,
+      writes: { payload: 'y'.repeat(3_000) },
+      parents: {},
+    };
+
+    await expect(saver.put(config, checkpoint, metadata)).rejects.toBeInstanceOf(
+      CheckpointTooLargeError,
+    );
+    expect(await saver.getTuple(readConfig(threadId))).toBeUndefined();
+  });
+
   it('flushes bookkeeping parked during the size-serialization window (not dropped on resume)', async () => {
     // `put` consumes the write anchor, then AWAITS `assertCheckpointFitsDocument` (serialization).
     // A bookkeeping-only putWrites dispatched in that window sees no anchor and no persisted

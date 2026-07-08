@@ -340,15 +340,23 @@ export class LazyMongoSaver extends MongoDBSaver {
     checkpoint: Checkpoint,
     metadata: CheckpointMetadata,
   ): Promise<void> {
-    // `MongoDBSaver.put` stores the serialized checkpoint AND the serialized metadata
-    // (plus a small raw `metadata_search` subset) in the SAME `agent_checkpoints`
-    // document, so BOTH count toward the 16 MB ceiling. Measuring only the checkpoint
-    // let a just-under-limit checkpoint with large metadata fall through to a raw
-    // `BSONObjectTooLarge`; the headroom now only has to cover `metadata_search`, ids
-    // and BSON framing.
+    // `MongoDBSaver.put` writes THREE size-bearing fields into the same
+    // `agent_checkpoints` document: the serialized `checkpoint`, the serialized
+    // `metadata`, AND `metadata_search` — the WHOLE raw `metadata` object stored a
+    // second time as a queryable BSON subdocument (`metadata_search: metadata`).
+    // So a large `metadata` (e.g. `metadata.writes` holding a big tool result) is
+    // counted twice on the wire. Measuring only checkpoint + serialized metadata
+    // let such a document pass the preflight while `metadata_search` pushed the
+    // actual BSON past 16 MB — the raw `BSONObjectTooLarge` this guard exists to
+    // prevent. Add the raw metadata's BSON size; the headroom now only has to
+    // cover ids and BSON framing.
     const [, serializedCheckpoint] = await this.serde.dumpsTyped(checkpoint);
     const [, serializedMetadata] = await this.serde.dumpsTyped(metadata);
-    const bytes = serializedCheckpoint.byteLength + serializedMetadata.byteLength;
+    const metadataSearchBytes = mongoose.mongo.BSON.calculateObjectSize(
+      metadata as unknown as Record<string, unknown>,
+    );
+    const bytes =
+      serializedCheckpoint.byteLength + serializedMetadata.byteLength + metadataSearchBytes;
     const threadId = config.configurable?.thread_id as string | undefined;
     const mb = (n: number): string => (n / 1024 / 1024).toFixed(1);
     if (bytes > this.hardLimitBytes) {
