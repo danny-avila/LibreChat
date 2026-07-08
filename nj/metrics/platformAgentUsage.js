@@ -20,7 +20,7 @@
         .aggregate([
           { $match: { agent_id: { $in: ids } } },
           { $group: { _id: '$agent_id', convs: { $sum: 1 }, users: { $addToSet: '$user' } } },
-          { $sort: { convs: -1 } },
+          { $sort: { _id: 1 } },
         ])
         .toArray()
         .map((d) => `${d._id},${nameById[d._id] ?? '?'},${d.convs},${d.users.length}`),
