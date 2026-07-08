@@ -8,6 +8,7 @@ const {
   toClientPendingAction,
   isHITLEnabled,
   deleteAgentCheckpoint,
+  attachAskUserQuestionArgs,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -288,7 +289,18 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     }
 
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
-    const abortResult = await GenerationJobManager.abortJob(jobStreamId);
+    // Re-attach a paused ask_user_question's args to the abort content BEFORE
+    // abortJob emits the final SSE. Redis reconstructs abort content from the
+    // chunk log, which never saw the pause-time stamp applied to the in-process
+    // contentParts — stamping inside abortJob (not after) means the LIVE client
+    // gets the question too, not just the saved message on reload.
+    const abortedAskPayload = job.metadata?.pendingAction?.payload;
+    const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
+      transformAbortContent: (content) =>
+        abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
+          ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
+          : content,
+    });
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
@@ -298,9 +310,12 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
     // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
     // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when
-    // HITL is off or nothing was written.
+    // HITL is off or nothing was written. The pendingAction check covers ask-only
+    // pauses (ask_user_question attaches a checkpointer WITHOUT the approval policy):
+    // a job aborted while paused still carries its pendingAction in metadata, which is
+    // exactly the case whose checkpoint would otherwise go stale.
     const agentsCfg = req.config?.endpoints?.agents;
-    if (isHITLEnabled(agentsCfg?.toolApproval)) {
+    if (isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null) {
       await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer).catch((err) =>
         logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
       );
@@ -315,7 +330,11 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       abortResult.jobData?.responseMessageId &&
       hasPersistableAbortContent(abortResult.content)
     ) {
-      const { jobData, content, text } = abortResult;
+      const { jobData, text } = abortResult;
+      // `abortResult.content` is already stamped by `transformAbortContent`
+      // above (same content the final SSE carried), so the saved message and
+      // the live client agree.
+      const { content } = abortResult;
       const responseMessage = {
         messageId: jobData.responseMessageId,
         parentMessageId: jobData.userMessage.messageId,
