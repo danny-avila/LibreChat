@@ -1840,11 +1840,6 @@ export const langfuseConfigSchema = z.object({
   displaySecretKey: z.string().optional(),
   /** Routing key for one of the deployment-configured tenant Langfuse destinations. */
   destination: z.string().optional(),
-  fanout: z
-    .object({
-      enabled: z.boolean().optional(),
-    })
-    .optional(),
 });
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;

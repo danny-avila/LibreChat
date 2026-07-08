@@ -1,6 +1,5 @@
-import crypto from 'node:crypto';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
-import { logger, BASE_CONFIG_PRINCIPAL_ID, encryptV3, decryptV3 } from '@librechat/data-schemas';
+import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import type {
   TCustomConfig,
   LangfuseConfig,
@@ -13,15 +12,15 @@ import type { IConfig } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import {
+  getLangfuseTenantDestinations,
+  resolveLangfuseTenantDestination,
+} from '~/langfuse/tenantDestinations';
+import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
+import { isLangfuseFanoutEnabled } from '~/langfuse/config';
 
 const DEFAULT_PRIORITY = 10;
-const FINGERPRINT_LENGTH = 12;
-
-/** Short, non-reversible fingerprint of a secret so reads can show which key is
- * configured without exposing it. */
-function fingerprintSecret(secret: string): string {
-  return crypto.createHash('sha256').update(secret).digest('hex').slice(0, FINGERPRINT_LENGTH);
-}
+const ENCRYPTED_PREFIX = 'v3:';
 
 export interface AdminLangfuseDeps {
   findConfigByPrincipal: (
@@ -55,21 +54,32 @@ function buildStatus(config: IConfig | null): TLangfuseConnectionStatus {
   return {
     configured: Boolean(stored?.publicKey && stored?.secretKey),
     enabled: stored?.enabled === true,
-    baseUrl: stored?.baseUrl,
+    destinations: getLangfuseTenantDestinations(),
+    destination: stored?.destination,
     publicKey: stored?.publicKey,
-    secretKeyFingerprint: stored?.secretKeyFingerprint,
+    displaySecretKey: stored?.displaySecretKey,
     updatedAt: config?.updatedAt ? new Date(config.updatedAt).toISOString() : undefined,
   };
 }
 
-function resolveStoredSecret(secret?: string): string | undefined {
-  if (!secret) {
+function rejectWhenFanoutDisabled(res: Response): Response | undefined {
+  if (isLangfuseFanoutEnabled()) {
     return undefined;
   }
-  if (!secret.startsWith('v3:')) {
-    return secret;
+
+  return res.status(404).json({ error: 'Langfuse fanout is not enabled' });
+}
+
+function getLangfuseTestFailureMessage(status: number): string {
+  if (status === 401) {
+    return 'Langfuse rejected these keys. Check the public and secret keys.';
   }
-  return decryptV3(secret);
+
+  if (status >= 500) {
+    return 'Langfuse is returning server errors. This may be a Langfuse incident.';
+  }
+
+  return `Langfuse responded with status ${status}`;
 }
 
 /**
@@ -93,6 +103,11 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   }
 
   async function getConnection(req: ServerRequest, res: Response): Promise<Response> {
+    const disabledResponse = rejectWhenFanoutDisabled(res);
+    if (disabledResponse) {
+      return disabledResponse;
+    }
+
     try {
       const config = await findBaseConfig();
       return res.status(200).json(buildStatus(config));
@@ -103,23 +118,30 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   }
 
   async function updateConnection(req: ServerRequest, res: Response): Promise<Response> {
+    const disabledResponse = rejectWhenFanoutDisabled(res);
+    if (disabledResponse) {
+      return disabledResponse;
+    }
+
     try {
       const body = (req.body ?? {}) as TUpdateLangfuseConnectionRequest;
       const enabled = body.enabled === true;
-      const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : '';
+      const destination = typeof body.destination === 'string' ? body.destination.trim() : '';
       const publicKey = typeof body.publicKey === 'string' ? body.publicKey.trim() : '';
       const secretKey = typeof body.secretKey === 'string' ? body.secretKey.trim() : '';
+      const tenantDestination = resolveLangfuseTenantDestination(destination);
 
-      if (!baseUrl) {
-        return res.status(400).json({ error: 'baseUrl is required' });
+      if (!destination) {
+        return res.status(400).json({ error: 'destination is required' });
       }
       if (!publicKey) {
         return res.status(400).json({ error: 'publicKey is required' });
       }
-      try {
-        new URL(baseUrl);
-      } catch {
-        return res.status(400).json({ error: 'baseUrl must be a valid URL' });
+      if (!tenantDestination) {
+        return res.status(400).json({ error: 'destination is not configured' });
+      }
+      if (secretKey.startsWith(ENCRYPTED_PREFIX)) {
+        return res.status(400).json({ error: 'Encrypted secretKey values cannot be submitted' });
       }
 
       const existing = await findBaseConfig();
@@ -132,19 +154,18 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
 
       const fields: Record<string, unknown> = {
         'langfuse.enabled': enabled,
-        'langfuse.baseUrl': baseUrl,
+        'langfuse.destination': tenantDestination.key,
         'langfuse.publicKey': publicKey,
       };
       if (secretKey) {
-        fields['langfuse.secretKey'] = encryptV3(secretKey);
-        fields['langfuse.secretKeyFingerprint'] = fingerprintSecret(secretKey);
+        fields['langfuse.secretKey'] = secretKey;
       }
 
       const updated = await patchConfigFields(
         PrincipalType.ROLE,
         BASE_CONFIG_PRINCIPAL_ID,
         PrincipalModel.ROLE,
-        fields,
+        encryptConfigSecretFields(fields),
         existing?.priority ?? DEFAULT_PRIORITY,
       );
 
@@ -160,26 +181,40 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   }
 
   async function testConnection(req: ServerRequest, res: Response): Promise<Response> {
+    const disabledResponse = rejectWhenFanoutDisabled(res);
+    if (disabledResponse) {
+      return disabledResponse;
+    }
+
     try {
       const body = (req.body ?? {}) as TLangfuseConnectionTestRequest;
-      const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : '';
+      const destination = typeof body.destination === 'string' ? body.destination.trim() : '';
       const publicKey = typeof body.publicKey === 'string' ? body.publicKey.trim() : '';
       let secretKey = typeof body.secretKey === 'string' ? body.secretKey.trim() : '';
+      const tenantDestination = resolveLangfuseTenantDestination(destination);
 
-      if (!baseUrl || !publicKey) {
-        return res.status(400).json({ error: 'baseUrl and publicKey are required' });
+      if (!destination || !publicKey) {
+        return res.status(400).json({ error: 'destination and publicKey are required' });
+      }
+      if (!tenantDestination) {
+        return res.status(400).json({ error: 'destination is not configured' });
+      }
+      if (secretKey.startsWith(ENCRYPTED_PREFIX)) {
+        return res.status(400).json({ error: 'Encrypted secretKey values cannot be submitted' });
       }
 
       if (!secretKey) {
         const existing = await findBaseConfig();
-        try {
-          secretKey = resolveStoredSecret(readStoredLangfuse(existing)?.secretKey) ?? '';
-        } catch {
-          const failed: TLangfuseConnectionTestResponse = {
-            success: false,
-            message: 'Stored secret key could not be decrypted',
-          };
-          return res.status(200).json(failed);
+        const storedSecret = readStoredLangfuse(existing)?.secretKey;
+        if (storedSecret) {
+          secretKey = decryptConfigSecret(storedSecret) ?? '';
+          if (!secretKey) {
+            const failed: TLangfuseConnectionTestResponse = {
+              success: false,
+              message: 'Stored secret key could not be decrypted',
+            };
+            return res.status(200).json(failed);
+          }
         }
       }
 
@@ -192,12 +227,12 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       }
 
       const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
-      const url = `${baseUrl.replace(/\/+$/, '')}/api/public/projects`;
+      const url = `${tenantDestination.baseUrl}/api/public/projects`;
       const response = await fetch(url, { headers: { Authorization: `Basic ${auth}` } });
 
       const result: TLangfuseConnectionTestResponse = response.ok
         ? { success: true }
-        : { success: false, message: `Langfuse responded with status ${response.status}` };
+        : { success: false, message: getLangfuseTestFailureMessage(response.status) };
       return res.status(200).json(result);
     } catch (error) {
       logger.error('[adminLangfuse] testConnection error:', error);

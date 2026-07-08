@@ -617,58 +617,6 @@ describe('Langfuse feedback scores', () => {
     );
   });
 
-  it('skips tenant scores when tenant fanout is disabled in app config', async () => {
-    enableTenantFanout();
-    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    const { sendFeedbackScore } = await loadFeedback();
-
-    await sendFeedbackScore({
-      traceId: 'trace-id',
-      feedback: { rating: 'thumbsUp' },
-      appConfig: appConfigWithLangfuse({
-        publicKey: 'tenant-public-key',
-        secretKey: encryptedTenantSecret(),
-        destination: 'eu',
-        fanout: { enabled: false },
-      }),
-    });
-
-    expect(getFetchMock()).toHaveBeenCalledTimes(1);
-    expect(getFetchMock()).toHaveBeenCalledWith(
-      'http://central-langfuse:3000/api/public/scores',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
-      }),
-    );
-  });
-
-  it('skips tenant scores when tenant fanout enabled is the string false', async () => {
-    enableTenantFanout();
-    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    const { sendFeedbackScore } = await loadFeedback();
-
-    await sendFeedbackScore({
-      traceId: 'trace-id',
-      feedback: { rating: 'thumbsUp' },
-      appConfig: appConfigWithLangfuse({
-        publicKey: 'tenant-public-key',
-        secretKey: encryptedTenantSecret(),
-        destination: 'eu',
-        fanout: { enabled: 'false' },
-      } as unknown as AppConfig['langfuse']),
-    });
-
-    expect(getFetchMock()).toHaveBeenCalledTimes(1);
-    expect(getFetchMock()).toHaveBeenCalledWith(
-      'http://central-langfuse:3000/api/public/scores',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
-      }),
-    );
-  });
-
   it('skips tenant scores when fanout has no collector URL', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';

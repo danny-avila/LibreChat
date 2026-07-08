@@ -14,6 +14,14 @@ beforeAll(async () => {
   ({ createAdminLangfuseHandlers } = await import('./langfuse'));
 });
 
+beforeEach(() => {
+  process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+});
+
+afterEach(() => {
+  delete process.env.LANGFUSE_FANOUT_ENABLED;
+});
+
 function mockReq(overrides = {}) {
   return {
     user: { id: 'u1', role: 'ADMIN', tenantId: 't1' },
@@ -83,6 +91,52 @@ function rehydrate(fields: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('createAdminLangfuseHandlers', () => {
+  describe('fanout feature gate', () => {
+    it('rejects connection reads when deployment fanout is disabled', async () => {
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('rejects connection updates when deployment fanout is disabled', async () => {
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({ body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects connection tests when deployment fanout is disabled', async () => {
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      global.fetch = jest.fn() as unknown as typeof fetch;
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({ body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getConnection', () => {
     it('reports not configured when no base config exists', async () => {
       const { handlers } = createHandlers();
@@ -100,10 +154,10 @@ describe('createAdminLangfuseHandlers', () => {
         findConfigByPrincipal: jest.fn().mockResolvedValue(
           baseConfigDoc({
             enabled: true,
-            baseUrl: 'https://cloud.langfuse.com',
+            destination: 'eu',
             publicKey: 'pk-lf-1',
             secretKey: encryptV3('sk-lf-secret'),
-            secretKeyFingerprint: 'abc123def456',
+            displaySecretKey: 'sk-lf...cret',
           }),
         ),
       });
@@ -114,10 +168,13 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.body).toMatchObject({
         configured: true,
         enabled: true,
-        baseUrl: 'https://cloud.langfuse.com',
+        destination: 'eu',
         publicKey: 'pk-lf-1',
-        secretKeyFingerprint: 'abc123def456',
+        displaySecretKey: 'sk-lf...cret',
       });
+      expect(res.body?.destinations).toEqual(
+        expect.arrayContaining([{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }]),
+      );
       expect(res.body?.secretKey).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain('sk-lf-secret');
       expect(JSON.stringify(res.body)).not.toContain('v3:');
@@ -125,7 +182,7 @@ describe('createAdminLangfuseHandlers', () => {
   });
 
   describe('updateConnection', () => {
-    it('requires baseUrl', async () => {
+    it('requires destination', async () => {
       const { handlers } = createHandlers();
       const res = mockRes();
       await handlers.updateConnection(mockReq({ body: { publicKey: 'pk' } }), res);
@@ -135,35 +192,43 @@ describe('createAdminLangfuseHandlers', () => {
     it('requires publicKey', async () => {
       const { handlers } = createHandlers();
       const res = mockRes();
-      await handlers.updateConnection(
-        mockReq({ body: { baseUrl: 'https://cloud.langfuse.com' } }),
-        res,
-      );
+      await handlers.updateConnection(mockReq({ body: { destination: 'eu' } }), res);
       expect(res.statusCode).toBe(400);
     });
 
-    it('rejects an invalid baseUrl', async () => {
+    it('rejects an unknown destination', async () => {
       const { handlers } = createHandlers();
       const res = mockRes();
       await handlers.updateConnection(
-        mockReq({ body: { baseUrl: 'not-a-url', publicKey: 'pk', secretKey: 'sk' } }),
+        mockReq({ body: { destination: 'mars', publicKey: 'pk', secretKey: 'sk' } }),
         res,
       );
       expect(res.statusCode).toBe(400);
     });
 
-    it('requires a secret key on first-time configuration', async () => {
+    it('rejects encrypted secret values from clients', async () => {
       const { handlers, deps } = createHandlers();
       const res = mockRes();
       await handlers.updateConnection(
-        mockReq({ body: { baseUrl: 'https://cloud.langfuse.com', publicKey: 'pk' } }),
+        mockReq({ body: { destination: 'eu', publicKey: 'pk', secretKey: encryptV3('sk') } }),
         res,
       );
       expect(res.statusCode).toBe(400);
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
-    it('encrypts the secret key, stores a fingerprint, and never returns the secret', async () => {
+    it('requires a secret key on first-time configuration', async () => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+      await handlers.updateConnection(
+        mockReq({ body: { destination: 'eu', publicKey: 'pk' } }),
+        res,
+      );
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('stores the secret through the shared config secret helper and never returns the secret', async () => {
       const { handlers, deps } = createHandlers();
       const res = mockRes();
 
@@ -171,7 +236,7 @@ describe('createAdminLangfuseHandlers', () => {
         mockReq({
           body: {
             enabled: true,
-            baseUrl: 'https://cloud.langfuse.com',
+            destination: 'eu',
             publicKey: 'pk-lf-1',
             secretKey: 'sk-lf-secret',
           },
@@ -183,8 +248,9 @@ describe('createAdminLangfuseHandlers', () => {
       const fields = deps.patchConfigFields.mock.calls[0][3];
       expect(fields['langfuse.secretKey']).toMatch(/^v3:/);
       expect(fields['langfuse.secretKey']).not.toContain('sk-lf-secret');
-      expect(fields['langfuse.secretKeyFingerprint']).toMatch(/^[a-f0-9]{12}$/);
+      expect(fields['langfuse.displaySecretKey']).toBe('sk-lf-...cret');
       expect(fields['langfuse.enabled']).toBe(true);
+      expect(fields['langfuse.destination']).toBe('eu');
       expect(fields['langfuse.publicKey']).toBe('pk-lf-1');
       expect(res.body?.secretKey).toBeUndefined();
       expect(deps.invalidateConfigCaches).toHaveBeenCalledWith('t1');
@@ -200,7 +266,7 @@ describe('createAdminLangfuseHandlers', () => {
 
       await handlers.updateConnection(
         mockReq({
-          body: { enabled: false, baseUrl: 'https://us.cloud.langfuse.com', publicKey: 'pk-2' },
+          body: { enabled: false, destination: 'us', publicKey: 'pk-2' },
         }),
         res,
       );
@@ -208,6 +274,7 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.statusCode).toBe(200);
       const fields = deps.patchConfigFields.mock.calls[0][3];
       expect(fields['langfuse.secretKey']).toBeUndefined();
+      expect(fields['langfuse.destination']).toBe('us');
       expect(fields['langfuse.publicKey']).toBe('pk-2');
     });
   });
@@ -218,11 +285,28 @@ describe('createAdminLangfuseHandlers', () => {
       global.fetch = realFetch;
     });
 
-    it('requires baseUrl and publicKey', async () => {
+    it('requires destination and publicKey', async () => {
+      const { handlers } = createHandlers();
+      const res = mockRes();
+      await handlers.testConnection(mockReq({ body: { destination: 'eu' } }), res);
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects an unknown destination', async () => {
       const { handlers } = createHandlers();
       const res = mockRes();
       await handlers.testConnection(
-        mockReq({ body: { baseUrl: 'https://cloud.langfuse.com' } }),
+        mockReq({ body: { destination: 'mars', publicKey: 'pk', secretKey: 'sk' } }),
+        res,
+      );
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects encrypted secret values from clients', async () => {
+      const { handlers } = createHandlers();
+      const res = mockRes();
+      await handlers.testConnection(
+        mockReq({ body: { destination: 'eu', publicKey: 'pk', secretKey: encryptV3('sk') } }),
         res,
       );
       expect(res.statusCode).toBe(400);
@@ -237,7 +321,7 @@ describe('createAdminLangfuseHandlers', () => {
 
       await handlers.testConnection(
         mockReq({
-          body: { baseUrl: 'https://cloud.langfuse.com', publicKey: 'pk', secretKey: 'sk' },
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
         }),
         res,
       );
@@ -248,7 +332,7 @@ describe('createAdminLangfuseHandlers', () => {
       expect(init.headers.Authorization).toMatch(/^Basic /);
     });
 
-    it('returns failure with status when Langfuse rejects the credentials', async () => {
+    it('returns a key-specific failure when Langfuse rejects the credentials', async () => {
       global.fetch = jest
         .fn()
         .mockResolvedValue({ ok: false, status: 401 }) as unknown as typeof fetch;
@@ -257,13 +341,35 @@ describe('createAdminLangfuseHandlers', () => {
 
       await handlers.testConnection(
         mockReq({
-          body: { baseUrl: 'https://cloud.langfuse.com', publicKey: 'pk', secretKey: 'sk' },
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
         }),
         res,
       );
 
-      expect(res.body?.success).toBe(false);
-      expect(res.body?.message).toContain('401');
+      expect(res.body).toEqual({
+        success: false,
+        message: 'Langfuse rejected these keys. Check the public and secret keys.',
+      });
+    });
+
+    it('returns an incident-oriented failure when Langfuse returns a server error', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: false, status: 503 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+        }),
+        res,
+      );
+
+      expect(res.body).toEqual({
+        success: false,
+        message: 'Langfuse is returning server errors. This may be a Langfuse incident.',
+      });
     });
 
     it('falls back to the stored (decrypted) secret when none is supplied', async () => {
@@ -277,10 +383,7 @@ describe('createAdminLangfuseHandlers', () => {
       });
       const res = mockRes();
 
-      await handlers.testConnection(
-        mockReq({ body: { baseUrl: 'https://cloud.langfuse.com', publicKey: 'pk' } }),
-        res,
-      );
+      await handlers.testConnection(mockReq({ body: { destination: 'eu', publicKey: 'pk' } }), res);
 
       expect(res.body).toEqual({ success: true });
       const [, init] = (global.fetch as unknown as jest.Mock).mock.calls[0];

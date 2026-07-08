@@ -834,21 +834,27 @@ export type TUpdateSkillNodeRequest = {
 export type TLangfuseConnectionStatus = {
   configured: boolean;
   enabled: boolean;
-  baseUrl?: string;
+  destinations: TLangfuseDestinationOption[];
+  destination?: string;
   publicKey?: string;
-  secretKeyFingerprint?: string;
+  displaySecretKey?: string;
   updatedAt?: string;
+};
+
+export type TLangfuseDestinationOption = {
+  key: string;
+  baseUrl: string;
 };
 
 export type TUpdateLangfuseConnectionRequest = {
   enabled: boolean;
-  baseUrl: string;
+  destination: string;
   publicKey: string;
   secretKey?: string;
 };
 
 export type TLangfuseConnectionTestRequest = {
-  baseUrl: string;
+  destination: string;
   publicKey: string;
   secretKey?: string;
 };

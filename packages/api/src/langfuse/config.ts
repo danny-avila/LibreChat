@@ -5,8 +5,6 @@ import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
-type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
-export type LangfuseFanoutConfig = LangfuseAppConfig['fanout'];
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
 };
@@ -22,9 +20,8 @@ export function isLangfuseTenantExportEnabled(): boolean {
   return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
 }
 
-export function isLangfuseFanoutEnabled(fanout?: LangfuseFanoutConfig): boolean {
-  const enabled = normalizeBoolean(fanout?.enabled);
-  return enabled !== false && (enabled === true || isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED));
+export function isLangfuseFanoutEnabled(): boolean {
+  return isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED);
 }
 
 function mergeTraceMetadata(
@@ -83,22 +80,16 @@ export function buildLangfuseConfig({
     langfuse.tags = tags;
   }
 
-  if (normalizeBoolean(config?.enabled) === false) {
-    return {
-      ...langfuse,
-      enabled: false,
-    };
-  }
-
+  const tenantLangfuseEnabled = normalizeBoolean(config?.enabled) !== false;
   const tenantCredentials = resolveTenantCredentials(config);
   const hasTenantCredentials = Boolean(tenantCredentials);
-  const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
-  const fanoutEnabled = isLangfuseFanoutEnabled(fanout);
+  const fanoutEnabled = isLangfuseFanoutEnabled();
   const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   const tenantDestination = resolveLangfuseTenantDestination(config?.destination);
   const tenantExportDestination = hasTenantCredentials ? tenantDestination : undefined;
   const tenantExportCollectorUrl = fanoutCollectorUrl;
   const tenantExportEnabled =
+    tenantLangfuseEnabled &&
     hasTenantCredentials &&
     fanoutEnabled &&
     isLangfuseTenantExportEnabled() &&
