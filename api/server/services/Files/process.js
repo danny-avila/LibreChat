@@ -1299,11 +1299,19 @@ const OLE_CONTAINER_MIME_TYPES = new Set([
 ]);
 
 /**
- * Reduces a MIME type to a token for equivalence comparison. Image, audio and
- * video collapse to their (executable-free) top-level type — audio and video
- * together, since they share containers (mp4/ogg/webm) — which tolerates the
- * vendor/subtype aliases `file-type` emits (`audio/x-wav`, `video/vnd.avi`).
- * `application/*` is kept fine-grained (so `application/zip` never matches
+ * Media container formats `file-type` reports under an `application/*` name even
+ * though the bytes are audio/video (Ogg, ASF for wmv/wma). Treated as media so
+ * they are not mistaken for documents.
+ */
+const MEDIA_CONTAINER_MIME_TYPES = new Set(['application/ogg', 'application/vnd.ms-asf']);
+
+/**
+ * Reduces a MIME type to a token for equivalence comparison. Image and text
+ * collapse to their top-level type; all audio/video (including the media
+ * containers the sniffer reports under `application/*`) collapse to `media`,
+ * since those formats share containers (mp4/ogg/webm/asf) and the sniffer's
+ * canonical name often differs from the configured one. `application/*` is
+ * otherwise kept fine-grained (so `application/zip` never matches
  * `application/pdf`), with the ZIP and OLE container families each mapped to a
  * single token so genuine Office/OpenDocument uploads are not falsely rejected.
  *
@@ -1317,7 +1325,7 @@ const contentSignature = (mimeType) => {
   if (topLevel === 'image' || topLevel === 'text') {
     return topLevel;
   }
-  if (topLevel === 'audio' || topLevel === 'video') {
+  if (topLevel === 'audio' || topLevel === 'video' || MEDIA_CONTAINER_MIME_TYPES.has(base)) {
     return 'media';
   }
   if (ZIP_CONTAINER_MIME_TYPES.has(base)) {
@@ -1361,15 +1369,21 @@ const allowListCandidates = (detectedMime) => {
  * which is not covered by the claimed-type allow-list check `filterFile` already
  * performs (`file.mimetype`/filename are attacker-controlled).
  *
- * Rejects, in order: executable/active-content signatures; a sniffed type the
- * endpoint does not permit (so e.g. `image/bmp` cannot ride in as `image/png`
- * on an image-only endpoint, nor a raw ZIP as `application/pdf`); and a sniffed
- * type whose content signature disagrees with the claim (so a PDF claimed as
- * `image/png` is rejected even on an endpoint that also allows PDFs). Container
- * and vendor aliases the sniffer reports for legitimate files (`audio/x-wav`,
- * OOXML as `application/zip`, legacy Office as `application/x-cfb`) are tolerated
- * by both checks. Files with no detectable signature (plain text, code, csv,
- * svg) fall through to the claimed-type gate already applied by the caller.
+ * Rejects, in order: executable/active-content signatures; a non-media sniffed
+ * type the endpoint does not permit (so `image/bmp` cannot ride in as
+ * `image/png` on an image-only endpoint, nor a raw ZIP as `application/pdf`);
+ * and a sniffed type whose content signature disagrees with the claim (so a PDF
+ * claimed as `image/png` is rejected even on an endpoint that also allows PDFs).
+ *
+ * The strict allow-list check is skipped for media (audio/video): `file-type`'s
+ * canonical names routinely differ from the configured tokens (a `.mov` is
+ * sniffed as `video/quicktime` but configured as `video/mov`; Ogg/ASF are
+ * reported under `application/*`), so an exact check would falsely reject
+ * legitimate uploads. For media it is enough that the claim already passed the
+ * endpoint allow-list and the sniffed content is the same (media) category —
+ * which still blocks a document/executable disguised as media and vice versa.
+ * Files with no detectable signature (plain text, code, csv, svg) fall through
+ * to the claimed-type gate already applied by the caller.
  *
  * @param {Object} params
  * @param {Express.Multer.File} params.file - The uploaded file (disk storage).
@@ -1393,15 +1407,25 @@ const assertContentMatchesType = async ({ file, fileConfig, endpointFileConfig }
     throw new Error('File content does not match its file type');
   }
 
-  const detectedIsSupported = allowListCandidates(detectedMime).some((mime) =>
-    fileConfig.checkType(mime, endpointFileConfig.supportedMimeTypes),
-  );
-  if (!detectedIsSupported) {
-    throw new Error('File content does not match its file type');
+  const detectedSignature = contentSignature(detectedMime);
+  // Media intentionally skips the exact allow-list check: `file-type`'s canonical
+  // names diverge from the configured tokens (video/quicktime vs video/mov,
+  // video/matroska vs video/mkv, ASF/Ogg reported under application/*), and
+  // containers don't reveal audio-vs-video, so an exact match would falsely
+  // reject legitimate uploads. Media is instead constrained to the same category
+  // as the (already allow-listed) claim; the signature check below still blocks a
+  // document/executable disguised as media and vice versa.
+  if (detectedSignature !== 'media') {
+    const detectedIsSupported = allowListCandidates(detectedMime).some((mime) =>
+      fileConfig.checkType(mime, endpointFileConfig.supportedMimeTypes),
+    );
+    if (!detectedIsSupported) {
+      throw new Error('File content does not match its file type');
+    }
   }
 
   const claimedMime = (file.mimetype || '').toLowerCase();
-  if (claimedMime && contentSignature(detectedMime) !== contentSignature(claimedMime)) {
+  if (claimedMime && detectedSignature !== contentSignature(claimedMime)) {
     throw new Error('File content does not match its file type');
   }
 };

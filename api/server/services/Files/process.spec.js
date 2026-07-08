@@ -1346,8 +1346,9 @@ describe('filterFile — content sniffing (MIME spoofing guard)', () => {
   const IMAGE = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
   const PDF = /^application\/pdf$/;
   const ZIP = /^application\/zip$/;
-  const AUDIO = /^audio\/(mp3|mpeg|wav|wave|x-wav|ogg|mp4|m4a|x-m4a)$/;
-  const VIDEO = /^video\/(mp4|avi|mov|webm)$/;
+  const AUDIO =
+    /^audio\/(mp3|mpeg|mpeg3|wav|wave|x-wav|ogg|vorbis|mp4|m4a|x-m4a|flac|x-flac|webm|aac|wma|opus)$/;
+  const VIDEO = /^video\/(mp4|avi|mov|wmv|flv|webm|mkv|m4v|3gp|ogv)$/;
   const TEXT = /^text\/plain$/;
   const SVG = /^image\/svg\+xml$/;
   const DOCX = /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/;
@@ -1442,6 +1443,40 @@ describe('filterFile — content sniffing (MIME spoofing guard)', () => {
     claimed: 'audio/mp4',
     detected: 'video/mp4',
     allow: [AUDIO, VIDEO],
+  });
+  // Media whose sniffed canonical name differs from the configured token — must
+  // not be rejected just because the exact string is not on the allow-list.
+  accept('MOV as video/mov (sniffed video/quicktime)', {
+    claimed: 'video/mov',
+    detected: 'video/quicktime',
+    allow: [VIDEO],
+  });
+  accept('3GP as video/3gp (sniffed video/3gpp)', {
+    claimed: 'video/3gp',
+    detected: 'video/3gpp',
+    allow: [VIDEO],
+  });
+  accept('OGG audio as audio/ogg (sniffed application/ogg)', {
+    claimed: 'audio/ogg',
+    detected: 'application/ogg',
+    allow: [AUDIO],
+  });
+  accept('WMV as video/wmv (sniffed application/vnd.ms-asf)', {
+    claimed: 'video/wmv',
+    detected: 'application/vnd.ms-asf',
+    allow: [VIDEO],
+  });
+  // Skipping the allow-list check for media does not let a document or
+  // executable ride in as media, nor media as a document.
+  reject('PDF bytes claimed as video/mov', {
+    claimed: 'video/mov',
+    detected: 'application/pdf',
+    allow: [VIDEO],
+  });
+  reject('QuickTime bytes claimed as application/pdf', {
+    claimed: 'application/pdf',
+    detected: 'video/quicktime',
+    allow: [PDF],
   });
   accept('real DOCX (sniffed as its OOXML type) on a docx endpoint', {
     claimed: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
