@@ -1,6 +1,6 @@
 /* eslint-disable no-undef */
 (function () {
-  const AGENTS_LAUNCH_DATE = ISODate('2026-06-25T00:00:00Z');
+  const AGENTS_LAUNCH_DATE = ISODate('2026-06-30T00:00:00Z');
   const total = db.conversations.countDocuments({ updatedAt: { $gte: AGENTS_LAUNCH_DATE } });
   const withAgent = db.conversations.countDocuments({
     updatedAt: { $gte: AGENTS_LAUNCH_DATE },
