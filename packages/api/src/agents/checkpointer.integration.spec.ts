@@ -533,4 +533,79 @@ describe('LazyMongoSaver checkpoint size guard (mongodb-memory-server integratio
       }),
     ).toBe(0);
   });
+
+  it('counts metadata toward the ceiling — refuses when the checkpoint is under but metadata pushes over', async () => {
+    // MongoDBSaver stores the serialized checkpoint AND metadata in one document, so a
+    // just-under-limit checkpoint with large metadata still overflows. The guard must catch it
+    // as a typed CheckpointTooLargeError, not let it fall through to a raw BSONObjectTooLarge.
+    jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    const saver = makeSaver({ warnBytes: 500, hardLimitBytes: 2_000 });
+    await saver.setup();
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+
+    const checkpoint = emptyCheckpoint();
+    checkpoint.channel_values = { messages: 'x'.repeat(400) }; // checkpoint alone well UNDER 2 KB
+    await saver.putWrites(
+      { configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id } },
+      [[INTERRUPT, 'approve?']],
+      'task-1',
+    );
+    const config = { configurable: { thread_id: threadId, checkpoint_ns: '' } };
+    // Metadata alone pushes checkpoint + metadata over the 2 KB hard limit.
+    const metadata = {
+      source: 'input' as const,
+      step: -1,
+      writes: { payload: 'y'.repeat(4_000) },
+      parents: {},
+    };
+
+    await expect(saver.put(config, checkpoint, metadata)).rejects.toBeInstanceOf(
+      CheckpointTooLargeError,
+    );
+    expect(await saver.getTuple(readConfig(threadId))).toBeUndefined();
+  });
+
+  it('flushes bookkeeping parked during the size-serialization window (not dropped on resume)', async () => {
+    // `put` consumes the write anchor, then AWAITS `assertCheckpointFitsDocument` (serialization).
+    // A bookkeeping-only putWrites dispatched in that window sees no anchor and no persisted
+    // marker, so it parks — and must be flushed once the checkpoint persists, or a resume
+    // re-executes the completed sibling.
+    const NO_WRITES = '__no_writes__';
+    const saver = makeSaver({ warnBytes: 5_000, hardLimitBytes: 50_000 });
+    await saver.setup();
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const checkpoint = emptyCheckpoint();
+    const writeCfg = {
+      configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id },
+    };
+    await saver.putWrites(writeCfg, [[INTERRUPT, 'approve?']], 'task-gate');
+
+    // Pause the checkpoint serialization inside `put` so the bookkeeping batch lands mid-window.
+    const serde = (saver as unknown as { serde: { dumpsTyped: (v: unknown) => unknown } }).serde;
+    const realDumps = serde.dumpsTyped.bind(serde);
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    let paused = false;
+    jest.spyOn(serde, 'dumpsTyped').mockImplementation(async (value: unknown) => {
+      if (!paused) {
+        paused = true;
+        await gate; // hold inside assertCheckpointFitsDocument (anchor consumed, not yet persisted)
+      }
+      return realDumps(value);
+    });
+
+    const config = { configurable: { thread_id: threadId, checkpoint_ns: '' } };
+    const metadata = { source: 'input' as const, step: -1, writes: null, parents: {} };
+    const putPromise = saver.put(config, checkpoint, metadata); // suspends at the gate
+    await saver.putWrites(writeCfg, [[NO_WRITES, null]], 'task-sibling'); // parks in the window
+    releaseGate();
+    await putPromise;
+
+    const tuple = await saver.getTuple(readConfig(threadId));
+    const channels = (tuple?.pendingWrites ?? []).map((w) => w[1]);
+    expect(channels).toContain(INTERRUPT);
+    expect(channels).toContain(NO_WRITES); // flushed, not dropped
+  });
 });

@@ -249,15 +249,9 @@ export class LazyMongoSaver extends MongoDBSaver {
     // wrongly discarded.
     this.recordWriteAnchor(checkpointId);
     try {
-      const buffered = this.bufferedBookkeeping.get(checkpointId);
-      this.bufferedBookkeeping.delete(checkpointId);
-      if (buffered) {
-        // The checkpoint's fate is now "persist" — flush the bookkeeping batches that
-        // arrived before this anchor so the stored pending writes are complete.
-        await Promise.all(
-          buffered.batches.map((b) => super.putWrites(b.config, b.writes, b.taskId)),
-        );
-      }
+      // The checkpoint's fate is now "persist" — flush the bookkeeping batches that
+      // arrived before this anchor so the stored pending writes are complete.
+      await this.flushBufferedBookkeeping(checkpointId);
       return await super.putWrites(config, writes, taskId);
     } catch (err) {
       // The write batch never landed — best-effort un-anchor so the concurrent `put` doesn't
@@ -278,10 +272,17 @@ export class LazyMongoSaver extends MongoDBSaver {
       // Carries a resumable write (interrupt / real-channel delta anchor) — persist so resume
       // can read it, and remember the id briefly so any bookkeeping batch dispatched after
       // this `put` is forwarded rather than parked.
-      await this.assertCheckpointFitsDocument(config, checkpoint);
+      await this.assertCheckpointFitsDocument(config, checkpoint, metadata);
       sweepStale(this.persistedIds, (t) => t);
       this.persistedIds.set(checkpoint.id, Date.now());
-      return super.put(config, checkpoint, metadata);
+      const persisted = await super.put(config, checkpoint, metadata);
+      // `assertCheckpointFitsDocument` awaits a (potentially slow) serialization AFTER the
+      // anchor was consumed above but BEFORE `persistedIds` was set — a bookkeeping-only
+      // `putWrites` dispatched in that window sees neither marker and parks its batch. Flush
+      // it now that the checkpoint is persisted; without this the marker is dropped and a
+      // resume can re-execute already-completed work.
+      await this.flushBufferedBookkeeping(checkpoint.id);
+      return persisted;
     }
     // No resumable writes ⇒ a clean exit (a non-paused completion, a resumed turn's clean
     // finish, or an error-only turn): discard, and drop the parked bookkeeping batches with
@@ -311,6 +312,22 @@ export class LazyMongoSaver extends MongoDBSaver {
   }
 
   /**
+   * Forward the bookkeeping batches parked for `checkpointId` while its fate was undecided,
+   * now that the checkpoint is being persisted. Snapshot-and-delete before awaiting so a batch
+   * that arrives afterwards can't be double-forwarded — by then the anchor/persisted marker is
+   * set, so it forwards directly instead of parking. Shared by the anchoring `putWrites` and by
+   * `put` (for a batch parked during the size-check serialization window).
+   */
+  private async flushBufferedBookkeeping(checkpointId: string): Promise<void> {
+    const buffered = this.bufferedBookkeeping.get(checkpointId);
+    if (!buffered) {
+      return;
+    }
+    this.bufferedBookkeeping.delete(checkpointId);
+    await Promise.all(buffered.batches.map((b) => super.putWrites(b.config, b.writes, b.taskId)));
+  }
+
+  /**
    * Measure the checkpoint's serialized size on the persist path and act on it: `debug`-log it,
    * `warn` past {@link warnBytes}, and throw {@link CheckpointTooLargeError} past
    * {@link hardLimitBytes} — BEFORE the write, so an oversize pause fails legibly rather than as a
@@ -321,9 +338,17 @@ export class LazyMongoSaver extends MongoDBSaver {
   private async assertCheckpointFitsDocument(
     config: RunnableConfig,
     checkpoint: Checkpoint,
+    metadata: CheckpointMetadata,
   ): Promise<void> {
-    const [, serialized] = await this.serde.dumpsTyped(checkpoint);
-    const bytes = serialized.byteLength;
+    // `MongoDBSaver.put` stores the serialized checkpoint AND the serialized metadata
+    // (plus a small raw `metadata_search` subset) in the SAME `agent_checkpoints`
+    // document, so BOTH count toward the 16 MB ceiling. Measuring only the checkpoint
+    // let a just-under-limit checkpoint with large metadata fall through to a raw
+    // `BSONObjectTooLarge`; the headroom now only has to cover `metadata_search`, ids
+    // and BSON framing.
+    const [, serializedCheckpoint] = await this.serde.dumpsTyped(checkpoint);
+    const [, serializedMetadata] = await this.serde.dumpsTyped(metadata);
+    const bytes = serializedCheckpoint.byteLength + serializedMetadata.byteLength;
     const threadId = config.configurable?.thread_id as string | undefined;
     const mb = (n: number): string => (n / 1024 / 1024).toFixed(1);
     if (bytes > this.hardLimitBytes) {
