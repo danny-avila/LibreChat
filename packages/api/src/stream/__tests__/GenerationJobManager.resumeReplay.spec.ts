@@ -125,7 +125,12 @@ describe('GenerationJobManager resume replay events', () => {
     } satisfies ServerSentEvent;
     const resolvedEvent = {
       event: 'on_elicitation_resolved',
-      data: { id: 'step-elicit', runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID', flowId, action: 'complete' },
+      data: {
+        id: 'step-elicit',
+        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        flowId,
+        action: 'complete',
+      },
     } satisfies ServerSentEvent;
 
     // Duplicate pending emit dedups by flowId; the resolved event is a separate
