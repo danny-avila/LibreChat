@@ -557,6 +557,37 @@ endpoints:
       titleModel: 'mixtral-8x7b-32768'
       modelDisplayLabel: 'groq'
 
+    # TokenLab Example
+    # TokenLab exposes an OpenAI-compatible `/v1` API and live model discovery
+    # at `/v1/models`. It also provides native endpoint families such as
+    # Responses, Anthropic Messages, and Gemini-compatible APIs for clients that
+    # support those request shapes.
+    - name: 'TokenLab'
+      apiKey: '${TOKENLAB_API_KEY}'
+      baseURL: 'https://api.tokenlab.sh/v1'
+      models:
+        default:
+          - 'gpt-5.5'
+          - 'gpt-5.4'
+          - 'gpt-5.4-mini'
+          - 'claude-opus-4-8'
+          - 'claude-sonnet-5'
+          - 'claude-fable-5'
+          - 'gemini-3.5-flash'
+          - 'gemini-3.1-flash-lite'
+          - 'grok-4.3'
+          - 'grok-4-fast'
+          - 'qwen3.7-max'
+          - 'deepseek-v4-pro'
+          - 'deepseek-v4-flash'
+          - 'glm-5.2'
+          - 'minimax-m3'
+          - 'kimi-k2.7-code'
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-5.4-mini'
+      modelDisplayLabel: 'TokenLab'
+
     # Mistral AI Example
     - name: 'Mistral' # Unique name for the endpoint
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
