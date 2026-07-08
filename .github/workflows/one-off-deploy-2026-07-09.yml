@@ -1,0 +1,42 @@
+name: One-off deploy trigger (2026-07-09 catch-up)
+
+# ONE-TIME USE — delete this file on Thu 2026-07-09 morning after it fires.
+#
+# Why this exists: on 2026-07-08 the scheduled-merge workflow squash-merged
+# PR #113 into main via GITHUB_TOKEN. GitHub's anti-recursion guardrail
+# suppresses downstream workflow runs from such pushes, so deploy-gcp-vm.yml
+# never fired and prod still runs pre-#113 code. The permanent fix (dispatching
+# deploy after each scheduled merge) ships alongside this file, but the
+# already-merged PR #113 needs a one-time catch-up. This workflow does that
+# by dispatching deploy-gcp-vm.yml overnight inside the maintenance window.
+#
+# workflow_dispatch events are NOT subject to the anti-recursion guardrail,
+# so the deploy WILL fire when we call it from here.
+
+on:
+  schedule:
+    # 05:00 UTC on 2026-07-09 = Thu 01:00 AM ET. GitHub scheduled runs can be
+    # delayed under load (seen ~2h20m yesterday); the whole maintenance window
+    # (01:00 UTC – 11:00 UTC Thu = 9 PM Wed – 7 AM Thu ET) tolerates the drift.
+    - cron: '0 5 9 7 *'
+  workflow_dispatch:
+
+concurrency:
+  group: one-off-deploy-2026-07-09
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Deploy to GCP VM
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "One-off catch-up deploy for PR #113 (merged 2026-07-08 without triggering deploy)."
+          gh workflow run deploy-gcp-vm.yml --ref main
+          echo "Deploy dispatched. Watch: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/deploy-gcp-vm.yml"

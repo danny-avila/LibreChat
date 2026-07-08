@@ -56,6 +56,7 @@ jobs:
           jq -r '.[] | "#\(.number)  \(.title)"' prs.json
 
       - name: Merge each labeled PR
+        id: merge
         if: steps.list.outputs.count != '0' && !inputs.dry_run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,6 +123,11 @@ jobs:
           echo "Merged: ${#MERGED[@]} PR(s) — ${MERGED[*]:-none}"
           echo "Failed/skipped: ${#FAILED[@]} PR(s) — ${FAILED[*]:-none}"
 
+          # Emit the merged count so the next step can dispatch the deploy workflow
+          # ONLY when we actually landed something on main. Written before any exit
+          # so a partial-failure run still triggers deploy for the merged subset.
+          echo "merged_count=${#MERGED[@]}" >> "$GITHUB_OUTPUT"
+
           if [ ${#FAILED[@]} -gt 0 ]; then
             RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             FAILED_LIST=$(printf -- '- %s\n' "${FAILED[@]}")
@@ -134,3 +140,16 @@ jobs:
               || true
             exit 1
           fi
+
+      # Merges pushed to main by GITHUB_TOKEN do NOT trigger downstream workflows
+      # (GitHub's anti-loop guardrail), so deploy-gcp-vm.yml would sit idle after a
+      # scheduled merge. workflow_dispatch is NOT subject to that guardrail, so we
+      # explicitly dispatch the deploy here whenever the merge step landed a PR.
+      - name: Dispatch Deploy to GCP VM
+        if: always() && steps.merge.outputs.merged_count != '' && steps.merge.outputs.merged_count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "Dispatching Deploy to GCP VM to pick up ${{ steps.merge.outputs.merged_count }} newly-merged PR(s)."
+          gh workflow run deploy-gcp-vm.yml --ref main
