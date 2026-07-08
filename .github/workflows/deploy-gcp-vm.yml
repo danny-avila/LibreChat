@@ -4,8 +4,17 @@ on:
   push:
     branches:
       - main
+    # A push to main only fires this workflow if it touches at least one file
+    # OUTSIDE every listed path. Runtime-irrelevant paths belong here so we don't
+    # rebuild + restart the container for changes that produce an identical image.
+    #   - `.github/**` — workflow / CI files, executed by GitHub Actions, not the VM
+    #   - `docs/**`    — documentation directory; no runtime consumers (grepped 2026-07-08)
+    #   - `**.md`      — README / plan / CLAUDE.md files anywhere; no `.md` is
+    #                    imported or readFileSync'd by prod code paths as of 2026-07-08
     paths-ignore:
       - '.github/**'
+      - 'docs/**'
+      - '**.md'
 
 concurrency:
   group: deploy-gcp-vm
