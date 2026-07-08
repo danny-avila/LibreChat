@@ -398,6 +398,7 @@ describe('summarizationConfig field passthrough', () => {
         updatePrompt: 'Update the existing summary with new messages',
         reserveRatio: 0.1,
         maxSummaryTokens: 4096,
+        retainRecent: { turns: 5, tokens: 40000 },
       },
     });
     const config = agents[0].summarizationConfig as Record<string, unknown>;
@@ -413,6 +414,7 @@ describe('summarizationConfig field passthrough', () => {
     expect(config.updatePrompt).toBe('Update the existing summary with new messages');
     expect(config.reserveRatio).toBe(0.1);
     expect(config.maxSummaryTokens).toBe(4096);
+    expect(config.retainRecent).toEqual({ turns: 5, tokens: 40000 });
   });
 
   it('uses self-summarize default when no config provided', async () => {

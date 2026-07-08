@@ -158,7 +158,7 @@ describe('filterFilesByAgentAccess', () => {
       expect(result.map((f) => f.file_id)).not.toContain('not-attached');
     });
 
-    it('should not return a file referenced from an agent that is not authored by the file owner', async () => {
+    it('should return an attached file even when the file owner is not the agent author', async () => {
       getAgent.mockResolvedValue(makeAgent({ author: USER_ID }));
       checkPermission.mockResolvedValue(true);
 
@@ -169,7 +169,7 @@ describe('filterFilesByAgentAccess', () => {
         agentId: AGENT_ID,
       });
 
-      expect(result).toEqual([]);
+      expect(result).toEqual([sharedFile]);
     });
 
     it('should return only owned files when user lacks VIEW permission', async () => {
@@ -321,7 +321,7 @@ describe('hasAccessToFilesViaAgent', () => {
       expect(checkPermission).not.toHaveBeenCalled();
     });
 
-    it('should deny attached files not owned by the agent author', async () => {
+    it('should grant attached files not owned by the agent author', async () => {
       getAgent.mockResolvedValue(makeAgent({ author: USER_ID }));
       getFiles.mockResolvedValue([makeFile('attached-1', AUTHOR_ID)]);
 
@@ -331,7 +331,7 @@ describe('hasAccessToFilesViaAgent', () => {
         agentId: AGENT_ID,
       });
 
-      expect(result.get('attached-1')).toBe(false);
+      expect(result.get('attached-1')).toBe(true);
     });
   });
 
@@ -358,6 +358,22 @@ describe('hasAccessToFilesViaAgent', () => {
         resourceId: AGENT_MONGO_ID,
         requiredPermission: PermissionBits.VIEW,
       });
+    });
+
+    it('should grant access to attached files owned by another collaborator', async () => {
+      const collaboratorFile = makeFile('attached-2', 'editor-user-id');
+      getAgent.mockResolvedValue(makeAgent());
+      checkPermission.mockResolvedValue(true);
+
+      const result = await hasAccessToFilesViaAgent({
+        userId: USER_ID,
+        role: 'USER',
+        fileIds: ['attached-2'],
+        agentId: AGENT_ID,
+        files: [collaboratorFile],
+      });
+
+      expect(result.get('attached-2')).toBe(true);
     });
 
     it('should deny all when VIEW permission is missing', async () => {

@@ -633,6 +633,7 @@ function shapeSummarizationConfig(
       updatePrompt: config?.updatePrompt,
       reserveRatio: config?.reserveRatio,
       maxSummaryTokens: config?.maxSummaryTokens,
+      retainRecent: config?.retainRecent,
     } satisfies AgentSummarizationConfig,
     contextPruning: config?.contextPruning as ContextPruningConfig | undefined,
     reserveRatio: config?.reserveRatio,
