@@ -6,6 +6,7 @@ export const IntegrationProviderKey = {
   DROPBOX: 'dropbox',
   BOX: 'box',
   CLIO: 'clio',
+  QUICKBOOKS: 'quickbooks',
 } as const;
 
 export type IntegrationProviderKey =
@@ -86,6 +87,13 @@ export const INTEGRATION_PROVIDERS: Record<IntegrationProviderKey, IntegrationPr
     nangoIntegrationId: 'clio',
     labelKey: 'com_integrations_clio',
     icon: 'clio',
+    enabled: true,
+  },
+  [IntegrationProviderKey.QUICKBOOKS]: {
+    key: IntegrationProviderKey.QUICKBOOKS,
+    nangoIntegrationId: 'quickbooks',
+    labelKey: 'com_integrations_quickbooks',
+    icon: 'quickbooks',
     enabled: true,
   },
 };

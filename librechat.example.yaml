@@ -427,6 +427,7 @@ modelSpecs:
       microsoftCalendar: true
       dropbox: true
       clio: true
+      quickbooks: true
       preset:
         endpoint: anthropic
         model: claude-sonnet-4-6
@@ -439,6 +440,7 @@ modelSpecs:
           - `google_mail` / `microsoft_mail`: search or list recent email.
           - `google_calendar` / `microsoft_calendar`: list upcoming calendar events.
           - `clio`: search or list Clio documents (read-only — no uploads).
+          - `quickbooks`: list invoices, customers, payments, or expenses from QuickBooks Online.
 
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:

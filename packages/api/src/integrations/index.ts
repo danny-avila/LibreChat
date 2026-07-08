@@ -66,6 +66,23 @@ export type { BoxFileSummary, BoxSearchOptions, BoxSearchResult } from './box/bo
 export { downloadClioDocument, searchClioDocuments } from './clio/clioApi';
 export type { ClioDocumentSummary, ClioSearchOptions, ClioSearchResult } from './clio/clioApi';
 export {
+  extractQuickBooksRealmId,
+  listQuickBooksCustomers,
+  listQuickBooksExpenses,
+  listQuickBooksInvoices,
+  listQuickBooksPayments,
+  runQuickBooksAction,
+} from './quickbooks/quickbooksApi';
+export type {
+  QuickBooksConnectionContext,
+  QuickBooksCustomerSummary,
+  QuickBooksExpenseSummary,
+  QuickBooksInvoiceSummary,
+  QuickBooksListOptions,
+  QuickBooksPaymentSummary,
+  QuickBooksToolAction,
+} from './quickbooks/quickbooksApi';
+export {
   createOneDriveDocument,
   downloadMicrosoftOneDriveFile,
   searchMicrosoftOneDriveFiles,

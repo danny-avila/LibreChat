@@ -45,6 +45,7 @@ const { createMicrosoftMailTool } = require('./microsoftMail');
 const { createMicrosoftCalendarTool } = require('./microsoftCalendar');
 const { createDropboxTool } = require('./dropbox');
 const { createClioTool } = require('./clio');
+const { createQuickBooksTool } = require('./quickbooks');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -390,6 +391,11 @@ const loadTools = async ({
     } else if (tool === Tools.clio) {
       requestedTools[tool] = async () => {
         return createClioTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.quickbooks) {
+      requestedTools[tool] = async () => {
+        return createQuickBooksTool({ user: options.req.user });
       };
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {

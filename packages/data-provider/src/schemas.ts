@@ -296,6 +296,7 @@ export const defaultAgentFormValues = {
   [Tools.microsoft_calendar]: false,
   [Tools.dropbox]: false,
   [Tools.clio]: false,
+  [Tools.quickbooks]: false,
   category: 'general',
   support_contact: {
     name: '',

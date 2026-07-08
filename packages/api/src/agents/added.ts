@@ -76,6 +76,7 @@ export async function loadAddedAgent(
       microsoft_calendar?: boolean;
       dropbox?: boolean;
       clio?: boolean;
+      quickbooks?: boolean;
       artifacts?: unknown;
     };
     [key: string]: unknown;
@@ -137,6 +138,7 @@ export async function loadAddedAgent(
         microsoft_calendar?: boolean;
         dropbox?: boolean;
         clio?: boolean;
+        quickbooks?: boolean;
         artifacts?: unknown;
       }
     | undefined;
@@ -160,6 +162,7 @@ export async function loadAddedAgent(
         microsoftCalendar?: boolean;
         dropbox?: boolean;
         clio?: boolean;
+        quickbooks?: boolean;
       }>;
     }
   )?.list;
@@ -206,6 +209,9 @@ export async function loadAddedAgent(
   }
   if (ephemeralAgent?.clio === true || modelSpec?.clio === true) {
     tools.push(Tools.clio);
+  }
+  if (ephemeralAgent?.quickbooks === true || modelSpec?.quickbooks === true) {
+    tools.push(Tools.quickbooks);
   }
 
   const addedServers = new Set<string>();

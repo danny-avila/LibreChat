@@ -12,7 +12,8 @@ export type IntegrationProviderKey =
   | 'microsoft'
   | 'dropbox'
   | 'box'
-  | 'clio';
+  | 'clio'
+  | 'quickbooks';
 
 export interface IntegrationProviderStatus {
   providerKey: IntegrationProviderKey;

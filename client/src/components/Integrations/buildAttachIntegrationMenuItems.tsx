@@ -1,8 +1,6 @@
 import { isIntegrationConnected } from 'librechat-data-provider';
 import type { IntegrationProviderKey, IntegrationProviderStatus } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
-import { INTEGRATION_LABEL_KEYS } from '~/constants/integrations';
-import { INTEGRATION_ATTACH_MENU } from './attachMenu';
 import { IntegrationProviderIcon } from './IntegrationProviderIcon';
 
 type IntegrationPickerKey = IntegrationProviderKey | 'microsoft-mail' | 'microsoft-calendar';
@@ -15,7 +13,6 @@ export interface BuildAttachIntegrationMenuItemsOptions {
   localize: LocalizeFn;
   closeAttachMenu: () => void;
   setActiveIntegrationPicker: (picker: IntegrationPickerKey) => void;
-  setConnectPromptProvider: (providerKey: IntegrationProviderKey) => void;
   openDrivePicker: () => void;
   openDropboxPicker: () => void;
   openBoxPicker: () => void;
@@ -25,74 +22,12 @@ export interface BuildAttachIntegrationMenuItemsOptions {
   openMicrosoftOutlookCalendarPicker: () => void;
   setToolResourceContext: () => void;
   showComingSoonToast: () => void;
-  onDisconnect: (providerKey: IntegrationProviderKey) => void;
   sharePointItem?: MenuItemProps;
 }
 
 function providerIcon(providerKey: IntegrationProviderKey): MenuItemProps['icon'] {
   return <IntegrationProviderIcon providerKey={providerKey} className="size-4" />;
 }
-
-function buildDisconnectItem(
-  providerKey: IntegrationProviderKey,
-  options: BuildAttachIntegrationMenuItemsOptions,
-): MenuItemProps {
-  const labelKey = INTEGRATION_LABEL_KEYS[providerKey];
-  const providerLabel = labelKey ? options.localize(labelKey) : providerKey;
-  return {
-    id: `disconnect-${providerKey}`,
-    label: options.localize('com_integrations_disconnect_provider', { provider: providerLabel }),
-    icon: providerIcon(providerKey),
-    onClick: () => {
-      options.closeAttachMenu();
-      options.onDisconnect(providerKey);
-    },
-  };
-}
-
-function withDisconnectItem(
-  subItems: MenuItemProps[],
-  providerKey: IntegrationProviderKey,
-  options: BuildAttachIntegrationMenuItemsOptions,
-): MenuItemProps[] {
-  if (subItems.length > 0) {
-    subItems.push({ separate: true });
-  }
-  subItems.push(buildDisconnectItem(providerKey, options));
-  return subItems;
-}
-
-function connectLabel(localize: LocalizeFn, providerKey: IntegrationProviderKey): string {
-  const connectKey = CONNECT_LABEL_KEYS[providerKey];
-  if (connectKey) {
-    return localize(connectKey);
-  }
-  const config = INTEGRATION_ATTACH_MENU[providerKey];
-  if (!config) {
-    return providerKey;
-  }
-  return localize(config.menuLabelKey);
-}
-
-const CONNECT_LABEL_KEYS: Partial<Record<IntegrationProviderKey, string>> = {
-  'google-drive': 'com_files_connect_google_drive',
-  'google-mail': 'com_files_connect_gmail',
-  'google-calendar': 'com_files_connect_google_calendar',
-  microsoft: 'com_files_upload_microsoft',
-  dropbox: 'com_files_upload_dropbox',
-  box: 'com_files_upload_box',
-  clio: 'com_files_upload_clio',
-};
-
-const INTEGRATION_MENU_ORDER: IntegrationProviderKey[] = [
-  'google-drive',
-  'google-mail',
-  'google-calendar',
-  'microsoft',
-  'dropbox',
-  'box',
-  'clio',
-];
 
 function appendSection(
   items: MenuItemProps[],
@@ -112,21 +47,6 @@ function appendSection(
     label: localize(headerKey),
   });
   items.push(...sectionItems);
-}
-
-function buildConnectItem(
-  providerKey: IntegrationProviderKey,
-  options: BuildAttachIntegrationMenuItemsOptions,
-): MenuItemProps {
-  return {
-    id: `connect-${providerKey}`,
-    label: connectLabel(options.localize, providerKey),
-    icon: providerIcon(providerKey),
-    onClick: () => {
-      options.closeAttachMenu();
-      options.setConnectPromptProvider(providerKey);
-    },
-  };
 }
 
 function appendFilePickerSection(
@@ -196,23 +116,6 @@ function buildGoogleConnectedSubmenu(
     });
   }
 
-  const disconnectItems: MenuItemProps[] = [];
-  if (isDriveConnected) {
-    disconnectItems.push(buildDisconnectItem('google-drive', options));
-  }
-  if (isMailConnected) {
-    disconnectItems.push(buildDisconnectItem('google-mail', options));
-  }
-  if (isCalendarConnected) {
-    disconnectItems.push(buildDisconnectItem('google-calendar', options));
-  }
-  if (disconnectItems.length > 0) {
-    if (subItems.length > 0) {
-      subItems.push({ separate: true });
-    }
-    subItems.push(...disconnectItems);
-  }
-
   return subItems;
 }
 
@@ -243,7 +146,7 @@ function buildMicrosoftConnectedSubmenu(
     },
   );
 
-  return withDisconnectItem(subItems, 'microsoft', options);
+  return subItems;
 }
 
 export function buildAttachIntegrationMenuItems(
@@ -254,7 +157,6 @@ export function buildAttachIntegrationMenuItems(
     enabledIntegrations.map((integration) => [integration.providerKey, integration.status]),
   );
 
-  const isEnabled = (providerKey: IntegrationProviderKey): boolean => statusByKey.has(providerKey);
   const isConnected = (providerKey: IntegrationProviderKey): boolean =>
     isIntegrationConnected(statusByKey.get(providerKey));
 
@@ -295,11 +197,7 @@ export function buildAttachIntegrationMenuItems(
       label: options.localize('com_files_from_dropbox'),
       icon: providerIcon('dropbox'),
       onClick: () => {},
-      subItems: withDisconnectItem(
-        options.createFileTypeSubItems(options.openDropboxPicker),
-        'dropbox',
-        options,
-      ),
+      subItems: options.createFileTypeSubItems(options.openDropboxPicker),
     });
   }
 
@@ -309,11 +207,7 @@ export function buildAttachIntegrationMenuItems(
       label: options.localize('com_files_from_box'),
       icon: providerIcon('box'),
       onClick: () => {},
-      subItems: withDisconnectItem(
-        options.createFileTypeSubItems(options.openBoxPicker),
-        'box',
-        options,
-      ),
+      subItems: options.createFileTypeSubItems(options.openBoxPicker),
     });
   }
 
@@ -323,22 +217,12 @@ export function buildAttachIntegrationMenuItems(
       label: options.localize('com_files_from_clio'),
       icon: providerIcon('clio'),
       onClick: () => {},
-      subItems: withDisconnectItem(
-        options.createFileTypeSubItems(options.openClioPicker),
-        'clio',
-        options,
-      ),
+      subItems: options.createFileTypeSubItems(options.openClioPicker),
     });
   }
 
   if (options.sharePointItem) {
     cloudItems.push(options.sharePointItem);
-  }
-
-  for (const providerKey of INTEGRATION_MENU_ORDER) {
-    if (isEnabled(providerKey) && !isConnected(providerKey)) {
-      cloudItems.push(buildConnectItem(providerKey, options));
-    }
   }
 
   const menuItems: MenuItemProps[] = [];

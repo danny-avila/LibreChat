@@ -177,13 +177,6 @@ const AttachFileMenu = ({
     ? integrationConnectors[connectPromptProvider]
     : null;
 
-  const handleMenuIntegrationDisconnect = useCallback(
-    (providerKey: IntegrationProviderKey) => {
-      void integrationConnectors[providerKey]?.disconnect();
-    },
-    [integrationConnectors],
-  );
-
   const openIntegrationReconnect = useCallback(
     (providerKey: IntegrationProviderKey) => {
       setActiveIntegrationPicker(null);
@@ -422,7 +415,6 @@ const AttachFileMenu = ({
           localize,
           closeAttachMenu,
           setActiveIntegrationPicker,
-          setConnectPromptProvider,
           openDrivePicker,
           openDropboxPicker,
           openBoxPicker,
@@ -439,7 +431,6 @@ const AttachFileMenu = ({
               status: 'info',
             });
           },
-          onDisconnect: handleMenuIntegrationDisconnect,
           sharePointItem,
         }),
       );
@@ -486,7 +477,6 @@ const AttachFileMenu = ({
     openMicrosoftOutlookCalendarPicker,
     setIsSharePointDialogOpen,
     setActiveIntegrationPicker,
-    handleMenuIntegrationDisconnect,
     showToast,
   ]);
 
@@ -513,25 +503,16 @@ const AttachFileMenu = ({
     />
   );
   const handleIntegrationConnect = async () => {
-    if (!connectPromptConnector) {
+    const connector = connectPromptConnector;
+    if (!connector) {
       return;
     }
 
-    const connected = await connectPromptConnector.connect();
-    if (connected) {
-      setConnectPromptProvider(null);
-    }
-  };
-
-  const handleIntegrationDisconnect = async () => {
-    if (!connectPromptConnector) {
-      return;
-    }
-
-    const disconnected = await connectPromptConnector.disconnect();
-    if (disconnected) {
-      setConnectPromptProvider(null);
-    }
+    // Close the (modal) prompt before opening the Nango Connect UI. A Radix modal
+    // dialog sets `pointer-events: none` on the body, which would leave the Nango
+    // popup (portaled outside the dialog) visible but unclickable — a frozen screen.
+    setConnectPromptProvider(null);
+    await connector.connect();
   };
 
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
@@ -797,9 +778,7 @@ const AttachFileMenu = ({
         status={connectPromptConnector?.status}
         isConnecting={connectPromptConnector?.isConnecting}
         onConnect={handleIntegrationConnect}
-        canDisconnect={connectPromptConnector?.canDisconnect}
-        isDisconnecting={connectPromptConnector?.isDisconnecting}
-        onDisconnect={handleIntegrationDisconnect}
+        canDisconnect={false}
       />
     </>
   );

@@ -35,6 +35,7 @@ export enum Tools {
   microsoft_calendar = 'microsoft_calendar',
   dropbox = 'dropbox',
   clio = 'clio',
+  quickbooks = 'quickbooks',
 }
 
 export enum EToolResources {

@@ -9,6 +9,7 @@ import {
   ScrollText,
   ArrowRightToLine,
   SlidersHorizontal,
+  Plug2,
 } from 'lucide-react';
 import {
   Permissions,
@@ -38,6 +39,8 @@ import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
 import { ScheduledSkillsPanel } from '~/components/ScheduledSkills';
+import IntegrationsPanel from '~/components/Integrations/IntegrationsPanel';
+import { useGetStartupConfig } from '~/data-provider';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -87,6 +90,8 @@ export default function useSideNavLinks({
     permission: Permissions.CREATE,
   });
   const { availableMCPServers } = useMCPServerManager();
+  const { data: startupConfig } = useGetStartupConfig();
+  const integrationsEnabled = startupConfig?.integrationsEnabled === true;
 
   const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
   const { skillsEnabled } = useAgentCapabilities(
@@ -185,6 +190,16 @@ export default function useSideNavLinks({
       Component: FilesPanel,
     });
 
+    if (integrationsEnabled) {
+      links.push({
+        title: 'com_sidepanel_integrations',
+        label: '',
+        icon: Plug2,
+        id: 'integrations',
+        Component: IntegrationsPanel,
+      });
+    }
+
     if (
       interfaceConfig.parameters === true &&
       isParamEndpoint(endpoint ?? '', endpointType ?? '') === true &&
@@ -241,6 +256,7 @@ export default function useSideNavLinks({
     availableMCPServers,
     hasAccessToUseMCPSettings,
     hasAccessToCreateMCP,
+    integrationsEnabled,
     includeHidePanel,
     hidePanel,
   ]);

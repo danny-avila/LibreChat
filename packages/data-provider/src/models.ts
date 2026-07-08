@@ -45,6 +45,7 @@ export type TModelSpec = {
   microsoftCalendar?: boolean;
   dropbox?: boolean;
   clio?: boolean;
+  quickbooks?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
 };
@@ -74,6 +75,7 @@ export const tModelSpecSchema = z.object({
   microsoftCalendar: z.boolean().optional(),
   dropbox: z.boolean().optional(),
   clio: z.boolean().optional(),
+  quickbooks: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
 });

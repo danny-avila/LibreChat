@@ -235,6 +235,7 @@ export function applyModelSpecEphemeralAgent({
     microsoft_calendar: modelSpec.microsoftCalendar ?? false,
     dropbox: modelSpec.dropbox ?? false,
     clio: modelSpec.clio ?? false,
+    quickbooks: modelSpec.quickbooks ?? false,
     artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
   };
 

@@ -416,7 +416,8 @@ export const googleMailSchema: ExtendedJsonSchema = {
     },
     message_id: {
       type: 'string',
-      description: 'For read_message and modify_labels: the Gmail message ID (from search results).',
+      description:
+        'For read_message and modify_labels: the Gmail message ID (from search results).',
     },
     to: {
       type: 'array',
@@ -591,6 +592,29 @@ export const clioSchema: ExtendedJsonSchema = {
   },
 };
 
+/** QuickBooks Online tool JSON schema (read-only) */
+export const quickbooksSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list_invoices', 'list_customers', 'list_payments', 'list_expenses'],
+      description:
+        'QuickBooks read action: list_invoices, list_customers, list_payments, or list_expenses.',
+    },
+    max_results: {
+      type: 'number',
+      description: 'Maximum records to return (1-50). Defaults to 10.',
+    },
+    open_only: {
+      type: 'boolean',
+      description:
+        'For list_invoices only: when true, return invoices with an outstanding balance.',
+    },
+  },
+  required: ['action'],
+};
+
 /** Tool definitions registry - maps tool names to their definitions */
 export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google: {
@@ -719,6 +743,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Search and list documents in the connected user Clio account (read-only). Returns document names, types, and modification times.',
     schema: clioSchema,
+    toolType: 'builtin',
+  },
+  quickbooks: {
+    name: 'quickbooks',
+    description:
+      'Read data from the connected user QuickBooks Online company: invoices, customers, payments, and expenses.',
+    schema: quickbooksSchema,
     toolType: 'builtin',
   },
   image_gen_oai: {

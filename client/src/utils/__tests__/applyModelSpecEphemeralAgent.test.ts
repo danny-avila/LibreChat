@@ -72,6 +72,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         microsoft_calendar: false,
         dropbox: false,
         clio: false,
+        quickbooks: false,
         artifacts: 'default',
       });
     });
@@ -102,6 +103,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         microsoft_calendar: false,
         dropbox: false,
         clio: false,
+        quickbooks: false,
         artifacts: 'default',
       });
     });
@@ -132,6 +134,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         microsoft_calendar: true,
         dropbox: false,
         clio: false,
+        quickbooks: false,
         artifacts: 'default',
       });
     });
@@ -293,6 +296,7 @@ describe('applyModelSpecEphemeralAgent', () => {
         microsoft_calendar: false,
         dropbox: false,
         clio: false,
+        quickbooks: false,
         artifacts: 'default',
       });
     });

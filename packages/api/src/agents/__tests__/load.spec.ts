@@ -238,7 +238,7 @@ describe('loadAgent', () => {
     expect(result!.tools).toContain('microsoft_calendar');
   });
 
-  test('should include Dropbox and Clio tools from modelSpec', async () => {
+  test('should include Dropbox, Clio, and QuickBooks tools from modelSpec', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 
     const mockReq = {
@@ -251,6 +251,7 @@ describe('loadAgent', () => {
               label: 'Assistant',
               dropbox: true,
               clio: true,
+              quickbooks: true,
             },
           ],
         },
@@ -272,6 +273,7 @@ describe('loadAgent', () => {
     expect(result).toBeDefined();
     expect(result!.tools).toContain('dropbox');
     expect(result!.tools).toContain('clio');
+    expect(result!.tools).toContain('quickbooks');
   });
 
   test('should return null for non-existent agent', async () => {

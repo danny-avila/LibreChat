@@ -111,6 +111,7 @@ export type TEphemeralAgent = {
   microsoft_calendar?: boolean;
   dropbox?: boolean;
   clio?: boolean;
+  quickbooks?: boolean;
   artifacts?: string;
   skills?: boolean;
 };

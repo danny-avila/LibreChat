@@ -302,6 +302,7 @@ function setupMocks(overrides: { provider?: string } = {}) {
     dropbox: integrationConnector,
     box: integrationConnector,
     clio: integrationConnector,
+    quickbooks: integrationConnector,
   });
   mockUseAgentToolPermissions.mockReturnValue({
     fileSearchAllowedByAgent: false,
@@ -625,7 +626,7 @@ describe('AttachFileMenu', () => {
       expect(screen.getByTestId('submenu-item-Upload to Code Environment')).toBeInTheDocument();
     });
 
-    it('shows flat connect item when Drive is not connected', () => {
+    it('does not show a connect item when Drive is not connected (connect lives in the sidebar hub)', () => {
       setupMocks();
       mockUseGetStartupConfig.mockReturnValue({
         data: { sharePointFilePickerEnabled: false, integrationsEnabled: true },
@@ -643,9 +644,9 @@ describe('AttachFileMenu', () => {
       });
       renderMenu({ endpointType: EModelEndpoint.openAI });
       openMenu();
-      expect(screen.getByText('Google Drive')).toBeInTheDocument();
-      expect(screen.queryByText('Connect another service…')).not.toBeInTheDocument();
+      expect(screen.queryByText('Google Drive')).not.toBeInTheDocument();
       expect(screen.queryByText('From Google Drive')).not.toBeInTheDocument();
+      expect(screen.queryByText('Connect another service…')).not.toBeInTheDocument();
     });
   });
 

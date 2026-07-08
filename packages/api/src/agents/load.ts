@@ -111,6 +111,9 @@ export async function loadEphemeralAgent(
   if (ephemeralAgent?.clio === true || modelSpec?.clio === true) {
     tools.push(Tools.clio);
   }
+  if (ephemeralAgent?.quickbooks === true || modelSpec?.quickbooks === true) {
+    tools.push(Tools.quickbooks);
+  }
 
   const addedServers = new Set<string>();
   if (mcpServers.size > 0) {

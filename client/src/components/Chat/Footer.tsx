@@ -3,7 +3,10 @@ import TagManager from 'react-gtm-module';
 import ReactMarkdown from 'react-markdown';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
+import { LegalDocumentLink } from '~/components/LegalDocumentLink';
 import { useLocalize } from '~/hooks';
+
+const chatFooterLinkClassName = 'text-text-secondary underline';
 
 function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
@@ -11,18 +14,24 @@ function Footer({ className }: { className?: string }) {
 
   const privacyPolicy = config?.interface?.privacyPolicy;
   const termsOfService = config?.interface?.termsOfService;
+  const hasPrivacyPolicy = Boolean(privacyPolicy?.externalUrl);
+  const hasTermsOfService = Boolean(termsOfService?.externalUrl);
 
-  const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
-    <a className="text-text-secondary underline" href={privacyPolicy.externalUrl} rel="noreferrer">
-      {localize('com_ui_privacy_policy')}
-    </a>
-  );
+  const privacyPolicyRender = hasPrivacyPolicy ? (
+    <LegalDocumentLink
+      config={privacyPolicy}
+      labelKey="com_ui_privacy_policy"
+      className={chatFooterLinkClassName}
+    />
+  ) : null;
 
-  const termsOfServiceRender = termsOfService?.externalUrl != null && (
-    <a className="text-text-secondary underline" href={termsOfService.externalUrl} rel="noreferrer">
-      {localize('com_ui_terms_of_service')}
-    </a>
-  );
+  const termsOfServiceRender = hasTermsOfService ? (
+    <LegalDocumentLink
+      config={termsOfService}
+      labelKey="com_ui_terms_of_service"
+      className={chatFooterLinkClassName}
+    />
+  ) : null;
 
   const appTitle = config?.appTitle ?? 'AI Workforce Pro';
   const appUrl = 'https://smbteam.com';

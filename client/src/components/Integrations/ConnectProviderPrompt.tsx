@@ -79,11 +79,7 @@ export function ConnectProviderPrompt({
             >
               {localize('com_ui_cancel')}
             </Button>
-            <Button
-              variant="submit"
-              onClick={onConnect}
-              disabled={isConnecting || isDisconnecting}
-            >
+            <Button variant="submit" onClick={onConnect} disabled={isConnecting || isDisconnecting}>
               {isConnecting ? (
                 <>
                   <Spinner className="mr-2 h-4 w-4" />

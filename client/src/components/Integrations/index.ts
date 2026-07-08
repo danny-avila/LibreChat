@@ -2,6 +2,7 @@ export { buildAttachIntegrationMenuItems } from './buildAttachIntegrationMenuIte
 export { IntegrationProviderIcon } from './IntegrationProviderIcon';
 export { ConnectProviderPrompt } from './ConnectProviderPrompt';
 export { IntegrationStatusChip } from './IntegrationStatusChip';
+export { default as IntegrationsPanel } from './IntegrationsPanel';
 export {
   INTEGRATION_ATTACH_MENU,
   INTEGRATION_ATTACH_PROVIDER_KEYS,

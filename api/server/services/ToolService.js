@@ -513,6 +513,7 @@ const nativeTools = new Set([
   Tools.microsoft_calendar,
   Tools.dropbox,
   Tools.clio,
+  Tools.quickbooks,
 ]);
 
 /** Checks if a tool name is a known built-in tool */

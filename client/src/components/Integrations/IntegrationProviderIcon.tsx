@@ -5,8 +5,9 @@ import {
   SiGmail,
   SiGooglecalendar,
   SiGoogledrive,
+  SiQuickbooks,
 } from '@icons-pack/react-simple-icons';
-import { Briefcase, LayoutGrid } from 'lucide-react';
+import { Briefcase, LayoutGrid, Receipt } from 'lucide-react';
 import type { IntegrationProviderKey } from 'librechat-data-provider';
 import { cn } from '~/utils';
 
@@ -30,6 +31,7 @@ const SIMPLE_ICONS: Partial<Record<IntegrationProviderKey, SimpleIconComponent>>
 const FALLBACK_ICONS: Partial<Record<IntegrationProviderKey, LucideIconComponent>> = {
   microsoft: LayoutGrid,
   clio: Briefcase,
+  quickbooks: Receipt,
 };
 
 interface IntegrationProviderIconProps {
@@ -41,6 +43,17 @@ export function IntegrationProviderIcon({
   providerKey,
   className = 'size-4',
 }: IntegrationProviderIconProps) {
+  if (providerKey === 'quickbooks') {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn('inline-flex shrink-0 items-center justify-center', className)}
+      >
+        <SiQuickbooks color="default" size={16} className="h-full w-full" />
+      </span>
+    );
+  }
+
   const SimpleIcon = SIMPLE_ICONS[providerKey];
   if (SimpleIcon) {
     return (

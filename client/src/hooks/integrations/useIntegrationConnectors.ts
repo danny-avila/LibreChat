@@ -16,6 +16,7 @@ export function useIntegrationConnectors(enabled: boolean): IntegrationConnector
   const dropbox = useNangoConnect({ providerKey: 'dropbox', enabled });
   const box = useNangoConnect({ providerKey: 'box', enabled });
   const clio = useNangoConnect({ providerKey: 'clio', enabled });
+  const quickbooks = useNangoConnect({ providerKey: 'quickbooks', enabled });
 
   return useMemo(
     () => ({
@@ -26,7 +27,8 @@ export function useIntegrationConnectors(enabled: boolean): IntegrationConnector
       dropbox,
       box,
       clio,
+      quickbooks,
     }),
-    [googleDrive, googleMail, googleCalendar, microsoft, dropbox, box, clio],
+    [googleDrive, googleMail, googleCalendar, microsoft, dropbox, box, clio, quickbooks],
   );
 }

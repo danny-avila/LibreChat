@@ -9,4 +9,5 @@ export const INTEGRATION_LABEL_KEYS: Partial<Record<IntegrationProviderKey, stri
   dropbox: 'com_integrations_dropbox',
   box: 'com_integrations_box',
   clio: 'com_integrations_clio',
+  quickbooks: 'com_integrations_quickbooks',
 };
