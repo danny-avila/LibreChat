@@ -193,6 +193,35 @@ describe('createSubagentLoader', () => {
     expect(skippedAgentIds.has('FORBIDDEN')).toBe(true);
   });
 
+  it('/v1 ACL: enforces VIEW at DEPTH 2 — denies a GRANDCHILD subagent (A -> B -> FORBIDDEN)', async () => {
+    // Gate-2 #202: prove the ACL fires at every BFS depth, not just depth 0.
+    // A's child B is allowed; B's child FORBIDDEN is denied. A future refactor
+    // of resolveSubagentTrees that short-circuited deep nodes would break this.
+    const A = makeConfig('A', ['B']);
+    const map: Record<string, SubagentConfigLike> = {
+      B: makeConfig('B', ['FORBIDDEN']),
+      FORBIDDEN: makeConfig('FORBIDDEN', []),
+    };
+    const rawAgents: Record<string, Agent> = {
+      B: { id: 'B', _id: 'mongo-B' } as unknown as Agent,
+      FORBIDDEN: { id: 'FORBIDDEN', _id: 'mongo-FORBIDDEN' } as unknown as Agent,
+    };
+    const skippedAgentIds = new Set<string>();
+    const { loader } = makeLoader(A, map, {
+      getAgent: async ({ id }) => rawAgents[id] ?? null,
+      // deny only the grandchild
+      checkSubagentAccess: async (agent) => agent._id !== 'mongo-FORBIDDEN',
+      skippedAgentIds,
+    });
+
+    await loader.resolveSubagentTrees([A]);
+
+    // B (depth 1) loads; FORBIDDEN (depth 2, B's child) is ACL-denied.
+    expect(A.subagentAgentConfigs?.map((c) => c.id)).toEqual(['B']);
+    expect(map.B.subagentAgentConfigs).toEqual([]);
+    expect(skippedAgentIds.has('FORBIDDEN')).toBe(true);
+  });
+
   it('/v1 ACL: skips an orphaned subagent reference (getAgent returns null)', async () => {
     const A = makeConfig('A', ['GONE']);
     const skippedAgentIds = new Set<string>();
