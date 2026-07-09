@@ -18,12 +18,18 @@ const {
   createSafeUser,
   initializeAgent,
   loadSkillStates,
+  encodeAndFormatDocuments,
+  filterFilesByEndpointConfig,
+  getEndpointFileLimit,
   getBalanceConfig,
   injectSkillPrimes,
   extractManualSkills,
   recordCollectedUsage,
   createSubagentUsageSink,
   getTransactionsConfig,
+  extractRemoteAgentResponseFiles,
+  attachDocumentsToMessageContent,
+  remoteInlineFileMarkerPrefix,
   findPiiMatchInMessages,
   discoverConnectedAgents,
   createToolExecuteHandler,
@@ -68,10 +74,27 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+
+const standardFilePolicyEndpoints = new Set([
+  EModelEndpoint.agents,
+  EModelEndpoint.openAI,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.anthropic,
+  EModelEndpoint.google,
+  EModelEndpoint.bedrock,
+]);
+
+function resolveFilePolicyEndpointType(endpoint, provider) {
+  if (endpoint && !standardFilePolicyEndpoints.has(endpoint)) {
+    return EModelEndpoint.custom;
+  }
+  return provider ?? endpoint;
+}
 
 /**
  * Creates a tool loader function for the agent.
@@ -108,12 +131,42 @@ function createToolLoader(signal, definitionsOnly = true) {
 }
 
 /**
- * Convert Open Responses input items to internal messages
- * @param {import('@librechat/api').InputItem[]} input
- * @returns {Array} Internal messages
+ * Builds the Responses `store: true` input-message copy.
+ * Provider document blocks and internal inline-file markers are request-scoped;
+ * only a readable placeholder should be persisted for conversation replay.
  */
-function convertToInternalMessages(input) {
-  return convertInputToMessages(input);
+function cloneMessagesForStorage(messages, inlineProviderFiles = []) {
+  const inlineFileNamesById = new Map(
+    inlineProviderFiles.map((file) => [file.file_id, file.filename]),
+  );
+
+  return messages.map((message) => {
+    if (!Array.isArray(message?.content)) {
+      return { ...message };
+    }
+
+    const content = message.content
+      .filter((part) => part?.type !== 'document')
+      .map((part) => {
+        if (part?.type !== 'text' || typeof part.text !== 'string') {
+          return part;
+        }
+
+        const text = part.text.trim();
+        if (!text.startsWith(remoteInlineFileMarkerPrefix)) {
+          return part;
+        }
+
+        const fileId = text.slice(remoteInlineFileMarkerPrefix.length);
+        const filename = inlineFileNamesById.get(fileId);
+        /** Store a stable user-facing reference instead of leaking the private marker. */
+        return { ...part, text: filename ? `[File: ${filename}]` : '' };
+      })
+      /** Drop unmatched markers rather than saving implementation details. */
+      .filter((part) => !(part?.type === 'text' && part.text === ''));
+
+    return { ...message, content };
+  });
 }
 
 /**
@@ -336,6 +389,22 @@ const createResponse = async (req, res) => {
   });
 
   try {
+    /**
+     * Pull request-scoped `input_file` parts into transient LibreChat-style file
+     * records. The returned input keeps private placeholders so conversion to
+     * internal messages can preserve file positions.
+     */
+    const { value: remoteInput, files: inlineProviderFiles } = extractRemoteAgentResponseFiles(
+      request.input,
+      req.user?.id,
+    );
+
+    if (inlineProviderFiles.length > 0) {
+      logger.debug(
+        `[Responses API] Detected ${inlineProviderFiles.length} remote inline provider file(s) for agent ${agentId}: ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
+      );
+    }
+
     if (request.previous_response_id != null) {
       if (typeof request.previous_response_id !== 'string') {
         return sendResponsesErrorResponse(
@@ -602,9 +671,105 @@ const createResponse = async (req, res) => {
     }
 
     // Convert input to internal messages
-    const inputMessages = convertToInternalMessages(
-      typeof request.input === 'string' ? request.input : request.input,
-    );
+    const inputMessages = convertInputToMessages(remoteInput);
+    /** Keep storage separate from provider attachment to avoid saving transient document payloads. */
+    const inputMessagesForStorage = cloneMessagesForStorage(inputMessages, inlineProviderFiles);
+
+    if (inlineProviderFiles.length > 0) {
+      const endpoint = primaryConfig.endpoint ?? agent.provider;
+      const provider = primaryConfig.provider ?? agent.provider;
+      const endpointType = resolveFilePolicyEndpointType(endpoint, provider);
+      const modelUsesResponsesApi = primaryConfig.model_parameters?.useResponsesApi === true;
+
+      /** Enforce the UI-facing count limit here because the shared file filter does not. */
+      const fileLimit = getEndpointFileLimit(req, { endpoint, endpointType });
+      if (Number.isFinite(fileLimit) && inlineProviderFiles.length > fileLimit) {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'Too many file inputs were provided for the configured file upload settings.',
+          'invalid_request',
+          'too_many_files',
+        );
+      }
+
+      /**
+       * Reuse LibreChat's endpoint file policy for disabled, MIME, per-file size,
+       * and total-size checks. Remote inline files are rejected as a whole instead
+       * of silently dropping any requested file.
+       */
+      const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
+        files: inlineProviderFiles,
+        endpoint,
+        endpointType,
+      });
+      if (filteredInlineProviderFiles.length !== inlineProviderFiles.length) {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not allowed by the configured file upload settings.',
+          'invalid_request',
+          'unsupported_file',
+        );
+      }
+
+      if (
+        (provider === EModelEndpoint.openAI || provider === EModelEndpoint.azureOpenAI) &&
+        !modelUsesResponsesApi
+      ) {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'File inputs with OpenAI or Azure OpenAI agent backends require the agent configuration to have Use Responses API enabled.',
+          'invalid_request',
+          'responses_api_required',
+        );
+      }
+
+      /** Attach provider document blocks to the same latest user message that carried the file parts. */
+      let latestUserMessage;
+      for (let i = inputMessages.length - 1; i >= 0; i--) {
+        if (inputMessages[i]?.role === 'user') {
+          latestUserMessage = inputMessages[i];
+          break;
+        }
+      }
+
+      /** Format before stream setup so validation failures can still return a JSON 400. */
+      const documentResult = await encodeAndFormatDocuments(
+        req,
+        inlineProviderFiles,
+        {
+          provider,
+          endpoint,
+          useResponsesApi: modelUsesResponsesApi,
+          model: primaryConfig.model || agent.model_parameters?.model,
+        },
+        getStrategyFunctions,
+      );
+
+      if (documentResult.documents.length !== inlineProviderFiles.length) {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not supported by the configured provider.',
+          'invalid_request',
+          'unsupported_file',
+        );
+      }
+
+      if (latestUserMessage && documentResult.documents.length > 0) {
+        attachDocumentsToMessageContent(
+          latestUserMessage,
+          documentResult.documents,
+          `Attached file(s): ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
+        );
+      }
+
+      logger.debug(
+        `[Responses API] Attached ${documentResult.documents.length} provider document block(s) for ${inlineProviderFiles.length} remote inline file(s) on agent ${agentId}`,
+      );
+    }
 
     const piiHit = findPiiMatchInMessages(inputMessages, appConfig?.messageFilter?.pii);
     if (piiHit != null) {
@@ -852,7 +1017,7 @@ const createResponse = async (req, res) => {
           await saveConversation(req, conversationId, agentId, agent);
 
           // Save input messages
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
+          await saveInputMessages(req, conversationId, inputMessagesForStorage, agentId);
 
           // Build response for saving (use tracker with buildResponse for streaming)
           const finalResponse = buildResponse(context, tracker, 'completed');
@@ -1029,7 +1194,7 @@ const createResponse = async (req, res) => {
         try {
           await saveConversation(req, conversationId, agentId, agent);
 
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
+          await saveInputMessages(req, conversationId, inputMessagesForStorage, agentId);
 
           await saveResponseOutput(req, conversationId, responseId, response, agentId);
 
@@ -1060,9 +1225,10 @@ const createResponse = async (req, res) => {
       res.end();
     } else {
       // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const errorStatus = error?.status ?? error?.statusCode;
       const statusCode =
-        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
-          ? error.status
+        typeof errorStatus === 'number' && errorStatus >= 400 && errorStatus < 600
+          ? errorStatus
           : 500;
       const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
       sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);

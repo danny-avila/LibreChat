@@ -199,7 +199,17 @@ const startServer = async () => {
   /* Middleware */
   app.use(metricsMiddleware);
   app.use(noIndex);
-  app.use(express.json({ limit: '3mb' }));
+  const jsonParser = express.json({ limit: '3mb' });
+  app.use((req, res, next) => {
+    const pathname = new URL(req.originalUrl, 'http://localhost').pathname;
+    const isRemoteAgentJsonRequest =
+      req.method === 'POST' &&
+      /(?:^|\/)api\/agents\/v1\/(?:responses|chat\/completions)\/?$/.test(pathname);
+    if (isRemoteAgentJsonRequest) {
+      return next();
+    }
+    return jsonParser(req, res, next);
+  });
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(handleJsonParseError);
 

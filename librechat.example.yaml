@@ -428,6 +428,11 @@ endpoints:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  #   # (optional) Remote Agent API settings
+  #   remoteApi:
+  #     # Max JSON body size for authenticated Remote Agent API requests with inline provider files.
+  #     # Uses Express size syntax. Defaults to 64mb.
+  #     requestBodyLimit: 64mb
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy

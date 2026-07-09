@@ -17,11 +17,26 @@ import type { Request, Response, NextFunction } from 'express';
  * app.use(handleJsonParseError);
  */
 export function handleJsonParseError(
-  err: Error & { status?: number; body?: unknown },
+  err: Error & { status?: number; body?: unknown; type?: string; limit?: number },
   req: Request,
   res: Response,
   next: NextFunction,
 ): void {
+  if (err.status === 413 && err.type === 'entity.too.large') {
+    logger.warn('[JSON Parse Error] Request body too large', {
+      path: req.path,
+      method: req.method,
+      ip: req.ip,
+      limit: err.limit,
+    });
+
+    res.status(413).json({
+      error: 'Request body too large',
+      message: 'The request body exceeds the configured size limit',
+    });
+    return;
+  }
+
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     logger.warn('[JSON Parse Error] Invalid JSON received', {
       path: req.path,

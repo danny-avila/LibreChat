@@ -8,6 +8,7 @@ export * from './contact';
 export * from './context';
 export * from './discovery';
 export * from './edges';
+export * from './files';
 export * from './handlers';
 export * from './initialize';
 export * from './legacy';

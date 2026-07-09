@@ -1,5 +1,5 @@
-import { handleJsonParseError } from './json';
 import type { Request, Response, NextFunction } from 'express';
+import { handleJsonParseError } from './json';
 
 describe('handleJsonParseError', () => {
   let req: Partial<Request>;
@@ -84,6 +84,40 @@ describe('handleJsonParseError', () => {
   });
 
   describe('non-JSON errors', () => {
+    it('should handle body-parser entity.too.large errors with 413', () => {
+      const err = new Error('request entity too large') as Error & {
+        status?: number;
+        type?: string;
+        limit?: number;
+      };
+      err.status = 413;
+      err.type = 'entity.too.large';
+      err.limit = 1024;
+
+      handleJsonParseError(err, req as Request, res as Response, next);
+
+      expect(statusSpy).toHaveBeenCalledWith(413);
+      expect(jsonSpy).toHaveBeenCalledWith({
+        error: 'Request body too large',
+        message: 'The request body exceeds the configured size limit',
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('should pass through unrelated 413 errors', () => {
+      const err = new Error('payload rejected') as Error & {
+        status?: number;
+        type?: string;
+      };
+      err.status = 413;
+      err.type = 'custom.limit';
+
+      handleJsonParseError(err, req as Request, res as Response, next);
+
+      expect(next).toHaveBeenCalledWith(err);
+      expect(statusSpy).not.toHaveBeenCalled();
+    });
+
     it('should pass through non-SyntaxError errors', () => {
       const err = new Error('Some other error');
 
