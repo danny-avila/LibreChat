@@ -25,6 +25,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  TAgentsEndpoint,
   AgentModelParameters,
   AgentSubagentsConfig,
   ReasoningResponseKey,
@@ -47,6 +48,7 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
+import { resolveSubagentMaxTurns } from '~/agents/config';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
@@ -816,6 +818,7 @@ function buildSubagentConfigs(
   agentInput: AgentInputs,
   toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
   state: SubagentBuildState,
+  agentsEConfig: Partial<TAgentsEndpoint> | undefined,
   ancestors: Set<string> = new Set(),
   depth = 0,
 ): SubagentConfig[] {
@@ -834,6 +837,8 @@ function buildSubagentConfigs(
       type: SELF_SUBAGENT_TYPE,
       name: selfName,
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
+      /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
+      maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
     });
   }
 
@@ -882,6 +887,7 @@ function buildSubagentConfigs(
       childInputs,
       toInput,
       state,
+      agentsEConfig,
       nextAncestors,
       childDepth,
     );
@@ -895,6 +901,8 @@ function buildSubagentConfigs(
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
+      /** Honor each child agent's own resolved recursion limit. */
+      maxTurns: resolveSubagentMaxTurns(agentsEConfig, child),
     });
   }
 
@@ -1213,6 +1221,8 @@ export async function createRun({
     return agentInput;
   };
 
+  const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+
   const agentInputs: AgentInputs[] = [];
   const subagentBuildState: SubagentBuildState = {
     configCount: 0,
@@ -1225,6 +1235,7 @@ export async function createRun({
       agentInput,
       buildAgentInput,
       subagentBuildState,
+      agentsEndpointConfig,
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
@@ -1271,7 +1282,6 @@ export async function createRun({
    * and the resume route). When disabled, nothing attaches and the run is identical
    * to before this feature shipped.
    */
-  const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
   // Resolve the effective policy through the single seam so per-agent / per-skill
   // sources can layer in later without touching this call site (see
   // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
