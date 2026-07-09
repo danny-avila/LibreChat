@@ -56,7 +56,13 @@ const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
 const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
 const EXECUTE_CODE_MARKER = 'E2E_EXECUTE_CODE:';
 const FILE_SEARCH_MARKER = 'E2E_FILE_SEARCH:';
-const EXECUTE_CODE_TOOL_NAME = 'execute_code';
+/** Code Interpreter advertises bash_tool/read_file at runtime (execute_code is legacy);
+ *  emit whichever the agent actually exposes so the tool batch — and provisioning — fires. */
+const CODE_EXEC_TOOLS = [
+  { name: 'bash_tool', args: { command: 'echo e2e' } },
+  { name: 'read_file', args: { path: '/mnt/data' } },
+  { name: 'execute_code', args: { lang: 'py', code: 'print("e2e")' } },
+];
 const FILE_SEARCH_TOOL_NAME = 'file_search';
 const EXECUTE_CODE_FINAL_TEXT = 'E2E execute_code complete';
 const FILE_SEARCH_FINAL_TEXT = 'E2E file_search complete';
@@ -758,14 +764,14 @@ function backgroundCollectResponses(messages, toolNames) {
 function provisioningToolResponses({ text, toolNames }) {
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
   if (codeLabel) {
-    console.warn(
-      `[e2e-diag fake-model] execute_code marker; advertised=${toolNames.has(
-        EXECUTE_CODE_TOOL_NAME,
-      )} tools=${JSON.stringify([...toolNames])}`,
-    );
-    if (!toolNames.has(EXECUTE_CODE_TOOL_NAME)) {
+    const codeTool = CODE_EXEC_TOOLS.find((tool) => toolNames.has(tool.name));
+    if (!codeTool) {
       return {
-        responses: [`E2E execute_code unavailable: ${EXECUTE_CODE_TOOL_NAME} was not advertised.`],
+        responses: [
+          `E2E execute_code unavailable: no code-execution tool advertised (saw ${
+            JSON.stringify([...toolNames]) || 'none'
+          }).`,
+        ],
       };
     }
     return {
@@ -773,8 +779,8 @@ function provisioningToolResponses({ text, toolNames }) {
       toolCalls: [
         {
           id: EXECUTE_CODE_TOOL_CALL_ID,
-          name: EXECUTE_CODE_TOOL_NAME,
-          args: { lang: 'py', code: 'print("e2e")' },
+          name: codeTool.name,
+          args: codeTool.args,
           type: 'tool_call',
         },
       ],
