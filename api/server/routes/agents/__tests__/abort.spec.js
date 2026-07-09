@@ -121,7 +121,10 @@ describe('Agent Abort Endpoint', () => {
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual({ success: true, aborted: jobStreamId });
-        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(jobStreamId);
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+          jobStreamId,
+          expect.objectContaining({ transformAbortContent: expect.any(Function) }),
+        );
       });
 
       it('should allow abort when job has no userId metadata (backwards compatibility)', async () => {
@@ -327,6 +330,56 @@ describe('Agent Abort Endpoint', () => {
         );
       });
 
+      it('stamps a paused ask_user_question via transformAbortContent, before the final SSE emits', async () => {
+        const jobStreamId = 'test-stream-123';
+        const question = { question: 'Deploy where?', options: [{ label: 'Prod', value: 'prod' }] };
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: {
+            userId: 'test-user-123',
+            pendingAction: { payload: { type: 'ask_user_question', question } },
+          },
+        });
+
+        // abortJob applies the transform; capture it and echo the transformed
+        // content back as the result, mirroring the real (Redis) reconstruction
+        // where the ask tool_call arrives with empty args.
+        let capturedTransform;
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          capturedTransform = options?.transformAbortContent;
+          const rawContent = [
+            { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
+          ];
+          const content = capturedTransform ? capturedTransform(rawContent) : rawContent;
+          return {
+            success: true,
+            jobData: {
+              userMessage: { messageId: 'user-msg-123' },
+              responseMessageId: 'response-msg-456',
+              conversationId: jobStreamId,
+            },
+            content,
+            text: '',
+          };
+        });
+
+        mockSaveMessage.mockResolvedValue();
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        expect(capturedTransform).toEqual(expect.any(Function));
+        // The saved (and, in prod, emitted) content carries the stamped args.
+        // saveMessage(reqLike, responseMessage, opts) — the message is arg #2.
+        const savedMessage = mockSaveMessage.mock.calls[0][1];
+        const askPart = savedMessage.content.find(
+          (p) => p?.tool_call?.name === 'ask_user_question',
+        );
+        expect(JSON.parse(askPart.tool_call.args)).toMatchObject({ question: 'Deploy where?' });
+      });
+
       it('should handle saveMessage errors gracefully', async () => {
         const jobStreamId = 'test-stream-123';
 
@@ -388,7 +441,10 @@ describe('Agent Abort Endpoint', () => {
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual({ success: true, aborted: 'running-stream' });
-        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith('running-stream');
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+          'running-stream',
+          expect.objectContaining({ transformAbortContent: expect.any(Function) }),
+        );
       });
 
       it('should not abort paused fallback jobs', async () => {

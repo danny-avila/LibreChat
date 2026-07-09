@@ -132,28 +132,44 @@ describe('computeToggleAction', () => {
 });
 
 describe('skillsEnabledTransition', () => {
-  test('adding the first skill turns the master flag on', () => {
-    expect(skillsEnabledTransition([], ['s1'], undefined)).toBe(true);
-    expect(skillsEnabledTransition([], ['s1'], false)).toBe(true);
+  test('a non-empty selection turns the master flag on when it is off', () => {
+    expect(skillsEnabledTransition(['s1'], undefined)).toBe(true);
+    expect(skillsEnabledTransition(['s1'], false)).toBe(true);
+    expect(skillsEnabledTransition(['s1', 's2'], false)).toBe(true);
   });
 
-  test('adding the first skill leaves an already-on flag alone', () => {
-    expect(skillsEnabledTransition([], ['s1'], true)).toBeUndefined();
+  test('a non-empty selection leaves an already-on flag alone', () => {
+    expect(skillsEnabledTransition(['s1'], true)).toBeUndefined();
+    expect(skillsEnabledTransition(['s1', 's2'], true)).toBeUndefined();
   });
 
-  test('removing the last skill turns the master flag off', () => {
-    expect(skillsEnabledTransition(['s1'], [], true)).toBe(false);
+  test('clearing the selection turns the master flag off', () => {
+    expect(skillsEnabledTransition([], true)).toBe(false);
   });
 
-  test('removing the last skill leaves an off flag alone', () => {
-    expect(skillsEnabledTransition(['s1'], [], false)).toBeUndefined();
-    expect(skillsEnabledTransition(['s1'], [], undefined)).toBeUndefined();
+  test('an empty selection leaves an off flag alone', () => {
+    expect(skillsEnabledTransition([], false)).toBeUndefined();
+    expect(skillsEnabledTransition([], undefined)).toBeUndefined();
   });
+});
 
-  test('edits within a non-empty selection never touch the flag', () => {
-    expect(skillsEnabledTransition(['s1'], ['s1', 's2'], true)).toBeUndefined();
-    expect(skillsEnabledTransition(['s1'], ['s1', 's2'], false)).toBeUndefined();
-    expect(skillsEnabledTransition(['s1', 's2'], ['s1'], true)).toBeUndefined();
-    expect(skillsEnabledTransition(['s1', 's2'], ['s1'], false)).toBeUndefined();
+describe('computeToggleAction — ask_user_question builtin', () => {
+  const item = {
+    kind: 'builtin',
+    id: 'ask_user_question',
+    iconKey: 'ask_user_question',
+    name: 'com_ui_ask_user',
+    description: 'com_agents_ask_user_info',
+  } as const;
+
+  test('toggles agent.tools, never a capability field', () => {
+    expect(computeToggleAction(item as never, { selected: false })).toEqual({
+      type: 'tool-add',
+      id: 'ask_user_question',
+    });
+    expect(computeToggleAction(item as never, { selected: true })).toEqual({
+      type: 'tool-remove',
+      id: 'ask_user_question',
+    });
   });
 });

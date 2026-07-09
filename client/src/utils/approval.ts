@@ -10,6 +10,13 @@ import type { Agents, TMessage, TMessageContentParts } from 'librechat-data-prov
  */
 export const ASK_USER_QUESTION = 'ask_user_question' as const;
 
+/**
+ * Answer sent when the user explicitly skips a question: the run must resume
+ * (a client-side dismiss would leave it paused until expiry — a hung turn),
+ * and the model needs to know the user declined rather than answered.
+ */
+export const ASK_USER_DECLINED_ANSWER = 'The user chose not to answer this question.';
+
 /** Shape of the synthetic content part carrying an ask-user pending action. */
 export interface AskUserQuestionPart {
   type: typeof ASK_USER_QUESTION;
@@ -25,7 +32,7 @@ export interface AskUserQuestionPart {
  * because `AskUserQuestionPart` isn't assignable to the strict
  * `TMessageContentParts` union).
  */
-const isAskUserQuestionPart = (part: TMessageContentParts | undefined): boolean =>
+export const isAskUserQuestionPart = (part: Partial<TMessageContentParts> | undefined): boolean =>
   (part as { type?: string } | undefined)?.type === ASK_USER_QUESTION &&
   part != null &&
   ASK_USER_QUESTION in part;
@@ -174,6 +181,228 @@ function applyAskUserQuestion(
     return { ...message, content: nextContent };
   }
   return { ...message, content: [...content, askPart] };
+}
+
+/**
+ * Parse an `ask_user_question` tool call's args into the question request shape.
+ * Args arrive as a JSON string on persisted messages (or an object mid-stream);
+ * malformed/empty args degrade to `null` so the caller can render a fallback
+ * label instead of crashing on model output.
+ */
+export function parseAskUserQuestionArgs(
+  args: string | Record<string, unknown> | undefined,
+): Agents.AskUserQuestionRequest | null {
+  let parsed: unknown = args;
+  if (typeof args === 'string') {
+    if (args.trim().length === 0) {
+      return null;
+    }
+    try {
+      parsed = JSON.parse(args);
+    } catch {
+      return null;
+    }
+  }
+  if (
+    parsed == null ||
+    typeof parsed !== 'object' ||
+    typeof (parsed as { question?: unknown }).question !== 'string'
+  ) {
+    return null;
+  }
+  const request = parsed as {
+    question: string;
+    description?: unknown;
+    options?: unknown;
+    multiSelect?: unknown;
+  };
+  /** Model/persisted args are untrusted — normalize instead of crashing the
+   *  message render on shapes like `options: {}` or non-string entries. */
+  const options = Array.isArray(request.options)
+    ? request.options.filter(
+        (option): option is Agents.AskUserQuestionOption =>
+          option != null &&
+          typeof (option as { label?: unknown }).label === 'string' &&
+          typeof (option as { value?: unknown }).value === 'string',
+      )
+    : undefined;
+  return {
+    question: request.question,
+    description: typeof request.description === 'string' ? request.description : undefined,
+    options: options && options.length > 0 ? options : undefined,
+    multiSelect: request.multiSelect === true ? true : undefined,
+  };
+}
+
+/**
+ * Removes the synthetic ask-user-question part for `actionId` from a message.
+ * Pure — returns the same message reference when nothing matched.
+ *
+ * Called when the answer submits successfully: the card is pause-scoped UI, and
+ * once the run resumes the server streams new content parts at ABSOLUTE indices
+ * continuing after the pre-pause parts — exactly the slot the appended synthetic
+ * part occupies. Left in place, it blocks the incoming part at that index and
+ * the resumed segment doesn't render until finalize replaces the message.
+ */
+export function removeAskUserQuestionPart(message: TMessage, actionId: string): TMessage {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return message;
+  }
+  const nextContent = content.filter(
+    (part) =>
+      !(
+        isAskUserQuestionPart(part) &&
+        (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].actionId === actionId
+      ),
+  );
+  if (nextContent.length === content.length) {
+    return message;
+  }
+  return { ...message, content: nextContent };
+}
+
+/**
+ * Session-scoped record of answers the user has submitted, keyed by the ask
+ * tool_call id. Render-layer fallback for `AskUserQuestionCall`: the SSE
+ * step handler evolves its own cached copy of the streaming message, so a
+ * store-level `output` stamp can be overwritten by the next streamed event —
+ * this survives any message-copy churn until finalize delivers the
+ * server-stamped part. Written by {@link resolveAskUserQuestionPart}.
+ */
+const submittedAskAnswers = new Map<string, string>();
+
+/** The locally-submitted answer for an ask tool_call, if any. */
+export function getSubmittedAskAnswer(toolCallId: string | undefined): string | undefined {
+  return toolCallId ? submittedAskAnswers.get(toolCallId) : undefined;
+}
+
+/**
+ * Resolve an answered ask-user-question pause on the client, mirroring the
+ * server's resume-time stamp so the durable Q&A card shows the answer the
+ * moment the user submits (the server-patched part otherwise only arrives at
+ * finalize): removes the synthetic card part for `actionId` AND patches the
+ * newest unanswered `ask_user_question` tool_call with `output = answer`
+ * (seeding `args` from the synthetic part's question when the streamed args
+ * were lost). Pure — returns the input message when nothing matched.
+ */
+export function resolveAskUserQuestionPart(
+  message: TMessage,
+  actionId: string,
+  answer: string,
+): TMessage {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return message;
+  }
+  const syntheticPart = content.find(
+    (part) =>
+      isAskUserQuestionPart(part) &&
+      (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].actionId === actionId,
+  ) as unknown as AskUserQuestionPart | undefined;
+  if (!syntheticPart) {
+    return message;
+  }
+
+  let patched = false;
+  const nextContent: TMessageContentParts[] = [];
+  for (const part of content) {
+    if (
+      isAskUserQuestionPart(part) &&
+      (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].actionId === actionId
+    ) {
+      continue; // strip the pause-scoped card
+    }
+    nextContent.push(part);
+  }
+  for (let i = nextContent.length - 1; i >= 0; i--) {
+    const part = nextContent[i] as { type?: string; tool_call?: Agents.ToolCall } | undefined;
+    const toolCall = part?.tool_call;
+    if (
+      part?.type !== ContentTypes.TOOL_CALL ||
+      toolCall?.name !== ASK_USER_QUESTION ||
+      (typeof toolCall.output === 'string' && toolCall.output.length > 0)
+    ) {
+      continue;
+    }
+    const hasArgs =
+      (typeof toolCall.args === 'string' && toolCall.args.trim().length > 0) ||
+      (toolCall.args != null && typeof toolCall.args === 'object');
+    nextContent[i] = {
+      ...(part as object),
+      tool_call: {
+        ...toolCall,
+        ...(hasArgs ? {} : { args: JSON.stringify(syntheticPart[ASK_USER_QUESTION].question) }),
+        output: answer,
+        progress: 1,
+      },
+    } as TMessageContentParts;
+    if (typeof toolCall.id === 'string' && toolCall.id.length > 0) {
+      submittedAskAnswers.set(toolCall.id, answer);
+    }
+    patched = true;
+    break;
+  }
+
+  if (!patched && nextContent.length === content.length) {
+    return message;
+  }
+  return { ...message, content: nextContent };
+}
+
+/**
+ * Splits a model-supplied catch-all "Other"-style option away from the real
+ * choices. The answer UI always renders its own inline free-form row, so a
+ * model option like "Other (type your own)" would duplicate it — instead its
+ * label becomes the inline input's placeholder. Conservative match: value
+ * `other` (the shape the tool description used to suggest) or a label that
+ * reads as a free-form invitation.
+ */
+export function splitOtherOption(options: Agents.AskUserQuestionOption[] | undefined): {
+  choices: Agents.AskUserQuestionOption[];
+  otherLabel?: string;
+} {
+  const list = options ?? [];
+  const isOther = (option: Agents.AskUserQuestionOption): boolean =>
+    option.value.trim().toLowerCase() === 'other' ||
+    /^other\b|something else|type (my|your) own|free[- ]?form/i.test(option.label);
+  const otherOption = [...list].reverse().find(isOther);
+  if (!otherOption) {
+    return { choices: list };
+  }
+  return {
+    choices: list.filter((option) => option !== otherOption),
+    otherLabel: otherOption.label,
+  };
+}
+
+/**
+ * Finds the live (unanswered) ask-user-question pause across a conversation's
+ * messages — the newest synthetic part wins. Drives the composer popover: the
+ * part exists exactly while a pause is live (applied on `on_pending_action`,
+ * stripped when the answer submits), so its presence IS the popover signal.
+ */
+export function findLiveAskUserQuestion(
+  messages: TMessage[] | null | undefined,
+): { actionId: string; question: Agents.AskUserQuestionRequest; messageId: string } | null {
+  if (!Array.isArray(messages)) {
+    return null;
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    const content = message?.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (let j = content.length - 1; j >= 0; j--) {
+      const part = content[j];
+      if (isAskUserQuestionPart(part)) {
+        const ask = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION];
+        return { actionId: ask.actionId, question: ask.question, messageId: message.messageId };
+      }
+    }
+  }
+  return null;
 }
 
 /**

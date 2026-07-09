@@ -14,6 +14,7 @@ const {
   FileSources,
   ResourceType,
   EModelEndpoint,
+  EToolResources,
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
@@ -29,13 +30,22 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
 
 const router = express.Router();
+const AGENT_TOOL_RESOURCE_KEYS = new Set([
+  EToolResources.execute_code,
+  EToolResources.file_search,
+  EToolResources.image_edit,
+  EToolResources.context,
+  EToolResources.ocr,
+]);
+
+const isAgentToolResourceKey = (toolResource) =>
+  typeof toolResource === 'string' && AGENT_TOOL_RESOURCE_KEYS.has(toolResource);
 
 router.get('/', async (req, res) => {
   try {
@@ -94,20 +104,20 @@ router.get('/agent/:agent_id', async (req, res) => {
       }
     }
 
-    const agentFileIds = [];
+    const agentFileIds = new Set();
     if (agent.tool_resources) {
       for (const [, resource] of Object.entries(agent.tool_resources)) {
         if (resource?.file_ids && Array.isArray(resource.file_ids)) {
-          agentFileIds.push(...resource.file_ids);
+          resource.file_ids.forEach((fileId) => agentFileIds.add(fileId));
         }
       }
     }
 
-    if (agentFileIds.length === 0) {
+    if (agentFileIds.size === 0) {
       return res.status(200).json([]);
     }
 
-    const files = await db.getFiles({ file_id: { $in: agentFileIds }, user: agent.author }, null, {
+    const files = await db.getFiles({ file_id: { $in: [...agentFileIds] } }, null, {
       text: 0,
     });
 
@@ -156,6 +166,52 @@ router.delete('/', async (req, res) => {
     const fileIds = files.map((file) => file.file_id);
     const dbFiles = await db.getFiles({ file_id: { $in: fileIds } });
 
+    if (req.body.agent_id && req.body.tool_resource) {
+      if (!isAgentToolResourceKey(req.body.tool_resource)) {
+        return res.status(400).json({ message: 'Invalid agent tool resource' });
+      }
+
+      const agent = await db.getAgent({
+        id: req.body.agent_id,
+      });
+
+      if (!agent) {
+        return res.status(404).json({ message: 'Agent not found' });
+      }
+
+      const hasAgentEditAccess =
+        agent.author?.toString() === req.user.id.toString() ||
+        (await checkPermission({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          requiredPermission: PermissionBits.EDIT,
+        }));
+      if (!hasAgentEditAccess) {
+        return res.status(403).json({
+          message: 'You can only delete files you have access to',
+          unauthorizedFiles: files.map((file) => file.file_id),
+        });
+      }
+
+      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const agentFiles = files
+        .filter((f) => toolResourceFiles.includes(f.file_id))
+        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
+      if (agentFiles.length === 0) {
+        res.status(200).json({ message: 'File associations removed successfully from agent' });
+        return;
+      }
+
+      await db.removeAgentResourceFiles({
+        agent_id: req.body.agent_id,
+        files: agentFiles,
+      });
+      res.status(200).json({ message: 'File associations removed successfully from agent' });
+      return;
+    }
+
     const ownedFiles = [];
     const nonOwnedFiles = [];
 
@@ -179,71 +235,14 @@ router.delete('/', async (req, res) => {
       return;
     }
 
-    let authorizedFiles = [...ownedFiles];
-    let unauthorizedFiles = [];
-
-    if (req.body.agent_id && nonOwnedFiles.length > 0) {
-      const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
-      const accessMap = await hasAccessToFilesViaAgent({
-        userId: req.user.id,
-        role: req.user.role,
-        fileIds: nonOwnedFileIds,
-        agentId: req.body.agent_id,
-        isDelete: true,
-        files: nonOwnedFiles,
-      });
-
-      for (const file of nonOwnedFiles) {
-        if (accessMap.get(file.file_id)) {
-          authorizedFiles.push(file);
-        } else {
-          unauthorizedFiles.push(file);
-        }
-      }
-    } else {
-      unauthorizedFiles = nonOwnedFiles;
-    }
+    const authorizedFiles = [...ownedFiles];
+    const unauthorizedFiles = nonOwnedFiles;
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete files you have access to',
+        message: 'You can only delete files you own',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
-    }
-
-    /* Handle agent unlinking even if no valid files to delete */
-    if (req.body.agent_id && req.body.tool_resource && dbFiles.length === 0) {
-      const agent = await db.getAgent({
-        id: req.body.agent_id,
-      });
-
-      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
-      const agentFiles = files
-        .filter((f) => toolResourceFiles.includes(f.file_id))
-        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
-      const hasAgentEditAccess =
-        agent.author?.toString() === req.user.id.toString() ||
-        (await checkPermission({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.AGENT,
-          resourceId: agent._id,
-          requiredPermission: PermissionBits.EDIT,
-        }));
-      const unauthorizedFiles = hasAgentEditAccess ? [] : agentFiles;
-      if (unauthorizedFiles.length > 0) {
-        return res.status(403).json({
-          message: 'You can only delete files you have access to',
-          unauthorizedFiles: unauthorizedFiles.map((file) => file.file_id),
-        });
-      }
-
-      await db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      });
-      res.status(200).json({ message: 'File associations removed successfully from agent' });
-      return;
     }
 
     /* Handle assistant unlinking even if no valid files to delete */

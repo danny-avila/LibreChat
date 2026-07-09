@@ -23,6 +23,7 @@ import {
   SubagentCall,
 } from './Parts';
 import { getAskUserQuestionPart } from '~/utils/approval';
+import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
@@ -194,6 +195,17 @@ const Part = memo(function Part({
               output={toolCall.output ?? ''}
               attachments={attachments}
               hideAttachments={hideAttachments}
+            />
+          );
+        } else if (toolCall.name === 'ask_user_question') {
+          /** Dedicated Q&A record — the generic tool card would label the
+           *  interrupt-resolved call "cancelled" and dump raw JSON args. */
+          return (
+            <AskUserQuestionCall
+              args={toolCall.args}
+              output={typeof toolCall.output === 'string' ? toolCall.output : ''}
+              toolCallId={toolCall.id}
+              isSubmitting={isSubmitting}
             />
           );
         } else if (toolCall.name === 'skill') {

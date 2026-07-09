@@ -238,7 +238,113 @@ export const RESUME_CONTEXT_KEYS = [
   'manualSkills',
 ] as const;
 
-export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>>;
+export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>> & {
+  /** Resolved model params captured at pause (sanitized); replayed by the resume route. */
+  model_parameters?: Record<string, unknown>;
+};
+
+/** Exact (lowercased) parameter keys that carry credentials or server transport config. */
+const SENSITIVE_PARAM_KEYS = new Set([
+  'auth',
+  'authoptions',
+  'auth_options',
+  'token',
+  'accesstoken',
+  'access_token',
+  'refreshtoken',
+  'refresh_token',
+  'idtoken',
+  'id_token',
+  'sessiontoken',
+  'session_token',
+  'configuration',
+  'client',
+  'clientoptions',
+  'client_options',
+  'fetchoptions',
+  'fetch_options',
+  'fetch',
+  'httpagent',
+  'httpsagent',
+  'callbacks',
+  'endpointhost',
+  'endpoint_host',
+]);
+
+/** Key fragments matched anywhere in a (lowercased) key, e.g. `azureOpenAIApiKey`. */
+const SENSITIVE_PARAM_KEY_FRAGMENTS = [
+  'apikey',
+  'api_key',
+  'api-key',
+  'apiurl',
+  'api_url',
+  'api-url',
+  'secret',
+  'password',
+  'credential',
+  'authorization',
+  'azureopenai',
+  'header',
+  'proxy',
+  'baseurl',
+  'base_url',
+  'basepath',
+  'base_path',
+];
+
+function isSensitiveParamKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  if (SENSITIVE_PARAM_KEYS.has(normalized)) {
+    return true;
+  }
+  return SENSITIVE_PARAM_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment));
+}
+
+/** Bounded recursion guard for pathological / cyclic parameter graphs. */
+const MAX_SANITIZE_DEPTH = 8;
+
+function sanitizeParamValue(value: unknown, depth: number): unknown {
+  if (typeof value === 'function') {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return depth >= MAX_SANITIZE_DEPTH
+      ? undefined
+      : value.map((item) => sanitizeParamValue(item, depth + 1));
+  }
+  if (value != null && typeof value === 'object') {
+    if (depth >= MAX_SANITIZE_DEPTH) {
+      return undefined;
+    }
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (isSensitiveParamKey(key) || typeof child === 'function') {
+        continue;
+      }
+      sanitized[key] = sanitizeParamValue(child, depth + 1);
+    }
+    return sanitized;
+  }
+  return value;
+}
+
+/**
+ * Strip credentials and server transport config from resolved model parameters before
+ * they are persisted for resume replay. The initialized agent's `model_parameters` are
+ * the resolved `llmConfig` — they carry provider secrets (`apiKey`, Azure key names,
+ * Google `authOptions`, Bedrock `credentials`) and gateway config (`configuration`,
+ * headers, base URLs). Resume re-resolves all of those server-side from env/config, so
+ * only the user-level generation params (temperature, max tokens, custom endpoint
+ * params, …) need to survive the round trip.
+ */
+export function sanitizeResumeModelParameters(
+  params: unknown,
+): Record<string, unknown> | undefined {
+  if (params == null || typeof params !== 'object' || Array.isArray(params)) {
+    return undefined;
+  }
+  return sanitizeParamValue(params, 0) as Record<string, unknown>;
+}
 
 /** Extract the graph-determining fields from a request body for durable replay. */
 export function pickResumeContext(body: Record<string, unknown> | undefined | null): ResumeContext {
@@ -318,4 +424,50 @@ export function buildPendingAction(
     requestFingerprint: ctx.requestFingerprint,
     resumeContext: ctx.resumeContext,
   };
+}
+
+/**
+ * Client-facing projection of a pending action. `requestFingerprint` and `resumeContext`
+ * are server-only replay state — `resumeContext` in particular carries the resolved
+ * model parameters — so every copy that leaves the server (SSE, status, resume state)
+ * must go through this. The full record stays in the job store for the resume route.
+ */
+export function toClientPendingAction(
+  pendingAction: Agents.PendingAction | undefined | null,
+): Agents.PendingAction | undefined {
+  if (pendingAction == null) {
+    return undefined;
+  }
+  const {
+    requestFingerprint: _requestFingerprint,
+    resumeContext: _resumeContext,
+    ...clientSafe
+  } = pendingAction;
+  return clientSafe;
+}
+
+/**
+ * Exempt `ask_user_question` from the tool-approval prompt unless the admin
+ * mentioned it EXPLICITLY (in `allow`, `ask`, or `deny`). With approval enabled
+ * in its default prompt-everything mode, the ask tool would otherwise trigger
+ * an approval card for the act of asking a question — a double pause with no
+ * safety upside: the tool is side-effect-free by construction (it only asks;
+ * the payload is length-capped and rendered as text). An explicit admin entry
+ * still wins, in either direction.
+ */
+export function exemptAskUserQuestionFromApproval(
+  policy: TToolApprovalPolicy | undefined,
+  toolName: string,
+): TToolApprovalPolicy | undefined {
+  if (!policy) {
+    return policy;
+  }
+  const mentioned =
+    policy.allow?.includes(toolName) === true ||
+    policy.ask?.includes(toolName) === true ||
+    policy.deny?.includes(toolName) === true;
+  if (mentioned) {
+    return policy;
+  }
+  return { ...policy, allow: [...(policy.allow ?? []), toolName] };
 }

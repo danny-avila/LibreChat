@@ -1,15 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useToastContext } from '@librechat/client';
 import { ChevronLeft, Check, Copy } from 'lucide-react';
-import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { sectionLabelClass, groupHeadingClass } from './ui';
-import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers';
 import OrchestrationHub from './OrchestrationHub';
 import MaxAgentSteps from './MaxAgentSteps';
-import SkillsToggle from './SkillsToggle';
+import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
 export default function AdvancedPanel() {
@@ -19,7 +17,7 @@ export default function AdvancedPanel() {
   const currentAgentId = watch('id');
   const [copied, setCopied] = useState(false);
 
-  const { agentsConfig, setActivePanel } = useAgentPanelContext();
+  const { setActivePanel } = useAgentPanelContext();
 
   const handleCopyAgentId = async () => {
     if (!currentAgentId) return;
@@ -32,16 +30,6 @@ export default function AdvancedPanel() {
       showToast({ message: localize('com_ui_error'), status: 'error' });
     }
   };
-
-  const skillsEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.skills) ?? false,
-    [agentsConfig],
-  );
-  const hasSkillsAccess = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.USE,
-  });
-  const showSkillsKillSwitch = skillsEnabled && hasSkillsAccess;
 
   return (
     <div className="mb-1 flex w-full flex-col gap-4 text-sm">
@@ -64,7 +52,6 @@ export default function AdvancedPanel() {
         <section className="flex flex-col gap-3">
           <span className={groupHeadingClass}>{localize('com_ui_essentials')}</span>
           <MaxAgentSteps />
-          {showSkillsKillSwitch && <SkillsToggle />}
         </section>
 
         <OrchestrationHub currentAgentId={currentAgentId} />

@@ -3,7 +3,7 @@ const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
 const { getCachedTools } = require('~/server/services/Config');
-const { manifestToolMap } = require('~/app/clients/tools');
+const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
 const { updateAssistantDoc } = require('~/models');
 const { getOpenAIClient } = require('./helpers');
 
@@ -32,6 +32,15 @@ const createAssistant = async (req, res) => {
 
     assistantData.tools = tools
       .map((tool) => {
+        /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
+         *  the assistants runtime — drop them even when posted directly, since
+         *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
+        if (isAgentsOnlyTool(tool)) {
+          logger.warn(
+            `[/assistants] Dropping agents-only tool from assistant payload: ${typeof tool === 'string' ? tool : tool?.function?.name}`,
+          );
+          return undefined;
+        }
         if (typeof tool !== 'string') {
           return tool;
         }
@@ -125,6 +134,15 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
 
   let hasFileSearch = false;
   for (const tool of updateData.tools ?? []) {
+    /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
+     *  the assistants runtime — drop them even when posted directly, since
+     *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
+    if (isAgentsOnlyTool(tool)) {
+      logger.warn(
+        `[/assistants] Dropping agents-only tool from assistant payload: ${typeof tool === 'string' ? tool : tool?.function?.name}`,
+      );
+      continue;
+    }
     const toolDefinitions = (await getCachedTools()) ?? {};
     let actualTool = typeof tool === 'string' ? toolDefinitions[tool] : tool;
 

@@ -222,13 +222,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should allow deleting files accessible through shared agent', async () => {
-      // Create an agent with the file attached
+    it('should prevent physically deleting non-owned files accessible through shared agent', async () => {
       const agent = await createAgent({
         id: uuidv4(),
         name: 'Test Agent',
@@ -242,7 +241,6 @@ describe('File Routes - Delete with Agent Access', () => {
         },
       });
 
-      // Grant EDIT permission to user on the agent
       const { grantPermission } = require('~/server/services/PermissionService');
       await grantPermission({
         principalType: PrincipalType.USER,
@@ -265,12 +263,143 @@ describe('File Routes - Delete with Agent Access', () => {
           ],
         });
 
-      expect(response.status).toBe(200);
-      expect(response.body.message).toBe('Files deleted successfully');
-      expect(processDeleteRequest).toHaveBeenCalled();
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('You can only delete files you own');
+      expect(response.body.unauthorizedFiles).toContain(fileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files not owned by the agent author', async () => {
+    it('unlinks attached agent files without invoking storage deletion', async () => {
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [
+            {
+              file_id: fileId,
+              filepath: '/uploads/test.txt',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+    });
+
+    it('rejects invalid agent tool_resource values before unlinking', async () => {
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search.$pullAll',
+          files: [{ file_id: fileId, filepath: '/uploads/test.txt' }],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid agent tool resource');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([fileId]);
+    });
+
+    it('allows an agent author to unlink an editor-owned attached file', async () => {
+      const editorFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: editorFileId,
+        filename: 'editor-file.txt',
+        filepath: '/uploads/editor-file.txt',
+        bytes: 300,
+        type: 'text/plain',
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [editorFileId],
+          },
+        },
+      });
+
+      const authorApp = express();
+      authorApp.use(express.json());
+      authorApp.use((req, res, next) => {
+        req.user = {
+          id: authorId.toString(),
+          role: SystemRoles.USER,
+        };
+        req.app.locals = {};
+        next();
+      });
+      authorApp.use('/files', router);
+
+      const response = await request(authorApp)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: editorFileId, filepath: '/uploads/editor-file.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+
+      const retainedFile = await File.findOne({ file_id: editorFileId }).lean();
+      expect(retainedFile).toBeTruthy();
+    });
+
+    it('should prevent physically deleting attached files owned by another user', async () => {
       const thirdUserId = new mongoose.Types.ObjectId();
       const thirdUserFileId = uuidv4();
       await createFile({
@@ -318,12 +447,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(thirdUserFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files not attached to the specified agent', async () => {
+    it('should prevent physically deleting non-owned files not attached to the specified agent', async () => {
       // Create another file not attached to the agent
       const unattachedFileId = uuidv4();
       await createFile({
@@ -373,7 +502,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unattachedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
@@ -438,12 +567,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unauthorizedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files when user lacks EDIT permission on agent', async () => {
+    it('should prevent unlinking attached files when user lacks EDIT permission on agent', async () => {
       // Create an agent with the file attached
       const agent = await createAgent({
         id: uuidv4(),
@@ -473,6 +602,7 @@ describe('File Routes - Delete with Agent Access', () => {
         .delete('/files')
         .send({
           agent_id: agent.id,
+          tool_resource: 'file_search',
           files: [
             {
               file_id: fileId,

@@ -53,6 +53,8 @@ export type TModelSpec = {
   fileSearch?: boolean;
   executeCode?: boolean;
   memory?: boolean;
+  /** Equip the spec's ephemeral agent with the `ask_user_question` HITL tool. */
+  askUserQuestion?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
@@ -87,6 +89,7 @@ export const tModelSpecSchema = z.object({
   fileSearch: z.boolean().optional(),
   executeCode: z.boolean().optional(),
   memory: z.boolean().optional(),
+  askUserQuestion: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),

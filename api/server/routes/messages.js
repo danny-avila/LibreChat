@@ -10,7 +10,13 @@ const {
   mergeQuotedTextForCount,
 } = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
-const { requireJwtAuth, validateMessageReq, configMiddleware } = require('~/server/middleware');
+const {
+  requireJwtAuth,
+  validateMessageReq,
+  configMiddleware,
+  sendValidationResponse,
+  prepareMessageRequestValidation,
+} = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
@@ -271,11 +277,30 @@ router.post('/artifact/:messageId', async (req, res) => {
   }
 });
 
-/* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
-router.get('/:conversationId', validateMessageReq, async (req, res) => {
+router.get('/:conversationId', prepareMessageRequestValidation, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const messages = await db.getMessages({ conversationId, user: req.user.id }, '-_id -__v -user');
+    const validation = req.messageRequestValidation;
+    // This intentionally starts a user-scoped read before validation resolves;
+    // the response remains gated on validation success below.
+    const messagesPromise = validation.shouldFetchMessages
+      ? db.getMessages({ conversationId, user: req.user.id }, '-_id -__v -user').then(
+          (messages) => ({ messages }),
+          (error) => ({ error }),
+        )
+      : null;
+
+    const validationResult = await validation.promise;
+    if (!validationResult.ok) {
+      return sendValidationResponse(res, validationResult);
+    }
+
+    const messagesResult = await messagesPromise;
+    if (messagesResult?.error) {
+      throw messagesResult.error;
+    }
+
+    const messages = messagesResult?.messages ?? [];
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);

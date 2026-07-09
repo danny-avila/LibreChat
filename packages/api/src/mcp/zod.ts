@@ -173,21 +173,56 @@ function convertToZodUnion(
 }
 
 /**
- * Helper function to resolve $ref references
+ * Resolves a local JSON pointer (e.g. `#/properties/body/properties/start`)
+ * against the root schema, per RFC 6901 (`~1` → `/`, `~0` → `~`).
+ * @returns The referenced subschema, or undefined when the pointer is dangling
+ */
+function resolveLocalPointer(
+  root: Record<string, unknown>,
+  pointer: string,
+): Record<string, unknown> | undefined {
+  const segments = pointer
+    .slice(2)
+    .split('/')
+    .map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+
+  let node: unknown = root;
+  for (const segment of segments) {
+    if (node == null || typeof node !== 'object') {
+      return undefined;
+    }
+    node = (node as Record<string, unknown>)[segment];
+  }
+
+  if (node != null && typeof node === 'object' && !Array.isArray(node)) {
+    return node as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+/**
+ * Helper function to resolve $ref references. Resolves `#/$defs/...` and
+ * `#/definitions/...` refs via the definitions map, and any other local
+ * `#/...` pointer (e.g. `#/properties/foo`) against the root schema —
+ * MCP servers with OpenAPI-derived schemas commonly emit both forms.
  * @param schema - The schema to resolve
  * @param definitions - The definitions to use
  * @param visited - The set of visited references
+ * @param root - The root schema local pointers resolve against (defaults to `schema`)
  * @returns The resolved schema
  */
 export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
   schema: T,
   definitions?: Record<string, unknown>,
   visited: Set<string> = new Set<string>(),
+  root?: Record<string, unknown>,
 ): T {
   // Handle null, undefined, or non-object values first
   if (!schema || typeof schema !== 'object') {
     return schema;
   }
+
+  const rootSchema = root ?? schema;
 
   // If no definitions provided, try to extract from schema.$defs or schema.definitions
   if (!definitions) {
@@ -196,7 +231,9 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
 
   // Handle arrays
   if (Array.isArray(schema)) {
-    return schema.map((item) => resolveJsonSchemaRefs(item, definitions, visited)) as unknown as T;
+    return schema.map((item) =>
+      resolveJsonSchemaRefs(item, definitions, visited, rootSchema),
+    ) as unknown as T;
   }
 
   // Handle objects
@@ -219,7 +256,12 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
 
       // Extract the reference path
       const refPath = value.replace(/^#\/(\$defs|definitions)\//, '');
-      const resolved = definitions?.[refPath];
+      let resolved = definitions?.[refPath];
+
+      // Fall back to resolving any other local pointer against the root schema
+      if (!resolved && value.startsWith('#/')) {
+        resolved = resolveLocalPointer(rootSchema, value);
+      }
 
       if (resolved) {
         visited.add(value);
@@ -227,6 +269,7 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
           resolved as Record<string, unknown>,
           definitions,
           visited,
+          rootSchema,
         );
         visited.delete(value);
 
@@ -238,7 +281,12 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
       }
     } else if (value && typeof value === 'object') {
       // Recursively resolve nested objects/arrays
-      result[key] = resolveJsonSchemaRefs(value as Record<string, unknown>, definitions, visited);
+      result[key] = resolveJsonSchemaRefs(
+        value as Record<string, unknown>,
+        definitions,
+        visited,
+        rootSchema,
+      );
     } else {
       // Copy primitive values as is
       result[key] = value;
@@ -367,6 +415,7 @@ function mergeRequired(a: unknown, b: unknown): string[] | undefined {
 const GEMINI_UNSUPPORTED_KEYS = new Set([
   'additionalProperties',
   '$schema',
+  '$ref',
   '$id',
   'id',
   '$comment',

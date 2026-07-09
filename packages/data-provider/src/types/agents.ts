@@ -364,6 +364,9 @@ export namespace Agents {
     /** Optional descriptive context for the prompt; mirrors the SDK field. */
     description?: string;
     options?: AskUserQuestionOption[];
+    /** When true the user may pick several options; the answer is their
+     *  selected option values joined with ", ". */
+    multiSelect?: boolean;
   }
 
   /** Interrupt payload for an ask-user-question pause. */

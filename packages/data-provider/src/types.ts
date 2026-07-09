@@ -109,6 +109,8 @@ export type TEphemeralAgent = {
   artifacts?: string;
   skills?: boolean;
   memory?: boolean;
+  /** Equip the ephemeral agent with the `ask_user_question` HITL tool. */
+  ask_user_question?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &

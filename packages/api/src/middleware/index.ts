@@ -17,3 +17,4 @@ export * from './checkBalance';
 export * from './remoteAgentAuth';
 export * from './share';
 export * from './messageFilterPii';
+export * from './messageValidation';
