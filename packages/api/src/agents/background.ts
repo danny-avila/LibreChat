@@ -406,6 +406,10 @@ interface TaskBucket {
 
 const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
 const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
+/** Max wall-clock a task may stay `running` before being reaped as timed-out,
+ *  so a detached call that never settles (hung network / lost MCP connection)
+ *  can't hold a running slot and exhaust the per-conversation cap forever. */
+const RUNNING_TASK_TTL_MS = 30 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
@@ -438,6 +442,15 @@ export class BackgroundTaskRegistryClass {
         continue;
       }
       for (const [taskId, task] of bucket.tasks) {
+        if (task.status === 'running' && now - task.createdAt > RUNNING_TASK_TTL_MS) {
+          /** Reap a stuck task: freeing the running slot (it no longer counts
+           *  toward the cap) and letting the completed-task TTL evict it. */
+          task.status = 'error';
+          task.progress = 1;
+          task.error = 'Background task timed out';
+          task.updatedAt = now;
+          continue;
+        }
         if (task.status !== 'running' && now - task.updatedAt > COMPLETED_TASK_TTL_MS) {
           bucket.tasks.delete(taskId);
         }
@@ -553,9 +566,13 @@ export class BackgroundTaskRegistryClass {
   }
 
   get(userId: string, conversationId: string, taskId: string): BackgroundTask | undefined {
+    const now = Date.now();
+    /** Sweep before returning so repeated polling of a known id can't keep an
+     *  expired task (and its retained result) alive past the completed TTL. */
+    this.sweep(now);
     const bucket = this.buckets.get(this.key(userId, conversationId));
     if (bucket) {
-      bucket.lastAccess = Date.now();
+      bucket.lastAccess = now;
     }
     return bucket?.tasks.get(taskId);
   }

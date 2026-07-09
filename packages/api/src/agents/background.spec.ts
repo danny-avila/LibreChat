@@ -402,6 +402,41 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.error).toBe('boom');
   });
 
+  it('reaps a stuck running task past the running TTL (frees the slot)', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_stuck',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    // backdate creation past the 30-min running TTL, then trigger a sweep
+    created.task.createdAt = Date.now() - 31 * 60 * 1000;
+    registry.list('u1', 'c1');
+    expect(created.task.status).toBe('error');
+    expect(created.task.error).toBe('Background task timed out');
+  });
+
+  it('sweeps an expired completed task on direct get() (no indefinite retention)', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_old',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u1', 'c1', created.task.id, { content: 'X' });
+    // backdate completion past the 1-hour completed TTL
+    created.task.updatedAt = Date.now() - 61 * 60 * 1000;
+    expect(registry.get('u1', 'c1', created.task.id)).toBeUndefined();
+  });
+
   it('caps concurrent running tasks per conversation', () => {
     const registry = new BackgroundTaskRegistryClass();
     let atCapacity = false;
