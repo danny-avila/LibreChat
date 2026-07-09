@@ -1,5 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
-const validateEmailLogin = require('./validateEmailLogin');
+import { logger } from '@librechat/data-schemas';
+import type { NextFunction, Request, Response } from 'express';
+import { validateEmailLogin } from './email';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -13,18 +14,21 @@ describe('validateEmailLogin', () => {
     ALLOW_EMAIL_LOGIN: process.env.ALLOW_EMAIL_LOGIN,
     ALLOW_EMAIL_LOGIN_OVERRIDE: process.env.ALLOW_EMAIL_LOGIN_OVERRIDE,
   };
-  let req, res, next;
+
+  let req: Request;
+  let res: Response;
+  let next: jest.MockedFunction<NextFunction>;
 
   beforeEach(() => {
     delete process.env.ALLOW_EMAIL_LOGIN;
     delete process.env.ALLOW_EMAIL_LOGIN_OVERRIDE;
-    req = { ip: '127.0.0.1' };
+    req = { ip: '127.0.0.1' } as Request;
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
-    };
+    } as Partial<Response> as Response;
     next = jest.fn();
-    jest.clearAllMocks();
+    (logger.warn as jest.Mock).mockClear();
   });
 
   afterAll(() => {
