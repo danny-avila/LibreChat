@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/extend-expect';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { McpItem } from '../../items/types';
 import McpSection from '../sections/McpSection';
@@ -211,5 +211,51 @@ describe('McpSection', () => {
     };
     render(<McpSection item={empty} />);
     expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
+  });
+
+  test('connectionDeferred attaches the whole server via the mcp_all wildcard', async () => {
+    // Request-scoped servers (runtime {{LIBRECHAT_BODY_*}} placeholders) defer
+    // their connection to the next chat turn, so no tool list arrives here —
+    // Connect should attach the server-wide wildcard instead of waiting.
+    mockInitializeServer.mockResolvedValue({ success: true, connectionDeferred: true });
+    const empty: McpItem = {
+      ...item,
+      server: { ...item.server, tools: [] } as never,
+      toolCount: 0,
+    };
+    render(<McpSection item={empty} />);
+    fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
+    await waitFor(() =>
+      expect(mockSetValue).toHaveBeenCalledWith(
+        'tools',
+        ['sys__server__sys_mcp_srv', 'sys__all__sys_mcp_srv'],
+        expect.objectContaining({ shouldDirty: true }),
+      ),
+    );
+  });
+
+  test('connectionDeferred does not duplicate an already-attached wildcard', async () => {
+    mockInitializeServer.mockResolvedValue({ success: true, connectionDeferred: true });
+    mockGetValues.mockReturnValue(['sys__server__sys_mcp_srv', 'sys__all__sys_mcp_srv']);
+    const empty: McpItem = {
+      ...item,
+      server: { ...item.server, tools: [] } as never,
+      toolCount: 0,
+    };
+    render(<McpSection item={empty} />);
+    fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
+    await waitFor(() => expect(mockInitializeServer).toHaveBeenCalled());
+    expect(mockSetValue).not.toHaveBeenCalled();
+  });
+
+  test('shows the runtime-tools hint when attached via the wildcard', () => {
+    mockGetValues.mockReturnValue(['sys__all__sys_mcp_srv']);
+    const empty: McpItem = {
+      ...item,
+      server: { ...item.server, tools: [] } as never,
+      toolCount: 0,
+    };
+    render(<McpSection item={empty} />);
+    expect(screen.getByText('com_ui_tools_mcp_runtime_tools')).toBeInTheDocument();
   });
 });

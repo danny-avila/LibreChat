@@ -15,7 +15,7 @@ import {
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
-import { mcpServerToken } from '../../items/selectors';
+import { mcpAllToken, mcpServerToken } from '../../items/selectors';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
 import MCPToolItem from '../../../MCPToolItem';
@@ -85,6 +85,7 @@ export default function McpSection({ item }: Props) {
 
   const serverName = item.server.serverName;
   const serverToken = mcpServerToken(serverName);
+  const serverAllToken = mcpAllToken(serverName);
   /** Live server data — `item.server` is a snapshot from card click and goes stale once
    * the MCP query refetches (e.g., after a server connects), so read from the live map. */
   const liveServer = mcpServersMap.get(serverName) ?? item.server;
@@ -94,6 +95,9 @@ export default function McpSection({ item }: Props) {
   /** Subscribe to the tools field so selection toggles re-render this section.
    * `getValues` is a non-reactive read and left the checkboxes visually stale. */
   const formTools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
+  /** Attached via the server-wide `mcp_all` wildcard — used by request-scoped
+   * servers whose tools resolve at chat-turn time and can't be listed here. */
+  const isWildcardAttached = formTools.includes(serverAllToken);
 
   const getSelectedTools = (): string[] =>
     tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
@@ -178,6 +182,17 @@ export default function McpSection({ item }: Props) {
       const res = await initializeServer(serverName, false);
       if (res == null || !res.success) {
         setAutoSelectPending(false);
+        return;
+      }
+      /** Request-scoped servers (runtime `{{LIBRECHAT_BODY_*}}` placeholders)
+       * defer their connection to the next chat turn, so no tool list will ever
+       * arrive here. Attach the whole server via the `mcp_all` wildcard instead
+       * — the backend resolves it into the server's full tool set at turn time. */
+      if (res.connectionDeferred) {
+        setAutoSelectPending(false);
+        if (!isWildcardAttached) {
+          updateFormTools([serverAllToken]);
+        }
         return;
       }
       if (res.oauthRequired && res.oauthUrl) {
@@ -361,7 +376,9 @@ export default function McpSection({ item }: Props) {
           </Collapse>
           <Collapse open={!hasTools && !toolsLoading}>
             <p className="rounded-xl border border-dashed border-border-light p-3 text-center text-xs text-text-tertiary">
-              {localize('com_ui_tools_mcp_no_tools')}
+              {localize(
+                isWildcardAttached ? 'com_ui_tools_mcp_runtime_tools' : 'com_ui_tools_mcp_no_tools',
+              )}
             </p>
           </Collapse>
         </div>

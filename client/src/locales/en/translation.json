@@ -1908,6 +1908,7 @@
   "com_ui_tools_marketplace_search": "Search tools…",
   "com_ui_tools_mcp_deselect_all": "Deselect all",
   "com_ui_tools_mcp_no_tools": "This server has not exposed any tools yet.",
+  "com_ui_tools_mcp_runtime_tools": "All of this server's tools are attached; they are resolved at runtime, during chat.",
   "com_ui_tools_mcp_select_all": "Select all",
   "com_ui_tools_mcp_status_unconfigured": "Needs configuration",
   "com_ui_tools_mcp_tools_section": "Tools in this server",
