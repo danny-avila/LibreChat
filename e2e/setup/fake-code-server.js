@@ -23,7 +23,7 @@ const http = require('http');
 const busboy = require('busboy');
 const { randomUUID } = require('crypto');
 
-const PORT = parseInt(process.env.E2E_CODE_API_PORT || '8766', 10);
+const PORT = parseInt(process.env.E2E_CODE_API_PORT || '8790', 10);
 const HOST = '127.0.0.1';
 
 /** @type {Map<string, Array<{ fileId: string; filename: string }>>} */

@@ -20,7 +20,7 @@
 const http = require('http');
 const busboy = require('busboy');
 
-const PORT = parseInt(process.env.E2E_RAG_API_PORT || '8767', 10);
+const PORT = parseInt(process.env.E2E_RAG_API_PORT || '8791', 10);
 const HOST = '127.0.0.1';
 
 /** @type {Array<{ file_id: string; filename: string; entity_id: string; bytes: number; auth: string }>} */

@@ -354,7 +354,7 @@ const AttachFileMenu = ({
                 id="attach-file-button"
                 aria-label={localize('com_sidepanel_attach_files')}
                 onClick={handleUnifiedUpload}
-                className="flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50"
+                className="focus-visible:ring-primary flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-opacity-50"
               >
                 <div className="flex w-full items-center justify-center gap-2">
                   <AttachmentIcon />

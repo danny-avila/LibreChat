@@ -54,6 +54,9 @@ interface CodeEnvRefBase {
   /** Code API deployment that owns this storage pointer. Legacy refs omit
    *  the field and are treated as `default`; new writes always persist it. */
   executionProfile?: CodeExecutionProfile;
+  /** Epoch ms when the file was uploaded to the code env; drives the liveness
+   *  fast-path (distinct from the usage-bumped `updatedAt`). */
+  provisionedAt?: number;
 }
 
 export type CodeExecutionProfile = 'default' | 'stateful';
