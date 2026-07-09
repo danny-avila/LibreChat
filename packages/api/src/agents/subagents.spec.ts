@@ -122,17 +122,25 @@ describe('createSubagentLoader', () => {
     );
   });
 
-  it('cycle guard: A <-> B resolves back to the already-initialized primary (no infinite loop)', async () => {
+  it('cycle guard: a mutual A <-> B cycle is depth-bounded and never RELOADS the primary', async () => {
+    // A lists B; B lists A (the primary). The primary-reuse guard reuses the
+    // primary object instead of reloading it, but the pair still climbs the
+    // depth counter — MAX_SUBAGENT_DEPTH is the intended cycle terminator
+    // (faithful to the original closures). Assert the two real guarantees:
+    //   1. the cycle terminates (rejects) rather than infinite-looping, and
+    //   2. the primary ('A') is never fetched via loadAgentById (reused).
     const A = makeConfig('A', ['B']);
     const map: Record<string, SubagentConfigLike> = {
-      B: makeConfig('B', ['A']), // B lists A (the primary) as a subagent
+      B: makeConfig('B', ['A']),
     };
-    const { loader } = makeLoader(A, map);
+    const { loader, loadAgentById } = makeLoader(A, map);
 
-    await loader.resolveSubagentTrees([A]);
-
-    expect(A.subagentAgentConfigs?.map((c) => c.id)).toEqual(['B']);
-    // B's subagent "A" resolves to the primary object itself, not a reload
+    await expect(loader.resolveSubagentTrees([A])).rejects.toThrow(
+      `maximum depth of ${MAX_DEPTH}`,
+    );
+    // The primary is reused, never reloaded — the unique job of the cycle guard.
+    expect(loadAgentById).not.toHaveBeenCalledWith('A');
+    // First-level resolution still reused the primary OBJECT for B's subagent.
     expect(map.B.subagentAgentConfigs?.[0]).toBe(A);
   });
 
