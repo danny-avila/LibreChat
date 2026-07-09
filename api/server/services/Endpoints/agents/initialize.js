@@ -27,8 +27,10 @@ const {
   createLazyAgentHistoryResolver,
 } = require('@librechat/api');
 const {
+  FileContext,
   ResourceType,
   EModelEndpoint,
+  EToolResources,
   PermissionBits,
   MAX_SUBAGENT_DEPTH,
   isAgentsEndpoint,
@@ -492,6 +494,29 @@ const initializeClient = async ({
         return;
       }
 
+      /** Current-message chat attachments stay in the user's sandbox / unscoped vector
+       *  index (matching the direct message_file upload path); only agent setup files
+       *  are scoped to the agent. */
+      const entityIdForFile = (file) =>
+        file.context === FileContext.message_attachment ? undefined : agentId;
+
+      /** Surface a just-provisioned file to the tool loaded immediately after: the code
+       *  and file_search primers read `tool_resources.<resource>.files`. */
+      if (!ctx.tool_resources) {
+        ctx.tool_resources = {};
+      }
+      const addProvisionedFile = (file, resourceType) => {
+        if (!file.file_id) {
+          return;
+        }
+        const resource = ctx.tool_resources[resourceType] ?? {};
+        const files = resource.files ? [...resource.files] : [];
+        if (!files.some((existing) => existing.file_id === file.file_id)) {
+          files.push(file);
+        }
+        ctx.tool_resources[resourceType] = { ...resource, files };
+      };
+
       /** @type {import('@librechat/api').TFileUpdate[]} */
       const pendingUpdates = [];
 
@@ -501,9 +526,10 @@ const initializeClient = async ({
             const { codeEnvRef, fileUpdate } = await provisionToCodeEnv({
               req,
               file,
-              entity_id: agentId,
+              entity_id: entityIdForFile(file),
             });
             file.metadata = { ...file.metadata, codeEnvRef };
+            addProvisionedFile(file, EToolResources.execute_code);
             pendingUpdates.push(fileUpdate);
           }),
         );
@@ -518,9 +544,14 @@ const initializeClient = async ({
       if (needsSearch && provisionState.vectorDBFiles.length > 0) {
         const results = await Promise.allSettled(
           provisionState.vectorDBFiles.map(async (file) => {
-            const result = await provisionToVectorDB({ req, file, entity_id: agentId });
+            const result = await provisionToVectorDB({
+              req,
+              file,
+              entity_id: entityIdForFile(file),
+            });
             if (result.embedded) {
               file.embedded = true;
+              addProvisionedFile(file, EToolResources.file_search);
               if (result.fileUpdate) {
                 pendingUpdates.push(result.fileUpdate);
               }
