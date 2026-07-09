@@ -528,6 +528,44 @@ export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
   return types.some((regex) => regex.test('x-librechat/x-probe'));
 };
 
+const mimeAcceptTokens: Record<string, string> = {
+  'image/.*': 'image/*,.heif,.heic',
+  'application/pdf': '.pdf,application/pdf',
+  'application/msword': '.doc,application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel': '.xls,application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+    '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
+/**
+ * Converts recognized finite MIME regex allowlists into a browser file input
+ * `accept` string. Returns '' when any pattern is unrecognized, so callers can
+ * fall back to provider-specific defaults.
+ */
+export const mimeTypesToAccept = (types?: RegExp[]): string => {
+  if (!types || types.length === 0) {
+    return '';
+  }
+
+  const tokens: string[] = [];
+  for (const regex of types) {
+    const normalized = regex.source
+      .replace(/^\^/, '')
+      .replace(/\$$/, '')
+      .replace(/\\([/.])/g, '$1');
+    const accept = mimeAcceptTokens[normalized];
+    if (accept === undefined) {
+      return '';
+    }
+    if (!tokens.includes(accept)) {
+      tokens.push(accept);
+    }
+  }
+  return tokens.join(',');
+};
+
 /**
  * Gets the appropriate endpoint file configuration with standardized lookup logic.
  *

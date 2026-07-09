@@ -19,6 +19,7 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
+  mimeTypesToAccept,
   isPermissiveMimeConfig,
   defaultAgentCapabilities,
   bedrockDocumentExtensions,
@@ -120,11 +121,14 @@ const AttachFileMenu = ({
         return;
       }
       inputRef.current.value = '';
+      const configAccept = mimeTypesToAccept(endpointFileConfig?.supportedMimeTypes);
       if (
         fileType !== undefined &&
         isPermissiveMimeConfig(endpointFileConfig?.supportedMimeTypes)
       ) {
         inputRef.current.accept = '';
+      } else if (fileType !== undefined && configAccept !== '') {
+        inputRef.current.accept = configAccept;
       } else if (fileType === 'image') {
         inputRef.current.accept = 'image/*,.heif,.heic';
       } else if (fileType === 'document') {

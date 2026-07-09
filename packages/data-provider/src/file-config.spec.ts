@@ -3,6 +3,7 @@ import {
   fileConfig as baseFileConfig,
   isPermissiveMimeConfig,
   convertStringsToRegex,
+  mimeTypesToAccept,
   documentParserMimeTypes,
   getEndpointFileConfig,
   applicationMimeTypes,
@@ -1357,5 +1358,63 @@ describe('isPermissiveMimeConfig', () => {
   it('returns true for regex produced by convertStringsToRegex with .*', () => {
     const converted = convertStringsToRegex(['.*']);
     expect(isPermissiveMimeConfig(converted)).toBe(true);
+  });
+});
+
+describe('mimeTypesToAccept', () => {
+  it('maps an image + pdf + Office allowlist to a finite accept string', () => {
+    const converted = convertStringsToRegex([
+      'image/.*',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]);
+    expect(mimeTypesToAccept(converted)).toBe(
+      'image/*,.heif,.heic,' +
+        '.pdf,application/pdf,' +
+        '.doc,application/msword,' +
+        '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
+        '.xls,application/vnd.ms-excel,' +
+        '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  });
+
+  it('maps an image + pdf allowlist to a finite accept string', () => {
+    const converted = convertStringsToRegex(['image/.*', 'application/pdf']);
+    expect(mimeTypesToAccept(converted)).toBe('image/*,.heif,.heic,.pdf,application/pdf');
+  });
+
+  it('recognizes anchored and escaped pattern variants', () => {
+    expect(mimeTypesToAccept([/^application\/pdf$/, /^application\/vnd\.ms-excel$/])).toBe(
+      '.pdf,application/pdf,.xls,application/vnd.ms-excel',
+    );
+  });
+
+  it('deduplicates repeated patterns', () => {
+    const converted = convertStringsToRegex(['application/pdf', 'application/pdf']);
+    expect(mimeTypesToAccept(converted)).toBe('.pdf,application/pdf');
+  });
+
+  it('returns empty string for the default supportedMimeTypes', () => {
+    expect(mimeTypesToAccept(supportedMimeTypes)).toBe('');
+  });
+
+  it('returns empty string when any pattern is unrecognized', () => {
+    const converted = convertStringsToRegex(['image/.*', 'application/pdf', 'application/zip']);
+    expect(mimeTypesToAccept(converted)).toBe('');
+  });
+
+  it('returns empty string for permissive patterns', () => {
+    expect(mimeTypesToAccept(convertStringsToRegex(['.*']))).toBe('');
+  });
+
+  it('returns empty string for undefined', () => {
+    expect(mimeTypesToAccept(undefined)).toBe('');
+  });
+
+  it('returns empty string for empty array', () => {
+    expect(mimeTypesToAccept([])).toBe('');
   });
 });
