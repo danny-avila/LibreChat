@@ -22,6 +22,7 @@ import {
   stripRunInBackgroundArg,
   buildBackgroundHandleContent,
   buildBackgroundCapacityContent,
+  stripBackgroundFromToolDefinitions,
   CHECK_BACKGROUND_TASK_NAME,
 } from './background';
 import {
@@ -3579,7 +3580,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       if (toolRegistry) {
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
-                        const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                        const filteredToolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
                           (t) =>
                             t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
@@ -3588,6 +3589,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                              * shortcut, not callable from PTC-generated code. */
                             t.name !== CHECK_BACKGROUND_TASK_NAME &&
                             !fileAuthoringToolNames.has(t.name),
+                        );
+                        /* PTC-generated calls don't go through the host background
+                         * interceptor, so strip the injected `run_in_background`
+                         * param from target schemas (the registry entries were
+                         * mutated to include it) — mirrors the self-spawn path. */
+                        const toolDefs = stripBackgroundFromToolDefinitions(
+                          filteredToolDefs,
+                          mergedConfigurable?.backgroundToolNames as string[] | undefined,
                         );
                         toolCallConfig.toolDefs = toolDefs;
                         toolCallConfig.toolMap = ptcToolMap ?? toolMap;
