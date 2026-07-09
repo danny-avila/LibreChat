@@ -22,6 +22,7 @@ jest.mock('@librechat/data-schemas', () => ({
   DEFAULT_SESSION_EXPIRY: 60000,
   SystemCapabilities: { ACCESS_ADMIN: 'ACCESS_ADMIN' },
   getTenantId: jest.fn(() => undefined),
+  tenantStorage: { run: jest.fn((ctx, fn) => fn()) },
 }));
 
 jest.mock('@librechat/api', () => {
@@ -43,6 +44,7 @@ jest.mock('@librechat/api', () => {
     tenantContextMiddleware: jest.fn((req, res, next) => next()),
     preAuthTenantMiddleware: jest.fn((req, res, next) => next()),
     applyAdminRefresh: jest.fn(),
+    applyGoogleAdminRefresh: jest.fn(),
     AdminRefreshError,
     buildOpenIDRefreshParams: jest.fn(() => {
       const params = {};
@@ -104,7 +106,12 @@ jest.mock('~/server/middleware', () => ({
 
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, applyAdminRefresh, buildOpenIDRefreshParams } = require('@librechat/api');
+const {
+  isEnabled,
+  applyAdminRefresh,
+  applyGoogleAdminRefresh,
+  buildOpenIDRefreshParams,
+} = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies');
 const adminAuthRouter = require('./auth');
 
@@ -246,5 +253,184 @@ describe('admin auth OpenID refresh route', () => {
     expect(debugOutput).not.toContain('new-admin-id');
     expect(debugOutput).not.toContain('new-admin-refresh');
     expect(debugOutput).not.toContain('https://api.example.com');
+  });
+});
+
+describe('admin auth Google refresh route', () => {
+  let app;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.SESSION_EXPIRY;
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/admin', adminAuthRouter);
+
+    process.env.GOOGLE_CLIENT_ID = 'google-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'google-client-secret';
+
+    applyGoogleAdminRefresh.mockResolvedValue({
+      token: 'admin-jwt',
+      refreshToken: 'rotated-refresh',
+      user: {
+        _id: 'user-id',
+        id: 'user-id',
+        email: 'admin@example.com',
+        name: 'Admin',
+        username: 'admin',
+        role: 'ADMIN',
+        provider: 'google',
+      },
+      expiresAt: 1234567890,
+    });
+  });
+
+  it('delegates to applyGoogleAdminRefresh with route-supplied deps and options', async () => {
+    const response = await request(app).post('/api/admin/oauth/refresh').send({
+      refresh_token: 'incoming-google-refresh',
+      user_id: '6a343eb8b5025a84b6ca2767',
+      provider: 'google',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      token: 'admin-jwt',
+      refreshToken: 'rotated-refresh',
+      user: expect.objectContaining({
+        _id: 'user-id',
+        id: 'user-id',
+        email: 'admin@example.com',
+        name: 'Admin',
+        username: 'admin',
+        role: 'ADMIN',
+        provider: 'google',
+      }),
+      expiresAt: 1234567890,
+    });
+    expect(applyGoogleAdminRefresh).toHaveBeenCalledWith(
+      expect.objectContaining({
+        findUsers: expect.any(Function),
+        getUserById: expect.any(Function),
+        canAccessAdmin: expect.any(Function),
+        mintToken: expect.any(Function),
+      }),
+      {
+        refreshToken: 'incoming-google-refresh',
+        userId: '6a343eb8b5025a84b6ca2767',
+        tenantId: undefined,
+        clientId: 'google-client-id',
+        clientSecret: 'google-client-secret',
+      },
+    );
+  });
+
+  it('forwards the tenant id from getTenantId() to the helper', async () => {
+    const { getTenantId } = require('@librechat/data-schemas');
+    getTenantId.mockReturnValueOnce('tenant-x');
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(200);
+    expect(applyGoogleAdminRefresh).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ tenantId: 'tenant-x' }),
+    );
+  });
+
+  it('canAccessAdmin closure calls hasCapability with the normalized user id', async () => {
+    const { hasCapability } = require('~/server/middleware/roles/capabilities');
+    let capturedDeps;
+    applyGoogleAdminRefresh.mockImplementationOnce(async (deps) => {
+      capturedDeps = deps;
+      return {
+        token: 'jwt',
+        refreshToken: 'r',
+        user: { id: 'u', _id: 'u', email: 'e@e.com', name: '', username: '', role: 'ADMIN' },
+        expiresAt: 0,
+      };
+    });
+
+    await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'google-refresh', provider: 'google' });
+
+    await capturedDeps.canAccessAdmin({ id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' });
+    expect(hasCapability).toHaveBeenCalledWith(
+      { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' },
+      'ACCESS_ADMIN',
+    );
+  });
+
+  it('does not require OPENID_REUSE_TOKENS for the google provider', async () => {
+    isEnabled.mockReturnValue(false);
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('maps AdminRefreshError thrown by the helper to the documented status and code', async () => {
+    const { AdminRefreshError } = require('@librechat/api');
+    applyGoogleAdminRefresh.mockRejectedValueOnce(
+      new AdminRefreshError('GOOGLE_NOT_CONFIGURED', 503, 'Google admin OAuth is not configured'),
+    );
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({
+      error: 'Google admin OAuth is not configured',
+      error_code: 'GOOGLE_NOT_CONFIGURED',
+    });
+  });
+
+  it('returns 500 INTERNAL_ERROR when the helper throws a non-AdminRefreshError', async () => {
+    applyGoogleAdminRefresh.mockRejectedValueOnce(new Error('boom'));
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(500);
+    expect(response.body.error_code).toBe('INTERNAL_ERROR');
+  });
+
+  it('rejects unknown provider values with INVALID_PROVIDER before calling either helper', async () => {
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-refresh', provider: 'github' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error_code).toBe('INVALID_PROVIDER');
+    expect(applyGoogleAdminRefresh).not.toHaveBeenCalled();
+    expect(applyAdminRefresh).not.toHaveBeenCalled();
+  });
+
+  it('re-runs checkBan with the resolved user identity and blocks a banned user', async () => {
+    const middleware = require('~/server/middleware');
+    let banCheckCalls = 0;
+    middleware.checkBan.mockImplementation((req, res, next) => {
+      banCheckCalls++;
+      if (banCheckCalls >= 2 && req.user) {
+        req.banned = true;
+        return res.status(403).json({ message: 'banned' });
+      }
+      return next();
+    });
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(403);
+    expect(middleware.checkBan).toHaveBeenCalledTimes(2);
+    expect(middleware.checkBan.mock.calls[1][0].user).toEqual({ id: 'user-id' });
   });
 });
