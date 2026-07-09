@@ -2,10 +2,10 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librechat-data-provider';
 import type { IRole, IUser, RolePermissions } from '..';
-import { createRoleMethods } from './role';
-import { createModels } from '../models';
 import { _resetStrictCache } from '../models/plugins/tenantIsolation';
 import { tenantStorage } from '~/config/tenantContext';
+import { createRoleMethods } from './role';
+import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -510,6 +510,7 @@ describe('initializeRoles', () => {
           [Permissions.USE]: false,
           [Permissions.CREATE]: true,
           [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: false,
         },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
       },
@@ -575,6 +576,7 @@ describe('initializeRoles', () => {
           [Permissions.USE]: false,
           [Permissions.CREATE]: false,
           [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
         },
         [PermissionTypes.BOOKMARKS]:
           roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.BOOKMARKS],
@@ -627,6 +629,177 @@ describe('initializeRoles', () => {
     const userRole = await getRoleByName(SystemRoles.USER);
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO]).toBeDefined();
     expect(userRole.permissions[PermissionTypes.MULTI_CONVO]?.USE).toBeDefined();
+  });
+});
+
+describe('initializeRoles - SHARE permission preservation', () => {
+  beforeEach(async () => {
+    await Role.deleteMany({});
+  });
+
+  it('preserves a fully-populated USER AGENTS block (SHARE stays true)', async () => {
+    await new Role({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    }).save();
+
+    await initializeRoles();
+
+    const userRole = await getRoleByName(SystemRoles.USER);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE).toBe(true);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE_PUBLIC).toBe(false);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.USE).toBe(true);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.CREATE).toBe(true);
+  });
+
+  it('fills missing fields without clobbering a present SHARE:true on USER AGENTS', async () => {
+    await new Role({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.SHARE]: true,
+        },
+      },
+    }).save();
+
+    await initializeRoles();
+
+    const userRole = await getRoleByName(SystemRoles.USER);
+    // Present field preserved.
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE).toBe(true);
+    // Genuinely-missing fields filled from the USER default.
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.USE).toBe(true);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.CREATE).toBe(true);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE_PUBLIC).toBe(false);
+  });
+
+  it('leaves an all-true ADMIN AGENTS block unchanged', async () => {
+    await new Role({
+      name: SystemRoles.ADMIN,
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: true,
+        },
+      },
+    }).save();
+
+    await initializeRoles();
+
+    const adminRole = await getRoleByName(SystemRoles.ADMIN);
+    expect(adminRole.permissions[PermissionTypes.AGENTS]).toEqual({
+      USE: true,
+      CREATE: true,
+      SHARE: true,
+      SHARE_PUBLIC: true,
+    });
+  });
+
+  it('documents that hardening alone does not rescue a stripped (empty) block', async () => {
+    // An empty block carries no SHARED_GLOBAL to migrate, so the per-field merge fills USER defaults (SHARE:false).
+    await new Role({
+      name: SystemRoles.USER,
+      permissions: {
+        [PermissionTypes.AGENTS]: {},
+      },
+    }).save();
+
+    await initializeRoles();
+
+    const userRole = await getRoleByName(SystemRoles.USER);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE).toBe(false);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.USE).toBe(true);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.CREATE).toBe(true);
+    expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE_PUBLIC).toBe(false);
+  });
+
+  it('migrates AGENTS.SHARED_GLOBAL:true to SHARE:true and removes SHARED_GLOBAL', async () => {
+    // Raw insert keeps the off-schema SHARED_GLOBAL field that strict mode would strip.
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: { AGENTS: { SHARED_GLOBAL: true } },
+    });
+
+    await initializeRoles();
+
+    const doc = await Role.collection.findOne({ name: SystemRoles.USER });
+    expect(doc?.permissions.AGENTS.SHARE).toBe(true);
+    expect(doc?.permissions.AGENTS.SHARED_GLOBAL).toBeUndefined();
+    // Migration maps SHARED_GLOBAL to SHARE only, never SHARE_PUBLIC.
+    expect(doc?.permissions.AGENTS.SHARE_PUBLIC).toBe(false);
+  });
+
+  it('migrates AGENTS.SHARED_GLOBAL:false to SHARE:false and removes SHARED_GLOBAL', async () => {
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: { AGENTS: { SHARED_GLOBAL: false } },
+    });
+
+    await initializeRoles();
+
+    const doc = await Role.collection.findOne({ name: SystemRoles.USER });
+    expect(doc?.permissions.AGENTS.SHARE).toBe(false);
+    expect(doc?.permissions.AGENTS.SHARED_GLOBAL).toBeUndefined();
+  });
+
+  it('preserves an existing SHARE:false when SHARED_GLOBAL:true is also present', async () => {
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: { AGENTS: { SHARE: false, SHARED_GLOBAL: true } },
+    });
+
+    await initializeRoles();
+
+    const doc = await Role.collection.findOne({ name: SystemRoles.USER });
+    expect(doc?.permissions.AGENTS.SHARE).toBe(false);
+    expect(doc?.permissions.AGENTS.SHARED_GLOBAL).toBeUndefined();
+  });
+
+  it('migrates PROMPTS.SHARED_GLOBAL:true to PROMPTS.SHARE:true', async () => {
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: { PROMPTS: { SHARED_GLOBAL: true } },
+    });
+
+    await initializeRoles();
+
+    const doc = await Role.collection.findOne({ name: SystemRoles.USER });
+    expect(doc?.permissions.PROMPTS.SHARE).toBe(true);
+    expect(doc?.permissions.PROMPTS.SHARED_GLOBAL).toBeUndefined();
+  });
+
+  it('is a no-op on a clean DB with no legacy SHARED_GLOBAL', async () => {
+    await initializeRoles();
+
+    const userDoc = await Role.collection.findOne({ name: SystemRoles.USER });
+    const adminDoc = await Role.collection.findOne({ name: SystemRoles.ADMIN });
+    expect('SHARED_GLOBAL' in (userDoc?.permissions.AGENTS ?? {})).toBe(false);
+    expect('SHARED_GLOBAL' in (userDoc?.permissions.PROMPTS ?? {})).toBe(false);
+    expect('SHARED_GLOBAL' in (adminDoc?.permissions.AGENTS ?? {})).toBe(false);
+    expect('SHARED_GLOBAL' in (adminDoc?.permissions.PROMPTS ?? {})).toBe(false);
+  });
+
+  it('keeps the migrated SHARE:true across a second initializeRoles run', async () => {
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      permissions: { AGENTS: { SHARED_GLOBAL: true } },
+    });
+
+    await initializeRoles();
+    await initializeRoles();
+
+    const doc = await Role.collection.findOne({ name: SystemRoles.USER });
+    expect(doc?.permissions.AGENTS.SHARE).toBe(true);
+    expect(doc?.permissions.AGENTS.SHARED_GLOBAL).toBeUndefined();
   });
 });
 

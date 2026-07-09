@@ -34,8 +34,10 @@ const {
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
+  toClientPendingAction,
   computeAgentRequestFingerprint,
   extractDiscoveredToolsFromHistory,
+  sanitizeResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
@@ -1222,9 +1224,13 @@ class AgentClient extends BaseClient {
     // paused on. The resume payload omits them and they aren't part of the fingerprint, so
     // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
     // these from the DB record server-side, so this is belt-and-suspenders for them.)
+    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
     const resumeContext = pickResumeContext(this.options.req?.body);
-    const resolvedModelParameters = this.options.agent?.model_parameters;
-    if (resolvedModelParameters && typeof resolvedModelParameters === 'object') {
+    const resolvedModelParameters = sanitizeResumeModelParameters(
+      this.options.agent?.model_parameters,
+    );
+    if (resolvedModelParameters) {
       resumeContext.model_parameters = resolvedModelParameters;
     }
     const pendingAction = buildPendingAction(interrupt.payload, {
@@ -1311,7 +1317,7 @@ class AgentClient extends BaseClient {
     }
     await GenerationJobManager.emitChunk(streamId, {
       event: ApprovalEvents.ON_PENDING_ACTION,
-      data: pendingAction,
+      data: toClientPendingAction(pendingAction),
     });
     logger.debug(
       `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
@@ -1615,6 +1621,10 @@ class AgentClient extends BaseClient {
         // conversation (one that expired or was aborted while paused) so this fresh
         // turn starts clean instead of rehydrating a stale interrupt — thread_id is
         // the stable conversationId. No-op when HITL is off or nothing is orphaned.
+        // Deliberately UNCONDITIONAL per HITL turn: any cheaper gate (job metadata,
+        // a Redis flag) can go stale across replicas/restarts and skip the prune
+        // exactly when an orphan exists, while these are two indexed, usually-empty
+        // deleteMany ops — correctness over a micro-optimization.
         if (streamId && isHITLEnabled(agentsEConfig?.toolApproval)) {
           await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
         }
@@ -1743,35 +1753,13 @@ class AgentClient extends BaseClient {
         this._resolveRun = null;
       }
 
-      // HITL: a turn that completed (or errored) without pausing leaves a dead
-      // checkpoint. thread_id is the conversationId — stable across turns — so it
-      // MUST be pruned before the next turn, or LangGraph would resume this turn's
-      // state instead of starting fresh. Skip when paused (the checkpoint is needed
-      // to resume) or when HITL is off (none was written). The Mongo TTL is the backstop.
-      const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
-      if (!this.pendingApproval && isHITLEnabled(agentsEConfig?.toolApproval)) {
-        try {
-          // Job-replacement guard: only prune if THIS generation is still the live job.
-          // A newer request can replace this one on the same conversationId; if this
-          // (older) run's finally lands after the newer run paused, pruning by
-          // conversationId would delete the NEWER run's checkpoint and break its /resume.
-          const resumableStreamId = this.options.req?._resumableStreamId;
-          let replaced = false;
-          if (resumableStreamId && this.jobCreatedAt != null) {
-            const liveJob = await GenerationJobManager.getJobStore().getJob(resumableStreamId);
-            replaced = !liveJob || liveJob.createdAt !== this.jobCreatedAt;
-          }
-          if (replaced) {
-            logger.debug('[AgentClient] Skipping checkpoint prune — job was replaced', {
-              streamId: resumableStreamId,
-            });
-          } else {
-            await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
-          }
-        } catch (err) {
-          logger.warn('[AgentClient] Failed to prune checkpoint after completion', err);
-        }
-      }
+      // HITL: a non-paused turn deliberately prunes nothing here. The lazy checkpointer
+      // (LazyMongoSaver) never persists a clean-exit checkpoint, so there is
+      // nothing this turn left to delete. A checkpoint orphaned by a PRIOR abandoned pause
+      // is cleared by the pre-run prune (before processStream) on the next turn, with the
+      // Mongo TTL as the backstop. Dropping this post-completion prune also removes its
+      // job-replacement race: an older run's late finally can no longer delete a newer
+      // paused run's checkpoint, because there is no longer a clean-path prune to race.
 
       run = null;
       config = null;

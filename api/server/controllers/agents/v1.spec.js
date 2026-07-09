@@ -500,6 +500,38 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.model_parameters.maxContextTokens).toBeUndefined();
     });
 
+    test('should drop non-numeric strings and coerce numeric strings in model_parameters', async () => {
+      // Regression test for #12920: a stray placeholder string ("System") persisted
+      // into max_tokens was forwarded to the provider, causing a 400
+      const dataWithCorruptModelParams = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'Agent with Corrupt Model Params',
+        model_parameters: {
+          max_tokens: 'System',
+          maxContextTokens: '256000',
+          fileTokenLimit: 256000,
+          useResponsesApi: true,
+        },
+      };
+
+      mockReq.body = dataWithCorruptModelParams;
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.model_parameters.max_tokens).toBeUndefined();
+      expect(createdAgent.model_parameters.maxContextTokens).toBe(256000);
+      expect(createdAgent.model_parameters.fileTokenLimit).toBe(256000);
+      expect(createdAgent.model_parameters.useResponsesApi).toBe(true);
+
+      const agentInDb = await Agent.findOne({ id: createdAgent.id });
+      expect(agentInDb.model_parameters.max_tokens).toBeUndefined();
+      expect(agentInDb.model_parameters.maxContextTokens).toBe(256000);
+    });
+
     test('should handle invalid avatar format', async () => {
       const dataWithInvalidAvatar = {
         provider: 'openai',
@@ -697,6 +729,32 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.name).toBe('Updated Agent');
     });
 
+    test('should sanitize corrupt numeric model_parameters on update', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        name: 'Healed Agent',
+        model_parameters: {
+          max_tokens: 'System',
+          maxContextTokens: 256000,
+          temperature: '0.7',
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.model_parameters.max_tokens).toBeUndefined();
+      expect(updatedAgent.model_parameters.maxContextTokens).toBe(256000);
+      expect(updatedAgent.model_parameters.temperature).toBe(0.7);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.model_parameters.max_tokens).toBeUndefined();
+      expect(agentInDb.model_parameters.maxContextTokens).toBe(256000);
+    });
+
     test('should reject update with unauthorized fields (mass assignment protection)', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
@@ -749,7 +807,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.name).toBe('Admin Update');
     });
 
-    test('should prune admin-supplied file_ids against the agent author', async () => {
+    test('should allow an editor to add their own file but not another user file', async () => {
       const File = mongoose.models.File;
       const adminUserId = new mongoose.Types.ObjectId().toString();
       const authorFileId = `file_${uuidv4()}`;
@@ -788,7 +846,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       await updateAgentHandler(mockReq, mockRes);
 
       const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
-      expect(agentInDb.tool_resources.file_search.file_ids).toEqual([authorFileId]);
+      expect(agentInDb.tool_resources.file_search.file_ids).toEqual([adminFileId]);
     });
 
     test('should validate tool_resources in updates', async () => {
@@ -1095,6 +1153,31 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
         expect(agentInDb.tool_resources.file_search.file_ids).toEqual([keeper]);
       });
+
+      test('preserves existing attached file_ids owned by another user', async () => {
+        const authorFile = `file_${uuidv4()}`;
+        const editorFile = `file_${uuidv4()}`;
+        const editorId = new mongoose.Types.ObjectId();
+        await createFileDoc(authorFile, existingAgentAuthorId);
+        await createFileDoc(editorFile, editorId);
+        await Agent.updateOne(
+          { id: existingAgentId },
+          { $set: { tool_resources: { file_search: { file_ids: [editorFile] } } } },
+        );
+
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = {
+          tool_resources: {
+            file_search: { file_ids: [authorFile, editorFile] },
+          },
+        };
+
+        await updateAgentHandler(mockReq, mockRes);
+
+        const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+        expect(agentInDb.tool_resources.file_search.file_ids).toEqual([authorFile, editorFile]);
+      });
     });
   });
 
@@ -1144,11 +1227,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agent.tool_resources.context.file_ids).toEqual([cloneAuthorFileId]);
     });
 
-    test('revertAgentVersionHandler should prune restored file_ids not owned by the agent author', async () => {
+    test('revertAgentVersionHandler should preserve restored attached file_ids with metadata', async () => {
       const agentAuthorId = new mongoose.Types.ObjectId();
       const otherUserId = new mongoose.Types.ObjectId();
       const ownedFileId = `file_${uuidv4()}`;
       const otherFileId = `file_${uuidv4()}`;
+      const orphanFileId = `file_${uuidv4()}`;
 
       await createFileDoc(ownedFileId, agentAuthorId);
       await createFileDoc(otherFileId, otherUserId);
@@ -1165,7 +1249,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
             provider: 'openai',
             model: 'gpt-4',
             tool_resources: {
-              file_search: { file_ids: [ownedFileId, otherFileId] },
+              file_search: { file_ids: [ownedFileId, otherFileId, orphanFileId] },
             },
           },
         ],
@@ -1179,7 +1263,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       expect(mockRes.json).toHaveBeenCalled();
       const agentInDb = await Agent.findOne({ id: agent.id }).lean();
-      expect(agentInDb.tool_resources.file_search.file_ids).toEqual([ownedFileId]);
+      expect(agentInDb.tool_resources.file_search.file_ids).toEqual([ownedFileId, otherFileId]);
     });
   });
 

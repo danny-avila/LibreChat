@@ -56,6 +56,7 @@
     "@babel/preset-env": "^7.29.5",
     "@babel/preset-react": "^7.18.6",
     "@babel/preset-typescript": "^7.21.0",
+    "@langchain/langgraph": "^1.4.5",
     "@rollup/plugin-alias": "^5.1.0",
     "@rollup/plugin-commonjs": "^29.0.0",
     "@rollup/plugin-json": "^6.1.0",
@@ -113,7 +114,7 @@
     "@azure/storage-blob": "^12.30.0",
     "@google/genai": "^2.8.0",
     "@keyv/redis": "^4.3.3",
-    "@librechat/agents": "^3.2.55",
+    "@librechat/agents": "^3.2.57",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",
@@ -165,6 +166,7 @@
     "zod": "^3.22.4"
   },
   "dependencies": {
+    "@langchain/langgraph-checkpoint": "^1.1.2",
     "@langchain/langgraph-checkpoint-mongodb": "^1.4.0"
   }
 }

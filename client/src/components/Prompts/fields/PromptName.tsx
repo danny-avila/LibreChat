@@ -53,7 +53,8 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
         setNewName(name);
         setIsEditing(false);
       }
-      if (e.key === 'Enter') {
+      // Ignore the Enter that commits an IME composition (see useTextarea.ts).
+      if (e.key === 'Enter' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
         e.preventDefault();
         skipBlurRef.current = true;
         commitName();

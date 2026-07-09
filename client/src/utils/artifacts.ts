@@ -842,6 +842,8 @@ export function fileToArtifact(
         | 'textFormat'
         | 'updatedAt'
         | 'createdAt'
+        | 'source'
+        | 'user'
       >
   >,
   options?: FileToArtifactOptions,
@@ -894,6 +896,18 @@ export function fileToArtifact(
     language,
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
+    /* Preserve the original-file download coordinates so the panel's
+     * download button can fetch the real file (matching the inline
+     * card's `useAttachmentLink` path). Critical for office buckets
+     * whose `content` is a server-rendered HTML preview, not the
+     * binary — serializing `content` would hand the user the preview
+     * instead of the .pptx/.xlsx/.docx. */
+    download: {
+      filepath: attachment.filepath,
+      file_id: attachment.file_id,
+      source: attachment.source,
+      user: attachment.user,
+    },
   };
 }
 

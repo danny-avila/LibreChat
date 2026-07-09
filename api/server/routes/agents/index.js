@@ -5,6 +5,7 @@ const {
   hasPersistableAbortContent,
   buildAbortedResponseMetadata,
   isPendingActionStale,
+  toClientPendingAction,
   isHITLEnabled,
   deleteAgentCheckpoint,
 } = require('@librechat/api');
@@ -222,8 +223,12 @@ router.get('/chat/status/:conversationId', async (req, res) => {
     resumeState,
     // Surface the live pending approval so a client rebuilding from /chat/status
     // (reload / cross-replica) has the action id + payload to render and submit
-    // the prompt, not just the knowledge that the stream is paused.
-    pendingAction: job.status === 'requires_action' && pendingLive ? pendingAction : undefined,
+    // the prompt, not just the knowledge that the stream is paused. Client-safe
+    // projection only — resumeContext/requestFingerprint stay server-side.
+    pendingAction:
+      job.status === 'requires_action' && pendingLive
+        ? toClientPendingAction(pendingAction)
+        : undefined,
   });
 });
 
