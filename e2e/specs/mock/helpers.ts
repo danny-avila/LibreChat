@@ -387,8 +387,10 @@ export async function fetchJson<T>(page: Page, path: string, token: string): Pro
 }
 
 /** Base URLs of the fake code-exec + RAG servers started by playwright.config.mock.ts. */
-export const CODE_API_BASE = `http://127.0.0.1:${process.env.E2E_CODE_API_PORT || '8766'}`;
-export const RAG_API_BASE = `http://127.0.0.1:${process.env.E2E_RAG_API_PORT || '8767'}`;
+/** Defaults must match `playwright.config.mock.ts`, which keeps these clear of
+ *  the MCP (8765/8766) and label (8889) fixtures. */
+export const CODE_API_BASE = `http://127.0.0.1:${process.env.E2E_CODE_API_PORT || '8790'}`;
+export const RAG_API_BASE = `http://127.0.0.1:${process.env.E2E_RAG_API_PORT || '8791'}`;
 
 export type CodeProvisionRecord = {
   filename: string;
