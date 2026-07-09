@@ -196,4 +196,65 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(state.calls).toBe(1);
     expect(results[0].content).toContain('REAL for y');
   });
+
+  it('strips run_in_background:false on a foreground call of a background-capable tool', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    const configurable = buildConfig(['search_mcp_docs']);
+    const metadata = { thread_id: 'exec_convo_falseflag' };
+
+    const results = await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_false', name: 'search_mcp_docs', args: { q: 'z', run_in_background: false } },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+
+    // ran in the foreground, and the injected flag never reached the real tool
+    expect(state.calls).toBe(1);
+    expect(state.lastInput).toEqual({ q: 'z' });
+    expect(results[0].content).toContain('RESULT for z');
+  });
+
+  it('processes artifacts from a backgrounded tool through toolEndCallback', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const artifactTool = {
+      name: 'search_mcp_docs',
+      description: 'returns an artifact',
+      schema: z.object({ q: z.string() }),
+      invoke: async (input: Record<string, unknown>) => {
+        state.calls += 1;
+        return { content: `RESULT for ${String(input.q)}`, artifact: { files: ['a.png'] } };
+      },
+    } as unknown as StructuredToolInterface;
+    const toolEndCalls: Array<{ name?: string; artifact?: unknown }> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [artifactTool] }),
+      toolEndCallback: (async (data: { output?: { name?: string; artifact?: unknown } }) => {
+        toolEndCalls.push({ name: data.output?.name, artifact: data.output?.artifact });
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+    });
+    const configurable = buildConfig(['search_mcp_docs']);
+    const metadata = { thread_id: 'exec_convo_artifact', run_id: 'run-artifact' };
+
+    await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_art', name: 'search_mcp_docs', args: { q: 'img', run_in_background: true } },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(state.calls).toBe(1);
+    expect(toolEndCalls).toHaveLength(1);
+    expect(toolEndCalls[0]).toEqual({ name: 'search_mcp_docs', artifact: { files: ['a.png'] } });
+  });
 });

@@ -311,7 +311,13 @@ export class BackgroundTaskRegistryClass {
       for (const [taskId, task] of bucket.tasks) {
         if (task.status !== 'running' && now - task.updatedAt > COMPLETED_TASK_TTL_MS) {
           bucket.tasks.delete(taskId);
-          bucket.byToolCall.delete(task.toolCallId);
+        }
+      }
+      /** Drop dedupe mappings whose task was evicted (keys are
+       *  `runId::toolCallId`, so they can't be derived from a task alone). */
+      for (const [dedupeKey, taskId] of bucket.byToolCall) {
+        if (!bucket.tasks.has(taskId)) {
+          bucket.byToolCall.delete(dedupeKey);
         }
       }
     }
@@ -330,21 +336,28 @@ export class BackgroundTaskRegistryClass {
 
   /**
    * Registers a task for a tool call. Returns the existing task (and
-   * `isNew: false`) when the same `toolCallId` was already dispatched — the
-   * caller must not start the work twice. Returns `atCapacity: true` when the
-   * per-conversation running cap is reached.
+   * `isNew: false`) only when the SAME run re-dispatched the same `toolCallId`
+   * (a resume/replay) — the caller must not start the work twice. Returns
+   * `atCapacity: true` when the per-conversation running cap is reached.
+   *
+   * The dedupe key includes `runId` because provider tool-call ids repeat
+   * across turns (e.g. `call_0` per response); keying on `toolCallId` alone
+   * would make a later turn's identically-named call collide with a prior
+   * (retained) task and hand back a stale result instead of executing.
    */
   create(params: {
     userId: string;
     conversationId: string;
     toolCallId: string;
     toolName: string;
+    runId?: string;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
     const bucket = this.getBucket(params.userId, params.conversationId, now);
 
-    const existingId = bucket.byToolCall.get(params.toolCallId);
+    const dedupeKey = `${params.runId ?? ''}::${params.toolCallId}`;
+    const existingId = bucket.byToolCall.get(dedupeKey);
     if (existingId) {
       const existing = bucket.tasks.get(existingId);
       if (existing) {
@@ -372,7 +385,7 @@ export class BackgroundTaskRegistryClass {
       updatedAt: now,
     };
     bucket.tasks.set(task.id, task);
-    bucket.byToolCall.set(params.toolCallId, task.id);
+    bucket.byToolCall.set(dedupeKey, task.id);
     return { task, isNew: true };
   }
 
@@ -449,13 +462,32 @@ export function buildBackgroundCapacityContent(toolName: string): string {
   });
 }
 
-function serializeTask(task: BackgroundTask): Record<string, unknown> {
+/**
+ * Serializes a task for the poll tool. The list path (`includeResult: false`)
+ * returns metadata only — never the full `result` — so a status-list poll can't
+ * inject megabytes of retained tool output into the next model step. The full
+ * result is only returned when a specific `background_task_id` is requested.
+ */
+function resultFields(task: BackgroundTask, includeResult: boolean): Record<string, unknown> {
+  if (task.result === undefined) {
+    return {};
+  }
+  if (includeResult) {
+    return { result: task.result };
+  }
+  return { result_available: true, result_chars: task.result.length };
+}
+
+function serializeTask(
+  task: BackgroundTask,
+  { includeResult }: { includeResult: boolean },
+): Record<string, unknown> {
   return {
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
     progress: task.progress,
-    ...(task.result !== undefined ? { result: task.result } : {}),
+    ...resultFields(task, includeResult),
     ...(task.hasArtifact
       ? { note: 'The tool produced an artifact that is not included inline.' }
       : {}),
@@ -485,10 +517,12 @@ export function runCheckBackgroundTask(params: {
         message: 'No background task with that id exists in this conversation.',
       });
     }
-    return JSON.stringify(serializeTask(task));
+    return JSON.stringify(serializeTask(task, { includeResult: true }));
   }
 
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   logger.debug(`[background] check_background_task listed ${tasks.length} task(s)`);
-  return JSON.stringify({ tasks: tasks.map(serializeTask) });
+  return JSON.stringify({
+    tasks: tasks.map((task) => serializeTask(task, { includeResult: false })),
+  });
 }

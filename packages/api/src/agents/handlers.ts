@@ -3254,12 +3254,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
              * registry for `check_background_task` to collect. Idempotent by
              * `toolCallId` so graph re-execution (resume/replay) never double-fires.
              */
+            const backgroundRunId = (metadata as Record<string, unknown>)?.run_id as
+              | string
+              | undefined;
             const dispatchBackgroundToolCall = (tc: ToolCallRequest): ToolExecuteResult => {
               const created = backgroundTaskRegistry.create({
                 userId: backgroundUserId,
                 conversationId: backgroundConversationId,
                 toolCallId: tc.id,
                 toolName: tc.name,
+                /** Scope idempotency to the run+turn so a later turn's repeated
+                 *  provider id (e.g. `call_0`) starts a fresh task. */
+                runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
               });
               if ('atCapacity' in created) {
                 return {
@@ -3290,6 +3296,38 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           metadata,
                         } as Record<string, unknown>,
                       )) as { content?: unknown; artifact?: unknown };
+                      /** Process artifacts (images, files, UI resources,
+                       *  citations) through the same callback as the foreground
+                       *  path so backgrounding an artifact-producing tool doesn't
+                       *  drop them. Best-effort: if the turn already returned and
+                       *  the stream is closed, persistence still runs and the SSE
+                       *  write no-ops. */
+                      if (toolEndCallback && result.artifact != null) {
+                        try {
+                          await toolEndCallback(
+                            {
+                              output: {
+                                name: tc.name,
+                                tool_call_id: tc.id,
+                                content: result.content,
+                                artifact: result.artifact,
+                              },
+                            },
+                            {
+                              run_id: backgroundRunId,
+                              thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                                | string
+                                | undefined,
+                              ...metadata,
+                            },
+                          );
+                        } catch (callbackError) {
+                          logger.warn(
+                            '[background] toolEndCallback error for detached artifact:',
+                            callbackError,
+                          );
+                        }
+                      }
                       backgroundTaskRegistry.complete(
                         backgroundUserId,
                         backgroundConversationId,
@@ -3551,11 +3589,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                     }
 
-                    const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
-                      toolCall: toolCallConfig,
-                      configurable: mergedConfigurable,
-                      metadata,
-                    } as Record<string, unknown>);
+                    /** Strip the host-only `run_in_background` flag for
+                     *  background-capable tools even on foreground calls (the
+                     *  model may emit it as `false`), so a strict MCP/action
+                     *  schema doesn't reject an undeclared argument. */
+                    const foregroundArgs = backgroundToolSet.has(tc.name)
+                      ? stripRunInBackgroundArg(tc.args)
+                      : tc.args;
+                    const result = await tool.invoke(
+                      normalizeToolInvokeArgs(foregroundArgs, tool),
+                      {
+                        toolCall: toolCallConfig,
+                        configurable: mergedConfigurable,
+                        metadata,
+                      } as Record<string, unknown>,
+                    );
 
                     // Code-execution tools emit per-call boilerplate
                     // ("Note: ..." paragraphs and `| <annotation>` per-file

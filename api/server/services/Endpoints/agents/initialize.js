@@ -484,6 +484,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       skillStates,
       defaultActiveOnShare,
       codeEnvAvailable,
+      backgroundToolsAvailable,
       memoryAvailable,
     },
     {
@@ -696,6 +697,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
            *  false`, so `bash_tool` / `read_file` sandbox fallback are
            *  silently gated off even though the seed walk found it. */
           codeEnvAvailable,
+          backgroundToolsAvailable,
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,

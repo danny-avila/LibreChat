@@ -231,25 +231,50 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(task?.progress).toBe(1);
   });
 
-  it('is idempotent by toolCallId (never double-dispatches)', () => {
+  it('is idempotent within the same run (never double-dispatches on replay)', () => {
     const registry = new BackgroundTaskRegistryClass();
     const first = registry.create({
       userId: 'u1',
       conversationId: 'c1',
       toolCallId: 'call_dup',
       toolName: 'search_mcp_docs',
+      runId: 'run-A',
     });
     const second = registry.create({
       userId: 'u1',
       conversationId: 'c1',
       toolCallId: 'call_dup',
       toolName: 'search_mcp_docs',
+      runId: 'run-A',
     });
     if ('atCapacity' in first || 'atCapacity' in second) {
       throw new Error('unexpected capacity');
     }
     expect(second.isNew).toBe(false);
     expect(second.task.id).toBe(first.task.id);
+  });
+
+  it('does NOT collide when the same provider toolCallId repeats in a later run/turn', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const turn1 = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_0',
+      toolName: 'search_mcp_docs',
+      runId: 'run-turn-1',
+    });
+    const turn2 = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_0',
+      toolName: 'search_mcp_docs',
+      runId: 'run-turn-2',
+    });
+    if ('atCapacity' in turn1 || 'atCapacity' in turn2) {
+      throw new Error('unexpected capacity');
+    }
+    expect(turn2.isNew).toBe(true);
+    expect(turn2.task.id).not.toBe(turn1.task.id);
   });
 
   it('records failures', () => {
@@ -349,6 +374,11 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
     expect(listed.tasks).toHaveLength(1);
     expect(listed.tasks[0].background_task_id).toBe(created.task.id);
+    // list path must NOT dump full results (context-overflow guard); metadata only
+    expect(listed.tasks[0].result).toBeUndefined();
+    expect(listed.tasks[0]).toEqual(
+      expect.objectContaining({ status: 'completed', result_available: true, result_chars: 6 }),
+    );
   });
 });
 
