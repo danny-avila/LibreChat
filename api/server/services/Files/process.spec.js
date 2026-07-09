@@ -447,7 +447,7 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'audio/webm',
-          source: FileSources.text,
+          llmDeliveryPath: 'text',
           text: 'submitted transcript',
         }),
         true,
@@ -1616,7 +1616,18 @@ describe('processAgentFileUpload', () => {
               id: 'agent-abc',
               storage_session_id: 'sess-csv',
               file_id: 'fid-csv',
+              executionProfile: 'default',
               provisionedAt: expect.any(Number),
+            },
+            codeEnvRefs: {
+              default: {
+                kind: 'agent',
+                id: 'agent-abc',
+                storage_session_id: 'sess-csv',
+                file_id: 'fid-csv',
+                executionProfile: 'default',
+                provisionedAt: expect.any(Number),
+              },
             },
           },
           llmDeliveryPath: 'none',

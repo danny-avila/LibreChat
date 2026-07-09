@@ -18,8 +18,6 @@ const {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   resolveDefaultLLMDeliveryPath,
-  documentParserMimeTypes,
-  isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
