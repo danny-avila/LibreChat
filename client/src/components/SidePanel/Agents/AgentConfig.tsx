@@ -1,25 +1,25 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
-import { Input } from '@librechat/client';
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
-import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { Link } from 'react-router-dom';
+import { Input } from '@librechat/client';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
+import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
-import { Panel } from '~/common';
-import { useLocalize } from '~/hooks';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
-import { icons } from '~/hooks/Endpoint/Icons';
 import FileContext from '~/nj/components/Agents/FileContext';
+import AgentCategorySelector from './AgentCategorySelector';
 import FileSearch from '~/nj/components/Agents/FileSearch';
 import TipComponent from '~/nj/components/TipComponent';
-import { useAgentPanelContext } from '~/Providers';
 import { cn, getIconKey, validateEmail } from '~/utils';
-import AgentAvatar from './AgentAvatar';
-import AgentCategorySelector from './AgentCategorySelector';
-import Instructions from './Instructions';
 import { useAgentFileEntries } from './Tools/hooks';
+import { useAgentPanelContext } from '~/Providers';
 import ToolsSection from './Tools/ToolsSection';
+import { icons } from '~/hooks/Endpoint/Icons';
+import Instructions from './Instructions';
+import AgentAvatar from './AgentAvatar';
+import { useLocalize } from '~/hooks';
+import { Panel } from '~/common';
 
 const fieldClass = 'h-9';
 const sectionLabelClass = 'font-semibold';

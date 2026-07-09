@@ -1,7 +1,11 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
+import { useId, useState } from 'react';
 import * as Menu from '@ariakit/react/menu';
+import { Maximize2, PlusCircle } from 'lucide-react';
+import { specialVariables } from 'librechat-data-provider';
+import { Controller, useFormContext } from 'react-hook-form';
 import {
   Button,
   CircleHelpIcon,
@@ -18,13 +22,9 @@ import {
   OGDialogTitle,
 } from '@librechat/client';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
-import { specialVariables } from 'librechat-data-provider';
-import { Maximize2, PlusCircle } from 'lucide-react';
-import { useId, useState } from 'react';
-import { Controller, useFormContext } from 'react-hook-form';
 import type { AgentForm } from '~/common';
-import { useLocalize } from '~/hooks';
 import { njInputClass } from '~/nj/components/Agents/agentInputStyle';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const textareaClass =
