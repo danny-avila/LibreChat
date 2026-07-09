@@ -37,6 +37,7 @@ function makeLoader(
     checkSubagentAccess?: (agent: Agent) => Promise<boolean>;
     getAgent?: (filter: { id: string }) => Promise<Agent | null>;
     skippedAgentIds?: Set<string>;
+    logPrefix?: string;
   } = {},
 ) {
   const subagentGraphIds = new Set<string>([primaryConfig.id as string]);
@@ -58,11 +59,21 @@ function makeLoader(
     loadAgentById,
     assertSubagentGraphRoom,
     maxSubagentDepth: MAX_DEPTH,
+    logPrefix: opts.logPrefix,
     getAgent: opts.getAgent,
     checkSubagentAccess: opts.checkSubagentAccess,
   });
   return { loader, loadAgentById };
 }
+
+/** A straight chain d0 -> d1 -> ... -> d(MAX_DEPTH+1), deeper than the limit. */
+const makeDeepChain = (): Record<string, SubagentConfigLike> => {
+  const map: Record<string, SubagentConfigLike> = {};
+  for (let i = 0; i <= MAX_DEPTH + 1; i++) {
+    map[`d${i}`] = makeConfig(`d${i}`, i < MAX_DEPTH + 1 ? [`d${i + 1}`] : []);
+  }
+  return map;
+};
 
 describe('createSubagentLoader', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -85,15 +96,10 @@ describe('createSubagentLoader', () => {
   });
 
   it('throws and logs with the [initializeClient] tag when depth exceeds MAX_SUBAGENT_DEPTH', async () => {
-    // Build a straight chain deeper than MAX_DEPTH: d0 -> d1 -> ... -> d6
-    const map: Record<string, SubagentConfigLike> = {};
-    for (let i = 0; i <= MAX_DEPTH + 1; i++) {
-      map[`d${i}`] = makeConfig(`d${i}`, i < MAX_DEPTH + 1 ? [`d${i + 1}`] : []);
-    }
-    const primary = map.d0;
-    const { loader } = makeLoader(primary, map);
+    const map = makeDeepChain();
+    const { loader } = makeLoader(map.d0, map);
 
-    await expect(loader.resolveSubagentTrees([primary])).rejects.toThrow(
+    await expect(loader.resolveSubagentTrees([map.d0])).rejects.toThrow(
       `maximum depth of ${MAX_DEPTH}`,
     );
     expect(logger.warn).toHaveBeenCalledWith(
@@ -103,30 +109,16 @@ describe('createSubagentLoader', () => {
   });
 
   it('honors a custom logPrefix for the /v1 callers', async () => {
-    const map: Record<string, SubagentConfigLike> = {};
-    for (let i = 0; i <= MAX_DEPTH + 1; i++) {
-      map[`d${i}`] = makeConfig(`d${i}`, i < MAX_DEPTH + 1 ? [`d${i + 1}`] : []);
-    }
-    const primary = map.d0;
-    const subagentGraphIds = new Set<string>([primary.id as string]);
-    const loader = createSubagentLoader({
-      primaryConfig: primary,
-      skippedAgentIds: new Set(),
-      edgeAgentIds: new Set(),
-      pureSubagentIds: new Set(),
-      subagentGraphIds,
-      loadedSubagentConfigIds: new Set(),
-      maxResolvedDepthByConfigId: new Map(),
-      loadAgentById: async (id) => map[id] ?? null,
-      assertSubagentGraphRoom: () => undefined,
-      maxSubagentDepth: MAX_DEPTH,
-      logPrefix: '[openai]',
-    });
+    const map = makeDeepChain();
+    // Identical to the depth test above, only the injected logPrefix differs.
+    const { loader } = makeLoader(map.d0, map, { logPrefix: '[openai]' });
 
-    await expect(loader.resolveSubagentTrees([primary])).rejects.toThrow();
+    await expect(loader.resolveSubagentTrees([map.d0])).rejects.toThrow(
+      `maximum depth of ${MAX_DEPTH}`,
+    );
     expect(logger.warn).toHaveBeenCalledWith(
       '[openai] Subagent graph depth limit exceeded',
-      expect.any(Object),
+      expect.objectContaining({ maxSubagentDepth: MAX_DEPTH, depth: MAX_DEPTH }),
     );
   });
 
