@@ -1427,4 +1427,17 @@ describe('getConfiguredMimeAccept', () => {
   it('returns undefined for a finite config with no recognized types (fall back to provider filter)', () => {
     expect(getConfiguredMimeAccept([/^application\/x-librechat-unknown$/])).toBeUndefined();
   });
+
+  it('falls back when any configured type is unrepresentable, rather than emitting a partial accept', () => {
+    expect(getConfiguredMimeAccept([/^application\/pdf$/, /^text\/x-python$/])).toBeUndefined();
+  });
+
+  it('translates a fully-representable mixed pdf + audio allowlist', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^application\/pdf$/, /^audio\/mp3$/]));
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('application/pdf')).toBe(true);
+    expect(accept.has('audio/*')).toBe(true);
+    expect(accept.has('video/*')).toBe(false);
+    expect(accept.has('image/*')).toBe(false);
+  });
 });

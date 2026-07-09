@@ -536,16 +536,48 @@ const mimeAcceptCategories: ReadonlyArray<{
 }> = [
   {
     token: 'image/*',
-    samples: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'],
+    samples: [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/heic',
+      'image/heif',
+      'image/svg+xml',
+    ],
     extras: ['.heif', '.heic'],
   },
   {
     token: 'audio/*',
-    samples: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac'],
+    samples: [
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/wav',
+      'audio/ogg',
+      'audio/m4a',
+      'audio/aac',
+      'audio/flac',
+      'audio/wma',
+      'audio/opus',
+      'audio/mp4',
+    ],
   },
   {
     token: 'video/*',
-    samples: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'],
+    samples: [
+      'video/mp4',
+      'video/avi',
+      'video/mov',
+      'video/wmv',
+      'video/flv',
+      'video/webm',
+      'video/mkv',
+      'video/m4v',
+      'video/3gp',
+      'video/ogv',
+      'video/mpeg',
+      'video/quicktime',
+    ],
   },
 ];
 
@@ -577,9 +609,27 @@ const documentMimeExtensions: ReadonlyArray<readonly [string, string]> = [
   ['message/rfc822', '.eml'],
 ];
 
-/** Translates a finite MIME allowlist into a file-input `accept` string, or `undefined` if none match. */
+/** Every MIME type the translator can represent; a pattern matching none of these is untranslatable. */
+const recognizedMimeTypes: readonly string[] = [
+  ...mimeAcceptCategories.flatMap((category) => category.samples),
+  ...documentMimeExtensions.map(([mimeType]) => mimeType),
+];
+
+/**
+ * Translates a finite MIME allowlist into a file-input `accept` string. Returns `undefined` unless
+ * every configured pattern maps to a recognized type, so a partial translation never hides a
+ * supported type the provider fallback filter would have shown.
+ */
 const buildMimeAccept = (types: RegExp[]): string | undefined => {
   const matches = (mimeType: string): boolean => types.some((regex) => regex.test(mimeType));
+
+  const everyPatternRecognized = types.every((regex) =>
+    recognizedMimeTypes.some((mimeType) => regex.test(mimeType)),
+  );
+  if (!everyPatternRecognized) {
+    return undefined;
+  }
+
   const tokens: string[] = [];
   const seen = new Set<string>();
   const push = (token: string): void => {
