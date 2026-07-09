@@ -19,10 +19,14 @@ describe('validateEmailLogin', () => {
   let res: Response;
   let next: jest.MockedFunction<NextFunction>;
 
+  function createRequest(ip = '127.0.0.1'): Request {
+    return { ip } as Request;
+  }
+
   beforeEach(() => {
     delete process.env.ALLOW_EMAIL_LOGIN;
     delete process.env.ALLOW_EMAIL_LOGIN_OVERRIDE;
-    req = { ip: '127.0.0.1' } as Request;
+    req = createRequest();
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
@@ -69,7 +73,7 @@ describe('validateEmailLogin', () => {
 
   it('should log blocked login attempts with the request IP', () => {
     process.env.ALLOW_EMAIL_LOGIN = 'false';
-    req.ip = '10.0.0.42';
+    req = createRequest('10.0.0.42');
 
     validateEmailLogin(req, res, next);
 
@@ -98,7 +102,7 @@ describe('validateEmailLogin', () => {
   it('should log override logins with the request IP', () => {
     process.env.ALLOW_EMAIL_LOGIN = 'false';
     process.env.ALLOW_EMAIL_LOGIN_OVERRIDE = 'true';
-    req.ip = '10.0.0.42';
+    req = createRequest('10.0.0.42');
 
     validateEmailLogin(req, res, next);
 
