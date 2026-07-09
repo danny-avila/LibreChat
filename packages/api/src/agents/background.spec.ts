@@ -5,6 +5,7 @@ import {
   stripRunInBackgroundArg,
   injectRunInBackgroundParam,
   stripBackgroundFromToolDefinitions,
+  stripBackgroundFromToolRegistry,
   applyBackgroundToolCalls,
   synthesizeBackgroundToolOptions,
   registerBackgroundTaskTool,
@@ -360,6 +361,31 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(turn2.task.id).not.toBe(turn1.task.id);
   });
 
+  it('does NOT collide when two agents in the same run emit the same toolCallId', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const agentA = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_0',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      agentId: 'agent-A',
+    });
+    const agentB = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_0',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      agentId: 'agent-B',
+    });
+    if ('atCapacity' in agentA || 'atCapacity' in agentB) {
+      throw new Error('unexpected capacity');
+    }
+    expect(agentB.isNew).toBe(true);
+    expect(agentB.task.id).not.toBe(agentA.task.id);
+  });
+
   it('records failures', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -462,6 +488,41 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(listed.tasks[0]).toEqual(
       expect.objectContaining({ status: 'completed', result_available: true, result_chars: 6 }),
     );
+
+    // stringified args must still resolve the specific task (with its full result)
+    const singleFromString = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'poll_user',
+        conversationId: 'poll_convo2',
+        args: `{"background_task_id":"${created.task.id}"}`,
+      }),
+    );
+    expect(singleFromString).toEqual(
+      expect.objectContaining({ status: 'completed', result: 'RESULT' }),
+    );
+  });
+});
+
+describe('stripBackgroundFromToolRegistry', () => {
+  it('drops the poll entry and the injected param without mutating the input', () => {
+    const searchDef = mcpDef('search_mcp_docs');
+    const registry: LCToolRegistry = new Map([['search_mcp_docs', { ...searchDef }]]);
+    applyBackgroundToolCalls({
+      toolDefinitions: [searchDef],
+      toolRegistry: registry,
+      toolOptions: { search_mcp_docs: { run_in_background: true } },
+      enabled: true,
+    });
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
+
+    const stripped = stripBackgroundFromToolRegistry(registry, ['search_mcp_docs']);
+    expect(stripped?.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
+    expect(
+      (stripped?.get('search_mcp_docs')?.parameters as { properties: Record<string, unknown> })
+        .properties[RUN_IN_BACKGROUND_ARG],
+    ).toBeUndefined();
+    // original untouched (parent still needs background)
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
   });
 });
 

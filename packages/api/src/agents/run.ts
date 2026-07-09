@@ -39,10 +39,13 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
+import {
+  stripBackgroundFromToolRegistry,
+  stripBackgroundFromToolDefinitions,
+} from '~/agents/background';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
-import { stripBackgroundFromToolDefinitions } from '~/agents/background';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
@@ -856,6 +859,10 @@ function buildSubagentConfigs(
               ...agentInput,
               toolDefinitions: stripBackgroundFromToolDefinitions(
                 agentInput.toolDefinitions,
+                agent.backgroundToolNames,
+              ),
+              toolRegistry: stripBackgroundFromToolRegistry(
+                agentInput.toolRegistry,
                 agent.backgroundToolNames,
               ),
             },

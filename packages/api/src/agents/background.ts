@@ -204,6 +204,33 @@ export function stripBackgroundFromToolDefinitions(
     .map((d) => (bgSet.has(d.name) ? removeRunInBackgroundParam(d) : d));
 }
 
+/**
+ * Registry counterpart of {@link stripBackgroundFromToolDefinitions}. Returns a
+ * NEW registry (never mutates the shared parent one) without the poll tool and
+ * with the injected param removed, so a self-spawn child that uses
+ * tool_search/deferred loading can't rediscover the host-only background schema.
+ */
+export function stripBackgroundFromToolRegistry(
+  toolRegistry: LCToolRegistry | undefined,
+  backgroundToolNames: string[] | undefined,
+): LCToolRegistry | undefined {
+  if (!toolRegistry) {
+    return toolRegistry;
+  }
+  const bgSet = new Set(backgroundToolNames ?? []);
+  if (bgSet.size === 0 && !toolRegistry.has(CHECK_BACKGROUND_TASK_NAME)) {
+    return toolRegistry;
+  }
+  const next: LCToolRegistry = new Map();
+  for (const [name, def] of toolRegistry) {
+    if (name === CHECK_BACKGROUND_TASK_NAME) {
+      continue;
+    }
+    next.set(name, bgSet.has(name) ? removeRunInBackgroundParam(def) : def);
+  }
+  return next;
+}
+
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check the status and retrieve the result of tool calls previously dispatched in the background (with run_in_background: true).
 
 Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them.`;
@@ -416,7 +443,7 @@ export class BackgroundTaskRegistryClass {
         }
       }
       /** Drop dedupe mappings whose task was evicted (keys are
-       *  `runId::toolCallId`, so they can't be derived from a task alone). */
+       *  `agentId::runId::toolCallId`, so they can't be derived from a task alone). */
       for (const [dedupeKey, taskId] of bucket.byToolCall) {
         if (!bucket.tasks.has(taskId)) {
           bucket.byToolCall.delete(dedupeKey);
@@ -442,10 +469,11 @@ export class BackgroundTaskRegistryClass {
    * (a resume/replay) — the caller must not start the work twice. Returns
    * `atCapacity: true` when the per-conversation running cap is reached.
    *
-   * The dedupe key includes `runId` because provider tool-call ids repeat
-   * across turns (e.g. `call_0` per response); keying on `toolCallId` alone
-   * would make a later turn's identically-named call collide with a prior
-   * (retained) task and hand back a stale result instead of executing.
+   * The dedupe key includes `agentId` + `runId` because provider tool-call ids
+   * repeat across turns AND across agents in one run (e.g. `call_0` per
+   * response); keying on `toolCallId` alone would make a later turn's — or a
+   * second agent's — identically-named call collide with a prior (retained)
+   * task and hand back a stale/foreign result instead of executing.
    */
   create(params: {
     userId: string;
@@ -453,12 +481,13 @@ export class BackgroundTaskRegistryClass {
     toolCallId: string;
     toolName: string;
     runId?: string;
+    agentId?: string;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
     const bucket = this.getBucket(params.userId, params.conversationId, now);
 
-    const dedupeKey = `${params.runId ?? ''}::${params.toolCallId}`;
+    const dedupeKey = `${params.agentId ?? ''}::${params.runId ?? ''}::${params.toolCallId}`;
     const existingId = bucket.byToolCall.get(dedupeKey);
     if (existingId) {
       const existing = bucket.tasks.get(existingId);
@@ -604,10 +633,7 @@ export function runCheckBackgroundTask(params: {
   args: unknown;
 }): string {
   const { userId, conversationId } = params;
-  const rawId =
-    typeof params.args === 'object' && params.args !== null
-      ? (params.args as Record<string, unknown>).background_task_id
-      : undefined;
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
 
   if (taskId) {
