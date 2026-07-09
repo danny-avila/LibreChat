@@ -62,9 +62,13 @@ const updateResourcePermissions = async (req, res) => {
     validateResourceType(resourceType);
 
     /* Config-defined global agents own their access via server config; reject post-boot permission
-     * edits (an admin/sharer would otherwise re-grant/revoke until the next restart). The `_id` is
-     * globally unique, so the system-context fallback resolves tenantless globals without leaking. */
-    if (resourceType === ResourceType.AGENT && mongoose.isValidObjectId(resourceId)) {
+     * edits (an admin/sharer would otherwise re-grant/revoke until the next restart). Covers the
+     * remote-agent sharing endpoint too, which shares the same agent `_id`. The `_id` is globally
+     * unique, so the system-context fallback resolves tenantless globals without leaking. */
+    if (
+      (resourceType === ResourceType.AGENT || resourceType === ResourceType.REMOTE_AGENT) &&
+      mongoose.isValidObjectId(resourceId)
+    ) {
       const agent =
         (await db.getAgent({ _id: resourceId })) ??
         (await runAsSystem(() => db.getAgent({ _id: resourceId, tenantId: { $exists: false } })));

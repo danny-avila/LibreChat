@@ -110,7 +110,7 @@ export interface DiscoverConnectedAgentsDeps {
   authorizeSystemGlobalAgent?: (params: {
     agentId: string;
     requiredPermission: number;
-    req: { user: { id: string; role: string } };
+    req: { user: { id: string; role: string; tenantId?: string } };
   }) => Promise<{ status: 'ok' | 'not_found' | 'forbidden'; agent?: Agent }>;
   /** Violation logger passed through to validateAgentModel. */
   logViolation: ValidateAgentModelParams['logViolation'];
@@ -238,7 +238,11 @@ export async function discoverConnectedAgents(
             await authorizeSystemGlobalAgent({
               agentId,
               requiredPermission: PermissionBits.VIEW,
-              req: { user: { id: userId, role: req.user?.role ?? '' } },
+              // Preserve tenantId: hasCapability keys its cache/principals on it, so dropping it
+              // would skip tenant-scoped managers/admins relying on the MANAGE_AGENTS bypass.
+              req: {
+                user: { id: userId, role: req.user?.role ?? '', tenantId: req.user?.tenantId },
+              },
             })
           ).status === 'ok'
         : await checkPermission({

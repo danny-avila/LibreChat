@@ -304,6 +304,24 @@ describe('PermissionsController', () => {
       expect(mockBulkUpdateResourcePermissions).not.toHaveBeenCalled();
     });
 
+    it('rejects remote-agent permission edits for a config-managed (isSystem) agent', async () => {
+      db.getAgent.mockResolvedValueOnce({ _id: agentObjectId, isSystem: true });
+      const req = createMockReq({
+        params: { resourceType: ResourceType.REMOTE_AGENT, resourceId: agentObjectId },
+        body: {
+          updated: [{ type: PrincipalType.USER, id: revokedUserId, accessRoleId: 'agent_viewer' }],
+          removed: [],
+          public: false,
+        },
+      });
+      const res = createMockRes();
+
+      await updateResourcePermissions(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockBulkUpdateResourcePermissions).not.toHaveBeenCalled();
+    });
+
     it('removes agent from revoked users favorites on REMOTE_AGENT resource type', async () => {
       const req = createMockReq({
         params: { resourceType: ResourceType.REMOTE_AGENT, resourceId: agentObjectId },

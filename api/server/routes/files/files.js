@@ -650,8 +650,10 @@ router.post('/', async (req, res) => {
     }
 
     /* Only agent-resource uploads mutate the agent; per-message attachments (message_file) reuse the
-     * conversation's agent_id but don't touch agent resources, so they must stay allowed for globals. */
-    if (metadata.agent_id && metadata.message_file !== true) {
+     * conversation's agent_id but don't touch agent resources, so they must stay allowed for globals.
+     * Multipart sends the flag as the string 'true', so normalize both forms (matches upload auth). */
+    const isMessageAttachment = metadata.message_file === true || metadata.message_file === 'true';
+    if (metadata.agent_id && !isMessageAttachment) {
       const targetAgent = await withSystemGlobalFallback(
         metadata.agent_id,
         () => db.getAgent({ id: metadata.agent_id }),

@@ -12,7 +12,7 @@ import type { Types } from 'mongoose';
 
 type AgentFilter = { id: string; tenantId?: { $exists: boolean } };
 type Principal = { principalType: string; principalId?: string | Types.ObjectId };
-type AccessRequestUser = { id: string; role: string };
+type AccessRequestUser = { id: string; role: string; tenantId?: string };
 
 export interface SystemGlobalAccessDeps {
   getAgent: (filter: AgentFilter) => Promise<Agent | null>;
