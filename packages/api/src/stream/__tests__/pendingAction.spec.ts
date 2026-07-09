@@ -67,6 +67,30 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     test('returns false when the job does not exist', async () => {
       expect(await manager.approvals.pause('nonexistent', buildAction('nonexistent'))).toBe(false);
     });
+
+    test('client-facing copies omit resumeContext/requestFingerprint; the stored record keeps them', async () => {
+      const streamId = 'stream-redact';
+      await manager.createJob(streamId, 'user-1');
+
+      const action = buildAction(streamId, {
+        requestFingerprint: 'fp-hash',
+        resumeContext: {
+          endpoint: 'agents',
+          model_parameters: { temperature: 0.7 },
+        },
+      });
+      expect(await manager.approvals.pause(streamId, action)).toBe(true);
+
+      const resumeState = await manager.getResumeState(streamId);
+      expect(resumeState?.pendingAction?.actionId).toBe(action.actionId);
+      expect(resumeState?.pendingAction?.resumeContext).toBeUndefined();
+      expect(resumeState?.pendingAction?.requestFingerprint).toBeUndefined();
+
+      // The resume route replays from the job store, which must retain the full record.
+      const job = await manager.getJob(streamId);
+      expect(job?.metadata.pendingAction?.resumeContext).toEqual(action.resumeContext);
+      expect(job?.metadata.pendingAction?.requestFingerprint).toBe('fp-hash');
+    });
   });
 
   describe('peek', () => {
@@ -196,6 +220,111 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       const job = await manager.getJob(streamId);
       expect(job?.status).toBe('aborted');
       expect(job?.completedAt).toBeGreaterThan(0);
+    });
+  });
+
+  describe('expireApproval → approval-expired handler', () => {
+    // The host registers this to prune the paused run's durable checkpoint eagerly on
+    // expiry (sweeper or stale submit) instead of waiting out the checkpoint TTL.
+    test('fires the registered handler with the streamId after a successful expiry', async () => {
+      const streamId = 'stream-expire-handler';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId, { actionId: 'action-A' }));
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+
+      expect(await manager.expireApproval(streamId, 'action-A')).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      // The expired job rides along so the host can resolve tenant/user-scoped config.
+      expect(handler).toHaveBeenCalledWith(streamId, expect.objectContaining({ userId: 'user-1' }));
+
+      // The aborted job outlives the expiry (completed-job TTL), so the next sweep enters
+      // the relay branch for the SAME approval — the cleanup must not run a second time.
+      await (
+        manager as unknown as { expireStaleApprovals(): Promise<void> }
+      ).expireStaleApprovals();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    test('relays a store-won expiry through the handler (multi-replica path)', async () => {
+      const streamId = 'stream-expire-relay';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId));
+
+      // Another replica's store cleanup wins the expiry CAS: the status flips via the
+      // lifecycle primitive with NO emit, NO handler, and no errorEvent on this replica.
+      expect(await manager.approvals.expire(streamId)).toBe(true);
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+      // This replica's sweep observes the already-aborted expiry and relays it.
+      await (
+        manager as unknown as { expireStaleApprovals(): Promise<void> }
+      ).expireStaleApprovals();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({ userId: 'user-1', status: 'aborted' }),
+      );
+
+      // Repeated sweeps must not re-run the (idempotent but not free) cleanup.
+      await (
+        manager as unknown as { expireStaleApprovals(): Promise<void> }
+      ).expireStaleApprovals();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    test('relay cleanup still runs when the terminal error is already cached (reconnect)', async () => {
+      const streamId = 'stream-expire-relay-cached';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      expect(await manager.approvals.expire(streamId)).toBe(true); // store-won CAS
+
+      // A reconnect seeds runtime.errorEvent from the aborted job BEFORE any sweep —
+      // that must gate the relay emit, not the checkpoint cleanup.
+      const internals = manager as unknown as {
+        runtimeState: Map<string, { errorEvent?: string }>;
+        expireStaleApprovals(): Promise<void>;
+      };
+      const runtime = internals.runtimeState.get(streamId);
+      expect(runtime).toBeDefined();
+      runtime!.errorEvent = 'cached-terminal-error';
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+      await internals.expireStaleApprovals();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({ status: 'aborted' }),
+      );
+    });
+
+    test('does NOT fire when nothing was expired (failed CAS)', async () => {
+      const streamId = 'stream-expire-handler-noop';
+      await manager.createJob(streamId, 'user-1'); // running — no pending action to expire
+
+      const handler = jest.fn();
+      manager.setApprovalExpiredHandler(handler);
+
+      expect(await manager.expireApproval(streamId)).toBe(false);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test('a throwing handler never breaks the expiry itself', async () => {
+      const streamId = 'stream-expire-handler-throws';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId));
+
+      manager.setApprovalExpiredHandler(() => {
+        throw new Error('prune failed');
+      });
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(await manager.getJobStatus(streamId)).toBe('aborted');
     });
   });
 

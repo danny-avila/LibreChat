@@ -17,11 +17,16 @@ import Markdown from '../Markdown';
  */
 jest.mock('~/components/Artifacts/ArtifactButton', () => ({
   __esModule: true,
-  default: ({ artifact }: { artifact?: { index?: number; identifier?: string } }) => (
+  default: ({
+    artifact,
+  }: {
+    artifact?: { index?: number; identifier?: string; content?: string };
+  }) => (
     <div
       data-testid="art"
       data-index={String(artifact?.index)}
       data-id={String(artifact?.identifier)}
+      data-content={String(artifact?.content ?? '')}
     />
   ),
 }));
@@ -113,5 +118,32 @@ describe('MarkdownBlocks artifact-index parity (e2e)', () => {
     render(wrap(<Markdown content={content} isLatestMessage={false} />));
 
     expect(await readArtifacts()).toEqual([{ idx: '0', id: 'a' }]);
+  });
+
+  it('preserves markdown artifact content with inner fenced code blocks', async () => {
+    const markdown = [
+      '# Title',
+      '',
+      '```bash',
+      'echo one',
+      '```',
+      'Text between sections.',
+      '## Section B',
+      '```bash',
+      'echo two',
+      '```',
+    ].join('\n');
+    const content = [
+      ':::artifact{identifier="git-cheatsheet" type="text/markdown" title="Git Cheatsheet"}',
+      '````markdown',
+      markdown,
+      '````',
+      ':::',
+    ].join('\n');
+
+    render(wrap(<Markdown content={content} isLatestMessage={false} />));
+
+    const [artifactNode] = await screen.findAllByTestId('art');
+    expect(artifactNode.getAttribute('data-content')).toBe(`${markdown}\n`);
   });
 });

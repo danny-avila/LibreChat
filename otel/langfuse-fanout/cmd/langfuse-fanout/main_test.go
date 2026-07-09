@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -128,6 +129,46 @@ func TestTraceProxyForwardsExistingRoutingAttributesToCollector(t *testing.T) {
 	}
 	if attrs["kept"] != "value" {
 		t.Fatalf("collector trace lost kept attr: %#v", attrs)
+	}
+}
+
+func TestTraceProxyDoesNotReturnCollectorErrorDetails(t *testing.T) {
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logBuffer, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "failed https://storage.example.com/object?X-Amz-Signature=secret", http.StatusBadGateway)
+	}))
+	defer collector.Close()
+
+	gw := newTestGatewayWithCollector(collector.URL)
+	body := buildTraceRequest(t, nil)
+	req := httptest.NewRequest(http.MethodPost, otelTracePath, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	resp := httptest.NewRecorder()
+
+	gw.handle(resp, req)
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "storage.example.com") || strings.Contains(resp.Body.String(), "secret") {
+		t.Fatalf("response leaked collector error details: %s", resp.Body.String())
+	}
+	if strings.TrimSpace(resp.Body.String()) != "trace collector export failed" {
+		t.Fatalf("unexpected response body: %s", resp.Body.String())
+	}
+	logOutput := logBuffer.String()
+	if strings.Contains(logOutput, "storage.example.com") || strings.Contains(logOutput, "secret") {
+		t.Fatalf("log leaked collector error details: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"operation":"trace_collector"`) {
+		t.Fatalf("log missing operation context: %s", logOutput)
+	}
+	if got := strings.Count(strings.TrimSpace(logOutput), "\n") + 1; got != 1 {
+		t.Fatalf("expected one gateway failure log, got %d: %s", got, logOutput)
 	}
 }
 
@@ -327,6 +368,89 @@ func TestMediaUploadRejectsInvalidIDBeforeReadingBody(t *testing.T) {
 	}
 	if reader.read {
 		t.Fatal("invalid upload id should not read request body")
+	}
+}
+
+func TestUploadPlanStoreErrorsUseGenericResponses(t *testing.T) {
+	t.Parallel()
+
+	sensitiveErr := errors.New("redis://internal-redis:6379 leaked-secret")
+
+	t.Run("ping", func(t *testing.T) {
+		t.Parallel()
+
+		store := newFakeUploadPlanStore()
+		store.pingErr = sensitiveErr
+		gw := newTestGatewayWithStore("http://central.invalid", nil, store)
+
+		req := httptest.NewRequest(http.MethodPost, mediaPath, strings.NewReader(`{"contentLength":5}`))
+		resp := httptest.NewRecorder()
+		gw.handle(resp, req)
+
+		assertGenericErrorResponse(t, resp, http.StatusBadGateway, "media upload plan store unavailable")
+	})
+
+	t.Run("put", func(t *testing.T) {
+		t.Parallel()
+
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			uploadURL := "http://storage.invalid/upload"
+			writeJSON(w, http.StatusCreated, mediaUploadResponse{
+				MediaID:   "same-media-id",
+				UploadURL: &uploadURL,
+			})
+		}))
+		defer upstream.Close()
+
+		store := newFakeUploadPlanStore()
+		store.putErr = sensitiveErr
+		gw := newTestGatewayWithStore(upstream.URL, nil, store)
+
+		req := httptest.NewRequest(http.MethodPost, mediaPath, strings.NewReader(`{"contentLength":5}`))
+		resp := httptest.NewRecorder()
+		gw.handle(resp, req)
+
+		assertGenericErrorResponse(t, resp, http.StatusBadGateway, "failed to store media upload plan")
+	})
+
+	t.Run("take", func(t *testing.T) {
+		t.Parallel()
+
+		store := newFakeUploadPlanStore()
+		store.takeErr = sensitiveErr
+		gw := newTestGatewayWithStore("http://central.invalid", nil, store)
+
+		req := httptest.NewRequest(http.MethodPut, mediaUploadProxyPath+"abcdef1234", strings.NewReader("hello"))
+		resp := httptest.NewRecorder()
+		gw.handle(resp, req)
+
+		assertGenericErrorResponse(t, resp, http.StatusBadGateway, "failed to load media upload plan")
+	})
+}
+
+func TestUploadPlanStoreErrorsUseRedactedLogs(t *testing.T) {
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logBuffer, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	store := newFakeUploadPlanStore()
+	store.pingErr = errors.New("redis://internal-redis:6379 leaked-secret")
+	gw := newTestGatewayWithStore("http://central.invalid", nil, store)
+
+	req := httptest.NewRequest(http.MethodPost, mediaPath, strings.NewReader(`{"contentLength":5}`))
+	resp := httptest.NewRecorder()
+	gw.handle(resp, req)
+
+	assertGenericErrorResponse(t, resp, http.StatusBadGateway, "media upload plan store unavailable")
+	logOutput := logBuffer.String()
+	if strings.Contains(logOutput, "internal-redis") || strings.Contains(logOutput, "leaked-secret") {
+		t.Fatalf("log leaked upload plan store details: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"error":"error details redacted"`) {
+		t.Fatalf("log missing redacted error context: %s", logOutput)
 	}
 }
 
@@ -687,6 +811,36 @@ func TestMetricsEndpointRequiresBearerToken(t *testing.T) {
 	}
 }
 
+func TestSafeErrorMessageRedactsURLErrorURL(t *testing.T) {
+	t.Parallel()
+
+	err := &url.Error{
+		Op:  "Put",
+		URL: "https://storage.example.com/object?X-Amz-Signature=secret",
+		Err: errors.New("lookup bucket.storage.example.com: connection refused"),
+	}
+
+	message := safeErrorMessage(err)
+	if strings.Contains(message, "storage.example.com") || strings.Contains(message, "bucket") || strings.Contains(message, "secret") {
+		t.Fatalf("safe error leaked URL details: %q", message)
+	}
+	if !strings.Contains(message, "Put") || !strings.Contains(message, "URL request failed") {
+		t.Fatalf("safe error lost useful context: %q", message)
+	}
+}
+
+func TestSafeErrorMessageRedactsGenericError(t *testing.T) {
+	t.Parallel()
+
+	message := safeErrorMessage(errors.New("redis://internal-redis:6379 leaked-secret"))
+	if strings.Contains(message, "internal-redis") || strings.Contains(message, "leaked-secret") {
+		t.Fatalf("safe error leaked generic error details: %q", message)
+	}
+	if message != "error details redacted" {
+		t.Fatalf("unexpected generic error message: %q", message)
+	}
+}
+
 func TestTraceProxyRecordsPrometheusMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -878,6 +1032,19 @@ func scrapeMetrics(t *testing.T, gw *gateway) string {
 	return resp.Body.String()
 }
 
+func assertGenericErrorResponse(t *testing.T, resp *httptest.ResponseRecorder, status int, body string) {
+	t.Helper()
+	if resp.Code != status {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if strings.TrimSpace(resp.Body.String()) != body {
+		t.Fatalf("unexpected body: %s", resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "internal-redis") || strings.Contains(resp.Body.String(), "leaked-secret") {
+		t.Fatalf("response leaked upload plan store details: %s", resp.Body.String())
+	}
+}
+
 func newUploadURLPath(t *testing.T, value string) string {
 	t.Helper()
 	parsed, err := url.Parse(value)
@@ -890,6 +1057,10 @@ func newUploadURLPath(t *testing.T, value string) string {
 type fakeUploadPlanStore struct {
 	mu    sync.Mutex
 	plans map[string]uploadPlan
+
+	putErr  error
+	takeErr error
+	pingErr error
 }
 
 func newFakeUploadPlanStore() *fakeUploadPlanStore {
@@ -897,6 +1068,9 @@ func newFakeUploadPlanStore() *fakeUploadPlanStore {
 }
 
 func (s *fakeUploadPlanStore) Put(_ context.Context, uploadID string, plan uploadPlan) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.plans[uploadID] = plan
@@ -904,6 +1078,9 @@ func (s *fakeUploadPlanStore) Put(_ context.Context, uploadID string, plan uploa
 }
 
 func (s *fakeUploadPlanStore) Take(_ context.Context, uploadID string) (uploadPlan, bool, error) {
+	if s.takeErr != nil {
+		return uploadPlan{}, false, s.takeErr
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	plan, ok := s.plans[uploadID]
@@ -912,6 +1089,9 @@ func (s *fakeUploadPlanStore) Take(_ context.Context, uploadID string) (uploadPl
 }
 
 func (s *fakeUploadPlanStore) Ping(_ context.Context) error {
+	if s.pingErr != nil {
+		return s.pingErr
+	}
 	return nil
 }
 

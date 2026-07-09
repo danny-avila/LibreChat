@@ -3,9 +3,12 @@ jest.mock('~/models', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  createMessageRequestMiddleware:
+    jest.requireActual('@librechat/api').createMessageRequestMiddleware,
   GenerationJobManager: {
     getJob: jest.fn(),
   },
+  isPendingActionStale: jest.fn(() => false),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({

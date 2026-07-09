@@ -144,6 +144,12 @@ describe('ConversationsSection streaming re-renders', () => {
     // data hook firing is the deterministic signal that the chunk resolved).
     await waitFor(() => expect(mockUseGetConversationTags).toHaveBeenCalled());
 
+    // waitFor resolves as soon as the hook has fired once, but the Suspense
+    // resolution commit can still have a trailing render pass pending on slow
+    // runners (Windows CI shards). Flush it before capturing baselines so the
+    // first stream tick doesn't carry it and inflate the children's counts.
+    await act(async () => {});
+
     expect(mockUseFavorites.mock.calls.length).toBeGreaterThan(0);
     expect(mockUseGetConversationTags.mock.calls.length).toBeGreaterThan(0);
 

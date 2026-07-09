@@ -3,6 +3,7 @@ const axios = require('axios');
 jest.mock('axios');
 jest.mock('@librechat/api', () => ({
   generateShortLivedToken: jest.fn(),
+  logAxiosError: jest.fn(),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({

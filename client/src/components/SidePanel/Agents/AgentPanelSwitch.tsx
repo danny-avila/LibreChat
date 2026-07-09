@@ -5,7 +5,6 @@ import AgentPanelSplash from '~/nj/components/Agents/AgentPanelSplash';
 import { atomWithLocalStorage } from '~/store/utils';
 import { Panel, isEphemeralAgent } from '~/common';
 import VersionPanel from './Version/VersionPanel';
-import ActionsPanel from './ActionsPanel';
 import AgentPanel from './AgentPanel';
 import store from '~/store';
 
@@ -35,9 +34,6 @@ function AgentPanelSwitchWithContext() {
     return <AgentPanelSplash setShowSplashPage={setShowSplashPage} />;
   }
 
-  if (activePanel === Panel.actions) {
-    return <ActionsPanel />;
-  }
   if (activePanel === Panel.version) {
     return <VersionPanel />;
   }

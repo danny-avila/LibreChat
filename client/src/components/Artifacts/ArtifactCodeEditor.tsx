@@ -5,6 +5,7 @@ import type { Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
 import { useMutationState, useCodeState } from '~/Providers/EditorContext';
+import { getResponseStatus } from '~/utils/errors';
 import { useArtifactsContext } from '~/Providers';
 import { useEditArtifact } from '~/data-provider';
 
@@ -111,10 +112,12 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   const { setCurrentCode } = useCodeState();
   const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
   const { isMutating, setIsMutating } = useMutationState();
+  const [failedContent, setFailedContent] = useState<string | null>(null);
   const artifactRef = useRef(artifact);
   const isMutatingRef = useRef(isMutating);
   const currentUpdateRef = useRef(currentUpdate);
   const setCurrentCodeRef = useRef(setCurrentCode);
+  const failedContentRef = useRef(failedContent);
   const pendingUpdateRef = useRef<PendingUpdate | null>(null);
   const runMutationRef = useRef<(code: string, original?: string) => void>(() => {});
 
@@ -130,6 +133,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       currentUpdateRef.current = null;
       setIsMutating(false);
       setCurrentUpdate(null);
+      setFailedContent(null);
 
       const pending = pendingUpdateRef.current;
       pendingUpdateRef.current = null;
@@ -148,7 +152,12 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         runMutationRef.current(pending.code, original);
       }
     },
-    onError: () => {
+    onError: (error) => {
+      const status = getResponseStatus(error);
+      if (status === 400 && currentUpdateRef.current != null) {
+        setFailedContent(currentUpdateRef.current);
+        failedContentRef.current = currentUpdateRef.current;
+      }
       const pending = pendingUpdateRef.current;
       pendingUpdateRef.current = null;
       isMutatingRef.current = false;
@@ -182,6 +191,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   currentUpdateRef.current = currentUpdate;
   editArtifactRef.current = editArtifact;
   setCurrentCodeRef.current = setCurrentCode;
+  failedContentRef.current = failedContent;
 
   const runMutation = useCallback(
     (code: string, originalOverride?: string) => {
@@ -206,6 +216,10 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         currentUpdateRef.current == null ? true : code.trim() !== currentUpdateRef.current.trim();
 
       if (!isNotOriginal || !isNotRepeated) {
+        return;
+      }
+
+      if (failedContentRef.current != null && code.trim() === failedContentRef.current.trim()) {
         return;
       }
 
@@ -284,6 +298,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     }
     prevArtifactId.current = artifact.id;
     pendingUpdateRef.current = null;
+    setFailedContent(null);
     prevContentRef.current = artifact.content ?? '';
     const ed = monacoRef.current;
     if (ed && artifact.content != null) {

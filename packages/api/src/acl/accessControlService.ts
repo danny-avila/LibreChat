@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { createMethods, logger } from '@librechat/data-schemas';
 import {
+  CacheKeys,
   AccessRoleIds,
   PermissionBits,
   PrincipalType,
@@ -10,12 +11,15 @@ import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
 import type { ClientSession, DeleteResult } from 'mongoose';
 
 import type { ResolvedPrincipal } from '~/types/principal';
+import { userPrincipalsCache } from '~/cache';
 
 export class AccessControlService {
   private _dbMethods: AllMethods;
 
   constructor(mongoose: typeof import('mongoose')) {
-    this._dbMethods = createMethods(mongoose);
+    this._dbMethods = createMethods(mongoose, {
+      getCache: (key) => (key === CacheKeys.USER_PRINCIPALS ? userPrincipalsCache() : undefined),
+    });
   }
 
   /**
@@ -347,7 +351,7 @@ export class AccessControlService {
     requiredPermission,
   }: {
     userId: string;
-    role?: string;
+    role?: string | null;
     resourceType: ResourceType;
     resourceId: string | Types.ObjectId;
     requiredPermission: number;

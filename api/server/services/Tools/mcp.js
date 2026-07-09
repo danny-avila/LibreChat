@@ -1,5 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
-const { getMissingCustomUserVars, requiresEphemeralUserConnection } = require('@librechat/api');
+const {
+  getMissingCustomUserVars,
+  requiresEphemeralUserConnection,
+  getMissingRuntimeBodyPlaceholderFields,
+} = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
@@ -114,6 +118,28 @@ async function reinitMCPServer({
         message: `MCP server '${serverName}' requires user-provided variable(s) [${missingUserVars.join(
           ', ',
         )}] which are not set`,
+        oauthRequired: false,
+        serverName,
+        oauthUrl: null,
+        tools: null,
+      };
+    }
+
+    /** `{{LIBRECHAT_BODY_*}}` placeholders only resolve during a chat turn; connecting
+     *  without them would fail, so defer the connection instead of reporting a failure. */
+    const missingBodyFields = serverConfig
+      ? getMissingRuntimeBodyPlaceholderFields(serverConfig, requestBody)
+      : [];
+    if (missingBodyFields.length > 0) {
+      logger.info(
+        `[MCP Reinitialize] Server '${serverName}' requires request body field(s) [${missingBodyFields.join(
+          ', ',
+        )}] for runtime placeholders; connection deferred to first use in a chat turn`,
+      );
+      return {
+        availableTools: null,
+        success: true,
+        message: `MCP server '${serverName}' uses request-scoped placeholders; connection will be established on first use in a chat turn`,
         oauthRequired: false,
         serverName,
         oauthUrl: null,
