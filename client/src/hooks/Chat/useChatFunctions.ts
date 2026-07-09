@@ -79,6 +79,28 @@ const hasPendingAssistantParent = (message: TMessage | null) =>
   message.updatedAt == null &&
   !hasStreamStartFailed(message);
 
+function isWaitingForConversationDetails(
+  queryClient: ReturnType<typeof useQueryClient>,
+  conversationId: string | null,
+): boolean {
+  if (
+    !conversationId ||
+    conversationId === Constants.NEW_CONVO ||
+    conversationId === Constants.SEARCH
+  ) {
+    return false;
+  }
+
+  const conversationQueryKey = [QueryKeys.conversation, conversationId];
+  const conversationQueryState = queryClient.getQueryState(conversationQueryKey);
+  return (
+    queryClient.getQueryData(conversationQueryKey) == null &&
+    (queryClient.isFetching({ queryKey: conversationQueryKey, exact: true }) > 0 ||
+      conversationQueryState?.status === 'loading' ||
+      conversationQueryState?.status === 'error')
+  );
+}
+
 type RegenerateTargetResponseArgs = {
   messages: TMessage[];
   parentMessageId?: string | null;
@@ -300,6 +322,14 @@ export default function useChatFunctions({
     if (conversationId == 'search') {
       console.error('cannot send any message under search view!');
       return;
+    }
+
+    if (isWaitingForConversationDetails(queryClient, conversationId)) {
+      logger.warn(
+        '[useChatFunctions] Waiting for full conversation details before submitting',
+        conversationId,
+      );
+      return false;
     }
 
     if (isContinued && !latestMessage) {

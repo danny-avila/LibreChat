@@ -2,10 +2,16 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { logger } from '~/utils';
 
-export default function useFocusChatEffect(textAreaRef: React.RefObject<HTMLTextAreaElement>) {
+export default function useFocusChatEffect(
+  textAreaRef: React.RefObject<HTMLTextAreaElement>,
+  enabled = true,
+) {
   const location = useLocation();
   const navigate = useNavigate();
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     if (textAreaRef?.current && location.state?.focusChat) {
       logger.log(
         'conversation',
@@ -32,5 +38,5 @@ export default function useFocusChatEffect(textAreaRef: React.RefObject<HTMLText
         state: {},
       });
     }
-  }, [navigate, textAreaRef, location.pathname, location.state?.focusChat]);
+  }, [enabled, navigate, textAreaRef, location.pathname, location.state?.focusChat]);
 }

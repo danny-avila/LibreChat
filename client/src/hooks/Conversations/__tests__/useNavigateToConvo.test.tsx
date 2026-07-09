@@ -125,6 +125,46 @@ describe('useNavigateToConvo', () => {
     );
   });
 
+  it('uses cached full conversation details for the immediate navigation state', async () => {
+    const cachedConversation = conversation('target', {
+      promptPrefix: 'Saved instructions',
+      temperature: 0.2,
+      title: 'Cached target',
+    });
+    const listConversation = conversation('target', { title: 'List target' });
+    const fetch = deferred<TConversation>();
+    mockQueryClient.getQueryData.mockImplementation((key: unknown) => {
+      if (Array.isArray(key) && key[0] === QueryKeys.endpoints) {
+        return { openAI: { type: 'custom' } };
+      }
+      if (Array.isArray(key) && key[0] === QueryKeys.conversation && key[1] === 'target') {
+        return cachedConversation;
+      }
+      return undefined;
+    });
+    mockQueryClient.fetchQuery.mockReturnValue(fetch.promise);
+
+    const { result } = renderHook(() => useNavigateToConvo());
+
+    act(() => {
+      result.current.navigateToConvo(listConversation, { currentConvoId: 'source' });
+    });
+
+    expect(mockSetConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'target',
+        title: 'List target',
+        promptPrefix: 'Saved instructions',
+        temperature: 0.2,
+      }),
+    );
+
+    await act(async () => {
+      fetch.resolve(conversation('target', { title: 'Fresh target' }));
+      await fetch.promise;
+    });
+  });
+
   it('drops stale conversation detail responses after a faster second navigation', async () => {
     const firstFetch = deferred<TConversation>();
     const secondFetch = deferred<TConversation>();

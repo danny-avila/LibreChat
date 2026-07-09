@@ -125,8 +125,14 @@ const useNavigateToConvo = (index = 0) => {
     clearMessagesCache(queryClient, currentConvoId);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
       pendingConversationId.current = convo.conversationId;
-      clearModelForNonEphemeralAgent(convo);
-      setConversation(convo);
+      const cachedConvo = queryClient.getQueryData<TConversation>([
+        QueryKeys.conversation,
+        convo.conversationId,
+      ]);
+      const navigationConvo =
+        cachedConvo?.conversationId === convo.conversationId ? { ...cachedConvo, ...convo } : convo;
+      clearModelForNonEphemeralAgent(navigationConvo);
+      setConversation(navigationConvo);
       navigate(`/c/${convo.conversationId}`, { state: { focusChat: true } });
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
       void fetchFreshData(convo);
