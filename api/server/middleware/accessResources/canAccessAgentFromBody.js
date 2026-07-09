@@ -113,12 +113,10 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
       return next();
     }
 
-    const tenantAgent = await resolveAgentIdFromBody(addedAgentId);
-
-    /* System-scope globals are tenantless; resolve them under the system context and cache the doc
-     * so loadAddedAgent doesn't re-fetch via the tenant-scoped path (which misses it). Admins bypass
-     * the permission check but must still populate the cache. */
-    if (!tenantAgent && isSystemGlobalId(addedAgentId)) {
+    /* Tenantless system-scope globals: resolve/authorize under the system context and cache the doc
+     * (admins included) so loadAddedAgent doesn't re-fetch via the tenant-scoped path, which misses
+     * the row. Regular agents and in-tenant globals fall through to the original flow below. */
+    if (isSystemGlobalId(addedAgentId) && !(await resolveAgentIdFromBody(addedAgentId))) {
       if (req.user.role === SystemRoles.ADMIN) {
         const agent = await resolveSystemGlobalAgent(addedAgentId);
         if (agent) {
@@ -139,13 +137,11 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
     }
 
     if (req.user.role === SystemRoles.ADMIN) {
-      if (tenantAgent) {
-        req.resolvedAddedAgent = tenantAgent;
-      }
       return next();
     }
 
-    if (!tenantAgent) {
+    const agent = await resolveAgentIdFromBody(addedAgentId);
+    if (!agent) {
       return res.status(404).json({
         error: 'Not Found',
         message: `${ResourceType.AGENT} not found`,
@@ -156,7 +152,7 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
       userId: req.user.id,
       role: req.user.role,
       resourceType: ResourceType.AGENT,
-      resourceId: tenantAgent._id,
+      resourceId: agent._id,
       requiredPermission,
     });
 
@@ -167,7 +163,7 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
       });
     }
 
-    req.resolvedAddedAgent = tenantAgent;
+    req.resolvedAddedAgent = agent;
     return next();
   } catch (error) {
     logger.error('Failed to validate addedConvo access permissions', error);
