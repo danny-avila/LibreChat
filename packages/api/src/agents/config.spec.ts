@@ -1,5 +1,5 @@
 import type { TAgentsEndpoint } from 'librechat-data-provider';
-import { resolveRecursionLimit } from './config';
+import { resolveRecursionLimit, resolveSubagentMaxTurns } from './config';
 
 describe('resolveRecursionLimit', () => {
   it('returns default 50 when no config or agent provided', () => {
@@ -58,5 +58,36 @@ describe('resolveRecursionLimit', () => {
   it('does not cap when agent.recursion_limit equals maxRecursionLimit', () => {
     const config = { recursionLimit: 50, maxRecursionLimit: 150 } as TAgentsEndpoint;
     expect(resolveRecursionLimit(config, { recursion_limit: 150 })).toBe(150);
+  });
+});
+
+describe('resolveSubagentMaxTurns', () => {
+  it('floors at the SDK default (25 turns / 75 graph steps) with no config', () => {
+    expect(resolveSubagentMaxTurns(undefined, undefined)).toBe(25);
+  });
+
+  it('floors at 25 when the resolved limit divided by 3 is below the default', () => {
+    const config = { recursionLimit: 50 } as TAgentsEndpoint;
+    expect(resolveSubagentMaxTurns(config, {})).toBe(25);
+  });
+
+  it('derives maxTurns from the per-agent recursion_limit so the graph limit tracks it', () => {
+    const config = { recursionLimit: 50, maxRecursionLimit: 1000 } as TAgentsEndpoint;
+    expect(resolveSubagentMaxTurns(config, { recursion_limit: 500 })).toBe(167);
+  });
+
+  it('derives maxTurns from the yaml recursionLimit default', () => {
+    const config = { recursionLimit: 300 } as TAgentsEndpoint;
+    expect(resolveSubagentMaxTurns(config, {})).toBe(100);
+  });
+
+  it('respects maxRecursionLimit when capping the resolved limit', () => {
+    const config = { recursionLimit: 100, maxRecursionLimit: 150 } as TAgentsEndpoint;
+    expect(resolveSubagentMaxTurns(config, { recursion_limit: 600 })).toBe(50);
+  });
+
+  it('rounds up so the derived graph limit is never below the resolved limit', () => {
+    const config = { recursionLimit: 100 } as TAgentsEndpoint;
+    expect(resolveSubagentMaxTurns(config, { recursion_limit: 200 })).toBe(67);
   });
 });
