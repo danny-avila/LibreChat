@@ -1440,6 +1440,15 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agent.isSystem).toBeFalsy();
       expect(agent.author.toString()).toBe(mockReq.user.id);
     });
+
+    test('revertAgentVersionHandler returns 403 for a system agent', async () => {
+      mockReq.params.id = systemAgentId;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+    });
   });
 
   describe('getListAgentsHandler - Security Tests', () => {

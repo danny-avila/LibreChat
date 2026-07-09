@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem, ResourceCapabilityMap } = require('@librechat/data-schemas');
 const {
   Constants,
   Permissions,
@@ -9,10 +9,46 @@ const {
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { canAccessResource } = require('./canAccessResource');
 const db = require('~/models');
 
 const { getRoleByName, getAgent } = db;
+
+/**
+ * Authorizes a `tenants: 'system'` global agent whose tenantless row/grants are invisible to the
+ * tenant-scoped access path. Resolves and checks entirely under the system context, pinned to the
+ * tenantless row so it can never authorize another tenant's explicit-scope row of the same id.
+ * Preserves the MANAGE_AGENTS capability bypass for parity with `canAccessResource`.
+ * @returns {Promise<{status:'ok'|'not_found'|'forbidden', agent?: object}>}
+ */
+const checkSystemGlobalAgentAccess = (agentId, requiredPermission, req) =>
+  runAsSystem(async () => {
+    const agent = await getAgent({ id: agentId, tenantId: { $exists: false } });
+    if (!agent) {
+      return { status: 'not_found' };
+    }
+    const cap = ResourceCapabilityMap[ResourceType.AGENT];
+    let hasCap = false;
+    try {
+      hasCap = cap != null && (await hasCapability(req.user, cap));
+    } catch (err) {
+      logger.warn(
+        `[canAccessAgentFromBody] capability check failed, denying bypass: ${err.message}`,
+      );
+    }
+    if (hasCap) {
+      return { status: 'ok', agent };
+    }
+    const allowed = await checkPermission({
+      userId: req.user.id,
+      role: req.user.role,
+      resourceType: ResourceType.AGENT,
+      resourceId: agent._id,
+      requiredPermission,
+    });
+    return { status: allowed ? 'ok' : 'forbidden', agent };
+  });
 
 /**
  * Resolves custom agent ID (e.g., "agent_abc123") to a MongoDB document.
@@ -97,6 +133,25 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
     }
 
     const agent = await resolveAgentIdFromBody(addedAgentId);
+
+    /* System-scope global agents are tenantless; resolve + authorize them under the system context. */
+    if (!agent && addedAgentId.startsWith(Constants.GLOBAL_AGENT_PREFIX)) {
+      const result = await checkSystemGlobalAgentAccess(addedAgentId, requiredPermission, req);
+      if (result.status === 'not_found') {
+        return res
+          .status(404)
+          .json({ error: 'Not Found', message: `${ResourceType.AGENT} not found` });
+      }
+      if (result.status === 'forbidden') {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: `Insufficient permissions to access this ${ResourceType.AGENT}`,
+        });
+      }
+      req.resolvedAddedAgent = result.agent;
+      return next();
+    }
+
     if (!agent) {
       return res.status(404).json({
         error: 'Not Found',
@@ -174,6 +229,22 @@ const canAccessAgentFromBody = (options) => {
       const afterPrimaryCheck = () => addedConvoMiddleware(req, res, next);
 
       if (isEphemeralAgentId(agentId)) {
+        return afterPrimaryCheck();
+      }
+
+      if (agentId.startsWith(Constants.GLOBAL_AGENT_PREFIX) && !(await getAgent({ id: agentId }))) {
+        const result = await checkSystemGlobalAgentAccess(agentId, requiredPermission, req);
+        if (result.status === 'not_found') {
+          return res
+            .status(404)
+            .json({ error: 'Not Found', message: `${ResourceType.AGENT} not found` });
+        }
+        if (result.status === 'forbidden') {
+          return res.status(403).json({
+            error: 'Forbidden',
+            message: `Insufficient permissions to access this ${ResourceType.AGENT}`,
+          });
+        }
         return afterPrimaryCheck();
       }
 

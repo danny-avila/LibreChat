@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Types } from 'mongoose';
-import { logger, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { AccessRoleIds, ResourceType, PrincipalType } from 'librechat-data-provider';
+import { logger, runAsSystem, tenantStorage, extractMCPServerNames } from '@librechat/data-schemas';
 import type {
   IAgent,
   IAccessRole,
@@ -14,6 +14,9 @@ import { agentCreateSchema } from './validation';
 
 /** Zero ObjectId used as the author of config-defined system agents (no human owner). */
 const SYSTEM_USER_ID = '000000000000000000000000';
+
+/** User/group principals in the config must be 24-char ObjectId hex; grantPermission casts them. */
+const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
 
 type AgentCreateData = z.infer<typeof agentCreateSchema>;
 
@@ -86,9 +89,21 @@ function buildDesiredPrincipals(access?: TGlobalAgentAccess): DesiredPrincipal[]
     principals.push({ type: PrincipalType.ROLE, principalId: role, accessRoleId });
   }
   for (const group of access.groups ?? []) {
+    if (!OBJECT_ID_RE.test(group)) {
+      logger.warn(
+        `[GlobalAgents] Ignoring invalid group id "${group}" (expected a 24-char ObjectId).`,
+      );
+      continue;
+    }
     principals.push({ type: PrincipalType.GROUP, principalId: group, accessRoleId });
   }
   for (const user of access.users ?? []) {
+    if (!OBJECT_ID_RE.test(user)) {
+      logger.warn(
+        `[GlobalAgents] Ignoring invalid user id "${user}" (expected a 24-char ObjectId).`,
+      );
+      continue;
+    }
     principals.push({ type: PrincipalType.USER, principalId: user, accessRoleId });
   }
   return principals;
@@ -118,6 +133,9 @@ async function upsertAgent({
       $set: {
         ...entry.agentData,
         isSystem: true,
+        /* The direct upsert skips createAgent's derivation, so keep mcpServerNames in sync with
+         * tools — the MCP registry exposes servers to users via shared agents through this field. */
+        mcpServerNames: extractMCPServerNames(entry.agentData.tools),
         author: new Types.ObjectId(SYSTEM_USER_ID),
       },
       $setOnInsert: { id: entry.id, createdAt: now },
@@ -137,7 +155,9 @@ async function resolveRole(
   if (roleCache.has(accessRoleId)) {
     return roleCache.get(accessRoleId) ?? null;
   }
-  const role = await methods.findRoleByIdentifier(accessRoleId);
+  /* Default access roles are seeded tenantless; AccessRole is tenant-isolated, so a lookup inside a
+   * tenant context misses them. Always resolve under the system context regardless of agent scope. */
+  const role = await runAsSystem(() => methods.findRoleByIdentifier(accessRoleId));
   roleCache.set(accessRoleId, role);
   return role;
 }
@@ -230,12 +250,16 @@ async function reconcileScope({
 }: ReconcileScopeParams): Promise<void> {
   const expectedIds = new Set(entries.map((entry) => entry.id));
   for (const entry of entries) {
-    const resourceId = await upsertAgent({ AgentModel, entry, scope });
-    if (!resourceId) {
-      continue;
+    try {
+      const resourceId = await upsertAgent({ AgentModel, entry, scope });
+      if (!resourceId) {
+        continue;
+      }
+      await reconcileGrants({ methods, resourceId, access: entry.access, roleCache });
+      logger.info(`[GlobalAgents] Reconciled global agent: ${entry.id}`);
+    } catch (error) {
+      logger.error(`[GlobalAgents] Failed to reconcile global agent "${entry.id}":`, error);
     }
-    await reconcileGrants({ methods, resourceId, access: entry.access, roleCache });
-    logger.info(`[GlobalAgents] Reconciled global agent: ${entry.id}`);
   }
   await retireOrphans({ AgentModel, methods, expectedIds, scope });
 }
@@ -275,7 +299,14 @@ export async function reconcileGlobalAgents({
       reconcileScope({ entries: systemEntries, scope: 'system', methods, AgentModel, roleCache }),
     );
 
-    for (const [tenantId, list] of tenantEntries) {
+    /* Visit every tenant that either has config entries now OR was previously seeded, so a tenant
+     * (or entry) removed from config still gets its stale grants retired in that tenant's context. */
+    const seededTenantIds = (await runAsSystem(() =>
+      AgentModel.distinct('tenantId', { isSystem: true, tenantId: { $exists: true, $ne: null } }),
+    )) as string[];
+    const tenantIds = new Set<string>([...tenantEntries.keys(), ...seededTenantIds]);
+    for (const tenantId of tenantIds) {
+      const list = tenantEntries.get(tenantId) ?? [];
       await tenantStorage.run({ tenantId }, () =>
         reconcileScope({ entries: list, scope: 'tenant', methods, AgentModel, roleCache }),
       );

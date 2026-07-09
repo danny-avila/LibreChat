@@ -42,6 +42,7 @@ export {
   AUDIT_ACTION_CATEGORY,
 } from './types/admin';
 export { GENESIS_HASH, PLATFORM_CHAIN_KEY } from './schema/auditLog';
+export { extractMCPServerNames } from './methods/agent';
 export { default as logger } from './config/winston';
 export { default as meiliLogger } from './config/meiliLogger';
 export { redactMessage } from './config/parsers';

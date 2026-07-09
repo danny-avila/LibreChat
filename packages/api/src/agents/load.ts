@@ -21,7 +21,10 @@ const { mcp_all, mcp_delimiter } = Constants;
 type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
 
 export interface LoadAgentDeps {
-  getAgent: (searchParameter: { id: string }) => Promise<Agent | null>;
+  getAgent: (searchParameter: {
+    id: string;
+    tenantId?: { $exists: boolean };
+  }) => Promise<Agent | null>;
   getMCPServerTools: (
     userId: string,
     serverName: string,
@@ -189,9 +192,10 @@ export async function loadAgent(
 
   /* Config-defined global agents scoped `tenants: 'system'` are stored as a single tenantless
    * row that a tenant-scoped read can't see. On a miss for a global id, retry under the system
-   * context so the shared row resolves across every tenant. */
+   * context — pinned to the tenantless row so it can never resolve another tenant's explicit-scope
+   * row of the same id. */
   if (!agent && agent_id.startsWith(Constants.GLOBAL_AGENT_PREFIX)) {
-    agent = await runAsSystem(() => deps.getAgent({ id: agent_id }));
+    agent = await runAsSystem(() => deps.getAgent({ id: agent_id, tenantId: { $exists: false } }));
   }
 
   if (!agent) {

@@ -47,7 +47,7 @@ export interface AgentDeps {
  * Extracts unique MCP server names from tools array.
  * Tools format: "toolName_mcp_serverName" or "sys__server__sys_mcp_serverName"
  */
-function extractMCPServerNames(tools: string[] | undefined | null): string[] {
+export function extractMCPServerNames(tools: string[] | undefined | null): string[] {
   if (!tools || !Array.isArray(tools)) {
     return [];
   }

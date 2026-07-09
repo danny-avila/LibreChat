@@ -69,6 +69,21 @@ const getSafeModelParameters = (modelParameters) => {
 };
 const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
 
+/**
+ * Rejects mutations of config-defined global agents. Enforced in every mutating handler (not the
+ * route middleware) because admins/managers bypass the ACL via the MANAGE_AGENTS capability.
+ * @returns {boolean} true when the response was written (caller should return).
+ */
+const rejectImmutableSystemAgent = (agent, res) => {
+  if (agent?.isSystem) {
+    res
+      .status(403)
+      .json({ error: 'Global agents are managed by server configuration and cannot be modified.' });
+    return true;
+  }
+  return false;
+};
+
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
   delete agent.skills_enabled;
@@ -681,10 +696,8 @@ const updateAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    if (existingAgent.isSystem) {
-      return res.status(403).json({
-        error: 'Global agents are managed by server configuration and cannot be modified.',
-      });
+    if (rejectImmutableSystemAgent(existingAgent, res)) {
+      return;
     }
 
     // Convert legacy OCR tool resource to context format in existing agent
@@ -1007,7 +1020,13 @@ const deleteAgentHandler = async (req, res) => {
  * other tenant's agents can leak in). Single-tenant deployments never call this; the tenantless
  * rows already surface through the normal query.
  */
-async function getEntitledSystemGlobalAgents({ userId, role, filter, includeSkillConfig }) {
+async function getEntitledSystemGlobalAgents({
+  userId,
+  role,
+  filter,
+  includeSkillConfig,
+  requiredPermission,
+}) {
   return runAsSystem(async () => {
     const systemAgents = await db.getAgents({ isSystem: true, tenantId: { $exists: false } });
     if (!systemAgents.length) {
@@ -1018,7 +1037,7 @@ async function getEntitledSystemGlobalAgents({ userId, role, filter, includeSkil
       userId,
       role,
       resourceType: ResourceType.AGENT,
-      requiredPermissions: PermissionBits.VIEW,
+      requiredPermissions: requiredPermission,
     });
     const accessibleIds = entitledIds.filter((oid) => systemIdSet.has(oid.toString()));
     if (!accessibleIds.length) {
@@ -1144,7 +1163,8 @@ const getListAgentsHandler = async (req, res) => {
           userId,
           role: req.user.role,
           filter,
-          includeSkillConfig: true,
+          includeSkillConfig: canReturnSkillConfig,
+          requiredPermission,
         });
         const seen = new Set(agents.map((agent) => agent.id));
         for (const systemAgent of systemGlobals) {
@@ -1233,6 +1253,10 @@ const uploadAgentAvatarHandler = async (req, res) => {
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (rejectImmutableSystemAgent(existingAgent, res)) {
+      return;
     }
 
     const buffer = await fs.readFile(req.file.path);
@@ -1340,6 +1364,10 @@ const revertAgentVersionHandler = async (req, res) => {
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (rejectImmutableSystemAgent(existingAgent, res)) {
+      return;
     }
 
     // Permissions are enforced via route middleware (ACL EDIT)

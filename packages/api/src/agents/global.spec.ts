@@ -142,4 +142,40 @@ describe('reconcileGlobalAgents', () => {
     expect(await Agent.countDocuments({ id: 'agent_global_broken' })).toBe(0);
     expect(await Agent.countDocuments({ id: 'agent_global_support' })).toBe(1);
   });
+
+  test('derives mcpServerNames from configured MCP tools', async () => {
+    await reconcile([baseAgent({ tools: ['search_mcp_tavily'], access: { public: true } })]);
+
+    const agent = await Agent.findOne({ id: 'agent_global_support' }).lean<IAgent>();
+    expect(agent?.mcpServerNames).toEqual(['tavily']);
+  });
+
+  test('ignores invalid principal ids but still grants valid ones', async () => {
+    const validUser = new Types.ObjectId().toString();
+    await reconcile([baseAgent({ access: { users: [validUser, 'not-an-objectid'] } })]);
+
+    const agent = await Agent.findOne({ id: 'agent_global_support' }).lean<IAgent>();
+    const grants = await grantsFor(agent!._id as Types.ObjectId);
+    expect(grants).toHaveLength(1);
+    expect(String(grants[0].principalId)).toBe(validUser);
+  });
+
+  test('seeds tenant-scoped agents with grants and retires them when the tenant leaves config', async () => {
+    await reconcile([baseAgent({ tenants: ['tenant-a'], access: { roles: ['USER'] } })]);
+
+    const agent = await Agent.findOne({
+      id: 'agent_global_support',
+      tenantId: 'tenant-a',
+    }).lean<IAgent>();
+    expect(agent).toBeTruthy();
+    // Role resolves under the system context even though the write ran in the tenant context.
+    expect(await grantsFor(agent!._id as Types.ObjectId)).toHaveLength(1);
+
+    await reconcile([]);
+
+    expect(await Agent.countDocuments({ id: 'agent_global_support', tenantId: 'tenant-a' })).toBe(
+      1,
+    );
+    expect(await grantsFor(agent!._id as Types.ObjectId)).toHaveLength(0);
+  });
 });
