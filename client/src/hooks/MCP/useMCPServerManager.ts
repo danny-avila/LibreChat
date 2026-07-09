@@ -348,6 +348,12 @@ export function useMCPServerManager({
       updateServerInitState(serverName, { isInitializing: true });
       try {
         const response = await reinitializeMutation.mutateAsync(serverName);
+        /** Record whether this attempt deferred to a chat turn (request-scoped
+         * server) so consumers that didn't await this call — e.g. the agent
+         * builder behind the customUserVars config dialog — can react to it. */
+        updateServerInitState(serverName, {
+          connectionDeferred: Boolean(response.connectionDeferred),
+        });
         if (!response.success) {
           showToast({
             message: localize('com_ui_mcp_init_failed', { 0: serverName }),
@@ -452,6 +458,13 @@ export function useMCPServerManager({
   const isCancellable = useCallback(
     (serverName: string) => {
       return getServerInitState(serverInitStates, serverName).isCancellable;
+    },
+    [serverInitStates],
+  );
+
+  const isConnectionDeferred = useCallback(
+    (serverName: string) => {
+      return getServerInitState(serverInitStates, serverName).connectionDeferred;
     },
     [serverInitStates],
   );
@@ -678,6 +691,7 @@ export function useMCPServerManager({
     cancelOAuthFlow,
     isInitializing,
     isCancellable,
+    isConnectionDeferred,
     getOAuthUrl,
     mcpValues,
     setMCPValues,

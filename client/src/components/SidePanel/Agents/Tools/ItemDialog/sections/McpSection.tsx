@@ -61,8 +61,13 @@ interface Props {
 export default function McpSection({ item }: Props) {
   const localize = useLocalize();
   const { control, getValues, setValue } = useFormContext<AgentForm>();
-  const { getServerStatusIconProps, getConfigDialogProps, initializeServer, getOAuthUrl } =
-    useMCPServerManager();
+  const {
+    getServerStatusIconProps,
+    getConfigDialogProps,
+    initializeServer,
+    isConnectionDeferred,
+    getOAuthUrl,
+  } = useMCPServerManager();
   const [oauthOpen, setOauthOpen] = useState(false);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [prevConnected, setPrevConnected] = useState(false);
@@ -104,16 +109,19 @@ export default function McpSection({ item }: Props) {
 
   /** Replace this server's tool selection while keeping the server attached: the
    * placeholder token is always rewritten, so deselect-all leaves the server
-   * pinned with zero tools; only an explicit remove detaches it. */
+   * pinned with zero tools; only an explicit remove detaches it. The `mcp_all`
+   * wildcard is also stripped unless explicitly re-passed in `next`, so a
+   * per-tool selection always supersedes a stale wildcard (e.g. after a server
+   * stops being request-scoped and its tools become enumerable). */
   const updateFormTools = useCallback(
     (next: string[]) => {
       const current = (getValues('tools') ?? []) as string[];
       const otherTools = current.filter(
-        (t) => t !== serverToken && !tools.some((st) => st.tool_id === t),
+        (t) => t !== serverToken && t !== serverAllToken && !tools.some((st) => st.tool_id === t),
       );
       setValue('tools', [...otherTools, serverToken, ...next], { shouldDirty: true });
     },
-    [getValues, setValue, serverToken, tools],
+    [getValues, setValue, serverToken, serverAllToken, tools],
   );
 
   const toggleToolSelect = (toolId: string) => {
@@ -159,14 +167,42 @@ export default function McpSection({ item }: Props) {
   /** Connecting from this dialog implies the user wants the server's tools:
    * once the connection settles and the tools arrive (query refetch for direct
    * connects, polling for OAuth), select them all — an effect because both
-   * signals come from external systems, not from anything rendered here. */
+   * signals come from external systems, not from anything rendered here.
+   *
+   * Request-scoped servers (runtime `{{LIBRECHAT_BODY_*}}` placeholders) defer
+   * their connection to the next chat turn, so no tool list will ever arrive —
+   * attach the whole server via the `mcp_all` wildcard instead; the backend
+   * resolves it into the server's full tool set at turn time. Keying on the
+   * manager's init state (not the awaited response) also covers connects that
+   * happen behind the customUserVars config dialog, which this component does
+   * not await. */
+  const serverDeferred = isConnectionDeferred(serverName);
   useEffect(() => {
-    if (!autoSelectPending || !isConnected || !hasTools) {
+    if (!autoSelectPending) {
+      return;
+    }
+    if (serverDeferred && !hasTools) {
+      setAutoSelectPending(false);
+      if (!isWildcardAttached) {
+        updateFormTools([serverAllToken]);
+      }
+      return;
+    }
+    if (!isConnected || !hasTools) {
       return;
     }
     setAutoSelectPending(false);
     updateFormTools(tools.map((t) => t.tool_id));
-  }, [autoSelectPending, isConnected, hasTools, tools, updateFormTools]);
+  }, [
+    autoSelectPending,
+    serverDeferred,
+    isConnected,
+    hasTools,
+    tools,
+    updateFormTools,
+    isWildcardAttached,
+    serverAllToken,
+  ]);
 
   /** Connect inline from this first dialog. Servers with custom user variables are
    * routed to the config dialog (which sets the vars and initializes); others
@@ -182,17 +218,6 @@ export default function McpSection({ item }: Props) {
       const res = await initializeServer(serverName, false);
       if (res == null || !res.success) {
         setAutoSelectPending(false);
-        return;
-      }
-      /** Request-scoped servers (runtime `{{LIBRECHAT_BODY_*}}` placeholders)
-       * defer their connection to the next chat turn, so no tool list will ever
-       * arrive here. Attach the whole server via the `mcp_all` wildcard instead
-       * — the backend resolves it into the server's full tool set at turn time. */
-      if (res.connectionDeferred) {
-        setAutoSelectPending(false);
-        if (!isWildcardAttached) {
-          updateFormTools([serverAllToken]);
-        }
         return;
       }
       if (res.oauthRequired && res.oauthUrl) {

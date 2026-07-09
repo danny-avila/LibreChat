@@ -7,6 +7,7 @@ import McpSection from '../sections/McpSection';
 const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
 const mockInitializeServer = jest.fn();
+const mockIsConnectionDeferred = jest.fn((): boolean => false);
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
@@ -34,6 +35,7 @@ jest.mock('~/hooks', () => ({
     getServerStatusIconProps: () => null,
     getConfigDialogProps: () => null,
     initializeServer: mockInitializeServer,
+    isConnectionDeferred: mockIsConnectionDeferred,
     getOAuthUrl: () => undefined,
     isCancellable: () => false,
     cancelOAuthFlow: jest.fn(),
@@ -132,6 +134,8 @@ describe('McpSection', () => {
     mockSetValue.mockClear();
     mockGetValues.mockReturnValue([]);
     mockInitializeServer.mockReset();
+    mockIsConnectionDeferred.mockReset();
+    mockIsConnectionDeferred.mockReturnValue(false);
   });
 
   test('renders one row per tool', () => {
@@ -213,11 +217,12 @@ describe('McpSection', () => {
     expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
   });
 
-  test('connectionDeferred attaches the whole server via the mcp_all wildcard', async () => {
+  test('deferred connect attaches the whole server via the mcp_all wildcard', async () => {
     // Request-scoped servers (runtime {{LIBRECHAT_BODY_*}} placeholders) defer
     // their connection to the next chat turn, so no tool list arrives here —
     // Connect should attach the server-wide wildcard instead of waiting.
     mockInitializeServer.mockResolvedValue({ success: true, connectionDeferred: true });
+    mockIsConnectionDeferred.mockReturnValue(true);
     const empty: McpItem = {
       ...item,
       server: { ...item.server, tools: [] } as never,
@@ -234,8 +239,9 @@ describe('McpSection', () => {
     );
   });
 
-  test('connectionDeferred does not duplicate an already-attached wildcard', async () => {
+  test('deferred connect does not duplicate an already-attached wildcard', async () => {
     mockInitializeServer.mockResolvedValue({ success: true, connectionDeferred: true });
+    mockIsConnectionDeferred.mockReturnValue(true);
     mockGetValues.mockReturnValue(['sys__server__sys_mcp_srv', 'sys__all__sys_mcp_srv']);
     const empty: McpItem = {
       ...item,
@@ -246,6 +252,20 @@ describe('McpSection', () => {
     fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
     await waitFor(() => expect(mockInitializeServer).toHaveBeenCalled());
     expect(mockSetValue).not.toHaveBeenCalled();
+  });
+
+  test('per-tool selection replaces a stale wildcard', () => {
+    // If a formerly request-scoped server starts exposing a normal tool list,
+    // picking individual tools must drop the mcp_all wildcard — otherwise the
+    // runtime would still grant every tool while the UI shows a subset.
+    mockGetValues.mockReturnValue(['sys__all__sys_mcp_srv']);
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByTestId('tool-mcp:srv:a'));
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tools',
+      ['sys__server__sys_mcp_srv', 'mcp:srv:a'],
+      expect.objectContaining({ shouldDirty: true }),
+    );
   });
 
   test('shows the runtime-tools hint when attached via the wildcard', () => {
