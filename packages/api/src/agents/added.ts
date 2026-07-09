@@ -10,6 +10,7 @@ import {
 import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { requiresEphemeralUserConnection, filterChatSelectableMCPServers } from '~/mcp/utils';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -117,6 +118,7 @@ export async function loadAddedAgent(
         web_search?: boolean;
         artifacts?: unknown;
         memory?: boolean;
+        ask_user_question?: boolean;
       }
     | undefined;
 
@@ -185,6 +187,12 @@ export async function loadAddedAgent(
   }
   if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
     tools.push(Tools.memory);
+  }
+  /** Mirror the primary ephemeral loader (`loadEphemeralAgent`) so a model
+   *  spec's Ask User flag equips the added top-level agent too; downstream
+   *  `createRun` gating (hitlCapable, non-subagent, admin filter) is uniform. */
+  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+    tools.push(ASK_USER_QUESTION_TOOL_NAME);
   }
 
   const addedServers = new Set<string>();

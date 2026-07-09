@@ -42,7 +42,11 @@ const {
   getApprovalTtlMs,
   isHITLEnabled,
   deleteAgentCheckpoint,
+  agentRequestsAskUserQuestion,
+  attachAskUserQuestionArgs,
+  createContentIndexOffsetHandlers,
   getRequestMemories,
+  getMemoryAgentId,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
@@ -533,10 +537,34 @@ class AgentClient extends BaseClient {
      *  keys + token metadata) is reserved for agents that can call
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     const memories = await this.useMemory();
+    /** Partition the loaded memories belong to (the primary agent's). */
+    const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
     const buildMemoryContext = (text) =>
       text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
-    const memoryContext = buildMemoryContext(memories?.withoutKeys);
-    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
+    /** Resolves formatted memories for an agent's own partition. A defined
+     *  `memories` means the run-level gates (permission, opt-out, config)
+     *  passed; agents on other partitions fetch through the request-scoped
+     *  cache so repeated partitions share one query. */
+    const getAgentPartitionMemories = async (agent) => {
+      if (!memories) {
+        return undefined;
+      }
+      const agentPartition = getMemoryAgentId(agent);
+      if (agentPartition === loadedMemoryAgentId) {
+        return memories;
+      }
+      try {
+        return await getRequestMemories({
+          req: this.options.req,
+          userId: this.options.req.user.id + '',
+          agentId: agentPartition,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+      } catch (error) {
+        logger.error('[AgentClient] Error loading partition memories', error);
+        return undefined;
+      }
+    };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -585,15 +613,17 @@ class AgentClient extends BaseClient {
     const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
-      allAgents.map(({ agent, agentId }) => {
+      allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
         const agentHasMemory = agentHasInlineMemoryTools(agent);
-        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
-        if (
-          agentMemoryContext &&
-          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
-        ) {
-          agentRunContextParts.push(agentMemoryContext);
+        if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+          const partitionMemories = await getAgentPartitionMemories(agent);
+          const agentMemoryContext = buildMemoryContext(
+            agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          );
+          if (agentMemoryContext) {
+            agentRunContextParts.push(agentMemoryContext);
+          }
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -671,6 +701,8 @@ class AgentClient extends BaseClient {
     }
 
     const userId = this.options.req.user.id + '';
+    /** Memory partition of the primary agent; undefined = shared personal pool */
+    const memoryAgentId = getMemoryAgentId(this.options.agent);
     this.processMemory = undefined;
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
@@ -678,6 +710,7 @@ class AgentClient extends BaseClient {
         const { withKeys, withoutKeys } = await getRequestMemories({
           req: this.options.req,
           userId,
+          agentId: memoryAgentId,
           getFormattedMemories: db.getFormattedMemories,
         });
         return { withKeys, withoutKeys };
@@ -783,6 +816,7 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      agentId: memoryAgentId,
       config,
       messageId,
       streamId,
@@ -802,6 +836,7 @@ class AgentClient extends BaseClient {
       ({ withKeys } = await getRequestMemories({
         req: this.options.req,
         userId,
+        agentId: memoryAgentId,
         getFormattedMemories: db.getFormattedMemories,
       }));
     } catch (error) {
@@ -1233,6 +1268,17 @@ class AgentClient extends BaseClient {
     if (resolvedModelParameters) {
       resumeContext.model_parameters = resolvedModelParameters;
     }
+    // Persist the question onto the paused ask tool_call's args NOW: an
+    // abandoned/expired/stopped pause never reaches the answer-resume stamp,
+    // and the streamed args were dropped (name-less chunks) — without this the
+    // unfinished turn saves an empty ask part the record card can't render.
+    if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
+      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      if (stamped !== this.contentParts) {
+        this.contentParts.length = 0;
+        this.contentParts.push(...stamped);
+      }
+    }
     const pendingAction = buildPendingAction(interrupt.payload, {
       streamId,
       conversationId: this.conversationId,
@@ -1625,7 +1671,14 @@ class AgentClient extends BaseClient {
         // a Redis flag) can go stale across replicas/restarts and skip the prune
         // exactly when an orphan exists, while these are two indexed, usually-empty
         // deleteMany ops — correctness over a micro-optimization.
-        if (streamId && isHITLEnabled(agentsEConfig?.toolApproval)) {
+        // The gate mirrors createRun's checkpointer condition: the approval policy
+        // OR an ask_user_question-capable agent (which attaches a checkpointer
+        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
+        // or Stop would otherwise rehydrate here and silently duplicate context.
+        if (
+          streamId &&
+          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion))
+        ) {
           await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
         }
 
@@ -1893,7 +1946,14 @@ class AgentClient extends BaseClient {
         initialSessions,
         runId: this.responseMessageId,
         signal: abortController.signal,
-        customHandlers: this.options.eventHandlers,
+        // The rebuilt graph numbers content indices from 0, but the aggregator was
+        // just seeded with the pre-pause parts at those same indices — shift every
+        // resumed step index past the seed, or the new output merges into (or, on a
+        // type mismatch, is silently dropped against) the pre-pause content.
+        customHandlers: createContentIndexOffsetHandlers(
+          this.options.eventHandlers,
+          Array.isArray(seedContent) ? seedContent : [],
+        ),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
         tenantId: this.options.req?.user?.tenantId,

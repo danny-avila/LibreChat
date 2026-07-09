@@ -5,6 +5,7 @@ import type {
   AgentToolOptions,
   SupportContact,
   AgentProvider,
+  MemoryScope,
   GraphEdge,
   Agent,
 } from 'librechat-data-provider';
@@ -40,6 +41,8 @@ export type AgentForm = {
   tool_options?: AgentToolOptions;
   skills?: string[];
   skills_enabled?: boolean;
+  /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
   provider?: AgentProvider | OptionWithIcon;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
