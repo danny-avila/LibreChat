@@ -62,18 +62,13 @@ describe('resolveRecursionLimit', () => {
 });
 
 describe('resolveSubagentMaxTurns', () => {
-  it('floors at the SDK default (25 turns / 75 graph steps) with no config', () => {
-    expect(resolveSubagentMaxTurns(undefined, undefined)).toBe(25);
-  });
-
-  it('floors at 25 when the resolved limit divided by 3 is below the default', () => {
-    const config = { recursionLimit: 50 } as TAgentsEndpoint;
-    expect(resolveSubagentMaxTurns(config, {})).toBe(25);
+  it('tracks the default resolved limit (50 -> 16 turns / 48 graph steps)', () => {
+    expect(resolveSubagentMaxTurns(undefined, undefined)).toBe(16);
   });
 
   it('derives maxTurns from the per-agent recursion_limit so the graph limit tracks it', () => {
     const config = { recursionLimit: 50, maxRecursionLimit: 1000 } as TAgentsEndpoint;
-    expect(resolveSubagentMaxTurns(config, { recursion_limit: 500 })).toBe(167);
+    expect(resolveSubagentMaxTurns(config, { recursion_limit: 500 })).toBe(166);
   });
 
   it('derives maxTurns from the yaml recursionLimit default', () => {
@@ -81,31 +76,35 @@ describe('resolveSubagentMaxTurns', () => {
     expect(resolveSubagentMaxTurns(config, {})).toBe(100);
   });
 
-  it('respects maxRecursionLimit when capping the resolved limit', () => {
+  it('honors an explicit recursion limit below the historical 75-step default', () => {
+    const config = { recursionLimit: 45 } as TAgentsEndpoint;
+    const turns = resolveSubagentMaxTurns(config, {});
+    expect(turns).toBe(15);
+    expect(turns * 3).toBeLessThanOrEqual(45);
+  });
+
+  it('honors a per-agent recursion_limit lowered below the yaml default', () => {
+    const config = { recursionLimit: 300 } as TAgentsEndpoint;
+    const turns = resolveSubagentMaxTurns(config, { recursion_limit: 30 });
+    expect(turns).toBe(10);
+    expect(turns * 3).toBeLessThanOrEqual(30);
+  });
+
+  it('never exceeds maxRecursionLimit when it caps the resolved limit', () => {
     const config = { recursionLimit: 100, maxRecursionLimit: 150 } as TAgentsEndpoint;
-    expect(resolveSubagentMaxTurns(config, { recursion_limit: 600 })).toBe(50);
+    const turns = resolveSubagentMaxTurns(config, { recursion_limit: 600 });
+    expect(turns).toBe(50);
+    expect(turns * 3).toBeLessThanOrEqual(150);
   });
 
-  it('rounds up so the derived graph limit is never below the resolved limit', () => {
-    const config = { recursionLimit: 100 } as TAgentsEndpoint;
-    expect(resolveSubagentMaxTurns(config, { recursion_limit: 200 })).toBe(67);
-  });
-
-  it('clamps the default floor so it never exceeds a small maxRecursionLimit', () => {
+  it('never exceeds a small maxRecursionLimit', () => {
     const config = { maxRecursionLimit: 20 } as TAgentsEndpoint;
     const turns = resolveSubagentMaxTurns(config, {});
     expect(turns).toBe(6);
     expect(turns * 3).toBeLessThanOrEqual(20);
   });
 
-  it('clamps ceil overshoot so it never exceeds maxRecursionLimit', () => {
-    const config = { recursionLimit: 200, maxRecursionLimit: 200 } as TAgentsEndpoint;
-    const turns = resolveSubagentMaxTurns(config, {});
-    expect(turns).toBe(66);
-    expect(turns * 3).toBeLessThanOrEqual(200);
-  });
-
-  it('keeps at least one turn when maxRecursionLimit is smaller than the multiplier', () => {
+  it('keeps at least one turn when the resolved limit is smaller than the multiplier', () => {
     const config = { maxRecursionLimit: 2 } as TAgentsEndpoint;
     expect(resolveSubagentMaxTurns(config, {})).toBe(1);
   });
