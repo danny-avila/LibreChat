@@ -11,6 +11,7 @@ const {
   GenerationJobManager,
   getCustomEndpointConfig,
   discoverConnectedAgents,
+  createSubagentLoader,
   resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
   resolveModelSpecSkillIds,
@@ -757,110 +758,26 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    * gets them honored at runtime. Self-spawn works regardless (no DB
    * lookup needed). Pruning decisions are deferred to `pureSubagentIds`.
    */
-  const loadSubagentsFor = async (config, depth = 0) => {
-    const sub = config.subagents;
-    if (!subagentsCapabilityEnabled || !sub?.enabled) {
-      config.subagentAgentConfigs = [];
-      return;
-    }
-
-    if (loadedSubagentConfigIds.has(config.id)) {
-      if ((config.subagentAgentConfigs?.length ?? 0) > 0 && depth >= MAX_SUBAGENT_DEPTH) {
-        logger.warn('[initializeClient] Subagent graph depth limit exceeded', {
-          agentId: config.id,
-          primaryAgentId: primaryConfig.id,
-          depth,
-          maxSubagentDepth: MAX_SUBAGENT_DEPTH,
-          childCount: config.subagentAgentConfigs.length,
-        });
-        throw new Error(
-          `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
-        );
-      }
-      return;
-    }
-
-    /** Dedupe and filter in one pass — a crafted payload could
-     *  legitimately include the same ID twice; the backend shouldn't
-     *  create duplicate SubagentConfig entries for the LLM to see as
-     *  separate spawn targets. */
-    const explicitSubagentIds = Array.from(
-      new Set(
-        Array.isArray(sub.agent_ids)
-          ? sub.agent_ids.filter((id) => typeof id === 'string' && id && id !== config.id)
-          : [],
-      ),
-    );
-
-    if (explicitSubagentIds.length > 0 && depth >= MAX_SUBAGENT_DEPTH) {
-      logger.warn('[initializeClient] Subagent graph depth limit exceeded', {
-        agentId: config.id,
-        primaryAgentId: primaryConfig.id,
-        depth,
-        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
-        childCount: explicitSubagentIds.length,
-      });
-      throw new Error(
-        `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
-      );
-    }
-
-    loadedSubagentConfigIds.add(config.id);
-
-    /** @type {Array<Object>} */
-    const resolved = [];
-    for (const subagentId of explicitSubagentIds) {
-      if (skippedAgentIds.has(subagentId)) continue;
-
-      /** Cycle guard: a configuration like A ↔ B (B lists A as its
-       *  subagent) would otherwise trigger `loadAgentById` on the
-       *  primary — inserting a second config for the same primary id,
-       *  which downstream duplicates in the agent array. Reuse the
-       *  existing primary config when a subagent ref points back at it. */
-      if (subagentId === primaryConfig.id) {
-        resolved.push(primaryConfig);
-        continue;
-      }
-
-      assertSubagentGraphRoom(subagentId);
-      const subagentConfig = await loadAgentById(subagentId);
-      if (!subagentConfig) continue;
-
-      subagentGraphIds.add(subagentConfig.id ?? subagentId);
-      resolved.push(subagentConfig);
-
-      if (!edgeAgentIds.has(subagentId)) {
-        pureSubagentIds.add(subagentId);
-      }
-    }
-
-    config.subagentAgentConfigs = resolved;
-  };
-
   const maxResolvedDepthByConfigId = new Map();
 
   /** BFS across subagent trees so nested chains like A → B → C get
    *  resolved before any pruning. Agent configs are loaded once, but
    *  overlapping roots can still be revisited at deeper path depths so
    *  the depth guard observes the deepest reachable subagent path. */
-  const resolveSubagentTrees = async (rootConfigs) => {
-    const pending = rootConfigs.map((cfg) => ({ cfg, depth: 0 }));
-    for (let index = 0; index < pending.length; index++) {
-      const { cfg, depth } = pending[index];
-      if (!cfg?.id) continue;
-      const previousDepth = maxResolvedDepthByConfigId.get(cfg.id);
-      if (previousDepth != null && previousDepth >= depth) continue;
-      maxResolvedDepthByConfigId.set(cfg.id, depth);
-      await loadSubagentsFor(cfg, depth);
-      for (const child of cfg.subagentAgentConfigs ?? []) {
-        const childDepth = depth + 1;
-        const previousChildDepth = child?.id ? maxResolvedDepthByConfigId.get(child.id) : undefined;
-        if (child?.id && (previousChildDepth == null || previousChildDepth < childDepth)) {
-          pending.push({ cfg: child, depth: childDepth });
-        }
-      }
-    }
-  };
+  const { resolveSubagentTrees } = createSubagentLoader({
+    primaryConfig,
+    skippedAgentIds,
+    edgeAgentIds,
+    pureSubagentIds,
+    subagentGraphIds,
+    loadedSubagentConfigIds,
+    maxResolvedDepthByConfigId,
+    loadAgentById,
+    assertSubagentGraphRoom,
+    maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+    /** #13898 JWT/browser path: no load-time ACL (unchanged; SDK spawn-time callback governs) */
+    checkSubagentAccess: undefined,
+  });
 
   await resolveSubagentTrees([primaryConfig, ...agentConfigs.values()]);
 

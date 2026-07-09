@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
-const {
+const { MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_GRAPH_NODES,
   EModelEndpoint,
   ResourceType,
   PermissionBits,
@@ -29,6 +29,8 @@ const {
   findPiiMatchInMessages,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
+  createSubagentLoader,
+  buildRemoteAgentSubagentAccessCheck,
   createToolExecuteHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
@@ -440,6 +442,70 @@ const OpenAIChatCompletionController = async (req, res) => {
     }
 
     primaryConfig.edges = discoveredEdges;
+
+    /**
+     * #13898: load subagent-spawn configs for the /v1 path (parity with handoffs,
+     * mirrors PR #12740). Placement/state is local; ACL = REMOTE_AGENT + VIEW,
+     * the same boundary discoverConnectedAgents enforces for handoff targets.
+     */
+    const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+    if (subagentsCapabilityEnabled) {
+      const subagentSkippedIds = new Set();
+      const subagentGraphIds = new Set([primaryConfig.id, ...handoffAgentConfigs.keys()]);
+      const loadSubagentConfigById = async (agentId) => {
+        const agent = await db.getAgent({ id: agentId });
+        if (!agent) {
+          subagentSkippedIds.add(agentId);
+          return null;
+        }
+        return initializeAgent(
+          {
+            req,
+            res,
+            agent,
+            loadTools,
+            requestFiles: [],
+            conversationId,
+            parentMessageId,
+            endpointOption,
+            allowedProviders,
+          },
+          dbMethods,
+        );
+      };
+      const assertSubagentGraphRoom = (agentId) => {
+        if (subagentGraphIds.size >= MAX_SUBAGENT_GRAPH_NODES) {
+          throw new Error(
+            `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} agents at ${agentId}.`,
+          );
+        }
+      };
+      const checkSubagentPermission = async ({ userId, role, resourceId, requiredPermission }) => {
+        const permissions = await getRemoteAgentPermissions(
+          { getEffectivePermissions },
+          userId,
+          role,
+          resourceId,
+        );
+        return hasPermissions(permissions, requiredPermission);
+      };
+      const { resolveSubagentTrees } = createSubagentLoader({
+        primaryConfig,
+        skippedAgentIds: subagentSkippedIds,
+        edgeAgentIds: new Set([primaryConfig.id, ...handoffAgentConfigs.keys()]),
+        pureSubagentIds: new Set(),
+        subagentGraphIds,
+        loadedSubagentConfigIds: new Set(),
+        maxResolvedDepthByConfigId: new Map(),
+        loadAgentById: loadSubagentConfigById,
+        assertSubagentGraphRoom,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+        getAgent: db.getAgent,
+        checkSubagentAccess: buildRemoteAgentSubagentAccessCheck(req, checkSubagentPermission),
+      });
+      await resolveSubagentTrees([primaryConfig, ...handoffAgentConfigs.values()]);
+    }
+
 
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
