@@ -1969,6 +1969,7 @@ export enum KnownEndpoints {
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
   unify = 'unify',
+  unorouter = 'unorouter',
   vercel = 'vercel',
   xai = 'xai',
 }
@@ -2006,6 +2007,7 @@ export const alternateName = {
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
+  [KnownEndpoints.unorouter]: 'UnoRouter',
 };
 
 const sharedOpenAIModels = [
