@@ -81,17 +81,17 @@ export async function enableMemory(page: Page) {
 /** Enable the ephemeral Code Interpreter (execute_code) capability from the tool menu. */
 export async function enableCodeInterpreter(page: Page) {
   await page.getByRole('button', { name: 'Tools Options' }).click();
-  await page.getByRole('menuitem', { name: 'Run Code' }).click();
+  await page.getByTestId('tools-menu-run-code').click();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'Run Code' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Run Code' })).toBeVisible();
 }
 
 /** Enable the ephemeral File Search capability from the composer tool menu. */
 export async function enableFileSearch(page: Page) {
   await page.getByRole('button', { name: 'Tools Options' }).click();
-  await page.getByRole('menuitem', { name: 'File Search' }).click();
+  await page.getByTestId('tools-menu-file-search').click();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'File Search' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'File Search' })).toBeVisible();
 }
 
 /** The conversation messages container. */
