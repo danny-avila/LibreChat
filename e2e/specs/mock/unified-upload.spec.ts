@@ -1,12 +1,14 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { UploadedFile } from './helpers';
 import {
   MOCK_ENDPOINTS,
   NEW_CHAT_PATH,
+  uniqueName,
   fetchJson,
   isAgentsStream,
   getAccessToken,
   selectMockEndpoint,
+  uploadViaUnifiedButton,
 } from './helpers';
 
 /**
@@ -23,39 +25,14 @@ import {
  *   out of LLM delivery — reachable only by tools.
  * - A `provider`-routed upload (markdown) is STILL delivered to the model AND
  *   shown as an attachment chip — unified mode doesn't lose upload-to-provider.
- * - The mock harness has no code-execution environment, so the "available to the
- *   code interpreter at tool-execute time" half is covered by jest
- *   (`packages/api/src/agents/resources.test.ts`), not here.
+ * - A `text`-routed upload (json) is extracted and persisted as `text`.
  *
- * `.xlsx` follows the identical `none` code path; csv/markdown are used so the
+ * The "available to the code interpreter / file_search at tool-execute time" half
+ * lives in file-provisioning.spec.ts, which drives the fake code + RAG servers.
+ *
+ * `.xlsx` follows the identical `none` code path; csv/markdown/json are used so the
  * uploaded bytes match the declared mime type without synthesizing binaries.
  */
-
-const uniqueName = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
-
-type UploadedFile = { filename?: string; type?: string; llmDeliveryPath?: string };
-
-const isFilesUpload = (url: string, method: string) =>
-  method === 'POST' && /\/api\/files(?:\?|$)/.test(new URL(url).pathname);
-
-async function uploadViaUnifiedButton(
-  page: Page,
-  file: { name: string; mimeType: string; content: string },
-) {
-  const uploadResponse = page.waitForResponse((r) => isFilesUpload(r.url(), r.request().method()), {
-    timeout: 30000,
-  });
-  const [fileChooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    page.locator('#attach-file-button').click(),
-  ]);
-  await fileChooser.setFiles({
-    name: file.name,
-    mimeType: file.mimeType,
-    buffer: Buffer.from(file.content, 'utf8'),
-  });
-  return uploadResponse;
-}
 
 test.describe('unified file upload', () => {
   test('single attach button routes a csv to llmDeliveryPath "none"', async ({ page }) => {
@@ -138,5 +115,47 @@ test.describe('unified file upload', () => {
     await expect(
       page.getByTestId('messages-view').getByRole('button', { name: fileName }),
     ).toBeVisible();
+  });
+
+  test('single attach button routes a json upload to llmDeliveryPath "text"', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[1]);
+
+    await expect(page.locator('#attach-file-button')).toBeVisible({ timeout: 15000 });
+
+    // application/json is neither overridden nor image/pdf, so it falls through to the
+    // system fallback ('text'): extracted and delivered as text context, not a provider file.
+    const fileName = `${uniqueName('notes')}.json`;
+    const response = await uploadViaUnifiedButton(page, {
+      name: fileName,
+      mimeType: 'application/json',
+      content: '{"e2e":"unified text routing","rows":[1,2,3]}\n',
+    });
+    expect(response.ok()).toBeTruthy();
+
+    const token = await getAccessToken(page);
+    const files = await fetchJson<UploadedFile[]>(page, '/api/files', token);
+    const persisted = files.find((f) => f.filename === fileName);
+    expect(persisted, `uploaded file "${fileName}" should persist`).toBeTruthy();
+    expect(persisted?.llmDeliveryPath).toBe('text');
+  });
+
+  test('legacy endpoint renders the 3-way upload dropdown, not the single button', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    // Mock Provider A opts into legacyFileUploadUX.
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    // Legacy: the menu-button trigger is present; the unified single button is not.
+    await expect(page.locator('#attach-file-menu-button')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#attach-file-button')).toHaveCount(0);
+
+    // Opening it reveals the classic per-tool-resource options.
+    await page.locator('#attach-file-menu-button').click();
+    await expect(page.getByRole('menuitem', { name: 'Upload to Code Environment' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Upload for File Search' })).toBeVisible();
   });
 });

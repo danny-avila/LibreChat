@@ -25,6 +25,12 @@ const labelServerPath = path.resolve(rootPath, 'e2e/setup/fake-label-server.js')
 /** The template's custom-endpoint `baseURL`s hard-code 8889;
  *  `writeRuntimeMockConfig` substitutes any override into the generated copy. */
 const LABEL_PORT = process.env.E2E_LABEL_PORT || '8889';
+const codeServerPath = path.resolve(rootPath, 'e2e/setup/fake-code-server.js');
+const ragServerPath = path.resolve(rootPath, 'e2e/setup/fake-rag-server.js');
+/** Ports the backend reaches via LIBRECHAT_CODE_BASEURL / RAG_API_URL below.
+ *  Kept clear of the MCP (8765/8766) and label (8889) fixtures. */
+const CODE_API_PORT = process.env.E2E_CODE_API_PORT || '8790';
+const RAG_API_PORT = process.env.E2E_RAG_API_PORT || '8791';
 const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
 /** Model-fixture record mode: the run hook taps the REAL provider stream into a
  *  replayable fixture instead of overriding the model (e2e/setup/model-replay.js). */
@@ -139,6 +145,10 @@ const baseEnv = {
   ...(process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN
     ? { E2E_CODE_BRIDGE_ADMIN_TOKEN: process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN }
     : {}),
+  /** Point code-env + RAG provisioning at the local fakes started below. */
+  LIBRECHAT_CODE_BASEURL: `http://127.0.0.1:${CODE_API_PORT}/v1`,
+  LIBRECHAT_CODE_API_KEY: 'e2e-code-key',
+  RAG_API_URL: `http://127.0.0.1:${RAG_API_PORT}`,
   ...vanillaOverrides,
 };
 
@@ -374,6 +384,26 @@ export default defineConfig({
       cwd: rootPath,
       env: { ...process.env, E2E_ASSISTANTS_PORT: ASSISTANTS_PORT },
       url: `http://127.0.0.1:${ASSISTANTS_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // Fake code-execution API for file-provisioning specs (LIBRECHAT_CODE_BASEURL).
+      command: `node ${codeServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_CODE_API_PORT: CODE_API_PORT },
+      url: `http://127.0.0.1:${CODE_API_PORT}/health`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // Fake RAG (vector DB) API for file-provisioning specs (RAG_API_URL).
+      command: `node ${ragServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_RAG_API_PORT: RAG_API_PORT },
+      url: `http://127.0.0.1:${RAG_API_PORT}/health`,
       stdout: 'pipe',
       timeout: 60_000,
       reuseExistingServer: false,
