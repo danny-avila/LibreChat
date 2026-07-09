@@ -24,7 +24,11 @@ import {
   bedrockDocumentExtensions,
   isDocumentSupportedProvider,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
+import type {
+  TConversation,
+  EndpointFileConfig,
+  MimeUploadCategory,
+} from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useAgentToolPermissions,
@@ -47,6 +51,15 @@ type FileUploadType =
   | 'image_document'
   | 'image_document_extended'
   | 'image_document_video_audio';
+
+/** Content categories each provider upload path can actually send, used to scope the picker filter. */
+const fileTypeCapabilities: Record<FileUploadType, MimeUploadCategory[]> = {
+  image: ['image'],
+  document: ['document'],
+  image_document: ['image', 'document'],
+  image_document_extended: ['image', 'document'],
+  image_document_video_audio: ['image', 'document', 'audio', 'video'],
+};
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -120,8 +133,14 @@ const AttachFileMenu = ({
         return;
       }
       inputRef.current.value = '';
-      const configuredAccept = getConfiguredMimeAccept(endpointFileConfig?.supportedMimeTypes);
-      if (fileType !== undefined && configuredAccept != null) {
+      const configuredAccept =
+        fileType !== undefined
+          ? getConfiguredMimeAccept(
+              endpointFileConfig?.supportedMimeTypes,
+              fileTypeCapabilities[fileType],
+            )
+          : undefined;
+      if (configuredAccept != null) {
         inputRef.current.accept = configuredAccept;
       } else if (fileType === 'image') {
         inputRef.current.accept = 'image/*,.heif,.heic';

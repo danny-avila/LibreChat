@@ -1,3 +1,4 @@
+import type { MimeUploadCategory } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
@@ -1364,21 +1365,26 @@ describe('isPermissiveMimeConfig', () => {
 describe('getConfiguredMimeAccept', () => {
   const toSet = (accept?: string) => new Set((accept ?? '').split(',').filter(Boolean));
 
+  /** Provider capability tiers: image-only, document providers (OpenAI/Anthropic/custom), and Google/OpenRouter. */
+  const IMAGE_ONLY: MimeUploadCategory[] = ['image'];
+  const IMAGE_DOC: MimeUploadCategory[] = ['image', 'document'];
+  const ALL: MimeUploadCategory[] = ['image', 'document', 'audio', 'video'];
+
   it('returns undefined for undefined', () => {
-    expect(getConfiguredMimeAccept(undefined)).toBeUndefined();
+    expect(getConfiguredMimeAccept(undefined, ALL)).toBeUndefined();
   });
 
   it('returns undefined for empty array', () => {
-    expect(getConfiguredMimeAccept([])).toBeUndefined();
+    expect(getConfiguredMimeAccept([], ALL)).toBeUndefined();
   });
 
   it('returns undefined for the built-in default supportedMimeTypes (keep provider filter)', () => {
-    expect(getConfiguredMimeAccept(supportedMimeTypes)).toBeUndefined();
+    expect(getConfiguredMimeAccept(supportedMimeTypes, ALL)).toBeUndefined();
   });
 
   it("returns '' for permissive configs so the picker stays unrestricted", () => {
-    expect(getConfiguredMimeAccept(convertStringsToRegex(['.*']))).toBe('');
-    expect(getConfiguredMimeAccept([/^.+$/])).toBe('');
+    expect(getConfiguredMimeAccept(convertStringsToRegex(['.*']), ALL)).toBe('');
+    expect(getConfiguredMimeAccept([/^.+$/], ALL)).toBe('');
   });
 
   it('translates the finite Office + image allowlist from issue #14162', () => {
@@ -1390,7 +1396,7 @@ describe('getConfiguredMimeAccept', () => {
       '^application/vnd\\.ms-excel$',
       '^application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet$',
     ]);
-    const accept = toSet(getConfiguredMimeAccept(config));
+    const accept = toSet(getConfiguredMimeAccept(config, IMAGE_DOC));
 
     for (const token of [
       'image/*',
@@ -1413,31 +1419,58 @@ describe('getConfiguredMimeAccept', () => {
   });
 
   it('emits image/* for an image-only allowlist', () => {
-    const accept = toSet(getConfiguredMimeAccept([/^image\/(jpeg|png)$/]));
+    const accept = toSet(getConfiguredMimeAccept([/^image\/(jpeg|png)$/], IMAGE_DOC));
     expect(accept.has('image/*')).toBe(true);
     expect(accept.has('.pdf')).toBe(false);
   });
 
-  it('emits media wildcards for audio and video allowlists', () => {
-    const accept = toSet(getConfiguredMimeAccept([/^audio\/.*$/, /^video\/.*$/]));
+  it('emits media wildcards for audio and video allowlists on a media-capable path', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^audio\/.*$/, /^video\/.*$/], ALL));
     expect(accept.has('audio/*')).toBe(true);
     expect(accept.has('video/*')).toBe(true);
   });
 
   it('returns undefined for a finite config with no recognized types (fall back to provider filter)', () => {
-    expect(getConfiguredMimeAccept([/^application\/x-librechat-unknown$/])).toBeUndefined();
+    expect(getConfiguredMimeAccept([/^application\/x-librechat-unknown$/], ALL)).toBeUndefined();
   });
 
   it('falls back when any configured type is unrepresentable, rather than emitting a partial accept', () => {
-    expect(getConfiguredMimeAccept([/^application\/pdf$/, /^text\/x-python$/])).toBeUndefined();
+    expect(
+      getConfiguredMimeAccept([/^application\/pdf$/, /^text\/x-python$/], IMAGE_DOC),
+    ).toBeUndefined();
   });
 
-  it('translates a fully-representable mixed pdf + audio allowlist', () => {
-    const accept = toSet(getConfiguredMimeAccept([/^application\/pdf$/, /^audio\/mp3$/]));
+  it('translates a fully-representable mixed pdf + audio allowlist on a media-capable path', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^application\/pdf$/, /^audio\/mp3$/], ALL));
     expect(accept.has('.pdf')).toBe(true);
     expect(accept.has('application/pdf')).toBe(true);
     expect(accept.has('audio/*')).toBe(true);
     expect(accept.has('video/*')).toBe(false);
     expect(accept.has('image/*')).toBe(false);
+  });
+
+  it('keeps the image upload path image-only even when the allowlist adds documents', () => {
+    const config = convertStringsToRegex([
+      '^image/.*',
+      '^application/pdf$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, IMAGE_ONLY));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(false);
+    expect(accept.has('.docx')).toBe(false);
+  });
+
+  it('excludes audio/video for document providers that cannot send them', () => {
+    const accept = toSet(
+      getConfiguredMimeAccept([/^image\/.*$/, /^application\/pdf$/, /^audio\/mp3$/], IMAGE_DOC),
+    );
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('audio/*')).toBe(false);
+  });
+
+  it('falls back for a broad application/.* regex that reaches unrepresentable types', () => {
+    expect(getConfiguredMimeAccept([/^application\/.*$/], IMAGE_DOC)).toBeUndefined();
   });
 });
