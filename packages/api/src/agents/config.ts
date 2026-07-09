@@ -51,14 +51,27 @@ export function resolveRecursionLimit(
  * both the YAML `recursionLimit`/`maxRecursionLimit` and the per-agent
  * `recursion_limit`, always running at the SDK default of 75 graph steps.
  *
- * Floored at {@link DEFAULT_SUBAGENT_MAX_TURNS} so resolved limits below the
- * historical default never reduce subagent capacity.
+ * Floored at {@link DEFAULT_SUBAGENT_MAX_TURNS} so a small resolved limit never
+ * reduces subagent capacity below the historical default. When an explicit
+ * `maxRecursionLimit` cap is set it wins over that floor: `maxTurns` is clamped
+ * to `floor(maxRecursionLimit / SUBAGENT_RECURSION_MULTIPLIER)` so the effective
+ * graph limit never exceeds the admin cap (the SDK's `* 3` would otherwise let
+ * the floor or `ceil` overshoot it, e.g. cap 20 → 75 steps, cap 200 → 201).
  */
 export function resolveSubagentMaxTurns(
   agentsEConfig: Partial<TAgentsEndpoint> | undefined,
   agent: { recursion_limit?: number } | undefined,
 ): number {
   const limit = resolveRecursionLimit(agentsEConfig, agent);
-  const turns = Math.ceil(limit / SUBAGENT_RECURSION_MULTIPLIER);
-  return Math.max(DEFAULT_SUBAGENT_MAX_TURNS, turns);
+  let turns = Math.max(
+    DEFAULT_SUBAGENT_MAX_TURNS,
+    Math.ceil(limit / SUBAGENT_RECURSION_MULTIPLIER),
+  );
+
+  const maxCap = agentsEConfig?.maxRecursionLimit;
+  if (typeof maxCap === 'number' && maxCap > 0) {
+    turns = Math.min(turns, Math.floor(maxCap / SUBAGENT_RECURSION_MULTIPLIER));
+  }
+
+  return Math.max(1, turns);
 }

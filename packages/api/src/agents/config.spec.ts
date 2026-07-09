@@ -90,4 +90,23 @@ describe('resolveSubagentMaxTurns', () => {
     const config = { recursionLimit: 100 } as TAgentsEndpoint;
     expect(resolveSubagentMaxTurns(config, { recursion_limit: 200 })).toBe(67);
   });
+
+  it('clamps the default floor so it never exceeds a small maxRecursionLimit', () => {
+    const config = { maxRecursionLimit: 20 } as TAgentsEndpoint;
+    const turns = resolveSubagentMaxTurns(config, {});
+    expect(turns).toBe(6);
+    expect(turns * 3).toBeLessThanOrEqual(20);
+  });
+
+  it('clamps ceil overshoot so it never exceeds maxRecursionLimit', () => {
+    const config = { recursionLimit: 200, maxRecursionLimit: 200 } as TAgentsEndpoint;
+    const turns = resolveSubagentMaxTurns(config, {});
+    expect(turns).toBe(66);
+    expect(turns * 3).toBeLessThanOrEqual(200);
+  });
+
+  it('keeps at least one turn when maxRecursionLimit is smaller than the multiplier', () => {
+    const config = { maxRecursionLimit: 2 } as TAgentsEndpoint;
+    expect(resolveSubagentMaxTurns(config, {})).toBe(1);
+  });
 });
