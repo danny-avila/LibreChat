@@ -452,9 +452,9 @@ export const primeResources = async ({
 
       if (needsCodeEnv || needsVectorDB) {
         let codeApiKey: string | undefined;
-        if (needsCodeEnv && loadCodeApiKey && req.user?.id) {
+        if (needsCodeEnv && loadCodeApiKey && resourcePrincipal?.id) {
           try {
-            codeApiKey = await loadCodeApiKey(req.user.id);
+            codeApiKey = await loadCodeApiKey(resourcePrincipal.id);
           } catch (error) {
             logger.error('[primeResources] Failed to load CODE_API_KEY', error);
             warnings.push('Code execution file provisioning unavailable');
