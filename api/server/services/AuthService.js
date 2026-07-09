@@ -218,16 +218,17 @@ const createTokenHash = () => {
  */
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
+  const email = user.email.toLowerCase();
 
   const verificationLink = `${
     domains.client
-  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  }/verify?token=${verifyToken}&email=${encodeURIComponent(email)}`;
   await sendEmail({
-    email: user.email,
+    email,
     subject: 'Verify your email',
     payload: {
       appName: process.env.APP_TITLE || 'LibreChat',
-      name: user.name || user.username || user.email,
+      name: user.name || user.username || email,
       verificationLink: verificationLink,
       year: new Date().getFullYear(),
     },
@@ -236,14 +237,14 @@ const sendVerificationEmail = async (user) => {
 
   await createToken({
     userId: user._id,
-    email: user.email,
+    email,
     type: AuthTokenTypes.EMAIL_VERIFICATION,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
   });
 
-  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
+  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${email}]`);
 };
 
 /**
