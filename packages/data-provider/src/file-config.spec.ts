@@ -1550,4 +1550,24 @@ describe('getConfiguredMimeAccept', () => {
       getConfiguredMimeAccept([/^image\/.*$/, /^audio\/x-librechat-unknown$/], GOOGLE),
     ).toBeUndefined();
   });
+
+  it('translates a finite Excel allowlist that includes legacy MIME aliases', () => {
+    const config = convertStringsToRegex([
+      '^application/(vnd\\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet)$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, IMAGE_DOC));
+    expect(accept.has('.xls')).toBe(true);
+    expect(accept.has('.xlsx')).toBe(true);
+  });
+
+  it('translates finite epub and parquet document allowlists', () => {
+    const accept = toSet(
+      getConfiguredMimeAccept(
+        [/^application\/epub\+zip$/, /^application\/vnd\.apache\.parquet$/],
+        IMAGE_DOC,
+      ),
+    );
+    expect(accept.has('.epub')).toBe(true);
+    expect(accept.has('.parquet')).toBe(true);
+  });
 });
