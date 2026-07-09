@@ -86,6 +86,7 @@ jest.mock('~/models', () => ({
   findFileById: jest.fn(),
   getConvo: jest.fn(),
   getExpiredFiles: jest.fn(),
+  getAgent: jest.fn().mockResolvedValue(null),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
@@ -981,6 +982,42 @@ describe('processAgentFileUpload', () => {
           type: 'text/markdown',
           llmDeliveryPath: 'provider',
         }),
+        true,
+      );
+    });
+
+    test('resolves llmDeliveryPath from the agent provider config for agent uploads', async () => {
+      const { createFile, getAgent } = require('~/models');
+      getAgent.mockResolvedValueOnce({ provider: 'Custom Provider' });
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        endpoints: {
+          'Custom Provider': { defaultLLMDeliveryPath: { fallback: 'none' } },
+        },
+      });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+      req.body.endpoint = EModelEndpoint.agents;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          message_file: 'true',
+          file_id: 'file-uuid-123',
+        },
+      });
+
+      expect(getAgent).toHaveBeenCalledWith({ id: 'agent-abc' });
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({ llmDeliveryPath: 'none' }),
         true,
       );
     });
