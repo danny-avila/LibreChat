@@ -904,6 +904,24 @@ function buildSubagentConfigs(
      */
     const childInputs = toInput(child, { isSubagent: true });
     /**
+     * A child reachable as a top-level/handoff agent is initialized WITH the
+     * background capability, then reused here as a subagent. Isolated child
+     * graphs run subagent tools without the host background dispatch/poll
+     * behavior, so strip the injected `run_in_background` param + the
+     * `check_background_task` def (defs AND registry) so the child doesn't
+     * advertise a background contract it can't honor. Mirrors the self-spawn path.
+     */
+    if ((child.backgroundToolNames?.length ?? 0) > 0) {
+      childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
+        childInputs.toolDefinitions,
+        child.backgroundToolNames,
+      );
+      childInputs.toolRegistry = stripBackgroundFromToolRegistry(
+        childInputs.toolRegistry,
+        child.backgroundToolNames,
+      );
+    }
+    /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
      * `subagents.enabled` is true loses every explicit target when
