@@ -1,8 +1,9 @@
-import type { MimeUploadCategory } from './file-config';
+import type { MimeUploadCapability } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
   getConfiguredMimeAccept,
+  bedrockDocumentMimeTypes,
   isPermissiveMimeConfig,
   convertStringsToRegex,
   documentParserMimeTypes,
@@ -80,6 +81,26 @@ describe('inferMimeType', () => {
   it('should produce a type accepted by checkType for .eml files', () => {
     const normalized = inferMimeType('test.eml', '');
     expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
+
+  it('infers Office MIME types from extension when the browser reports none', () => {
+    expect(inferMimeType('legacy.doc', '')).toBe('application/msword');
+    expect(inferMimeType('report.docx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    expect(inferMimeType('legacy.xls', '')).toBe('application/vnd.ms-excel');
+    expect(inferMimeType('sheet.xlsx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(inferMimeType('deck.pptx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    );
+  });
+
+  it('produces Office types accepted by checkType after inference', () => {
+    expect(baseFileConfig.checkType(inferMimeType('report.docx', ''))).toBe(true);
+    expect(baseFileConfig.checkType(inferMimeType('sheet.xlsx', ''))).toBe(true);
+    expect(baseFileConfig.checkType(inferMimeType('legacy.doc', ''))).toBe(true);
   });
 });
 
@@ -1365,10 +1386,14 @@ describe('isPermissiveMimeConfig', () => {
 describe('getConfiguredMimeAccept', () => {
   const toSet = (accept?: string) => new Set((accept ?? '').split(',').filter(Boolean));
 
-  /** Provider capability tiers: image-only, document providers (OpenAI/Anthropic/custom), and Google/OpenRouter. */
-  const IMAGE_ONLY: MimeUploadCategory[] = ['image'];
-  const IMAGE_DOC: MimeUploadCategory[] = ['image', 'document'];
-  const ALL: MimeUploadCategory[] = ['image', 'document', 'audio', 'video'];
+  /** Provider capability tiers: image-only, document providers, Google/OpenRouter, and Bedrock. */
+  const IMAGE_ONLY: MimeUploadCapability = { categories: ['image'] };
+  const IMAGE_DOC: MimeUploadCapability = { categories: ['image', 'document'] };
+  const ALL: MimeUploadCapability = { categories: ['image', 'document', 'audio', 'video'] };
+  const BEDROCK: MimeUploadCapability = {
+    categories: ['image', 'document'],
+    documentMimeTypes: bedrockDocumentMimeTypes,
+  };
 
   it('returns undefined for undefined', () => {
     expect(getConfiguredMimeAccept(undefined, ALL)).toBeUndefined();
@@ -1472,5 +1497,20 @@ describe('getConfiguredMimeAccept', () => {
 
   it('falls back for a broad application/.* regex that reaches unrepresentable types', () => {
     expect(getConfiguredMimeAccept([/^application\/.*$/], IMAGE_DOC)).toBeUndefined();
+  });
+
+  it('restricts Bedrock document accepts to Bedrock-supported formats', () => {
+    const config = convertStringsToRegex([
+      '^application/pdf$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+      '^application/vnd\\.openxmlformats-officedocument\\.presentationml\\.presentation$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, BEDROCK));
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('.docx')).toBe(true);
+    expect(accept.has('.pptx')).toBe(false);
+    expect(
+      accept.has('application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+    ).toBe(false);
   });
 });

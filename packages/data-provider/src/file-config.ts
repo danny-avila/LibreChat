@@ -177,6 +177,9 @@ export const bedrockDocumentFormats: Record<string, BedrockDocumentFormat> = {
 export const isBedrockDocumentType = (mimeType?: string): boolean =>
   mimeType != null && mimeType in bedrockDocumentFormats;
 
+/** MIME types Bedrock's Converse document path can send to the model (mirrors `bedrockDocumentFormats`). */
+export const bedrockDocumentMimeTypes: readonly string[] = Object.keys(bedrockDocumentFormats);
+
 /** File extensions accepted by Bedrock document uploads (for input accept attributes) */
 export const bedrockDocumentExtensions =
   '.pdf,.csv,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,application/pdf,text/csv,application/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,text/plain,text/markdown';
@@ -359,6 +362,12 @@ export const codeTypeMapping: { [key: string]: string } = {
   ods: 'application/vnd.oasis.opendocument.spreadsheet', // .ods - OpenDocument Spreadsheet
   odp: 'application/vnd.oasis.opendocument.presentation', // .odp - OpenDocument Presentation
   odg: 'application/vnd.oasis.opendocument.graphics', // .odg - OpenDocument Graphics
+  doc: 'application/msword', // .doc - Word (legacy)
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx - Word
+  xls: 'application/vnd.ms-excel', // .xls - Excel (legacy)
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx - Excel
+  ppt: 'application/vnd.ms-powerpoint', // .ppt - PowerPoint (legacy)
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx - PowerPoint
   ics: 'text/calendar', // .ics - iCalendar
   ical: 'text/calendar', // .ical - iCalendar
   ifb: 'text/calendar', // .ifb - iCalendar free/busy
@@ -531,6 +540,14 @@ export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
 /** The kind of content a provider upload path can actually send to the model. */
 export type MimeUploadCategory = 'image' | 'document' | 'audio' | 'video';
 
+/** Describes what an upload path can send, used to scope a configured allowlist to selectable files. */
+export interface MimeUploadCapability {
+  /** Content categories the path forwards to the model. */
+  categories: ReadonlyArray<MimeUploadCategory>;
+  /** When `document` is permitted, restrict document types to this set (e.g. Bedrock formats); default: all. */
+  documentMimeTypes?: readonly string[];
+}
+
 /** Media categories that collapse to a wildcard `accept` token when any member type is allowed. */
 const mimeAcceptCategories: ReadonlyArray<{
   category: Exclude<MimeUploadCategory, 'document'>;
@@ -645,16 +662,17 @@ const isRepresentable = (mimeType: string): boolean =>
   categoryOf(mimeType) !== 'document' || documentMimeSet.has(mimeType);
 
 /**
- * Translates a finite MIME allowlist into a file-input `accept` string, intersected with the
- * categories the provider upload path can actually send. Returns `undefined` (keep the provider
- * filter) when a configured pattern matches a supported type in a permitted category that cannot be
- * represented, so the picker never hides a file the path would have accepted.
+ * Translates a finite MIME allowlist into a file-input `accept` string, intersected with what the
+ * provider upload path can actually send. Returns `undefined` (keep the provider filter) when a
+ * configured pattern matches a supported, path-handleable type that cannot be represented, so the
+ * picker never hides a file the path would have accepted.
  */
 const buildMimeAccept = (
   types: RegExp[],
-  permitted: ReadonlyArray<MimeUploadCategory>,
+  { categories, documentMimeTypes }: MimeUploadCapability,
 ): string | undefined => {
-  const permittedSet = new Set<MimeUploadCategory>(permitted);
+  const permittedSet = new Set<MimeUploadCategory>(categories);
+  const documentAllowSet = documentMimeTypes ? new Set(documentMimeTypes) : null;
   const emittedMedia = new Set<MimeUploadCategory>();
   const emittedDocuments = new Set<string>();
 
@@ -665,6 +683,10 @@ const buildMimeAccept = (
       }
       const category = categoryOf(mimeType);
       if (!permittedSet.has(category)) {
+        continue;
+      }
+      /** The path handles documents but drops this specific type (e.g. Bedrock ignores pptx/ODF). */
+      if (category === 'document' && documentAllowSet && !documentAllowSet.has(mimeType)) {
         continue;
       }
       if (!isRepresentable(mimeType)) {
@@ -706,7 +728,7 @@ const buildMimeAccept = (
 
 /**
  * Resolves the file-input `accept` value for a configured `supportedMimeTypes` allowlist, scoped to
- * the categories the current upload path (`permitted`) can send to the model.
+ * what the current upload path (`capability`) can send to the model.
  * - `undefined` for the built-in default or a config that can't be represented safely, so callers
  *   keep their provider-specific filter.
  * - `''` for permissive configs (e.g. `.*`), leaving the picker unrestricted.
@@ -717,7 +739,7 @@ const buildMimeAccept = (
  */
 export const getConfiguredMimeAccept = (
   types: RegExp[] | undefined,
-  permitted: ReadonlyArray<MimeUploadCategory>,
+  capability: MimeUploadCapability,
 ): string | undefined => {
   /** Referential identity with the built-in list signals an unconfigured endpoint (keep provider filter). */
   if (!types || types.length === 0 || types === supportedMimeTypes) {
@@ -726,7 +748,7 @@ export const getConfiguredMimeAccept = (
   if (isPermissiveMimeConfig(types)) {
     return '';
   }
-  return buildMimeAccept(types, permitted);
+  return buildMimeAccept(types, capability);
 };
 
 /**

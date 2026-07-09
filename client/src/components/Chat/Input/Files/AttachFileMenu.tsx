@@ -20,6 +20,7 @@ import {
   EToolResources,
   EModelEndpoint,
   getConfiguredMimeAccept,
+  bedrockDocumentMimeTypes,
   defaultAgentCapabilities,
   bedrockDocumentExtensions,
   isDocumentSupportedProvider,
@@ -27,7 +28,7 @@ import {
 import type {
   TConversation,
   EndpointFileConfig,
-  MimeUploadCategory,
+  MimeUploadCapability,
 } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
@@ -52,13 +53,16 @@ type FileUploadType =
   | 'image_document_extended'
   | 'image_document_video_audio';
 
-/** Content categories each provider upload path can actually send, used to scope the picker filter. */
-const fileTypeCapabilities: Record<FileUploadType, MimeUploadCategory[]> = {
-  image: ['image'],
-  document: ['document'],
-  image_document: ['image', 'document'],
-  image_document_extended: ['image', 'document'],
-  image_document_video_audio: ['image', 'document', 'audio', 'video'],
+/** What each provider upload path can actually send, used to scope the picker filter to selectable files. */
+const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
+  image: { categories: ['image'] },
+  document: { categories: ['document'] },
+  image_document: { categories: ['image', 'document'] },
+  image_document_extended: {
+    categories: ['image', 'document'],
+    documentMimeTypes: bedrockDocumentMimeTypes,
+  },
+  image_document_video_audio: { categories: ['image', 'document', 'audio', 'video'] },
 };
 
 interface AttachFileMenuProps {
