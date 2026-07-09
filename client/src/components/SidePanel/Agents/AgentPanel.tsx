@@ -29,6 +29,7 @@ import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
 import { Panel, isEphemeralAgent } from '~/common';
+import DuplicateAgent from './DuplicateAgent';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
@@ -548,6 +549,13 @@ export default function AgentPanel() {
                 <p className="text-token-text-secondary">
                   {localize(isSystemAgent ? 'com_agents_global_readonly' : 'com_agents_no_access')}
                 </p>
+                {isSystemAgent &&
+                  agentQuery.data?.id &&
+                  (canEdit || user?.role === SystemRoles.ADMIN) && (
+                    <div className="mt-4 flex justify-center">
+                      <DuplicateAgent agent_id={agentQuery.data.id} />
+                    </div>
+                  )}
               </div>
             </div>
           )}

@@ -154,6 +154,22 @@ describe('Agent Methods', () => {
       expect(count).toBe(1);
     });
 
+    test('rejects file resource mutations on system (global) agents', async () => {
+      const agent = await createBasicAgent();
+      await Agent.updateOne({ id: agent.id }, { $set: { isSystem: true } });
+      const fileId = uuidv4();
+
+      await expect(
+        addAgentResourceFile({ agent_id: agent.id, tool_resource: 'file_search', file_id: fileId }),
+      ).rejects.toThrow(/managed by server configuration/);
+      await expect(
+        removeAgentResourceFiles({
+          agent_id: agent.id,
+          files: [{ tool_resource: 'file_search', file_id: fileId }],
+        }),
+      ).rejects.toThrow(/managed by server configuration/);
+    });
+
     test('should not duplicate tool_resource in tools if already present', async () => {
       const agent = await createBasicAgent();
       const fileId1 = uuidv4();

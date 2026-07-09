@@ -45,6 +45,7 @@ const {
 } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
+const { authorizeSystemGlobalAgent } = require('~/server/services/Agents/systemGlobal');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const { logViolation } = require('~/cache');
@@ -486,6 +487,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     {
       getAgent: db.getAgent,
       checkPermission,
+      authorizeSystemGlobalAgent,
       logViolation,
       db: {
         getFiles: db.getFiles,

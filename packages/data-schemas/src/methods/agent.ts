@@ -611,6 +611,9 @@ export function createAgentMethods(
     if (!agent) {
       throw new Error('Agent not found for adding resource file');
     }
+    if (agent.isSystem) {
+      throw new Error('Global agents are managed by server configuration and cannot be modified');
+    }
     const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
     await Agent.updateOne(
       {
@@ -653,6 +656,11 @@ export function createAgentMethods(
   }): Promise<IAgent> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const searchParameter = { id: agent_id };
+
+    const targetAgent = await getAgent(searchParameter);
+    if (targetAgent?.isSystem) {
+      throw new Error('Global agents are managed by server configuration and cannot be modified');
+    }
 
     const filesByResource = files.reduce(
       (acc: Record<string, string[]>, { tool_resource, file_id }) => {

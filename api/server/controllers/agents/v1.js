@@ -85,6 +85,15 @@ const rejectImmutableSystemAgent = (agent, res) => {
   return false;
 };
 
+/** Load an agent by id, falling back to the tenantless system-global row on a tenant-scoped miss, so
+ *  mutating handlers reach the isSystem immutability guard (403) instead of returning 404. */
+const loadAgentWithSystemFallback = (searchId) =>
+  withSystemGlobalFallback(
+    searchId,
+    () => db.getAgent({ id: searchId }),
+    () => db.getAgent({ id: searchId, tenantId: { $exists: false } }),
+  );
+
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
   delete agent.skills_enabled;
@@ -699,7 +708,7 @@ const updateAgentHandler = async (req, res) => {
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
-    const existingAgent = await db.getAgent({ id });
+    const existingAgent = await loadAgentWithSystemFallback(id);
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -1009,7 +1018,7 @@ const duplicateAgentHandler = async (req, res) => {
 const deleteAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const agent = await db.getAgent({ id });
+    const agent = await loadAgentWithSystemFallback(id);
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
@@ -1266,7 +1275,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    const existingAgent = await db.getAgent({ id: agent_id });
+    const existingAgent = await loadAgentWithSystemFallback(agent_id);
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -1377,7 +1386,7 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(400).json({ error: 'version_index is required' });
     }
 
-    const existingAgent = await db.getAgent({ id });
+    const existingAgent = await loadAgentWithSystemFallback(id);
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
