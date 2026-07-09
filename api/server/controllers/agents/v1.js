@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
   agentCreateSchema,
@@ -550,6 +550,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         model: agent.model,
         model_parameters: getSafeModelParameters(agent.model_parameters),
         isPublic: agent.isPublic,
+        isSystem: agent.isSystem ?? false,
         version: agent.version,
         // Safe metadata
         createdAt: agent.createdAt,
@@ -678,6 +679,12 @@ const updateAgentHandler = async (req, res) => {
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (existingAgent.isSystem) {
+      return res.status(403).json({
+        error: 'Global agents are managed by server configuration and cannot be modified.',
+      });
     }
 
     // Convert legacy OCR tool resource to context format in existing agent
@@ -821,6 +828,7 @@ const duplicateAgentHandler = async (req, res) => {
       updatedAt: _updatedAt,
       tool_resources: _tool_resources = {},
       versions: _versions,
+      isSystem: _isSystem,
       __v: _v,
       ...cloneData
     } = agent;
@@ -979,6 +987,11 @@ const deleteAgentHandler = async (req, res) => {
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
+    if (agent.isSystem) {
+      return res.status(403).json({
+        error: 'Global agents are managed by server configuration and cannot be deleted.',
+      });
+    }
     await db.deleteAgent({ id });
     return res.json({ message: 'Agent deleted' });
   } catch (error) {
@@ -986,6 +999,41 @@ const deleteAgentHandler = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+/**
+ * Resolve the `tenants: 'system'` global agents this user is entitled to. Their rows and ACL
+ * grants are tenantless, so a tenant-scoped list query can't see them — we read under the system
+ * context and intersect the user's accessible ids with the known tenantless system agents (so no
+ * other tenant's agents can leak in). Single-tenant deployments never call this; the tenantless
+ * rows already surface through the normal query.
+ */
+async function getEntitledSystemGlobalAgents({ userId, role, filter, includeSkillConfig }) {
+  return runAsSystem(async () => {
+    const systemAgents = await db.getAgents({ isSystem: true, tenantId: { $exists: false } });
+    if (!systemAgents.length) {
+      return [];
+    }
+    const systemIdSet = new Set(systemAgents.map((agent) => agent._id.toString()));
+    const entitledIds = await findAccessibleResources({
+      userId,
+      role,
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    const accessibleIds = entitledIds.filter((oid) => systemIdSet.has(oid.toString()));
+    if (!accessibleIds.length) {
+      return [];
+    }
+    const list = await db.getListAgentsByAccess({
+      accessibleIds,
+      otherParams: filter,
+      limit: null,
+      after: null,
+      includeSkillConfig,
+    });
+    return list?.data ?? [];
+  });
+}
 
 /**
  * Lists agents using ACL-aware permissions (ownership + explicit shares).
@@ -1086,6 +1134,29 @@ const getListAgentsHandler = async (req, res) => {
     });
 
     const agents = data?.data ?? [];
+
+    /* Multi-tenant only: surface `tenants: 'system'` global agents (tenantless rows/grants the
+     * tenant-scoped query above can't see) on the first page. Single-tenant deployments have no
+     * active tenant context and resolve these through the normal query. */
+    if (getTenantId() && !cursor) {
+      try {
+        const systemGlobals = await getEntitledSystemGlobalAgents({
+          userId,
+          role: req.user.role,
+          filter,
+          includeSkillConfig: true,
+        });
+        const seen = new Set(agents.map((agent) => agent.id));
+        for (const systemAgent of systemGlobals) {
+          if (!seen.has(systemAgent.id)) {
+            agents.push(systemAgent);
+          }
+        }
+      } catch (err) {
+        logger.error('[/Agents] Error merging system global agents: %o', err);
+      }
+    }
+
     if (!agents.length) {
       return res.json(data);
     }

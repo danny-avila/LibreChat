@@ -288,6 +288,8 @@ export type Agent = {
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
+  /** Config-defined global agent, seeded at boot and immutable in the app. */
+  isSystem?: boolean;
   version?: number;
   category?: string;
   support_contact?: SupportContact;

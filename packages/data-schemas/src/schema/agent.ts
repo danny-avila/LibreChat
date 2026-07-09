@@ -109,6 +109,12 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       default: false,
       index: true,
     },
+    /** Config-defined global agent, seeded at boot and immutable in the app. */
+    isSystem: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     /** MCP server names extracted from tools for efficient querying */
     mcpServerNames: {
       type: [String],

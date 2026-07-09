@@ -428,6 +428,25 @@ endpoints:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  #   # (optional) Global agents: server-defined agents seeded to a stable id at startup and
+  #   # immutable in the app. The body is the same payload the agent builder posts, so an entry
+  #   # can be minimal (id + provider + model) or override any agent field.
+  #   globalAgents:
+  #     - id: agent_global_assistant   # required; must start with `agent_global_`
+  #       name: Company Assistant
+  #       provider: openAI
+  #       model: gpt-4o
+  #       instructions: You are the shared company assistant.
+  #       # (optional) Visibility, using the existing ACL granularity. Omit to seed but not share.
+  #       access:
+  #         level: viewer               # viewer (default) | editor
+  #         roles: ["USER"]             # visible to every user with this account role
+  #         # public: true              # visible to everyone, including public/share contexts
+  #         # groups: ["<groupId>"]
+  #         # users: ["<userId>"]
+  #       # (optional) Tenant reach. 'system' (default) = one shared row for all tenants;
+  #       # a list scopes it to specific tenants. Ignored in single-tenant deployments.
+  #       # tenants: system
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy

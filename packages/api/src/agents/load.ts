@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, runAsSystem } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
@@ -185,7 +185,14 @@ export async function loadAgent(
   if (isEphemeralAgentId(agent_id)) {
     return loadEphemeralAgent({ req, spec, endpoint, model_parameters }, deps);
   }
-  const agent = await deps.getAgent({ id: agent_id });
+  let agent = await deps.getAgent({ id: agent_id });
+
+  /* Config-defined global agents scoped `tenants: 'system'` are stored as a single tenantless
+   * row that a tenant-scoped read can't see. On a miss for a global id, retry under the system
+   * context so the shared row resolves across every tenant. */
+  if (!agent && agent_id.startsWith(Constants.GLOBAL_AGENT_PREFIX)) {
+    agent = await runAsSystem(() => deps.getAgent({ id: agent_id }));
+  }
 
   if (!agent) {
     return null;
