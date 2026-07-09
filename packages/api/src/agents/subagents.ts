@@ -237,3 +237,151 @@ export function buildRemoteAgentSubagentAccessCheck(
     });
   };
 }
+
+/** Params for the shared /v1 subagent resolver (openai.js + responses.js). */
+export interface ResolveV1SubagentsParams {
+  req: { user?: { id?: string; role?: string; tenantId?: string } };
+  res: unknown;
+  /** The already-initialized primary agent config. */
+  primaryConfig: SubagentConfigLike;
+  /** Handoff configs discovered on this request (keys seed the graph set). */
+  handoffAgentConfigs: Map<string, SubagentConfigLike>;
+  endpointOption: unknown;
+  allowedProviders: Set<string>;
+  conversationId: string;
+  parentMessageId: string | null;
+  loadTools: unknown;
+  dbMethods: unknown;
+  /** MAX_SUBAGENT_DEPTH from librechat-data-provider. */
+  maxSubagentDepth: number;
+  /** MAX_SUBAGENT_GRAPH_NODES from librechat-data-provider. */
+  maxSubagentGraphNodes: number;
+  /** Log tag, e.g. '[openai]' or '[responses]'. */
+  logPrefix?: string;
+}
+
+/** Injected wiring for the shared /v1 subagent resolver (from the /api layer). */
+export interface ResolveV1SubagentsDeps {
+  getAgent: (filter: { id: string }) => Promise<Agent | null>;
+  initializeAgent: (
+    params: Record<string, unknown>,
+    dbMethods: unknown,
+  ) => Promise<SubagentConfigLike>;
+  getEffectivePermissions: unknown;
+  getRemoteAgentPermissions: (
+    deps: { getEffectivePermissions: unknown },
+    userId: string,
+    role: string | undefined,
+    resourceId: unknown,
+  ) => Promise<unknown>;
+  hasPermissions: (permissions: unknown, requiredPermission: number) => boolean;
+}
+
+/**
+ * #13898 — the single source of truth for loading subagent-spawn configs on the
+ * OpenAI-compatible `/v1` controllers (chat/completions AND responses).
+ *
+ * Gate-2 finding #201: this block was previously copy-pasted, byte-for-byte, in
+ * both controllers — a latent risk that a future security patch is applied to
+ * one endpoint but not the other. Both controllers now call this ONE function,
+ * so the REMOTE_AGENT + VIEW ACL on the subagent path can only ever be defined
+ * in a single place.
+ *
+ * Behavior is identical to the prior inline blocks: builds a per-request loader
+ * with a REMOTE_AGENT + VIEW `checkSubagentAccess`, then resolves the subagent
+ * trees for the primary and every discovered handoff agent.
+ */
+export async function resolveV1Subagents(
+  params: ResolveV1SubagentsParams,
+  deps: ResolveV1SubagentsDeps,
+): Promise<void> {
+  const {
+    req,
+    res,
+    primaryConfig,
+    handoffAgentConfigs,
+    endpointOption,
+    allowedProviders,
+    conversationId,
+    parentMessageId,
+    loadTools,
+    dbMethods,
+    maxSubagentDepth,
+    maxSubagentGraphNodes,
+    logPrefix = '[openai]',
+  } = params;
+  const {
+    getAgent,
+    initializeAgent,
+    getEffectivePermissions,
+    getRemoteAgentPermissions,
+    hasPermissions,
+  } = deps;
+
+  const subagentSkippedIds = new Set<string>();
+  const graphSeed: string[] = [primaryConfig.id as string, ...handoffAgentConfigs.keys()];
+  const subagentGraphIds = new Set<string>(graphSeed);
+
+  const loadAgentById = async (agentId: string): Promise<SubagentConfigLike | null> => {
+    const agent = await getAgent({ id: agentId });
+    if (!agent) {
+      subagentSkippedIds.add(agentId);
+      return null;
+    }
+    return initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [],
+        conversationId,
+        parentMessageId,
+        endpointOption,
+        allowedProviders,
+      },
+      dbMethods,
+    );
+  };
+
+  const assertSubagentGraphRoom = (agentId: string): void => {
+    if (subagentGraphIds.size >= maxSubagentGraphNodes) {
+      throw new Error(
+        `Subagent graph exceeds the maximum of ${maxSubagentGraphNodes} agents at ${agentId}.`,
+      );
+    }
+  };
+
+  const checkSubagentPermission = async (p: {
+    userId: string;
+    role?: string;
+    resourceId: unknown;
+    requiredPermission: number;
+  }): Promise<boolean> => {
+    const permissions = await getRemoteAgentPermissions(
+      { getEffectivePermissions },
+      p.userId,
+      p.role,
+      p.resourceId,
+    );
+    return hasPermissions(permissions, p.requiredPermission);
+  };
+
+  const { resolveSubagentTrees } = createSubagentLoader({
+    primaryConfig,
+    skippedAgentIds: subagentSkippedIds,
+    edgeAgentIds: new Set<string>(graphSeed),
+    pureSubagentIds: new Set<string>(),
+    subagentGraphIds,
+    loadedSubagentConfigIds: new Set<string>(),
+    maxResolvedDepthByConfigId: new Map<string, number>(),
+    loadAgentById,
+    assertSubagentGraphRoom,
+    maxSubagentDepth,
+    logPrefix,
+    getAgent,
+    checkSubagentAccess: buildRemoteAgentSubagentAccessCheck(req, checkSubagentPermission),
+  });
+
+  await resolveSubagentTrees([primaryConfig, ...handoffAgentConfigs.values()]);
+}
