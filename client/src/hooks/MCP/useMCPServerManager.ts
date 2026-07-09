@@ -345,7 +345,9 @@ export function useMCPServerManager({
 
   const initializeServer = useCallback(
     async (serverName: string, autoOpenOAuth: boolean = true) => {
-      updateServerInitState(serverName, { isInitializing: true });
+      /** connectionDeferred is reset up front so a stale value from a previous
+       * attempt can never be mistaken for this attempt's outcome. */
+      updateServerInitState(serverName, { isInitializing: true, connectionDeferred: false });
       try {
         const response = await reinitializeMutation.mutateAsync(serverName);
         /** Record whether this attempt deferred to a chat turn (request-scoped
@@ -467,6 +469,16 @@ export function useMCPServerManager({
       return getServerInitState(serverInitStates, serverName).connectionDeferred;
     },
     [serverInitStates],
+  );
+
+  /** Clear a recorded deferred outcome without starting a new attempt — used
+   * before routing into the customUserVars config dialog so a stale flag from
+   * an earlier attempt can't trigger consumers while the dialog is open. */
+  const resetConnectionDeferred = useCallback(
+    (serverName: string) => {
+      updateServerInitState(serverName, { connectionDeferred: false });
+    },
+    [updateServerInitState],
   );
 
   const getOAuthUrl = useCallback(
@@ -692,6 +704,7 @@ export function useMCPServerManager({
     isInitializing,
     isCancellable,
     isConnectionDeferred,
+    resetConnectionDeferred,
     getOAuthUrl,
     mcpValues,
     setMCPValues,

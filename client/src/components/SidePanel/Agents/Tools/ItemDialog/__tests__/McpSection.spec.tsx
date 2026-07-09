@@ -36,6 +36,7 @@ jest.mock('~/hooks', () => ({
     getConfigDialogProps: () => null,
     initializeServer: mockInitializeServer,
     isConnectionDeferred: mockIsConnectionDeferred,
+    resetConnectionDeferred: jest.fn(),
     getOAuthUrl: () => undefined,
     isCancellable: () => false,
     cancelOAuthFlow: jest.fn(),
@@ -254,16 +255,26 @@ describe('McpSection', () => {
     expect(mockSetValue).not.toHaveBeenCalled();
   });
 
-  test('per-tool selection replaces a stale wildcard', () => {
-    // If a formerly request-scoped server starts exposing a normal tool list,
-    // picking individual tools must drop the mcp_all wildcard — otherwise the
-    // runtime would still grant every tool while the UI shows a subset.
+  test('wildcard attachment shows every enumerable tool as selected', () => {
+    // The mcp_all wildcard grants every tool at runtime; if the server's tools
+    // become enumerable, the display must reflect that instead of showing
+    // unchecked boxes while runtime grants everything.
+    mockGetValues.mockReturnValue(['sys__all__sys_mcp_srv']);
+    render(<McpSection item={item} />);
+    expect(screen.getByTestId('tool-mcp:srv:a')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('tool-mcp:srv:b')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('touching a selection converts the wildcard to concrete tool ids', () => {
+    // With a wildcard attached and tools enumerable, deselecting one tool must
+    // rewrite the form with the remaining concrete ids and drop the wildcard —
+    // otherwise runtime would still grant every tool while the UI shows a subset.
     mockGetValues.mockReturnValue(['sys__all__sys_mcp_srv']);
     render(<McpSection item={item} />);
     fireEvent.click(screen.getByTestId('tool-mcp:srv:a'));
     expect(mockSetValue).toHaveBeenCalledWith(
       'tools',
-      ['sys__server__sys_mcp_srv', 'mcp:srv:a'],
+      ['sys__server__sys_mcp_srv', 'mcp:srv:b'],
       expect.objectContaining({ shouldDirty: true }),
     );
   });

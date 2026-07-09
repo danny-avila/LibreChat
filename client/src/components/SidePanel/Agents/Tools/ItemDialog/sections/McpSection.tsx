@@ -13,9 +13,9 @@ import {
   useMCPToolOptions,
 } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
+import { mcpAllToken, mcpServerToken } from '../../items/selectors';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
-import { mcpAllToken, mcpServerToken } from '../../items/selectors';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
 import MCPToolItem from '../../../MCPToolItem';
@@ -66,6 +66,7 @@ export default function McpSection({ item }: Props) {
     getConfigDialogProps,
     initializeServer,
     isConnectionDeferred,
+    resetConnectionDeferred,
     getOAuthUrl,
   } = useMCPServerManager();
   const [oauthOpen, setOauthOpen] = useState(false);
@@ -104,8 +105,16 @@ export default function McpSection({ item }: Props) {
    * servers whose tools resolve at chat-turn time and can't be listed here. */
   const isWildcardAttached = formTools.includes(serverAllToken);
 
+  /** The `mcp_all` wildcard grants every server tool at runtime, so when the
+   * server's tools ARE enumerable (e.g. it stopped being request-scoped), fold
+   * the wildcard into the display as "all selected" — otherwise the dialog
+   * would show unchecked boxes while runtime grants everything. Any selection
+   * interaction then rewrites the form with concrete tool ids (the wildcard is
+   * stripped by `updateFormTools`), converting the attachment on first touch. */
   const getSelectedTools = (): string[] =>
-    tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
+    isWildcardAttached
+      ? tools.map((t) => t.tool_id)
+      : tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
 
   /** Replace this server's tool selection while keeping the server attached: the
    * placeholder token is always rewritten, so deselect-all leaves the server
@@ -211,6 +220,11 @@ export default function McpSection({ item }: Props) {
   const handleConnect = async (e: MouseEvent) => {
     setAutoSelectPending(true);
     if (statusIconProps != null && statusIconProps.hasCustomUserVars) {
+      /** A stale deferred flag from an earlier attempt must not fire the
+       * auto-attach effect while the config dialog is open — only this
+       * attempt's outcome (recorded on save → initialize) counts. The direct
+       * path below needs no reset: initializeServer clears it up front. */
+      resetConnectionDeferred(serverName);
       statusIconProps.onConfigClick(e);
       return;
     }
