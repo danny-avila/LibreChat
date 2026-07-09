@@ -389,6 +389,83 @@ describe('loadAgent', () => {
     expect(withoutFlag?.tools).not.toContain('ask_user_question');
   });
 
+  test('synthesizes background tool_options from the ephemeralAgent run_in_background flag', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const result = await loadAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          body: {
+            ephemeralAgent: {
+              web_search: true,
+              execute_code: true,
+              run_in_background: true,
+            } as TEphemeralAgent,
+          },
+        },
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    // eligible tool opts in; excluded code-execution tool does not
+    expect(result?.tool_options?.web_search).toEqual({ run_in_background: true });
+    expect(result?.tool_options?.execute_code).toBeUndefined();
+  });
+
+  test('synthesizes background tool_options from a model spec (runInBackground: true), and not without it', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const buildReq = (specName: string, runInBackground: boolean): LoadAgentParams['req'] =>
+      ({
+        user: { id: 'user123' },
+        body: {},
+        config: {
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          modelSpecs: {
+            list: [
+              {
+                name: specName,
+                label: specName,
+                preset: { endpoint: 'openai', model: 'gpt-4' },
+                webSearch: true,
+                runInBackground,
+              },
+            ],
+          },
+        },
+      }) as unknown as LoadAgentParams['req'];
+
+    const withFlag = await loadAgent(
+      {
+        req: buildReq('bg-on', true),
+        spec: 'bg-on',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+    expect(withFlag?.tool_options?.web_search).toEqual({ run_in_background: true });
+
+    const withoutFlag = await loadAgent(
+      {
+        req: buildReq('bg-off', false),
+        spec: 'bg-off',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+    expect(withoutFlag?.tool_options).toBeUndefined();
+  });
+
   test('should enable full skill scope for ephemeral model spec with skills true', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 

@@ -51,6 +51,7 @@ import {
   isFileAuthoringToolDefinition,
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -397,6 +398,13 @@ export interface InitializeAgentParams {
   skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether the `run_in_background` capability is enabled for this run. When
+   * true, tools the agent opted in via `tool_options[name].run_in_background`
+   * get a `run_in_background` schema param and the `check_background_task` poll
+   * tool is registered.
+   */
+  backgroundToolsAvailable?: boolean;
   /** Whether inline memory tools are available (memory capability enabled, memory
    *  configured, and the user permitted). When true and the agent lists the `memory`
    *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
@@ -1133,6 +1141,22 @@ export async function initializeAgent(
       includeSkillFileInstructions: skillAuthoringAvailable,
     });
     toolDefinitions = fileAuthoringResult.toolDefinitions;
+  }
+
+  /**
+   * Inject the `run_in_background` param into eligible opted-in tools and
+   * register the `check_background_task` poll tool. Runs after all built-in
+   * tool registration so the full, final `toolDefinitions` set is considered.
+   * Opt-in is per-tool via `tool_options` for both saved and ephemeral agents.
+   */
+  if (params.backgroundToolsAvailable === true) {
+    const backgroundResult = applyBackgroundToolCalls({
+      toolDefinitions,
+      toolRegistry,
+      toolOptions: agent.tool_options,
+      enabled: true,
+    });
+    toolDefinitions = backgroundResult.toolDefinitions;
   }
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */

@@ -1,0 +1,152 @@
+import { z } from 'zod';
+import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import { CHECK_BACKGROUND_TASK_NAME } from './background';
+import { createToolExecuteHandler } from './handlers';
+
+interface BatchInput {
+  toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>;
+  agentId: string;
+  configurable: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  resolve: (results: Array<{ content: string }>) => void;
+  reject: (error: Error) => void;
+}
+
+const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+
+const makeSearchTool = (state: { calls: number; lastInput?: Record<string, unknown> }) =>
+  ({
+    name: 'search_mcp_docs',
+    description: 'search docs',
+    schema: z.object({ q: z.string() }),
+    invoke: async (input: Record<string, unknown>) => {
+      state.calls += 1;
+      state.lastInput = input;
+      return { content: `RESULT for ${String(input.q)}` };
+    },
+  }) as unknown as StructuredToolInterface;
+
+const buildConfig = () => {
+  const toolRegistry = new Map<string, unknown>([
+    [CHECK_BACKGROUND_TASK_NAME, { name: CHECK_BACKGROUND_TASK_NAME, allowed_callers: ['direct'] }],
+    ['search_mcp_docs', { name: 'search_mcp_docs' }],
+  ]);
+  return {
+    req: { user: { id: 'exec_user' }, body: { conversationId: 'exec_convo' } },
+    toolRegistry,
+  };
+};
+
+const runBatch = async (
+  handler: ReturnType<typeof createToolExecuteHandler>,
+  input: Omit<BatchInput, 'resolve' | 'reject'>,
+): Promise<Array<{ content: string }>> => {
+  let out: Array<{ content: string }> = [];
+  await handler.handle('on_tool_execute', {
+    ...input,
+    resolve: (results: Array<{ content: string }>) => {
+      out = results;
+    },
+    reject: (error: Error) => {
+      throw error;
+    },
+  } as unknown as Parameters<typeof handler.handle>[1]);
+  return out;
+};
+
+describe('createToolExecuteHandler — background tool calls', () => {
+  it('returns a handle immediately, runs the tool once detached, and yields the result via check_background_task', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    const configurable = buildConfig();
+    const metadata = { thread_id: 'exec_convo' };
+
+    const dispatchResults = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_bg',
+          name: 'search_mcp_docs',
+          args: { q: 'librechat', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable,
+      metadata,
+    });
+
+    expect(dispatchResults).toHaveLength(1);
+    const handle = JSON.parse(dispatchResults[0].content);
+    expect(handle.status).toBe('running');
+    expect(typeof handle.background_task_id).toBe('string');
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // real tool ran exactly once, without the injected flag
+    expect(state.calls).toBe(1);
+    expect(state.lastInput).toEqual({ q: 'librechat' });
+
+    const pollResults = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handle.background_task_id },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable,
+      metadata,
+    });
+
+    const polled = JSON.parse(pollResults[0].content);
+    expect(polled.status).toBe('completed');
+    expect(polled.result).toContain('RESULT for librechat');
+  });
+
+  it('does not double-dispatch when the same tool call re-executes (resume/replay)', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    const configurable = buildConfig();
+    const metadata = { thread_id: 'exec_convo_dup' };
+    const toolCalls = [
+      { id: 'call_same', name: 'search_mcp_docs', args: { q: 'x', run_in_background: true } },
+    ];
+
+    const first = await runBatch(handler, { toolCalls, agentId: 'a', configurable, metadata });
+    await flushMicrotasks();
+    const second = await runBatch(handler, { toolCalls, agentId: 'a', configurable, metadata });
+    await flushMicrotasks();
+
+    const firstId = JSON.parse(first[0].content).background_task_id;
+    const secondId = JSON.parse(second[0].content).background_task_id;
+    expect(secondId).toBe(firstId);
+    expect(state.calls).toBe(1);
+  });
+
+  it('runs the tool synchronously when background is not requested', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    const configurable = buildConfig();
+    const metadata = { thread_id: 'exec_convo_sync' };
+
+    const results = await runBatch(handler, {
+      toolCalls: [{ id: 'call_sync', name: 'search_mcp_docs', args: { q: 'now' } }],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+
+    expect(state.calls).toBe(1);
+    expect(results[0].content).toContain('RESULT for now');
+  });
+});

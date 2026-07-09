@@ -16,6 +16,16 @@ import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
 import {
+  backgroundTaskRegistry,
+  runCheckBackgroundTask,
+  isBackgroundRequested,
+  stripRunInBackgroundArg,
+  buildBackgroundHandleContent,
+  buildBackgroundCapacityContent,
+  isBackgroundEligibleToolName,
+  CHECK_BACKGROUND_TASK_NAME,
+} from './background';
+import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
@@ -3217,8 +3227,114 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
+            /**
+             * Background tool calls. `backgroundActive` is true only when the
+             * run registered the `check_background_task` poll tool (i.e. the
+             * capability was enabled and at least one tool opted in), which is
+             * the exact condition under which the model can have been shown the
+             * injected `run_in_background` schema param.
+             */
+            const backgroundReq = mergedConfigurable?.req as ServerRequest | undefined;
+            const backgroundUserId = backgroundReq?.user?.id ?? '';
+            const backgroundConversationId =
+              ((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+              (mergedConfigurable?.thread_id as string | undefined) ??
+              (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
+              '';
+            const backgroundActive =
+              (mergedConfigurable?.toolRegistry as LCToolRegistry | undefined)?.has(
+                CHECK_BACKGROUND_TASK_NAME,
+              ) === true;
+
+            /**
+             * Registers the task, returns a synthetic handle immediately, and
+             * runs the real tool as a floating promise whose result lands in the
+             * registry for `check_background_task` to collect. Idempotent by
+             * `toolCallId` so graph re-execution (resume/replay) never double-fires.
+             */
+            const dispatchBackgroundToolCall = (tc: ToolCallRequest): ToolExecuteResult => {
+              const created = backgroundTaskRegistry.create({
+                userId: backgroundUserId,
+                conversationId: backgroundConversationId,
+                toolCallId: tc.id,
+                toolName: tc.name,
+              });
+              if ('atCapacity' in created) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'success' as const,
+                  content: buildBackgroundCapacityContent(tc.name),
+                };
+              }
+              const { task, isNew } = created;
+              if (isNew) {
+                const tool = toolMap.get(tc.name);
+                if (!tool) {
+                  backgroundTaskRegistry.fail(
+                    backgroundUserId,
+                    backgroundConversationId,
+                    task.id,
+                    `Tool ${tc.name} not found`,
+                  );
+                } else {
+                  const strippedArgs = stripRunInBackgroundArg(tc.args);
+                  void (async () => {
+                    try {
+                      const result = (await tool.invoke(
+                        normalizeToolInvokeArgs(strippedArgs, tool),
+                        {
+                          toolCall: { id: tc.id, stepId: tc.stepId, turn: tc.turn },
+                          configurable: mergedConfigurable,
+                          metadata,
+                        } as Record<string, unknown>,
+                      )) as { content?: unknown; artifact?: unknown };
+                      backgroundTaskRegistry.complete(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        { content: result.content, hasArtifact: result.artifact != null },
+                      );
+                    } catch (toolError) {
+                      const { message } = getSafeToolError(toolError);
+                      backgroundTaskRegistry.fail(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        message,
+                      );
+                    }
+                  })();
+                }
+              }
+              return {
+                toolCallId: tc.id,
+                status: 'success' as const,
+                content: buildBackgroundHandleContent(task),
+              };
+            };
+
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
+                if (tc.name === CHECK_BACKGROUND_TASK_NAME) {
+                  return reportResult({
+                    toolCallId: tc.id,
+                    status: 'success' as const,
+                    content: runCheckBackgroundTask({
+                      userId: backgroundUserId,
+                      conversationId: backgroundConversationId,
+                      args: tc.args,
+                    }),
+                  });
+                }
+
+                if (
+                  backgroundActive &&
+                  isBackgroundRequested(tc.args) &&
+                  isBackgroundEligibleToolName(tc.name)
+                ) {
+                  return reportResult(dispatchBackgroundToolCall(tc));
+                }
+
                 const execute = async (
                   sandboxContext?: SandboxSessionContext,
                 ): Promise<ToolExecuteResult> => {
