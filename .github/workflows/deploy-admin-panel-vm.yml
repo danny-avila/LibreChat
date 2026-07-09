@@ -1,0 +1,112 @@
+name: Deploy Admin Panel to VM
+
+# Why this workflow lives in the AIWP repo (not the admin panel repo):
+# The AIWP self-hosted runner is what actually lives on librechat-vm, where the
+# admin panel container also runs. Putting the deploy here guarantees runner
+# access without worrying about cross-repo runner-scope questions. Once the
+# runner is promoted to org-scope, this can move to the admin panel repo and
+# be push-triggered instead of dispatch-only.
+#
+# Background: the admin panel's `docker-publish.yml` (in the admin panel repo)
+# only builds and pushes an image to GHCR. Nothing on the VM pulls / restarts
+# the container. Result: every admin panel merge sits stale in prod until a
+# human SSHes and refreshes it. This workflow closes that gap.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-admin-panel-vm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Locate admin panel app directory
+        id: locate
+        run: |
+          set -e
+          # Candidate paths, in priority order. First one that exists and contains
+          # docker-compose.local.yml wins. Override by setting the
+          # ADMIN_PANEL_APP_DIR repository variable if the layout differs.
+          CANDIDATES=(
+            "${{ vars.ADMIN_PANEL_APP_DIR }}"
+            "/home/greta_smbteam_com/admin-panel"
+            "/home/greta/admin-panel"
+          )
+          # Also try a sibling of the LibreChat app dir (e.g. /home/x/librechat → /home/x/admin-panel)
+          if [ -n "${{ vars.GCP_VM_APP_DIR }}" ]; then
+            CANDIDATES+=("$(dirname '${{ vars.GCP_VM_APP_DIR }}')/admin-panel")
+          fi
+
+          for dir in "${CANDIDATES[@]}"; do
+            [ -z "$dir" ] && continue
+            if [ -d "$dir" ] && [ -f "$dir/docker-compose.local.yml" ]; then
+              echo "app_dir=$dir" >> "$GITHUB_OUTPUT"
+              echo "==> Using admin panel directory: $dir"
+              exit 0
+            fi
+          done
+
+          echo "ERROR: could not find admin panel directory containing docker-compose.local.yml"
+          echo "Tried: ${CANDIDATES[*]}"
+          echo ""
+          echo "Fix: set the ADMIN_PANEL_APP_DIR repository variable to the correct path."
+          echo "     Settings → Secrets and variables → Actions → Variables → New repository variable"
+          exit 1
+
+      - name: Pull latest admin panel code
+        run: |
+          set -e
+          APP_DIR="${{ steps.locate.outputs.app_dir }}"
+          git config --global --add safe.directory "$APP_DIR"
+          cd "$APP_DIR"
+          echo "==> Before fetch:"
+          git log --oneline -1
+          echo "==> Fetching origin main..."
+          git fetch origin main
+          git reset --hard origin/main
+          echo "==> After reset:"
+          git log --oneline -1
+
+      - name: Build and restart admin-panel container
+        env:
+          # Required for `--mount=type=cache` in the Dockerfile.
+          DOCKER_BUILDKIT: '1'
+          COMPOSE_DOCKER_CLI_BUILD: '1'
+        run: |
+          set -e
+          APP_DIR="${{ steps.locate.outputs.app_dir }}"
+          cd "$APP_DIR"
+          echo "==> Building admin-panel image..."
+          docker compose -f docker-compose.local.yml build admin-panel
+          echo "==> Restarting admin-panel container..."
+          docker compose -f docker-compose.local.yml up -d admin-panel
+          echo "==> Container status:"
+          docker compose -f docker-compose.local.yml ps admin-panel
+
+      - name: Health check
+        run: |
+          set -e
+          APP_DIR="${{ steps.locate.outputs.app_dir }}"
+          # Admin panel binds to :3000 inside its docker network; the compose file
+          # maps it to the host on :3000 by default. If a custom PORT was set in
+          # .env, this check may miss it — treat a non-200 as informational only.
+          for i in 1 2 3 4 5 6; do
+            if curl -sf -o /dev/null http://localhost:3000/ 2>/dev/null; then
+              echo "==> Admin panel responding on :3000"
+              exit 0
+            fi
+            echo "==> Attempt $i: not responding on :3000, waiting 5s..."
+            sleep 5
+          done
+          echo "WARNING: admin panel did not respond on :3000 after 30s. Recent logs:"
+          docker compose -f "$APP_DIR/docker-compose.local.yml" logs admin-panel --tail=60 || true
+          # Exit non-zero so the run surfaces as failed; the container may still
+          # be usable via a non-default port, so operator should verify manually.
+          exit 1
