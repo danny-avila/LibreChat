@@ -2688,5 +2688,49 @@ describe('Premium Token Pricing', () => {
   });
 });
 
+describe('endpointTokenConfig wildcard fallback - getMultiplier', () => {
+  it('should prefer model-specific rate over wildcard', () => {
+    const endpointTokenConfig = {
+      'my-model': { prompt: 0.001, completion: 0.002 },
+      '*': { prompt: 0, completion: 0 },
+    };
+    expect(getMultiplier({ model: 'my-model', tokenType: 'prompt', endpointTokenConfig })).toBe(
+      0.001,
+    );
+    expect(getMultiplier({ model: 'my-model', tokenType: 'completion', endpointTokenConfig })).toBe(
+      0.002,
+    );
+  });
+
+  it('should fall back to wildcard when model is not listed', () => {
+    const endpointTokenConfig = { '*': { prompt: 0, completion: 0 } };
+    expect(
+      getMultiplier({ model: 'unknown-model', tokenType: 'prompt', endpointTokenConfig }),
+    ).toBe(0);
+    expect(
+      getMultiplier({ model: 'unknown-model', tokenType: 'completion', endpointTokenConfig }),
+    ).toBe(0);
+  });
+});
+
+describe('endpointTokenConfig wildcard fallback - getCacheMultiplier', () => {
+  it('should use wildcard cache rates when model is not listed', () => {
+    const endpointTokenConfig = { '*': { write: 0, read: 0 } };
+    expect(
+      getCacheMultiplier({ model: 'unknown-model', cacheType: 'write', endpointTokenConfig }),
+    ).toBe(0);
+    expect(
+      getCacheMultiplier({ model: 'unknown-model', cacheType: 'read', endpointTokenConfig }),
+    ).toBe(0);
+  });
+
+  it('should return null when neither model nor wildcard are configured', () => {
+    const endpointTokenConfig = { 'other-model': { write: 1, read: 0.1 } };
+    expect(
+      getCacheMultiplier({ model: 'unknown-model', cacheType: 'write', endpointTokenConfig }),
+    ).toBeNull();
+  });
+});
+
 // Cross-package sync validation tests (tokens.ts ↔ tx.ts) moved to
 // packages/api tests since they require maxTokensMap from @librechat/api.
