@@ -834,7 +834,11 @@ const duplicateAgentHandler = async (req, res) => {
   const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
   try {
-    const agent = await db.getAgent({ id });
+    const agent = await withSystemGlobalFallback(
+      id,
+      () => db.getAgent({ id }),
+      () => db.getAgent({ id, tenantId: { $exists: false } }),
+    );
     if (!agent) {
       return res.status(404).json({
         error: 'Agent not found',

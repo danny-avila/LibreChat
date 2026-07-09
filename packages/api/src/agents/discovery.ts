@@ -12,6 +12,7 @@ import type { ServerRequest } from '~/types';
 import { validateAgentModel as defaultValidateAgentModel } from './validation';
 import { initializeAgent as defaultInitializeAgent } from './initialize';
 import { createEdgeCollector, filterOrphanedEdges } from './edges';
+import { withSystemGlobalFallback } from './systemGlobal';
 import { createSequentialChainEdges } from './chain';
 
 /**
@@ -98,7 +99,7 @@ export interface DiscoverConnectedAgentsParams {
 
 export interface DiscoverConnectedAgentsDeps {
   /** Fetch an agent by string id from the database. */
-  getAgent: (filter: { id: string }) => Promise<Agent | null>;
+  getAgent: (filter: { id: string; tenantId?: { $exists: boolean } }) => Promise<Agent | null>;
   /** Permission check (typically a wrapper around PermissionService.checkPermission). */
   checkPermission: CheckAgentPermission;
   /** Violation logger passed through to validateAgentModel. */
@@ -190,7 +191,14 @@ export async function discoverConnectedAgents(
   };
 
   const processAgent = async (agentId: string): Promise<Agent | null> => {
-    const agent = await getAgent({ id: agentId });
+    /* A connected agent (edge/subagent target) may be a `tenants: 'system'` global — a tenantless
+     * row a tenant-scoped read misses. Fall back to the system context so configured handoffs and
+     * subagents pointing at a global agent resolve instead of being silently pruned. */
+    const agent = await withSystemGlobalFallback(
+      agentId,
+      () => getAgent({ id: agentId }),
+      () => getAgent({ id: agentId, tenantId: { $exists: false } }),
+    );
     if (!agent) {
       logger.warn(
         `[discoverConnectedAgents] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
