@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AgentCapabilities } from 'librechat-data-provider';
 import {
@@ -20,15 +19,6 @@ export default function StatefulSessions() {
 
   const enabled = watch(AgentCapabilities.stateful_code_sessions) ?? false;
   const codeEnabled = watch(AgentCapabilities.execute_code);
-
-  /** Clear the persisted opt-in when Code Interpreter is turned off so the saved
-   *  agent matches the disabled UI — otherwise `composeAgentUpdatePayload` keeps
-   *  `stateful_code_sessions: true` and re-enabling code silently reactivates it. */
-  useEffect(() => {
-    if (codeEnabled !== true && enabled) {
-      setValue(AgentCapabilities.stateful_code_sessions, false, { shouldDirty: true });
-    }
-  }, [codeEnabled, enabled, setValue]);
 
   const handleChange = (value: boolean) => {
     setValue(AgentCapabilities.stateful_code_sessions, value, { shouldDirty: true });

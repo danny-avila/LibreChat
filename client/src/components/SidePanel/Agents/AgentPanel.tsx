@@ -82,6 +82,11 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     avatar_action: avatarActionState,
   } = data;
 
+  /* stateful_code_sessions requires Code Interpreter; force it off on save when
+   * execute_code is disabled so a stale opt-in can't silently reactivate later. */
+  const normalizedStatefulCodeSessions =
+    data.execute_code === true ? stateful_code_sessions : false;
+
   const shouldResetAvatar =
     avatarActionState === 'reset' && Boolean(agent_id) && !isEphemeralAgent(agent_id);
   const model = _model ?? '';
@@ -102,7 +107,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       subagents,
       end_after_tools,
       hide_sequential_outputs,
-      stateful_code_sessions,
+      stateful_code_sessions: normalizedStatefulCodeSessions,
       recursion_limit,
       category,
       support_contact,
