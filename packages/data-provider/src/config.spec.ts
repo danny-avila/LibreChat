@@ -558,4 +558,38 @@ describe('webSearchSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('accepts Keenable search options', () => {
+    const result = webSearchSchema.parse({
+      keenableSearchOptions: {
+        maxResults: 7,
+        site: 'example.com',
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.keenableSearchOptions?.maxResults).toBe(7);
+    expect(result.keenableSearchOptions?.site).toBe('example.com');
+    expect(result.keenableSearchOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
 });

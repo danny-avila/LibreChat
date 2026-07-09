@@ -138,6 +138,49 @@ export async function loadWebSearchAuth({
       }
     }
 
+    // Special case: Keenable is keyless by default. The public endpoint needs no
+    // key, so the provider authenticates even when nothing is configured. Pick up
+    // the optional key and URL override when present (a key only lifts rate limits).
+    if (category === SearchCategories.PROVIDERS && specificService === SearchProviders.KEENABLE) {
+      let keenableUserProvided = false;
+      const keenableKeys: TWebSearchKeys[] = ['keenableApiKey', 'keenableApiUrl'];
+      for (const originalKey of keenableKeys) {
+        const authFields = extractWebSearchEnvVars({
+          keys: [originalKey],
+          config: webSearchConfig,
+        });
+        if (authFields.length === 0) {
+          continue;
+        }
+        const field = authFields[0];
+        try {
+          const authValues = await loadAuthValues({
+            userId,
+            authFields: [field],
+            optional: new Set([field]),
+            throwError: false,
+          });
+          const value = authValues[field];
+          if (!value) {
+            continue;
+          }
+          const isFieldUserProvided = process.env[field] !== value;
+          // keenableApiUrl is a user-providable URL: SSRF-preflight it before use.
+          if (originalKey === 'keenableApiUrl' && isFieldUserProvided && (await isSSRFUrl(value))) {
+            continue;
+          }
+          authResult[originalKey] = value;
+          if (isFieldUserProvided) {
+            keenableUserProvided = true;
+          }
+        } catch {
+          continue;
+        }
+      }
+      authResult.searchProvider = SearchProviders.KEENABLE;
+      return [true, keenableUserProvided];
+    }
+
     // If a specific service is specified, only check that one
     const services = specificService
       ? [specificService]
@@ -288,6 +331,7 @@ export async function loadWebSearchAuth({
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
+  authResult.keenableSearchOptions = webSearchConfig?.keenableSearchOptions;
 
   return {
     authTypes,

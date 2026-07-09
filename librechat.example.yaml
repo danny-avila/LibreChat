@@ -804,6 +804,8 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Keenable (search provider; keyless by default, a key only lifts rate limits)
+#   keenableApiKey: '${KEENABLE_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
@@ -839,6 +841,17 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# Keenable as search provider example (keyless by default):
+# webSearch:
+#   searchProvider: keenable
+#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoint used when unset)
+#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: custom API URL override
+#   keenableSearchOptions:
+#     maxResults: 5             # 1-20 results per search (default: 5)
+#     # site: example.com       # Restrict search to a single domain
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each request
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
 
 # Memory configuration for user memories
 # memory:

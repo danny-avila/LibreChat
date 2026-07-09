@@ -60,6 +60,8 @@ describe('loadWebSearchConfig', () => {
         tavilyApiKey: '${TAVILY_API_KEY}',
         tavilySearchUrl: '${TAVILY_SEARCH_URL}',
         tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+        keenableApiKey: '${KEENABLE_API_KEY}',
+        keenableApiUrl: '${KEENABLE_API_URL}',
       });
     });
 
@@ -134,6 +136,8 @@ describe('loadWebSearchConfig', () => {
       expect(result?.firecrawlApiKey).toBe('${FIRECRAWL_API_KEY}');
       expect(result?.jinaApiKey).toBe('${JINA_API_KEY}');
       expect(result?.cohereApiKey).toBe('${COHERE_API_KEY}');
+      expect(result?.keenableApiKey).toBe('${KEENABLE_API_KEY}');
+      expect(result?.keenableApiUrl).toBe('${KEENABLE_API_URL}');
     });
 
     it('should preserve custom API keys', () => {
