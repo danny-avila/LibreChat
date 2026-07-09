@@ -1538,4 +1538,16 @@ describe('getConfiguredMimeAccept', () => {
     expect(accept.has('audio/*')).toBe(true);
     expect(accept.has('.docx')).toBe(false);
   });
+
+  it('translates a sampled audio subtype (audio/webm) rather than hiding it', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^image\/.*$/, /^audio\/webm$/], GOOGLE));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('audio/*')).toBe(true);
+  });
+
+  it('falls back when a configured pattern matches no known MIME type', () => {
+    expect(
+      getConfiguredMimeAccept([/^image\/.*$/, /^audio\/x-librechat-unknown$/], GOOGLE),
+    ).toBeUndefined();
+  });
 });

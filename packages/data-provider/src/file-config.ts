@@ -556,36 +556,47 @@ const mimeAcceptCategories: ReadonlyArray<{
   extras?: readonly string[];
 }> = [
   {
+    /** Mirrors `imageMimeTypes` (+ the code-interpreter svg variants) so every accepted type is known. */
     category: 'image',
     token: 'image/*',
     samples: [
       'image/jpeg',
-      'image/png',
       'image/gif',
+      'image/png',
       'image/webp',
       'image/heic',
       'image/heif',
+      'image/svg',
       'image/svg+xml',
     ],
     extras: ['.heif', '.heic'],
   },
   {
+    /** Mirrors `audioMimeTypes`. */
     category: 'audio',
     token: 'audio/*',
     samples: [
-      'audio/mpeg',
       'audio/mp3',
+      'audio/mpeg',
+      'audio/mpeg3',
       'audio/wav',
+      'audio/wave',
+      'audio/x-wav',
       'audio/ogg',
+      'audio/vorbis',
+      'audio/mp4',
       'audio/m4a',
-      'audio/aac',
+      'audio/x-m4a',
       'audio/flac',
+      'audio/x-flac',
+      'audio/webm',
+      'audio/aac',
       'audio/wma',
       'audio/opus',
-      'audio/mp4',
     ],
   },
   {
+    /** Mirrors `videoMimeTypes`. */
     category: 'video',
     token: 'video/*',
     samples: [
@@ -599,8 +610,6 @@ const mimeAcceptCategories: ReadonlyArray<{
       'video/m4v',
       'video/3gp',
       'video/ogv',
-      'video/mpeg',
-      'video/quicktime',
     ],
   },
 ];
@@ -675,6 +684,14 @@ const buildMimeAccept = (
   const documentAllowSet = documentMimeTypes ? new Set(documentMimeTypes) : null;
   const emittedMedia = new Set<MimeUploadCategory>();
   const emittedDocuments = new Set<string>();
+
+  /** A pattern matching nothing known may still accept a supported type we can't represent; fall back. */
+  const everyPatternKnown = types.every((regex) =>
+    knownMimeUniverse.some((mimeType) => regex.test(mimeType)),
+  );
+  if (!everyPatternKnown) {
+    return undefined;
+  }
 
   for (const regex of types) {
     for (const mimeType of knownMimeUniverse) {
