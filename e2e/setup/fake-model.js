@@ -54,6 +54,14 @@ const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
 const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
 const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
 const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
+const EXECUTE_CODE_MARKER = 'E2E_EXECUTE_CODE:';
+const FILE_SEARCH_MARKER = 'E2E_FILE_SEARCH:';
+const EXECUTE_CODE_TOOL_NAME = 'execute_code';
+const FILE_SEARCH_TOOL_NAME = 'file_search';
+const EXECUTE_CODE_FINAL_TEXT = 'E2E execute_code complete';
+const FILE_SEARCH_FINAL_TEXT = 'E2E file_search complete';
+const EXECUTE_CODE_TOOL_CALL_ID = 'call_e2e_execute_code';
+const FILE_SEARCH_TOOL_CALL_ID = 'call_e2e_file_search';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
 const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
 const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
@@ -740,6 +748,57 @@ function backgroundCollectResponses(messages, toolNames) {
   };
 }
 
+/**
+ * Emit an `execute_code` / `file_search` tool call so the run reaches
+ * ON_TOOL_EXECUTE, where `provisionFiles` lazily uploads message attachments to
+ * the code env / vector DB. The tool's own result is irrelevant to the
+ * provisioning assertion (which inspects the fake servers) — we just need the
+ * batch to fire. Guards assert the resource tool was actually advertised.
+ */
+function provisioningToolResponses({ text, toolNames }) {
+  const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
+  if (codeLabel) {
+    if (!toolNames.has(EXECUTE_CODE_TOOL_NAME)) {
+      return {
+        responses: [`E2E execute_code unavailable: ${EXECUTE_CODE_TOOL_NAME} was not advertised.`],
+      };
+    }
+    return {
+      responses: ['', `${EXECUTE_CODE_FINAL_TEXT}: ${codeLabel}`],
+      toolCalls: [
+        {
+          id: EXECUTE_CODE_TOOL_CALL_ID,
+          name: EXECUTE_CODE_TOOL_NAME,
+          args: { lang: 'py', code: 'print("e2e")' },
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
+
+  const searchLabel = getMarkerValue(text, FILE_SEARCH_MARKER);
+  if (searchLabel) {
+    if (!toolNames.has(FILE_SEARCH_TOOL_NAME)) {
+      return {
+        responses: [`E2E file_search unavailable: ${FILE_SEARCH_TOOL_NAME} was not advertised.`],
+      };
+    }
+    return {
+      responses: ['', `${FILE_SEARCH_FINAL_TEXT}: ${searchLabel}`],
+      toolCalls: [
+        {
+          id: FILE_SEARCH_TOOL_CALL_ID,
+          name: FILE_SEARCH_TOOL_NAME,
+          args: { query: `e2e ${searchLabel}` },
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
+
+  return null;
+}
+
 function resolveResponses({ agents, messages, text, toolNames }) {
   const reply = replyResponses(text);
   if (reply) {
@@ -749,6 +808,11 @@ function resolveResponses({ agents, messages, text, toolNames }) {
   const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
   if (steerToolLabel) {
     return steerToolReplyResponses(steerToolLabel, toolNames);
+  }
+
+  const provisioningTool = provisioningToolResponses({ text, toolNames });
+  if (provisioningTool) {
+    return provisioningTool;
   }
 
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
