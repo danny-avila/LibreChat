@@ -57,10 +57,17 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   /**
    * Built-ins whose results are turned into user-visible attachments/citations
    * by the foreground `toolEndCallback`; a detached run stores only content, so
-   * backgrounding them would silently drop those sources/files.
+   * backgrounding them would silently drop those sources/files. Image-generation
+   * tools are artifact-first — their files can't be reliably attached to an
+   * already-saved turn — so they're excluded rather than degraded.
    */
   Tools.web_search,
   Tools.file_search,
+  'dalle',
+  'flux',
+  'gemini_image_gen',
+  'image_gen_oai',
+  'image_edit_oai',
 ]);
 
 /**
@@ -161,11 +168,29 @@ export function registerBackgroundTaskTool(params: {
 }): { toolDefinitions: LCTool[] } {
   const { toolRegistry, toolDefinitions } = params;
   const defs = toolDefinitions ?? [];
-  const alreadyPresent =
-    defs.some((d) => d.name === CHECK_BACKGROUND_TASK_NAME) ||
-    toolRegistry?.has(CHECK_BACKGROUND_TASK_NAME) === true;
-  if (alreadyPresent) {
+  const isOurs = (tool?: { description?: string }): boolean =>
+    tool?.description === CHECK_BACKGROUND_TASK_DESCRIPTION;
+
+  const existingDef = defs.find((d) => d.name === CHECK_BACKGROUND_TASK_NAME);
+  const existingRegistry = toolRegistry?.get(CHECK_BACKGROUND_TASK_NAME);
+
+  /** Already registered by us — idempotent no-op. */
+  if (isOurs(existingDef) || isOurs(existingRegistry)) {
     return { toolDefinitions: defs };
+  }
+
+  /**
+   * The name is reserved: since the executor intercepts every
+   * `check_background_task` call in a background-enabled run, a user/MCP tool
+   * with the same name must not be advertised (its schema would mismatch the
+   * interception). Overwrite so the model sees the poll schema the host honors,
+   * and warn that the colliding tool is shadowed.
+   */
+  const collides = existingDef != null || existingRegistry != null;
+  if (collides) {
+    logger.warn(
+      `[background] A tool named "${CHECK_BACKGROUND_TASK_NAME}" collides with the reserved background poll tool; the host poll tool takes precedence and the colliding tool is shadowed for this run.`,
+    );
   }
   toolRegistry?.set(CHECK_BACKGROUND_TASK_NAME, {
     name: CHECK_BACKGROUND_TASK_NAME,
@@ -173,7 +198,10 @@ export function registerBackgroundTaskTool(params: {
     parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
     allowed_callers: ['direct'],
   });
-  return { toolDefinitions: [...defs, CHECK_BACKGROUND_TASK_DEF] };
+  const withoutCollision = collides
+    ? defs.filter((d) => d.name !== CHECK_BACKGROUND_TASK_NAME)
+    : defs;
+  return { toolDefinitions: [...withoutCollision, CHECK_BACKGROUND_TASK_DEF] };
 }
 
 /**

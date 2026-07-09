@@ -697,7 +697,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
            *  false`, so `bash_tool` / `read_file` sandbox fallback are
            *  silently gated off even though the seed walk found it. */
           codeEnvAvailable,
-          backgroundToolsAvailable,
+          /* Background tool calls are intentionally NOT enabled for pure
+           * subagents (spawn-tool child graphs): their tools don't reach the
+           * host ON_TOOL_EXECUTE background interceptor, so injecting the
+           * schema would advertise a poll tool the host can't honor. Backgrounding
+           * subagent work is the durable follow-up. */
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,

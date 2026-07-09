@@ -331,6 +331,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
+  backgroundToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -1361,6 +1363,13 @@ export async function createRun({
         Constants.EXECUTE_CODE,
         Constants.BASH_TOOL,
         ASK_USER_QUESTION_TOOL_NAME,
+        /**
+         * Background-capable tools: eager execution could launch the detached
+         * task with speculative/partial args before the final tool call, and a
+         * background side effect (unlike a foreground eager mismatch) can't be
+         * canceled once dispatched.
+         */
+        ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
       ],
     },
     // Let host file-authoring tools share the code-execution sandbox session so

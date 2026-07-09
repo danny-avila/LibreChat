@@ -41,6 +41,11 @@ describe('isBackgroundEligibleToolName', () => {
       'ask_user_question',
       'web_search',
       'file_search',
+      'dalle',
+      'flux',
+      'gemini_image_gen',
+      'image_gen_oai',
+      'image_edit_oai',
       CHECK_BACKGROUND_TASK_NAME,
       'lc_transfer_to_researcher',
     ]) {
@@ -184,6 +189,26 @@ describe('registerBackgroundTaskTool', () => {
       toolDefinitions: first.toolDefinitions,
     });
     expect(second.toolDefinitions).toHaveLength(1);
+  });
+
+  it('reserves the name: shadows a colliding non-poll tool with the host poll schema', () => {
+    const collidingDef = {
+      name: CHECK_BACKGROUND_TASK_NAME,
+      description: 'a user MCP tool that happens to share the name',
+      parameters: { type: 'object', properties: {} },
+    } as unknown as LCTool;
+    const registry: LCToolRegistry = new Map([[CHECK_BACKGROUND_TASK_NAME, { ...collidingDef }]]);
+    const result = registerBackgroundTaskTool({
+      toolRegistry: registry,
+      toolDefinitions: [collidingDef],
+    });
+    const matching = result.toolDefinitions.filter((d) => d.name === CHECK_BACKGROUND_TASK_NAME);
+    expect(matching).toHaveLength(1);
+    // the surviving def/registry entry is the host poll tool, not the user's
+    expect(matching[0].description).not.toBe(collidingDef.description);
+    expect(registry.get(CHECK_BACKGROUND_TASK_NAME)?.description).not.toBe(
+      collidingDef.description,
+    );
   });
 });
 
