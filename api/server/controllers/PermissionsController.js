@@ -3,7 +3,7 @@
  */
 
 const mongoose = require('mongoose');
-const { logger, getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
 const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require('@librechat/api');
 const {
@@ -60,6 +60,21 @@ const updateResourcePermissions = async (req, res) => {
   try {
     const { resourceType, resourceId } = req.params;
     validateResourceType(resourceType);
+
+    /* Config-defined global agents own their access via server config; reject post-boot permission
+     * edits (an admin/sharer would otherwise re-grant/revoke until the next restart). The `_id` is
+     * globally unique, so the system-context fallback resolves tenantless globals without leaking. */
+    if (resourceType === ResourceType.AGENT && mongoose.isValidObjectId(resourceId)) {
+      const agent =
+        (await db.getAgent({ _id: resourceId })) ??
+        (await runAsSystem(() => db.getAgent({ _id: resourceId, tenantId: { $exists: false } })));
+      if (agent?.isSystem) {
+        return res.status(403).json({
+          error:
+            'Global agents are managed by server configuration and their access cannot be modified.',
+        });
+      }
+    }
 
     /** @type {TUpdateResourcePermissionsRequest} */
     const { updated, removed, public: isPublic, publicAccessRoleId } = req.body;

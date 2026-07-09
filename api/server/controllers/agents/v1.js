@@ -50,7 +50,11 @@ const {
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
-const { withSystemGlobalFallback } = require('~/server/services/Agents/systemGlobal');
+const {
+  isSystemGlobalId,
+  withSystemGlobalFallback,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -145,9 +149,29 @@ const classifyAgentReferences = async (agentIds, userId, userRole) => {
 
   const agents = await db.getAgents({ id: { $in: ids } });
   const foundIds = new Set(agents.map((a) => a.id));
-  const missing = ids.filter((id) => !foundIds.has(id));
+  let missing = ids.filter((id) => !foundIds.has(id));
 
-  if (agents.length === 0) return { missing, unauthorized: [] };
+  /* Tenantless `tenants: 'system'` globals are invisible to the tenant-scoped query above; resolve
+   * and authorize any global-prefixed missing id under the system context so a normal agent can
+   * reference a global agent as a subagent/edge without a false 400. */
+  const systemUnauthorized = [];
+  const globalMissing = missing.filter((id) => isSystemGlobalId(id));
+  if (globalMissing.length > 0) {
+    const stillMissing = new Set(missing);
+    for (const id of globalMissing) {
+      const result = await authorizeSystemGlobalAgent({
+        agentId: id,
+        requiredPermission: PermissionBits.VIEW,
+        req: { user: { id: userId, role: userRole } },
+      });
+      if (result.status === 'not_found') continue;
+      stillMissing.delete(id);
+      if (result.status !== 'ok') systemUnauthorized.push(id);
+    }
+    missing = [...stillMissing];
+  }
+
+  if (agents.length === 0) return { missing, unauthorized: systemUnauthorized };
 
   const permissionsMap = await getResourcePermissionsMap({
     userId,
@@ -163,7 +187,7 @@ const classifyAgentReferences = async (agentIds, userId, userRole) => {
     })
     .map((a) => a.id);
 
-  return { missing, unauthorized };
+  return { missing, unauthorized: [...unauthorized, ...systemUnauthorized] };
 };
 
 /**
