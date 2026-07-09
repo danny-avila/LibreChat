@@ -29,8 +29,7 @@ const {
   findPiiMatchInMessages,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
-  createSubagentLoader,
-  buildRemoteAgentSubagentAccessCheck,
+  resolveV1Subagents,
   createToolExecuteHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
@@ -450,60 +449,30 @@ const OpenAIChatCompletionController = async (req, res) => {
      */
     const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
     if (subagentsCapabilityEnabled) {
-      const subagentSkippedIds = new Set();
-      const subagentGraphIds = new Set([primaryConfig.id, ...handoffAgentConfigs.keys()]);
-      const loadSubagentConfigById = async (agentId) => {
-        const agent = await db.getAgent({ id: agentId });
-        if (!agent) {
-          subagentSkippedIds.add(agentId);
-          return null;
-        }
-        return initializeAgent(
-          {
-            req,
-            res,
-            agent,
-            loadTools,
-            requestFiles: [],
-            conversationId,
-            parentMessageId,
-            endpointOption,
-            allowedProviders,
-          },
+      await resolveV1Subagents(
+        {
+          req,
+          res,
+          primaryConfig,
+          handoffAgentConfigs,
+          endpointOption,
+          allowedProviders,
+          conversationId,
+          parentMessageId,
+          loadTools,
           dbMethods,
-        );
-      };
-      const assertSubagentGraphRoom = (agentId) => {
-        if (subagentGraphIds.size >= MAX_SUBAGENT_GRAPH_NODES) {
-          throw new Error(
-            `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} agents at ${agentId}.`,
-          );
-        }
-      };
-      const checkSubagentPermission = async ({ userId, role, resourceId, requiredPermission }) => {
-        const permissions = await getRemoteAgentPermissions(
-          { getEffectivePermissions },
-          userId,
-          role,
-          resourceId,
-        );
-        return hasPermissions(permissions, requiredPermission);
-      };
-      const { resolveSubagentTrees } = createSubagentLoader({
-        primaryConfig,
-        skippedAgentIds: subagentSkippedIds,
-        edgeAgentIds: new Set([primaryConfig.id, ...handoffAgentConfigs.keys()]),
-        pureSubagentIds: new Set(),
-        subagentGraphIds,
-        loadedSubagentConfigIds: new Set(),
-        maxResolvedDepthByConfigId: new Map(),
-        loadAgentById: loadSubagentConfigById,
-        assertSubagentGraphRoom,
-        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
-        getAgent: db.getAgent,
-        checkSubagentAccess: buildRemoteAgentSubagentAccessCheck(req, checkSubagentPermission),
-      });
-      await resolveSubagentTrees([primaryConfig, ...handoffAgentConfigs.values()]);
+          maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+          maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+          logPrefix: '[openai]',
+        },
+        {
+          getAgent: db.getAgent,
+          initializeAgent,
+          getEffectivePermissions,
+          getRemoteAgentPermissions,
+          hasPermissions,
+        },
+      );
     }
 
 
