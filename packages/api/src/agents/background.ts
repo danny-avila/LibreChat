@@ -81,27 +81,43 @@ export function isBackgroundEligibleToolName(name: string): boolean {
   return !name.startsWith(AgentConstants.LC_TRANSFER_TO_);
 }
 
-/** Whether tool-call args request background dispatch. */
+/**
+ * Coerces tool-call args to an object, parsing a stringified JSON object (some
+ * providers deliver args as a string). Returns undefined for non-object args.
+ */
+function coerceArgsObject(args: unknown): Record<string, unknown> | undefined {
+  if (typeof args === 'object' && args !== null && !Array.isArray(args)) {
+    return args as Record<string, unknown>;
+  }
+  if (typeof args === 'string' && args.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(args) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** Whether tool-call args request background dispatch (handles stringified args). */
 export function isBackgroundRequested(args: unknown): boolean {
-  return (
-    typeof args === 'object' &&
-    args !== null &&
-    (args as Record<string, unknown>)[RUN_IN_BACKGROUND_ARG] === true
-  );
+  return coerceArgsObject(args)?.[RUN_IN_BACKGROUND_ARG] === true;
 }
 
 /**
  * Returns the args without the injected `run_in_background` key so the real
- * tool never receives a parameter it doesn't declare.
+ * tool never receives a parameter it doesn't declare. Parses stringified JSON
+ * object args; returns the value unchanged when the flag is absent.
  */
 export function stripRunInBackgroundArg(args: unknown): unknown {
-  if (typeof args !== 'object' || args === null) {
+  const obj = coerceArgsObject(args);
+  if (!obj || !(RUN_IN_BACKGROUND_ARG in obj)) {
     return args;
   }
-  if (!(RUN_IN_BACKGROUND_ARG in (args as Record<string, unknown>))) {
-    return args;
-  }
-  const { [RUN_IN_BACKGROUND_ARG]: _omit, ...rest } = args as Record<string, unknown>;
+  const { [RUN_IN_BACKGROUND_ARG]: _omit, ...rest } = obj;
   return rest;
 }
 
@@ -134,6 +150,58 @@ export function injectRunInBackgroundParam(def: LCTool): LCTool {
     properties: { ...existingProps, [RUN_IN_BACKGROUND_ARG]: RUN_IN_BACKGROUND_PROPERTY },
   };
   return { ...def, parameters: nextParams as unknown as LCTool['parameters'] };
+}
+
+/**
+ * Whether the `run_in_background` param can be cleanly injected into a tool.
+ * False for non-object (e.g. string-input/DynamicTool) schemas — rewriting them
+ * to an object would break the tool's input contract — and for tools that
+ * already declare their own `run_in_background` parameter (which the executor
+ * would otherwise hijack/strip).
+ */
+function canInjectRunInBackgroundParam(def: LCTool): boolean {
+  const params = def.parameters as JsonSchemaObject | undefined;
+  if (params == null) {
+    return true;
+  }
+  if (params.type != null && params.type !== 'object') {
+    return false;
+  }
+  return !(params.properties != null && RUN_IN_BACKGROUND_ARG in params.properties);
+}
+
+/** Returns a copy of the def without the injected `run_in_background` property. */
+function removeRunInBackgroundParam(def: LCTool): LCTool {
+  const params = def.parameters as JsonSchemaObject | undefined;
+  if (params?.properties == null || !(RUN_IN_BACKGROUND_ARG in params.properties)) {
+    return def;
+  }
+  const { [RUN_IN_BACKGROUND_ARG]: _omit, ...restProps } = params.properties;
+  return {
+    ...def,
+    parameters: { ...params, properties: restProps } as unknown as LCTool['parameters'],
+  };
+}
+
+/**
+ * Removes the background additions (the injected param + the `check_background_task`
+ * def) from a tool-definition list. Used to sanitize a self-spawn subagent's
+ * inherited inputs so it doesn't advertise a background schema the isolated child
+ * path can't honor.
+ */
+export function stripBackgroundFromToolDefinitions(
+  toolDefinitions: LCTool[] | undefined,
+  backgroundToolNames: string[] | undefined,
+): LCTool[] {
+  const defs = toolDefinitions ?? [];
+  const bgSet = new Set(backgroundToolNames ?? []);
+  const hasPoll = defs.some((d) => d.name === CHECK_BACKGROUND_TASK_NAME);
+  if (bgSet.size === 0 && !hasPoll) {
+    return defs;
+  }
+  return defs
+    .filter((d) => d.name !== CHECK_BACKGROUND_TASK_NAME)
+    .map((d) => (bgSet.has(d.name) ? removeRunInBackgroundParam(d) : d));
 }
 
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check the status and retrieve the result of tool calls previously dispatched in the background (with run_in_background: true).
@@ -228,6 +296,12 @@ export function applyBackgroundToolCalls(params: {
   const nextDefs = defs.map((def) => {
     const optedIn = toolOptions[def.name]?.run_in_background === true;
     if (!optedIn || !isBackgroundEligibleToolName(def.name)) {
+      return def;
+    }
+    if (!canInjectRunInBackgroundParam(def)) {
+      logger.warn(
+        `[background] Skipping run_in_background for "${def.name}": non-object schema or the tool already declares the parameter.`,
+      );
       return def;
     }
     backgroundToolNames.push(def.name);

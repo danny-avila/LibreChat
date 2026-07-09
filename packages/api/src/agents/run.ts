@@ -42,6 +42,7 @@ import {
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
+import { stripBackgroundFromToolDefinitions } from '~/agents/background';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
@@ -834,6 +835,14 @@ function buildSubagentConfigs(
   if (allowSelf) {
     const selfName = agentInput.name ?? agent.name ?? 'self';
     countSubagentConfig(state);
+    /**
+     * Self-spawn reuses the parent's AgentInputs. When the parent has background
+     * tools, provide a sanitized copy so the isolated child — which runs the
+     * direct/child-graph path rather than the host background interceptor —
+     * doesn't advertise `run_in_background` / `check_background_task`. The
+     * resolver keeps a provided `agentInputs` even with `self: true`.
+     */
+    const hasBackground = (agent.backgroundToolNames?.length ?? 0) > 0;
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -841,6 +850,17 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
+      ...(hasBackground
+        ? {
+            agentInputs: {
+              ...agentInput,
+              toolDefinitions: stripBackgroundFromToolDefinitions(
+                agentInput.toolDefinitions,
+                agent.backgroundToolNames,
+              ),
+            },
+          }
+        : {}),
     });
   }
 

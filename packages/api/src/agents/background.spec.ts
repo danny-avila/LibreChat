@@ -4,6 +4,7 @@ import {
   isBackgroundRequested,
   stripRunInBackgroundArg,
   injectRunInBackgroundParam,
+  stripBackgroundFromToolDefinitions,
   applyBackgroundToolCalls,
   synthesizeBackgroundToolOptions,
   registerBackgroundTaskTool,
@@ -81,6 +82,15 @@ describe('isBackgroundRequested / stripRunInBackgroundArg', () => {
     expect(stripRunInBackgroundArg('str')).toBe('str');
     const noFlag = { q: 'hi' };
     expect(stripRunInBackgroundArg(noFlag)).toBe(noFlag);
+  });
+
+  it('handles stringified JSON args', () => {
+    expect(isBackgroundRequested('{"run_in_background":true,"q":"x"}')).toBe(true);
+    expect(isBackgroundRequested('{"q":"x"}')).toBe(false);
+    expect(isBackgroundRequested('not json')).toBe(false);
+    expect(stripRunInBackgroundArg('{"run_in_background":true,"q":"x"}')).toEqual({ q: 'x' });
+    // flag absent -> string returned unchanged (no shape rewrite)
+    expect(stripRunInBackgroundArg('{"q":"x"}')).toBe('{"q":"x"}');
   });
 });
 
@@ -176,6 +186,54 @@ describe('applyBackgroundToolCalls', () => {
     expect(result.enabled).toBe(false);
     expect(result.backgroundToolNames).toEqual([]);
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
+  });
+
+  it('skips a non-object (string-input) schema without rewriting it', () => {
+    const defs = [{ name: 'legacy_tool', parameters: { type: 'string' } } as unknown as LCTool];
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: new Map(),
+      toolOptions: { legacy_tool: { run_in_background: true } },
+      enabled: true,
+    });
+    expect(result.enabled).toBe(false);
+    expect(result.backgroundToolNames).toEqual([]);
+    expect((result.toolDefinitions[0].parameters as { type: string }).type).toBe('string');
+  });
+
+  it('skips a tool that already declares its own run_in_background param', () => {
+    const defs = [
+      {
+        name: 'owns_it',
+        parameters: { type: 'object', properties: { run_in_background: { type: 'boolean' } } },
+      } as unknown as LCTool,
+    ];
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: new Map(),
+      toolOptions: { owns_it: { run_in_background: true } },
+      enabled: true,
+    });
+    expect(result.enabled).toBe(false);
+    expect(result.backgroundToolNames).toEqual([]);
+  });
+});
+
+describe('stripBackgroundFromToolDefinitions', () => {
+  it('removes the poll tool and the injected param (self-spawn sanitization)', () => {
+    const injected = injectRunInBackgroundParam(mcpDef('search_mcp_docs'));
+    const withPoll = registerBackgroundTaskTool({
+      toolRegistry: new Map(),
+      toolDefinitions: [injected],
+    }).toolDefinitions;
+    const stripped = stripBackgroundFromToolDefinitions(withPoll, ['search_mcp_docs']);
+    expect(stripped.some((d) => d.name === CHECK_BACKGROUND_TASK_NAME)).toBe(false);
+    const search = stripped.find((d) => d.name === 'search_mcp_docs');
+    expect(
+      (search?.parameters as { properties: Record<string, unknown> }).properties[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeUndefined();
   });
 });
 

@@ -3582,6 +3582,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.TOOL_SEARCH &&
+                            /* Host-only poll tool: implemented by the ON_TOOL_EXECUTE
+                             * shortcut, not callable from PTC-generated code. */
+                            t.name !== CHECK_BACKGROUND_TASK_NAME &&
                             !fileAuthoringToolNames.has(t.name),
                         );
                         toolCallConfig.toolDefs = toolDefs;
