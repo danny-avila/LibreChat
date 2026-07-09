@@ -38,6 +38,9 @@ test.describe('file provisioning — immediate (legacy dropdown)', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     await resetProvisioning(page);
+    // The legacy "Upload to Code Environment" option only appears once the
+    // ephemeral execute_code capability is enabled.
+    await enableCodeInterpreter(page);
 
     const fileName = `${uniqueName('code')}.csv`;
     const response = await uploadViaLegacyOption(page, 'Upload to Code Environment', {
@@ -60,6 +63,9 @@ test.describe('file provisioning — immediate (legacy dropdown)', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     await resetProvisioning(page);
+    // The legacy "Upload for File Search" option only appears once the ephemeral
+    // file_search capability is enabled.
+    await enableFileSearch(page);
 
     const fileName = `${uniqueName('search')}.csv`;
     const response = await uploadViaLegacyOption(page, 'Upload for File Search', {

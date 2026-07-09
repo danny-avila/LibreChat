@@ -153,9 +153,10 @@ test.describe('unified file upload', () => {
     await expect(page.locator('#attach-file-menu-button')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('#attach-file-button')).toHaveCount(0);
 
-    // Opening it reveals the classic per-tool-resource options.
+    // Opening it reveals the classic multi-option menu (its always-present entry is
+    // the provider upload; the code/file_search options are gated on those ephemeral
+    // capabilities being enabled first).
     await page.locator('#attach-file-menu-button').click();
-    await expect(page.getByRole('menuitem', { name: 'Upload to Code Environment' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Upload for File Search' })).toBeVisible();
+    await expect(page.getByText('Upload to Provider')).toBeVisible();
   });
 });
