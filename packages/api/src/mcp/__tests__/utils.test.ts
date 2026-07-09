@@ -16,6 +16,7 @@ import {
   getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
   requiresEphemeralUserConnection,
+  filterChatSelectableMCPServers,
 } from '~/mcp/utils';
 
 describe('normalizeServerName', () => {
@@ -797,5 +798,41 @@ describe('getMissingCustomUserVars', () => {
     expect(
       getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
     ).toEqual([]);
+  });
+});
+
+describe('filterChatSelectableMCPServers', () => {
+  const mcpConfig = {
+    visible: { chatMenu: true },
+    hidden: { chatMenu: false },
+    unset: {},
+  };
+
+  it('drops servers configured with chatMenu: false', () => {
+    expect(filterChatSelectableMCPServers(['visible', 'hidden'], mcpConfig)).toEqual(['visible']);
+  });
+
+  it('keeps servers with chatMenu true or unset', () => {
+    expect(filterChatSelectableMCPServers(['visible', 'unset'], mcpConfig)).toEqual([
+      'visible',
+      'unset',
+    ]);
+  });
+
+  it('fails open for servers absent from the resolved config', () => {
+    expect(filterChatSelectableMCPServers(['db-server', 'hidden'], mcpConfig)).toEqual([
+      'db-server',
+    ]);
+  });
+
+  it('returns all selections when no config map is provided', () => {
+    expect(filterChatSelectableMCPServers(['a', 'b'], null)).toEqual(['a', 'b']);
+    expect(filterChatSelectableMCPServers(['a', 'b'], undefined)).toEqual(['a', 'b']);
+  });
+
+  it('returns an empty array for empty or missing selections', () => {
+    expect(filterChatSelectableMCPServers([], mcpConfig)).toEqual([]);
+    expect(filterChatSelectableMCPServers(undefined, mcpConfig)).toEqual([]);
+    expect(filterChatSelectableMCPServers(null, mcpConfig)).toEqual([]);
   });
 });

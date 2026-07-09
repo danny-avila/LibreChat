@@ -167,6 +167,103 @@ describe('loadAgent', () => {
     expect(result?.tools).toContain('tool1_mcp_server1');
   });
 
+  test('should strip chat-hidden MCP servers from the ephemeral selection', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => {
+      if (server === 'visible') {
+        return { tool_mcp_visible: {} };
+      }
+      if (server === 'hidden') {
+        return { tool_mcp_hidden: {} };
+      }
+      return null;
+    });
+
+    const mockReq = {
+      user: { id: 'user123' },
+      config: {
+        mcpConfig: {
+          visible: { type: 'streamable-http' as const, url: 'https://mcp.example.com/visible/mcp' },
+          hidden: {
+            type: 'streamable-http' as const,
+            url: 'https://mcp.example.com/hidden/mcp',
+            chatMenu: false,
+          },
+        },
+      } as unknown as AppConfig,
+      body: {
+        ephemeralAgent: { mcp: ['visible', 'hidden'] },
+      },
+    };
+
+    const result = await loadAgent(
+      {
+        req: mockReq,
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith('user123', 'visible');
+    expect(mockGetMCPServerTools).not.toHaveBeenCalledWith('user123', 'hidden');
+    expect(result?.tools).toContain('tool_mcp_visible');
+    expect(result?.tools).not.toContain('tool_mcp_hidden');
+  });
+
+  test('should keep spec-pinned MCP servers even when hidden from the chat menu', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => {
+      if (server === 'hidden') {
+        return { tool_mcp_hidden: {} };
+      }
+      return null;
+    });
+
+    const mockReq = {
+      user: { id: 'user123' },
+      config: {
+        mcpConfig: {
+          hidden: {
+            type: 'streamable-http' as const,
+            url: 'https://mcp.example.com/hidden/mcp',
+            chatMenu: false,
+          },
+        },
+        modelSpecs: {
+          list: [
+            {
+              name: 'pins-hidden',
+              label: 'Pins Hidden',
+              preset: { endpoint: 'openai', model: 'gpt-4' },
+              mcpServers: ['hidden'],
+            },
+          ],
+        },
+      } as unknown as AppConfig,
+      body: {
+        ephemeralAgent: { mcp: [] },
+      },
+    };
+
+    const result = await loadAgent(
+      {
+        req: mockReq,
+        spec: 'pins-hidden',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith('user123', 'hidden');
+    expect(result?.tools).toContain('tool_mcp_hidden');
+  });
+
   test('should return null for non-existent agent', async () => {
     const mockReq = { user: { id: 'user123' } };
     const result = await loadAgent(
