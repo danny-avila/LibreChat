@@ -13,6 +13,14 @@ import type { Agent } from 'librechat-data-provider';
  *   loadSubagentsFor(config, depth = 0)   — mutates config.subagentAgentConfigs
  *   resolveSubagentTrees(rootConfigs)     — positional array of root configs
  *
+ * BEHAVIOR-PARITY NOTES (validated against initialize.spec.js):
+ *  - `loadSubagentsFor` ALWAYS assigns `config.subagentAgentConfigs` (empty
+ *    array when subagents are missing/disabled) — the original closure's
+ *    contract; downstream consumers rely on the field existing.
+ *  - The depth-limit warn tag defaults to "[initializeClient]" so existing
+ *    tests and log-greppers keep working on the JWT path; /v1 callers pass
+ *    their own `logPrefix`.
+ *
  * SECURITY (#13898): the JWT path performs NO load-time ACL (unchanged — the
  * SDK spawn-time callback governs). The /v1 controllers inject
  * `checkSubagentAccess` (REMOTE_AGENT + VIEW via
@@ -51,6 +59,9 @@ export interface SubagentLoaderDeps {
   assertSubagentGraphRoom: (agentId: string) => void;
   /** MAX_SUBAGENT_DEPTH from librechat-data-provider (caller passes it in). */
   maxSubagentDepth: number;
+  /** Log tag for warnings. Defaults to "[initializeClient]" (JWT-path parity —
+   *  existing tests/log-greppers key on it). /v1 callers pass their own. */
+  logPrefix?: string;
   /** Raw agent fetch for the ACL check (required only when checkSubagentAccess set). */
   getAgent?: (filter: { id: string }) => Promise<Agent | null>;
   /** #13898 load-time ACL. undefined on the JWT path (unchanged behavior);
@@ -73,6 +84,7 @@ export function createSubagentLoader(deps: SubagentLoaderDeps): {
     loadAgentById,
     assertSubagentGraphRoom,
     maxSubagentDepth,
+    logPrefix = '[initializeClient]',
     getAgent,
     checkSubagentAccess,
   } = deps;
@@ -80,6 +92,9 @@ export function createSubagentLoader(deps: SubagentLoaderDeps): {
   const loadSubagentsFor = async (config: SubagentConfigLike, depth = 0): Promise<void> => {
     const sub = config.subagents;
     if (!sub || !sub.enabled) {
+      /** PARITY: the original closure always left the field defined —
+       *  downstream (createRun / capability strip) relies on it existing. */
+      config.subagentAgentConfigs = config.subagentAgentConfigs ?? [];
       return;
     }
 
@@ -94,7 +109,7 @@ export function createSubagentLoader(deps: SubagentLoaderDeps): {
     );
 
     if (explicitSubagentIds.length > 0 && depth >= maxSubagentDepth) {
-      logger.warn('[createSubagentLoader] Subagent graph depth limit exceeded', {
+      logger.warn(`${logPrefix} Subagent graph depth limit exceeded`, {
         agentId: config.id,
         primaryAgentId: primaryConfig.id,
         depth,
@@ -129,7 +144,7 @@ export function createSubagentLoader(deps: SubagentLoaderDeps): {
         const rawAgent = await getAgent({ id: subagentId });
         if (!rawAgent) {
           logger.warn(
-            `[createSubagentLoader] Subagent ${subagentId} not found, skipping (orphaned reference)`,
+            `${logPrefix} Subagent ${subagentId} not found, skipping (orphaned reference)`,
           );
           skippedAgentIds.add(subagentId);
           continue;
@@ -137,7 +152,7 @@ export function createSubagentLoader(deps: SubagentLoaderDeps): {
         const hasAccess = await checkSubagentAccess(rawAgent);
         if (!hasAccess) {
           logger.warn(
-            `[createSubagentLoader] Caller lacks VIEW access to subagent ${subagentId}, skipping`,
+            `${logPrefix} Caller lacks VIEW access to subagent ${subagentId}, skipping`,
           );
           skippedAgentIds.add(subagentId);
           continue;
