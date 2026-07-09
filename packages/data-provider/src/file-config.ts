@@ -605,32 +605,32 @@ const mimeAcceptCategories: ReadonlyArray<{
   },
 ];
 
-/** Document/text MIME types paired with the extension browsers filter on in the file picker. */
-const documentMimeExtensions: ReadonlyArray<readonly [string, string]> = [
-  ['application/pdf', '.pdf'],
-  ['application/msword', '.doc'],
-  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
-  ['application/vnd.ms-excel', '.xls'],
-  ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
-  ['application/vnd.ms-powerpoint', '.ppt'],
-  ['application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'],
-  ['application/vnd.oasis.opendocument.text', '.odt'],
-  ['application/vnd.oasis.opendocument.spreadsheet', '.ods'],
-  ['application/vnd.oasis.opendocument.presentation', '.odp'],
-  ['application/vnd.oasis.opendocument.graphics', '.odg'],
-  ['application/rtf', '.rtf'],
-  ['application/json', '.json'],
-  ['application/xml', '.xml'],
-  ['application/yaml', '.yaml'],
-  ['application/zip', '.zip'],
-  ['text/csv', '.csv'],
-  ['application/csv', '.csv'],
-  ['text/tab-separated-values', '.tsv'],
-  ['text/plain', '.txt'],
-  ['text/markdown', '.md'],
-  ['text/html', '.html'],
-  ['text/calendar', '.ics'],
-  ['message/rfc822', '.eml'],
+/** Document/text MIME types paired with the extension(s) browsers filter on in the file picker. */
+const documentMimeExtensions: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['application/pdf', ['.pdf']],
+  ['application/msword', ['.doc']],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', ['.docx']],
+  ['application/vnd.ms-excel', ['.xls']],
+  ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ['.xlsx']],
+  ['application/vnd.ms-powerpoint', ['.ppt']],
+  ['application/vnd.openxmlformats-officedocument.presentationml.presentation', ['.pptx']],
+  ['application/vnd.oasis.opendocument.text', ['.odt']],
+  ['application/vnd.oasis.opendocument.spreadsheet', ['.ods']],
+  ['application/vnd.oasis.opendocument.presentation', ['.odp']],
+  ['application/vnd.oasis.opendocument.graphics', ['.odg']],
+  ['application/rtf', ['.rtf']],
+  ['application/json', ['.json']],
+  ['application/xml', ['.xml']],
+  ['application/yaml', ['.yaml', '.yml']],
+  ['application/zip', ['.zip']],
+  ['text/csv', ['.csv']],
+  ['application/csv', ['.csv']],
+  ['text/tab-separated-values', ['.tsv']],
+  ['text/plain', ['.txt']],
+  ['text/markdown', ['.md']],
+  ['text/html', ['.html', '.htm']],
+  ['text/calendar', ['.ics']],
+  ['message/rfc822', ['.eml']],
 ];
 
 const documentMimeSet = new Set(documentMimeExtensions.map(([mimeType]) => mimeType));
@@ -716,9 +716,9 @@ const buildMimeAccept = (
     }
   }
 
-  for (const [mimeType, extension] of documentMimeExtensions) {
+  for (const [mimeType, extensions] of documentMimeExtensions) {
     if (emittedDocuments.has(mimeType)) {
-      push(extension);
+      extensions.forEach(push);
       push(mimeType);
     }
   }

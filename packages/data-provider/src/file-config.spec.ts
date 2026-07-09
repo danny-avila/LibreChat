@@ -1394,6 +1394,10 @@ describe('getConfiguredMimeAccept', () => {
     categories: ['image', 'document'],
     documentMimeTypes: bedrockDocumentMimeTypes,
   };
+  const GOOGLE: MimeUploadCapability = {
+    categories: ['image', 'document', 'audio', 'video'],
+    documentMimeTypes: ['application/pdf'],
+  };
 
   it('returns undefined for undefined', () => {
     expect(getConfiguredMimeAccept(undefined, ALL)).toBeUndefined();
@@ -1512,5 +1516,26 @@ describe('getConfiguredMimeAccept', () => {
     expect(
       accept.has('application/vnd.openxmlformats-officedocument.presentationml.presentation'),
     ).toBe(false);
+  });
+
+  it('includes both .html and .htm when translating text/html', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^text\/html$/], BEDROCK));
+    expect(accept.has('.html')).toBe(true);
+    expect(accept.has('.htm')).toBe(true);
+    expect(accept.has('text/html')).toBe(true);
+  });
+
+  it('restricts Google/OpenRouter documents to PDF while keeping media categories', () => {
+    const config = convertStringsToRegex([
+      '^image/.*$',
+      '^application/pdf$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+      '^audio/.*$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, GOOGLE));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('audio/*')).toBe(true);
+    expect(accept.has('.docx')).toBe(false);
   });
 });

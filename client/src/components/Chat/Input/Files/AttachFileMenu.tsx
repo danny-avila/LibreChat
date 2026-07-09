@@ -62,7 +62,11 @@ const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
     categories: ['image', 'document'],
     documentMimeTypes: bedrockDocumentMimeTypes,
   },
-  image_document_video_audio: { categories: ['image', 'document', 'audio', 'video'] },
+  /** Google/Vertex/OpenRouter media path: documents are limited to PDF (see isProviderAttachType). */
+  image_document_video_audio: {
+    categories: ['image', 'document', 'audio', 'video'],
+    documentMimeTypes: ['application/pdf'],
+  },
 };
 
 interface AttachFileMenuProps {
