@@ -1,3 +1,4 @@
+import { ResourceType, PermissionBits } from 'librechat-data-provider';
 import { createSubagentLoader, buildRemoteAgentSubagentAccessCheck } from './subagents';
 import type { SubagentConfigLike } from './subagents';
 import type { Agent } from 'librechat-data-provider';
@@ -229,8 +230,9 @@ describe('buildRemoteAgentSubagentAccessCheck', () => {
     expect(checkPermission).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'u1',
-        resourceType: 'REMOTE_AGENT',
+        resourceType: ResourceType.REMOTE_AGENT,
         resourceId: 'mongo-X',
+        requiredPermission: PermissionBits.VIEW,
       }),
     );
   });
