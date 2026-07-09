@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { atom, useRecoilState } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import {
@@ -6,12 +7,47 @@ import {
   useSubmitAskAnswerMutation,
   type ResumeAgentFields,
 } from '~/data-provider';
+import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
 
 /** Per-action submission lifecycle, surfaced to the cards so they can disable
  *  controls and explain a terminal outcome. */
 type ActionStatus = 'idle' | 'submitting' | 'submitted' | 'expired' | 'error';
+
+/**
+ * Ask-answer submit status keyed by `actionId`. This lives in Recoil, NOT the
+ * {@link ApprovalContext} React state, because the PRIMARY answer surface is
+ * the composer in `ChatForm` — which renders OUTSIDE `ApprovalProvider` (that
+ * only wraps message content). A React context read there degrades to the
+ * inert {@link FALLBACK}, so an in-flight lock / expired status tracked in the
+ * context would never engage for the composer. A global atom is visible to
+ * both the composer (`useAskAnswerMode`) and the message-content card
+ * (`AskUserQuestion`), so a fast double-submit is actually blocked and a
+ * terminal (expired/error) state surfaces on either surface.
+ */
+const askSubmitStatusAtom = atom<Record<string, ActionStatus>>({
+  key: 'askAnswerSubmitStatus',
+  default: {},
+});
+
+/** Shared read/write for the ask-answer submit status. */
+export function useAskSubmitStatus(): {
+  getAskStatus: (actionId: string) => ActionStatus;
+  setAskStatus: (actionId: string, status: ActionStatus) => void;
+} {
+  const [statusMap, setStatusMap] = useRecoilState(askSubmitStatusAtom);
+  const getAskStatus = useCallback(
+    (actionId: string): ActionStatus => statusMap[actionId] ?? 'idle',
+    [statusMap],
+  );
+  const setAskStatus = useCallback(
+    (actionId: string, status: ActionStatus) =>
+      setStatusMap((prev) => ({ ...prev, [actionId]: status })),
+    [setStatusMap],
+  );
+  return { getAskStatus, setAskStatus };
+}
 
 interface ApprovalContextValue {
   /** Record (or clear) a card's decision for its tool_call within an action. */
@@ -226,11 +262,15 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
  * than crashing.
  */
 export function useResumeSubmit() {
-  const conversation = useContext(ChatContext)?.conversation;
+  const chatContext = useContext(ChatContext);
+  const conversation = chatContext?.conversation;
   const getEphemeralAgent = useGetEphemeralAgent();
   const approvalMutation = useSubmitToolApprovalMutation();
   const askMutation = useSubmitAskAnswerMutation();
   const { getDecisions, isReady, setStatus } = useApprovalContext();
+  /** Ask status lives in Recoil so it works from the composer (outside the
+   *  provider); tool-approval status stays on the context. */
+  const { setAskStatus } = useAskSubmitStatus();
 
   const buildResumeFields = useCallback((): ResumeAgentFields | null => {
     const conversationId = conversation?.conversationId;
@@ -271,21 +311,52 @@ export function useResumeSubmit() {
   );
 
   const submitAskAnswer = useCallback(
-    (actionId: string, answer: string) => {
+    (actionId: string, answer: string, opts?: { onSuccess?: () => void }) => {
       const fields = buildResumeFields();
       if (!fields || answer.length === 0) {
         return;
       }
-      setStatus(actionId, 'submitting');
+      setAskStatus(actionId, 'submitting');
       askMutation.mutate(
         { ...fields, actionId, answer },
         {
-          onSuccess: () => setStatus(actionId, 'submitted'),
-          onError: (error) => setStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
+          onSuccess: () => {
+            setAskStatus(actionId, 'submitted');
+            /**
+             * Drop the synthetic question part now that the run is resuming: the
+             * server streams the resumed segment at ABSOLUTE content indices
+             * continuing after the pre-pause parts — the exact slot this appended
+             * part occupies. Left in place it blocks that index and the resumed
+             * output doesn't render until finalize. The Q&A's durable record is
+             * the ask_user_question tool call itself.
+             */
+            const messages = chatContext?.getMessages?.();
+            if (messages && chatContext?.setMessages) {
+              let changed = false;
+              const next = messages.map((message) => {
+                const resolved = resolveAskUserQuestionPart(message, actionId, answer);
+                if (resolved !== message) {
+                  changed = true;
+                }
+                return resolved;
+              });
+              if (changed) {
+                chatContext.setMessages(next);
+              }
+            }
+            /**
+             * Caller cleanup (clearing the composer / selection) runs ONLY on
+             * success: the composer is the user's sole copy of a free-form
+             * answer, so a failed resume (400 on the answer cap, expiry, a
+             * network error) must leave it intact for the user to trim/retry.
+             */
+            opts?.onSuccess?.();
+          },
+          onError: (error) => setAskStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
         },
       );
     },
-    [askMutation, buildResumeFields, setStatus],
+    [askMutation, buildResumeFields, setAskStatus, chatContext],
   );
 
   return { submitToolApproval, submitAskAnswer };

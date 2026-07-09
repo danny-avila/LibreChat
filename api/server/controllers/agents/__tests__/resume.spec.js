@@ -511,6 +511,20 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.body.error).toMatch(/answer is required/i);
     });
 
+    it('400 when an ask_user_question answer exceeds the length cap', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
+      const res = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+        answer: 'x'.repeat(16_001),
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/maximum length/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
     it('400 on an unsupported pending-action type', async () => {
       const job = makeToolApprovalJob();
       job.metadata.pendingAction.payload = { type: 'totally_unknown' };

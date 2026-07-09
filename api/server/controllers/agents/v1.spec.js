@@ -634,6 +634,27 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
       expect(response.owner_contact).toBeUndefined();
     });
+
+    test('should include conversation_starters in the basic VIEW response', async () => {
+      const starters = ['Summarize this page', 'What can you do?'];
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Starter Agent',
+        description: 'Exposes conversation starters',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        conversation_starters: starters,
+      });
+
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.conversation_starters).toEqual(starters);
+    });
   });
 
   describe('getAgentVersionsHandler', () => {
@@ -1625,6 +1646,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           'author',
           'avatar',
           'category',
+          'conversation_starters',
           'description',
           'id',
           'is_promoted',

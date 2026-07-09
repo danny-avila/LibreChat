@@ -763,8 +763,19 @@ class GenerationJobManagerClass {
    * Cross-replica support (Redis mode):
    * - Emits abort signal via Redis pub/sub
    * - The replica running generation receives signal and aborts its AbortController
+   *
+   * `options.transformAbortContent` rewrites the persistable content BEFORE the
+   * final SSE is emitted (and before it is returned for the DB save), so a
+   * host-side stamp — e.g. re-attaching a paused `ask_user_question`'s args
+   * that the Redis chunk-log reconstruction dropped — reaches the LIVE client
+   * too, not just the saved message. Pure/optional; identity when omitted.
    */
-  async abortJob(streamId: string): Promise<AbortResult> {
+  async abortJob(
+    streamId: string,
+    options?: {
+      transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
+    },
+  ): Promise<AbortResult> {
     const jobData = await this.jobStore.getJob(streamId);
     const runtime = this.runtimeState.get(streamId);
 
@@ -795,7 +806,12 @@ class GenerationJobManagerClass {
     /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
-    const abortContent = filterPersistableAbortContent(content);
+    let abortContent = filterPersistableAbortContent(content);
+    if (options?.transformAbortContent) {
+      abortContent = options.transformAbortContent(
+        abortContent as TMessageContentParts[],
+      ) as typeof abortContent;
+    }
     const shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
