@@ -305,12 +305,12 @@ export const clearMessagesCache = (
 ): void => {
   const convoId = conversationId ?? Constants.NEW_CONVO;
 
-  // Clear messages for the current conversation
-  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], []);
+  // Clear messages for the current conversation without marking an empty array as fresh data.
+  queryClient.removeQueries([QueryKeys.messages, convoId]);
 
   // Also clear NEW_CONVO messages if we're not already on NEW_CONVO
   if (convoId !== Constants.NEW_CONVO) {
-    queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+    queryClient.removeQueries([QueryKeys.messages, Constants.NEW_CONVO]);
   }
 };
 

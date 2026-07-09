@@ -1,6 +1,9 @@
+import { QueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import {
+  clearMessagesCache,
   isValidTimestamp,
   getMessageAriaLabel,
   getMessageTimestamp,
@@ -31,6 +34,42 @@ const makeMessage = (overrides: Partial<TMessage> = {}): TMessage =>
     isCreatedByUser: false,
     ...overrides,
   }) as TMessage;
+
+describe('clearMessagesCache', () => {
+  it('removes message queries instead of caching empty arrays as fresh data', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'convo-1';
+    const otherConversationId = 'convo-2';
+    const existingMessages = [makeMessage({ messageId: 'existing' })];
+    const otherMessages = [makeMessage({ messageId: 'other' })];
+    const newConvoMessages = [makeMessage({ messageId: 'new-convo' })];
+
+    queryClient.setQueryData([QueryKeys.messages, conversationId], existingMessages);
+    queryClient.setQueryData([QueryKeys.messages, otherConversationId], otherMessages);
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], newConvoMessages);
+
+    clearMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, otherConversationId])).toBe(otherMessages);
+  });
+
+  it('removes only the NEW_CONVO query when no conversation id is provided', () => {
+    const queryClient = new QueryClient();
+    const otherConversationId = 'convo-2';
+    const otherMessages = [makeMessage({ messageId: 'other' })];
+    const newConvoMessages = [makeMessage({ messageId: 'new-convo' })];
+
+    queryClient.setQueryData([QueryKeys.messages, otherConversationId], otherMessages);
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], newConvoMessages);
+
+    clearMessagesCache(queryClient, undefined);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, otherConversationId])).toBe(otherMessages);
+  });
+});
 
 describe('getMessageAriaLabel', () => {
   it('returns "Message N" when depth is present and valid', () => {

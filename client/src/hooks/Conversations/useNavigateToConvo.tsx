@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -29,6 +29,7 @@ import store from '~/store';
 const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const pendingConversationId = useRef<string | null>(null);
   const clearAllConversations = store.useClearConvoState();
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
@@ -51,6 +52,13 @@ const useNavigateToConvo = (index = 0) => {
     [setConvo, queryClient, applyModelSpecEffects],
   );
 
+  const shouldApplyFreshConversation = useCallback((conversationId: string) => {
+    return (
+      pendingConversationId.current === conversationId &&
+      window.location.pathname.endsWith(`/c/${conversationId}`)
+    );
+  }, []);
+
   const fetchFreshData = async (conversation?: Partial<TConversation>) => {
     const conversationId = conversation?.conversationId;
     if (!conversationId) {
@@ -64,14 +72,11 @@ const useNavigateToConvo = (index = 0) => {
 
       const convoData = { ...data };
       clearModelForNonEphemeralAgent(convoData);
-      setConversation(convoData);
-      navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
+      if (shouldApplyFreshConversation(conversationId)) {
+        setConversation(convoData);
+      }
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);
-      if (conversation) {
-        setConversation(conversation as TConversation);
-        navigate(`/c/${conversationId}`, { state: { focusChat: true } });
-      }
     }
   };
 
@@ -119,17 +124,14 @@ const useNavigateToConvo = (index = 0) => {
     clearAllConversations(true);
     clearMessagesCache(queryClient, currentConvoId);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
-      /**
-       * Remove (not just invalidate) the target's messages so a freshly-mounted
-       * ChatView refetches them. A prior `clearMessagesCache` can leave this
-       * conversation cached as `[]`, which the messages query's `refetchOnMount: false`
-       * would treat as valid — leaving the chat stuck on an empty cache with no
-       * request when navigating in from a non-chat route (e.g. /projects).
-       */
-      queryClient.removeQueries([QueryKeys.messages, convo.conversationId]);
+      pendingConversationId.current = convo.conversationId;
+      clearModelForNonEphemeralAgent(convo);
+      setConversation(convo);
+      navigate(`/c/${convo.conversationId}`, { state: { focusChat: true } });
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
-      fetchFreshData(convo);
+      void fetchFreshData(convo);
     } else {
+      pendingConversationId.current = null;
       setConversation(convo);
       navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
     }

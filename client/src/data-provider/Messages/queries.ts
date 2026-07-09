@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
+import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import { isNotFoundError, logger } from '~/utils';
 
@@ -74,7 +74,7 @@ export function shouldPreserveMessagesOnNotFound({
   return hasPendingAssistantTail(currentMessages);
 }
 
-function hasActiveJob(queryClient: QueryClient, id: string) {
+export function hasActiveJob(queryClient: QueryClient, id: string) {
   if (!id) {
     return false;
   }

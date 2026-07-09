@@ -1,16 +1,17 @@
 import { createElement } from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type { ReactNode } from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
-import { logger } from '~/utils';
+import type { ReactNode } from 'react';
 import {
   getStableMessages,
+  hasActiveJob,
   shouldPreserveMessagesOnNotFound,
   useGetMessagesByConvoId,
 } from '../queries';
+import { logger } from '~/utils';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -303,6 +304,16 @@ describe('shouldPreserveMessagesOnNotFound', () => {
         isStreaming: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('hasActiveJob', () => {
+  it('returns true when the conversation is in the active jobs cache', () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData([QueryKeys.activeJobs], { activeJobIds: ['active-convo'] });
+
+    expect(hasActiveJob(queryClient, 'active-convo')).toBe(true);
+    expect(hasActiveJob(queryClient, 'other-convo')).toBe(false);
   });
 });
 
