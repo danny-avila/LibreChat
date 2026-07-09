@@ -723,7 +723,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     tool_resource === EToolResources.ocr ? EToolResources.context : tool_resource;
 
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const endpoint = req.body?.endpoint;
+  // An agent upload carries endpoint=agents; resolve the file config from the agent's
+  // own provider so provider-specific defaultLLMDeliveryPath overrides are honored.
+  let endpoint = req.body?.endpoint;
+  if (agent_id) {
+    const uploadAgent = await db.getAgent({ id: agent_id });
+    if (uploadAgent?.provider) {
+      endpoint = uploadAgent.provider;
+    }
+  }
   const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
 
   if (agent_id && !tool_resource && !messageAttachment) {
@@ -798,6 +806,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       storage_session_id: uploaded.storage_session_id,
       file_id: uploaded.file_id,
       executionProfile: 'default',
+      provisionedAt: Date.now(),
     });
   } else if (effectiveToolResource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
