@@ -79,6 +79,7 @@ async function provisionToCodeEnv({ req, file, entity_id }) {
     id,
     storage_session_id: uploaded.storage_session_id,
     file_id: uploaded.file_id,
+    provisionedAt: Date.now(),
   };
 
   logger.debug(
@@ -213,7 +214,7 @@ async function checkCodeEnvFileAlive({ file, apiKey }) {
  * @param {object} params
  * @param {import('librechat-data-provider').TFile[]} params.files - Files with metadata.codeEnvRef
  * @param {string} params.apiKey - Pre-loaded CODE_API_KEY
- * @param {number} [params.staleSafeWindowMs=21600000] - Skip check if file updated within this window (default 6h)
+ * @param {number} [params.staleSafeWindowMs=21600000] - Skip the live check if the file was provisioned to the code env within this window (default 6h)
  * @returns {Promise<Set<string>>} Set of file_ids that are confirmed alive
  */
 async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 60 * 1000 }) {
@@ -230,8 +231,11 @@ async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 
       continue;
     }
 
-    const updatedAt = file.updatedAt ? new Date(file.updatedAt).getTime() : 0;
-    if (now - updatedAt < staleSafeWindowMs) {
+    // Trust only the code-env upload timestamp, not `updatedAt` (bumped by usage,
+    // e.g. updateFilesUsage on resend); a usage-touched file may still have an
+    // expired sandbox session. Refs without a marker fall through to a live check.
+    const provisionedAt = ref.provisionedAt ?? 0;
+    if (provisionedAt && now - provisionedAt < staleSafeWindowMs) {
       aliveFileIds.add(file.file_id);
       continue;
     }
