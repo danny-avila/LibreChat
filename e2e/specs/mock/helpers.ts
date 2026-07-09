@@ -426,6 +426,7 @@ export async function resetProvisioning(page: Page): Promise<void> {
 
 /** Shape of a file record as returned by POST /api/files and GET /api/files. */
 export type UploadedFile = {
+  file_id?: string;
   filename?: string;
   type?: string;
   llmDeliveryPath?: string;
