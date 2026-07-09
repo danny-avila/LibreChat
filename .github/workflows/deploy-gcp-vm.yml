@@ -15,6 +15,12 @@ on:
       - '.github/**'
       - 'docs/**'
       - '**.md'
+  # Allows this workflow to be dispatched programmatically (e.g. by the
+  # scheduled-merge workflow's post-merge step, or manually via `gh workflow run`).
+  # Required because pushes made by GITHUB_TOKEN do not themselves trigger
+  # downstream workflows (GitHub's anti-recursion guardrail), so scheduled auto-
+  # merges must dispatch this workflow explicitly to land the merged code in prod.
+  workflow_dispatch:
 
 concurrency:
   group: deploy-gcp-vm
