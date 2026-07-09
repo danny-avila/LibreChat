@@ -649,7 +649,9 @@ router.post('/', async (req, res) => {
       }
     }
 
-    if (metadata.agent_id) {
+    /* Only agent-resource uploads mutate the agent; per-message attachments (message_file) reuse the
+     * conversation's agent_id but don't touch agent resources, so they must stay allowed for globals. */
+    if (metadata.agent_id && metadata.message_file !== true) {
       const targetAgent = await withSystemGlobalFallback(
         metadata.agent_id,
         () => db.getAgent({ id: metadata.agent_id }),

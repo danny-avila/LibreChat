@@ -229,8 +229,11 @@ export async function discoverConnectedAgents(
       return null;
     }
 
+    /* The system-global authorizer only checks AGENT ACL grants. Restrict it to `resourceType: AGENT`
+     * so REMOTE_AGENT callers (OpenAI/Responses controllers) still enforce their remote sharing
+     * boundary via `checkPermission` — a global agent isn't remote-accessible unless granted so. */
     const hasAccess =
-      viaSystemFallback && authorizeSystemGlobalAgent
+      viaSystemFallback && authorizeSystemGlobalAgent && resourceType === ResourceType.AGENT
         ? (
             await authorizeSystemGlobalAgent({
               agentId,
