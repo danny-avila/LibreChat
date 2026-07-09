@@ -178,4 +178,18 @@ describe('reconcileGlobalAgents', () => {
     );
     expect(await grantsFor(agent!._id as Types.ObjectId)).toHaveLength(0);
   });
+
+  test('skips empty and reserved tenant ids without creating an unscoped row', async () => {
+    await reconcile([
+      baseAgent({ tenants: ['', '__SYSTEM__', 'tenant-a'], access: { roles: ['USER'] } }),
+    ]);
+
+    expect(await Agent.countDocuments({ id: 'agent_global_support', tenantId: 'tenant-a' })).toBe(
+      1,
+    );
+    // The empty/reserved ids must not fall through to a tenantless (system) upsert.
+    expect(
+      await Agent.countDocuments({ id: 'agent_global_support', tenantId: { $exists: false } }),
+    ).toBe(0);
+  });
 });

@@ -898,7 +898,7 @@ export const globalAgentSchema = z
   .object({
     id: z.string().regex(/^agent_global_[A-Za-z0-9_-]+$/),
     access: globalAgentAccessSchema.optional(),
-    tenants: z.union([z.literal('system'), z.array(z.string())]).optional(),
+    tenants: z.union([z.literal('system'), z.array(z.string().trim().min(1))]).optional(),
   })
   .passthrough();
 

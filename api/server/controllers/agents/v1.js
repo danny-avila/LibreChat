@@ -50,6 +50,7 @@ const {
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
+const { withSystemGlobalFallback } = require('~/server/services/Agents/systemGlobal');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -518,7 +519,11 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     // Permissions are validated by middleware before calling this function.
     // Load the agent with a `version` count but without the heavy `versions`
     // array; version history is fetched lazily via GET /agents/:id/versions.
-    const agent = await db.getAgentWithVersionCount({ id });
+    const agent = await withSystemGlobalFallback(
+      id,
+      () => db.getAgentWithVersionCount({ id }),
+      () => db.getAgentWithVersionCount({ id, tenantId: { $exists: false } }),
+    );
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -603,7 +608,11 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 const getAgentVersionsHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const versions = await db.getAgentVersions({ id });
+    const versions = await withSystemGlobalFallback(
+      id,
+      () => db.getAgentVersions({ id }),
+      () => db.getAgentVersions({ id, tenantId: { $exists: false } }),
+    );
 
     if (versions == null) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -1017,8 +1026,9 @@ const deleteAgentHandler = async (req, res) => {
  * Resolve the `tenants: 'system'` global agents this user is entitled to. Their rows and ACL
  * grants are tenantless, so a tenant-scoped list query can't see them — we read under the system
  * context and intersect the user's accessible ids with the known tenantless system agents (so no
- * other tenant's agents can leak in). Single-tenant deployments never call this; the tenantless
- * rows already surface through the normal query.
+ * other tenant's agents can leak in). The user's principals are built in the request tenant context
+ * first (so group memberships reflect this tenant, not every tenant); only the agent/ACL lookup runs
+ * as system. Single-tenant deployments never call this; the tenantless rows already surface normally.
  */
 async function getEntitledSystemGlobalAgents({
   userId,
@@ -1027,18 +1037,21 @@ async function getEntitledSystemGlobalAgents({
   includeSkillConfig,
   requiredPermission,
 }) {
+  const principals = await db.getUserPrincipals({ userId, role });
+  if (!principals.length) {
+    return [];
+  }
   return runAsSystem(async () => {
     const systemAgents = await db.getAgents({ isSystem: true, tenantId: { $exists: false } });
     if (!systemAgents.length) {
       return [];
     }
     const systemIdSet = new Set(systemAgents.map((agent) => agent._id.toString()));
-    const entitledIds = await findAccessibleResources({
-      userId,
-      role,
-      resourceType: ResourceType.AGENT,
-      requiredPermissions: requiredPermission,
-    });
+    const entitledIds = await db.findAccessibleResources(
+      principals,
+      ResourceType.AGENT,
+      requiredPermission,
+    );
     const accessibleIds = entitledIds.filter((oid) => systemIdSet.has(oid.toString()));
     if (!accessibleIds.length) {
       return [];

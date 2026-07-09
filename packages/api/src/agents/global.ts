@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { Types } from 'mongoose';
 import { AccessRoleIds, ResourceType, PrincipalType } from 'librechat-data-provider';
-import { logger, runAsSystem, tenantStorage, extractMCPServerNames } from '@librechat/data-schemas';
+import {
+  logger,
+  runAsSystem,
+  tenantStorage,
+  SYSTEM_TENANT_ID,
+  extractMCPServerNames,
+} from '@librechat/data-schemas';
 import type {
   IAgent,
   IAccessRole,
@@ -288,6 +294,13 @@ export async function reconcileGlobalAgents({
       continue;
     }
     for (const tenantId of entry.tenants) {
+      /* An empty/whitespace or reserved sentinel tenant id resolves to an unscoped/system context
+       * in tenantStorage — which would upsert across tenants and let retireOrphans revoke every
+       * system agent's grants. Skip them so a misconfig can't nuke unrelated tenants. */
+      if (!tenantId.trim() || tenantId === SYSTEM_TENANT_ID) {
+        logger.warn(`[GlobalAgents] Ignoring invalid tenant id for global agent "${entry.id}".`);
+        continue;
+      }
       const list = tenantEntries.get(tenantId) ?? [];
       list.push(entry);
       tenantEntries.set(tenantId, list);

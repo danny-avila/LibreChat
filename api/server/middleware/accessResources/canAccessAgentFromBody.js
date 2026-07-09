@@ -1,4 +1,4 @@
-const { logger, runAsSystem, ResourceCapabilityMap } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
   Constants,
   Permissions,
@@ -8,47 +8,32 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
+const {
+  isSystemGlobalId,
+  resolveSystemGlobalAgent,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { canAccessResource } = require('./canAccessResource');
 const db = require('~/models');
 
 const { getRoleByName, getAgent } = db;
 
-/**
- * Authorizes a `tenants: 'system'` global agent whose tenantless row/grants are invisible to the
- * tenant-scoped access path. Resolves and checks entirely under the system context, pinned to the
- * tenantless row so it can never authorize another tenant's explicit-scope row of the same id.
- * Preserves the MANAGE_AGENTS capability bypass for parity with `canAccessResource`.
- * @returns {Promise<{status:'ok'|'not_found'|'forbidden', agent?: object}>}
- */
-const checkSystemGlobalAgentAccess = (agentId, requiredPermission, req) =>
-  runAsSystem(async () => {
-    const agent = await getAgent({ id: agentId, tenantId: { $exists: false } });
-    if (!agent) {
-      return { status: 'not_found' };
-    }
-    const cap = ResourceCapabilityMap[ResourceType.AGENT];
-    let hasCap = false;
-    try {
-      hasCap = cap != null && (await hasCapability(req.user, cap));
-    } catch (err) {
-      logger.warn(
-        `[canAccessAgentFromBody] capability check failed, denying bypass: ${err.message}`,
-      );
-    }
-    if (hasCap) {
-      return { status: 'ok', agent };
-    }
-    const allowed = await checkPermission({
-      userId: req.user.id,
-      role: req.user.role,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      requiredPermission,
+/** Write a 404/403 for a system-global authorization result; returns true when handled. */
+const respondSystemGlobalDenied = (result, res) => {
+  if (result.status === 'not_found') {
+    res.status(404).json({ error: 'Not Found', message: `${ResourceType.AGENT} not found` });
+    return true;
+  }
+  if (result.status === 'forbidden') {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: `Insufficient permissions to access this ${ResourceType.AGENT}`,
     });
-    return { status: allowed ? 'ok' : 'forbidden', agent };
-  });
+    return true;
+  }
+  return false;
+};
 
 /**
  * Resolves custom agent ID (e.g., "agent_abc123") to a MongoDB document.
@@ -128,31 +113,39 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
       return next();
     }
 
-    if (req.user.role === SystemRoles.ADMIN) {
-      return next();
-    }
+    const tenantAgent = await resolveAgentIdFromBody(addedAgentId);
 
-    const agent = await resolveAgentIdFromBody(addedAgentId);
-
-    /* System-scope global agents are tenantless; resolve + authorize them under the system context. */
-    if (!agent && addedAgentId.startsWith(Constants.GLOBAL_AGENT_PREFIX)) {
-      const result = await checkSystemGlobalAgentAccess(addedAgentId, requiredPermission, req);
-      if (result.status === 'not_found') {
-        return res
-          .status(404)
-          .json({ error: 'Not Found', message: `${ResourceType.AGENT} not found` });
+    /* System-scope globals are tenantless; resolve them under the system context and cache the doc
+     * so loadAddedAgent doesn't re-fetch via the tenant-scoped path (which misses it). Admins bypass
+     * the permission check but must still populate the cache. */
+    if (!tenantAgent && isSystemGlobalId(addedAgentId)) {
+      if (req.user.role === SystemRoles.ADMIN) {
+        const agent = await resolveSystemGlobalAgent(addedAgentId);
+        if (agent) {
+          req.resolvedAddedAgent = agent;
+        }
+        return next();
       }
-      if (result.status === 'forbidden') {
-        return res.status(403).json({
-          error: 'Forbidden',
-          message: `Insufficient permissions to access this ${ResourceType.AGENT}`,
-        });
+      const result = await authorizeSystemGlobalAgent({
+        agentId: addedAgentId,
+        requiredPermission,
+        req,
+      });
+      if (respondSystemGlobalDenied(result, res)) {
+        return;
       }
       req.resolvedAddedAgent = result.agent;
       return next();
     }
 
-    if (!agent) {
+    if (req.user.role === SystemRoles.ADMIN) {
+      if (tenantAgent) {
+        req.resolvedAddedAgent = tenantAgent;
+      }
+      return next();
+    }
+
+    if (!tenantAgent) {
       return res.status(404).json({
         error: 'Not Found',
         message: `${ResourceType.AGENT} not found`,
@@ -163,7 +156,7 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
       userId: req.user.id,
       role: req.user.role,
       resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
+      resourceId: tenantAgent._id,
       requiredPermission,
     });
 
@@ -174,7 +167,7 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
       });
     }
 
-    req.resolvedAddedAgent = agent;
+    req.resolvedAddedAgent = tenantAgent;
     return next();
   } catch (error) {
     logger.error('Failed to validate addedConvo access permissions', error);
@@ -232,18 +225,10 @@ const canAccessAgentFromBody = (options) => {
         return afterPrimaryCheck();
       }
 
-      if (agentId.startsWith(Constants.GLOBAL_AGENT_PREFIX) && !(await getAgent({ id: agentId }))) {
-        const result = await checkSystemGlobalAgentAccess(agentId, requiredPermission, req);
-        if (result.status === 'not_found') {
-          return res
-            .status(404)
-            .json({ error: 'Not Found', message: `${ResourceType.AGENT} not found` });
-        }
-        if (result.status === 'forbidden') {
-          return res.status(403).json({
-            error: 'Forbidden',
-            message: `Insufficient permissions to access this ${ResourceType.AGENT}`,
-          });
+      if (isSystemGlobalId(agentId) && !(await getAgent({ id: agentId }))) {
+        const result = await authorizeSystemGlobalAgent({ agentId, requiredPermission, req });
+        if (respondSystemGlobalDenied(result, res)) {
+          return;
         }
         return afterPrimaryCheck();
       }

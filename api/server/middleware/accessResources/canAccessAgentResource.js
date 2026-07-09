@@ -1,4 +1,8 @@
 const { ResourceType } = require('librechat-data-provider');
+const {
+  isSystemGlobalId,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const { canAccessResource } = require('./canAccessResource');
 const { getAgent } = require('~/models');
 
@@ -46,12 +50,35 @@ const canAccessAgentResource = (options) => {
     throw new Error('canAccessAgentResource: requiredPermission is required and must be a number');
   }
 
-  return canAccessResource({
+  const baseMiddleware = canAccessResource({
     resourceType: ResourceType.AGENT,
     requiredPermission,
     resourceIdParam,
     idResolver: resolveAgentId,
   });
+
+  /* System-scope globals are tenantless; when the tenant-scoped resolve misses one, authorize it
+   * under the system context so entitled users can view/select the shared agent from detail routes.
+   * Everything else (including explicit-tenant globals) flows through the generic middleware. */
+  return async (req, res, next) => {
+    const agentId = req.params?.[resourceIdParam];
+    if (req.user?.id && isSystemGlobalId(agentId) && !(await resolveAgentId(agentId))) {
+      const result = await authorizeSystemGlobalAgent({ agentId, requiredPermission, req });
+      if (result.status === 'not_found') {
+        return res
+          .status(404)
+          .json({ error: 'Not Found', message: `${ResourceType.AGENT} not found` });
+      }
+      if (result.status === 'forbidden') {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: `Insufficient permissions to access this ${ResourceType.AGENT}`,
+        });
+      }
+      return next();
+    }
+    return baseMiddleware(req, res, next);
+  };
 };
 
 module.exports = {
