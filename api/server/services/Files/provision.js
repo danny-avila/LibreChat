@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { EnvVar, getCodeBaseURL } = require('@librechat/agents');
+const { getCodeBaseURL } = require('@librechat/agents');
 const {
   logAxiosError,
   createAxiosInstance,
@@ -19,16 +19,24 @@ const { getStrategyFunctions } = require('./strategies');
 
 const axios = createAxiosInstance();
 
+/** Env var holding the code-execution API key (symmetric with LIBRECHAT_CODE_BASEURL). */
+const CODE_API_KEY_FIELD = 'LIBRECHAT_CODE_API_KEY';
+
 /**
- * Loads the CODE_API_KEY for a user. Call once per request and pass the result
- * to checkSessionsAlive to avoid redundant lookups.
+ * Loads the code-execution API key for a user. Call once per request and pass the
+ * result to checkSessionsAlive to avoid redundant lookups. Returns undefined when
+ * no key is configured, so provisioning is skipped rather than failing the turn.
  *
  * @param {string} userId
- * @returns {Promise<string>} The CODE_API_KEY
+ * @returns {Promise<string | undefined>} The code-execution API key, if configured
  */
 async function loadCodeApiKey(userId) {
-  const result = await loadAuthValues({ userId, authFields: [EnvVar.CODE_API_KEY] });
-  return result[EnvVar.CODE_API_KEY];
+  const result = await loadAuthValues({
+    userId,
+    authFields: [CODE_API_KEY_FIELD],
+    throwError: false,
+  });
+  return result[CODE_API_KEY_FIELD];
 }
 
 /**
