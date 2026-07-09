@@ -611,6 +611,11 @@ function fileAuthoringResponses(operation, toolNames) {
 function provisioningToolResponses({ text, toolNames }) {
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
   if (codeLabel) {
+    console.warn(
+      `[e2e-diag fake-model] execute_code marker; advertised=${toolNames.has(
+        EXECUTE_CODE_TOOL_NAME,
+      )} tools=${JSON.stringify([...toolNames])}`,
+    );
     if (!toolNames.has(EXECUTE_CODE_TOOL_NAME)) {
       return {
         responses: [`E2E execute_code unavailable: ${EXECUTE_CODE_TOOL_NAME} was not advertised.`],
