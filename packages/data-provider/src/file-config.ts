@@ -528,6 +528,105 @@ export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
   return types.some((regex) => regex.test('x-librechat/x-probe'));
 };
 
+/** Media categories that collapse to a wildcard `accept` token when any member type is allowed. */
+const mimeAcceptCategories: ReadonlyArray<{
+  token: string;
+  samples: readonly string[];
+  extras?: readonly string[];
+}> = [
+  {
+    token: 'image/*',
+    samples: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'],
+    extras: ['.heif', '.heic'],
+  },
+  {
+    token: 'audio/*',
+    samples: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac'],
+  },
+  {
+    token: 'video/*',
+    samples: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'],
+  },
+];
+
+/** Document/text MIME types paired with the extension browsers filter on in the file picker. */
+const documentMimeExtensions: ReadonlyArray<readonly [string, string]> = [
+  ['application/pdf', '.pdf'],
+  ['application/msword', '.doc'],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+  ['application/vnd.ms-excel', '.xls'],
+  ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
+  ['application/vnd.ms-powerpoint', '.ppt'],
+  ['application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'],
+  ['application/vnd.oasis.opendocument.text', '.odt'],
+  ['application/vnd.oasis.opendocument.spreadsheet', '.ods'],
+  ['application/vnd.oasis.opendocument.presentation', '.odp'],
+  ['application/vnd.oasis.opendocument.graphics', '.odg'],
+  ['application/rtf', '.rtf'],
+  ['application/json', '.json'],
+  ['application/xml', '.xml'],
+  ['application/yaml', '.yaml'],
+  ['application/zip', '.zip'],
+  ['text/csv', '.csv'],
+  ['application/csv', '.csv'],
+  ['text/tab-separated-values', '.tsv'],
+  ['text/plain', '.txt'],
+  ['text/markdown', '.md'],
+  ['text/html', '.html'],
+  ['text/calendar', '.ics'],
+  ['message/rfc822', '.eml'],
+];
+
+/** Translates a finite MIME allowlist into a file-input `accept` string, or `undefined` if none match. */
+const buildMimeAccept = (types: RegExp[]): string | undefined => {
+  const matches = (mimeType: string): boolean => types.some((regex) => regex.test(mimeType));
+  const tokens: string[] = [];
+  const seen = new Set<string>();
+  const push = (token: string): void => {
+    if (!seen.has(token)) {
+      seen.add(token);
+      tokens.push(token);
+    }
+  };
+
+  for (const category of mimeAcceptCategories) {
+    if (category.samples.some(matches)) {
+      push(category.token);
+      category.extras?.forEach(push);
+    }
+  }
+
+  for (const [mimeType, extension] of documentMimeExtensions) {
+    if (matches(mimeType)) {
+      push(extension);
+      push(mimeType);
+    }
+  }
+
+  return tokens.length > 0 ? tokens.join(',') : undefined;
+};
+
+/**
+ * Resolves the file-input `accept` value for a configured `supportedMimeTypes` allowlist.
+ * - `undefined` for the built-in default or an untranslatable config, so callers keep their
+ *   provider-specific filter.
+ * - `''` for permissive configs (e.g. `.*`), leaving the picker unrestricted.
+ * - a translated `accept` string for a recognized finite allowlist (images, PDFs, Office docs, etc.).
+ *
+ * The picker `accept` is a UX convenience, not a security boundary: the backend still enforces
+ * `supportedMimeTypes` on upload, so a slightly broad translation is safe.
+ */
+export const getConfiguredMimeAccept = (types?: RegExp[]): string | undefined => {
+  /** Referential identity with the built-in list signals an unconfigured endpoint (keep provider filter). */
+  if (!types || types.length === 0 || types === supportedMimeTypes) {
+    return undefined;
+  }
+  if (isPermissiveMimeConfig(types)) {
+    return '';
+  }
+  return buildMimeAccept(types);
+};
+
 /**
  * Gets the appropriate endpoint file configuration with standardized lookup logic.
  *

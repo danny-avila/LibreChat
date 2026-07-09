@@ -1,6 +1,7 @@
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  getConfiguredMimeAccept,
   isPermissiveMimeConfig,
   convertStringsToRegex,
   documentParserMimeTypes,
@@ -1357,5 +1358,73 @@ describe('isPermissiveMimeConfig', () => {
   it('returns true for regex produced by convertStringsToRegex with .*', () => {
     const converted = convertStringsToRegex(['.*']);
     expect(isPermissiveMimeConfig(converted)).toBe(true);
+  });
+});
+
+describe('getConfiguredMimeAccept', () => {
+  const toSet = (accept?: string) => new Set((accept ?? '').split(',').filter(Boolean));
+
+  it('returns undefined for undefined', () => {
+    expect(getConfiguredMimeAccept(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for empty array', () => {
+    expect(getConfiguredMimeAccept([])).toBeUndefined();
+  });
+
+  it('returns undefined for the built-in default supportedMimeTypes (keep provider filter)', () => {
+    expect(getConfiguredMimeAccept(supportedMimeTypes)).toBeUndefined();
+  });
+
+  it("returns '' for permissive configs so the picker stays unrestricted", () => {
+    expect(getConfiguredMimeAccept(convertStringsToRegex(['.*']))).toBe('');
+    expect(getConfiguredMimeAccept([/^.+$/])).toBe('');
+  });
+
+  it('translates the finite Office + image allowlist from issue #14162', () => {
+    const config = convertStringsToRegex([
+      '^image/.*',
+      '^application/pdf$',
+      '^application/msword$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+      '^application/vnd\\.ms-excel$',
+      '^application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config));
+
+    for (const token of [
+      'image/*',
+      '.pdf',
+      'application/pdf',
+      '.doc',
+      'application/msword',
+      '.docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls',
+      'application/vnd.ms-excel',
+      '.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]) {
+      expect(accept.has(token)).toBe(true);
+    }
+    expect(accept.has('.pptx')).toBe(false);
+    expect(accept.has('audio/*')).toBe(false);
+    expect(accept.has('video/*')).toBe(false);
+  });
+
+  it('emits image/* for an image-only allowlist', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^image\/(jpeg|png)$/]));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(false);
+  });
+
+  it('emits media wildcards for audio and video allowlists', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^audio\/.*$/, /^video\/.*$/]));
+    expect(accept.has('audio/*')).toBe(true);
+    expect(accept.has('video/*')).toBe(true);
+  });
+
+  it('returns undefined for a finite config with no recognized types (fall back to provider filter)', () => {
+    expect(getConfiguredMimeAccept([/^application\/x-librechat-unknown$/])).toBeUndefined();
   });
 });
