@@ -135,9 +135,7 @@ describe('createSubagentLoader', () => {
     };
     const { loader, loadAgentById } = makeLoader(A, map);
 
-    await expect(loader.resolveSubagentTrees([A])).rejects.toThrow(
-      `maximum depth of ${MAX_DEPTH}`,
-    );
+    await expect(loader.resolveSubagentTrees([A])).rejects.toThrow(`maximum depth of ${MAX_DEPTH}`);
     // The primary is reused, never reloaded — the unique job of the cycle guard.
     expect(loadAgentById).not.toHaveBeenCalledWith('A');
     // First-level resolution still reused the primary OBJECT for B's subagent.
@@ -225,11 +223,15 @@ describe('createSubagentLoader', () => {
   it('/v1 ACL: skips an orphaned subagent reference (getAgent returns null)', async () => {
     const A = makeConfig('A', ['GONE']);
     const skippedAgentIds = new Set<string>();
-    const { loader, loadAgentById } = makeLoader(A, {}, {
-      getAgent: async () => null,
-      checkSubagentAccess: async () => true,
-      skippedAgentIds,
-    });
+    const { loader, loadAgentById } = makeLoader(
+      A,
+      {},
+      {
+        getAgent: async () => null,
+        checkSubagentAccess: async () => true,
+        skippedAgentIds,
+      },
+    );
 
     await loader.resolveSubagentTrees([A]);
 

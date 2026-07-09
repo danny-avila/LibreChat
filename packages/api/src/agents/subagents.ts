@@ -151,9 +151,7 @@ export function createSubagentLoader(deps: SubagentLoaderDeps): {
         }
         const hasAccess = await checkSubagentAccess(rawAgent);
         if (!hasAccess) {
-          logger.warn(
-            `${logPrefix} Caller lacks VIEW access to subagent ${subagentId}, skipping`,
-          );
+          logger.warn(`${logPrefix} Caller lacks VIEW access to subagent ${subagentId}, skipping`);
           skippedAgentIds.add(subagentId);
           continue;
         }
@@ -193,9 +191,7 @@ export function createSubagentLoader(deps: SubagentLoaderDeps): {
       await loadSubagentsFor(cfg, depth);
       for (const child of cfg.subagentAgentConfigs ?? []) {
         const childDepth = depth + 1;
-        const previousChildDepth = child?.id
-          ? maxResolvedDepthByConfigId.get(child.id)
-          : undefined;
+        const previousChildDepth = child?.id ? maxResolvedDepthByConfigId.get(child.id) : undefined;
         if (child?.id && (previousChildDepth == null || previousChildDepth < childDepth)) {
           pending.push({ cfg: child, depth: childDepth });
         }

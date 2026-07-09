@@ -1,7 +1,9 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
-const { MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_GRAPH_NODES,
+const {
+  MAX_SUBAGENT_DEPTH,
+  MAX_SUBAGENT_GRAPH_NODES,
   EModelEndpoint,
   ResourceType,
   PermissionBits,
@@ -474,7 +476,6 @@ const OpenAIChatCompletionController = async (req, res) => {
         },
       );
     }
-
 
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;

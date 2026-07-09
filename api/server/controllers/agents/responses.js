@@ -2,7 +2,9 @@ const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
-const { MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_GRAPH_NODES,
+const {
+  MAX_SUBAGENT_DEPTH,
+  MAX_SUBAGENT_GRAPH_NODES,
   EModelEndpoint,
   ResourceType,
   PermissionBits,
