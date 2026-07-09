@@ -515,8 +515,26 @@ export class BackgroundTaskRegistryClass {
         running++;
       }
     }
-    if (running >= MAX_RUNNING_PER_BUCKET || bucket.tasks.size >= MAX_TASKS_PER_BUCKET) {
+    /** Only *running* tasks gate dispatch. */
+    if (running >= MAX_RUNNING_PER_BUCKET) {
       return { atCapacity: true };
+    }
+    /** The total-tasks cap bounds memory but must NOT block new work: evict the
+     *  oldest SETTLED tasks to make room rather than rejecting (settled tasks
+     *  aren't removed by polling, so 200 quick calls would otherwise block for
+     *  up to the completed-TTL). Running is already capped, so room always frees. */
+    if (bucket.tasks.size >= MAX_TASKS_PER_BUCKET) {
+      const settledOldestFirst = [...bucket.tasks.values()]
+        .filter((t) => t.status !== 'running')
+        .sort((a, b) => a.createdAt - b.createdAt);
+      let toEvict = bucket.tasks.size - MAX_TASKS_PER_BUCKET + 1;
+      for (const stale of settledOldestFirst) {
+        if (toEvict <= 0) {
+          break;
+        }
+        bucket.tasks.delete(stale.id);
+        toEvict--;
+      }
     }
 
     const task: BackgroundTask = {

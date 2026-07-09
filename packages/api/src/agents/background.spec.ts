@@ -455,6 +455,41 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(atCapacity).toBe(true);
   });
 
+  it('evicts oldest settled tasks instead of blocking when the total cap is full', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let i = 0; i < 200; i++) {
+      const created = registry.create({
+        userId: 'u1',
+        conversationId: 'c-full',
+        toolCallId: `call_${i}`,
+        toolName: 't',
+        runId: 'r',
+        agentId: 'a',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      registry.complete('u1', 'c-full', created.task.id, { content: 'x' });
+    }
+    // bucket now holds the max number of settled tasks; a new dispatch must
+    // succeed by evicting the oldest settled task, not be rejected.
+    const next = registry.create({
+      userId: 'u1',
+      conversationId: 'c-full',
+      toolCallId: 'call_new',
+      toolName: 't',
+      runId: 'r',
+      agentId: 'a',
+    });
+    expect('atCapacity' in next).toBe(false);
+    if ('atCapacity' in next) {
+      return;
+    }
+    expect(next.isNew).toBe(true);
+    // total held stays bounded (one evicted, one added)
+    expect(registry.list('u1', 'c-full')).toHaveLength(200);
+  });
+
   it('scopes tasks by user and conversation', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
