@@ -807,6 +807,7 @@ describe('processAgentFileUpload', () => {
               storage_session_id: 'sess-1',
               file_id: 'fid-1',
               executionProfile: 'default',
+              provisionedAt: expect.any(Number),
             },
             codeEnvRefs: {
               default: {
@@ -815,6 +816,7 @@ describe('processAgentFileUpload', () => {
                 storage_session_id: 'sess-1',
                 file_id: 'fid-1',
                 executionProfile: 'default',
+                provisionedAt: expect.any(Number),
               },
             },
           },
@@ -845,6 +847,7 @@ describe('processAgentFileUpload', () => {
               storage_session_id: 'sess-2',
               file_id: 'fid-2',
               executionProfile: 'default',
+              provisionedAt: expect.any(Number),
             },
             codeEnvRefs: {
               default: {
@@ -853,6 +856,7 @@ describe('processAgentFileUpload', () => {
                 storage_session_id: 'sess-2',
                 file_id: 'fid-2',
                 executionProfile: 'default',
+                provisionedAt: expect.any(Number),
               },
             },
           },
@@ -915,6 +919,7 @@ describe('processAgentFileUpload', () => {
               storage_session_id: 'sess-5',
               file_id: 'fid-5',
               executionProfile: 'default',
+              provisionedAt: expect.any(Number),
             },
             codeEnvRefs: {
               default: {
@@ -923,6 +928,7 @@ describe('processAgentFileUpload', () => {
                 storage_session_id: 'sess-5',
                 file_id: 'fid-5',
                 executionProfile: 'default',
+                provisionedAt: expect.any(Number),
               },
             },
           },
@@ -1204,6 +1210,7 @@ describe('processAgentFileUpload', () => {
               id: 'agent-abc',
               storage_session_id: 'sess-csv',
               file_id: 'fid-csv',
+              provisionedAt: expect.any(Number),
             },
           },
           llmDeliveryPath: 'none',
