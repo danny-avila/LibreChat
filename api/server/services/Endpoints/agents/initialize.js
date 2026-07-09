@@ -295,11 +295,22 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       if (!ctx.tool_resources) {
         ctx.tool_resources = {};
       }
-      const addProvisionedFile = (file, resourceType) => {
+      const addProvisionedFile = (file, resourceType, agentScoped) => {
         if (!file.file_id) {
           return;
         }
         const resource = ctx.tool_resources[resourceType] ?? {};
+        /** Agent-scoped file_search files are embedded under `entity_id: agentId`, so
+         *  they must be queried by `file_ids` (primeFiles marks those `fromAgent` and
+         *  passes `entity_id`); user chat attachments and code files live in `files`. */
+        if (agentScoped && resourceType === EToolResources.file_search) {
+          const fileIds = resource.file_ids ? [...resource.file_ids] : [];
+          if (!fileIds.includes(file.file_id)) {
+            fileIds.push(file.file_id);
+          }
+          ctx.tool_resources[resourceType] = { ...resource, file_ids: fileIds };
+          return;
+        }
         const files = resource.files ? [...resource.files] : [];
         if (!files.some((existing) => existing.file_id === file.file_id)) {
           files.push(file);
@@ -341,7 +352,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
             });
             if (result.embedded) {
               file.embedded = true;
-              addProvisionedFile(file, EToolResources.file_search);
+              addProvisionedFile(
+                file,
+                EToolResources.file_search,
+                entityIdForFile(file) !== undefined,
+              );
               if (result.fileUpdate) {
                 pendingUpdates.push(result.fileUpdate);
               }
