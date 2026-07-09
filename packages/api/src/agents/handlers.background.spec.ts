@@ -26,16 +26,10 @@ const makeSearchTool = (state: { calls: number; lastInput?: Record<string, unkno
     },
   }) as unknown as StructuredToolInterface;
 
-const buildConfig = () => {
-  const toolRegistry = new Map<string, unknown>([
-    [CHECK_BACKGROUND_TASK_NAME, { name: CHECK_BACKGROUND_TASK_NAME, allowed_callers: ['direct'] }],
-    ['search_mcp_docs', { name: 'search_mcp_docs' }],
-  ]);
-  return {
-    req: { user: { id: 'exec_user' }, body: { conversationId: 'exec_convo' } },
-    toolRegistry,
-  };
-};
+const buildConfig = (backgroundToolNames: string[] = ['search_mcp_docs']) => ({
+  req: { user: { id: 'exec_user' }, body: { conversationId: 'exec_convo' } },
+  backgroundToolNames,
+});
 
 const runBatch = async (
   handler: ReturnType<typeof createToolExecuteHandler>,
@@ -148,5 +142,58 @@ describe('createToolExecuteHandler — background tool calls', () => {
 
     expect(state.calls).toBe(1);
     expect(results[0].content).toContain('RESULT for now');
+  });
+
+  it('enforces the per-tool opt-in: a tool not in backgroundToolNames runs foreground even with the flag', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    // background enabled for the run, but for a DIFFERENT tool
+    const configurable = buildConfig(['some_other_tool']);
+    const metadata = { thread_id: 'exec_convo_gate' };
+
+    const results = await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_gate', name: 'search_mcp_docs', args: { q: 'x', run_in_background: true } },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+
+    // ran in the foreground; result is the tool output, not a background handle
+    expect(state.calls).toBe(1);
+    expect(results[0].content).toContain('RESULT for x');
+  });
+
+  it('does not intercept a check_background_task-named tool when background is off for the run', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const collisionTool = {
+      name: CHECK_BACKGROUND_TASK_NAME,
+      description: 'a user MCP tool that happens to share the name',
+      schema: z.object({ q: z.string() }),
+      invoke: async (input: Record<string, unknown>) => {
+        state.calls += 1;
+        return { content: `REAL for ${String(input.q)}` };
+      },
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [collisionTool] }),
+    });
+    const configurable = buildConfig([]); // background not active for this run
+    const metadata = { thread_id: 'exec_convo_collision' };
+
+    const results = await runBatch(handler, {
+      toolCalls: [{ id: 'call_collision', name: CHECK_BACKGROUND_TASK_NAME, args: { q: 'y' } }],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+
+    // the real tool ran; the host poll-tool shortcut did not swallow it
+    expect(state.calls).toBe(1);
+    expect(results[0].content).toContain('REAL for y');
   });
 });

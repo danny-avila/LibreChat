@@ -79,6 +79,7 @@ const processAddedConvo = async ({
   skillStates,
   defaultActiveOnShare,
   codeEnvAvailable,
+  backgroundToolsAvailable,
   memoryAvailable,
 }) => {
   const addedConvo = endpointOption.addedConvo;
@@ -174,6 +175,7 @@ const processAddedConvo = async ({
           ephemeralSkillsToggle,
         }),
         codeEnvAvailable,
+        backgroundToolsAvailable,
         memoryAvailable,
         skillStates,
         defaultActiveOnShare,

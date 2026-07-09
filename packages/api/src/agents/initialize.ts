@@ -257,6 +257,13 @@ export type InitializedAgent = Agent & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
+  /**
+   * Names of this agent's tools that were injected with the `run_in_background`
+   * param (capability enabled AND per-tool opt-in AND eligible). Threaded to the
+   * tool executor via `configurable` so it can enforce the per-tool background
+   * opt-in and gate the `check_background_task` poll tool at execution time.
+   */
+  backgroundToolNames?: string[];
   /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
    *  registered for this agent. Authoritative LibreChat-only signal of the
    *  inline memory opt-in for the execution path, since some contexts hold the
@@ -1149,6 +1156,7 @@ export async function initializeAgent(
    * tool registration so the full, final `toolDefinitions` set is considered.
    * Opt-in is per-tool via `tool_options` for both saved and ephemeral agents.
    */
+  let backgroundToolNames: string[] | undefined;
   if (params.backgroundToolsAvailable === true) {
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
@@ -1157,6 +1165,9 @@ export async function initializeAgent(
       enabled: true,
     });
     toolDefinitions = backgroundResult.toolDefinitions;
+    if (backgroundResult.backgroundToolNames.length > 0) {
+      backgroundToolNames = backgroundResult.backgroundToolNames;
+    }
   }
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
@@ -1313,6 +1324,7 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    backgroundToolNames,
     actionsEnabled,
     baseContextTokens,
     memoryToolsRegistered: inlineMemoryRegistered,

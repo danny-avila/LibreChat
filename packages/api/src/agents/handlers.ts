@@ -22,7 +22,6 @@ import {
   stripRunInBackgroundArg,
   buildBackgroundHandleContent,
   buildBackgroundCapacityContent,
-  isBackgroundEligibleToolName,
   CHECK_BACKGROUND_TASK_NAME,
 } from './background';
 import {
@@ -3228,11 +3227,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
             /**
-             * Background tool calls. `backgroundActive` is true only when the
-             * run registered the `check_background_task` poll tool (i.e. the
-             * capability was enabled and at least one tool opted in), which is
-             * the exact condition under which the model can have been shown the
-             * injected `run_in_background` schema param.
+             * Background tool calls. The set of tools that received the injected
+             * `run_in_background` param is threaded per-agent from `initializeAgent`
+             * via `configurable.backgroundToolNames` (a reliable channel, unlike
+             * `toolRegistry` which only reaches the executor for PTC/tool_search).
+             * A non-empty set is the exact condition under which the run registered
+             * the poll tool and the model could have been shown the param, so it
+             * also gates the `check_background_task` interception and enforces the
+             * per-tool opt-in (a tool not in the set never had the param).
              */
             const backgroundReq = mergedConfigurable?.req as ServerRequest | undefined;
             const backgroundUserId = backgroundReq?.user?.id ?? '';
@@ -3241,10 +3243,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               (mergedConfigurable?.thread_id as string | undefined) ??
               (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
               '';
-            const backgroundActive =
-              (mergedConfigurable?.toolRegistry as LCToolRegistry | undefined)?.has(
-                CHECK_BACKGROUND_TASK_NAME,
-              ) === true;
+            const backgroundToolSet = new Set(
+              (mergedConfigurable?.backgroundToolNames as string[] | undefined) ?? [],
+            );
+            const backgroundEnabledForRun = backgroundToolSet.size > 0;
 
             /**
              * Registers the task, returns a synthetic handle immediately, and
@@ -3315,7 +3317,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
-                if (tc.name === CHECK_BACKGROUND_TASK_NAME) {
+                if (backgroundEnabledForRun && tc.name === CHECK_BACKGROUND_TASK_NAME) {
                   return reportResult({
                     toolCallId: tc.id,
                     status: 'success' as const,
@@ -3327,11 +3329,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   });
                 }
 
-                if (
-                  backgroundActive &&
-                  isBackgroundRequested(tc.args) &&
-                  isBackgroundEligibleToolName(tc.name)
-                ) {
+                if (backgroundToolSet.has(tc.name) && isBackgroundRequested(tc.args)) {
                   return reportResult(dispatchBackgroundToolCall(tc));
                 }
 

@@ -1450,6 +1450,7 @@ async function loadToolsForExecution({
   agent,
   toolNames,
   toolRegistry,
+  backgroundToolNames,
   mcpAvailableTools,
   requestScopedConnections,
   userMCPAuthMap,
@@ -1461,6 +1462,12 @@ async function loadToolsForExecution({
   const allLoadedTools = [];
   const mcpRequestScopedConnections = requestScopedConnections ?? getMCPRequestContext(req, res);
   const configurable = { userMCPAuthMap, requestScopedConnections: mcpRequestScopedConnections };
+  /** Per-agent set of tools that received the injected `run_in_background`
+   *  param; the event-driven executor gates background dispatch and the
+   *  `check_background_task` poll tool on this reliable per-agent channel. */
+  if (backgroundToolNames?.length) {
+    configurable.backgroundToolNames = backgroundToolNames;
+  }
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
   const ptcToolNames = [

@@ -39,6 +39,8 @@ describe('isBackgroundEligibleToolName', () => {
       'set_memory',
       'delete_memory',
       'ask_user_question',
+      'web_search',
+      'file_search',
       CHECK_BACKGROUND_TASK_NAME,
       'lc_transfer_to_researcher',
     ]) {
@@ -47,7 +49,7 @@ describe('isBackgroundEligibleToolName', () => {
   });
 
   it('allows MCP and other event-driven tools', () => {
-    for (const name of ['search_mcp_docs', 'web_search', 'file_search', 'lookup_customer']) {
+    for (const name of ['search_mcp_docs', 'lookup_customer', 'fetch_weather']) {
       expect(isBackgroundEligibleToolName(name)).toBe(true);
     }
   });
@@ -119,6 +121,7 @@ describe('applyBackgroundToolCalls', () => {
     });
     expect(result.enabled).toBe(false);
     expect(result.toolDefinitions).toBe(defs);
+    expect(result.backgroundToolNames).toEqual([]);
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
   });
 
@@ -132,6 +135,7 @@ describe('applyBackgroundToolCalls', () => {
       enabled: true,
     });
     expect(result.enabled).toBe(true);
+    expect(result.backgroundToolNames).toEqual(['search_mcp_docs']);
 
     const searchDef = result.toolDefinitions.find((d) => d.name === 'search_mcp_docs');
     const lookupDef = result.toolDefinitions.find((d) => d.name === 'lookup_customer');
@@ -165,6 +169,7 @@ describe('applyBackgroundToolCalls', () => {
       enabled: true,
     });
     expect(result.enabled).toBe(false);
+    expect(result.backgroundToolNames).toEqual([]);
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
   });
 });
@@ -187,14 +192,14 @@ describe('synthesizeBackgroundToolOptions', () => {
     expect(synthesizeBackgroundToolOptions(['search_mcp_docs'], false)).toBeUndefined();
   });
 
-  it('marks only eligible tools', () => {
+  it('marks only eligible tools (excludes code/HITL/attachment built-ins)', () => {
     const options = synthesizeBackgroundToolOptions(
-      ['search_mcp_docs', 'execute_code', 'ask_user_question', 'web_search'],
+      ['search_mcp_docs', 'execute_code', 'ask_user_question', 'web_search', 'lookup_customer'],
       true,
     );
     expect(options).toEqual({
       search_mcp_docs: { run_in_background: true },
-      web_search: { run_in_background: true },
+      lookup_customer: { run_in_background: true },
     });
   });
 

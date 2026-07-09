@@ -389,8 +389,9 @@ describe('loadAgent', () => {
     expect(withoutFlag?.tools).not.toContain('ask_user_question');
   });
 
-  test('synthesizes background tool_options from the ephemeralAgent run_in_background flag', async () => {
+  test('synthesizes background tool_options for eligible MCP tools from the ephemeralAgent flag', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
+    mockGetMCPServerTools.mockResolvedValue({ crm_lookup: { name: 'crm_lookup' } });
 
     const result = await loadAgent(
       {
@@ -398,6 +399,7 @@ describe('loadAgent', () => {
           user: { id: 'user123' },
           body: {
             ephemeralAgent: {
+              mcp: ['crm'],
               web_search: true,
               execute_code: true,
               run_in_background: true,
@@ -411,13 +413,15 @@ describe('loadAgent', () => {
       deps,
     );
 
-    // eligible tool opts in; excluded code-execution tool does not
-    expect(result?.tool_options?.web_search).toEqual({ run_in_background: true });
+    // eligible MCP tool opts in; excluded built-ins (web_search, execute_code) do not
+    expect(result?.tool_options?.crm_lookup).toEqual({ run_in_background: true });
+    expect(result?.tool_options?.web_search).toBeUndefined();
     expect(result?.tool_options?.execute_code).toBeUndefined();
   });
 
   test('synthesizes background tool_options from a model spec (runInBackground: true), and not without it', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
+    mockGetMCPServerTools.mockResolvedValue({ crm_lookup: { name: 'crm_lookup' } });
 
     const buildReq = (specName: string, runInBackground: boolean): LoadAgentParams['req'] =>
       ({
@@ -434,6 +438,7 @@ describe('loadAgent', () => {
                 label: specName,
                 preset: { endpoint: 'openai', model: 'gpt-4' },
                 webSearch: true,
+                mcpServers: ['crm'],
                 runInBackground,
               },
             ],
@@ -451,7 +456,8 @@ describe('loadAgent', () => {
       },
       deps,
     );
-    expect(withFlag?.tool_options?.web_search).toEqual({ run_in_background: true });
+    expect(withFlag?.tool_options?.crm_lookup).toEqual({ run_in_background: true });
+    expect(withFlag?.tool_options?.web_search).toBeUndefined();
 
     const withoutFlag = await loadAgent(
       {

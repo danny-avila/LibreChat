@@ -19,7 +19,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
+import { Tools, Constants } from 'librechat-data-provider';
 import { Constants as AgentConstants } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
@@ -54,6 +54,13 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   DELETE_MEMORY_TOOL_NAME,
   ASK_USER_QUESTION_TOOL_NAME,
   CHECK_BACKGROUND_TASK_NAME,
+  /**
+   * Built-ins whose results are turned into user-visible attachments/citations
+   * by the foreground `toolEndCallback`; a detached run stores only content, so
+   * backgrounding them would silently drop those sources/files.
+   */
+  Tools.web_search,
+  Tools.file_search,
 ]);
 
 /**
@@ -182,24 +189,24 @@ export function applyBackgroundToolCalls(params: {
   toolRegistry: LCToolRegistry | undefined;
   toolOptions: AgentToolOptions | undefined;
   enabled: boolean;
-}): { toolDefinitions: LCTool[]; enabled: boolean } {
+}): { toolDefinitions: LCTool[]; enabled: boolean; backgroundToolNames: string[] } {
   const { toolRegistry, toolOptions } = params;
   const defs = params.toolDefinitions ?? [];
   if (!params.enabled || !toolOptions) {
-    return { toolDefinitions: defs, enabled: false };
+    return { toolDefinitions: defs, enabled: false, backgroundToolNames: [] };
   }
 
-  let changed = false;
+  const backgroundToolNames: string[] = [];
   const nextDefs = defs.map((def) => {
     const optedIn = toolOptions[def.name]?.run_in_background === true;
     if (!optedIn || !isBackgroundEligibleToolName(def.name)) {
       return def;
     }
+    backgroundToolNames.push(def.name);
     const injected = injectRunInBackgroundParam(def);
     if (injected === def) {
       return def;
     }
-    changed = true;
     const registryEntry = toolRegistry?.get(def.name);
     if (registryEntry) {
       toolRegistry?.set(def.name, { ...registryEntry, parameters: injected.parameters });
@@ -207,12 +214,12 @@ export function applyBackgroundToolCalls(params: {
     return injected;
   });
 
-  if (!changed) {
-    return { toolDefinitions: defs, enabled: false };
+  if (backgroundToolNames.length === 0) {
+    return { toolDefinitions: defs, enabled: false, backgroundToolNames: [] };
   }
 
   const withPoll = registerBackgroundTaskTool({ toolRegistry, toolDefinitions: nextDefs });
-  return { toolDefinitions: withPoll.toolDefinitions, enabled: true };
+  return { toolDefinitions: withPoll.toolDefinitions, enabled: true, backgroundToolNames };
 }
 
 /**
