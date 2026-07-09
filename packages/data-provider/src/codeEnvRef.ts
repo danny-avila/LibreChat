@@ -51,6 +51,9 @@ interface CodeEnvRefBase {
   id: string;
   storage_session_id: string;
   file_id: string;
+  /** Epoch ms when the file was uploaded to the code env; drives the liveness
+   *  fast-path (distinct from the usage-bumped `updatedAt`). */
+  provisionedAt?: number;
 }
 
 export type CodeEnvRef =
