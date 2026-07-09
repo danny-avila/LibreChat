@@ -3340,6 +3340,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       turn: tc.turn,
                     };
 
+                    /* Stateful runtime-session hint: the SDK resolves it onto
+                     * the request for execute_code/bash (orthogonal to the
+                     * transient exec-session below — a first call has a hint but
+                     * no session yet). The remote executors read it off
+                     * `config.toolCall._runtime_session_hint`; without this the
+                     * event-driven ON_TOOL_EXECUTE path drops it and every
+                     * conversation collapses onto the Code API's `default`
+                     * session (no per-conversation isolation). */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
+                    }
+
                     if (
                       tc.codeSessionContext &&
                       isCodeSessionAwareToolCall(tc.name, mergedConfigurable)
