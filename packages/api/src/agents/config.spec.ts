@@ -104,8 +104,10 @@ describe('resolveSubagentMaxTurns', () => {
     expect(turns * 3).toBeLessThanOrEqual(20);
   });
 
-  it('keeps at least one turn when the resolved limit is smaller than the multiplier', () => {
+  it('yields 0 turns when the resolved cap is below the multiplier (never exceeds it)', () => {
     const config = { maxRecursionLimit: 2 } as TAgentsEndpoint;
-    expect(resolveSubagentMaxTurns(config, {})).toBe(1);
+    const turns = resolveSubagentMaxTurns(config, {});
+    expect(turns).toBe(0);
+    expect(turns * 3).toBeLessThanOrEqual(2);
   });
 });

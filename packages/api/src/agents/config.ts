@@ -47,12 +47,15 @@ export function resolveRecursionLimit(
  * `floor` keeps the effective graph limit at or below the resolved value, which
  * (since `resolveRecursionLimit` already caps at `maxRecursionLimit`) also keeps
  * it within the admin cap — so a lowered limit applies to subagents too, and
- * `maxTurns * 3` never overshoots the ceiling. Never returns below 1 turn.
+ * `maxTurns * 3` never overshoots the ceiling. A resolved limit below the
+ * multiplier yields 0 turns: like a top-level run with `recursionLimit < 3`, the
+ * child can't take a full step, and the SDK returns a graceful recursion error
+ * rather than silently granting more steps than the cap allows.
  */
 export function resolveSubagentMaxTurns(
   agentsEConfig: Partial<TAgentsEndpoint> | undefined,
   agent: { recursion_limit?: number } | undefined,
 ): number {
   const limit = resolveRecursionLimit(agentsEConfig, agent);
-  return Math.max(1, Math.floor(limit / SUBAGENT_RECURSION_MULTIPLIER));
+  return Math.floor(limit / SUBAGENT_RECURSION_MULTIPLIER);
 }
