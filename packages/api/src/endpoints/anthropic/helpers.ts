@@ -6,6 +6,7 @@ import {
   AnthropicEffort,
   anthropicSettings,
   resolveThinkingDisplay,
+  rejectsThinkingDisabled,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
@@ -96,6 +97,16 @@ function configureReasoning(
   const updatedOptions = { ...anthropicInput };
   const currentMaxTokens = updatedOptions.max_tokens ?? updatedOptions.maxTokens;
   const modelName = updatedOptions.model ?? '';
+
+  /**
+   * LangChain's Anthropic client defaults to `{ type: 'disabled' }` when
+   * thinking is omitted. Some models (e.g. Claude Fable) reject that value and
+   * expect adaptive thinking or no thinking field at all.
+   */
+  if (!extendedOptions.thinking && modelName && rejectsThinkingDisabled(modelName)) {
+    updatedOptions.thinking = { type: 'adaptive' as const };
+    return updatedOptions;
+  }
 
   if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
     /**

@@ -105,8 +105,23 @@ function parseSonnetVersion(model: string): { major: number; minor: number } | n
   return null;
 }
 
-/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6+) */
+function isFableModel(model: string): boolean {
+  return /claude-fable(?:[-.]?\d+)?/.test(model);
+}
+
+/**
+ * Models that reject `thinking.type: "disabled"` on the Messages API.
+ * LangChain defaults to disabled when thinking is omitted from config.
+ */
+export function rejectsThinkingDisabled(model: string): boolean {
+  return isFableModel(model);
+}
+
+/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6+, Fable) */
 export function supportsAdaptiveThinking(model: string): boolean {
+  if (isFableModel(model)) {
+    return true;
+  }
   const opus = parseOpusVersion(model);
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
     return true;
@@ -320,11 +335,12 @@ export const bedrockInputParser = s.tConversationSchema
       }
     });
 
-    /** Default thinking and thinkingBudget for 'anthropic.claude-3-7-sonnet' models, if not defined */
+    /** Default thinking and thinkingBudget for Anthropic Claude models, if not defined */
     if (
       typeof typedData.model === 'string' &&
       (typedData.model.includes('anthropic.claude-3-7-sonnet') ||
-        /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
+        typedData.model.includes('claude-fable') ||
+        /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku|fable)|(?:sonnet|opus|haiku|fable)-[4-9])/.test(
           typedData.model,
         ))
     ) {
@@ -338,9 +354,15 @@ export const bedrockInputParser = s.tConversationSchema
         delete additionalFields.effort;
 
         if (additionalFields.thinking === false) {
-          delete additionalFields.thinking;
-          delete additionalFields.thinkingBudget;
-          delete additionalFields.thinkingDisplay;
+          if (rejectsThinkingDisabled(typedData.model as string)) {
+            additionalFields.thinking = { type: 'adaptive' };
+            delete additionalFields.thinkingBudget;
+            delete additionalFields.thinkingDisplay;
+          } else {
+            delete additionalFields.thinking;
+            delete additionalFields.thinkingBudget;
+            delete additionalFields.thinkingDisplay;
+          }
         } else {
           /**
            * Persisted agent `model_parameters` round-trip back through this

@@ -204,9 +204,9 @@ interface:
 
       **10.2 License to operate.** You grant SMB Team a limited, non-exclusive, royalty-free license to host, store, process, transmit, and display User Content solely for the purpose of providing the Service to you.
 
-      **10.3 AI model providers.** We use third-party AI model providers to process User Content. Our primary model provider is **Anthropic**, and we operate under Anthropic's Teams plan, which contractually prohibits Anthropic from using customer data to train its models. Additional models are made available through **OpenRouter**, and we restrict our integration to OpenRouter's Zero Data Retention ("**ZDR**") endpoints only — meaning requests are routed only to model endpoints that contractually do not store or train on customer data. Free-tier OpenRouter endpoints (which may use data for training) are not enabled.
+      **10.3 AI model providers.** We use third-party AI model providers to process User Content. Our primary model provider is **Anthropic**, and we operate under Anthropic's Teams plan, which contractually prohibits Anthropic from using customer data to train its models. We also connect directly to **OpenAI** and **Google** APIs for additional models, under each provider's enterprise/API terms that prohibit training on customer data sent through the Service.
 
-      **10.4 No training on your data.** We do not use your User Content to train AI models. Through our agreements with Anthropic (Teams plan) and our ZDR-only restriction on OpenRouter, our model providers also do not train on or retain your User Content beyond what is necessary for short-term service operation and abuse detection.
+      **10.4 No training on your data.** We do not use your User Content to train AI models. Through our direct agreements with Anthropic (Teams plan), OpenAI, and Google, our model providers also do not train on or retain your User Content beyond what is necessary for short-term service operation and abuse detection.
 
       ## 11. Intellectual Property
 
@@ -638,6 +638,14 @@ endpoints:
 
   anthropic:
     titleModel: claude-sonnet-4-6
+    models:
+      - claude-fable-5
+      - claude-opus-4-8
+      - claude-opus-4-7
+      - claude-opus-4-6
+      - claude-sonnet-4-6
+      - claude-sonnet-4-5-20250929
+      - claude-haiku-4-5-20251001
     # Enables Anthropic's native hosted web search (web_search_20250305).
     # getLLMConfig injects it directly into the request's tools array, so it
     # works in agent mode without a separate search provider or the
@@ -662,30 +670,28 @@ endpoints:
   # Google tools are not supported with external tools." Revisit via a custom
   # search provider (e.g. Tavily) that coexists with function tools.
   google:
-    titleModel: gemini-2.5-flash
+    titleModel: gemini-3.5-flash
 
-  # OpenRouter — single OpenAI-compatible gateway powering the curated model picker.
-  # To add a model: add its slug to `models.default` below AND add a matching spec
-  # under `modelSpecs.list` (reuse the `*aiw_tools` / `*aiw_instructions` anchors).
-  custom:
-    - name: "OpenRouter"
-      apiKey: "${OPENROUTER_KEY}"
-      baseURL: "https://openrouter.ai/api/v1"
-      models:
-        default:
-          - openai/gpt-5.5-pro
-          - openai/gpt-5.5
-          - openai/o3
-          - google/gemini-2.5-pro
-          - google/gemini-2.5-flash
-          - "~anthropic/claude-sonnet-latest"
-          - anthropic/claude-haiku-4.5
-        fetch: false
-      titleConvo: true
-      titleModel: "openai/gpt-5.5"
-      # OpenRouter models use varied stop tokens; dropping `stop` avoids 400s.
-      dropParams: ["stop"]
-      modelDisplayLabel: "OpenRouter"
+  # OpenRouter was removed — models route directly to native OpenAI, Google, and Anthropic
+  # endpoints below via modelSpecs presets (better latency than a gateway).
+  # custom:
+  #   - name: "OpenRouter"
+  #     apiKey: "${OPENROUTER_KEY}"
+  #     baseURL: "https://openrouter.ai/api/v1"
+  #     models:
+  #       default:
+  #         - openai/gpt-5.5-pro
+  #         - openai/gpt-5.5
+  #         - openai/o3
+  #         - google/gemini-2.5-pro
+  #         - google/gemini-2.5-flash
+  #         - "~anthropic/claude-sonnet-latest"
+  #         - anthropic/claude-haiku-4.5
+  #       fetch: false
+  #     titleConvo: true
+  #     titleModel: "openai/gpt-5.5"
+  #     dropParams: ["stop"]
+  #     modelDisplayLabel: "OpenRouter"
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
@@ -718,7 +724,7 @@ endpoints:
   #     trace: "enabled"
 
 modelSpecs:
-  # enforce: only the curated specs below are selectable (raw OpenRouter catalog hidden).
+  # enforce: only the curated specs below are selectable.
   enforce: true
   prioritize: true
   list:
@@ -825,9 +831,15 @@ modelSpecs:
           - `dropbox` with `action: search`: search or list files (empty query = recently modified files).
           - `dropbox` with `action: create_document`: save a new document file when they ask to write or draft in Dropbox. Provide a clear `title` and full draft text in `content`.
 
-          ## Connected Clio account (read-only)
+          ## Connected Clio account
 
-          When the user asks about legal documents in Clio in plain language (e.g. "find my latest Clio document", "search Clio for the Smith contract"), use the `clio` tool. Clio is **read-only** — search and list documents only; do not attempt to create or upload documents in Clio.
+          When the user asks about legal practice data in Clio (matters, contacts, tasks, time entries, documents, communications, calendar, or firm users), use the `clio` tool with the appropriate `action`.
+
+          **Read actions:** `search_documents`, `list_matters`, `get_matter`, `list_contacts`, `get_contact`, `list_tasks`, `list_activities`, `list_communications`, `list_calendar_entries`, `list_users`, `get_user`.
+
+          **Write actions (return created `id`):** `create_matter` (requires `client_id`, `description`), `create_contact` (`name`), `create_task` (`matter_id`, `name`, `assignee_id`), `create_activity_time_entry` (`matter_id`, `quantity_hours`), `create_document` (`matter_id`, `name`, optional `content`).
+
+          **Do not** create or update communications or calendar entries in Clio. Users are read-only (`list_users`, `get_user`). Resolve attorney/user ids via `list_users` when needed. If Clio returns permission errors after a deploy, ask the user to reconnect Clio in Integrations.
 
           ## Connected QuickBooks Online account
 
@@ -878,27 +890,27 @@ modelSpecs:
 
     - <<: *aiw_tools
       webSearch: true
-      name: gemini-2.5-pro
-      label: Gemini 2.5 Pro
-      description: Google's top-tier model for reasoning, coding, and scientific work.
+      name: gemini-3.1-pro-preview
+      label: Gemini 3.1 Pro
+      description: Google's flagship reasoning model for complex analysis, coding, and scientific work.
       group: Google
       groupIcon: google
       preset:
         endpoint: google
-        model: gemini-2.5-pro
+        model: gemini-3.1-pro-preview
         max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
 
     - <<: *aiw_tools
       webSearch: true
-      name: gemini-2.5-flash
-      label: Gemini 2.5 Flash
-      description: Fast Google model with strong reasoning for quick workflows.
+      name: gemini-3.5-flash
+      label: Gemini 3.5 Flash
+      description: Google's latest fast model for agentic workflows and quick reasoning at scale.
       group: Google
       preset:
         endpoint: google
-        model: gemini-2.5-flash
+        model: gemini-3.5-flash
         max_tokens: 8192
         greeting: How can I help you today?
         instructions: *aiw_instructions
@@ -930,6 +942,32 @@ modelSpecs:
       preset:
         endpoint: anthropic
         model: claude-haiku-4-5-20251001
+        addParams:
+          web_search: true
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
+
+    - <<: *aiw_tools
+      name: claude-opus-4-8
+      label: Claude Opus 4.8
+      description: Anthropic's most capable Opus model for complex agentic coding and enterprise work.
+      group: Anthropic
+      preset:
+        endpoint: anthropic
+        model: claude-opus-4-8
+        addParams:
+          web_search: true
+        greeting: How can I help you today?
+        instructions: *aiw_instructions
+
+    - <<: *aiw_tools
+      name: claude-fable-5
+      label: Claude Fable 5
+      description: Anthropic's frontier model for long-horizon agents and the most demanding reasoning tasks.
+      group: Anthropic
+      preset:
+        endpoint: anthropic
+        model: claude-fable-5
         addParams:
           web_search: true
         greeting: How can I help you today?
@@ -1125,6 +1163,6 @@ memory:
   personalize: true
   agent:
     enabled: true
-    provider: "OpenRouter"
-    model: "google/gemini-2.5-flash"
+    provider: "google"
+    model: "gemini-3.5-flash"
     instructions: "You are a memory management assistant. Read the user's stored memories and inject relevant context into conversations when applicable."

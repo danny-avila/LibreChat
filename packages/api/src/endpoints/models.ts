@@ -344,7 +344,7 @@ export async function fetchAnthropicModels(
   }
 
   if (baseURL) {
-    models = await fetchModels({
+    const fetchedModels = await fetchModels({
       apiKey,
       baseURL,
       user: opts.user,
@@ -352,6 +352,9 @@ export async function fetchAnthropicModels(
       tokenKey: EModelEndpoint.anthropic,
       skipCache: opts.skipCache,
     });
+    if (fetchedModels.length > 0) {
+      models = [...new Set([...fetchedModels, ...(_models ?? [])])];
+    }
   }
 
   if (models.length === 0) {

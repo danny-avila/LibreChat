@@ -439,7 +439,7 @@ modelSpecs:
           - `google_drive` / `microsoft_onedrive` / `dropbox` with `action: create_document`: save a draft using `title` and `content`.
           - `google_mail` / `microsoft_mail`: search or list recent email.
           - `google_calendar` / `microsoft_calendar`: list upcoming calendar events.
-          - `clio`: search or list Clio documents (read-only — no uploads).
+          - `clio`: read/write Clio matters, contacts, tasks, activities, documents; read communications, calendar, users.
           - `quickbooks`: list invoices, customers, payments, or expenses from QuickBooks Online.
 
 # Example modelSpecs configuration showing grouping options

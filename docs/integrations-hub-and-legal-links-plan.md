@@ -19,11 +19,17 @@ All file anchors below were verified against the current `main`.
 
 ## 0. Scope decisions (confirmed)
 
+**Branch layout (updated 2026-07-08):**
+
+| Work | Branch / PR | Status |
+|------|-------------|--------|
+| #110, #111 | `feat/integrations-hub-and-legal-links` → [#113](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/pull/113) | **Merged to `main`** |
+| #112 | `feat/clio-expanded-scopes` → [#115](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/pull/115) | In review |
+
 | Decision | Choice |
 |---|---|
-| Branch layout | **One shared branch** for #110, #111, #112. |
 | QBO surface | Add QBO **and** build a **left-side-nav Integrations hub** (not just the attach menu) as part of #111. |
-| #112 gating | **Discovery table first**, posted as a comment on #112; no scope code until Greta confirms. |
+| #112 gating | ~~Discovery first~~ **Done** — gap table posted; Greta confirmed scope ([comment](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/issues/112#issuecomment-4908204909)). Implementation plan: `docs/clio-expanded-scopes-plan.md`. |
 | QBO data model | QBO is a **data tool** (invoices, payments, sales, expenses), not a file connector — mirror the Clio **tool** path, not the file-picker path. |
 
 ---
@@ -165,53 +171,42 @@ Today integrations are surfaced only through the chat **attach (+) menu**
 
 ---
 
-## 3. AIWP#112 — Expose expanded Clio scopes (size: M) — GATED
+## 3. AIWP#112 — Expose expanded Clio scopes (size: M) — **IN REVIEW**
 
-Greta expanded Clio's developer-portal permissions to a broader set of **13
-permissions** (matters, contacts, documents, activities, communications,
-calendars, tasks, custom fields, and write scopes). AIWP still exposes only the
-read-only document search.
+**Branch:** `feat/clio-expanded-scopes`  
+**Plan:** [`docs/clio-expanded-scopes-plan.md`](./clio-expanded-scopes-plan.md)  
+**PR:** [#115](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/pull/115)
 
-### Current state
+Greta expanded Clio's developer-portal permissions (app **34580**). Product scope is **confirmed** and v1 implementation is on the dedicated branch (rebased onto `main` after #113 merged).
 
-- Tool is hard-coded read-only doc search: `api/app/clients/tools/util/clio.js`
-  (single `query`/`page_size` schema → `searchClioDocuments`).
-- Helper exposes only `searchClioDocuments`: `packages/api/src/integrations/clio/clioApi.ts`.
-- `librechat.yaml:829` tells the model **"Clio is read-only"**.
+### Discovery — done
 
-### Step 1 — Discovery FIRST (blocking)
+- Gap table: [issue #112 comment](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/issues/112#issuecomment-4907991499)
+- Greta sign-off: [issue #112 comment](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/issues/112#issuecomment-4908204909)
 
-Produce and **post as a comment on #112** a 2-column gap table:
+### v1 summary (confirmed)
 
-| Approved in Clio portal | Exposed as an AIWP tool today? |
-|---|---|
-| read matters | ❌ no |
-| write matters | ❌ no |
-| read/write contacts | ❌ no |
-| documents (read) | ✅ yes (`clio` tool) |
-| activities / communications / calendars / tasks / custom fields | ❌ no |
-| ... (fill from portal — Greta is source of truth) | ... |
+**In scope:** Matters, Contacts, Tasks, Activities, Documents, Communications (read), Calendars (read), Users (read only: `list_users`, `get_user`) — with writes on matters, contacts, tasks, activity time entries, documents; **not** on communications, calendars, or users.
 
-Await Greta's confirmation of the target scope before writing code.
+**Writes must return** created record `id`. **Users must reconnect** Clio after deploy.
 
-### Step 2 — Implementation (after sign-off)
+**Out of v1:** Api, Court rules, Custom fields, Payment distributions, Reporting, Webhooks.
 
-1. Extend `clioApi.ts` with helpers for the confirmed actions (matters, contacts,
-   activities, write scopes) — typed, with spec coverage.
-2. Extend `clio.js` to an `action`-discriminated schema (e.g. `search_documents`,
-   `list_matters`, `create_matter`, `list_contacts`, `create_contact`, ...),
-   dispatching to the new helpers.
-3. Update `librechat.yaml` instructions (`:827-829`): remove the "read-only"
-   claim and describe the now-callable actions.
-4. Verify at least one **write** action end-to-end from a chat (e.g. "Create a new
-   matter in Clio called 'Test Matter'").
+### Implementation (see dedicated plan)
+
+1. Extend `clioApi.ts` with typed helpers + `clioRequest` refactor.
+2. Evolve `clio.js` to `action`-discriminated schema (QuickBooks pattern).
+3. Update `definitions.ts` and `librechat.yaml` (remove "read-only").
+4. Optional reconnect banner in Integrations hub.
+5. Manual E2E: at least `create_matter`.
 
 ### Acceptance (#112)
 
-- Discovery comment posted; Greta confirms target scope.
-- `librechat.yaml` instructions updated (no more "read-only" if writes approved).
-- At least one write action verified end-to-end.
-- PR labeled `deploy-tonight`.
+- [x] Discovery comment posted; Greta confirms target scope.
+- [x] `clio` tool exposes v1 actions; writes return `id`.
+- [x] `librechat.yaml` instructions updated.
+- [ ] At least one write action verified end-to-end (blocked on Clio tenant billing in QA).
+- [x] PR labeled `deploy-tonight`.
 
 ---
 
@@ -225,11 +220,9 @@ Action: confirm it satisfies the issue and **close #12**.
 
 ## 5. Deployment & sequencing
 
-- #110 is independent and low-risk — can ship first.
-- #111 and #112 both land via the maintenance-window pipeline — label the PR(s)
-  `deploy-tonight` (auto-merge 22:00 ET via the `scheduled-merge` workflow).
-- #112 code is blocked on the discovery sign-off; #110 and #111 can proceed in
-  parallel meanwhile.
+- #110 and #111 shipped via PR [#113](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/pull/113) (merged to `main`).
+- #112 ships from `feat/clio-expanded-scopes` via PR [#115](https://github.com/SMB-Team-Technology/AI-Workforce-Pro/pull/115).
+- Label Clio PR `deploy-tonight` for the maintenance-window pipeline (auto-merge 01:00 ET).
 
 ---
 

@@ -63,6 +63,11 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       modelsConfig[EModelEndpoint.bedrock] = bedrockConfig.models;
     }
 
+    const anthropicConfig = appConfig.endpoints?.[EModelEndpoint.anthropic];
+    if (anthropicConfig?.models && Array.isArray(anthropicConfig.models)) {
+      modelsConfig[EModelEndpoint.anthropic] = anthropicConfig.models;
+    }
+
     if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
       return modelsConfig;
     }

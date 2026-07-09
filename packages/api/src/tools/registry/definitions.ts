@@ -576,20 +576,132 @@ export const dropboxSchema: ExtendedJsonSchema = {
   },
 };
 
-/** Clio tool JSON schema (read-only) */
+/** Clio tool JSON schema */
 export const clioSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
+    action: {
+      type: 'string',
+      enum: [
+        'search_documents',
+        'list_matters',
+        'get_matter',
+        'list_contacts',
+        'get_contact',
+        'list_tasks',
+        'list_activities',
+        'list_communications',
+        'list_calendar_entries',
+        'list_users',
+        'get_user',
+        'create_matter',
+        'create_contact',
+        'create_task',
+        'create_activity_time_entry',
+        'create_document',
+      ],
+      description:
+        'Clio action. Reads: search_documents, list/get matters, contacts, tasks, activities, communications, calendar entries, users. Writes: create_matter, create_contact, create_task, create_activity_time_entry, create_document. No writes on communications or calendars.',
+    },
     query: {
       type: 'string',
-      description:
-        'Optional search query for Clio documents. Leave empty to list recently updated documents.',
+      description: 'Search query for documents, matters, contacts, or users.',
     },
     page_size: {
       type: 'number',
-      description: 'Maximum number of documents to return (1-20). Defaults to 10.',
+      description: 'For search_documents: max documents (1-20). Defaults to 10.',
+    },
+    max_results: {
+      type: 'number',
+      description: 'Maximum records for list actions (1-50). Defaults to 20.',
+    },
+    page_token: {
+      type: 'string',
+      description: 'Pagination token from a previous list response.',
+    },
+    status: {
+      type: 'string',
+      description: 'For list_matters: open, pending, or closed.',
+    },
+    matter_id: {
+      type: 'string',
+      description: 'Matter id for scoped reads or create actions.',
+    },
+    contact_id: {
+      type: 'string',
+      description: 'Contact id for get_contact.',
+    },
+    user_id: {
+      type: 'string',
+      description: 'User id for get_user.',
+    },
+    start_date: {
+      type: 'string',
+      description: 'For list_calendar_entries: start date (YYYY-MM-DD).',
+    },
+    end_date: {
+      type: 'string',
+      description: 'For list_calendar_entries: end date (YYYY-MM-DD).',
+    },
+    client_id: {
+      type: 'string',
+      description: 'For create_matter: client contact id.',
+    },
+    description: {
+      type: 'string',
+      description: 'For create_matter or optional create_task details.',
+    },
+    responsible_attorney_id: {
+      type: 'string',
+      description: 'For create_matter: optional responsible attorney user id.',
+    },
+    name: {
+      type: 'string',
+      description: 'Name for create_contact, create_task, or create_document.',
+    },
+    type: {
+      type: 'string',
+      description: 'For create_contact: Person or Company.',
+    },
+    first_name: {
+      type: 'string',
+      description: 'For create_contact (Person): first name.',
+    },
+    last_name: {
+      type: 'string',
+      description: 'For create_contact (Person): last name.',
+    },
+    assignee_id: {
+      type: 'string',
+      description: 'For create_task: assignee user or contact id.',
+    },
+    assignee_type: {
+      type: 'string',
+      enum: ['User', 'Contact'],
+      description: 'For create_task: assignee type.',
+    },
+    quantity_hours: {
+      type: 'number',
+      description: 'For create_activity_time_entry: hours worked.',
+    },
+    date: {
+      type: 'string',
+      description: 'For create_activity_time_entry: date (YYYY-MM-DD).',
+    },
+    note: {
+      type: 'string',
+      description: 'For create_activity_time_entry: optional note.',
+    },
+    content: {
+      type: 'string',
+      description: 'For create_document: optional text content to upload.',
+    },
+    filename: {
+      type: 'string',
+      description: 'For create_document: optional file name.',
     },
   },
+  required: ['action'],
 };
 
 /** QuickBooks Online tool JSON schema (read-only) */
@@ -741,7 +853,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   clio: {
     name: 'clio',
     description:
-      'Search and list documents in the connected user Clio account (read-only). Returns document names, types, and modification times.',
+      'Read and write Clio Manage data: matters, contacts, tasks, activities, documents, communications (read), calendar entries (read), and users (read). Write actions return the created record id.',
     schema: clioSchema,
     toolType: 'builtin',
   },

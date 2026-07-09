@@ -63,8 +63,43 @@ export type {
 } from './dropbox/dropboxApi';
 export { downloadBoxFile, searchBoxFiles } from './box/boxApi';
 export type { BoxFileSummary, BoxSearchOptions, BoxSearchResult } from './box/boxApi';
-export { downloadClioDocument, searchClioDocuments } from './clio/clioApi';
-export type { ClioDocumentSummary, ClioSearchOptions, ClioSearchResult } from './clio/clioApi';
+export {
+  createClioActivityTimeEntry,
+  createClioContact,
+  createClioDocument,
+  createClioMatter,
+  createClioTask,
+  downloadClioDocument,
+  getClioContact,
+  getClioMatter,
+  getClioUser,
+  listClioActivities,
+  listClioCalendarEntries,
+  listClioCommunications,
+  listClioContacts,
+  listClioMatters,
+  listClioTasks,
+  listClioUsers,
+  runClioAction,
+  searchClioDocuments,
+} from './clio/clioApi';
+export type {
+  ClioActionParams,
+  ClioActivitySummary,
+  ClioCalendarEntrySummary,
+  ClioCommunicationSummary,
+  ClioContactSummary,
+  ClioCreatedRecord,
+  ClioDocumentSummary,
+  ClioListOptions,
+  ClioListResult,
+  ClioMatterSummary,
+  ClioSearchOptions,
+  ClioSearchResult,
+  ClioTaskSummary,
+  ClioToolAction,
+  ClioUserSummary,
+} from './clio/clioApi';
 export {
   extractQuickBooksRealmId,
   listQuickBooksCustomers,

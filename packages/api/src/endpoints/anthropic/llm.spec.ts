@@ -1241,6 +1241,32 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig).toHaveProperty('topK', 40);
       });
 
+      it('should use adaptive thinking for Claude Fable 5 by default', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-fable-5',
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('adaptive');
+        expect(result.llmConfig.thinking).not.toHaveProperty('budget_tokens');
+      });
+
+      it('should use adaptive thinking for Claude Fable 5 when thinking is disabled', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-fable-5',
+            thinking: false,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('adaptive');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
       it('should respect model-specific maxOutputTokens for Claude 4.x models', () => {
         const testCases = [
           { model: 'claude-sonnet-4-5', maxOutputTokens: 50000, expected: 50000 },

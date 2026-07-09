@@ -2,6 +2,7 @@ import { ThinkingDisplay } from '../src/schemas';
 import {
   BEDROCK_OUTPUT_128K_BETA,
   supportsAdaptiveThinking,
+  rejectsThinkingDisabled,
   omitsThinkingByDefault,
   resolveThinkingDisplay,
   bedrockOutputParser,
@@ -124,6 +125,28 @@ describe('supportsAdaptiveThinking', () => {
 
   test('should return false for claude-4-sonnet (alternate naming, below threshold)', () => {
     expect(supportsAdaptiveThinking('claude-4-sonnet')).toBe(false);
+  });
+
+  test('should return true for claude-fable-5', () => {
+    expect(supportsAdaptiveThinking('claude-fable-5')).toBe(true);
+  });
+
+  test('should return true for anthropic.claude-fable-5 (Bedrock)', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-fable-5')).toBe(true);
+  });
+});
+
+describe('rejectsThinkingDisabled', () => {
+  test('should return true for claude-fable-5', () => {
+    expect(rejectsThinkingDisabled('claude-fable-5')).toBe(true);
+  });
+
+  test('should return false for claude-opus-4-6', () => {
+    expect(rejectsThinkingDisabled('claude-opus-4-6')).toBe(false);
+  });
+
+  test('should return false for claude-sonnet-4-6', () => {
+    expect(rejectsThinkingDisabled('claude-sonnet-4-6')).toBe(false);
   });
 });
 

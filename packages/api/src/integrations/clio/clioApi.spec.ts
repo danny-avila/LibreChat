@@ -1,4 +1,10 @@
-import { downloadClioDocument, searchClioDocuments } from './clioApi';
+import {
+  createClioMatter,
+  downloadClioDocument,
+  listClioMatters,
+  runClioAction,
+  searchClioDocuments,
+} from './clioApi';
 
 describe('searchClioDocuments', () => {
   const originalFetch = global.fetch;
@@ -93,6 +99,142 @@ describe('searchClioDocuments', () => {
     await searchClioDocuments('token-123', { pageToken: nextUrl });
 
     expect(mockFetch).toHaveBeenCalledWith(nextUrl, expect.any(Object));
+  });
+});
+
+describe('listClioMatters', () => {
+  const originalFetch = global.fetch;
+  const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('lists matters with status filter', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 42,
+            display_number: '00001',
+            description: 'Smith v Jones',
+            status: 'open',
+            client_id: 7,
+          },
+        ],
+      }),
+    } as unknown as Response);
+
+    const result = await listClioMatters('token-123', {
+      status: 'open',
+      maxResults: 5,
+    });
+
+    expect(result.records).toEqual([
+      expect.objectContaining({
+        id: '42',
+        displayNumber: '00001',
+        description: 'Smith v Jones',
+        status: 'open',
+        clientId: '7',
+      }),
+    ]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/matters.json'),
+      expect.any(Object),
+    );
+    const calledUrl = String(mockFetch.mock.calls[0]?.[0]);
+    expect(calledUrl).toContain('status=open');
+  });
+});
+
+describe('createClioMatter', () => {
+  const originalFetch = global.fetch;
+  const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('creates a matter and returns id', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: { id: 999 },
+      }),
+    } as unknown as Response);
+
+    const result = await createClioMatter('token-123', {
+      client_id: 7,
+      description: 'AIWP Test Matter',
+      responsible_attorney_id: 3,
+    });
+
+    expect(result).toEqual({ id: '999' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/matters.json'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token-123',
+        }),
+      }),
+    );
+    const body = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    expect(body.data).toEqual(
+      expect.objectContaining({
+        client: { id: 7 },
+        description: 'AIWP Test Matter',
+        responsible_attorney: { id: 3 },
+      }),
+    );
+  });
+});
+
+describe('runClioAction', () => {
+  const originalFetch = global.fetch;
+  const mockFetch = jest.fn() as unknown as jest.MockedFunction<typeof fetch>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('dispatches list_users', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ id: 1, name: 'Jane Attorney', email: 'jane@firm.com', enabled: true }],
+      }),
+    } as unknown as Response);
+
+    const result = await runClioAction('token-123', 'list_users', { max_results: 10 });
+
+    expect(result).toEqual({
+      records: [
+        {
+          id: '1',
+          name: 'Jane Attorney',
+          email: 'jane@firm.com',
+          enabled: true,
+        },
+      ],
+    });
   });
 });
 

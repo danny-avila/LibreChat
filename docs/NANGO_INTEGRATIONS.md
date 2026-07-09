@@ -99,7 +99,7 @@ Self-hosted Nango at **`https://nango.smbteam.com` must run 0.70.7** with Connec
 | `microsoft` | Microsoft 365 | Yes | OneDrive files + Outlook Mail + Outlook Calendar |
 | `dropbox` | Dropbox | Yes | Files (picker) |
 | `box` | Box | **No** (disabled in registry) | — (code retained; re-enable in `providers.ts`) |
-| `clio` | Clio | Yes | Documents (picker) |
+| `clio` | Clio | Yes | Documents (picker) + agent tool (matters, contacts, tasks, etc.) |
 
 | Item | Value |
 |------|--------|
@@ -153,24 +153,33 @@ Box uses **traditional OAuth scopes**. Configure them in **both** Nango and the 
 
 LibreChat does **not** send scopes at connect time — Nango includes them in the OAuth authorize URL from the integration settings.
 
-### Clio — app-level permissions (Nango integration `clio`) — **read-only**
+### Clio — app-level permissions (Nango integration `clio`)
 
-> **Agent tool:** `clio` supports **search/list only** — no document upload or create. Matches **Documents (read)** app permission.
+> **Agent tool:** `clio` supports v1 read/write actions for matters, contacts, tasks, activities, documents, plus read-only communications, calendar entries, and users. See [clio-expanded-scopes-plan.md](./clio-expanded-scopes-plan.md) (AIWP#112).
 
 Clio uses **app-level access permissions**, not OAuth scopes in Nango. Permissions are chosen once when the developer application is created in the [Clio Developer Portal](https://docs.developers.clio.com/api-docs/clio-manage/permissions/) and cannot be extended via the Nango **Scopes** field.
 
 | Permission (Clio app settings) | Used for |
 |--------------------------------|----------|
-| **Documents → Read** | List, search, and download documents via Clio API v4 (`/api/v4/documents`) |
+| **Documents** (read + write) | Document picker; `search_documents`, `create_document` |
+| **Matters** (read + write) | `list_matters`, `get_matter`, `create_matter` |
+| **Contacts** (read + write) | `list_contacts`, `get_contact`, `create_contact` |
+| **Tasks** (read + write) | `list_tasks`, `create_task` |
+| **Activities** (read + write) | `list_activities`, `create_activity_time_entry` |
+| **Communications** (read only in v1) | `list_communications` — no write tool |
+| **Calendars** (read only in v1) | `list_calendar_entries` — no write tool |
+| **Users** (read only) | `list_users`, `get_user` |
 
 | Where | What to set |
 |-------|-------------|
-| **Clio Developer Portal** | **Documents (read)** when creating/editing the OAuth app · Redirect URI = Nango callback URL |
+| **Clio Developer Portal** | Enable the permissions above on OAuth app **34580** (or your app) · Redirect URI = Nango callback URL |
 | **Nango** (`clio` integration) | Client ID + Secret · **Leave Scopes empty** · Callback URL: `https://nango.smbteam.com/oauth/callback` |
 
 LibreChat does **not** pass scopes in `createConnectSession` — same as Box; only `allowed_integrations` and user tags are sent. For Clio, authorization is limited to whatever permissions were registered on the app at creation time.
 
-MVP covers **documents only** — no mail, calendar, or matters attach.
+**Reconnect after permission changes:** users who connected before new app permissions were enabled must **disconnect and reconnect Clio** in the Integrations hub so Clio issues a token with the expanded access.
+
+Attach picker remains **documents only**; other resources are accessed via the `clio` agent tool in chat.
 
 ### Box vs Clio (operator checklist)
 
@@ -219,9 +228,9 @@ When enabled on the active `modelSpec` (`librechat.yaml`), the assistant can cal
 | `microsoft_mail` | Outlook | search | — |
 | `microsoft_calendar` | Outlook Calendar | list events | — |
 | `dropbox` | Dropbox | search | `create_document` (upload file) |
-| `clio` | Clio | search documents | **read-only** |
+| `clio` | Clio | search/list documents; list/get matters, contacts, tasks, activities, communications, calendar, users; create matter, contact, task, time entry, document | communications & calendar: **read only**; users: **read only** |
 
-Enable per spec: `googleDrive`, `microsoftOneDrive`, `dropbox`, `clio`, etc. Users must still connect OAuth via the attach menu first.
+Enable per spec: `googleDrive`, `microsoftOneDrive`, `dropbox`, `clio`, etc. Users must connect Clio via the **Integrations** hub (left nav) or attach menu before using the `clio` tool.
 
 ### Backend API modules
 
@@ -364,7 +373,7 @@ Location: `packages/api/src/integrations/providers.ts`
 | `microsoft` | `microsoft` | `true` | OneDrive + Outlook Mail + Outlook Calendar |
 | `dropbox` | `dropbox` | `true` | Files |
 | `box` | `box` | **`false`** | Files (implementation kept; not user-facing) |
-| `clio` | `clio` | `true` | Documents |
+| `clio` | `clio` | `true` | Documents + agent tool (matters, contacts, tasks, …) |
 
 ---
 
@@ -647,18 +656,26 @@ Personal Microsoft accounts (`@outlook.com`, `@hotmail.com`) do not require this
 
 Nango `box` integration should already show the same callback URL and scope `root_readonly`.
 
-### Clio: 403 or empty document list
+### Clio: `payment required` (403)
 
-**Symptom:** Connect succeeds but document search/download returns **403** or an empty list.
+**Symptom:** `clio` tool returns `Clio API error (403): {"error":"payment required",...}`.
 
-**Cause:** The Clio OAuth app was created without **Documents (read)** permission, or the user’s Clio role does not allow document access.
+**Cause:** The connected Clio firm account has a billing issue on Clio's side (not LibreChat or Nango).
+
+**Fix:** Resolve billing in the Clio Manage account tied to the OAuth connection, then retry.
+
+### Clio: 401, 403, or empty results
+
+**Symptom:** Connect succeeds but the `clio` tool or document picker returns **401**, **403**, or an empty list.
+
+**Cause:** The Clio OAuth app is missing required **app-level permissions**, the user's Clio role does not allow access, or the stored token is **expired/revoked** (common after expanding app permissions without reconnecting).
 
 **Fix:**
 
-1. Clio Developer Portal → your app → confirm **Documents (read)** is enabled (app-level permission, not Nango scopes).
+1. Clio Developer Portal → your app → confirm v1 permissions are enabled: Documents, Matters, Contacts, Tasks, Activities (read+write as needed), Communications (read), Calendars (read), Users (read). See [Clio section](#clio--app-level-permissions-nango-integration-clio) above.
 2. Nango `clio` integration → **Scopes** field should remain **empty**.
-3. If permissions were added after users connected, users must **reconnect** so Clio issues a new token.
-4. Retry **From Clio** in LibreChat.
+3. Users must **disconnect and reconnect Clio** in the Integrations hub after permission changes or when seeing `invalid_token`.
+4. Retry the `clio` tool or **From Clio** in the attach menu.
 
 ---
 
@@ -692,7 +709,7 @@ npx jest src/components/Chat/Input/Files/__tests__/AttachFileMenu.spec.tsx --no-
 5. **Google:** attach menu → From Google Drive / Gmail / Calendar → connect → pick items → attach.
 6. **Dropbox:** attach menu → From Dropbox → connect → pick files → attach.
 7. **Microsoft:** attach menu → connect Microsoft → verify three entries (OneDrive, Outlook Mail, Outlook Calendar) → pick and attach each type.
-8. **Clio:** attach menu → connect → pick documents → attach. (**Box:** skipped while registry `enabled: false`.)
+8. **Clio:** Integrations hub → connect (or reconnect) Clio → attach menu **From Clio** → pick documents → attach. In chat, exercise `clio` tool read actions (`list_matters`, `list_users`, `search_documents`) and write smoke (`create_matter`) on a healthy Clio tenant. (**Box:** skipped while registry `enabled: false`.)
 9. After OAuth → `GET /api/integrations/<providerKey>/status` shows `connected`.
 10. Admin Panel `/integrations` shows **Connected** (read-only).
 11. Verify connection in Nango dashboard (connections tagged with `end_user_id`).
@@ -708,7 +725,7 @@ npx jest src/components/Chat/Input/Files/__tests__/AttachFileMenu.spec.tsx --no-
 | **Manual QA** | End-to-end attach with real Microsoft, Dropbox, and Clio accounts | Medium |
 | **Microsoft org** | Azure **Grant admin consent** for work/school tenants | Medium (IT) |
 | **Box (disabled)** | Re-enable in `providers.ts` after redirect URI + `root_readonly` in Box Developer Console and Nango | Low (when needed) |
-| **Clio permissions** | **Documents (read)** on Clio app at creation; Nango scopes empty | Medium (DevOps) |
+| **Clio permissions** | App permissions for v1 scope on Clio Developer Portal; Nango scopes empty; users reconnect after expand | Medium (DevOps) |
 
 ### Local commits (awaiting push)
 
