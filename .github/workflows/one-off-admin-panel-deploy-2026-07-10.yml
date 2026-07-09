@@ -1,0 +1,41 @@
+name: One-off admin panel deploy trigger (2026-07-10 catch-up)
+
+# ONE-TIME USE — delete this file on Fri 2026-07-10 morning after it fires.
+#
+# Why this exists: Admin-Panel PR #13 (user migration UI) merged 2026-07-07
+# but the admin panel container on the VM was never pulled/restarted, so the
+# UI is not visible to tenant admins. The permanent fix (deploy-admin-panel-vm.yml)
+# ships alongside this file, but the already-merged code needs a one-time
+# catch-up during tonight's maintenance window.
+#
+# workflow_dispatch events are NOT subject to the GITHUB_TOKEN anti-recursion
+# guardrail, so this dispatch WILL trigger the deploy workflow.
+
+on:
+  schedule:
+    # 05:00 UTC on 2026-07-10 = Fri 01:00 AM ET. GitHub scheduled runs can be
+    # delayed under load (seen ~2h20m on 2026-07-08, ~3h20m on 2026-07-09);
+    # the whole maintenance window (01:00–11:00 UTC Fri = 9 PM Thu – 7 AM Fri ET)
+    # tolerates the drift.
+    - cron: '0 5 10 7 *'
+  workflow_dispatch:
+
+concurrency:
+  group: one-off-admin-panel-deploy-2026-07-10
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Deploy Admin Panel to VM
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "One-off catch-up deploy for Admin-Panel PR #13 (merged 2026-07-07 without triggering deploy)."
+          gh workflow run deploy-admin-panel-vm.yml --ref main
+          echo "Deploy dispatched. Watch: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/deploy-admin-panel-vm.yml"
