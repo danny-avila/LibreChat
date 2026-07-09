@@ -263,6 +263,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     ...getSkillToolDeps(),
     provisionFiles: async (toolNames, agentId) => {
       const ctx = agentToolContexts.get(agentId);
+      logger.warn(
+        `[e2e-diag provisionFiles] agentId=${agentId} tools=${JSON.stringify(toolNames)} hasCtx=${!!ctx} hasProvisionState=${!!ctx?.provisionState} codeEnvFiles=${ctx?.provisionState?.codeEnvFiles?.length ?? 'na'} vectorDBFiles=${ctx?.provisionState?.vectorDBFiles?.length ?? 'na'} codeApiKey=${!!ctx?.provisionState?.codeApiKey}`,
+      );
       if (!ctx?.provisionState) {
         return;
       }
