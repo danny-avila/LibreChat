@@ -293,7 +293,11 @@ export const scrollToEnd = (callback?: () => void) => {
 
 const clearMessagesQuery = (queryClient: QueryClient, conversationId: string): void => {
   const queryKey = [QueryKeys.messages, conversationId];
-  const query = queryClient.getQueryCache().find(queryKey);
+  // Some tests pass partial QueryClient doubles; real clients always expose getQueryCache.
+  const query =
+    typeof queryClient.getQueryCache === 'function'
+      ? queryClient.getQueryCache().find(queryKey)
+      : undefined;
 
   if (query?.getObserversCount()) {
     // Clear mounted views without the refetch that queryClient.resetQueries would trigger.
