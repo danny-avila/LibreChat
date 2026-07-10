@@ -12,12 +12,14 @@ export default function AudioRecorder({
   methods,
   textAreaRef,
   isSubmitting,
+  enabled = true,
 }: {
   disabled: boolean;
   ask: (data: { text: string }) => void;
   methods: ReturnType<typeof useChatFormContext>;
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   isSubmitting: boolean;
+  enabled?: boolean;
 }) {
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
@@ -74,6 +76,7 @@ export default function AudioRecorder({
   const { isListening, isLoading, startRecording, stopRecording } = useSpeechToText(
     setText,
     onTranscriptionComplete,
+    enabled,
   );
 
   if (!textAreaRef.current) {

@@ -10,6 +10,7 @@ import store from '~/store';
 const useSpeechToTextBrowser = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
+  enabled = true,
 ) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -36,6 +37,17 @@ const useSpeechToTextBrowser = (
   const isListening = useMemo(() => listening, [listening]);
 
   useEffect(() => {
+    if (!enabled) {
+      lastTranscript.current = finalTranscript;
+      return;
+    }
+
+    if (!interimTranscript) return;
+
+    if (lastTranscript.current === finalTranscript) {
+      return;
+    }
+
     if (interimTranscript == null || interimTranscript === '') {
       return;
     }
@@ -46,9 +58,13 @@ const useSpeechToTextBrowser = (
 
     setText(interimTranscript);
     lastInterim.current = interimTranscript;
-  }, [setText, interimTranscript]);
+  }, [enabled, setText, interimTranscript, finalTranscript]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     if (finalTranscript == null || finalTranscript === '') {
       return;
     }
@@ -71,7 +87,7 @@ const useSpeechToTextBrowser = (
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [setText, onTranscriptionComplete, resetTranscript, finalTranscript, autoSendText]);
+  }, [enabled, setText, onTranscriptionComplete, resetTranscript, finalTranscript, autoSendText]);
 
   const toggleListening = () => {
     if (!browserSupportsSpeechRecognition) {
@@ -117,7 +133,12 @@ const useSpeechToTextBrowser = (
     isListening,
     isLoading: false,
     startRecording: toggleListening,
-    stopRecording: toggleListening,
+    stopRecording: () => {
+      SpeechRecognition.stopListening();
+      resetTranscript();
+      lastTranscript.current = null;
+      lastInterim.current = null;
+    },
   };
 };
 

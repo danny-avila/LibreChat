@@ -251,6 +251,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     }
   }, [locationAllowed]);
 
+  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useRecoilState(
+    store.isFeedbackDialogOpen,
+  );
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) =>
@@ -388,6 +392,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                   textAreaRef={textAreaRef}
                   disabled={disableInputs || isNotAppendable}
                   isSubmitting={isSubmitting}
+                  enabled={!isFeedbackDialogOpen}
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>

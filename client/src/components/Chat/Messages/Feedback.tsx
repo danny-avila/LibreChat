@@ -21,9 +21,11 @@ import {
   MicOff,
   Mic,
 } from 'lucide-react';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useSpeechToText } from '~/hooks';
 import { cn } from '~/utils';
 import { FormProvider, useForm } from 'react-hook-form';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 interface FeedbackProps {
   handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
@@ -207,39 +209,61 @@ export default function Feedback({
     defaultValues: { text: '' },
   });
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [, setIsFeedbackDialogOpen] = useRecoilState(store.isFeedbackDialogOpen);
 
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const { isListening, isLoading, startRecording, stopRecording } = useSpeechToText(
+    (text) => {
+      methods.setValue('text', text);
+      setFeedback((prev) => (prev ? { ...prev, text } : prev));
+    },
+    (text) => {
+      methods.setValue('text', text);
+      setFeedback((prev) => (prev ? { ...prev, text } : prev));
+    },
+    openDialog,
+  );
+
   const { ref: rhfRef, ...textRegister } = methods.register('text');
   /* init browser STT once */
+  // useEffect(() => {
+  //   const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  //   if (!SR) return;
+
+  //   const rec = new SR();
+  //   rec.lang = 'en-US';
+  //   rec.interimResults = true;
+  //   rec.continuous = true;
+
+  //   rec.onstart = () => setIsListening(true);
+  //   rec.onend = () => setIsListening(false);
+  //   rec.onerror = (event: any) => {
+  //     setIsListening(false);
+  //     if (event.error === 'not-allowed') {
+  //       alert(
+  //         'Microphone access is required for voice input. Please allow microphone permission and try again.',
+  //       );
+  //     }
+  //   };
+  //   rec.onresult = (e: any) => {
+  //     let transcript = '';
+  //     for (let i = e.resultIndex; i < e.results.length; i++) {
+  //       transcript += e.results[i][0].transcript;
+  //     }
+  //     methods.setValue('text', transcript);
+  //     setFeedback((prev) => (prev ? { ...prev, text: transcript } : prev));
+  //   };
+
+  //   recognitionRef.current = rec;
+  // }, [methods]);
+
+  // const toggleRecording = () => {
+  //   if (!recognitionRef.current) return;
+  //   isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
+  // };
+
   useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
-
-    const rec = new SR();
-    rec.lang = 'en-US';
-    rec.interimResults = true;
-    rec.continuous = true;
-
-    rec.onstart = () => setIsListening(true);
-    rec.onend = () => setIsListening(false);
-    rec.onerror = () => setIsListening(false);
-    rec.onresult = (e: any) => {
-      let transcript = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        transcript += e.results[i][0].transcript;
-      }
-      methods.setValue('text', transcript);
-      setFeedback((prev) => (prev ? { ...prev, text: transcript } : prev));
-    };
-
-    recognitionRef.current = rec;
-  }, [methods]);
-
-  const toggleRecording = () => {
-    if (!recognitionRef.current) return;
-    isListening ? recognitionRef.current.stop() : recognitionRef.current.start();
-  };
+    setIsFeedbackDialogOpen(openDialog);
+  }, [openDialog]);
 
   useEffect(() => {
     setFeedback(initialFeedback);
@@ -268,16 +292,30 @@ export default function Feedback({
     if (feedback?.tag?.key === 'other' && !feedback?.text?.trim()) {
       return;
     }
-    handleFeedback({ feedback });
-    propagateMinimal(feedback);
+    const text = methods.getValues('text');
+    const updatedFeedback = feedback
+      ? {
+          ...feedback,
+          text,
+        }
+      : undefined;
+    // handleFeedback({ feedback });
+    propagateMinimal(updatedFeedback);
     setOpenDialog(false);
-  }, [feedback, propagateMinimal, handleFeedback]);
+  }, [feedback, propagateMinimal, methods]);
 
   const handleDialogClear = useCallback(() => {
+    methods.reset({ text: '' });
     setFeedback(undefined);
     handleFeedback({ feedback: undefined });
     setOpenDialog(false);
-  }, [handleFeedback]);
+  }, [handleFeedback, methods]);
+
+  useEffect(() => {
+    if (!openDialog) {
+      stopRecording();
+    }
+  }, [openDialog]);
 
   const renderSingleFeedbackButton = () => {
     if (!feedback) return null;
@@ -325,6 +363,17 @@ export default function Feedback({
             </OGDialogTitle>
             <textarea
               {...textRegister}
+              onChange={(e) => {
+                textRegister.onChange(e);
+                setFeedback((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        text: e.target.value,
+                      }
+                    : prev,
+                );
+              }}
               ref={(el) => {
                 textAreaRef.current = el;
                 rhfRef(el);
@@ -336,7 +385,7 @@ export default function Feedback({
             <div className="mt-3 flex justify-end">
               <button
                 type="button"
-                onClick={toggleRecording}
+                onClick={isListening ? stopRecording : startRecording}
                 className={cn(
                   'flex items-center gap-2 rounded-full px-3 py-2',
                   isListening ? 'bg-red-500/10 text-red-500' : 'hover:bg-surface-hover',
@@ -355,7 +404,7 @@ export default function Feedback({
               <Button
                 variant="submit"
                 onClick={handleDialogSave}
-                disabled={!feedback?.text?.trim()}
+                disabled={!feedback?.text?.trim() && !textAreaRef.current?.value.trim()}
               >
                 {localize('com_ui_save')}
               </Button>
