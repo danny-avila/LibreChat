@@ -23,6 +23,10 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  # Required to dispatch deploy-gcp-vm.yml after a successful merge.
+  # Without this, `gh workflow run` returns HTTP 403 "Resource not accessible
+  # by integration" and the merged code sits on main without being deployed.
+  actions: write
 
 jobs:
   merge:

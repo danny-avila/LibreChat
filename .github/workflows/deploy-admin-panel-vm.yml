@@ -31,33 +31,41 @@ jobs:
         id: locate
         run: |
           set -e
-          # Candidate paths, in priority order. First one that exists and contains
-          # docker-compose.local.yml wins. Override by setting the
-          # ADMIN_PANEL_APP_DIR repository variable if the layout differs.
-          CANDIDATES=(
-            "${{ vars.ADMIN_PANEL_APP_DIR }}"
-            "/home/greta_smbteam_com/admin-panel"
-            "/home/greta/admin-panel"
-          )
-          # Also try a sibling of the LibreChat app dir (e.g. /home/x/librechat → /home/x/admin-panel)
-          if [ -n "${{ vars.GCP_VM_APP_DIR }}" ]; then
-            CANDIDATES+=("$(dirname '${{ vars.GCP_VM_APP_DIR }}')/admin-panel")
-          fi
-
-          for dir in "${CANDIDATES[@]}"; do
-            [ -z "$dir" ] && continue
-            if [ -d "$dir" ] && [ -f "$dir/docker-compose.local.yml" ]; then
-              echo "app_dir=$dir" >> "$GITHUB_OUTPUT"
-              echo "==> Using admin panel directory: $dir"
+          # Priority 1: honor an explicit ADMIN_PANEL_APP_DIR repo variable if set.
+          if [ -n "${{ vars.ADMIN_PANEL_APP_DIR }}" ]; then
+            DIR="${{ vars.ADMIN_PANEL_APP_DIR }}"
+            if [ -d "$DIR" ] && [ -f "$DIR/docker-compose.local.yml" ]; then
+              echo "app_dir=$DIR" >> "$GITHUB_OUTPUT"
+              echo "==> Using admin panel directory (from ADMIN_PANEL_APP_DIR var): $DIR"
               exit 0
             fi
-          done
+            echo "WARNING: ADMIN_PANEL_APP_DIR=$DIR but that path is missing docker-compose.local.yml — falling through to auto-discovery."
+          fi
 
-          echo "ERROR: could not find admin panel directory containing docker-compose.local.yml"
-          echo "Tried: ${CANDIDATES[*]}"
-          echo ""
+          # Priority 2: auto-discover by searching common roots for a docker-compose.local.yml
+          # that defines an `admin-panel` service. Robust against different checkout paths
+          # (e.g. /home/greta_smbteam_com/, /root/, /opt/) without needing configuration.
+          echo "==> Searching for admin panel checkout..."
+          FOUND=""
+          while IFS= read -r f; do
+            if grep -qE '^\s*admin-panel:' "$f" 2>/dev/null; then
+              FOUND="$(dirname "$f")"
+              break
+            fi
+          done < <(find /home /root /opt /srv -maxdepth 5 -type f -name 'docker-compose.local.yml' 2>/dev/null)
+
+          if [ -n "$FOUND" ]; then
+            echo "app_dir=$FOUND" >> "$GITHUB_OUTPUT"
+            echo "==> Discovered admin panel directory: $FOUND"
+            exit 0
+          fi
+
+          echo "ERROR: could not auto-discover an admin panel checkout."
           echo "Fix: set the ADMIN_PANEL_APP_DIR repository variable to the correct path."
           echo "     Settings → Secrets and variables → Actions → Variables → New repository variable"
+          echo ""
+          echo "Debug output — all docker-compose.local.yml files under common roots:"
+          find /home /root /opt /srv -maxdepth 5 -type f -name 'docker-compose.local.yml' 2>/dev/null || true
           exit 1
 
       - name: Pull latest admin panel code
