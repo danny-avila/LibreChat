@@ -4,10 +4,18 @@
  * Lets the model dispatch an eligible (event-driven) tool call detached: the
  * host executor returns a synthetic handle immediately so the graph superstep
  * resolves, while the real work runs as a floating promise whose result lands
- * in an in-process registry. The model retrieves it later with the
+ * in an in-process registry. The model retrieves it via the
  * `check_background_task` poll tool. No `@librechat/agents` change is required —
  * a backgrounded call and the poll call are both synchronous from the graph's
  * view.
+ *
+ * Scope: WITHIN-TURN parallelism. The detached work uses the run's
+ * request-scoped tool instance/connections and abort signal, which are torn
+ * down when the turn completes (MCP request-context cleanup + `completeJob`
+ * abort). So a backgrounded call must be polled and collected within the same
+ * turn that dispatched it; cross-turn survival of genuinely long-running calls
+ * (a background-owned connection + non-completing signal, or the subagent model)
+ * is a deliberate durable follow-up.
  *
  * Opt-in mirrors `deferred_tools`: an admin capability
  * (`AgentCapabilities.run_in_background`) gates the feature, and a per-tool
@@ -124,7 +132,7 @@ export function stripRunInBackgroundArg(args: unknown): unknown {
 const RUN_IN_BACKGROUND_PROPERTY = Object.freeze({
   type: 'boolean',
   description:
-    'Set true to run this tool call in the background: it returns immediately with a background_task_id instead of blocking. Poll check_background_task with that id to get progress and the final result. Use only for genuinely long-running calls when you have other useful work to do meanwhile.',
+    'Set true to run this tool call in the background: it returns immediately with a background_task_id instead of blocking, so you can do other work in this same turn. Poll check_background_task with that id and COLLECT THE RESULT BEFORE YOU FINISH RESPONDING — backgrounded work is not guaranteed to continue after your turn ends. Use for a slow call whose result you can gather a few steps later within the same turn.',
 });
 
 interface JsonSchemaObject {
@@ -233,7 +241,7 @@ export function stripBackgroundFromToolRegistry(
 
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check the status and retrieve the result of tool calls previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Poll within the same turn you dispatched the work: backgrounded tasks may not persist after your turn ends.`;
 
 const CHECK_BACKGROUND_TASK_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
@@ -615,7 +623,7 @@ export function buildBackgroundHandleContent(task: BackgroundTask): string {
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    message: `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result. Do not assume it has finished until you have polled and seen status "completed".`,
+    message: `Started "${task.toolName}" in the background. Call ${CHECK_BACKGROUND_TASK_NAME} with background_task_id "${task.id}" to check progress and retrieve the result — do this within the same turn, before you finish responding, since backgrounded work is not guaranteed to continue after your turn ends. Do not assume it has finished until you have polled and seen status "completed".`,
   });
 }
 
