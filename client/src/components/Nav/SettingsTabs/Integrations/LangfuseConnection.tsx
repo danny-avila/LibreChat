@@ -83,10 +83,11 @@ export default function LangfuseConnection() {
   const [publicKey, setPublicKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isEditingPublicKey, setIsEditingPublicKey] = useState(false);
-  const [isEditingSecret, setIsEditingSecret] = useState(false);
+  const [isEditingSecretKey, setIsEditingSecretKey] = useState(false);
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState>('idle');
   const [connectionTestMessage, setConnectionTestMessage] = useState('');
   const autoTestedConnectionRef = useRef<string>();
+  const connectionTestRequestRef = useRef(0);
 
   useEffect(() => {
     if (!status) {
@@ -112,16 +113,20 @@ export default function LangfuseConnection() {
 
   const secretConfigured = connectionStatus?.configured === true;
   const destinations = connectionStatus?.destinations ?? [];
-  const selectedDestination = destinations.find((option) => option.key === destination);
   const trimmedPublicKey = publicKey.trim();
   const trimmedSecretKey = secretKey.trim();
   const publicKeyInputVisible = !secretConfigured || isEditingPublicKey;
-  const secretInputVisible = !secretConfigured || isEditingSecret;
+  const secretInputVisible = !secretConfigured || isEditingSecretKey;
   const displayPublicKey = getDisplayPublicKey(publicKey);
+  const hasUnsavedChanges =
+    enabled !== (connectionStatus?.enabled === true) ||
+    destination !== (connectionStatus?.destination ?? '') ||
+    trimmedPublicKey !== (connectionStatus?.publicKey ?? '') ||
+    trimmedSecretKey !== '';
+  const showActions =
+    !secretConfigured || isEditingPublicKey || isEditingSecretKey || hasUnsavedChanges;
   const canSubmit =
-    destination !== '' &&
-    (!publicKeyInputVisible || trimmedPublicKey !== '') &&
-    (!secretInputVisible || trimmedSecretKey !== '');
+    destination !== '' && trimmedPublicKey !== '' && (secretConfigured || trimmedSecretKey !== '');
 
   useEffect(() => {
     const storedConnectionTestKey = getStoredConnectionTestKey(connectionStatus);
@@ -136,6 +141,7 @@ export default function LangfuseConnection() {
     }
 
     autoTestedConnectionRef.current = storedConnectionTestKey;
+    const requestId = ++connectionTestRequestRef.current;
     setConnectionTestState('checking');
     testMutation.mutate(
       {
@@ -144,10 +150,16 @@ export default function LangfuseConnection() {
       },
       {
         onSuccess: (result) => {
+          if (requestId !== connectionTestRequestRef.current) {
+            return;
+          }
           setConnectionTestState(result.success ? 'connected' : 'failed');
           setConnectionTestMessage(result.success ? '' : (result.message ?? ''));
         },
         onError: () => {
+          if (requestId !== connectionTestRequestRef.current) {
+            return;
+          }
           setConnectionTestState('failed');
           setConnectionTestMessage(localize('com_ui_langfuse_test_error'));
         },
@@ -166,6 +178,7 @@ export default function LangfuseConnection() {
     connectionTestState === 'failed' ? localize('com_ui_langfuse_status_failed_hover') : undefined;
 
   const handleSave = () => {
+    const requestId = ++connectionTestRequestRef.current;
     const payload = {
       enabled,
       destination,
@@ -182,7 +195,7 @@ export default function LangfuseConnection() {
           setConnectionTestMessage('');
           setSecretKey('');
           setIsEditingPublicKey(false);
-          setIsEditingSecret(false);
+          setIsEditingSecretKey(false);
           showToast({ message: localize('com_ui_langfuse_saved'), status: 'success' });
         },
         onError: () =>
@@ -203,6 +216,9 @@ export default function LangfuseConnection() {
       },
       {
         onSuccess: (result) => {
+          if (requestId !== connectionTestRequestRef.current) {
+            return;
+          }
           if (!result.success) {
             setConnectionTestState('failed');
             setConnectionTestMessage(result.message ?? localize('com_ui_langfuse_test_error'));
@@ -218,9 +234,68 @@ export default function LangfuseConnection() {
           saveConnection();
         },
         onError: () => {
+          if (requestId !== connectionTestRequestRef.current) {
+            return;
+          }
           setConnectionTestState('failed');
           setConnectionTestMessage(localize('com_ui_langfuse_test_error'));
           showToast({ message: localize('com_ui_langfuse_test_error'), status: 'error' });
+        },
+      },
+    );
+  };
+
+  const handleCancel = () => {
+    const availableDestinations = connectionStatus?.destinations ?? [];
+    const storedDestination = availableDestinations.some(
+      (option) => option.key === connectionStatus?.destination,
+    )
+      ? connectionStatus?.destination
+      : undefined;
+    setEnabled(connectionStatus?.enabled === true);
+    setDestination(storedDestination ?? '');
+    setPublicKey(connectionStatus?.publicKey ?? '');
+    setSecretKey('');
+    setIsEditingPublicKey(false);
+    setIsEditingSecretKey(false);
+  };
+
+  const handleDestinationChange = (nextDestination: string) => {
+    setDestination(nextDestination);
+    const requestId = ++connectionTestRequestRef.current;
+
+    if (
+      nextDestination === '' ||
+      trimmedPublicKey === '' ||
+      (!secretConfigured && trimmedSecretKey === '')
+    ) {
+      setConnectionTestState('idle');
+      setConnectionTestMessage('');
+      return;
+    }
+
+    setConnectionTestState('checking');
+    setConnectionTestMessage('');
+    testMutation.mutate(
+      {
+        destination: nextDestination,
+        publicKey: trimmedPublicKey,
+        ...(trimmedSecretKey ? { secretKey: trimmedSecretKey } : {}),
+      },
+      {
+        onSuccess: (result) => {
+          if (requestId !== connectionTestRequestRef.current) {
+            return;
+          }
+          setConnectionTestState(result.success ? 'connected' : 'failed');
+          setConnectionTestMessage(result.success ? '' : (result.message ?? ''));
+        },
+        onError: () => {
+          if (requestId !== connectionTestRequestRef.current) {
+            return;
+          }
+          setConnectionTestState('failed');
+          setConnectionTestMessage(localize('com_ui_langfuse_test_error'));
         },
       },
     );
@@ -281,7 +356,7 @@ export default function LangfuseConnection() {
           className="flex h-9 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary shadow-sm outline-none focus:ring-2 focus:ring-ring-primary disabled:cursor-not-allowed disabled:opacity-50"
           value={destination}
           disabled={destinations.length === 0}
-          onChange={(e) => setDestination(e.target.value)}
+          onChange={(e) => handleDestinationChange(e.target.value)}
         >
           <option value="">{localize('com_ui_select')}</option>
           {destinations.map((option) => (
@@ -290,123 +365,87 @@ export default function LangfuseConnection() {
             </option>
           ))}
         </select>
-        {selectedDestination != null && (
-          <span className="text-xs text-text-tertiary">{selectedDestination.baseUrl}</span>
-        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
-        {publicKeyInputVisible ? (
-          <Label htmlFor="langfuse-public-key">{localize('com_ui_langfuse_public_key')}</Label>
-        ) : (
-          <div className="text-sm font-medium text-text-primary">
-            {localize('com_ui_langfuse_public_key')}
-          </div>
-        )}
+        <Label htmlFor="langfuse-public-key">{localize('com_ui_langfuse_public_key')}</Label>
         {secretConfigured && !isEditingPublicKey && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border-light px-3 py-2">
-            <code className="min-w-0 truncate font-mono text-sm text-text-primary">
+          <button
+            type="button"
+            className="w-full rounded-lg border border-border-light px-3 py-2 text-left hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_public_key')}`}
+            onClick={() => setIsEditingPublicKey(true)}
+          >
+            <code className="block min-w-0 truncate font-mono text-sm text-text-primary">
               {displayPublicKey}
             </code>
-            <Button
-              variant="outline"
-              className="h-8 shrink-0 px-3"
-              aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_public_key')}`}
-              onClick={() => setIsEditingPublicKey(true)}
-            >
-              {localize('com_ui_edit')}
-            </Button>
-          </div>
+          </button>
         )}
         {publicKeyInputVisible && (
-          <div className="flex items-center gap-2">
-            <Input
-              id="langfuse-public-key"
-              value={publicKey}
-              placeholder="pk-lf-..."
-              className="flex-1"
-              onChange={(e) => setPublicKey(e.target.value)}
-            />
-            {secretConfigured && (
-              <Button
-                variant="outline"
-                className="h-10 shrink-0 px-3"
-                onClick={() => {
-                  setPublicKey(connectionStatus?.publicKey ?? '');
-                  setIsEditingPublicKey(false);
-                }}
-              >
-                {localize('com_ui_cancel')}
-              </Button>
-            )}
-          </div>
+          <Input
+            id="langfuse-public-key"
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            value={publicKey}
+            placeholder="pk-lf-..."
+            onChange={(e) => setPublicKey(e.target.value)}
+          />
         )}
       </div>
 
       <div className="flex flex-col gap-1.5">
-        {secretInputVisible ? (
-          <Label htmlFor="langfuse-secret-key">{localize('com_ui_langfuse_secret_key')}</Label>
-        ) : (
-          <div className="text-sm font-medium text-text-primary">
-            {localize('com_ui_langfuse_secret_key')}
-          </div>
-        )}
-        {secretConfigured && !isEditingSecret && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border-light px-3 py-2">
-            <code className="min-w-0 truncate font-mono text-sm text-text-primary">
+        <Label htmlFor="langfuse-secret-key">{localize('com_ui_langfuse_secret_key')}</Label>
+        {secretConfigured && !isEditingSecretKey && (
+          <button
+            type="button"
+            className="w-full rounded-lg border border-border-light px-3 py-2 text-left hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_secret_key')}`}
+            onClick={() => setIsEditingSecretKey(true)}
+          >
+            <code className="block min-w-0 truncate font-mono text-sm text-text-primary">
               {connectionStatus?.displaySecretKey}
             </code>
-            <Button
-              variant="outline"
-              className="h-8 shrink-0 px-3"
-              aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_secret_key')}`}
-              onClick={() => setIsEditingSecret(true)}
-            >
-              {localize('com_ui_edit')}
-            </Button>
-          </div>
+          </button>
         )}
         {secretInputVisible && (
-          <div className="flex items-center gap-2">
-            <SecretInput
-              id="langfuse-secret-key"
-              autoComplete="new-password"
-              controlsOnHover
-              value={secretKey}
-              placeholder="sk-lf-..."
-              className="flex-1"
-              onChange={(e) => setSecretKey(e.target.value)}
-            />
-            {secretConfigured && (
-              <Button
-                variant="outline"
-                className="h-10 shrink-0 px-3"
-                onClick={() => {
-                  setSecretKey('');
-                  setIsEditingSecret(false);
-                }}
-              >
-                {localize('com_ui_cancel')}
-              </Button>
-            )}
-          </div>
+          <SecretInput
+            id="langfuse-secret-key"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            controlsOnHover
+            value={secretKey}
+            placeholder="sk-lf-..."
+            containerClassName="w-full"
+            onChange={(e) => setSecretKey(e.target.value)}
+          />
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          disabled={!canSubmit || testMutation.isLoading || updateMutation.isLoading}
-          onClick={handleSave}
-        >
-          {testMutation.isLoading ? (
-            <span className="flex items-center gap-2">
-              <Spinner className="h-4 w-4" />
-              {localize('com_ui_langfuse_testing')}
-            </span>
-          ) : (
-            localize('com_ui_save')
-          )}
-        </Button>
+      <div className="flex min-h-9 items-center justify-end gap-2">
+        {showActions && (
+          <>
+            {secretConfigured && (
+              <Button variant="outline" onClick={handleCancel}>
+                {localize('com_ui_cancel')}
+              </Button>
+            )}
+            <Button
+              disabled={!canSubmit || testMutation.isLoading || updateMutation.isLoading}
+              onClick={handleSave}
+            >
+              {testMutation.isLoading ? (
+                <span className="flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  {localize('com_ui_langfuse_testing')}
+                </span>
+              ) : (
+                localize('com_ui_save')
+              )}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

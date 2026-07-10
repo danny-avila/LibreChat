@@ -72,7 +72,7 @@ function rejectWhenFanoutDisabled(res: Response): Response | undefined {
 
 function getLangfuseTestFailureMessage(status: number): string {
   if (status === 401) {
-    return 'Langfuse rejected these keys. Check the public and secret keys.';
+    return 'Langfuse rejected these keys. Check the destination and keys';
   }
 
   if (status >= 500) {
@@ -228,11 +228,34 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
 
       const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
       const url = `${tenantDestination.baseUrl}/api/public/projects`;
-      const response = await fetch(url, { headers: { Authorization: `Basic ${auth}` } });
+      const secretResponse = await fetch(url, {
+        headers: { Authorization: `Basic ${auth}` },
+      });
+      if (!secretResponse.ok) {
+        const failed: TLangfuseConnectionTestResponse = {
+          success: false,
+          message: getLangfuseTestFailureMessage(secretResponse.status),
+        };
+        return res.status(200).json(failed);
+      }
 
-      const result: TLangfuseConnectionTestResponse = response.ok
-        ? { success: true }
-        : { success: false, message: getLangfuseTestFailureMessage(response.status) };
+      const publicResponse = await fetch(`${tenantDestination.baseUrl}/api/public/ingestion`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${publicKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ batch: [] }),
+      });
+      if (!publicResponse.ok) {
+        const failed: TLangfuseConnectionTestResponse = {
+          success: false,
+          message: getLangfuseTestFailureMessage(publicResponse.status),
+        };
+        return res.status(200).json(failed);
+      }
+
+      const result: TLangfuseConnectionTestResponse = { success: true };
       return res.status(200).json(result);
     } catch (error) {
       logger.error('[adminLangfuse] testConnection error:', error);

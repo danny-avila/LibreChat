@@ -315,7 +315,8 @@ describe('createAdminLangfuseHandlers', () => {
     it('returns success when Langfuse responds ok', async () => {
       global.fetch = jest
         .fn()
-        .mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
+        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
       const { handlers } = createHandlers();
       const res = mockRes();
 
@@ -330,6 +331,34 @@ describe('createAdminLangfuseHandlers', () => {
       const [url, init] = (global.fetch as unknown as jest.Mock).mock.calls[0];
       expect(url).toBe('https://cloud.langfuse.com/api/public/projects');
       expect(init.headers.Authorization).toMatch(/^Basic /);
+      const [publicUrl, publicInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
+      expect(publicUrl).toBe('https://cloud.langfuse.com/api/public/ingestion');
+      expect(publicInit.method).toBe('POST');
+      expect(publicInit.headers.Authorization).toBe('Bearer pk');
+      expect(publicInit.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(publicInit.body)).toEqual({ batch: [] });
+    });
+
+    it('rejects an invalid public key even when the secret key is valid', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce({ ok: false, status: 401 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk-invalid', secretKey: 'sk-valid' },
+        }),
+        res,
+      );
+
+      expect(res.body).toEqual({
+        success: false,
+        message: 'Langfuse rejected these keys. Check the destination and keys',
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
     });
 
     it('returns a key-specific failure when Langfuse rejects the credentials', async () => {
@@ -348,8 +377,9 @@ describe('createAdminLangfuseHandlers', () => {
 
       expect(res.body).toEqual({
         success: false,
-        message: 'Langfuse rejected these keys. Check the public and secret keys.',
+        message: 'Langfuse rejected these keys. Check the destination and keys',
       });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it('returns an incident-oriented failure when Langfuse returns a server error', async () => {
@@ -375,7 +405,8 @@ describe('createAdminLangfuseHandlers', () => {
     it('falls back to the stored (decrypted) secret when none is supplied', async () => {
       global.fetch = jest
         .fn()
-        .mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
+        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
       const { handlers } = createHandlers({
         findConfigByPrincipal: jest
           .fn()

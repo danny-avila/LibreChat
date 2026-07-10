@@ -1648,7 +1648,7 @@
   "com_ui_langfuse_public_key": "Public key",
   "com_ui_langfuse_secret_key": "Secret key",
   "com_ui_langfuse_status_checking": "Checking connection",
-  "com_ui_langfuse_status_connected": "Connected",
+  "com_ui_langfuse_status_connected": "Verified with Langfuse",
   "com_ui_langfuse_status_failed": "Connection failed",
   "com_ui_langfuse_status_failed_hover": "Check Langfuse to see if traces are still failing. A one-time ping with the keys just failed.",
   "com_ui_langfuse_status_not_configured": "Not configured",
