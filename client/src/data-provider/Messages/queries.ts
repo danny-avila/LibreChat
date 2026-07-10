@@ -17,12 +17,20 @@ type ActiveJobs = {
   activeJobIds?: string[];
 };
 
+type MessagesQueryFnParams = {
+  id: string;
+  pathname: string;
+  queryClient: QueryClient;
+  isStreaming?: boolean | (() => boolean);
+  preservePendingTail?: boolean;
+};
+
 function isUnhydratedMessage(message: t.TMessage) {
   const messageId = message.messageId ?? '';
   return message.createdAt == null || message.updatedAt == null || messageId.endsWith('_');
 }
 
-function hasPendingAssistantTail(messages: t.TMessage[]) {
+export function hasPendingAssistantTail(messages: t.TMessage[]) {
   const lastMessage = messages[messages.length - 1];
   const parentMessageId = lastMessage?.parentMessageId ?? '';
   return (
@@ -82,6 +90,68 @@ export function hasActiveJob(queryClient: QueryClient, id: string) {
   return activeJobs?.activeJobIds?.includes(id) === true;
 }
 
+export async function getMessagesByConvoIdQueryFn({
+  id,
+  pathname,
+  queryClient,
+  isStreaming = false,
+  preservePendingTail = false,
+}: MessagesQueryFnParams): Promise<t.TMessage[]> {
+  if (id === Constants.NEW_CONVO) {
+    return queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]) ?? [];
+  }
+
+  const getIsStreaming = () => (typeof isStreaming === 'function' ? isStreaming() : isStreaming);
+  const hasLiveStream = (currentMessages?: t.TMessage[]) =>
+    getIsStreaming() ||
+    hasActiveJob(queryClient, id) ||
+    (preservePendingTail && currentMessages != null && hasPendingAssistantTail(currentMessages));
+
+  let result: t.TMessage[];
+  try {
+    result = await dataService.getMessagesByConvoId(id);
+  } catch (error) {
+    const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
+    if (
+      currentMessages &&
+      isNotFoundError(error) &&
+      shouldPreserveMessagesOnNotFound({
+        pathname,
+        currentMessages,
+        isStreaming: hasLiveStream(currentMessages),
+      })
+    ) {
+      logger.warn(
+        'messages',
+        `Messages query for convo ${id} returned 404 while cache has a pending assistant tail; path: "${pathname}"`,
+        currentMessages,
+      );
+      return currentMessages;
+    }
+
+    throw error;
+  }
+
+  const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
+  const stableMessages = getStableMessages({
+    pathname,
+    result,
+    currentMessages,
+    isStreaming: hasLiveStream(currentMessages),
+  });
+
+  if (stableMessages === currentMessages) {
+    logger.warn(
+      'messages',
+      `Messages query for convo ${id} returned fewer than cache; path: "${pathname}"`,
+      result,
+      currentMessages,
+    );
+  }
+
+  return stableMessages;
+}
+
 export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   id: string,
   config?: UseQueryOptions<t.TMessage[], unknown, TData>,
@@ -98,56 +168,13 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
 
   return useQuery<t.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
-    async () => {
-      if (id === Constants.NEW_CONVO) {
-        return queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]) ?? [];
-      }
-
-      let result: t.TMessage[];
-      try {
-        result = await dataService.getMessagesByConvoId(id);
-      } catch (error) {
-        const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
-        const hasLiveStream = isStreamingRef.current || hasActiveJob(queryClient, id);
-        if (
-          currentMessages &&
-          isNotFoundError(error) &&
-          shouldPreserveMessagesOnNotFound({
-            pathname: location.pathname,
-            currentMessages,
-            isStreaming: hasLiveStream,
-          })
-        ) {
-          logger.warn(
-            'messages',
-            `Messages query for convo ${id} returned 404 while cache has a pending assistant tail; path: "${location.pathname}"`,
-            currentMessages,
-          );
-          return currentMessages;
-        }
-
-        throw error;
-      }
-
-      const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
-      const stableMessages = getStableMessages({
+    () =>
+      getMessagesByConvoIdQueryFn({
+        id,
         pathname: location.pathname,
-        result,
-        currentMessages,
-        isStreaming: isStreamingRef.current || hasActiveJob(queryClient, id),
-      });
-
-      if (stableMessages === currentMessages) {
-        logger.warn(
-          'messages',
-          `Messages query for convo ${id} returned fewer than cache; path: "${location.pathname}"`,
-          result,
-          currentMessages,
-        );
-      }
-
-      return stableMessages;
-    },
+        queryClient,
+        isStreaming: () => isStreamingRef.current,
+      }),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

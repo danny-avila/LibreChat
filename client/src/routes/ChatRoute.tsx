@@ -4,8 +4,8 @@ import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { Constants, EModelEndpoint, QueryKeys, dataService } from 'librechat-data-provider';
-import type { TPreset } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
+import type { TMessage, TPreset } from 'librechat-data-provider';
 import {
   mergeQuerySettingsWithSpec,
   processValidSettings,
@@ -21,6 +21,8 @@ import {
   useGetStartupConfig,
   useGetEndpointsQuery,
   useProjectQuery,
+  getMessagesByConvoIdQueryFn,
+  hasPendingAssistantTail,
   hasActiveJob,
 } from '~/data-provider';
 import {
@@ -135,13 +137,23 @@ export default function ChatRoute() {
     }
 
     const messagesQueryKey = [QueryKeys.messages, conversationId];
-    if (hasActiveJob(queryClient, conversationId)) {
+    const currentMessages = queryClient.getQueryData<TMessage[]>(messagesQueryKey);
+    if (
+      hasActiveJob(queryClient, conversationId) ||
+      hasPendingAssistantTail(currentMessages ?? [])
+    ) {
       return;
     }
 
     void queryClient.prefetchQuery(
       messagesQueryKey,
-      () => dataService.getMessagesByConvoId(conversationId),
+      () =>
+        getMessagesByConvoIdQueryFn({
+          id: conversationId,
+          pathname: `/c/${conversationId}`,
+          queryClient,
+          preservePendingTail: true,
+        }),
       { staleTime: 15_000 },
     );
   }, [conversationId, isAuthenticated, queryClient]);

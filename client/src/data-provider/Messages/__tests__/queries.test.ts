@@ -7,7 +7,9 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
   getStableMessages,
+  getMessagesByConvoIdQueryFn,
   hasActiveJob,
+  hasPendingAssistantTail,
   shouldPreserveMessagesOnNotFound,
   useGetMessagesByConvoId,
 } from '../queries';
@@ -307,6 +309,36 @@ describe('shouldPreserveMessagesOnNotFound', () => {
   });
 });
 
+describe('hasPendingAssistantTail', () => {
+  it('returns true when the cache ends with an unhydrated assistant response', () => {
+    const messages = [
+      message({ messageId: 'user-1' }),
+      message({
+        messageId: 'user-1_',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+        createdAt: undefined,
+        updatedAt: undefined,
+      }),
+    ];
+
+    expect(hasPendingAssistantTail(messages)).toBe(true);
+  });
+
+  it('returns false when the final assistant response is already hydrated', () => {
+    const messages = [
+      message({ messageId: 'user-1' }),
+      message({
+        messageId: 'assistant-1',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+      }),
+    ];
+
+    expect(hasPendingAssistantTail(messages)).toBe(false);
+  });
+});
+
 describe('hasActiveJob', () => {
   it('returns true when the conversation is in the active jobs cache', () => {
     const queryClient = new QueryClient();
@@ -434,5 +466,93 @@ describe('useGetMessagesByConvoId', () => {
     );
 
     unmount();
+  });
+});
+
+describe('getMessagesByConvoIdQueryFn', () => {
+  it('reads the streaming state after an in-flight fetch resolves', async () => {
+    const conversationId = 'convo-id';
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const currentMessages = [
+      message({ messageId: 'persisted-1' }),
+      message({ messageId: 'user-2', parentMessageId: 'persisted-1' }),
+      message({
+        messageId: 'user-2_',
+        parentMessageId: 'user-2',
+        isCreatedByUser: false,
+        createdAt: undefined,
+        updatedAt: undefined,
+      }),
+    ];
+    let isStreaming = false;
+    let resolveMessages: (messages: TMessage[]) => void;
+    const mockGetMessagesByConvoId = dataService.getMessagesByConvoId as jest.MockedFunction<
+      typeof dataService.getMessagesByConvoId
+    >;
+    mockGetMessagesByConvoId.mockImplementationOnce(
+      () =>
+        new Promise<TMessage[]>((resolve) => {
+          resolveMessages = resolve;
+        }),
+    );
+
+    const queryPromise = getMessagesByConvoIdQueryFn({
+      id: conversationId,
+      pathname: `/c/${conversationId}`,
+      queryClient,
+      isStreaming: () => isStreaming,
+    });
+    queryClient.setQueryData([QueryKeys.messages, conversationId], currentMessages);
+    isStreaming = true;
+    resolveMessages!([currentMessages[0]]);
+
+    await expect(queryPromise).resolves.toBe(currentMessages);
+  });
+
+  it('preserves a pending assistant tail written while a prefetch is in flight', async () => {
+    const conversationId = 'convo-id';
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const currentMessages = [
+      message({ messageId: 'persisted-1' }),
+      message({ messageId: 'user-2', parentMessageId: 'persisted-1' }),
+      message({
+        messageId: 'user-2_',
+        parentMessageId: 'user-2',
+        isCreatedByUser: false,
+        createdAt: undefined,
+        updatedAt: undefined,
+      }),
+    ];
+    let resolveMessages: (messages: TMessage[]) => void;
+    const mockGetMessagesByConvoId = dataService.getMessagesByConvoId as jest.MockedFunction<
+      typeof dataService.getMessagesByConvoId
+    >;
+    mockGetMessagesByConvoId.mockImplementationOnce(
+      () =>
+        new Promise<TMessage[]>((resolve) => {
+          resolveMessages = resolve;
+        }),
+    );
+
+    const queryPromise = getMessagesByConvoIdQueryFn({
+      id: conversationId,
+      pathname: `/c/${conversationId}`,
+      queryClient,
+      preservePendingTail: true,
+    });
+    queryClient.setQueryData([QueryKeys.messages, conversationId], currentMessages);
+    resolveMessages!([currentMessages[0]]);
+
+    await expect(queryPromise).resolves.toBe(currentMessages);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'messages',
+      expect.stringContaining('returned fewer than cache'),
+      [currentMessages[0]],
+      currentMessages,
+    );
   });
 });
