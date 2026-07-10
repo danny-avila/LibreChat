@@ -149,7 +149,7 @@ export default function ChatRoute() {
     const hasPendingTail = hasPendingAssistantTail(currentMessages ?? []);
     const hasActiveGeneration =
       isSubmitting || activeJobsQuery.data?.activeJobIds?.includes(conversationId) === true;
-    if (hasPendingTail && (hasActiveGeneration || activeJobsQuery.isLoading)) {
+    if (hasActiveGeneration || (hasPendingTail && activeJobsQuery.isLoading)) {
       return;
     }
 
