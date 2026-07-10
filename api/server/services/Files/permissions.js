@@ -1,6 +1,10 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const { PermissionBits, ResourceType, isEphemeralAgentId } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
+const {
+  withSystemGlobalFallback,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const { getAgent, getFiles } = require('~/models');
 
 /**
@@ -49,11 +53,34 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
   fileIds.forEach((fileId) => accessMap.set(fileId, false));
 
   try {
-    const agent = await getAgent({ id: agentId });
+    const agent = await withSystemGlobalFallback(
+      agentId,
+      () => getAgent({ id: agentId }),
+      () => getAgent({ id: agentId, tenantId: { $exists: false } }),
+    );
 
     if (!agent) {
       return accessMap;
     }
+
+    /* A tenantless `tenants: 'system'` global's ACL grants are invisible to a tenant-scoped check;
+     * authorize it under the system context so its admin-provided context/OCR files aren't filtered
+     * out at runtime. In-tenant agents (incl. explicit-tenant globals) keep the normal check. */
+    const viaSystemGlobal = agent.isSystem === true && agent.tenantId == null;
+    const hasAgentPermission = (requiredPermission) =>
+      viaSystemGlobal
+        ? authorizeSystemGlobalAgent({
+            agentId,
+            requiredPermission,
+            req: { user: { id: userId, role, tenantId: getTenantId() } },
+          }).then((result) => result.status === 'ok')
+        : checkPermission({
+            userId,
+            role,
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            requiredPermission,
+          });
 
     const attachedFileIds = getAttachedFileIds(agent);
     const agentAuthorId = agent.author?.toString();
@@ -75,26 +102,14 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
       return accessMap;
     }
 
-    const hasViewPermission = await checkPermission({
-      userId,
-      role,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.VIEW,
-    });
+    const hasViewPermission = await hasAgentPermission(PermissionBits.VIEW);
 
     if (!hasViewPermission) {
       return accessMap;
     }
 
     if (isDelete) {
-      const hasEditPermission = await checkPermission({
-        userId,
-        role,
-        resourceType: ResourceType.AGENT,
-        resourceId: agent._id,
-        requiredPermission: PermissionBits.EDIT,
-      });
+      const hasEditPermission = await hasAgentPermission(PermissionBits.EDIT);
 
       if (!hasEditPermission) {
         return accessMap;
