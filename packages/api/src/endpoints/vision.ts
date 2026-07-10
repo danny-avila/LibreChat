@@ -1,4 +1,4 @@
-import { resolveImageCapability, ImageCapabilitySource } from 'librechat-data-provider';
+import { resolveImageCapability, isConfidentlyNonVision } from 'librechat-data-provider';
 import type { TEndpoint, TModelSpec, ImageCapabilityResult } from 'librechat-data-provider';
 
 export interface GetImageCapabilityParams {
@@ -54,5 +54,5 @@ export function getImageCapability({
  * regressions for custom endpoints the heuristic doesn't know about.
  */
 export function shouldStripImages(result: ImageCapabilityResult): boolean {
-  return !result.capable && result.source !== ImageCapabilitySource.none;
+  return isConfidentlyNonVision(result);
 }

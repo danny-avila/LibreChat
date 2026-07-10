@@ -10,6 +10,7 @@ jest.mock('~/hooks', () => ({
   useAgentCapabilities: jest.fn(),
   useGetAgentsConfig: jest.fn(),
   useFileHandlingNoChatContext: jest.fn(),
+  useImageCapability: jest.fn(),
   useLocalize: jest.fn(),
 }));
 
@@ -82,6 +83,7 @@ const mockUseAgentToolPermissions = jest.requireMock('~/hooks').useAgentToolPerm
 const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilities;
 const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
 const mockUseFileHandlingNoChatContext = jest.requireMock('~/hooks').useFileHandlingNoChatContext;
+const mockUseImageCapability = jest.requireMock('~/hooks').useImageCapability;
 const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
 const mockUseSharePointFileHandling = jest.requireMock(
   '~/hooks/Files/useSharePointFileHandling',
@@ -111,6 +113,11 @@ function setupMocks(overrides: { provider?: string } = {}) {
   });
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: {} });
   mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange: jest.fn() });
+  mockUseImageCapability.mockReturnValue({
+    capable: true,
+    source: 'heuristic',
+    confidentlyNonVision: false,
+  });
   const sharePointReturnValue = {
     handleSharePointFiles: jest.fn(),
     isProcessing: false,
@@ -219,6 +226,30 @@ describe('AttachFileMenu', () => {
       renderMenu({ endpointType: EModelEndpoint.azureOpenAI, useResponsesApi: false });
       openMenu();
       expect(screen.getByText('Upload Image')).toBeInTheDocument();
+    });
+
+    it('hides "Upload Image" for a confidently non-vision model on an image-only provider', () => {
+      setupMocks({ provider: 'unknown-provider' });
+      mockUseImageCapability.mockReturnValue({
+        capable: false,
+        source: 'declared',
+        confidentlyNonVision: true,
+      });
+      renderMenu({ endpointType: 'unknown-type' });
+      openMenu();
+      expect(screen.queryByText('Upload Image')).not.toBeInTheDocument();
+    });
+
+    it('still shows "Upload to Provider" for a non-vision model on a document-supported provider', () => {
+      setupMocks({ provider: EModelEndpoint.openAI });
+      mockUseImageCapability.mockReturnValue({
+        capable: false,
+        source: 'declared',
+        confidentlyNonVision: true,
+      });
+      renderMenu({ endpointType: EModelEndpoint.openAI });
+      openMenu();
+      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
     });
   });
 

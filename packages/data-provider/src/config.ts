@@ -2315,6 +2315,16 @@ export function resolveImageCapability({
   return { capable: false, source: ImageCapabilitySource.none };
 }
 
+/**
+ * Whether a resolution is a *confident* negative — safe to strip image content
+ * or hide image-upload affordances. A `none` result (no capability signal) is
+ * NOT confident: callers should stay permissive so unrecognized-but-possibly-
+ * capable models keep accepting images.
+ */
+export function isConfidentlyNonVision(result: ImageCapabilityResult): boolean {
+  return !result.capable && result.source !== ImageCapabilitySource.none;
+}
+
 export function validateVisionModel({
   model,
   additionalModels = [],
