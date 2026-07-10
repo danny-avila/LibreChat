@@ -993,6 +993,13 @@ export const endpointSchema = baseEndpointSchema.merge(
       .strict()
       .optional(),
     directEndpoint: z.boolean().optional(),
+    /**
+     * Operator-declared model ids/substrings that support image input for this
+     * endpoint. Overrides the built-in vision heuristic, which relies on
+     * canonical model names and misses proxy/renamed models (e.g. LiteLLM
+     * display names). Matched as substrings, like the built-in list.
+     */
+    visionModels: z.array(z.string()).optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
     /** Static per-model token config: context window and per-million-token rates */
     tokenConfig: z
@@ -2213,28 +2220,125 @@ export enum VisionModes {
   agents = 'agents',
 }
 
+/**
+ * Model name substrings that are known to be text-only even though a broader
+ * heuristic match might otherwise flag them (e.g. `gpt-4-turbo-preview` matches
+ * `gpt-4-turbo`, `o1-mini` matches `o1`). These take precedence over the
+ * heuristic `visionModels` list but never over an explicit capability
+ * declaration.
+ */
+export const nonVisionModels = ['gpt-4-turbo-preview', 'o1-mini'];
+
+/**
+ * How an image-capability decision was reached. Callers can use this to
+ * distinguish a confident negative (safe to strip image content) from an
+ * absence of information (`none`, where legacy permissive behavior should be
+ * preserved to avoid dropping images for unknown-but-capable models).
+ */
+export enum ImageCapabilitySource {
+  /** Explicitly declared via config (modelSpec / endpoint / agent). */
+  declared = 'declared',
+  /** Matched the built-in known-vision-model heuristic (or operator aliases). */
+  heuristic = 'heuristic',
+  /** Model is in the known text-only exclusion list. */
+  excluded = 'excluded',
+  /** Model is not among the deployment's available models. */
+  unavailable = 'unavailable',
+  /** Fell back to a provider/endpoint-level default. */
+  endpoint = 'endpoint',
+  /** No capability signal was available. */
+  none = 'none',
+}
+
+export interface ResolveImageCapabilityParams {
+  /** The model name/id being evaluated. */
+  model?: string;
+  /**
+   * Explicit capability declaration from config (modelSpec.vision, endpoint
+   * capability, agent toggle). When set, it overrides every heuristic.
+   */
+  vision?: boolean;
+  /** Provider/endpoint-level default used only when no per-model signal exists. */
+  endpointCapable?: boolean;
+  /** Extra vision-capable substrings (operator aliases for renamed/proxy models). */
+  additionalModels?: string[];
+  /** When provided, a model absent from this list is treated as unusable. */
+  availableModels?: string[];
+}
+
+export interface ImageCapabilityResult {
+  capable: boolean;
+  source: ImageCapabilitySource;
+}
+
+/**
+ * Single source of truth for deciding whether a model can accept image input.
+ *
+ * Precedence (highest first):
+ * 1. `availableModels` gate — a model the deployment doesn't serve is unusable.
+ * 2. Explicit `vision` declaration — operator/spec/agent knows best.
+ * 3. Known text-only exclusion list.
+ * 4. Built-in heuristic + operator aliases (`additionalModels`).
+ * 5. Provider/endpoint-level default (`endpointCapable`).
+ * 6. Otherwise, unknown → not capable, but reported as `none` so callers can
+ *    choose to remain permissive rather than strip images from an
+ *    unrecognized-but-possibly-capable model.
+ */
+export function resolveImageCapability({
+  model,
+  vision,
+  endpointCapable,
+  additionalModels = [],
+  availableModels,
+}: ResolveImageCapabilityParams): ImageCapabilityResult {
+  if (model && availableModels && !availableModels.includes(model)) {
+    return { capable: false, source: ImageCapabilitySource.unavailable };
+  }
+
+  if (typeof vision === 'boolean') {
+    return { capable: vision, source: ImageCapabilitySource.declared };
+  }
+
+  if (model) {
+    if (nonVisionModels.some((excluded) => model.includes(excluded))) {
+      return { capable: false, source: ImageCapabilitySource.excluded };
+    }
+    if (visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel))) {
+      return { capable: true, source: ImageCapabilitySource.heuristic };
+    }
+  }
+
+  if (typeof endpointCapable === 'boolean') {
+    return { capable: endpointCapable, source: ImageCapabilitySource.endpoint };
+  }
+
+  return { capable: false, source: ImageCapabilitySource.none };
+}
+
 export function validateVisionModel({
   model,
   additionalModels = [],
   availableModels,
+  vision,
+  endpointCapable,
 }: {
   model: string;
   additionalModels?: string[];
   availableModels?: string[];
+  vision?: boolean;
+  endpointCapable?: boolean;
 }) {
-  if (!model) {
+  if (!model && typeof vision !== 'boolean') {
     return false;
   }
 
-  if (model.includes('gpt-4-turbo-preview') || model.includes('o1-mini')) {
-    return false;
-  }
-
-  if (availableModels && !availableModels.includes(model)) {
-    return false;
-  }
-
-  return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
+  return resolveImageCapability({
+    model,
+    additionalModels,
+    availableModels,
+    vision,
+    endpointCapable,
+  }).capable;
 }
 
 export const imageGenTools = new Set([

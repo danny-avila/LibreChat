@@ -67,6 +67,9 @@ const {
   appendYouTubeVideoParts,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
+  getImageCapability,
+  shouldStripImages,
+  getCustomEndpointConfig,
 } = require('@librechat/api');
 const {
   Callback,
@@ -286,6 +289,40 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Resolves (and caches) whether the active model can accept image input,
+   * layering explicit config (model spec / endpoint `visionModels`) over the
+   * built-in heuristic. Used to avoid sending images to text-only models, which
+   * OpenAI-compatible providers reject outright.
+   * @returns {import('librechat-data-provider').ImageCapabilityResult}
+   */
+  getImageCapability() {
+    if (this._imageCapability) {
+      return this._imageCapability;
+    }
+
+    const appConfig = this.options.req?.config;
+    const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+
+    let endpointConfig;
+    try {
+      endpointConfig = getCustomEndpointConfig({ endpoint, appConfig });
+    } catch {
+      endpointConfig = undefined;
+    }
+
+    const modelSpec = this.options.spec
+      ? appConfig?.modelSpecs?.list?.find((spec) => spec.name === this.options.spec)
+      : undefined;
+
+    this._imageCapability = getImageCapability({
+      model: this.model,
+      endpointConfig,
+      modelSpec,
+    });
+    return this._imageCapability;
+  }
+
+  /**
    *
    * @param {TMessage} message
    * @param {Array<MongoFile>} attachments
@@ -301,7 +338,22 @@ class AgentClient extends BaseClient {
       },
       VisionModes.agents,
     );
-    message.image_urls = image_urls.length ? image_urls : undefined;
+
+    if (image_urls.length === 0) {
+      message.image_urls = undefined;
+      return files;
+    }
+
+    const capability = this.getImageCapability();
+    if (shouldStripImages(capability)) {
+      logger.debug(
+        `[AgentClient] Model "${this.model}" resolved as non-image-capable (source: ${capability.source}); dropping ${image_urls.length} image part(s) from the payload.`,
+      );
+      message.image_urls = undefined;
+      return files;
+    }
+
+    message.image_urls = image_urls;
     return files;
   }
 
