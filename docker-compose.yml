@@ -5,7 +5,7 @@ name: ananselabs-chat
 
 services:
   api:
-    container_name: hst-ananselabs-chat-librechat
+    container_name: LibreChat
     ports:
       - "${PORT}:${PORT}"
     depends_on:
@@ -39,7 +39,7 @@ services:
       - ./skill:/app/skill
 
   admin-panel:
-    container_name: hst-ananselabs-chat-admin
+    container_name: admin-panel
     image: registry.librechat.ai/clickhouse/librechat-admin-panel:latest
     ports:
       - "${ADMIN_PANEL_PORT:-3000}:3000"
@@ -54,7 +54,7 @@ services:
       - SESSION_COOKIE_SECURE=${ADMIN_PANEL_SESSION_COOKIE_SECURE:-false}
 
   mongodb:
-    container_name: hst-ananselabs-chat-mongodb
+    container_name: chat-mongodb
     image: mongo:8.0.20
     restart: always
     user: "${UID}:${GID}"
@@ -63,7 +63,7 @@ services:
     command: mongod --noauth
 
   meilisearch:
-    container_name: hst-ananselabs-chat-meilisearch
+    container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.35.1
     restart: always
     user: "${UID}:${GID}"
@@ -75,7 +75,7 @@ services:
       - ./meili_data_v1.35.1:/meili_data
 
   vectordb:
-    container_name: hst-ananselabs-chat-vectordb
+    container_name: vectordb
     image: pgvector/pgvector:0.8.0-pg15-trixie
     environment:
       POSTGRES_DB: mydatabase
@@ -86,7 +86,7 @@ services:
       - pgdata2:/var/lib/postgresql/data
 
   rag_api:
-    container_name: hst-ananselabs-chat-rag
+    container_name: rag_api
     image: registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:latest
     environment:
       - DB_HOST=vectordb
@@ -99,7 +99,7 @@ services:
 
   # Cloudflare Tunnel service to expose the api container securely
   tunnel:
-    container_name: hst-ananselabs-chat-tunnel
+    container_name: tunnel
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run

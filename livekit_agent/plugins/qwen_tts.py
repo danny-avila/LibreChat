@@ -1,5 +1,5 @@
 """
-plugins/hstai_tts.py — TTS plugin wrapping HSTAI's TTS endpoint.
+plugins/qwen_tts.py — TTS plugin wrapping a generic Qwen TTS endpoint.
 """
 import os
 import io
@@ -13,8 +13,8 @@ TTS_URL = os.environ.get("TTS_URL", "http://tts-server:8080/v1/audio/speech")
 SAMPLE_RATE = 22050
 
 
-class HSTAITts(tts.TTS):
-    """Thin wrapper around HSTAI's /api/files/speech/tts endpoint."""
+class QwenTts(tts.TTS):
+    """Thin wrapper around Qwen TTS endpoint."""
 
     def __init__(self, voice: str = "default"):
         super().__init__(
@@ -24,11 +24,11 @@ class HSTAITts(tts.TTS):
         )
         self._voice = voice
 
-    def synthesize(self, text: str) -> "HSTAISynthesizeStream":
-        return HSTAISynthesizeStream(text=text, voice=self._voice)
+    def synthesize(self, text: str) -> "QwenSynthesizeStream":
+        return QwenSynthesizeStream(text=text, voice=self._voice)
 
 
-class HSTAISynthesizeStream(tts.SynthesizeStream):
+class QwenSynthesizeStream(tts.SynthesizeStream):
     def __init__(self, *, text: str, voice: str):
         super().__init__()
         self._text = text

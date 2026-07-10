@@ -1,5 +1,5 @@
 """
-plugins/hstai_stt.py — STT plugin wrapping HSTAI's Whisper endpoint.
+plugins/whisper_stt.py — STT plugin wrapping a generic Whisper API endpoint.
 """
 import os
 import io
@@ -10,8 +10,8 @@ from livekit.agents import stt
 STT_URL = os.environ.get("STT_URL", "http://wlk-gpu-sortformer:8000/v1/audio/transcriptions")
 
 
-class HSTAIWhisperSTT(stt.STT):
-    """Thin wrapper around HSTAI's /api/files/speech/stt endpoint."""
+class WhisperSTT(stt.STT):
+    """Thin wrapper around an OpenAI-compatible Whisper STT endpoint."""
 
     def __init__(self):
         super().__init__(capabilities=stt.STTCapabilities(streaming=False, interim_results=False))
@@ -49,6 +49,4 @@ class HSTAIWhisperSTT(stt.STT):
 
     # Required abstract stub — we use recognize() not stream()
     def stream(self, *, language=None):
-        raise NotImplementedError("HSTAIWhisperSTT is non-streaming")
-
-
+        raise NotImplementedError("WhisperSTT is non-streaming")

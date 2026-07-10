@@ -4,7 +4,7 @@ This setup runs LibreChat against an OpenAI-compatible Unsloth endpoint and the 
 
 ## Files
 
-- `librechat.yaml` defines the `Unsloth` custom endpoint at `http://153.67.73.26:8888/v1`.
+- `librechat.yaml` defines the `Unsloth` custom endpoint at `http://localhost:8888/v1`.
 - `.env` disables public registration, enables email/password login, sets local secrets, and configures RAG embeddings.
 - `docker-compose.override.yml` mounts `librechat.yaml` and switches `rag_api` to the full RAG image with local embedding support.
 
@@ -17,7 +17,7 @@ UNSLOTH_API_KEY=sk-unsloth-...
 UNSLOTH_MODEL=Qwen3.5-4B-MTP-GGUF
 ```
 
-The configured base URL is `http://153.67.73.26:8888/v1`, derived from the Unsloth API base URL `http://153.67.73.26:8888`.
+The configured base URL is `http://localhost:8888/v1`, derived from the Unsloth API base URL `http://localhost:8888`.
 
 ## Start
 
