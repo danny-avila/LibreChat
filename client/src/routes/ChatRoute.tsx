@@ -12,7 +12,8 @@ import {
   useGetEndpointsQuery,
   useProjectQuery,
   getMessagesByConvoIdQueryFn,
-  hasPendingAssistantTail,
+  getPendingAssistantTailKey,
+  hasNewPendingAssistantTail,
   hasActiveJob,
   useActiveJobs,
 } from '~/data-provider';
@@ -146,10 +147,10 @@ export default function ChatRoute() {
 
     const messagesQueryKey = [QueryKeys.messages, conversationId];
     const currentMessages = queryClient.getQueryData<TMessage[]>(messagesQueryKey);
-    const hasPendingTail = hasPendingAssistantTail(currentMessages ?? []);
+    const pendingTailKeyAtStart = getPendingAssistantTailKey(currentMessages ?? []);
     const hasActiveGeneration =
       isSubmitting || activeJobsQuery.data?.activeJobIds?.includes(conversationId) === true;
-    if (hasActiveGeneration || (hasPendingTail && activeJobsQuery.isLoading)) {
+    if (hasActiveGeneration || (pendingTailKeyAtStart != null && activeJobsQuery.isLoading)) {
       return;
     }
 
@@ -161,7 +162,13 @@ export default function ChatRoute() {
           pathname: `/c/${conversationId}`,
           queryClient,
           preservePendingTail: () =>
-            isSubmittingRef.current || hasActiveJob(queryClient, conversationId),
+            isSubmittingRef.current ||
+            hasActiveJob(queryClient, conversationId) ||
+            hasNewPendingAssistantTail({
+              queryClient,
+              queryKey: messagesQueryKey,
+              pendingTailKeyAtStart,
+            }),
         }),
       { staleTime: 15_000 },
     );

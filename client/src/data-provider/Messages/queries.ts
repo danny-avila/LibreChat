@@ -2,7 +2,12 @@ import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
-import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
+import type {
+  UseQueryOptions,
+  QueryObserverResult,
+  QueryClient,
+  QueryKey,
+} from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import { isNotFoundError, logger } from '~/utils';
 
@@ -39,6 +44,15 @@ export function hasPendingAssistantTail(messages: t.TMessage[]) {
     parentMessageId !== Constants.NO_PARENT &&
     isUnhydratedMessage(lastMessage)
   );
+}
+
+export function getPendingAssistantTailKey(messages: t.TMessage[]) {
+  if (!hasPendingAssistantTail(messages)) {
+    return null;
+  }
+
+  const lastMessage = messages[messages.length - 1];
+  return `${lastMessage.messageId ?? ''}:${lastMessage.parentMessageId ?? ''}`;
 }
 
 function isMessagePrefix(result: t.TMessage[], currentMessages: t.TMessage[]) {
@@ -88,6 +102,21 @@ export function hasActiveJob(queryClient: QueryClient, id: string) {
   }
   const activeJobs = queryClient.getQueryData<ActiveJobs>([QueryKeys.activeJobs]);
   return activeJobs?.activeJobIds?.includes(id) === true;
+}
+
+export function hasNewPendingAssistantTail({
+  queryClient,
+  queryKey,
+  pendingTailKeyAtStart,
+}: {
+  queryClient: QueryClient;
+  queryKey: QueryKey;
+  pendingTailKeyAtStart: string | null;
+}) {
+  const pendingTailKey = getPendingAssistantTailKey(
+    queryClient.getQueryData<t.TMessage[]>(queryKey) ?? [],
+  );
+  return pendingTailKey != null && pendingTailKey !== pendingTailKeyAtStart;
 }
 
 export async function getMessagesByConvoIdQueryFn({
