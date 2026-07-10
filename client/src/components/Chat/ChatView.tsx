@@ -59,10 +59,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
         },
         [fileMap],
       ),
-      enabled:
-        !!conversationId &&
-        conversationId !== Constants.NEW_CONVO &&
-        conversationId !== Constants.SEARCH,
+      enabled: !!conversationId && conversationId !== Constants.SEARCH,
     },
     { isStreaming: isSubmitting },
   );

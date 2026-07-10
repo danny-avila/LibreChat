@@ -1,8 +1,8 @@
 import { createElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { QueryKeys, dataService } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
@@ -318,6 +318,32 @@ describe('hasActiveJob', () => {
 });
 
 describe('useGetMessagesByConvoId', () => {
+  it('observes new conversation cache writes without fetching messages from the server', async () => {
+    const currentMessages = [message({ messageId: 'new-user', conversationId: null })];
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    const { result, unmount } = renderHook(() => useGetMessagesByConvoId(Constants.NEW_CONVO), {
+      wrapper: createWrapper(queryClient, '/c/new'),
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual([]);
+    });
+
+    act(() => {
+      queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], currentMessages);
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual(currentMessages);
+    });
+    expect(dataService.getMessagesByConvoId).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
   it('keeps cache during submitting cleanup when active job cache still marks the stream active', async () => {
     const conversationId = 'convo-id';
     const currentMessages = [

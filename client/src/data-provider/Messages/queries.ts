@@ -99,6 +99,10 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   return useQuery<t.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
     async () => {
+      if (id === Constants.NEW_CONVO) {
+        return queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]) ?? [];
+      }
+
       let result: t.TMessage[];
       try {
         result = await dataService.getMessagesByConvoId(id);
