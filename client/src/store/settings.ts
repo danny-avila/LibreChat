@@ -12,6 +12,7 @@ const staticAtoms = {
     default: SettingsViews.default,
   }),
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
+  isFeedbackDialogOpen: atom({ key: 'isFeedbackDialogOpen', default: false }),
 };
 
 const localStorageAtoms = {

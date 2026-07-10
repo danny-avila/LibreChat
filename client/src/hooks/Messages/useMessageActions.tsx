@@ -119,8 +119,15 @@ export default function useMessageActions(props: TMessageActions) {
 
   const handleFeedback = useCallback(
     ({ feedback: newFeedback }: { feedback: TFeedback | undefined }) => {
+      const normalizedFeedback = newFeedback
+        ? {
+            ...newFeedback,
+            tag:
+              typeof newFeedback.tag === 'string' ? getTagByKey(newFeedback.tag) : newFeedback.tag,
+          }
+        : undefined;
       const payload: TUpdateFeedbackRequest = {
-        feedback: newFeedback ? toMinimalFeedback(newFeedback) : undefined,
+        feedback: newFeedback ? toMinimalFeedback(normalizedFeedback) : undefined,
       };
 
       feedbackMutation.mutate(payload, {

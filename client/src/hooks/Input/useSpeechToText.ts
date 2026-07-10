@@ -5,6 +5,7 @@ import useGetAudioSettings from './useGetAudioSettings';
 const useSpeechToText = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
+  enabled = true,
 ): {
   isLoading?: boolean;
   isListening?: boolean;
@@ -19,7 +20,7 @@ const useSpeechToText = (
     isLoading: speechIsLoadingBrowser,
     startRecording: startSpeechRecordingBrowser,
     stopRecording: stopSpeechRecordingBrowser,
-  } = useSpeechToTextBrowser(setText, onTranscriptionComplete);
+  } = useSpeechToTextBrowser(setText, onTranscriptionComplete, enabled);
 
   const {
     isListening: speechIsListeningExternal,
