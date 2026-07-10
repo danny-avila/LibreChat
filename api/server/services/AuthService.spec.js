@@ -471,6 +471,24 @@ describe('registerUser', () => {
       }),
     );
   });
+
+  it('issues the verification token against the lowercased email for mixed-case registrations', async () => {
+    checkEmailConfig.mockReturnValue(true);
+    createUser.mockResolvedValue({ _id: 'new-user-id', emailVerified: false });
+
+    const result = await registerUser({
+      ...registrationPayload,
+      email: 'Mixed.Case@Example.com',
+    });
+
+    expect(result.status).toBe(200);
+    expect(createToken).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'mixed.case@example.com' }),
+    );
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'mixed.case@example.com' }),
+    );
+  });
 });
 
 describe('verifyEmail public response handling', () => {
