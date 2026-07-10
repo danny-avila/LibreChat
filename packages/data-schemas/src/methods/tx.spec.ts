@@ -449,6 +449,20 @@ describe('getMultiplier', () => {
     );
   });
 
+  it('should return the correct multiplier for gpt-5.6 tiers', () => {
+    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+      expect(getValueKey(model)).toBe(model);
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(tokenValues[model].completion);
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(cacheTokenValues[model].write);
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(cacheTokenValues[model].read);
+    }
+    expect(getValueKey('gpt-5.6-sol')).toBe('gpt-5.6');
+    expect(getMultiplier({ model: 'openai/gpt-5.6-terra', tokenType: 'completion' })).toBe(
+      tokenValues['gpt-5.6-terra'].completion,
+    );
+  });
+
   it('should return the correct multiplier for gpt-4o', () => {
     const valueKey = getValueKey('gpt-4o-2024-08-06');
     expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
@@ -2685,6 +2699,35 @@ describe('Premium Token Pricing', () => {
     expect(
       getMultiplier({ valueKey, tokenType: 'completion', inputTokenCount: belowThreshold }),
     ).toBe(tokenValues[premiumModel].completion);
+  });
+});
+
+describe('GPT-5.6 Long-Context Premium Pricing', () => {
+  const tiers = ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'];
+
+  it('should define a premium entry above standard rates for every tier', () => {
+    for (const model of tiers) {
+      const premiumEntry = premiumTokenValues[model];
+      expect(premiumEntry).toBeDefined();
+      expect(premiumEntry.threshold).toBe(272000);
+      expect(premiumEntry.prompt).toBe(tokenValues[model].prompt * 2);
+      expect(premiumEntry.completion).toBe(tokenValues[model].completion * 1.5);
+    }
+  });
+
+  it('should bill standard rates at or below threshold and premium rates above', () => {
+    for (const model of tiers) {
+      const { threshold, prompt, completion } = premiumTokenValues[model];
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold })).toBe(
+        tokenValues[model].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold + 1 })).toBe(
+        prompt,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', inputTokenCount: threshold + 1 }),
+      ).toBe(completion);
+    }
   });
 });
 

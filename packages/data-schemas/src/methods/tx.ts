@@ -134,6 +134,9 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gpt-5.4-nano': { prompt: 0.2, completion: 1.25 },
     'gpt-5.5': { prompt: 5, completion: 30 },
     'gpt-5.5-pro': { prompt: 30, completion: 180 },
+    'gpt-5.6': { prompt: 5, completion: 30 },
+    'gpt-5.6-terra': { prompt: 2.5, completion: 15 },
+    'gpt-5.6-luna': { prompt: 1, completion: 6 },
     'chat-latest': { prompt: 5, completion: 30 },
     'gpt-5-chat-latest': { prompt: 1.25, completion: 10 },
     'gpt-5.1-chat-latest': { prompt: 1.25, completion: 10 },
@@ -329,6 +332,9 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gpt-5.4-mini': { write: 0.75, read: 0.075 },
   'gpt-5.4-nano': { write: 0.2, read: 0.02 },
   'gpt-5.5': { write: 5, read: 0.5 },
+  'gpt-5.6': { write: 5, read: 0.5 },
+  'gpt-5.6-terra': { write: 2.5, read: 0.25 },
+  'gpt-5.6-luna': { write: 1, read: 0.1 },
   'chat-latest': { write: 5, read: 0.5 },
   'gpt-5-chat-latest': { write: 1.25, read: 0.125 },
   'gpt-5.1-chat-latest': { write: 1.25, read: 0.125 },
@@ -376,6 +382,9 @@ export const premiumTokenValues: Record<
   'gpt-5.4-pro': { threshold: 272000, prompt: 60, completion: 270 },
   'gpt-5.5': { threshold: 272000, prompt: 10, completion: 45 },
   'gpt-5.5-pro': { threshold: 272000, prompt: 60, completion: 270 },
+  'gpt-5.6': { threshold: 272000, prompt: 10, completion: 45 },
+  'gpt-5.6-terra': { threshold: 272000, prompt: 5, completion: 22.5 },
+  'gpt-5.6-luna': { threshold: 272000, prompt: 2, completion: 9 },
 };
 
 export function createTxMethods(
