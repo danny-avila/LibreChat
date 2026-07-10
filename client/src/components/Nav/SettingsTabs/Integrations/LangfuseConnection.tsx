@@ -2,13 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Button,
   CircleHelpIcon,
+  Dropdown,
   HoverCard,
   HoverCardContent,
   HoverCardPortal,
   HoverCardTrigger,
   Input,
   Label,
-  SecretInput,
   Spinner,
   Switch,
   useToastContext,
@@ -30,7 +30,7 @@ function getStoredConnectionTestKey(status?: TLangfuseConnectionStatus): string 
     return undefined;
   }
 
-  return [status.destination, status.publicKey, status.updatedAt ?? ''].join('\u0000');
+  return [status.destination, status.publicKey].join('\u0000');
 }
 
 function getConnectionStatusLabelKey(state: ConnectionTestState): TranslationKeys {
@@ -88,6 +88,21 @@ export default function LangfuseConnection() {
   const [connectionTestMessage, setConnectionTestMessage] = useState('');
   const autoTestedConnectionRef = useRef<string>();
   const connectionTestRequestRef = useRef(0);
+  const skipConnectionStatusSyncRef = useRef(false);
+  const publicKeyInputRef = useRef<HTMLInputElement>(null);
+  const secretKeyInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditingPublicKey) {
+      publicKeyInputRef.current?.focus();
+    }
+  }, [isEditingPublicKey]);
+
+  useEffect(() => {
+    if (isEditingSecretKey) {
+      secretKeyInputRef.current?.focus();
+    }
+  }, [isEditingSecretKey]);
 
   useEffect(() => {
     if (!status) {
@@ -101,6 +116,10 @@ export default function LangfuseConnection() {
       return;
     }
     setEnabled(connectionStatus.enabled === true);
+    if (skipConnectionStatusSyncRef.current) {
+      skipConnectionStatusSyncRef.current = false;
+      return;
+    }
     const availableDestinations = connectionStatus.destinations ?? [];
     const storedDestination = availableDestinations.some(
       (option) => option.key === connectionStatus.destination,
@@ -113,13 +132,17 @@ export default function LangfuseConnection() {
 
   const secretConfigured = connectionStatus?.configured === true;
   const destinations = connectionStatus?.destinations ?? [];
+  const destinationOptions = destinations.map(({ key, baseUrl }) => ({
+    value: key,
+    label: `${key} - ${baseUrl}`,
+  }));
   const trimmedPublicKey = publicKey.trim();
   const trimmedSecretKey = secretKey.trim();
   const publicKeyInputVisible = !secretConfigured || isEditingPublicKey;
   const secretInputVisible = !secretConfigured || isEditingSecretKey;
   const displayPublicKey = getDisplayPublicKey(publicKey);
   const hasUnsavedChanges =
-    enabled !== (connectionStatus?.enabled === true) ||
+    (!secretConfigured && enabled !== (connectionStatus?.enabled === true)) ||
     destination !== (connectionStatus?.destination ?? '') ||
     trimmedPublicKey !== (connectionStatus?.publicKey ?? '') ||
     trimmedSecretKey !== '';
@@ -301,6 +324,45 @@ export default function LangfuseConnection() {
     );
   };
 
+  const handleEnabledChange = (nextEnabled: boolean) => {
+    setEnabled(nextEnabled);
+    if (!secretConfigured || !connectionStatus?.destination || !connectionStatus.publicKey) {
+      return;
+    }
+
+    const previousEnabled = connectionStatus.enabled === true;
+    const requestId = ++connectionTestRequestRef.current;
+    const saveEnabledState = () => {
+      updateMutation.mutate(
+        {
+          enabled: nextEnabled,
+          destination: connectionStatus.destination ?? '',
+          publicKey: connectionStatus.publicKey ?? '',
+        },
+        {
+          onSuccess: (nextStatus) => {
+            if (requestId !== connectionTestRequestRef.current) {
+              return;
+            }
+            autoTestedConnectionRef.current = getStoredConnectionTestKey(nextStatus);
+            skipConnectionStatusSyncRef.current = true;
+            setConnectionStatus(nextStatus);
+            showToast({ message: localize('com_ui_langfuse_saved'), status: 'success' });
+          },
+          onError: () => {
+            if (requestId !== connectionTestRequestRef.current) {
+              return;
+            }
+            setEnabled(previousEnabled);
+            showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' });
+          },
+        },
+      );
+    };
+
+    saveEnabledState();
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <HoverCard openDelay={50}>
@@ -324,7 +386,8 @@ export default function LangfuseConnection() {
             </div>
             <Switch
               checked={enabled}
-              onCheckedChange={setEnabled}
+              disabled={testMutation.isLoading || updateMutation.isLoading}
+              onCheckedChange={handleEnabledChange}
               aria-labelledby="langfuse-enabled-label"
             />
           </div>
@@ -350,25 +413,22 @@ export default function LangfuseConnection() {
       </HoverCard>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="langfuse-destination">{localize('com_ui_langfuse_destination')}</Label>
-        <select
-          id="langfuse-destination"
-          className="flex h-9 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary shadow-sm outline-none focus:ring-2 focus:ring-ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+        <Label id="langfuse-destination-label">{localize('com_ui_langfuse_destination')}</Label>
+        <Dropdown
           value={destination}
+          label={destination === '' ? localize('com_ui_select') : ''}
+          onChange={handleDestinationChange}
+          options={destinationOptions}
           disabled={destinations.length === 0}
-          onChange={(e) => handleDestinationChange(e.target.value)}
-        >
-          <option value="">{localize('com_ui_select')}</option>
-          {destinations.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.key} - {option.baseUrl}
-            </option>
-          ))}
-        </select>
+          className="w-full"
+          sizeClasses="z-50 w-[var(--popover-anchor-width)]"
+          testId="langfuse-destination"
+          aria-labelledby="langfuse-destination-label"
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="langfuse-public-key">{localize('com_ui_langfuse_public_key')}</Label>
+        <Label htmlFor="langfuse-public-token">{localize('com_ui_langfuse_public_key')}</Label>
         {secretConfigured && !isEditingPublicKey && (
           <button
             type="button"
@@ -383,10 +443,13 @@ export default function LangfuseConnection() {
         )}
         {publicKeyInputVisible && (
           <Input
-            id="langfuse-public-key"
+            ref={publicKeyInputRef}
+            id="langfuse-public-token"
             autoComplete="off"
             data-lpignore="true"
             data-1p-ignore="true"
+            data-bwignore="true"
+            data-form-type="other"
             value={publicKey}
             placeholder="pk-lf-..."
             onChange={(e) => setPublicKey(e.target.value)}
@@ -395,7 +458,7 @@ export default function LangfuseConnection() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="langfuse-secret-key">{localize('com_ui_langfuse_secret_key')}</Label>
+        <Label htmlFor="langfuse-private-token">{localize('com_ui_langfuse_secret_key')}</Label>
         {secretConfigured && !isEditingSecretKey && (
           <button
             type="button"
@@ -409,15 +472,17 @@ export default function LangfuseConnection() {
           </button>
         )}
         {secretInputVisible && (
-          <SecretInput
-            id="langfuse-secret-key"
-            autoComplete="new-password"
+          <Input
+            ref={secretKeyInputRef}
+            id="langfuse-private-token"
+            type="text"
+            autoComplete="off"
             data-lpignore="true"
             data-1p-ignore="true"
-            controlsOnHover
+            data-bwignore="true"
+            data-form-type="other"
             value={secretKey}
             placeholder="sk-lf-..."
-            containerClassName="w-full"
             onChange={(e) => setSecretKey(e.target.value)}
           />
         )}
