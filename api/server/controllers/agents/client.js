@@ -295,7 +295,7 @@ class AgentClient extends BaseClient {
    * OpenAI-compatible providers reject outright.
    * @returns {import('librechat-data-provider').ImageCapabilityResult}
    */
-  getImageCapability() {
+  resolveModelImageCapability() {
     if (this._imageCapability) {
       return this._imageCapability;
     }
@@ -338,22 +338,7 @@ class AgentClient extends BaseClient {
       },
       VisionModes.agents,
     );
-
-    if (image_urls.length === 0) {
-      message.image_urls = undefined;
-      return files;
-    }
-
-    const capability = this.getImageCapability();
-    if (shouldStripImages(capability)) {
-      logger.debug(
-        `[AgentClient] Model "${this.model}" resolved as non-image-capable (source: ${capability.source}); dropping ${image_urls.length} image part(s) from the payload.`,
-      );
-      message.image_urls = undefined;
-      return files;
-    }
-
-    message.image_urls = image_urls;
+    message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }
 
@@ -427,9 +412,27 @@ class AgentClient extends BaseClient {
     let hasFileContext = false;
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
+    /**
+     * When the model can't accept images, drop `image_urls` from the LLM
+     * payload for every message — current and historical/resent — so text-only
+     * providers don't reject the request. Stripping happens on a shallow copy so
+     * the persisted message and its UI rendering keep the user's image; only the
+     * formatted payload sent to the model is affected (mirrors the YouTube
+     * injection below, which is also payload-only).
+     */
+    const stripImages = shouldStripImages(this.resolveModelImageCapability());
+    if (stripImages) {
+      logger.debug(
+        `[AgentClient] Model "${this.model}" resolved as non-image-capable (source: ${this._imageCapability?.source}); stripping image parts from the LLM payload.`,
+      );
+    }
     const formattedMessages = orderedMessages.map((message, i) => {
+      const payloadMessage =
+        stripImages && Array.isArray(message.image_urls) && message.image_urls.length > 0
+          ? { ...message, image_urls: [] }
+          : message;
       const formattedMessage = formatMessage({
-        message,
+        message: payloadMessage,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });

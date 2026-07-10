@@ -994,10 +994,12 @@ export const endpointSchema = baseEndpointSchema.merge(
       .optional(),
     directEndpoint: z.boolean().optional(),
     /**
-     * Operator-declared model ids/substrings that support image input for this
-     * endpoint. Overrides the built-in vision heuristic, which relies on
-     * canonical model names and misses proxy/renamed models (e.g. LiteLLM
-     * display names). Matched as substrings, like the built-in list.
+     * Additional model ids/substrings to treat as image-capable for this
+     * endpoint, on top of the built-in vision heuristic. Use this for
+     * proxy/renamed models the heuristic can't recognize by canonical name
+     * (e.g. LiteLLM display names). Matched as substrings. This only *adds*
+     * capable models; it does not mark unlisted models as non-vision (declare
+     * that per-model with `modelSpec.vision: false`).
      */
     visionModels: z.array(z.string()).optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
