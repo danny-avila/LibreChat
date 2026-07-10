@@ -122,7 +122,17 @@ const fileAccess = async (req, res, next) => {
       });
     }
 
-    const [file] = await getFiles({ file_id: fileId });
+    let [file] = await getFiles({ file_id: fileId });
+    if (!file) {
+      /* A tenantless file attached to a `tenants: 'system'` global isn't found by the tenant-scoped
+       * lookup; retry under the system context pinned to tenantless (never another concrete tenant).
+       * Agent-based access below still gates whether this user may actually read it. */
+      const systemFiles = await runAsSystem(async () => {
+        const rows = await getFiles({ file_id: fileId, tenantId: { $exists: false } });
+        return rows;
+      });
+      file = systemFiles?.[0];
+    }
     if (!file) {
       return res.status(404).json({
         error: 'Not Found',

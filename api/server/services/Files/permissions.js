@@ -1,4 +1,4 @@
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem } = require('@librechat/data-schemas');
 const { PermissionBits, ResourceType, isEphemeralAgentId } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
 const {
@@ -84,12 +84,24 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
 
     const attachedFileIds = getAttachedFileIds(agent);
     const agentAuthorId = agent.author?.toString();
-    const filesById =
-      files != null
-        ? getFilesById(files)
-        : getFilesById(
-            await getFiles({ file_id: { $in: fileIds } }, null, { file_id: 1, user: 1 }),
-          );
+    /* A tenantless system global's admin-provided files are invisible to the caller's tenant-scoped
+     * `files`/getFiles lookup, so load their metadata under the system context (the ids are already
+     * scoped to this authorized agent's tool_resources). */
+    let fileMetadata;
+    if (viaSystemGlobal) {
+      fileMetadata = await runAsSystem(async () => {
+        const systemFiles = await getFiles({ file_id: { $in: fileIds } }, null, {
+          file_id: 1,
+          user: 1,
+        });
+        return systemFiles;
+      });
+    } else if (files != null) {
+      fileMetadata = files;
+    } else {
+      fileMetadata = await getFiles({ file_id: { $in: fileIds } }, null, { file_id: 1, user: 1 });
+    }
+    const filesById = getFilesById(fileMetadata);
     const canInheritFromAgent = (fileId) =>
       attachedFileIds.has(fileId) && filesById.get(fileId)?.user != null;
 
