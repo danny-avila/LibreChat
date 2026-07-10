@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
+import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -294,6 +295,7 @@ const ProjectItem = memo(
     const startChat = useCallback(async () => {
       const conversationId = await getCurrentConversationId();
       clearMessagesCache(queryClient, conversationId);
+      queryClient.invalidateQueries([QueryKeys.messages]);
       newConversation({ template: { chatProjectId: project._id } });
       toggleNav();
     }, [getCurrentConversationId, newConversation, project._id, queryClient, toggleNav]);

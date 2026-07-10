@@ -1,22 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
-import type { TMessage, TPreset } from 'librechat-data-provider';
-import {
-  useGetConvoIdQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-  useProjectQuery,
-  getMessagesByConvoIdQueryFn,
-  getPendingAssistantTailKey,
-  hasNewPendingAssistantTail,
-  hasActiveJob,
-  useActiveJobs,
-} from '~/data-provider';
+import type { TPreset } from 'librechat-data-provider';
 import {
   mergeQuerySettingsWithSpec,
   processValidSettings,
@@ -27,6 +16,12 @@ import {
   logger,
   clearMessagesCache,
 } from '~/utils';
+import {
+  useGetConvoIdQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+  useProjectQuery,
+} from '~/data-provider';
 import {
   useAssistantListMap,
   useIdChangeEffect,
@@ -66,16 +61,9 @@ export default function ChatRoute() {
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
-  const isSubmittingRef = useRef(isSubmitting);
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
-  const activeJobsQuery = useActiveJobs(isAuthenticated);
-
-  useLayoutEffect(() => {
-    isSubmittingRef.current = isSubmitting;
-  }, [isSubmitting]);
   const projectQuery = useProjectQuery(chatProjectId, {
     enabled: isAuthenticated && Boolean(chatProjectId),
     retry: false,
@@ -134,53 +122,6 @@ export default function ChatRoute() {
     enabled:
       isAuthenticated && conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
   });
-
-  useEffect(() => {
-    if (
-      !isAuthenticated ||
-      !conversationId ||
-      conversationId === Constants.NEW_CONVO ||
-      conversationId === Constants.SEARCH
-    ) {
-      return;
-    }
-
-    const messagesQueryKey = [QueryKeys.messages, conversationId];
-    const currentMessages = queryClient.getQueryData<TMessage[]>(messagesQueryKey);
-    const pendingTailKeyAtStart = getPendingAssistantTailKey(currentMessages ?? []);
-    const hasActiveGeneration =
-      isSubmitting || activeJobsQuery.data?.activeJobIds?.includes(conversationId) === true;
-    if (hasActiveGeneration || (pendingTailKeyAtStart != null && activeJobsQuery.isLoading)) {
-      return;
-    }
-
-    void queryClient.prefetchQuery(
-      messagesQueryKey,
-      () =>
-        getMessagesByConvoIdQueryFn({
-          id: conversationId,
-          pathname: `/c/${conversationId}`,
-          queryClient,
-          preservePendingTail: () =>
-            isSubmittingRef.current ||
-            hasActiveJob(queryClient, conversationId) ||
-            hasNewPendingAssistantTail({
-              queryClient,
-              queryKey: messagesQueryKey,
-              pendingTailKeyAtStart,
-            }),
-        }),
-      { staleTime: 15_000 },
-    );
-  }, [
-    activeJobsQuery.data?.activeJobIds,
-    activeJobsQuery.isLoading,
-    conversationId,
-    isAuthenticated,
-    isSubmitting,
-    queryClient,
-  ]);
-
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
 

@@ -1,5 +1,5 @@
+import { QueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import {
@@ -36,89 +36,17 @@ const makeMessage = (overrides: Partial<TMessage> = {}): TMessage =>
   }) as TMessage;
 
 describe('clearMessagesCache', () => {
-  it('removes message queries instead of caching empty arrays as fresh data', () => {
+  it('removes existing-conversation history while resetting the new-conversation cache', () => {
     const queryClient = new QueryClient();
-    const conversationId = 'convo-1';
-    const otherConversationId = 'convo-2';
-    const existingMessages = [makeMessage({ messageId: 'existing' })];
-    const otherMessages = [makeMessage({ messageId: 'other' })];
-    const newConvoMessages = [makeMessage({ messageId: 'new-convo' })];
-
-    queryClient.setQueryData([QueryKeys.messages, conversationId], existingMessages);
-    queryClient.setQueryData([QueryKeys.messages, otherConversationId], otherMessages);
-    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], newConvoMessages);
+    const conversationId = 'conversation-1';
+    const messages = [makeMessage({ conversationId })];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], messages);
 
     clearMessagesCache(queryClient, conversationId);
 
     expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
-    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toBeUndefined();
-    expect(queryClient.getQueryData([QueryKeys.messages, otherConversationId])).toBe(otherMessages);
-  });
-
-  it('removes only the NEW_CONVO query when no conversation id is provided', () => {
-    const queryClient = new QueryClient();
-    const otherConversationId = 'convo-2';
-    const otherMessages = [makeMessage({ messageId: 'other' })];
-    const newConvoMessages = [makeMessage({ messageId: 'new-convo' })];
-
-    queryClient.setQueryData([QueryKeys.messages, otherConversationId], otherMessages);
-    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], newConvoMessages);
-
-    clearMessagesCache(queryClient, undefined);
-
-    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toBeUndefined();
-    expect(queryClient.getQueryData([QueryKeys.messages, otherConversationId])).toBe(otherMessages);
-  });
-
-  it('resets an active message observer so mounted chats clear immediately', () => {
-    const queryClient = new QueryClient();
-    const activeMessages = [makeMessage({ messageId: 'active-new-convo' })];
-    const queryKey = [QueryKeys.messages, Constants.NEW_CONVO];
-    queryClient.setQueryData(queryKey, activeMessages);
-
-    const observer = new QueryObserver<TMessage[]>(queryClient, {
-      queryKey,
-      enabled: false,
-      queryFn: async () => activeMessages,
-    });
-    const unsubscribe = observer.subscribe(jest.fn());
-
-    expect(observer.getCurrentResult().data).toBe(activeMessages);
-
-    clearMessagesCache(queryClient, undefined);
-
-    expect(queryClient.getQueryData(queryKey)).toBeUndefined();
-    expect(observer.getCurrentResult().data).toBeUndefined();
-    expect(observer.getCurrentResult().status).toBe('loading');
-
-    unsubscribe();
-  });
-
-  it('does not refetch enabled observers when clearing mounted messages', () => {
-    const queryClient = new QueryClient();
-    const activeMessages = [makeMessage({ messageId: 'active-convo' })];
-    const queryKey = [QueryKeys.messages, 'convo-1'];
-    const queryFn = jest.fn(async () => activeMessages);
-    queryClient.setQueryData(queryKey, activeMessages);
-
-    const observer = new QueryObserver<TMessage[]>(queryClient, {
-      queryKey,
-      queryFn,
-      staleTime: Infinity,
-    });
-    const unsubscribe = observer.subscribe(jest.fn());
-
-    expect(observer.getCurrentResult().data).toBe(activeMessages);
-    expect(queryFn).not.toHaveBeenCalled();
-
-    clearMessagesCache(queryClient, 'convo-1');
-
-    expect(queryClient.getQueryData(queryKey)).toBeUndefined();
-    expect(observer.getCurrentResult().data).toBeUndefined();
-    expect(observer.getCurrentResult().status).toBe('loading');
-    expect(queryFn).not.toHaveBeenCalled();
-
-    unsubscribe();
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
   });
 });
 

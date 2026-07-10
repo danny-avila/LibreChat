@@ -2,12 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
-import type {
-  UseQueryOptions,
-  QueryObserverResult,
-  QueryClient,
-  QueryKey,
-} from '@tanstack/react-query';
+import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import { isNotFoundError, logger } from '~/utils';
 
@@ -22,20 +17,12 @@ type ActiveJobs = {
   activeJobIds?: string[];
 };
 
-type MessagesQueryFnParams = {
-  id: string;
-  pathname: string;
-  queryClient: QueryClient;
-  isStreaming?: boolean | (() => boolean);
-  preservePendingTail?: boolean | (() => boolean);
-};
-
 function isUnhydratedMessage(message: t.TMessage) {
   const messageId = message.messageId ?? '';
   return message.createdAt == null || message.updatedAt == null || messageId.endsWith('_');
 }
 
-export function hasPendingAssistantTail(messages: t.TMessage[]) {
+function hasPendingAssistantTail(messages: t.TMessage[]) {
   const lastMessage = messages[messages.length - 1];
   const parentMessageId = lastMessage?.parentMessageId ?? '';
   return (
@@ -44,15 +31,6 @@ export function hasPendingAssistantTail(messages: t.TMessage[]) {
     parentMessageId !== Constants.NO_PARENT &&
     isUnhydratedMessage(lastMessage)
   );
-}
-
-export function getPendingAssistantTailKey(messages: t.TMessage[]) {
-  if (!hasPendingAssistantTail(messages)) {
-    return null;
-  }
-
-  const lastMessage = messages[messages.length - 1];
-  return `${lastMessage.messageId ?? ''}:${lastMessage.parentMessageId ?? ''}`;
 }
 
 function isMessagePrefix(result: t.TMessage[], currentMessages: t.TMessage[]) {
@@ -96,107 +74,12 @@ export function shouldPreserveMessagesOnNotFound({
   return hasPendingAssistantTail(currentMessages);
 }
 
-export function hasActiveJob(queryClient: QueryClient, id: string) {
+function hasActiveJob(queryClient: QueryClient, id: string) {
   if (!id) {
     return false;
   }
   const activeJobs = queryClient.getQueryData<ActiveJobs>([QueryKeys.activeJobs]);
   return activeJobs?.activeJobIds?.includes(id) === true;
-}
-
-export function hasNewPendingAssistantTail({
-  queryClient,
-  queryKey,
-  pendingTailKeyAtStart,
-}: {
-  queryClient: QueryClient;
-  queryKey: QueryKey;
-  pendingTailKeyAtStart: string | null;
-}) {
-  const pendingTailKey = getPendingAssistantTailKey(
-    queryClient.getQueryData<t.TMessage[]>(queryKey) ?? [],
-  );
-  return pendingTailKey != null && pendingTailKey !== pendingTailKeyAtStart;
-}
-
-export async function getMessagesByConvoIdQueryFn({
-  id,
-  pathname,
-  queryClient,
-  isStreaming = false,
-  preservePendingTail = false,
-}: MessagesQueryFnParams): Promise<t.TMessage[]> {
-  if (id === Constants.NEW_CONVO) {
-    return queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]) ?? [];
-  }
-
-  const getIsStreaming = () => (typeof isStreaming === 'function' ? isStreaming() : isStreaming);
-  const getShouldPreservePendingTail = () =>
-    typeof preservePendingTail === 'function' ? preservePendingTail() : preservePendingTail;
-  const hasLiveStream = (currentMessages?: t.TMessage[]) =>
-    getIsStreaming() ||
-    hasActiveJob(queryClient, id) ||
-    (getShouldPreservePendingTail() &&
-      currentMessages != null &&
-      hasPendingAssistantTail(currentMessages));
-
-  let result: t.TMessage[];
-  try {
-    result = await dataService.getMessagesByConvoId(id);
-  } catch (error) {
-    const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
-    if (
-      currentMessages &&
-      isNotFoundError(error) &&
-      shouldPreserveMessagesOnNotFound({
-        pathname,
-        currentMessages,
-        isStreaming: hasLiveStream(currentMessages),
-      })
-    ) {
-      logger.warn(
-        'messages',
-        `Messages query for convo ${id} returned 404 while cache has a pending assistant tail; path: "${pathname}"`,
-        currentMessages,
-      );
-      return currentMessages;
-    }
-
-    throw error;
-  }
-
-  const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
-  if (
-    getShouldPreservePendingTail() &&
-    currentMessages != null &&
-    hasPendingAssistantTail(currentMessages)
-  ) {
-    logger.warn(
-      'messages',
-      `Messages query for convo ${id} preserved pending assistant tail during prefetch; path: "${pathname}"`,
-      result,
-      currentMessages,
-    );
-    return currentMessages;
-  }
-
-  const stableMessages = getStableMessages({
-    pathname,
-    result,
-    currentMessages,
-    isStreaming: hasLiveStream(currentMessages),
-  });
-
-  if (stableMessages === currentMessages) {
-    logger.warn(
-      'messages',
-      `Messages query for convo ${id} returned fewer than cache; path: "${pathname}"`,
-      result,
-      currentMessages,
-    );
-  }
-
-  return stableMessages;
 }
 
 export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
@@ -215,13 +98,75 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
 
   return useQuery<t.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
-    () =>
-      getMessagesByConvoIdQueryFn({
-        id,
+    async () => {
+      const queryKey = [QueryKeys.messages, id];
+      const messagesAtRequestStart = queryClient.getQueryData<t.TMessage[]>(queryKey);
+
+      if (id === Constants.NEW_CONVO) {
+        return messagesAtRequestStart ?? [];
+      }
+
+      let result: t.TMessage[];
+      try {
+        result = await dataService.getMessagesByConvoId(id);
+      } catch (error) {
+        const currentMessages = queryClient.getQueryData<t.TMessage[]>(queryKey);
+        if (
+          messagesAtRequestStart != null &&
+          currentMessages != null &&
+          currentMessages !== messagesAtRequestStart
+        ) {
+          return currentMessages;
+        }
+
+        const hasLiveStream = isStreamingRef.current || hasActiveJob(queryClient, id);
+        if (
+          currentMessages &&
+          isNotFoundError(error) &&
+          shouldPreserveMessagesOnNotFound({
+            pathname: location.pathname,
+            currentMessages,
+            isStreaming: hasLiveStream,
+          })
+        ) {
+          logger.warn(
+            'messages',
+            `Messages query for convo ${id} returned 404 while cache has a pending assistant tail; path: "${location.pathname}"`,
+            currentMessages,
+          );
+          return currentMessages;
+        }
+
+        throw error;
+      }
+
+      const currentMessages = queryClient.getQueryData<t.TMessage[]>(queryKey);
+      if (
+        messagesAtRequestStart != null &&
+        currentMessages != null &&
+        currentMessages !== messagesAtRequestStart
+      ) {
+        return currentMessages;
+      }
+
+      const stableMessages = getStableMessages({
         pathname: location.pathname,
-        queryClient,
-        isStreaming: () => isStreamingRef.current,
-      }),
+        result,
+        currentMessages,
+        isStreaming: isStreamingRef.current || hasActiveJob(queryClient, id),
+      });
+
+      if (stableMessages === currentMessages) {
+        logger.warn(
+          'messages',
+          `Messages query for convo ${id} returned fewer than cache; path: "${location.pathname}"`,
+          result,
+          currentMessages,
+        );
+      }
+
+      return stableMessages;
+    },
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

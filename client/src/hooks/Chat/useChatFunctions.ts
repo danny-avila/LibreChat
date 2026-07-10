@@ -79,28 +79,6 @@ const hasPendingAssistantParent = (message: TMessage | null) =>
   message.updatedAt == null &&
   !hasStreamStartFailed(message);
 
-function isWaitingForConversationDetails(
-  queryClient: ReturnType<typeof useQueryClient>,
-  conversationId: string | null,
-): boolean {
-  if (
-    !conversationId ||
-    conversationId === Constants.NEW_CONVO ||
-    conversationId === Constants.SEARCH
-  ) {
-    return false;
-  }
-
-  const conversationQueryKey = [QueryKeys.conversation, conversationId];
-  const conversationQueryState = queryClient.getQueryState(conversationQueryKey);
-  return (
-    queryClient.getQueryData(conversationQueryKey) == null &&
-    (queryClient.isFetching({ queryKey: conversationQueryKey, exact: true }) > 0 ||
-      conversationQueryState?.status === 'loading' ||
-      conversationQueryState?.status === 'error')
-  );
-}
-
 type RegenerateTargetResponseArgs = {
   messages: TMessage[];
   parentMessageId?: string | null;
@@ -219,7 +197,7 @@ export default function useChatFunctions({
   paramId?: string | undefined;
   conversation: TConversation | null;
   latestMessage: TMessage | null;
-  getMessages: () => TMessage[] | undefined;
+  getMessages: (conversationId?: string | null) => TMessage[] | undefined;
   setMessages: (messages: TMessage[]) => void;
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
@@ -324,11 +302,10 @@ export default function useChatFunctions({
       return;
     }
 
-    if (isWaitingForConversationDetails(queryClient, conversationId)) {
-      logger.warn(
-        '[useChatFunctions] Waiting for full conversation details before submitting',
-        conversationId,
-      );
+    const cachedMessages = getMessages(conversationId);
+    const isExistingConversation = conversationId != null && conversationId !== Constants.NEW_CONVO;
+    if (isExistingConversation && overrideMessages == null && cachedMessages == null) {
+      logger.warn('[useChatFunctions] Refusing to send before existing conversation history loads');
       return false;
     }
 
@@ -387,7 +364,7 @@ export default function useChatFunctions({
     }
     const isEditOrContinue = isEdited || isContinued;
 
-    let currentMessages: TMessage[] = overrideMessages ?? getMessages() ?? [];
+    let currentMessages: TMessage[] = overrideMessages ?? cachedMessages ?? [];
 
     if (conversation?.promptPrefix) {
       conversation.promptPrefix = replaceSpecialVars({

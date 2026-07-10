@@ -291,28 +291,9 @@ export const scrollToEnd = (callback?: () => void) => {
   }
 };
 
-const clearMessagesQuery = (queryClient: QueryClient, conversationId: string): void => {
-  const queryKey = [QueryKeys.messages, conversationId];
-  // Some tests pass partial QueryClient doubles; real clients always expose getQueryCache.
-  const query =
-    typeof queryClient.getQueryCache === 'function'
-      ? queryClient.getQueryCache().find(queryKey)
-      : undefined;
-
-  if (query?.getObserversCount()) {
-    // Clear mounted views without the refetch that queryClient.resetQueries would trigger.
-    // Callers should navigate or swap to a new conversation after clearing an enabled observer.
-    query.reset();
-    return;
-  }
-
-  queryClient.removeQueries({ queryKey, exact: true });
-};
-
 /**
- * Clears messages for both the specified conversation ID and the NEW_CONVO query key.
- * This ensures that messages are properly cleared in all contexts, preventing stale data
- * from persisting in the NEW_CONVO cache.
+ * Removes an existing conversation's message query so reopening it starts cold, and resets the
+ * NEW_CONVO query to an empty cache for immediate optimistic messages.
  *
  * @param queryClient - The React Query client instance
  * @param conversationId - The conversation ID to clear messages for
@@ -323,13 +304,12 @@ export const clearMessagesCache = (
 ): void => {
   const convoId = conversationId ?? Constants.NEW_CONVO;
 
-  // Observed queries must notify mounted chat views; unobserved queries can be removed entirely.
-  clearMessagesQuery(queryClient, convoId);
-
-  // Also clear NEW_CONVO messages if we're not already on NEW_CONVO
+  // An absent existing-conversation cache means its history must load before sending.
   if (convoId !== Constants.NEW_CONVO) {
-    clearMessagesQuery(queryClient, Constants.NEW_CONVO);
+    queryClient.removeQueries([QueryKeys.messages, convoId], { exact: true });
   }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
 };
 
 /** Returns a 1-based message number, or null if depth is absent or invalid. */

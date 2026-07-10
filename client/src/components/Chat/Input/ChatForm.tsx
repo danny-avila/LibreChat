@@ -2,13 +2,7 @@ import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { useIsFetching, useQueryClient } from '@tanstack/react-query';
-import {
-  Constants,
-  QueryKeys,
-  isAssistantsEndpoint,
-  isAgentsEndpoint,
-} from 'librechat-data-provider';
+import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import {
@@ -79,6 +73,7 @@ const ChatForm = memo(function ChatForm({
 }: ChatFormProps) {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  useFocusChatEffect(textAreaRef);
   const localize = useLocalize();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -102,7 +97,6 @@ const ChatForm = memo(function ChatForm({
   const mentionPopoverAtom = useMemo(() => store.showMentionPopoverFamily(index), [index]);
 
   const { requiresKey } = useRequiresKey();
-  const queryClient = useQueryClient();
   const methods = useChatFormContext();
   const {
     generateConversation,
@@ -125,23 +119,6 @@ const ChatForm = memo(function ChatForm({
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
   );
-  const conversationQueryKey = useMemo(
-    () => [QueryKeys.conversation, conversationId],
-    [conversationId],
-  );
-  const isFetchingConversationDetails =
-    useIsFetching({ queryKey: conversationQueryKey, exact: true }) > 0;
-  const isWaitingForConversationDetails = useMemo(() => {
-    const conversationQueryState = queryClient.getQueryState(conversationQueryKey);
-    return (
-      conversationId !== Constants.NEW_CONVO &&
-      conversationId !== Constants.SEARCH &&
-      queryClient.getQueryData(conversationQueryKey) == null &&
-      (isFetchingConversationDetails ||
-        conversationQueryState?.status === 'loading' ||
-        conversationQueryState?.status === 'error')
-    );
-  }, [conversationId, conversationQueryKey, isFetchingConversationDetails, queryClient]);
   /**
    * The quote feature merges excerpts server-side in `BaseClient.sendMessage`,
    * which the Assistants endpoints bypass — so hide the UI there rather than
@@ -161,10 +138,9 @@ const ChatForm = memo(function ChatForm({
     [conversation?.assistant_id, endpoint, assistantMap],
   );
   const disableInputs = useMemo(
-    () => requiresKey || invalidAssistant || isWaitingForConversationDetails,
-    [requiresKey, invalidAssistant, isWaitingForConversationDetails],
+    () => requiresKey || invalidAssistant,
+    [requiresKey, invalidAssistant],
   );
-  useFocusChatEffect(textAreaRef, !isWaitingForConversationDetails);
 
   const handleContainerClick = useCallback(() => {
     /** Check if the device is a touchscreen */

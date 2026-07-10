@@ -1,6 +1,7 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useRecoilValue } from 'recoil';
 import { SquarePen } from 'lucide-react';
+import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton, Sidebar, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
@@ -31,6 +32,7 @@ const NewChatButton = memo(function NewChatButton({
       if (e.button === 0 && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         clearMessagesCache(queryClient, conversation?.conversationId);
+        queryClient.invalidateQueries([QueryKeys.messages]);
         newConversation();
         if (switchToHistory) {
           setActive(DEFAULT_PANEL);

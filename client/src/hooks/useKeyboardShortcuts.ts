@@ -3,8 +3,8 @@ import copy from 'copy-to-clipboard';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMatch, useNavigate } from 'react-router-dom';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import type { ShortcutOverride } from '~/store/misc';
 import {
@@ -450,6 +450,7 @@ export function useShortcutActions(): ShortcutAction[] {
 
   const handleNewChat = useCallback(() => {
     clearMessagesCache(queryClient, conversation?.conversationId);
+    queryClient.invalidateQueries([QueryKeys.messages]);
     newConversation();
     return true;
   }, [queryClient, conversation?.conversationId, newConversation]);
