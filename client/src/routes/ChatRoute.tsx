@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
@@ -6,6 +6,16 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset } from 'librechat-data-provider';
+import {
+  useGetConvoIdQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+  useProjectQuery,
+  getMessagesByConvoIdQueryFn,
+  hasPendingAssistantTail,
+  hasActiveJob,
+  useActiveJobs,
+} from '~/data-provider';
 import {
   mergeQuerySettingsWithSpec,
   processValidSettings,
@@ -16,15 +26,6 @@ import {
   logger,
   clearMessagesCache,
 } from '~/utils';
-import {
-  useGetConvoIdQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-  useProjectQuery,
-  getMessagesByConvoIdQueryFn,
-  hasPendingAssistantTail,
-  hasActiveJob,
-} from '~/data-provider';
 import {
   useAssistantListMap,
   useIdChangeEffect,
@@ -64,9 +65,16 @@ export default function ChatRoute() {
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const isSubmittingRef = useRef(isSubmitting);
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
+  const activeJobsQuery = useActiveJobs(isAuthenticated);
+
+  useLayoutEffect(() => {
+    isSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
   const projectQuery = useProjectQuery(chatProjectId, {
     enabled: isAuthenticated && Boolean(chatProjectId),
     retry: false,
@@ -138,10 +146,10 @@ export default function ChatRoute() {
 
     const messagesQueryKey = [QueryKeys.messages, conversationId];
     const currentMessages = queryClient.getQueryData<TMessage[]>(messagesQueryKey);
-    if (
-      hasActiveJob(queryClient, conversationId) ||
-      hasPendingAssistantTail(currentMessages ?? [])
-    ) {
+    const hasPendingTail = hasPendingAssistantTail(currentMessages ?? []);
+    const hasActiveGeneration =
+      isSubmitting || activeJobsQuery.data?.activeJobIds?.includes(conversationId) === true;
+    if (hasPendingTail && (hasActiveGeneration || activeJobsQuery.isLoading)) {
       return;
     }
 
@@ -152,11 +160,19 @@ export default function ChatRoute() {
           id: conversationId,
           pathname: `/c/${conversationId}`,
           queryClient,
-          preservePendingTail: true,
+          preservePendingTail: () =>
+            isSubmittingRef.current || hasActiveJob(queryClient, conversationId),
         }),
       { staleTime: 15_000 },
     );
-  }, [conversationId, isAuthenticated, queryClient]);
+  }, [
+    activeJobsQuery.data?.activeJobIds,
+    activeJobsQuery.isLoading,
+    conversationId,
+    isAuthenticated,
+    isSubmitting,
+    queryClient,
+  ]);
 
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();

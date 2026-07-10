@@ -22,7 +22,7 @@ type MessagesQueryFnParams = {
   pathname: string;
   queryClient: QueryClient;
   isStreaming?: boolean | (() => boolean);
-  preservePendingTail?: boolean;
+  preservePendingTail?: boolean | (() => boolean);
 };
 
 function isUnhydratedMessage(message: t.TMessage) {
@@ -102,10 +102,14 @@ export async function getMessagesByConvoIdQueryFn({
   }
 
   const getIsStreaming = () => (typeof isStreaming === 'function' ? isStreaming() : isStreaming);
+  const getShouldPreservePendingTail = () =>
+    typeof preservePendingTail === 'function' ? preservePendingTail() : preservePendingTail;
   const hasLiveStream = (currentMessages?: t.TMessage[]) =>
     getIsStreaming() ||
     hasActiveJob(queryClient, id) ||
-    (preservePendingTail && currentMessages != null && hasPendingAssistantTail(currentMessages));
+    (getShouldPreservePendingTail() &&
+      currentMessages != null &&
+      hasPendingAssistantTail(currentMessages));
 
   let result: t.TMessage[];
   try {
@@ -133,7 +137,11 @@ export async function getMessagesByConvoIdQueryFn({
   }
 
   const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
-  if (preservePendingTail && currentMessages != null && hasPendingAssistantTail(currentMessages)) {
+  if (
+    getShouldPreservePendingTail() &&
+    currentMessages != null &&
+    hasPendingAssistantTail(currentMessages)
+  ) {
     logger.warn(
       'messages',
       `Messages query for convo ${id} preserved pending assistant tail during prefetch; path: "${pathname}"`,
