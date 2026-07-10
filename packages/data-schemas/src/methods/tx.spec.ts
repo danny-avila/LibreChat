@@ -5,6 +5,7 @@ import {
   tokenValues,
   cacheTokenValues,
   premiumTokenValues,
+  premiumCacheTokenValues,
   defaultRate,
 } from './tx';
 import { matchModelName, findMatchingPattern } from './test-helpers';
@@ -464,10 +465,8 @@ describe('getMultiplier', () => {
   });
 
   it('should bill gpt-5.6 cache writes at the documented 1.25x input surcharge', () => {
-    const cacheWrites = { 'gpt-5.6': 6.25, 'gpt-5.6-terra': 3.125, 'gpt-5.6-luna': 1.25 };
-    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const) {
-      expect(cacheTokenValues[model].write).toBe(cacheWrites[model]);
-      expect(cacheTokenValues[model].write).toBe(tokenValues[model].prompt * 1.25);
+    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+      expect(cacheTokenValues[model].write).toBeCloseTo(tokenValues[model].prompt * 1.25);
     }
   });
 
@@ -2735,6 +2734,46 @@ describe('GPT-5.6 Long-Context Premium Pricing', () => {
       expect(
         getMultiplier({ model, tokenType: 'completion', inputTokenCount: threshold + 1 }),
       ).toBe(completion);
+    }
+  });
+});
+
+describe('Long-Context Premium Cache Pricing', () => {
+  const premiumCacheModels = Object.keys(premiumCacheTokenValues);
+
+  it('should scale cache write/read by the same long-context multiplier as input', () => {
+    for (const model of premiumCacheModels) {
+      const inputRatio = premiumTokenValues[model].prompt / tokenValues[model].prompt;
+      expect(premiumCacheTokenValues[model].write).toBeCloseTo(
+        cacheTokenValues[model].write * inputRatio,
+      );
+      expect(premiumCacheTokenValues[model].read).toBeCloseTo(
+        cacheTokenValues[model].read * inputRatio,
+      );
+    }
+  });
+
+  it('should return premium cache rates above threshold and standard rates at/below', () => {
+    for (const model of premiumCacheModels) {
+      const { threshold } = premiumCacheTokenValues[model];
+      for (const cacheType of ['write', 'read'] as const) {
+        expect(getCacheMultiplier({ model, cacheType, inputTokenCount: threshold + 1 })).toBe(
+          premiumCacheTokenValues[model][cacheType],
+        );
+        expect(getCacheMultiplier({ model, cacheType, inputTokenCount: threshold })).toBe(
+          cacheTokenValues[model][cacheType],
+        );
+        expect(getCacheMultiplier({ model, cacheType })).toBe(cacheTokenValues[model][cacheType]);
+      }
+    }
+  });
+
+  it('should not apply premium cache rates to models without a premium cache entry', () => {
+    for (const model of ['gpt-5-mini', 'gpt-5.4-mini', 'gpt-4o']) {
+      expect(premiumCacheTokenValues[model]).toBeUndefined();
+      expect(getCacheMultiplier({ model, cacheType: 'read', inputTokenCount: 5_000_000 })).toBe(
+        getCacheMultiplier({ model, cacheType: 'read' }),
+      );
     }
   });
 });

@@ -387,6 +387,23 @@ export const premiumTokenValues: Record<
   'gpt-5.6-luna': { threshold: 272000, prompt: 2, completion: 9 },
 };
 
+/**
+ * Premium (tiered) cache pricing for models whose cache rates change once the
+ * prompt crosses the long-context threshold. Cache write/read scale by the same
+ * multiplier the long-context tier applies to input (e.g. 2x for the gpt-5.x
+ * family), so these mirror `premiumTokenValues` on the cache dimension.
+ */
+export const premiumCacheTokenValues: Record<
+  string,
+  { threshold: number; write: number; read: number }
+> = {
+  'gpt-5.4': { threshold: 272000, write: 5, read: 0.5 },
+  'gpt-5.5': { threshold: 272000, write: 10, read: 1 },
+  'gpt-5.6': { threshold: 272000, write: 12.5, read: 1 },
+  'gpt-5.6-terra': { threshold: 272000, write: 6.25, read: 0.5 },
+  'gpt-5.6-luna': { threshold: 272000, write: 2.5, read: 0.2 },
+};
+
 export function createTxMethods(
   _mongoose: typeof import('mongoose'),
   txDeps: TxDeps,
@@ -433,12 +450,14 @@ export function createTxMethods(
     model,
     endpoint,
     endpointTokenConfig,
+    inputTokenCount,
   }: {
     valueKey?: string;
     cacheType?: 'write' | 'read';
     model?: string;
     endpoint?: string;
     endpointTokenConfig?: Record<string, Record<string, number>>;
+    inputTokenCount?: number | null;
   }) => number | null;
   defaultRate: number;
   cacheTokenValues: Record<
@@ -562,7 +581,27 @@ export function createTxMethods(
   }
 
   /**
+   * Checks if premium (tiered) cache pricing applies and returns the premium rate.
+   */
+  function getPremiumCacheRate(
+    valueKey: string,
+    cacheType: 'write' | 'read',
+    inputTokenCount?: number | null,
+  ): number | null {
+    if (inputTokenCount == null) {
+      return null;
+    }
+    const premiumEntry = premiumCacheTokenValues[valueKey];
+    if (!premiumEntry || inputTokenCount <= premiumEntry.threshold) {
+      return null;
+    }
+    return premiumEntry[cacheType] ?? null;
+  }
+
+  /**
    * Retrieves the cache multiplier for a given value key and token type.
+   * When `inputTokenCount` crosses a model's long-context threshold, the
+   * premium cache rate applies instead of the standard one.
    */
   function getCacheMultiplier({
     valueKey,
@@ -570,12 +609,14 @@ export function createTxMethods(
     model,
     endpoint,
     endpointTokenConfig,
+    inputTokenCount,
   }: {
     valueKey?: string;
     cacheType?: 'write' | 'read';
     model?: string;
     endpoint?: string;
     endpointTokenConfig?: Record<string, Record<string, number>>;
+    inputTokenCount?: number | null;
   }): number | null {
     if (endpointTokenConfig && model) {
       const modelConfig = endpointTokenConfig[model];
@@ -587,7 +628,11 @@ export function createTxMethods(
     }
 
     if (valueKey && cacheType) {
-      return cacheTokenValues[valueKey]?.[cacheType] ?? null;
+      return (
+        getPremiumCacheRate(valueKey, cacheType, inputTokenCount) ??
+        cacheTokenValues[valueKey]?.[cacheType] ??
+        null
+      );
     }
 
     if (!cacheType || !model) {
@@ -599,7 +644,11 @@ export function createTxMethods(
       return null;
     }
 
-    return cacheTokenValues[valueKey]?.[cacheType] ?? null;
+    return (
+      getPremiumCacheRate(valueKey, cacheType, inputTokenCount) ??
+      cacheTokenValues[valueKey]?.[cacheType] ??
+      null
+    );
   }
 
   return {
