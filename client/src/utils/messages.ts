@@ -291,6 +291,20 @@ export const scrollToEnd = (callback?: () => void) => {
   }
 };
 
+const clearMessagesQuery = (queryClient: QueryClient, conversationId: string): void => {
+  const queryKey = [QueryKeys.messages, conversationId];
+  const query = queryClient.getQueryCache().find(queryKey);
+
+  if (query?.getObserversCount()) {
+    // Clear mounted views without the refetch that queryClient.resetQueries would trigger.
+    // Callers should navigate or swap to a new conversation after clearing an enabled observer.
+    query.reset();
+    return;
+  }
+
+  queryClient.removeQueries({ queryKey, exact: true });
+};
+
 /**
  * Clears messages for both the specified conversation ID and the NEW_CONVO query key.
  * This ensures that messages are properly cleared in all contexts, preventing stale data
@@ -305,12 +319,12 @@ export const clearMessagesCache = (
 ): void => {
   const convoId = conversationId ?? Constants.NEW_CONVO;
 
-  // Clear messages for the current conversation without marking an empty array as fresh data.
-  queryClient.removeQueries([QueryKeys.messages, convoId]);
+  // Observed queries must notify mounted chat views; unobserved queries can be removed entirely.
+  clearMessagesQuery(queryClient, convoId);
 
   // Also clear NEW_CONVO messages if we're not already on NEW_CONVO
   if (convoId !== Constants.NEW_CONVO) {
-    queryClient.removeQueries([QueryKeys.messages, Constants.NEW_CONVO]);
+    clearMessagesQuery(queryClient, Constants.NEW_CONVO);
   }
 };
 

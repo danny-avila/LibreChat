@@ -1,5 +1,4 @@
 import { useRecoilValue } from 'recoil';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, Button, NewChatIcon } from '@librechat/client';
 import { useLocalize, useNewConvo } from '~/hooks';
@@ -18,7 +17,6 @@ export default function NewChat({ className }: { className?: string }) {
       return;
     }
     clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
     newConversation();
   };
 

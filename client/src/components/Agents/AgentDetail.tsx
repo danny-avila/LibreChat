@@ -65,7 +65,6 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
       localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, agent.id);
 
       clearMessagesCache(queryClient, conversation?.conversationId);
-      queryClient.invalidateQueries([QueryKeys.messages]);
 
       /** Template with agent configuration */
       const template = {
