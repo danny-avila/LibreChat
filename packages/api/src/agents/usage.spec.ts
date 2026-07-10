@@ -1609,6 +1609,41 @@ describe('computeUsageCostUSD', () => {
     );
     expect(cost).toBeCloseTo((1000 * 3 + 2000 * 3.75 + 10000 * 0.3 + 500 * 15) / 1e6);
   });
+
+  it('routes nested cache_write_tokens to the write bucket, not the input rate', () => {
+    /** OpenAI GPT-5.6 reports cache writes as `cache_write_tokens`. Those 2000
+     *  tokens must bill at the write rate (3.75), not fold into input (3);
+     *  inputOnly = 13000 - 2000 write - 10000 read = 1000. */
+    const cost = computeUsageCostUSD(
+      {
+        input_tokens: 13000,
+        output_tokens: 500,
+        model: 'gpt-5.6',
+        provider: 'openAI',
+        input_token_details: { cache_read: 10000, cache_write_tokens: 2000 },
+      },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((1000 * 3 + 2000 * 3.75 + 10000 * 0.3 + 500 * 15) / 1e6);
+  });
+
+  it('routes top-level cache_write_tokens to the write bucket alongside the premium input tier', () => {
+    /** Top-level `cache_write_tokens` (Chat/Responses flattened shape) is also
+     *  recognized; inputOnly = 280000 - 5000 - 15000 = 260000, above the premium
+     *  threshold so input/completion price at the premium tier (8 / 40). */
+    const cost = computeUsageCostUSD(
+      {
+        input_tokens: 280000,
+        output_tokens: 500,
+        model: 'gpt-5.6',
+        provider: 'openAI',
+        input_token_details: { cache_read: 15000 },
+        cache_write_tokens: 5000,
+      },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((260000 * 8 + 5000 * 3.75 + 15000 * 0.3 + 500 * 40) / 1e6);
+  });
 });
 
 describe('aggregateEmittedUsage', () => {
