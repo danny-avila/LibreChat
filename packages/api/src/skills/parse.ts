@@ -4,6 +4,8 @@ export type ParsedSkillMarkdown = {
   name: string;
   description: string;
   alwaysApply?: boolean;
+  userInvocable?: boolean;
+  disableModelInvocation?: boolean;
   frontmatter?: Record<string, unknown>;
   invalidBooleans: string[];
   parseError?: string;
@@ -94,6 +96,29 @@ function hasBooleanPlaceholder(rawValue?: string): boolean {
   return rawValue !== undefined && stripInlineComment(rawValue).length === 0;
 }
 
+/**
+ * Extract a canonical boolean frontmatter field, applying the same strict
+ * true/false rules as `always-apply`: a present-but-non-boolean value is
+ * recorded on `invalidBooleans` so the import handler can 400 instead of
+ * silently dropping it, while an empty placeholder is treated as absent.
+ */
+function extractBooleanField(
+  frontmatter: Record<string, unknown>,
+  block: string,
+  key: string,
+  invalidBooleans: string[],
+): boolean | undefined {
+  if (!hasCaseInsensitive(frontmatter, key)) {
+    return undefined;
+  }
+  const rawValue = getRawFrontmatterValue(block, key);
+  const value = parseBoolean(getCaseInsensitive(frontmatter, key), rawValue);
+  if (value === undefined && !hasBooleanPlaceholder(rawValue)) {
+    invalidBooleans.push(key);
+  }
+  return value;
+}
+
 function toScalarString(value: unknown): string {
   if (typeof value === 'string') {
     return value;
@@ -150,10 +175,19 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
       invalidBooleans.push('alwaysApply');
     }
   }
+  const userInvocable = extractBooleanField(frontmatter, block, 'user-invocable', invalidBooleans);
+  const disableModelInvocation = extractBooleanField(
+    frontmatter,
+    block,
+    'disable-model-invocation',
+    invalidBooleans,
+  );
   return {
     name,
     description,
     alwaysApply,
+    userInvocable,
+    disableModelInvocation,
     frontmatter,
     invalidBooleans,
   };

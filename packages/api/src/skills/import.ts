@@ -23,19 +23,19 @@ export type { ImportLimits } from './limits';
 
 /**
  * YAML frontmatter parser — extracts the first-class fields LibreChat
- * persists as columns (`name`, `description`, `alwaysApply`) out of a
+ * persists as columns (`name`, `description`, `alwaysApply`) plus the
+ * invocation-mode flags (`userInvocable`, `disableModelInvocation`) out of a
  * SKILL.md file. Intentionally narrow: the full frontmatter validator in
  * `packages/data-schemas/src/methods/skill.ts` covers the wire contract;
- * this parser only needs to hand `createSkill` the columns it populates.
+ * this parser only needs to hand `createSkill` the fields it derives.
  *
- * When a known boolean field (currently `always-apply` plus the accepted
- * `alwaysApply` alias) is present
- * with a value that isn't recognizable as `true`/`false`, the parser
- * records it on `invalidBooleans[]` so the import handler can surface
- * a 400 instead of silently dropping the flag. Without this signal,
- * authoring mistakes like `alwaysApply: yes` would be lossy-converted
- * to "not always-applied" and the user would never learn their
- * frontmatter was malformed.
+ * When a known boolean field (`always-apply` plus the accepted `alwaysApply`
+ * alias, `user-invocable`, `disable-model-invocation`) is present with a value
+ * that isn't recognizable as `true`/`false`, the parser records it on
+ * `invalidBooleans[]` so the import handler can surface a 400 instead of
+ * silently dropping the flag. Without this signal, authoring mistakes like
+ * `always-apply: yes` would be lossy-converted to the schema default and the
+ * user would never learn their frontmatter was malformed.
  *
  * Exported for unit testing only — prefer `createImportHandler` at runtime.
  */
@@ -43,6 +43,8 @@ export function parseFrontmatter(raw: string): {
   name: string;
   description: string;
   alwaysApply?: boolean;
+  userInvocable?: boolean;
+  disableModelInvocation?: boolean;
   /** Keys that carried non-boolean values for fields that must be boolean. */
   invalidBooleans: string[];
   parseError?: string;
@@ -52,6 +54,8 @@ export function parseFrontmatter(raw: string): {
     name: string;
     description: string;
     alwaysApply?: boolean;
+    userInvocable?: boolean;
+    disableModelInvocation?: boolean;
     invalidBooleans: string[];
     parseError?: string;
   } = {
@@ -65,7 +69,33 @@ export function parseFrontmatter(raw: string): {
   if ('alwaysApply' in parsed) {
     result.alwaysApply = parsed.alwaysApply;
   }
+  if ('userInvocable' in parsed) {
+    result.userInvocable = parsed.userInvocable;
+  }
+  if ('disableModelInvocation' in parsed) {
+    result.disableModelInvocation = parsed.disableModelInvocation;
+  }
   return result;
+}
+
+/**
+ * Assemble the frontmatter bag `createSkill` derives the invocation-mode
+ * columns from. Only canonical keys that were actually present flow through,
+ * so an import without these fields keeps the previous behavior (no bag) and
+ * never trips `validateSkillFrontmatter`.
+ */
+function buildInvocationFrontmatter(
+  userInvocable: boolean | undefined,
+  disableModelInvocation: boolean | undefined,
+): Record<string, unknown> | undefined {
+  const frontmatter: Record<string, unknown> = {};
+  if (userInvocable !== undefined) {
+    frontmatter['user-invocable'] = userInvocable;
+  }
+  if (disableModelInvocation !== undefined) {
+    frontmatter['disable-model-invocation'] = disableModelInvocation;
+  }
+  return Object.keys(frontmatter).length > 0 ? frontmatter : undefined;
 }
 
 function sendFrontmatterParseError(res: Response, parseError: string) {
@@ -260,7 +290,15 @@ async function handleMarkdown(
 ) {
   const content = file.buffer.toString('utf-8');
 
-  const { name, description, alwaysApply, invalidBooleans, parseError } = parseFrontmatter(content);
+  const {
+    name,
+    description,
+    alwaysApply,
+    userInvocable,
+    disableModelInvocation,
+    invalidBooleans,
+    parseError,
+  } = parseFrontmatter(content);
   if (parseError) {
     return sendFrontmatterParseError(res, parseError);
   }
@@ -296,6 +334,7 @@ async function handleMarkdown(
     author: authorId,
     authorName,
     alwaysApply,
+    frontmatter: buildInvocationFrontmatter(userInvocable, disableModelInvocation),
     tenantId,
   });
 
@@ -374,8 +413,15 @@ async function handleZip(
     return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
-  const { name, description, alwaysApply, invalidBooleans, parseError } =
-    parseFrontmatter(skillMdContent);
+  const {
+    name,
+    description,
+    alwaysApply,
+    userInvocable,
+    disableModelInvocation,
+    invalidBooleans,
+    parseError,
+  } = parseFrontmatter(skillMdContent);
   if (parseError) {
     return sendFrontmatterParseError(res, parseError);
   }
@@ -411,6 +457,7 @@ async function handleZip(
     author: authorId,
     authorName,
     alwaysApply,
+    frontmatter: buildInvocationFrontmatter(userInvocable, disableModelInvocation),
     tenantId,
   });
 
