@@ -290,7 +290,11 @@ describe('isAdminPanelRedirect', () => {
 
     it('returns false for a redirect to the main client', () => {
       expect(
-        isAdminPanelRedirect('https://example.com/oauth/openid/callback', sameOriginAdmin, sameOriginClient),
+        isAdminPanelRedirect(
+          'https://example.com/oauth/openid/callback',
+          sameOriginAdmin,
+          sameOriginClient,
+        ),
       ).toBe(false);
     });
 
