@@ -8,6 +8,7 @@ import store from '~/store';
 const useSpeechToTextExternal = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
+  enabled = false,
 ) => {
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
@@ -221,6 +222,9 @@ const useSpeechToTextExternal = (
   };
 
   const externalStartRecording = () => {
+    if (!enabled) {
+      return;
+    }
     if (isListening) {
       showToast({ message: 'Already listening. Please stop recording first.', status: 'warning' });
       return;
@@ -230,6 +234,9 @@ const useSpeechToTextExternal = (
   };
 
   const externalStopRecording = () => {
+    if (!enabled) {
+      return;
+    }
     if (!isListening) {
       showToast({
         message: 'Not currently recording. Please start recording first.',
@@ -241,7 +248,16 @@ const useSpeechToTextExternal = (
     stopRecording();
   };
 
+  useEffect(() => {
+    if (!enabled && isListening) {
+      stopRecording();
+    }
+  }, [enabled, isListening]);
+
   const handleKeyDown = async (e: KeyboardEvent) => {
+    if (!enabled) {
+      return;
+    }
     if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled) {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
