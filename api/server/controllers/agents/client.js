@@ -105,6 +105,27 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
+/** Content-part types that carry image data, mirroring the agents formatter. */
+const IMAGE_CONTENT_TYPES = new Set([ContentTypes.IMAGE_URL, 'image']);
+
+/**
+ * Removes image content parts from a formatted LLM-payload message in place, so
+ * a non-image-capable model never receives them. Covers both channels: uploaded
+ * images (routed through `image_urls` → media parts) and images already embedded
+ * in `content` (e.g. an image-generation tool's artifact fed back as context).
+ * String content has no image parts and is left untouched.
+ * @param {{ content?: unknown }} formattedMessage
+ */
+const stripImageContentParts = (formattedMessage) => {
+  if (!Array.isArray(formattedMessage.content)) {
+    return;
+  }
+  const filtered = formattedMessage.content.filter(
+    (part) => !part || !IMAGE_CONTENT_TYPES.has(part.type),
+  );
+  formattedMessage.content = filtered.length > 0 ? filtered : '';
+};
+
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
 class AgentClient extends BaseClient {
@@ -413,12 +434,12 @@ class AgentClient extends BaseClient {
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
     /**
-     * When the model can't accept images, drop `image_urls` from the LLM
-     * payload for every message — current and historical/resent — so text-only
-     * providers don't reject the request. Stripping happens on a shallow copy so
-     * the persisted message and its UI rendering keep the user's image; only the
-     * formatted payload sent to the model is affected (mirrors the YouTube
-     * injection below, which is also payload-only).
+     * When the model can't accept images, strip image content parts from the
+     * LLM payload for every message — current and historical/resent — so
+     * text-only providers don't reject the request. Applied to the formatted
+     * payload only (not the memory copy or persisted message), so the user's
+     * uploaded image still renders in the UI; mirrors the payload-only YouTube
+     * injection below.
      */
     const stripImages = shouldStripImages(this.resolveModelImageCapability());
     if (stripImages) {
@@ -427,15 +448,14 @@ class AgentClient extends BaseClient {
       );
     }
     const formattedMessages = orderedMessages.map((message, i) => {
-      const payloadMessage =
-        stripImages && Array.isArray(message.image_urls) && message.image_urls.length > 0
-          ? { ...message, image_urls: [] }
-          : message;
       const formattedMessage = formatMessage({
-        message: payloadMessage,
+        message,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      if (stripImages) {
+        stripImageContentParts(formattedMessage);
+      }
       const memoryFormattedMessage = formatMessage({
         message,
         userName: this.options?.name,
@@ -2436,3 +2456,4 @@ class AgentClient extends BaseClient {
 }
 
 module.exports = AgentClient;
+module.exports.stripImageContentParts = stripImageContentParts;

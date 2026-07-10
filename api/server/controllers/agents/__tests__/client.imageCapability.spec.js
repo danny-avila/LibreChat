@@ -1,4 +1,7 @@
 const AgentClient = require('../client');
+const { formatMessage } = require('@librechat/agents');
+
+const { stripImageContentParts } = AgentClient;
 
 /**
  * Exercises the real backend plumbing (getCustomEndpointConfig + modelSpec
@@ -58,5 +61,48 @@ describe('AgentClient.resolveModelImageCapability', () => {
     const first = AgentClient.prototype.resolveModelImageCapability.call(self);
     const second = AgentClient.prototype.resolveModelImageCapability.call(self);
     expect(second).toBe(first);
+  });
+});
+
+describe('stripImageContentParts (real formatMessage payloads)', () => {
+  it('removes uploaded images routed through image_urls, keeping text', () => {
+    const formatted = formatMessage({
+      message: {
+        role: 'user',
+        text: 'hello',
+        image_urls: [{ type: 'image_url', image_url: { url: 'data:x' } }],
+      },
+    });
+    stripImageContentParts(formatted);
+    expect(formatted.content).toEqual([{ type: 'text', text: 'hello' }]);
+  });
+
+  it('removes image blocks already embedded in content (e.g. tool artifacts)', () => {
+    const formatted = formatMessage({
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'see' },
+          { type: 'image_url', image_url: { url: 'x' } },
+        ],
+      },
+    });
+    stripImageContentParts(formatted);
+    expect(formatted.content).toEqual([{ type: 'text', text: 'see' }]);
+  });
+
+  it('leaves plain string content untouched', () => {
+    const formatted = formatMessage({ message: { role: 'user', text: 'just text' } });
+    stripImageContentParts(formatted);
+    expect(formatted.content).toBe('just text');
+  });
+
+  it('does not produce an empty-array content for an image-only message', () => {
+    const formatted = formatMessage({
+      message: { role: 'user', image_urls: [{ type: 'image_url', image_url: { url: 'x' } }] },
+    });
+    stripImageContentParts(formatted);
+    expect(formatted.content).not.toHaveLength(0);
+    expect(JSON.stringify(formatted.content)).not.toContain('image_url');
   });
 });
