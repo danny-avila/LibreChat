@@ -10,7 +10,6 @@ import {
   Input,
   Label,
   Spinner,
-  Switch,
   useToastContext,
 } from '@librechat/client';
 import type { TLangfuseConnectionStatus } from 'librechat-data-provider';
@@ -23,7 +22,7 @@ import {
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-type ConnectionTestState = 'idle' | 'checking' | 'connected' | 'failed';
+type ConnectionTestState = 'idle' | 'unverified' | 'checking' | 'connected' | 'failed';
 
 function getStoredConnectionTestKey(status?: TLangfuseConnectionStatus): string | undefined {
   if (status?.configured !== true || !status.destination || !status.publicKey) {
@@ -41,6 +40,8 @@ function getConnectionStatusLabelKey(state: ConnectionTestState): TranslationKey
       return 'com_ui_langfuse_status_connected';
     case 'failed':
       return 'com_ui_langfuse_status_failed';
+    case 'unverified':
+      return 'com_ui_langfuse_status_not_verified';
     case 'idle':
     default:
       return 'com_ui_langfuse_status_not_configured';
@@ -78,7 +79,6 @@ export default function LangfuseConnection() {
   const testMutation = useTestLangfuseConnectionMutation();
 
   const [connectionStatus, setConnectionStatus] = useState<TLangfuseConnectionStatus>();
-  const [enabled, setEnabled] = useState(false);
   const [destination, setDestination] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -88,7 +88,6 @@ export default function LangfuseConnection() {
   const [connectionTestMessage, setConnectionTestMessage] = useState('');
   const autoTestedConnectionRef = useRef<string>();
   const connectionTestRequestRef = useRef(0);
-  const skipConnectionStatusSyncRef = useRef(false);
   const publicKeyInputRef = useRef<HTMLInputElement>(null);
   const secretKeyInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,11 +114,6 @@ export default function LangfuseConnection() {
     if (!connectionStatus) {
       return;
     }
-    setEnabled(connectionStatus.enabled === true);
-    if (skipConnectionStatusSyncRef.current) {
-      skipConnectionStatusSyncRef.current = false;
-      return;
-    }
     const availableDestinations = connectionStatus.destinations ?? [];
     const storedDestination = availableDestinations.some(
       (option) => option.key === connectionStatus.destination,
@@ -142,14 +136,14 @@ export default function LangfuseConnection() {
   const secretInputVisible = !secretConfigured || isEditingSecretKey;
   const displayPublicKey = getDisplayPublicKey(publicKey);
   const hasUnsavedChanges =
-    (!secretConfigured && enabled !== (connectionStatus?.enabled === true)) ||
     destination !== (connectionStatus?.destination ?? '') ||
     trimmedPublicKey !== (connectionStatus?.publicKey ?? '') ||
     trimmedSecretKey !== '';
-  const showActions =
+  const isEditing =
     !secretConfigured || isEditingPublicKey || isEditingSecretKey || hasUnsavedChanges;
   const canSubmit =
     destination !== '' && trimmedPublicKey !== '' && (secretConfigured || trimmedSecretKey !== '');
+  const busy = testMutation.isLoading || updateMutation.isLoading;
 
   useEffect(() => {
     const storedConnectionTestKey = getStoredConnectionTestKey(connectionStatus);
@@ -203,7 +197,7 @@ export default function LangfuseConnection() {
   const handleSave = () => {
     const requestId = ++connectionTestRequestRef.current;
     const payload = {
-      enabled,
+      enabled: true,
       destination,
       publicKey: trimmedPublicKey,
       ...(trimmedSecretKey ? { secretKey: trimmedSecretKey } : {}),
@@ -214,7 +208,7 @@ export default function LangfuseConnection() {
         onSuccess: (nextStatus) => {
           autoTestedConnectionRef.current = getStoredConnectionTestKey(nextStatus);
           setConnectionStatus(nextStatus);
-          setConnectionTestState(enabled ? 'connected' : 'idle');
+          setConnectionTestState('connected');
           setConnectionTestMessage('');
           setSecretKey('');
           setIsEditingPublicKey(false);
@@ -225,11 +219,6 @@ export default function LangfuseConnection() {
           showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' }),
       });
     };
-
-    if (!enabled) {
-      saveConnection();
-      return;
-    }
 
     testMutation.mutate(
       {
@@ -275,12 +264,36 @@ export default function LangfuseConnection() {
     )
       ? connectionStatus?.destination
       : undefined;
-    setEnabled(connectionStatus?.enabled === true);
     setDestination(storedDestination ?? '');
     setPublicKey(connectionStatus?.publicKey ?? '');
     setSecretKey('');
     setIsEditingPublicKey(false);
     setIsEditingSecretKey(false);
+
+    if (!storedDestination || !connectionStatus?.publicKey) {
+      setConnectionTestState('idle');
+      setConnectionTestMessage('');
+      return;
+    }
+
+    const requestId = ++connectionTestRequestRef.current;
+    setConnectionTestState('checking');
+    setConnectionTestMessage('');
+    testMutation.mutate(
+      { destination: storedDestination, publicKey: connectionStatus.publicKey },
+      {
+        onSuccess: (result) => {
+          if (requestId !== connectionTestRequestRef.current) return;
+          setConnectionTestState(result.success ? 'connected' : 'failed');
+          setConnectionTestMessage(result.success ? '' : (result.message ?? ''));
+        },
+        onError: () => {
+          if (requestId !== connectionTestRequestRef.current) return;
+          setConnectionTestState('failed');
+          setConnectionTestMessage(localize('com_ui_langfuse_test_error'));
+        },
+      },
+    );
   };
 
   const handleDestinationChange = (nextDestination: string) => {
@@ -324,13 +337,12 @@ export default function LangfuseConnection() {
     );
   };
 
-  const handleEnabledChange = (nextEnabled: boolean) => {
-    setEnabled(nextEnabled);
+  const handleEnabledChange = () => {
     if (!secretConfigured || !connectionStatus?.destination || !connectionStatus.publicKey) {
       return;
     }
 
-    const previousEnabled = connectionStatus.enabled === true;
+    const nextEnabled = connectionStatus.enabled !== true;
     const requestId = ++connectionTestRequestRef.current;
     const saveEnabledState = () => {
       updateMutation.mutate(
@@ -345,7 +357,6 @@ export default function LangfuseConnection() {
               return;
             }
             autoTestedConnectionRef.current = getStoredConnectionTestKey(nextStatus);
-            skipConnectionStatusSyncRef.current = true;
             setConnectionStatus(nextStatus);
             showToast({ message: localize('com_ui_langfuse_saved'), status: 'success' });
           },
@@ -353,7 +364,6 @@ export default function LangfuseConnection() {
             if (requestId !== connectionTestRequestRef.current) {
               return;
             }
-            setEnabled(previousEnabled);
             showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' });
           },
         },
@@ -367,12 +377,10 @@ export default function LangfuseConnection() {
     <div className="flex flex-col gap-4">
       <HoverCard openDelay={50}>
         <div className="flex flex-col gap-2">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div id="langfuse-enabled-label" className="font-medium">
-                  {localize('com_ui_langfuse_title')}
-                </div>
+                <div className="font-medium">{localize('com_ui_langfuse_title')}</div>
                 <div className="rounded-full border border-purple-600/40 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-700/10 dark:text-purple-400">
                   {localize('com_ui_beta')}
                 </div>
@@ -384,12 +392,6 @@ export default function LangfuseConnection() {
                 {localize('com_ui_langfuse_description')}
               </div>
             </div>
-            <Switch
-              checked={enabled}
-              disabled={testMutation.isLoading || updateMutation.isLoading}
-              onCheckedChange={handleEnabledChange}
-              aria-labelledby="langfuse-enabled-label"
-            />
           </div>
           <div
             className={`flex items-center gap-1.5 text-xs ${connectionStatusTextClass}`}
@@ -419,7 +421,7 @@ export default function LangfuseConnection() {
           label={destination === '' ? localize('com_ui_select') : ''}
           onChange={handleDestinationChange}
           options={destinationOptions}
-          disabled={destinations.length === 0}
+          disabled={destinations.length === 0 || busy}
           className="w-full"
           sizeClasses="z-50 w-[var(--popover-anchor-width)]"
           testId="langfuse-destination"
@@ -434,6 +436,7 @@ export default function LangfuseConnection() {
             type="button"
             className="w-full rounded-lg border border-border-light px-3 py-2 text-left hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_public_key')}`}
+            disabled={busy}
             onClick={() => setIsEditingPublicKey(true)}
           >
             <code className="block min-w-0 truncate font-mono text-sm text-text-primary">
@@ -451,8 +454,13 @@ export default function LangfuseConnection() {
             data-bwignore="true"
             data-form-type="other"
             value={publicKey}
+            disabled={busy}
             placeholder="pk-lf-..."
-            onChange={(e) => setPublicKey(e.target.value)}
+            onChange={(e) => {
+              setPublicKey(e.target.value);
+              setConnectionTestState('unverified');
+              setConnectionTestMessage('');
+            }}
           />
         )}
       </div>
@@ -464,6 +472,7 @@ export default function LangfuseConnection() {
             type="button"
             className="w-full rounded-lg border border-border-light px-3 py-2 text-left hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_secret_key')}`}
+            disabled={busy}
             onClick={() => setIsEditingSecretKey(true)}
           >
             <code className="block min-w-0 truncate font-mono text-sm text-text-primary">
@@ -482,34 +491,46 @@ export default function LangfuseConnection() {
             data-bwignore="true"
             data-form-type="other"
             value={secretKey}
+            disabled={busy}
             placeholder="sk-lf-..."
-            onChange={(e) => setSecretKey(e.target.value)}
+            onChange={(e) => {
+              setSecretKey(e.target.value);
+              setConnectionTestState('unverified');
+              setConnectionTestMessage('');
+            }}
           />
         )}
       </div>
 
       <div className="flex min-h-9 items-center justify-end gap-2">
-        {showActions && (
+        {isEditing ? (
           <>
-            {secretConfigured && (
-              <Button variant="outline" onClick={handleCancel}>
-                {localize('com_ui_cancel')}
-              </Button>
-            )}
-            <Button
-              disabled={!canSubmit || testMutation.isLoading || updateMutation.isLoading}
-              onClick={handleSave}
-            >
+            <Button variant="outline" disabled={busy} onClick={handleCancel}>
+              {localize('com_ui_cancel')}
+            </Button>
+            <Button disabled={!canSubmit || busy} onClick={handleSave}>
               {testMutation.isLoading ? (
                 <span className="flex items-center gap-2">
                   <Spinner className="h-4 w-4" />
                   {localize('com_ui_langfuse_testing')}
                 </span>
               ) : (
-                localize('com_ui_save')
+                localize('com_ui_langfuse_save_and_enable')
               )}
             </Button>
           </>
+        ) : (
+          <Button
+            variant={connectionStatus?.enabled === true ? 'outline' : 'submit'}
+            disabled={busy}
+            onClick={handleEnabledChange}
+          >
+            {localize(
+              connectionStatus?.enabled === true
+                ? 'com_ui_langfuse_disable'
+                : 'com_ui_langfuse_enable',
+            )}
+          </Button>
         )}
       </div>
     </div>
