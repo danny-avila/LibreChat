@@ -1,16 +1,25 @@
 name: Deploy Admin Panel to VM
 
-# Why this workflow lives in the AIWP repo (not the admin panel repo):
-# The AIWP self-hosted runner is what actually lives on librechat-vm, where the
-# admin panel container also runs. Putting the deploy here guarantees runner
-# access without worrying about cross-repo runner-scope questions. Once the
-# runner is promoted to org-scope, this can move to the admin panel repo and
-# be push-triggered instead of dispatch-only.
+# The admin panel container was migrated from /home/greta/admin-panel-src/ to
+# /opt/admin-panel/ on 2026-07-10 to follow the deploy pattern rules Eli
+# established (no personal home dirs, shared deploy user, pipeline in repo).
+# See feedback_deploy_pattern.md in project memory.
 #
-# Background: the admin panel's `docker-publish.yml` (in the admin panel repo)
-# only builds and pushes an image to GHCR. Nothing on the VM pulls / restarts
-# the container. Result: every admin panel merge sits stale in prod until a
-# human SSHes and refreshes it. This workflow closes that gap.
+# The self-hosted runner on this VM runs as user `eli_gill`, who:
+#   - IS in the `docker` group (can run docker without sudo)
+#   - is NOT in `google-sudoers` and has no sudoers.d entry (cannot sudo)
+#   - OWNS /opt/admin-panel/ directly (mirrors the /home/greta_smbteam_com/librechat/
+#     ownership pattern that LibreChat's own deploy workflow relies on)
+#
+# So docker commands here do NOT use sudo. eli_gill can operate on the
+# checkout and docker socket directly.
+#
+# KNOWN FOLLOW-UP: this workflow does NOT git-fetch before build. The initial
+# clone was done manually by a sudo-capable user (via SSH deploy key registered
+# under greta_smbteam_com). For future admin-panel merges to auto-deploy, we
+# need eli_gill to have GitHub auth of their own (SSH deploy key + registered
+# on the admin panel repo), OR we need a shared deploy user with pull access.
+# Tracked as tech debt post-migration.
 
 on:
   workflow_dispatch:
@@ -22,99 +31,90 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  APP_DIR: /opt/admin-panel
+  OLD_APP_DIR: /home/greta/admin-panel-src
+  OLD_CONTAINER_NAME: aiwp-admin-panel
+  HEALTH_CHECK_URL: http://localhost:3000/
+
 jobs:
   deploy:
     runs-on: self-hosted
     timeout-minutes: 30
     steps:
-      - name: Locate admin panel app directory
-        id: locate
+      - name: Verify prerequisites (path + files exist)
         run: |
           set -e
-          # Priority 1: honor an explicit ADMIN_PANEL_APP_DIR repo variable if set.
-          if [ -n "${{ vars.ADMIN_PANEL_APP_DIR }}" ]; then
-            DIR="${{ vars.ADMIN_PANEL_APP_DIR }}"
-            if [ -d "$DIR" ] && [ -f "$DIR/docker-compose.local.yml" ]; then
-              echo "app_dir=$DIR" >> "$GITHUB_OUTPUT"
-              echo "==> Using admin panel directory (from ADMIN_PANEL_APP_DIR var): $DIR"
-              exit 0
-            fi
-            echo "WARNING: ADMIN_PANEL_APP_DIR=$DIR but that path is missing docker-compose.local.yml — falling through to auto-discovery."
-          fi
+          test -d "$APP_DIR" || (echo "ERROR: $APP_DIR does not exist"; exit 1)
+          test -f "$APP_DIR/docker-compose.local.yml" || (echo "ERROR: $APP_DIR/docker-compose.local.yml missing"; exit 1)
+          test -f "$APP_DIR/.env" || (echo "ERROR: $APP_DIR/.env missing"; exit 1)
+          echo "==> Prerequisites OK. Contents:"
+          ls -la "$APP_DIR" | head -10
+          echo "==> Current git HEAD in $APP_DIR:"
+          git -C "$APP_DIR" log --oneline -1 2>&1 || echo "(git status unavailable — will use whatever is on disk)"
 
-          # Priority 2: auto-discover by searching common roots for a docker-compose.local.yml
-          # that defines an `admin-panel` service. Robust against different checkout paths
-          # (e.g. /home/greta_smbteam_com/, /root/, /opt/) without needing configuration.
-          echo "==> Searching for admin panel checkout..."
-          FOUND=""
-          while IFS= read -r f; do
-            if grep -qE '^\s*admin-panel:' "$f" 2>/dev/null; then
-              FOUND="$(dirname "$f")"
-              break
-            fi
-          done < <(find /home /root /opt /srv -maxdepth 5 -type f -name 'docker-compose.local.yml' 2>/dev/null)
-
-          if [ -n "$FOUND" ]; then
-            echo "app_dir=$FOUND" >> "$GITHUB_OUTPUT"
-            echo "==> Discovered admin panel directory: $FOUND"
-            exit 0
-          fi
-
-          echo "ERROR: could not auto-discover an admin panel checkout."
-          echo "Fix: set the ADMIN_PANEL_APP_DIR repository variable to the correct path."
-          echo "     Settings → Secrets and variables → Actions → Variables → New repository variable"
-          echo ""
-          echo "Debug output — all docker-compose.local.yml files under common roots:"
-          find /home /root /opt /srv -maxdepth 5 -type f -name 'docker-compose.local.yml' 2>/dev/null || true
-          exit 1
-
-      - name: Pull latest admin panel code
-        run: |
-          set -e
-          APP_DIR="${{ steps.locate.outputs.app_dir }}"
-          git config --global --add safe.directory "$APP_DIR"
-          cd "$APP_DIR"
-          echo "==> Before fetch:"
-          git log --oneline -1
-          echo "==> Fetching origin main..."
-          git fetch origin main
-          git reset --hard origin/main
-          echo "==> After reset:"
-          git log --oneline -1
-
-      - name: Build and restart admin-panel container
+      - name: Build new admin-panel image at /opt/admin-panel/
         env:
-          # Required for `--mount=type=cache` in the Dockerfile.
           DOCKER_BUILDKIT: '1'
           COMPOSE_DOCKER_CLI_BUILD: '1'
         run: |
           set -e
-          APP_DIR="${{ steps.locate.outputs.app_dir }}"
           cd "$APP_DIR"
           echo "==> Building admin-panel image..."
           docker compose -f docker-compose.local.yml build admin-panel
-          echo "==> Restarting admin-panel container..."
-          docker compose -f docker-compose.local.yml up -d admin-panel
-          echo "==> Container status:"
-          docker compose -f docker-compose.local.yml ps admin-panel
 
-      - name: Health check
+      - name: Stop old container (kept in stopped state for rollback)
+        run: |
+          set +e
+          if docker inspect "$OLD_CONTAINER_NAME" >/dev/null 2>&1; then
+            echo "==> Stopping old container $OLD_CONTAINER_NAME (kept for rollback)..."
+            docker stop "$OLD_CONTAINER_NAME" || echo "old container already stopped"
+          else
+            echo "==> Old container $OLD_CONTAINER_NAME does not exist. First-time swap or already migrated."
+          fi
+          set -e
+
+      - name: Start new container from /opt/admin-panel/
         run: |
           set -e
-          APP_DIR="${{ steps.locate.outputs.app_dir }}"
-          # Admin panel binds to :3000 inside its docker network; the compose file
-          # maps it to the host on :3000 by default. If a custom PORT was set in
-          # .env, this check may miss it — treat a non-200 as informational only.
-          for i in 1 2 3 4 5 6; do
-            if curl -sf -o /dev/null http://localhost:3000/ 2>/dev/null; then
-              echo "==> Admin panel responding on :3000"
+          cd "$APP_DIR"
+          echo "==> Starting new admin-panel container..."
+          docker compose -f docker-compose.local.yml up -d admin-panel
+          echo "==> New container status:"
+          docker compose -f docker-compose.local.yml ps admin-panel
+
+      - name: Health check (rollback on failure)
+        run: |
+          set +e
+          echo "==> Waiting for new container to respond on port 3000..."
+          for i in 1 2 3 4 5 6 7 8; do
+            if curl -sf -o /dev/null "$HEALTH_CHECK_URL" 2>/dev/null; then
+              echo "==> Admin panel healthy on attempt $i. New container is live."
+              # Health passed — safe to remove the stopped old container
+              if docker inspect "$OLD_CONTAINER_NAME" >/dev/null 2>&1; then
+                echo "==> Removing old container $OLD_CONTAINER_NAME (health check passed)..."
+                docker rm "$OLD_CONTAINER_NAME" || echo "old container removal skipped"
+              fi
               exit 0
             fi
-            echo "==> Attempt $i: not responding on :3000, waiting 5s..."
+            echo "==> Attempt $i: not responding, waiting 5s..."
             sleep 5
           done
-          echo "WARNING: admin panel did not respond on :3000 after 30s. Recent logs:"
+
+          echo "HEALTH CHECK FAILED. Attempting rollback..."
+          echo "==> New container logs (last 60 lines):"
           docker compose -f "$APP_DIR/docker-compose.local.yml" logs admin-panel --tail=60 || true
-          # Exit non-zero so the run surfaces as failed; the container may still
-          # be usable via a non-default port, so operator should verify manually.
+
+          echo "==> Stopping and removing failed new container..."
+          docker compose -f "$APP_DIR/docker-compose.local.yml" down || true
+
+          echo "==> Restarting old container from stopped state..."
+          if docker inspect "$OLD_CONTAINER_NAME" >/dev/null 2>&1; then
+            docker start "$OLD_CONTAINER_NAME"
+            echo "==> Rolled back to old container $OLD_CONTAINER_NAME."
+          else
+            echo "==> WARNING: cannot roll back — old container no longer exists."
+          fi
+
+          echo "DEPLOY FAILED — see logs above."
           exit 1

@@ -1,0 +1,42 @@
+name: One-off admin panel container swap (2026-07-11 01:00 ET)
+
+# ONE-TIME USE — delete this file on Sat 2026-07-11 morning after it fires.
+#
+# Purpose: dispatch deploy-admin-panel-vm.yml once tonight (Fri 2026-07-10)
+# during the maintenance window to swap the admin panel container from
+# /home/greta/admin-panel-src/ (old, personal home dir, image
+# aiwp-admin-panel:local) to /opt/admin-panel/ (new, follows deploy pattern
+# rules, image admin-panel-admin-panel:latest built earlier today).
+#
+# This is the first execution of the migrated deploy pipeline; the swap
+# workflow includes an automatic rollback path if the new container fails
+# the health check.
+
+on:
+  schedule:
+    # 05:00 UTC on 2026-07-11 = 01:00 ET Sat morning (Fri overnight).
+    # GitHub scheduled runs are typically delayed 1-3h; whole maintenance
+    # window (Fri 21:00 – Sat 07:00 ET = Sat 01:00 – 11:00 UTC) tolerates it.
+    - cron: '0 5 11 7 *'
+  workflow_dispatch:
+
+concurrency:
+  group: one-off-admin-panel-swap-2026-07-11
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Deploy Admin Panel to VM (post-migration swap)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "One-off container swap: /home/greta/admin-panel-src/ → /opt/admin-panel/"
+          echo "Ships PR #13 (user migration UI) + PR #14 (tenants scroll) + PR #15 (rebrand)."
+          gh workflow run deploy-admin-panel-vm.yml --ref main
+          echo "Deploy dispatched. Watch: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/deploy-admin-panel-vm.yml"
