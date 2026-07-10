@@ -133,6 +133,16 @@ export async function getMessagesByConvoIdQueryFn({
   }
 
   const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
+  if (preservePendingTail && currentMessages != null && hasPendingAssistantTail(currentMessages)) {
+    logger.warn(
+      'messages',
+      `Messages query for convo ${id} preserved pending assistant tail during prefetch; path: "${pathname}"`,
+      result,
+      currentMessages,
+    );
+    return currentMessages;
+  }
+
   const stableMessages = getStableMessages({
     pathname,
     result,

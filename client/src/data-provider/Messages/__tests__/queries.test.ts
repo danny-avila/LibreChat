@@ -550,8 +550,54 @@ describe('getMessagesByConvoIdQueryFn', () => {
     await expect(queryPromise).resolves.toBe(currentMessages);
     expect(logger.warn).toHaveBeenCalledWith(
       'messages',
-      expect.stringContaining('returned fewer than cache'),
+      expect.stringContaining('preserved pending assistant tail during prefetch'),
       [currentMessages[0]],
+      currentMessages,
+    );
+  });
+
+  it('keeps a pending regeneration tail over an equal-length prefetch result', async () => {
+    const conversationId = 'convo-id';
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const currentMessages = [
+      message({ messageId: 'user-1' }),
+      message({
+        messageId: 'assistant-1_',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+        createdAt: undefined,
+        updatedAt: undefined,
+      }),
+    ];
+    const serverMessages = [
+      currentMessages[0],
+      message({
+        messageId: 'assistant-1',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+      }),
+    ];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], currentMessages);
+
+    const mockGetMessagesByConvoId = dataService.getMessagesByConvoId as jest.MockedFunction<
+      typeof dataService.getMessagesByConvoId
+    >;
+    mockGetMessagesByConvoId.mockResolvedValueOnce(serverMessages);
+
+    await expect(
+      getMessagesByConvoIdQueryFn({
+        id: conversationId,
+        pathname: `/c/${conversationId}`,
+        queryClient,
+        preservePendingTail: true,
+      }),
+    ).resolves.toBe(currentMessages);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'messages',
+      expect.stringContaining('preserved pending assistant tail during prefetch'),
+      serverMessages,
       currentMessages,
     );
   });
