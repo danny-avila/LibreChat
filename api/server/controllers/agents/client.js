@@ -327,7 +327,11 @@ class AgentClient extends BaseClient {
     let endpointConfig;
     try {
       endpointConfig = getCustomEndpointConfig({ endpoint, appConfig });
-    } catch {
+    } catch (error) {
+      logger.debug(
+        `[AgentClient] Could not resolve custom endpoint config for "${endpoint}"; skipping endpoint-derived image-capability signals.`,
+        error,
+      );
       endpointConfig = undefined;
     }
 

@@ -2334,7 +2334,7 @@ export function validateVisionModel({
   vision,
   endpointCapable,
 }: {
-  model: string;
+  model?: string;
   additionalModels?: string[];
   availableModels?: string[];
   vision?: boolean;
