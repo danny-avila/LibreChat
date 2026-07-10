@@ -80,3 +80,7 @@ export * from './rum/proxy';
 export type * from './mcp/types';
 export type * from './flow/types';
 export type * from './types';
+
+/* Voice & LiveKit Integrations */
+export * from './voices/handlers';
+export * from './livekit/handlers';

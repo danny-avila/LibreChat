@@ -42,6 +42,7 @@ import { createBannerMethods, type BannerMethods } from './banner';
 import { createToolCallMethods, type ToolCallMethods } from './toolCall';
 import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
+import { createVoiceProfileMethods, type VoiceProfileMethods } from './voiceProfile';
 /* Tier 2 — Moderate (service deps injected) */
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
 import { createMessageMethods, type MessageMethods } from './message';
@@ -153,7 +154,8 @@ export type AllMethods = UserMethods &
   SkillMethods &
   SkillSyncMethods &
   AgentMethods &
-  ConfigMethods;
+  ConfigMethods &
+  VoiceProfileMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -288,6 +290,7 @@ export function createMethods(
     ...agentMethods,
     /* Config */
     ...createConfigMethods(mongoose),
+    ...createVoiceProfileMethods(mongoose),
   };
 }
 
@@ -341,4 +344,5 @@ export type {
   SkillSyncMethods,
   AgentMethods,
   ConfigMethods,
+  VoiceProfileMethods,
 };

@@ -4,6 +4,7 @@ import {
   Bot,
   Brain,
   Bookmark,
+  Mic,
   NotebookPen,
   ScrollText,
   ArrowRightToLine,
@@ -32,6 +33,7 @@ import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
+import VoiceProfilesConfigList from '~/components/Nav/SettingsTabs/Speech/VoiceProfiles';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
 
@@ -95,6 +97,14 @@ export default function useSideNavLinks({
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
+
+    links.push({
+      title: 'com_ui_voice_profiles',
+      label: '',
+      icon: Mic,
+      id: 'voice-profiles',
+      Component: VoiceProfilesConfigList,
+    });
 
     if (
       endpointsConfig?.[EModelEndpoint.agents] &&

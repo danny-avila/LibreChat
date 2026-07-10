@@ -1,0 +1,9 @@
+livekit-agents>=0.12
+livekit-agents[silero]>=0.12
+aiohttp>=3.9
+soundfile>=0.12
+numpy>=1.24
+Pillow>=10.0
+openai>=1.0
+livekit-plugins-google
+google-genai

@@ -14,7 +14,9 @@ import {
   useQueryParams,
   useSubmitMessage,
   useFocusChatEffect,
+  useAuthContext,
 } from '~/hooks';
+import { v4 } from 'uuid';
 import {
   useChatContext,
   useChatFormContext,
@@ -43,6 +45,9 @@ import SendButton from './SendButton';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
+import VideoCallButton from './VideoCallButton';
+import VideoCallOverlay from '../VideoCallOverlay';
+import { useVideoCall } from '~/hooks/useVideoCall';
 import store from '~/store';
 
 interface ChatFormProps {
@@ -141,6 +146,43 @@ const ChatForm = memo(function ChatForm({
     () => requiresKey || invalidAssistant,
     [requiresKey, invalidAssistant],
   );
+
+  const { token: jwtToken } = useAuthContext();
+  const { setMessages, getMessages, latestMessageId } = useChatContext();
+
+  const onAgentMessage = useCallback((text: string) => {
+    if (!conversation?.conversationId) return;
+
+    const parentMessageId = latestMessageId || '00000000-0000-0000-0000-000000000000';
+
+    const messageId = v4();
+    const messageData = {
+      messageId,
+      parentMessageId,
+      text,
+      sender: conversation.endpoint || 'assistant',
+      isCreatedByUser: false,
+      error: false,
+      unfinished: false,
+    };
+
+    fetch(`/api/messages/${conversation.conversationId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${jwtToken}`,
+      },
+      body: JSON.stringify(messageData),
+    })
+      .then((res) => res.json())
+      .then((savedMessage) => {
+        const currentMessages = getMessages() || [];
+        setMessages([...currentMessages, savedMessage]);
+      })
+      .catch((err) => console.error('Failed to save agent message:', err));
+  }, [conversation?.conversationId, conversation?.endpoint, jwtToken, getMessages, setMessages, latestMessageId]);
+
+  const { isCallActive, startCall, endCall, token, wsUrl } = useVideoCall();
 
   const handleContainerClick = useCallback(() => {
     /** Check if the device is a touchscreen */
@@ -421,11 +463,18 @@ const ChatForm = memo(function ChatForm({
               />
               <div className="mx-auto flex" />
               <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
+              {SpeechToText && TextToSpeech && (
+                <VideoCallButton
+                  disabled={disableInputs || isNotAppendable || isCallActive}
+                  isSubmitting={isSubmitting}
+                  onClick={startCall}
+                />
+              )}
               {SpeechToText && (
                 <AudioRecorder
                   methods={methods}
                   ask={submitMessage}
-                  disabled={disableInputs || isNotAppendable}
+                  disabled={disableInputs || isNotAppendable || isCallActive}
                   isSubmitting={isSubmitting}
                 />
               )}
@@ -448,7 +497,10 @@ const ChatForm = memo(function ChatForm({
                 )}
               </div>
             </div>
-            {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+            {TextToSpeech && automaticPlayback && !isCallActive && <StreamAudio index={index} />}
+            {isCallActive && token && wsUrl && (
+              <VideoCallOverlay token={token} wsUrl={wsUrl} onDisconnect={endCall} onAgentMessage={onAgentMessage} />
+            )}
           </div>
         </div>
       </div>
