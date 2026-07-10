@@ -34,12 +34,17 @@ const {
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
+  toClientPendingAction,
   computeAgentRequestFingerprint,
   extractDiscoveredToolsFromHistory,
+  sanitizeResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
   deleteAgentCheckpoint,
+  agentRequestsAskUserQuestion,
+  attachAskUserQuestionArgs,
+  createContentIndexOffsetHandlers,
   getRequestMemories,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
@@ -1222,10 +1227,25 @@ class AgentClient extends BaseClient {
     // paused on. The resume payload omits them and they aren't part of the fingerprint, so
     // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
     // these from the DB record server-side, so this is belt-and-suspenders for them.)
+    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
     const resumeContext = pickResumeContext(this.options.req?.body);
-    const resolvedModelParameters = this.options.agent?.model_parameters;
-    if (resolvedModelParameters && typeof resolvedModelParameters === 'object') {
+    const resolvedModelParameters = sanitizeResumeModelParameters(
+      this.options.agent?.model_parameters,
+    );
+    if (resolvedModelParameters) {
       resumeContext.model_parameters = resolvedModelParameters;
+    }
+    // Persist the question onto the paused ask tool_call's args NOW: an
+    // abandoned/expired/stopped pause never reaches the answer-resume stamp,
+    // and the streamed args were dropped (name-less chunks) — without this the
+    // unfinished turn saves an empty ask part the record card can't render.
+    if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
+      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      if (stamped !== this.contentParts) {
+        this.contentParts.length = 0;
+        this.contentParts.push(...stamped);
+      }
     }
     const pendingAction = buildPendingAction(interrupt.payload, {
       streamId,
@@ -1311,7 +1331,7 @@ class AgentClient extends BaseClient {
     }
     await GenerationJobManager.emitChunk(streamId, {
       event: ApprovalEvents.ON_PENDING_ACTION,
-      data: pendingAction,
+      data: toClientPendingAction(pendingAction),
     });
     logger.debug(
       `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
@@ -1619,7 +1639,14 @@ class AgentClient extends BaseClient {
         // a Redis flag) can go stale across replicas/restarts and skip the prune
         // exactly when an orphan exists, while these are two indexed, usually-empty
         // deleteMany ops — correctness over a micro-optimization.
-        if (streamId && isHITLEnabled(agentsEConfig?.toolApproval)) {
+        // The gate mirrors createRun's checkpointer condition: the approval policy
+        // OR an ask_user_question-capable agent (which attaches a checkpointer
+        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
+        // or Stop would otherwise rehydrate here and silently duplicate context.
+        if (
+          streamId &&
+          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion))
+        ) {
           await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
         }
 
@@ -1887,7 +1914,14 @@ class AgentClient extends BaseClient {
         initialSessions,
         runId: this.responseMessageId,
         signal: abortController.signal,
-        customHandlers: this.options.eventHandlers,
+        // The rebuilt graph numbers content indices from 0, but the aggregator was
+        // just seeded with the pre-pause parts at those same indices — shift every
+        // resumed step index past the seed, or the new output merges into (or, on a
+        // type mismatch, is silently dropped against) the pre-pause content.
+        customHandlers: createContentIndexOffsetHandlers(
+          this.options.eventHandlers,
+          Array.isArray(seedContent) ? seedContent : [],
+        ),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
         tenantId: this.options.req?.user?.tenantId,

@@ -42,6 +42,9 @@ function isBuiltinSelected(item: AgentItem, form: FormSelection): boolean {
       return Boolean(form.artifacts);
     case 'context':
       return form.context_files.length > 0;
+    case 'ask_user_question':
+      // Native tool presented as a builtin — selection lives in agent.tools.
+      return form.tools.includes('ask_user_question');
     default:
       return false;
   }

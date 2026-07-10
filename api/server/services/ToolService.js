@@ -28,6 +28,7 @@ const {
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
+  ASK_USER_QUESTION_TOOL_NAME,
 } = require('@librechat/api');
 const {
   Time,
@@ -578,6 +579,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
+    }
+    if (tool === ASK_USER_QUESTION_TOOL_NAME) {
+      return checkCapability(AgentCapabilities.ask_user_question);
     }
     if (isActionTool(tool)) {
       return actionsEnabled;
@@ -1133,6 +1137,8 @@ async function loadAgentTools({
       return includesWebSearch;
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
+    } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
+      return checkCapability(AgentCapabilities.ask_user_question);
     } else if (isActionTool(tool)) {
       return actionsEnabled;
     } else if (tool?.includes(Constants.mcp_delimiter)) {
@@ -1197,6 +1203,7 @@ async function loadAgentTools({
       loadedTools,
       userId: req.user.id,
       agentId: agent.id,
+      provider: agent.provider,
       agentToolOptions: agent.tool_options,
       deferredToolsEnabled,
       programmaticToolsEnabled,
