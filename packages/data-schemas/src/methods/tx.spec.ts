@@ -463,6 +463,14 @@ describe('getMultiplier', () => {
     );
   });
 
+  it('should bill gpt-5.6 cache writes at the documented 1.25x input surcharge', () => {
+    const cacheWrites = { 'gpt-5.6': 6.25, 'gpt-5.6-terra': 3.125, 'gpt-5.6-luna': 1.25 };
+    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const) {
+      expect(cacheTokenValues[model].write).toBe(cacheWrites[model]);
+      expect(cacheTokenValues[model].write).toBe(tokenValues[model].prompt * 1.25);
+    }
+  });
+
   it('should return the correct multiplier for gpt-4o', () => {
     const valueKey = getValueKey('gpt-4o-2024-08-06');
     expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
