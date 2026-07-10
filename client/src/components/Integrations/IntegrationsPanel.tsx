@@ -12,8 +12,8 @@ import type { IntegrationProviderKey } from 'librechat-data-provider';
 import { useGetStartupConfig, useIntegrationsQuery } from '~/data-provider';
 import { useIntegrationConnectors, useLocalize } from '~/hooks';
 import { INTEGRATION_LABEL_KEYS } from '~/constants/integrations';
+import { cn } from '~/utils';
 import { IntegrationProviderIcon } from './IntegrationProviderIcon';
-import { IntegrationStatusChip } from './IntegrationStatusChip';
 
 const HUB_PROVIDER_ORDER: IntegrationProviderKey[] = [
   'google-drive',
@@ -84,9 +84,9 @@ export default function IntegrationsPanel() {
     : '';
 
   return (
-    <div className="flex flex-col gap-3 px-3 pb-3 pt-2">
+    <div className="flex flex-col gap-2 px-3 pb-3 pt-2">
       <p className="text-sm text-text-secondary">{localize('com_integrations_hub_description')}</p>
-      <ul className="flex flex-col gap-2">
+      <ul className="divide-y divide-border-light">
         {orderedProviders.map((providerKey) => {
           const integration = enabledByKey.get(providerKey);
           if (!integration) {
@@ -99,50 +99,56 @@ export default function IntegrationsPanel() {
             INTEGRATION_LABEL_KEYS[providerKey] ??
             'com_integrations_google_drive';
           const providerLabel = localize(labelKey as Parameters<typeof localize>[0]);
+          const disconnectAriaLabel = localize('com_integrations_disconnect_provider', {
+            provider: providerLabel,
+          });
           const connected = isIntegrationConnected(integration.status);
           const reconnect = needsIntegrationReconnect(integration.status);
-          const connectLabel = reconnect
-            ? localize('com_integrations_reconnect_button')
-            : localize('com_integrations_connect_button');
+          const isLinked = connected && !reconnect;
+          const actionLabel = isLinked
+            ? localize('com_integrations_status_connected')
+            : reconnect
+              ? localize('com_integrations_reconnect_button')
+              : localize('com_integrations_connect_button');
+          const actionAriaLabel = isLinked
+            ? disconnectAriaLabel
+            : reconnect
+              ? localize('com_integrations_reconnect_expired_title', { provider: providerLabel })
+              : localize('com_integrations_connect_title', { provider: providerLabel });
+          const isActionLoading = isLinked ? connector?.isDisconnecting : connector?.isConnecting;
+
+          const handleAction = () => {
+            if (isLinked) {
+              setConfirmDisconnect(providerKey);
+              return;
+            }
+            handleConnect(providerKey);
+          };
 
           return (
-            <li
-              key={providerKey}
-              className="flex items-center justify-between gap-2 rounded-lg border border-border-light bg-surface-primary p-3"
-            >
+            <li key={providerKey} className="flex items-center justify-between gap-2 py-1.5">
               <div className="flex min-w-0 items-center gap-2">
-                <IntegrationProviderIcon providerKey={providerKey} className="size-5" />
-                <span className="truncate text-sm font-medium">{providerLabel}</span>
+                <IntegrationProviderIcon providerKey={providerKey} className="size-4 shrink-0" />
+                <p className="truncate text-sm font-medium text-text-primary">{providerLabel}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <IntegrationStatusChip status={integration.status} />
-                {connected && !reconnect ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setConfirmDisconnect(providerKey)}
-                    disabled={connector?.isDisconnecting}
-                  >
-                    {localize('com_integrations_disconnect_button')}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="submit"
-                    size="sm"
-                    onClick={() => handleConnect(providerKey)}
-                    disabled={connector?.isConnecting}
-                  >
-                    {connector?.isConnecting ? (
-                      <>
-                        <Spinner className="mr-2 h-4 w-4" />
-                        {localize('com_ui_loading')}
-                      </>
-                    ) : (
-                      connectLabel
-                    )}
-                  </Button>
+              <Button
+                variant="link"
+                size="sm"
+                className={cn(
+                  'h-6 shrink-0 px-1.5 text-xs font-normal no-underline hover:no-underline',
+                  isLinked
+                    ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
+                    : reconnect
+                      ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300'
+                      : 'text-text-secondary hover:text-text-primary',
                 )}
-              </div>
+                aria-label={actionAriaLabel}
+                aria-pressed={isLinked}
+                onClick={handleAction}
+                disabled={isActionLoading}
+              >
+                {isActionLoading ? <Spinner className="h-3.5 w-3.5" /> : actionLabel}
+              </Button>
             </li>
           );
         })}

@@ -8,12 +8,20 @@ interface IntegrationStatusChipProps {
   className?: string;
 }
 
-const statusStyles: Record<IntegrationConnectionStatus, string> = {
-  connected: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-  not_connected: 'bg-surface-secondary text-text-secondary',
-  expired: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  revoked: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
-  disabled: 'bg-surface-secondary text-text-tertiary',
+const statusTextStyles: Record<IntegrationConnectionStatus, string> = {
+  connected: 'text-green-600 dark:text-green-400',
+  not_connected: 'text-text-secondary',
+  expired: 'text-amber-600 dark:text-amber-400',
+  revoked: 'text-red-600 dark:text-red-400',
+  disabled: 'text-text-tertiary',
+};
+
+const statusDotStyles: Record<IntegrationConnectionStatus, string> = {
+  connected: 'bg-green-500',
+  not_connected: 'bg-text-tertiary',
+  expired: 'bg-amber-500',
+  revoked: 'bg-red-500',
+  disabled: 'bg-text-tertiary opacity-60',
 };
 
 export function IntegrationStatusChip({
@@ -33,11 +41,15 @@ export function IntegrationStatusChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        statusStyles[status],
+        'inline-flex items-center gap-1.5 whitespace-nowrap text-xs leading-none',
+        statusTextStyles[status],
         className,
       )}
     >
+      <span
+        className={cn('size-1.5 shrink-0 rounded-full', statusDotStyles[status])}
+        aria-hidden="true"
+      />
       {localize(labelKey)}
     </span>
   );
