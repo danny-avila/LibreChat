@@ -1512,5 +1512,6 @@
   "com_farmer_option_other": "Cits",
   "com_farmer_option_under_graduate": "Nepabeigta augstākā izglītība",
   "com_farmer_option_graduate": "Augstākā izglītība",
-  "com_farmer_option_post_graduate": "Pēcdiploma izglītība"
+  "com_farmer_option_post_graduate": "Pēcdiploma izglītība",
+  "com_ui_feedback_what_worked_what_not": "Pastāstiet mums, kas darbojās labi un kas nedarbojās."
 }

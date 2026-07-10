@@ -1391,5 +1391,6 @@
   "com_farmer_option_other": "其他",
   "com_farmer_option_under_graduate": "本科以下",
   "com_farmer_option_graduate": "本科",
-  "com_farmer_option_post_graduate": "研究生"
+  "com_farmer_option_post_graduate": "研究生",
+  "com_ui_feedback_what_worked_what_not": "请告诉我们哪些地方做得好，哪些地方做得不好。"
 }

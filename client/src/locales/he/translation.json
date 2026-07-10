@@ -1348,5 +1348,6 @@
   "com_farmer_option_other": "אחר",
   "com_farmer_option_under_graduate": "לפני תואר ראשון",
   "com_farmer_option_graduate": "בוגר",
-  "com_farmer_option_post_graduate": "בוגר תואר מתקדם"
+  "com_farmer_option_post_graduate": "בוגר תואר מתקדם",
+  "com_ui_feedback_what_worked_what_not": "ספרו לנו מה עבד היטב ומה לא."
 }

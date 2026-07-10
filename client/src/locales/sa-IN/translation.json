@@ -2029,5 +2029,6 @@
   "com_farmer_validation_age_minimum": "न्यूनतमम् १८ वर्षाणि भवेयुः",
   "com_farmer_validation_non_negative": "ऋणात्मकं न भवितुम् अर्हति",
   "com_farmer_validation_fix_errors": "कृपया प्रस्तोतुं पूर्वं त्रुटीः निवारयन्तु।",
-  "com_user_message": "भवान्"
+  "com_user_message": "भवान्",
+  "com_ui_feedback_what_worked_what_not": "किं सम्यक् कार्यम् अकरोत्, किं च न अकरोत् इति अस्मभ्यं कथयत।"
 }

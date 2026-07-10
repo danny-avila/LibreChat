@@ -8,6 +8,7 @@ import {
   OGDialogTitle,
   ThumbUpIcon,
   ThumbDownIcon,
+  DialogDescription,
 } from '@librechat/client';
 import {
   AlertCircle,
@@ -20,6 +21,7 @@ import {
   Search,
   MicOff,
   Mic,
+  Square,
 } from 'lucide-react';
 import { useLocalize, useSpeechToText } from '~/hooks';
 import { cn } from '~/utils';
@@ -361,6 +363,9 @@ export default function Feedback({
             <OGDialogTitle className="text-token-text-primary text-lg font-semibold leading-6">
               {localize('com_ui_feedback_more_information')}
             </OGDialogTitle>
+            <DialogDescription>
+              {localize('com_ui_feedback_what_worked_what_not')}
+            </DialogDescription>
             <textarea
               {...textRegister}
               onChange={(e) => {
@@ -382,26 +387,42 @@ export default function Feedback({
               rows={4}
               placeholder={localize('com_ui_feedback_placeholder')}
             />
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex justify-center">
               <button
                 type="button"
                 onClick={isListening ? stopRecording : startRecording}
                 className={cn(
                   'flex items-center gap-2 rounded-full px-3 py-2',
-                  isListening ? 'bg-red-500/10 text-red-500' : 'hover:bg-surface-hover',
+                  isListening ? 'text-red-500' : 'hover:bg-surface-hover',
                 )}
               >
-                {isListening ? <MicOff size="18" /> : <Mic size="18" />}
-                <span className="text-sm">
-                  {isListening ? localize('com_ui_stop') : localize('com_ui_use_micrphone')}
-                </span>
+                <div className="flex flex-col items-center justify-center">
+                  {!isListening ? (
+                    <Mic size="28" className="rounded-full" />
+                  ) : (
+                    <div
+                      className={cn(
+                        'flex h-full w-10 animate-pulse items-center justify-center rounded-full transition-all',
+                      )}
+                    >
+                      <Square
+                        className="text-red rounded-md bg-red-500 shadow-[0_0_0_10px_rgba(239,68,68,0.2)]"
+                        size={30}
+                      />
+                    </div>
+                  )}
+                  <div className="mt-2.5 text-sm">
+                    {isListening ? localize('com_ui_stop') : localize('com_ui_use_micrphone')}
+                  </div>
+                </div>
               </button>
             </div>
-            <div className="mt-4 flex items-end justify-end gap-2">
-              <Button variant="destructive" onClick={handleDialogClear}>
+            <div className="mt-4 flex items-end justify-between gap-2">
+              <Button className="w-full" variant="destructive" onClick={handleDialogClear}>
                 {localize('com_ui_delete')}
               </Button>
               <Button
+                className="w-full"
                 variant="submit"
                 onClick={handleDialogSave}
                 disabled={!feedback?.text?.trim() && !textAreaRef.current?.value.trim()}

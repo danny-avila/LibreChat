@@ -5,7 +5,7 @@ import useGetAudioSettings from './useGetAudioSettings';
 const useSpeechToText = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
-  enabled = true,
+  enabled = false,
 ): {
   isLoading?: boolean;
   isListening?: boolean;

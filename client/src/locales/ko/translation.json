@@ -1158,5 +1158,6 @@
   "com_farmer_option_other": "기타",
   "com_farmer_option_under_graduate": "학부 재학",
   "com_farmer_option_graduate": "학사 졸업",
-  "com_farmer_option_post_graduate": "대학원 졸업"
+  "com_farmer_option_post_graduate": "대학원 졸업",
+  "com_ui_feedback_what_worked_what_not": "무엇이 잘 작동했고 무엇이 그렇지 않았는지 알려주세요."
 }

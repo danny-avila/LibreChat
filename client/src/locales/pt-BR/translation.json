@@ -1081,5 +1081,6 @@
   "com_farmer_option_other": "Outro",
   "com_farmer_option_under_graduate": "Graduação Incompleta",
   "com_farmer_option_graduate": "Graduado",
-  "com_farmer_option_post_graduate": "Pós-Graduado"
+  "com_farmer_option_post_graduate": "Pós-Graduado",
+  "com_ui_feedback_what_worked_what_not": "Diga-nos o que funcionou bem e o que não funcionou."
 }

@@ -1510,5 +1510,6 @@
   "com_farmer_option_other": "Andere",
   "com_farmer_option_under_graduate": "Bachelor-Student",
   "com_farmer_option_graduate": "Absolvent",
-  "com_farmer_option_post_graduate": "Postgraduierter"
+  "com_farmer_option_post_graduate": "Postgraduierter",
+  "com_ui_feedback_what_worked_what_not": "Teilen Sie uns mit, was gut funktioniert hat und was nicht."
 }

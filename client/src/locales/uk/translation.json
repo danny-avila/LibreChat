@@ -1331,5 +1331,6 @@
   "com_farmer_option_other": "Інше",
   "com_farmer_option_under_graduate": "Неповна вища освіта",
   "com_farmer_option_graduate": "Вища освіта",
-  "com_farmer_option_post_graduate": "Післядипломна освіта"
+  "com_farmer_option_post_graduate": "Післядипломна освіта",
+  "com_ui_feedback_what_worked_what_not": "Розкажіть нам, що спрацювало добре, а що ні."
 }
