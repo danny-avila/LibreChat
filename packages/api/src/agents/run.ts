@@ -933,6 +933,7 @@ export async function createRun({
   requestBody,
   user,
   tenantId,
+  centralTraceExportEnabled,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -954,6 +955,11 @@ export async function createRun({
   requestBody?: t.RequestBody;
   user?: IUser;
   tenantId?: string;
+  /**
+   * Defaults to true. Set false to suppress central Langfuse export for this
+   * run. Tenant fanout can still export when tenant routing is available.
+   */
+  centralTraceExportEnabled?: boolean;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
   /**
@@ -1374,7 +1380,11 @@ export async function createRun({
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
-    langfuse: buildLangfuseConfig({ appConfig, tenantId: tenantId ?? user?.tenantId }),
+    langfuse: buildLangfuseConfig({
+      appConfig,
+      tenantId: tenantId ?? user?.tenantId,
+      centralTraceExportEnabled,
+    }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
