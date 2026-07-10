@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   isEnabled,
+  isLangfuseFanoutEnabled,
   getBalanceConfig,
   getCloudFrontConfig,
   resolveBuildInfo,
@@ -277,9 +278,7 @@ router.get('/', async function (req, res) {
       conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,
-      langfuseFanoutEnabled: /^(true|1|yes|on)$/i.test(
-        (process.env.LANGFUSE_FANOUT_ENABLED ?? '').trim(),
-      ),
+      langfuseFanoutEnabled: isLangfuseFanoutEnabled(),
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
     };

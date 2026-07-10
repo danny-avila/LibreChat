@@ -104,6 +104,8 @@ afterEach(() => {
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
   delete process.env.HELP_AND_FAQ_URL;
+  delete process.env.LANGFUSE_FANOUT_ENABLED;
+  delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
 });
 
 describe('GET /api/config', () => {
@@ -381,6 +383,23 @@ describe('GET /api/config', () => {
       expect(response.body.bundlerURL).toBe('https://bundler.test');
       expect(response.body.staticBundlerURL).toBe('https://static-bundler.test');
       expect(response.body.conversationImportMaxFileSize).toBe(5000000);
+    });
+
+    it('should advertise Langfuse fanout only when the toggle and collector URL are configured', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      const app = createApp(mockUser);
+
+      let response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
     });
 
     it('should include post-login informational fields', async () => {
