@@ -21,7 +21,10 @@ export function isLangfuseTenantExportEnabled(): boolean {
 }
 
 export function isLangfuseFanoutEnabled(): boolean {
-  return isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED);
+  return (
+    isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED) &&
+    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL) != null
+  );
 }
 
 function mergeTraceMetadata(

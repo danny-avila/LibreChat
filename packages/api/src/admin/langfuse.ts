@@ -11,6 +11,7 @@ import type {
 import type { IConfig } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
+import type { LangfuseTenantDestination } from '~/langfuse/tenantDestinations';
 import type { ServerRequest } from '~/types/http';
 import {
   getLangfuseTenantDestinations,
@@ -82,6 +83,55 @@ function getLangfuseTestFailureMessage(status: number): string {
   return `Langfuse responded with status ${status}`;
 }
 
+type LangfuseVerificationResult = TLangfuseConnectionTestResponse & {
+  responseStatus?: number;
+};
+
+async function verifyLangfuseCredentials(
+  destination: LangfuseTenantDestination,
+  publicKey: string,
+  secretKey: string,
+): Promise<LangfuseVerificationResult> {
+  try {
+    const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
+    const secretResponse = await fetch(`${destination.baseUrl}/api/public/projects`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    if (!secretResponse.ok) {
+      return {
+        success: false,
+        message: getLangfuseTestFailureMessage(secretResponse.status),
+        responseStatus: secretResponse.status >= 500 ? 502 : 400,
+      };
+    }
+
+    const publicResponse = await fetch(`${destination.baseUrl}/api/public/ingestion`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${publicKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ batch: [] }),
+    });
+    if (!publicResponse.ok) {
+      return {
+        success: false,
+        message: getLangfuseTestFailureMessage(publicResponse.status),
+        responseStatus: publicResponse.status >= 500 ? 502 : 400,
+      };
+    }
+
+    return { success: true };
+  } catch (error) {
+    logger.error('[adminLangfuse] connection verification error:', error);
+    return {
+      success: false,
+      message: 'Could not reach the Langfuse host',
+      responseStatus: 502,
+    };
+  }
+}
+
 /**
  * Admin handlers for the per-tenant Langfuse connection.
  *
@@ -145,11 +195,33 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       }
 
       const existing = await findBaseConfig();
-      const hasStoredSecret = Boolean(readStoredLangfuse(existing)?.secretKey);
+      const stored = readStoredLangfuse(existing);
+      const hasStoredSecret = Boolean(stored?.secretKey);
       if (!secretKey && !hasStoredSecret) {
         return res
           .status(400)
           .json({ error: 'secretKey is required for first-time configuration' });
+      }
+
+      const connectionChanged =
+        secretKey !== '' ||
+        stored?.destination !== tenantDestination.key ||
+        stored?.publicKey !== publicKey;
+      if (connectionChanged) {
+        const verificationSecret = secretKey || decryptConfigSecret(stored?.secretKey) || '';
+        if (!verificationSecret) {
+          return res.status(400).json({ error: 'Stored secret key could not be decrypted' });
+        }
+        const verification = await verifyLangfuseCredentials(
+          tenantDestination,
+          publicKey,
+          verificationSecret,
+        );
+        if (!verification.success) {
+          return res
+            .status(verification.responseStatus ?? 400)
+            .json({ error: verification.message });
+        }
       }
 
       const fields: Record<string, unknown> = {
@@ -226,37 +298,12 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         return res.status(200).json(failed);
       }
 
-      const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
-      const url = `${tenantDestination.baseUrl}/api/public/projects`;
-      const secretResponse = await fetch(url, {
-        headers: { Authorization: `Basic ${auth}` },
-      });
-      if (!secretResponse.ok) {
-        const failed: TLangfuseConnectionTestResponse = {
-          success: false,
-          message: getLangfuseTestFailureMessage(secretResponse.status),
-        };
-        return res.status(200).json(failed);
-      }
-
-      const publicResponse = await fetch(`${tenantDestination.baseUrl}/api/public/ingestion`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${publicKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ batch: [] }),
-      });
-      if (!publicResponse.ok) {
-        const failed: TLangfuseConnectionTestResponse = {
-          success: false,
-          message: getLangfuseTestFailureMessage(publicResponse.status),
-        };
-        return res.status(200).json(failed);
-      }
-
-      const result: TLangfuseConnectionTestResponse = { success: true };
-      return res.status(200).json(result);
+      const result = await verifyLangfuseCredentials(tenantDestination, publicKey, secretKey);
+      const response: TLangfuseConnectionTestResponse = {
+        success: result.success,
+        ...(result.message ? { message: result.message } : {}),
+      };
+      return res.status(200).json(response);
     } catch (error) {
       logger.error('[adminLangfuse] testConnection error:', error);
       const result: TLangfuseConnectionTestResponse = {

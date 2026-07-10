@@ -30,6 +30,19 @@ describe('buildLangfuseConfig', () => {
     clearEnv();
   });
 
+  it('enables fanout only when both the toggle and collector URL are configured', async () => {
+    const { isLangfuseFanoutEnabled } = await import('./config');
+
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    expect(isLangfuseFanoutEnabled()).toBe(false);
+
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
+    expect(isLangfuseFanoutEnabled()).toBe(false);
+
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+    expect(isLangfuseFanoutEnabled()).toBe(true);
+  });
+
   it('decrypts encrypted tenant secrets for tenant trace export', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';

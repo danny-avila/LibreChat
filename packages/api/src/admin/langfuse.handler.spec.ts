@@ -8,6 +8,7 @@ import type { ServerRequest } from '~/types/http';
 // after CREDS_KEY is set above (encryptV3 reads the key at module load).
 let encryptV3: typeof import('@librechat/data-schemas').encryptV3;
 let createAdminLangfuseHandlers: typeof import('./langfuse').createAdminLangfuseHandlers;
+const realFetch = global.fetch;
 
 beforeAll(async () => {
   ({ encryptV3 } = await import('@librechat/data-schemas'));
@@ -16,10 +17,14 @@ beforeAll(async () => {
 
 beforeEach(() => {
   process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+  process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
 });
 
 afterEach(() => {
   delete process.env.LANGFUSE_FANOUT_ENABLED;
+  delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  global.fetch = realFetch;
 });
 
 function mockReq(overrides = {}) {
@@ -117,6 +122,18 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.statusCode).toBe(404);
       expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects connection settings when the fanout collector URL is missing', async () => {
+      delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
     it('rejects connection tests when deployment fanout is disabled', async () => {
@@ -256,7 +273,7 @@ describe('createAdminLangfuseHandlers', () => {
       expect(deps.invalidateConfigCaches).toHaveBeenCalledWith('t1');
     });
 
-    it('allows updating metadata without resupplying the secret when one is stored', async () => {
+    it('verifies changed connection fields with the stored secret', async () => {
       const { handlers, deps } = createHandlers({
         findConfigByPrincipal: jest
           .fn()
@@ -276,15 +293,65 @@ describe('createAdminLangfuseHandlers', () => {
       expect(fields['langfuse.secretKey']).toBeUndefined();
       expect(fields['langfuse.destination']).toBe('us');
       expect(fields['langfuse.publicKey']).toBe('pk-2');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      const [url, init] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+      expect(url).toBe('https://us.cloud.langfuse.com/api/public/projects');
+      expect(
+        Buffer.from(init.headers.Authorization.replace('Basic ', ''), 'base64').toString(),
+      ).toBe('pk-2:sk-lf-secret');
+    });
+
+    it('rejects changed credentials before persisting when Langfuse verification fails', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: false, status: 401 }) as unknown as typeof fetch;
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'eu',
+            publicKey: 'pk-invalid',
+            secretKey: 'sk-invalid',
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Langfuse rejected these keys. Check the destination and keys',
+      });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('does not re-verify a pure enable or disable update', async () => {
+      const stored = {
+        enabled: false,
+        destination: 'eu',
+        publicKey: 'pk-lf-1',
+        secretKey: encryptV3('sk-lf-secret'),
+      };
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(baseConfigDoc(stored)),
+      });
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({ body: { enabled: true, destination: 'eu', publicKey: 'pk-lf-1' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(deps.patchConfigFields).toHaveBeenCalledTimes(1);
+      expect(deps.patchConfigFields.mock.calls[0][3]['langfuse.enabled']).toBe(true);
     });
   });
 
   describe('testConnection', () => {
-    const realFetch = global.fetch;
-    afterEach(() => {
-      global.fetch = realFetch;
-    });
-
     it('requires destination and publicKey', async () => {
       const { handlers } = createHandlers();
       const res = mockRes();
