@@ -1,36 +1,36 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { PermissionBits, hasPermissions, ResourceType } = require('librechat-data-provider');
 const { getEffectivePermissions } = require('~/server/services/PermissionService');
+const { authorizeSystemGlobalAgent } = require('~/server/services/Agents/systemGlobal');
 const { getAgents, getFiles } = require('~/models');
+
+/** Query matching agents that have the given file id in any tool_resource. */
+const fileResourceFilter = (fileId) => ({
+  $or: [
+    { 'tool_resources.execute_code.file_ids': fileId },
+    { 'tool_resources.file_search.file_ids': fileId },
+    { 'tool_resources.image_edit.file_ids': fileId },
+    { 'tool_resources.context.file_ids': fileId },
+    { 'tool_resources.ocr.file_ids': fileId },
+  ],
+});
 
 /**
  * Checks if user has access to a file through agent permissions
  * Files inherit permissions from agents they are attached to.
  */
-const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner }) => {
+const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner, tenantId }) => {
   try {
     const fileOwnerId = fileOwner?.toString();
     if (!fileOwnerId) {
       return false;
     }
 
-    /** Agents that have this file in their tool_resources */
-    const agentsWithFile = await getAgents({
-      $or: [
-        { 'tool_resources.execute_code.file_ids': fileId },
-        { 'tool_resources.file_search.file_ids': fileId },
-        { 'tool_resources.image_edit.file_ids': fileId },
-        { 'tool_resources.context.file_ids': fileId },
-        { 'tool_resources.ocr.file_ids': fileId },
-      ],
-    });
-
-    if (!agentsWithFile || agentsWithFile.length === 0) {
-      return false;
-    }
-
     const userIdStr = userId.toString();
-    for (const agent of agentsWithFile) {
+
+    /** Tenant-scoped agents that have this file in their tool_resources */
+    const agentsWithFile = await getAgents(fileResourceFilter(fileId));
+    for (const agent of agentsWithFile ?? []) {
       const agentAuthorId = agent.author?.toString();
       if (!agentAuthorId) {
         continue;
@@ -58,6 +58,29 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner }) =>
           `[fileAccess] Permission check failed for agent ${agent.id}:`,
           permissionError.message,
         );
+      }
+    }
+
+    /* Files attached to a tenantless `tenants: 'system'` global are invisible to the tenant-scoped
+     * query above, so a citation/preview/download would 403. Resolve those globals under the system
+     * context and authorize VIEW there (principals in the request tenant). */
+    const systemGlobalsWithFile = await runAsSystem(async () => {
+      const agents = await getAgents({
+        isSystem: true,
+        tenantId: { $exists: false },
+        ...fileResourceFilter(fileId),
+      });
+      return agents;
+    });
+    for (const agent of systemGlobalsWithFile ?? []) {
+      const result = await authorizeSystemGlobalAgent({
+        agentId: agent.id,
+        requiredPermission: PermissionBits.VIEW,
+        req: { user: { id: userId, role, tenantId } },
+      });
+      if (result.status === 'ok') {
+        logger.debug(`[fileAccess] User ${userId} authorized via system global ${agent.id}`);
+        return true;
       }
     }
 
@@ -129,6 +152,7 @@ const fileAccess = async (req, res, next) => {
       role: userRole,
       fileId,
       fileOwner: file.user,
+      tenantId: userTenantId,
     });
     if (hasAgentAccess) {
       req.fileAccess = { file };

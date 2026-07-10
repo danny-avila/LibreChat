@@ -192,4 +192,21 @@ describe('reconcileGlobalAgents', () => {
       await Agent.countDocuments({ id: 'agent_global_support', tenantId: { $exists: false } }),
     ).toBe(0);
   });
+
+  test('hard-deletes a tenant-scoped shadow when a global moves to system scope', async () => {
+    await reconcile([baseAgent({ tenants: ['tenant-a'], access: { roles: ['USER'] } })]);
+    expect(await Agent.countDocuments({ id: 'agent_global_support', tenantId: 'tenant-a' })).toBe(
+      1,
+    );
+
+    await reconcile([baseAgent({ tenants: 'system', access: { roles: ['USER'] } })]);
+
+    // The old tenant row must be removed (not soft-retired) so it can't shadow the tenantless row.
+    expect(await Agent.countDocuments({ id: 'agent_global_support', tenantId: 'tenant-a' })).toBe(
+      0,
+    );
+    expect(
+      await Agent.countDocuments({ id: 'agent_global_support', tenantId: { $exists: false } }),
+    ).toBe(1);
+  });
 });

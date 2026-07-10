@@ -61,6 +61,7 @@ interface ReconcileScopeParams {
   methods: GlobalAgentMethods;
   AgentModel: Model<IAgent>;
   roleCache: Map<string, IAccessRole | null>;
+  systemScopedIds: Set<string>;
 }
 
 /** Validate one config entry: split control fields off, validate the agent body with the same
@@ -225,11 +226,13 @@ async function retireOrphans({
   AgentModel,
   methods,
   expectedIds,
+  systemScopedIds,
   scope,
 }: {
   AgentModel: Model<IAgent>;
   methods: GlobalAgentMethods;
   expectedIds: Set<string>;
+  systemScopedIds: Set<string>;
   scope: AgentScope;
 }): Promise<void> {
   const filter: FilterQuery<IAgent> =
@@ -240,6 +243,15 @@ async function retireOrphans({
 
   for (const agent of seeded) {
     if (expectedIds.has(agent.id)) {
+      continue;
+    }
+    /* If a tenant-scoped orphan's id is now configured as a `tenants: 'system'` global, hard-delete
+     * it: a soft-retired (grant-revoked) tenant row would still be found by tenant-scoped reads and
+     * shadow the tenantless system row, so the miss-only access fallback would never resolve it. */
+    if (scope === 'tenant' && systemScopedIds.has(agent.id)) {
+      await AgentModel.deleteOne({ _id: agent._id });
+      await methods.deleteAclEntries({ resourceType: ResourceType.AGENT, resourceId: agent._id });
+      logger.info(`[GlobalAgents] Removed tenant-scoped shadow of system global: ${agent.id}`);
       continue;
     }
     await methods.deleteAclEntries({ resourceType: ResourceType.AGENT, resourceId: agent._id });
@@ -253,6 +265,7 @@ async function reconcileScope({
   methods,
   AgentModel,
   roleCache,
+  systemScopedIds,
 }: ReconcileScopeParams): Promise<void> {
   const expectedIds = new Set(entries.map((entry) => entry.id));
   for (const entry of entries) {
@@ -267,7 +280,7 @@ async function reconcileScope({
       logger.error(`[GlobalAgents] Failed to reconcile global agent "${entry.id}":`, error);
     }
   }
-  await retireOrphans({ AgentModel, methods, expectedIds, scope });
+  await retireOrphans({ AgentModel, methods, expectedIds, systemScopedIds, scope });
 }
 
 /**
@@ -288,6 +301,7 @@ export async function reconcileGlobalAgents({
   const roleCache = new Map<string, IAccessRole | null>();
 
   const systemEntries = entries.filter((entry) => entry.tenants === 'system');
+  const systemScopedIds = new Set(systemEntries.map((entry) => entry.id));
   const tenantEntries = new Map<string, ParsedGlobalAgent[]>();
   for (const entry of entries) {
     if (entry.tenants === 'system') {
@@ -309,7 +323,14 @@ export async function reconcileGlobalAgents({
 
   try {
     await runAsSystem(() =>
-      reconcileScope({ entries: systemEntries, scope: 'system', methods, AgentModel, roleCache }),
+      reconcileScope({
+        entries: systemEntries,
+        scope: 'system',
+        methods,
+        AgentModel,
+        roleCache,
+        systemScopedIds,
+      }),
     );
 
     /* Visit every tenant that either has config entries now OR was previously seeded, so a tenant
@@ -328,7 +349,14 @@ export async function reconcileGlobalAgents({
     for (const tenantId of tenantIds) {
       const list = tenantEntries.get(tenantId) ?? [];
       await tenantStorage.run({ tenantId }, () =>
-        reconcileScope({ entries: list, scope: 'tenant', methods, AgentModel, roleCache }),
+        reconcileScope({
+          entries: list,
+          scope: 'tenant',
+          methods,
+          AgentModel,
+          roleCache,
+          systemScopedIds,
+        }),
       );
     }
   } catch (error) {
