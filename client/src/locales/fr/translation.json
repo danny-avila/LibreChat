@@ -1357,5 +1357,6 @@
   "com_farmer_option_other": "Autre",
   "com_farmer_option_under_graduate": "Licence",
   "com_farmer_option_graduate": "Diplômé",
-  "com_farmer_option_post_graduate": "Post-diplômé"
+  "com_farmer_option_post_graduate": "Post-diplômé",
+  "com_ui_feedback_what_worked_what_not": "Dites-nous ce qui a bien fonctionné ou ce qui n'a pas fonctionné."
 }

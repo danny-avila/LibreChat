@@ -10,7 +10,7 @@ import store from '~/store';
 const useSpeechToTextBrowser = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
-  enabled = true,
+  enabled = false,
 ) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();

@@ -1020,5 +1020,6 @@
   "com_farmer_option_other": "Muu",
   "com_farmer_option_under_graduate": "Bakalaureuseõppes",
   "com_farmer_option_graduate": "Kõrgharidusega",
-  "com_farmer_option_post_graduate": "Magistrikraad või kõrgem"
+  "com_farmer_option_post_graduate": "Magistrikraad või kõrgem",
+  "com_ui_feedback_what_worked_what_not": "Andke meile teada, mis töötas hästi ja mis mitte."
 }

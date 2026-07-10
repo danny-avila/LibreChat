@@ -12,7 +12,7 @@ export default function AudioRecorder({
   methods,
   textAreaRef,
   isSubmitting,
-  enabled = true,
+  enabled = false,
 }: {
   disabled: boolean;
   ask: (data: { text: string }) => void;

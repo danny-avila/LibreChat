@@ -2029,5 +2029,6 @@
   "com_farmer_validation_smartphones_integer": "स्मार्टफोनक संख्या एकटा पूर्णांक होबय चाही",
   "com_farmer_validation_smartphones_range": "स्मार्टफोनक संख्या 0 सँ 20 क बीच होबय चाही",
   "com_user_message": "अहाँ",
-  "com_banner_message": "एप्लिकेशन एखन विकासक चरण मे अछि आ एकरा केवल परीक्षण आ सत्यापनक उद्देश्य सँ प्रदान कएल गे"
+  "com_banner_message": "एप्लिकेशन एखन विकासक चरण मे अछि आ एकरा केवल परीक्षण आ सत्यापनक उद्देश्य सँ प्रदान कएल गे",
+  "com_ui_feedback_what_worked_what_not": "कृपया हमरा बताउ जे की नीक सँ काज केलक आ की नहि केलक।"
 }

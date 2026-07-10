@@ -1330,5 +1330,6 @@
   "com_farmer_option_other": "Annet",
   "com_farmer_option_under_graduate": "Undergraduate",
   "com_farmer_option_graduate": "Graduate",
-  "com_farmer_option_post_graduate": "Postgraduate"
+  "com_farmer_option_post_graduate": "Postgraduate",
+  "com_ui_feedback_what_worked_what_not": "Fortell oss hva som fungerte, og hva som ikke fungerte."
 }

@@ -2029,5 +2029,6 @@
   "com_farmer_validation_smartphones_integer": "स्मार्ट फोनांची संख्या पुराय आंकड्यांत आसूंक जाय",
   "com_farmer_validation_smartphones_range": "स्मार्ट फोनांची संख्या 0 ते 20 मदीं आसूंक जाय",
   "com_user_message": "तुमी",
-  "com_banner_message": "हें ॲप्लिकेशन सद्या तयार जाता आनी तें फकत चाचणी (testing) आनी पडताळणीच्या (validation) उद्देशान दिल्लें आसा"
+  "com_banner_message": "हें ॲप्लिकेशन सद्या तयार जाता आनी तें फकत चाचणी (testing) आनी पडताळणीच्या (validation) उद्देशान दिल्लें आसा",
+  "com_ui_feedback_what_worked_what_not": "कितें बरे जालें आनी कितें बरे जाले ना, तें आमकां सांगात."
 }

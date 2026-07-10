@@ -781,5 +781,6 @@
   "com_farmer_option_other": "Anders",
   "com_farmer_option_under_graduate": "Niet afgestudeerd",
   "com_farmer_option_graduate": "Afgestudeerd",
-  "com_farmer_option_post_graduate": "Postdoctoraal"
+  "com_farmer_option_post_graduate": "Postdoctoraal",
+  "com_ui_feedback_what_worked_what_not": "Vertel ons wat goed werkte en wat niet."
 }

@@ -1371,5 +1371,6 @@
   "com_farmer_option_other": "Другой",
   "com_farmer_option_under_graduate": "Неоконченное высшее",
   "com_farmer_option_graduate": "Высшее",
-  "com_farmer_option_post_graduate": "Послевузовское"
+  "com_farmer_option_post_graduate": "Послевузовское",
+  "com_ui_feedback_what_worked_what_not": "Расскажите нам, что сработало хорошо, а что — нет."
 }

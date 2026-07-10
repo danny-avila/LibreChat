@@ -1396,5 +1396,6 @@
   "com_farmer_option_other": "その他",
   "com_farmer_option_under_graduate": "学部在学中",
   "com_farmer_option_graduate": "学士",
-  "com_farmer_option_post_graduate": "大学院修了"
+  "com_farmer_option_post_graduate": "大学院修了",
+  "com_ui_feedback_what_worked_what_not": "何がうまくいき、何がうまくいかなかったかを教えてください。"
 }
