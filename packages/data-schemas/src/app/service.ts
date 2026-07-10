@@ -119,6 +119,15 @@ export const AppService = async (params?: {
 
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
+
+  // NJ: Disable memory with the feature flag, `config.memory` gates the backend
+  // (`loadMemoryConfig` below) and frontend (`loadDefaultInterface` reads `config.memory` too).
+  if (getEnvBoolean('NJ_FF_MEMORY_ENABLED') === false) {
+    if (config.memory) {
+      config.memory.disabled = true;
+    } // else `config.memory` is undefined and therefore disabled
+  }
+
   const memory = loadMemoryConfig(config.memory);
   const summarization = loadSummarizationConfig(config);
   const skillSync = loadSkillSyncConfig(config);
@@ -226,3 +235,12 @@ export const AppService = async (params?: {
 
   return appConfig;
 };
+
+/**
+ * Helper for NJ feature flags.
+ */
+function getEnvBoolean(envVar: string): boolean | undefined {
+  const value = process.env[envVar];
+  if (value === undefined) return undefined;
+  return value.toLowerCase().trim() === 'true';
+}

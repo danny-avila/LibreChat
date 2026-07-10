@@ -37,7 +37,7 @@ interface:
   fileSearch: true
   marketplace:
     use: true
-  memories: false
+  memories: true # Can be force-disabled with env var NJ_FF_MEMORY_ENABLED=false
   multiConvo: false
   parameters: false
   peoplePicker:
@@ -95,6 +95,14 @@ modelSpecs:
 
 ocr:
   strategy: 'document_parser'
+
+# Memory is enabled by default, disable it with `NJ_FF_MEMORY_ENABLED=false`
+memory:
+  tokenLimit: 2000
+  agent:
+    enabled: true
+    provider: 'bedrock'
+    model: 'us.anthropic.claude-sonnet-4-6'
 
 fileConfig:
   serverFileSizeLimit: 15 # Global multer limit (MB)

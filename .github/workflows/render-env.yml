@@ -69,6 +69,7 @@ jobs:
           export GUARDRAIL_ID="${{ secrets.GUARDRAIL_ID }}"
           export GUARDRAIL_VERSION="${{ secrets.GUARDRAIL_VERSION }}"
 
+          export NJ_FF_MEMORY_ENABLED=$([[ "${{ inputs.environment }}" == "prod" ]] && echo false || echo true)
           export SEARCH=$([[ "${{ inputs.environment }}" == "prod" ]] && echo false || echo true)
           export MEILI_NO_ANALYTICS=true
           export MEILI_HOST=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "http://meilisearch.kitchensink:7700" || echo "http://meilisearch.internal:7700")
