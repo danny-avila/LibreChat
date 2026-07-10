@@ -162,7 +162,9 @@ const classifyAgentReferences = async (agentIds, userId, userRole) => {
       const result = await authorizeSystemGlobalAgent({
         agentId: id,
         requiredPermission: PermissionBits.VIEW,
-        req: { user: { id: userId, role: userRole } },
+        /* Preserve the request tenant so hasCapability's tenant-keyed MANAGE_AGENTS bypass applies
+         * (read here in the request context — inside authorize it runs under the system context). */
+        req: { user: { id: userId, role: userRole, tenantId: getTenantId() } },
       });
       if (result.status === 'not_found') continue;
       stillMissing.delete(id);

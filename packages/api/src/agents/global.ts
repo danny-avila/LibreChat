@@ -313,10 +313,17 @@ export async function reconcileGlobalAgents({
     );
 
     /* Visit every tenant that either has config entries now OR was previously seeded, so a tenant
-     * (or entry) removed from config still gets its stale grants retired in that tenant's context. */
-    const seededTenantIds = (await runAsSystem(() =>
-      AgentModel.distinct('tenantId', { isSystem: true, tenantId: { $exists: true, $ne: null } }),
-    )) as string[];
+     * (or entry) removed from config still gets its stale grants retired in that tenant's context.
+     * Await the query INSIDE the callback: runAsSystem only holds the ALS system context while the
+     * callback runs, so returning the lazy Mongoose thenable would execute it without that context
+     * (and throw under TENANT_ISOLATION_STRICT). */
+    const seededTenantIds = (await runAsSystem(async () => {
+      const ids = await AgentModel.distinct('tenantId', {
+        isSystem: true,
+        tenantId: { $exists: true, $ne: null },
+      });
+      return ids;
+    })) as string[];
     const tenantIds = new Set<string>([...tenantEntries.keys(), ...seededTenantIds]);
     for (const tenantId of tenantIds) {
       const list = tenantEntries.get(tenantId) ?? [];
