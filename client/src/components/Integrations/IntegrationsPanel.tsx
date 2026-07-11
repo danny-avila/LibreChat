@@ -1,19 +1,42 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import * as Ariakit from '@ariakit/react';
+import { Paperclip } from 'lucide-react';
 import {
   Button,
   Spinner,
   OGDialog,
-  OGDialogContent,
+  DropdownPopup,
   OGDialogTitle,
+  OGDialogContent,
   OGDialogDescription,
 } from '@librechat/client';
-import { isIntegrationConnected, needsIntegrationReconnect } from 'librechat-data-provider';
+import {
+  Constants,
+  mergeFileConfig,
+  resolveEndpointType,
+  getEndpointFileConfig,
+  isIntegrationConnected,
+  needsIntegrationReconnect,
+} from 'librechat-data-provider';
 import type { IntegrationProviderKey } from 'librechat-data-provider';
-import { useGetStartupConfig, useIntegrationsQuery } from '~/data-provider';
-import { useIntegrationConnectors, useLocalize } from '~/hooks';
+import {
+  useGetFileConfig,
+  useGetStartupConfig,
+  useIntegrationsQuery,
+  useGetEndpointsQuery,
+} from '~/data-provider';
+import {
+  useLocalize,
+  useUploadTypeItems,
+  useIntegrationPickers,
+  useIntegrationConnectors,
+} from '~/hooks';
+import { useChatContext } from '~/Providers';
 import { INTEGRATION_LABEL_KEYS } from '~/constants/integrations';
 import { cn } from '~/utils';
 import { IntegrationProviderIcon } from './IntegrationProviderIcon';
+import { IntegrationPickerDialogs } from './IntegrationPickerDialogs';
+import { getRowAttachMenu } from './buildAttachIntegrationMenuItems';
 
 const HUB_PROVIDER_ORDER: IntegrationProviderKey[] = [
   'google-drive',
@@ -35,6 +58,40 @@ export default function IntegrationsPanel() {
   });
   const connectors = useIntegrationConnectors(integrationsEnabled);
   const [confirmDisconnect, setConfirmDisconnect] = useState<IntegrationProviderKey | null>(null);
+  const [openMenuProvider, setOpenMenuProvider] = useState<IntegrationProviderKey | null>(null);
+
+  const { files, setFiles, setFilesLoading, conversation } = useChatContext();
+  const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
+  const endpoint = conversation?.endpoint ?? null;
+  const agentId = conversation?.agent_id;
+  const useResponsesApi = conversation?.useResponsesApi;
+
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+  const endpointType = useMemo(
+    () => resolveEndpointType(endpointsConfig, endpoint),
+    [endpointsConfig, endpoint],
+  );
+  const { data: fileConfig = null } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data as Parameters<typeof mergeFileConfig>[0]),
+  });
+  const endpointFileConfig = useMemo(
+    () => getEndpointFileConfig({ fileConfig, endpointType, endpoint }),
+    [fileConfig, endpointType, endpoint],
+  );
+
+  const { openers, setToolResource, dialogProps } = useIntegrationPickers(
+    { files, setFiles, setFilesLoading, conversation },
+    { endpointFileConfig, integrationsEnabled },
+  );
+
+  const createMenuItems = useUploadTypeItems({
+    agentId,
+    endpoint,
+    endpointType,
+    useResponsesApi,
+    conversationId,
+    setToolResource,
+  });
 
   const disconnectConnector = confirmDisconnect ? connectors[confirmDisconnect] : undefined;
 
@@ -125,34 +182,77 @@ export default function IntegrationsPanel() {
             handleConnect(providerKey);
           };
 
+          const rowAttachMenu = isLinked
+            ? getRowAttachMenu(providerKey, {
+                createFileTypeSubItems: createMenuItems,
+                localize,
+                openers,
+              })
+            : null;
+          const attachAriaLabel = localize('com_integrations_attach_files', {
+            provider: providerLabel,
+          });
+
           return (
             <li key={providerKey} className="flex items-center justify-between gap-2 py-1.5">
               <div className="flex min-w-0 items-center gap-2">
                 <IntegrationProviderIcon providerKey={providerKey} className="size-4 shrink-0" />
                 <p className="truncate text-sm font-medium text-text-primary">{providerLabel}</p>
               </div>
-              <Button
-                variant="link"
-                size="sm"
-                className={cn(
-                  'h-6 shrink-0 px-1.5 text-xs font-normal no-underline hover:no-underline',
-                  isLinked
-                    ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
-                    : reconnect
-                      ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300'
-                      : 'text-text-secondary hover:text-text-primary',
+              <div className="flex shrink-0 items-center gap-1">
+                {rowAttachMenu?.kind === 'direct' && (
+                  <button
+                    type="button"
+                    aria-label={attachAriaLabel}
+                    className="flex size-7 items-center justify-center rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={rowAttachMenu.open}
+                  >
+                    <Paperclip className="size-4" />
+                  </button>
                 )}
-                aria-label={actionAriaLabel}
-                aria-pressed={isLinked}
-                onClick={handleAction}
-                disabled={isActionLoading}
-              >
-                {isActionLoading ? <Spinner className="h-3.5 w-3.5" /> : actionLabel}
-              </Button>
+                {rowAttachMenu?.kind === 'menu' && (
+                  <DropdownPopup
+                    menuId={`integration-attach-${providerKey}`}
+                    isOpen={openMenuProvider === providerKey}
+                    setIsOpen={(open) => setOpenMenuProvider(open ? providerKey : null)}
+                    unmountOnHide={true}
+                    iconClassName="mr-0"
+                    items={rowAttachMenu.items}
+                    trigger={
+                      <Ariakit.MenuButton
+                        aria-label={attachAriaLabel}
+                        className="flex size-7 items-center justify-center rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      >
+                        <Paperclip className="size-4" />
+                      </Ariakit.MenuButton>
+                    }
+                  />
+                )}
+                <Button
+                  variant="link"
+                  size="sm"
+                  className={cn(
+                    'h-6 shrink-0 px-1.5 text-xs font-normal no-underline hover:no-underline',
+                    isLinked
+                      ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
+                      : reconnect
+                        ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300'
+                        : 'text-text-secondary hover:text-text-primary',
+                  )}
+                  aria-label={actionAriaLabel}
+                  aria-pressed={isLinked}
+                  onClick={handleAction}
+                  disabled={isActionLoading}
+                >
+                  {isActionLoading ? <Spinner className="h-3.5 w-3.5" /> : actionLabel}
+                </Button>
+              </div>
             </li>
           );
         })}
       </ul>
+
+      <IntegrationPickerDialogs {...dialogProps} />
 
       <OGDialog
         open={confirmDisconnect != null}

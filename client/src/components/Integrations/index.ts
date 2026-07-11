@@ -1,14 +1,10 @@
-export { buildAttachIntegrationMenuItems } from './buildAttachIntegrationMenuItems';
+export { getRowAttachMenu } from './buildAttachIntegrationMenuItems';
+export type { RowAttachMenu, RowAttachMenuOptions } from './buildAttachIntegrationMenuItems';
+export { IntegrationPickerDialogs } from './IntegrationPickerDialogs';
 export { IntegrationProviderIcon } from './IntegrationProviderIcon';
 export { ConnectProviderPrompt } from './ConnectProviderPrompt';
 export { IntegrationStatusChip } from './IntegrationStatusChip';
 export { default as IntegrationsPanel } from './IntegrationsPanel';
-export {
-  INTEGRATION_ATTACH_MENU,
-  INTEGRATION_ATTACH_PROVIDER_KEYS,
-  INTEGRATION_PICKER_PROVIDER_KEYS,
-  getIntegrationAttachMenuLabelKey,
-} from './attachMenu';
 export { GoogleDrivePickerDialog } from './GoogleDrivePickerDialog';
 export { GmailPickerDialog } from './GmailPickerDialog';
 export { GoogleCalendarPickerDialog } from './GoogleCalendarPickerDialog';

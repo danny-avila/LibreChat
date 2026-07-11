@@ -5,14 +5,23 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { EModelEndpoint, EToolResources, Providers } from 'librechat-data-provider';
 import AttachFileMenu from '../AttachFileMenu';
 
+// The chat attach menu keeps only local uploads + SharePoint. The upload-type
+// menu logic lives in the real `useUploadTypeItems` hook (its leaf deps are
+// mocked below), while the integration pickers now live in the sidebar.
 jest.mock('~/hooks', () => ({
-  useAgentToolPermissions: jest.fn(),
-  useAgentCapabilities: jest.fn(),
-  useGetAgentsConfig: jest.fn(),
-  useFileHandlingNoChatContext: jest.fn(),
   useLocalize: jest.fn(),
-  useIntegrationConnectors: jest.fn(),
+  useFileHandlingNoChatContext: jest.fn(),
+
+  useUploadTypeItems: jest.requireActual('~/hooks/Files/useUploadTypeItems').default,
 }));
+
+jest.mock('~/hooks/useLocalize', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('~/hooks/Agents/useAgentToolPermissions', () => ({
+  __esModule: true,
+  default: jest.fn(),
+}));
+jest.mock('~/hooks/Agents/useAgentCapabilities', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('~/hooks/Agents/useGetAgentsConfig', () => ({ __esModule: true, default: jest.fn() }));
 
 jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
   __esModule: true,
@@ -20,88 +29,12 @@ jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
   useSharePointFileHandlingNoChatContext: jest.fn(),
 }));
 
-jest.mock('~/hooks/Files/useGoogleDriveFileHandling', () => ({
-  __esModule: true,
-  default: jest.fn(),
-  useGoogleDriveFileHandlingNoChatContext: jest.fn(),
-}));
-
-jest.mock('~/hooks/Files/useDropboxFileHandling', () => ({
-  __esModule: true,
-  default: jest.fn(),
-  useDropboxFileHandlingNoChatContext: jest.fn(),
-}));
-
-jest.mock('~/hooks/Files/useBoxFileHandling', () => ({
-  __esModule: true,
-  default: jest.fn(),
-  useBoxFileHandlingNoChatContext: jest.fn(),
-}));
-
-jest.mock('~/hooks/Files/useClioFileHandling', () => ({
-  __esModule: true,
-  default: jest.fn(),
-  useClioFileHandlingNoChatContext: jest.fn(),
-}));
-
-jest.mock('~/hooks/Files/useMicrosoftOneDriveFileHandling', () => ({
-  __esModule: true,
-  default: jest.fn(),
-  useMicrosoftOneDriveFileHandlingNoChatContext: jest.fn(),
-}));
-
-jest.mock('~/hooks/Files/useIntegrationTextAttachHandling', () => ({
-  __esModule: true,
-  default: jest.fn(),
-  useIntegrationTextAttachHandlingNoChatContext: jest.fn(),
-}));
-
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: jest.fn(),
-  useIntegrationsQuery: jest.fn(),
 }));
 
 jest.mock('~/components/SharePoint', () => ({
   SharePointPickerDialog: () => null,
-}));
-
-jest.mock('~/components/Integrations', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const R = require('react');
-  const actual = jest.requireActual('~/components/Integrations/buildAttachIntegrationMenuItems');
-  return {
-    ConnectProviderPrompt: () => null,
-    GoogleDrivePickerDialog: () => null,
-    DropboxPickerDialog: () => null,
-    BoxPickerDialog: () => null,
-    ClioPickerDialog: () => null,
-    MicrosoftOneDrivePickerDialog: () => null,
-    MicrosoftOutlookMailPickerDialog: () => null,
-    MicrosoftOutlookCalendarPickerDialog: () => null,
-    GmailPickerDialog: () => null,
-    GoogleCalendarPickerDialog: () => null,
-    buildAttachIntegrationMenuItems: actual.buildAttachIntegrationMenuItems,
-    INTEGRATION_ATTACH_MENU: {
-      'google-drive': {
-        menuLabelKey: 'com_files_upload_google_drive',
-        Icon: () => R.createElement('span', { 'data-testid': 'google-drive-icon' }),
-      },
-    },
-    INTEGRATION_PICKER_PROVIDER_KEYS: new Set(['google-drive', 'google-mail', 'google-calendar']),
-    getIntegrationAttachMenuLabelKey: (providerKey: string, isConnected: boolean) => {
-      if (providerKey === 'google-drive' && isConnected) {
-        return 'com_files_upload_google_drive';
-      }
-      if (providerKey === 'google-drive') {
-        return 'com_files_connect_google_drive';
-      }
-      return 'com_files_upload_google_drive';
-    },
-  };
-});
-
-jest.mock('~/components/Integrations/IntegrationProviderIcon', () => ({
-  IntegrationProviderIcon: () => null,
 }));
 
 jest.mock('@librechat/client', () => {
@@ -182,50 +115,26 @@ jest.mock('@ariakit/react', () => {
   };
 });
 
-const mockUseAgentToolPermissions = jest.requireMock('~/hooks').useAgentToolPermissions;
-const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilities;
-const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
+const mockUseLocalizeBarrel = jest.requireMock('~/hooks').useLocalize;
 const mockUseFileHandlingNoChatContext = jest.requireMock('~/hooks').useFileHandlingNoChatContext;
-const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
-const mockUseSharePointFileHandling = jest.requireMock(
-  '~/hooks/Files/useSharePointFileHandling',
+const mockUseLocalizeDirect = jest.requireMock('~/hooks/useLocalize').default;
+const mockUseAgentToolPermissions = jest.requireMock(
+  '~/hooks/Agents/useAgentToolPermissions',
 ).default;
+const mockUseAgentCapabilities = jest.requireMock('~/hooks/Agents/useAgentCapabilities').default;
+const mockUseGetAgentsConfig = jest.requireMock('~/hooks/Agents/useGetAgentsConfig').default;
 const mockUseSharePointFileHandlingNoChatContext = jest.requireMock(
   '~/hooks/Files/useSharePointFileHandling',
 ).useSharePointFileHandlingNoChatContext;
-const mockUseGoogleDriveFileHandlingNoChatContext = jest.requireMock(
-  '~/hooks/Files/useGoogleDriveFileHandling',
-).useGoogleDriveFileHandlingNoChatContext;
-const mockUseDropboxFileHandlingNoChatContext = jest.requireMock(
-  '~/hooks/Files/useDropboxFileHandling',
-).useDropboxFileHandlingNoChatContext;
-const mockUseBoxFileHandlingNoChatContext = jest.requireMock(
-  '~/hooks/Files/useBoxFileHandling',
-).useBoxFileHandlingNoChatContext;
-const mockUseClioFileHandlingNoChatContext = jest.requireMock(
-  '~/hooks/Files/useClioFileHandling',
-).useClioFileHandlingNoChatContext;
-const mockUseMicrosoftOneDriveFileHandlingNoChatContext = jest.requireMock(
-  '~/hooks/Files/useMicrosoftOneDriveFileHandling',
-).useMicrosoftOneDriveFileHandlingNoChatContext;
-const mockUseIntegrationTextAttachHandlingNoChatContext = jest.requireMock(
-  '~/hooks/Files/useIntegrationTextAttachHandling',
-).useIntegrationTextAttachHandlingNoChatContext;
 const mockUseGetStartupConfig = jest.requireMock('~/data-provider').useGetStartupConfig;
-const mockUseIntegrationsQuery = jest.requireMock('~/data-provider').useIntegrationsQuery;
-const mockUseIntegrationConnectors = jest.requireMock('~/hooks').useIntegrationConnectors;
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 function setupMocks(overrides: { provider?: string } = {}) {
   const translations: Record<string, string> = {
-    com_files_upload_google_drive: 'Google Drive',
-    com_files_connect_google_drive: 'Google Drive',
     com_files_upload_sharepoint: 'SharePoint',
     com_attach_menu_section_upload: 'Upload',
     com_attach_menu_section_cloud: 'Connected accounts',
-    com_attach_menu_google: 'Google',
-    com_files_from_google_drive: 'Google Drive',
     com_sidepanel_attach_files: 'Attach Files',
     com_ui_upload_code_environment: 'Upload to Code Environment',
     com_ui_upload_file_search: 'Upload for File Search',
@@ -233,7 +142,9 @@ function setupMocks(overrides: { provider?: string } = {}) {
     com_ui_upload_ocr_text: 'Upload as Text',
     com_ui_upload_provider: 'Upload as attachment',
   };
-  mockUseLocalize.mockReturnValue((key: string) => translations[key] || key);
+  const localizeFn = (key: string) => translations[key] || key;
+  mockUseLocalizeBarrel.mockReturnValue(localizeFn);
+  mockUseLocalizeDirect.mockReturnValue(localizeFn);
   mockUseAgentCapabilities.mockReturnValue({
     contextEnabled: false,
     fileSearchEnabled: false,
@@ -241,68 +152,14 @@ function setupMocks(overrides: { provider?: string } = {}) {
   });
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: {} });
   mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange: jest.fn() });
-  const sharePointReturnValue = {
+  mockUseSharePointFileHandlingNoChatContext.mockReturnValue({
     handleSharePointFiles: jest.fn(),
     isProcessing: false,
     downloadProgress: 0,
     error: null,
-  };
-  mockUseSharePointFileHandling.mockReturnValue(sharePointReturnValue);
-  mockUseSharePointFileHandlingNoChatContext.mockReturnValue(sharePointReturnValue);
-  mockUseGoogleDriveFileHandlingNoChatContext.mockReturnValue({
-    handleGoogleDriveFiles: jest.fn(),
-    isProcessing: false,
-    error: null,
-  });
-  mockUseDropboxFileHandlingNoChatContext.mockReturnValue({
-    handleDropboxFiles: jest.fn(),
-    isProcessing: false,
-    error: null,
-  });
-  mockUseBoxFileHandlingNoChatContext.mockReturnValue({
-    handleBoxFiles: jest.fn(),
-    isProcessing: false,
-    error: null,
-  });
-  mockUseClioFileHandlingNoChatContext.mockReturnValue({
-    handleClioFiles: jest.fn(),
-    isProcessing: false,
-    error: null,
-  });
-  mockUseMicrosoftOneDriveFileHandlingNoChatContext.mockReturnValue({
-    handleMicrosoftOneDriveFiles: jest.fn(),
-    isProcessing: false,
-    error: null,
-  });
-  mockUseIntegrationTextAttachHandlingNoChatContext.mockReturnValue({
-    attachGmailMessages: jest.fn(),
-    attachCalendarEvents: jest.fn(),
-    attachOutlookMailMessages: jest.fn(),
-    attachOutlookCalendarEvents: jest.fn(),
-    isProcessing: false,
-    error: null,
   });
   mockUseGetStartupConfig.mockReturnValue({
     data: { sharePointFilePickerEnabled: false, integrationsEnabled: false },
-  });
-  mockUseIntegrationsQuery.mockReturnValue({ data: { integrations: [] } });
-  const integrationConnector = {
-    ensureConnected: jest.fn().mockResolvedValue(false),
-    isConnected: false,
-    isConnecting: false,
-    connect: jest.fn(),
-    labelKey: 'com_integrations_google_drive',
-    status: 'not_connected',
-  };
-  mockUseIntegrationConnectors.mockReturnValue({
-    'google-drive': integrationConnector,
-    'google-mail': integrationConnector,
-    'google-calendar': integrationConnector,
-    microsoft: integrationConnector,
-    dropbox: integrationConnector,
-    box: integrationConnector,
-    clio: integrationConnector,
-    quickbooks: integrationConnector,
   });
   mockUseAgentToolPermissions.mockReturnValue({
     fileSearchAllowedByAgent: false,
@@ -591,62 +448,17 @@ describe('AttachFileMenu', () => {
     });
   });
 
-  describe('Google Drive Integration', () => {
-    it('shows destination submenu when Drive is connected', () => {
+  describe('Connected accounts moved to the sidebar', () => {
+    it('does not render any connected-accounts integration items in the picker', () => {
       setupMocks();
       mockUseGetStartupConfig.mockReturnValue({
         data: { sharePointFilePickerEnabled: false, integrationsEnabled: true },
       });
-      mockUseIntegrationsQuery.mockReturnValue({
-        data: {
-          integrations: [
-            {
-              providerKey: 'google-drive',
-              enabled: true,
-              status: 'connected',
-            },
-          ],
-        },
-      });
-      mockUseAgentCapabilities.mockReturnValue({
-        contextEnabled: true,
-        fileSearchEnabled: true,
-        codeEnabled: true,
-      });
-      mockUseAgentToolPermissions.mockReturnValue({
-        fileSearchAllowedByAgent: true,
-        codeAllowedByAgent: true,
-        provider: undefined,
-      });
       renderMenu({ endpointType: EModelEndpoint.openAI });
       openMenu();
-      expect(screen.getByText('Google')).toBeInTheDocument();
-      expect(screen.getByText('Google Drive')).toBeInTheDocument();
-      expect(screen.getByTestId('submenu-item-Upload as Text')).toBeInTheDocument();
-      expect(screen.getByTestId('submenu-item-Upload to Code Environment')).toBeInTheDocument();
-    });
-
-    it('does not show a connect item when Drive is not connected (connect lives in the sidebar hub)', () => {
-      setupMocks();
-      mockUseGetStartupConfig.mockReturnValue({
-        data: { sharePointFilePickerEnabled: false, integrationsEnabled: true },
-      });
-      mockUseIntegrationsQuery.mockReturnValue({
-        data: {
-          integrations: [
-            {
-              providerKey: 'google-drive',
-              enabled: true,
-              status: 'not_connected',
-            },
-          ],
-        },
-      });
-      renderMenu({ endpointType: EModelEndpoint.openAI });
-      openMenu();
+      expect(screen.queryByText('Google')).not.toBeInTheDocument();
       expect(screen.queryByText('Google Drive')).not.toBeInTheDocument();
-      expect(screen.queryByText('From Google Drive')).not.toBeInTheDocument();
-      expect(screen.queryByText('Connect another service…')).not.toBeInTheDocument();
+      expect(screen.queryByText('Connected accounts')).not.toBeInTheDocument();
     });
   });
 
