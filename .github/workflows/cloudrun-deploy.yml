@@ -1,0 +1,170 @@
+name: Build & Deploy to Cloud Run (Staging & Production)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_staging:
+        description: "Deploy to Staging?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      deploy_production:
+        description: "Deploy to Production?"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  NODE_VERSION: '20'
+  DOCKER_IMAGE: ajrasakha-client
+  GCP_REGION: asia-south1
+  GCP_STAGING_SERVICE: ajrasakha-client-staging
+  GCP_PRODUCTION_SERVICE: ajrasakha-client-production
+
+jobs:
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    # Always build - deployment requires a fresh image
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          no-cache: true
+          platforms: linux/amd64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:staging
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:production
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          build-args: |
+            NODE_ENV=production
+
+  deploy_staging:
+    name: Deploy to Cloud Run (Staging)
+    if: |
+      always() &&
+      github.event.inputs.deploy_staging == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped' || needs.build.result == null)
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_GH_SA_KEY }}'
+
+      - name: Deploy to Cloud Run (Staging)
+        uses: google-github-actions/deploy-cloudrun@v2
+        timeout-minutes: 10
+        with:
+          service: ${{ env.GCP_STAGING_SERVICE }}
+          region: ${{ env.GCP_REGION }}
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          env_vars: |
+            NODE_ENV=staging
+            PORT=3080
+            # Database
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            # Session & Security
+            CREDS_KEY=${{ secrets.CREDS_KEY }}
+            CREDS_IV=${{ secrets.CREDS_IV }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            # Redis (optional - for caching and sessions)
+            REDIS_URI=${{ secrets.REDIS_URI }}
+            # Search (optional)
+            MEILI_HOST=${{ secrets.MEILI_HOST }}
+            MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
+            # Domain
+            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER_STAGING }}
+            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT_STAGING }}
+            # LLM API Keys (for cloud-hosted models)
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+            # Tailscale (for internal MCP server access)
+            TAILSCALE_AUTHKEY=${{ secrets.TAILSCALE_AUTHKEY }}
+            TS_HOSTNAME=ajrasakha-client-staging
+            HTTP_PROXY=http://localhost:1055
+            HTTPS_PROXY=http://localhost:1055
+            GLOBAL_AGENT_HTTP_PROXY=http://localhost:1055
+          flags: --allow-unauthenticated --port=3080 --memory=2Gi --min-instances=0 --timeout=300
+
+  deploy_production:
+    name: Deploy to Cloud Run (Production)
+    if: |
+      always() &&
+      github.event.inputs.deploy_production == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped' || needs.build.result == null)
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_GH_SA_KEY }}'
+
+      - name: Deploy to Cloud Run (Production)
+        uses: google-github-actions/deploy-cloudrun@v2
+        timeout-minutes: 10
+        with:
+          service: ${{ env.GCP_PRODUCTION_SERVICE }}
+          region: ${{ env.GCP_REGION }}
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          env_vars: |
+            NODE_ENV=production
+            PORT=3080
+            # Database
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            # Session & Security
+            CREDS_KEY=${{ secrets.CREDS_KEY }}
+            CREDS_IV=${{ secrets.CREDS_IV }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            # Redis (optional - for caching and sessions)
+            REDIS_URI=${{ secrets.REDIS_URI }}
+            # Search (optional)
+            MEILI_HOST=${{ secrets.MEILI_HOST }}
+            MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
+            # Domain
+            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER_PRODUCTION }}
+            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT_PRODUCTION }}
+            # LLM API Keys (for cloud-hosted models)
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+            # Tailscale (for internal MCP server access)
+            TAILSCALE_AUTHKEY=${{ secrets.TAILSCALE_AUTHKEY }}
+            TS_HOSTNAME=ajrasakha-client-production
+            HTTP_PROXY=http://localhost:1055
+            HTTPS_PROXY=http://localhost:1055
+            GLOBAL_AGENT_HTTP_PROXY=http://localhost:1055
+          flags: --allow-unauthenticated --port=3080 --memory=2Gi --min-instances=0 --timeout=300
