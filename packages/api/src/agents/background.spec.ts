@@ -308,7 +308,7 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(created.isNew).toBe(true);
     expect(created.task.status).toBe('running');
 
-    registry.complete('u1', 'c1', created.task.id, { content: 'DONE', hasArtifact: false });
+    registry.complete('u1', 'c1', created.task.id, { content: 'DONE' });
     const task = registry.get('u1', 'c1', created.task.id);
     expect(task?.status).toBe('completed');
     expect(task?.result).toBe('DONE');
@@ -400,6 +400,34 @@ describe('BackgroundTaskRegistryClass', () => {
     registry.fail('u1', 'c1', created.task.id, 'boom');
     expect(registry.get('u1', 'c1', created.task.id)?.status).toBe('error');
     expect(registry.get('u1', 'c1', created.task.id)?.error).toBe('boom');
+  });
+
+  it('holds a completed artifact and claims it exactly once', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_art',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'DONE',
+      artifact: { files: ['a.png'] },
+    });
+    expect(registry.get('u1', 'c1', created.task.id)?.hasArtifact).toBe(true);
+
+    const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
+    expect(claimed).toEqual({
+      toolName: 'search_mcp_docs',
+      artifact: { files: ['a.png'] },
+      content: 'DONE',
+    });
+    // second claim yields nothing (delivered once), and the artifact is freed
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+    expect(registry.get('u1', 'c1', created.task.id)?.artifact).toBeUndefined();
   });
 
   it('reaps a stuck running task past the running TTL (frees the slot)', () => {

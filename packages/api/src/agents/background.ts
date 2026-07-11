@@ -401,6 +401,14 @@ export interface BackgroundTask {
   result?: string;
   /** True when the completed tool produced an artifact (not returned inline). */
   hasArtifact?: boolean;
+  /**
+   * The completed tool's artifact, held until the poll turn collects it (a
+   * backgrounded call's own turn is finalized before the artifact resolves, so
+   * it can't ride that turn). Cleared once delivered to free memory.
+   */
+  artifact?: unknown;
+  /** True once the artifact has been handed to a live poll turn's callback. */
+  artifactDelivered?: boolean;
   /** Error message when status === 'error'. */
   error?: string;
   createdAt: number;
@@ -579,14 +587,36 @@ export class BackgroundTaskRegistryClass {
     userId: string,
     conversationId: string,
     taskId: string,
-    result: { content: unknown; hasArtifact?: boolean },
+    result: { content: unknown; artifact?: unknown },
   ): void {
     this.update(userId, conversationId, taskId, {
       status: 'completed',
       progress: 1,
       result: toStoredContent(result.content),
-      hasArtifact: result.hasArtifact === true,
+      hasArtifact: result.artifact != null,
+      artifact: result.artifact ?? undefined,
     });
+  }
+
+  /**
+   * Returns a completed task's artifact exactly once, marking it delivered and
+   * clearing it. The poll turn routes it to a live `toolEndCallback` so the
+   * artifact isn't lost with the finalized dispatch turn.
+   */
+  claimArtifact(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+  ): { toolName: string; artifact: unknown; content?: string } | undefined {
+    const bucket = this.buckets.get(this.key(userId, conversationId));
+    const task = bucket?.tasks.get(taskId);
+    if (!task || task.status !== 'completed' || task.artifact == null || task.artifactDelivered) {
+      return undefined;
+    }
+    const artifact = task.artifact;
+    task.artifactDelivered = true;
+    task.artifact = undefined;
+    return { toolName: task.toolName, artifact, content: task.result };
   }
 
   fail(userId: string, conversationId: string, taskId: string, error: string): void {
@@ -698,4 +728,23 @@ export function runCheckBackgroundTask(params: {
   return JSON.stringify({
     tasks: tasks.map((task) => serializeTask(task, { includeResult: false })),
   });
+}
+
+/**
+ * When a `check_background_task` call targets a specific completed task that
+ * produced an artifact, returns that artifact once (marking it delivered) so the
+ * poll turn's live callback can persist it. Returns undefined for the list form,
+ * an unknown id, or an already-delivered/artifact-less task.
+ */
+export function claimBackgroundArtifact(params: {
+  userId: string;
+  conversationId: string;
+  args: unknown;
+}): { toolName: string; artifact: unknown; content?: string } | undefined {
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  if (!taskId) {
+    return undefined;
+  }
+  return backgroundTaskRegistry.claimArtifact(params.userId, params.conversationId, taskId);
 }

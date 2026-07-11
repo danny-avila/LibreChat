@@ -18,6 +18,7 @@ import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
   runCheckBackgroundTask,
+  claimBackgroundArtifact,
   isBackgroundRequested,
   stripRunInBackgroundArg,
   buildBackgroundHandleContent,
@@ -3311,43 +3312,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           metadata,
                         } as Record<string, unknown>,
                       )) as { content?: unknown; artifact?: unknown };
-                      /** Process artifacts (images, files, UI resources,
-                       *  citations) through the same callback as the foreground
-                       *  path so backgrounding an artifact-producing tool doesn't
-                       *  drop them. Best-effort: if the turn already returned and
-                       *  the stream is closed, persistence still runs and the SSE
-                       *  write no-ops. */
-                      if (toolEndCallback && result.artifact != null) {
-                        try {
-                          await toolEndCallback(
-                            {
-                              output: {
-                                name: tc.name,
-                                tool_call_id: tc.id,
-                                content: result.content,
-                                artifact: result.artifact,
-                              },
-                            },
-                            {
-                              run_id: backgroundRunId,
-                              thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                                | string
-                                | undefined,
-                              ...metadata,
-                            },
-                          );
-                        } catch (callbackError) {
-                          logger.warn(
-                            '[background] toolEndCallback error for detached artifact:',
-                            callbackError,
-                          );
-                        }
-                      }
+                      /** Hold any artifact (images, files, UI resources,
+                       *  citations) on the task instead of routing it through
+                       *  this dispatch turn's callback: a slow background call
+                       *  resolves after the turn finalized, when its
+                       *  artifactPromises are already awaited and the stream is
+                       *  closed, so that push would be silently dropped. The poll
+                       *  turn delivers it live in `check_background_task`. */
                       backgroundTaskRegistry.complete(
                         backgroundUserId,
                         backgroundConversationId,
                         task.id,
-                        { content: result.content, hasArtifact: result.artifact != null },
+                        { content: result.content, artifact: result.artifact },
                       );
                     } catch (toolError) {
                       const { message } = getSafeToolError(toolError);
@@ -3371,14 +3347,51 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
                 if (backgroundEnabledForRun && tc.name === CHECK_BACKGROUND_TASK_NAME) {
-                  return reportResult({
-                    toolCallId: tc.id,
-                    status: 'success' as const,
-                    content: runCheckBackgroundTask({
+                  const pollContent = runCheckBackgroundTask({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  /** Deliver a completed task's artifact through THIS live poll
+                   *  turn's callback (once): the tool's own turn finalized before
+                   *  the artifact resolved, so this is where it can be persisted. */
+                  if (toolEndCallback) {
+                    const pending = claimBackgroundArtifact({
                       userId: backgroundUserId,
                       conversationId: backgroundConversationId,
                       args: tc.args,
-                    }),
+                    });
+                    if (pending) {
+                      try {
+                        await toolEndCallback(
+                          {
+                            output: {
+                              name: pending.toolName,
+                              tool_call_id: tc.id,
+                              content: pending.content,
+                              artifact: pending.artifact,
+                            },
+                          },
+                          {
+                            run_id: backgroundRunId,
+                            thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                              | string
+                              | undefined,
+                            ...metadata,
+                          },
+                        );
+                      } catch (callbackError) {
+                        logger.warn(
+                          '[background] toolEndCallback error delivering artifact on poll:',
+                          callbackError,
+                        );
+                      }
+                    }
+                  }
+                  return reportResult({
+                    toolCallId: tc.id,
+                    status: 'success' as const,
+                    content: pollContent,
                   });
                 }
 
