@@ -131,10 +131,14 @@ class ModelEndHandler {
       this.collectedUsage.push(taggedUsage);
 
       if (this.emitUsage) {
-        /** Normalize Anthropic/Bedrock-style top-level cache fields into details */
+        /** Normalize Anthropic/Bedrock top-level and OpenAI GPT-5.6
+         *  `cache_write_tokens` cache fields into details so the emitted/persisted
+         *  usage cost matches what billing charges (getCacheCreationTokens). */
         const cache_creation =
           taggedUsage.input_token_details?.cache_creation ??
-          taggedUsage.cache_creation_input_tokens;
+          taggedUsage.input_token_details?.cache_write_tokens ??
+          taggedUsage.cache_creation_input_tokens ??
+          taggedUsage.cache_write_tokens;
         const cache_read =
           taggedUsage.input_token_details?.cache_read ?? taggedUsage.cache_read_input_tokens;
         try {
