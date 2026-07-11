@@ -758,12 +758,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         // Steers that never reached an injection boundary (queued after the last
-        // tool batch, or the run had none). Drained here — before the terminal
-        // transition clears the queue — and reported on the final event so the
-        // client converts them to queued follow-up messages.
+        // tool batch, or the run had none). The close-and-drain atomically stops
+        // new enqueues first — a steer POST racing this finalization gets 404
+        // (client sends it as a normal message) instead of a 202 whose payload
+        // completeJob would then silently clear. Reported on the final event so
+        // the client converts them to queued follow-up messages.
         let pendingSteers;
         try {
-          const leftoverSteers = await GenerationJobManager.steering.drain(streamId);
+          const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(streamId);
           if (leftoverSteers.length > 0) {
             pendingSteers = leftoverSteers.map(toPendingSteer);
           }

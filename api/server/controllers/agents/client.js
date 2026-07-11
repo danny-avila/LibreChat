@@ -48,7 +48,6 @@ const {
   createSteerIndexOffsetHandlers,
   createSteerDrainHook,
   isSteeringSupported,
-  toPendingSteer,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -1430,20 +1429,13 @@ class AgentClient extends BaseClient {
       event: ApprovalEvents.ON_PENDING_ACTION,
       data: toClientPendingAction(pendingAction),
     });
-    // Steers queued while running can't be injected once the run is paused —
-    // drain and report them so the client converts them to queued follow-ups
-    // instead of leaving them stranded in the store for the approval window.
-    try {
-      const strandedSteers = await GenerationJobManager.steering.drain(streamId);
-      if (strandedSteers.length > 0) {
-        await GenerationJobManager.emitChunk(streamId, {
-          event: SteerEvents.ON_STEERS_PENDING,
-          data: { pendingSteers: strandedSteers.map(toPendingSteer) },
-        });
-      }
-    } catch (err) {
-      logger.warn(`[AgentClient] Failed to report stranded steers on pause ${streamId}`, err);
-    }
+    // Steers queued before this pause stay IN the store for the whole approval
+    // window: `resumeState.pendingSteers` re-seeds the client's chips on
+    // reload, and the resumed run drains them at its first tool boundary.
+    // Draining here would leave the only copy in ephemeral client state — a
+    // reload during the pause would silently lose the user's message. New
+    // steers are rejected while paused (enqueue is status-guarded), and the
+    // requires_action TTL extension keeps the queue key alive.
     logger.debug(
       `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
     );

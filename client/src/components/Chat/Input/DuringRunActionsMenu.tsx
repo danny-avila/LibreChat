@@ -55,7 +55,9 @@ function DuringRunActionsMenu({
       >
         <Ariakit.MenuItem
           className={MENU_ITEM_CLASS}
-          disabled={steering.effectiveAction !== 'steer'}
+          // Gate on availability, not the default action — this menu exists to
+          // override a queue-preferring default with an explicit steer.
+          disabled={!steering.canSteer}
           onClick={() => runAction((text) => steering.submitSteer(text))}
         >
           <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />

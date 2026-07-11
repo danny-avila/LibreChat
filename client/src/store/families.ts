@@ -371,6 +371,18 @@ const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
   default: false,
 });
 
+/**
+ * Server steer ids whose `on_steer_applied` event already landed. The 202 ACK
+ * and the SSE ride different connections, so the applied event can arrive
+ * FIRST — the ACK handler checks this set and drops its local chip instead of
+ * minting a `pending` chip whose only removal event has already passed.
+ * Cleared when the run's final event arrives.
+ */
+const appliedSteerIdsByConvoId = atomFamily<string[], string>({
+  key: 'appliedSteerIdsByConvoId',
+  default: [],
+});
+
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
   key: 'globalAudioURLByIndex',
   default: null,
@@ -541,5 +553,6 @@ export default {
   queuedMessagesByConvoId,
   runEndByIndex,
   drainAfterAbortByIndex,
+  appliedSteerIdsByConvoId,
   updateConversationSelector,
 };

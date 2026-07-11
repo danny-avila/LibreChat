@@ -1915,6 +1915,85 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('closeAndDrain atomically closes the queue; createJob reopens and clears it', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_NOT_RUNNING } = await import('../interfaces/IJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-close-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'drained'));
+
+      const drained = await store.closeAndDrainSteers(streamId);
+      expect(drained.map((s) => s.text)).toEqual(['drained']);
+
+      // Job hash still says `running`, but the closed flag rejects the race.
+      expect(await store.enqueueSteer(streamId, buildSteer('s2', 'raced'))).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+
+      // Replacement reopens the channel and starts with an empty queue.
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.peekSteers(streamId)).toEqual([]);
+      expect(await store.enqueueSteer(streamId, buildSteer('s3', 'fresh'))).toBe(1);
+
+      await store.destroy();
+    });
+
+    test('createJob clears steers inherited from a replaced job', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-replace-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'old run steer'));
+
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.peekSteers(streamId)).toEqual([]);
+
+      await store.destroy();
+    });
+
+    test('pausing for review extends the steers key TTL to the approval window', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-pause-ttl-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'kept across pause'));
+
+      const paused = await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(paused).toBe(true);
+
+      // Running TTL is 1200s; the paused window is >= the 24h backstop.
+      const ttl = await ioredisClient.ttl(`stream:{${streamId}}:steers`);
+      expect(ttl).toBeGreaterThan(1200);
+
+      // The queued steer survives the pause for the resumed run to drain.
+      expect((await store.peekSteers(streamId)).map((s) => s.text)).toEqual(['kept across pause']);
+
+      await store.destroy();
+    });
+
     test('terminal transitions and deleteJob remove the steers key', async () => {
       if (!ioredisClient) {
         return;

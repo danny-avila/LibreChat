@@ -9,6 +9,7 @@ const {
   isHITLEnabled,
   deleteAgentCheckpoint,
   attachAskUserQuestionArgs,
+  createMessageFilterPii,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -398,10 +399,25 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
  * @route POST /chat/steer
  * @desc Queue a mid-run user message for injection at the next tool boundary
  * @access Private
- * @description Mounted before chatRouter to bypass buildEndpointOption middleware;
- * `moderateText` screens the steer text exactly like a typed message.
+ * @description Mounted before chatRouter to bypass buildEndpointOption middleware,
+ * but a steer is model-bound user text, so it carries the same guards as a normal
+ * message: the configured IP/user rate limiters, `moderateText`, and the PII filter.
  */
-router.post('/chat/steer', configMiddleware, moderateText, SteerController);
+const steerLimiters = [];
+if (isEnabled(LIMIT_MESSAGE_IP)) {
+  steerLimiters.push(messageIpLimiter);
+}
+if (isEnabled(LIMIT_MESSAGE_USER)) {
+  steerLimiters.push(messageUserLimiter);
+}
+router.post(
+  '/chat/steer',
+  configMiddleware,
+  ...steerLimiters,
+  moderateText,
+  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  SteerController,
+);
 
 router.use('/', v1);
 

@@ -116,6 +116,14 @@ export interface SerializableJobData {
    * next tick right after resuming. Falls back to `createdAt` when unset.
    */
   lastActiveAt?: number;
+
+  /**
+   * Flat flag set by the terminal close-and-drain (Redis: raw hash field the
+   * enqueue Lua guards on; in-memory: a parallel set). Once set, new steers
+   * are rejected until `createJob` reuses the stream id. Never written through
+   * `updateJob` — listed here so cleanup paths can reference the key name.
+   */
+  steersClosed?: boolean;
 }
 
 /**
@@ -489,14 +497,24 @@ export interface IJobStore {
   // instance (the steer route), drained only by the run's owning process.
 
   /**
-   * Atomically append a steer, guarded on the job being `running`. Returns the
-   * new queue depth, {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing
-   * or not running, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
+   * Atomically append a steer, guarded on the job being `running` AND the
+   * queue not being closed by a terminal drain. Returns the new queue depth,
+   * {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing, not running,
+   * or closed, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
    */
   enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
 
   /** Atomically take ALL queued steers, FIFO. Empty array when none. */
   drainSteers(streamId: string): Promise<SteerQueueItem[]>;
+
+  /**
+   * Atomically CLOSE the queue to new steers, then take all queued items
+   * FIFO. Used by the terminal paths (final event, abort) so a steer POST
+   * racing finalization can never be 202-ACKed after the last drain and then
+   * silently cleared — once closed, `enqueueSteer` rejects until the next
+   * `createJob` reopens the stream id.
+   */
+  closeAndDrainSteers(streamId: string): Promise<SteerQueueItem[]>;
 
   /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
   peekSteers(streamId: string): Promise<SteerQueueItem[]>;

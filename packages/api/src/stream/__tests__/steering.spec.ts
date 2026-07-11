@@ -121,6 +121,36 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
   });
 
+  describe('closeAndDrain', () => {
+    test('takes all items and rejects later enqueues until the stream id is reused', async () => {
+      const streamId = 'steer-close';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('drained'));
+
+      const drained = await manager.steering.closeAndDrain(streamId);
+      expect(drained.map((s) => s.text)).toEqual(['drained']);
+
+      // The job is still `running`, but the queue is closed — a steer racing
+      // finalization must be rejected, not ACKed and then silently cleared.
+      expect(await manager.steering.enqueue(streamId, buildSteer('raced'))).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+
+      // A replacement job on the same stream id reopens the channel.
+      await manager.createJob(streamId, 'user-1');
+      expect(await manager.steering.enqueue(streamId, buildSteer('fresh'))).toBe(1);
+    });
+
+    test('createJob clears steers inherited from a replaced job', async () => {
+      const streamId = 'steer-replace';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('old run steer'));
+
+      await manager.createJob(streamId, 'user-1');
+      expect(await manager.steering.peek(streamId)).toEqual([]);
+    });
+  });
+
   describe('terminal cleanup', () => {
     test('completeJob clears any leftover steers', async () => {
       const streamId = 'steer-complete';

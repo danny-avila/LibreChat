@@ -110,17 +110,20 @@ const RUNSTEPS_SAVE_LUA =
   'return 1';
 
 /**
- * Atomically append a steer, guarded on the job hash still being `running`.
- * Both keys share the {streamId} hash tag (single slot), so the script is
- * atomic on cluster too — a steer can never land on a completed/aborted job,
- * and the depth cap can't be raced past by concurrent enqueues.
+ * Atomically append a steer, guarded on the job hash still being `running`
+ * AND the queue not being closed by a terminal drain (`steersClosed` field,
+ * set by {@link STEER_CLOSE_DRAIN_LUA}, cleared on createJob). Both keys share
+ * the {streamId} hash tag (single slot), so the script is atomic on cluster
+ * too — a steer can never land on a completed/aborted/finalizing job, and the
+ * depth cap can't be raced past by concurrent enqueues.
  *
  *   KEYS: [job, steers]
  *   ARGV: [itemJson, ttl, maxDepth]
- *   Returns: new depth, -1 (not running), or -2 (queue full)
+ *   Returns: new depth, -1 (not running / closed), or -2 (queue full)
  */
 const STEER_ENQUEUE_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
   'redis.call("RPUSH", KEYS[2], ARGV[1]) ' +
   'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
@@ -136,6 +139,22 @@ const STEER_ENQUEUE_LUA =
 const STEER_DRAIN_LUA =
   'local items = redis.call("LRANGE", KEYS[1], 0, -1) ' +
   'redis.call("DEL", KEYS[1]) ' +
+  'return items';
+
+/**
+ * Terminal close-then-drain in one atomic step: mark the queue closed on the
+ * job hash (only when the hash still exists — a bare HSET would resurrect a
+ * deleted job as a stray hash), then take the whole queue. Once closed,
+ * {@link STEER_ENQUEUE_LUA} rejects, so a steer POST racing finalization can
+ * never be ACKed after the last drain and then silently cleared.
+ *
+ *   KEYS: [job, steers]
+ *   Returns: array of item JSON strings (possibly empty)
+ */
+const STEER_CLOSE_DRAIN_LUA =
+  'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], "steersClosed", "1") end ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'redis.call("DEL", KEYS[2]) ' +
   'return items';
 
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
@@ -328,6 +347,9 @@ export class RedisJobStore implements IJobStore {
       // its own discovery would otherwise inherit the prior run's tool names and force-load
       // deferred tools it never discovered on resume.
       'discoveredTools',
+      // A replacement must start with an open steer channel — the closed flag
+      // belongs to the finalized run this hash is being reused from.
+      'steersClosed',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
@@ -336,6 +358,9 @@ export class RedisJobStore implements IJobStore {
       await this.redis.hset(key, this.serializeJob(job));
       await this.redis.hdel(key, ...staleHitlFields);
       await this.redis.expire(key, this.ttl.running);
+      // The steer queue is keyed by streamId only — a replacement must not
+      // inherit the replaced run's undrained steers.
+      await this.redis.del(KEYS.steers(streamId));
       await this.redis.sadd(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
@@ -347,6 +372,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.hset(key, this.serializeJob(job));
       pipeline.hdel(key, ...staleHitlFields);
       pipeline.expire(key, this.ttl.running);
+      pipeline.del(KEYS.steers(streamId));
       pipeline.sadd(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);
@@ -539,6 +565,10 @@ export class RedisJobStore implements IJobStore {
       }
       await this.redis.expire(KEYS.chunks(streamId), ttl);
       await this.redis.expire(KEYS.runSteps(streamId), ttl);
+      // Steers queued before a pause must survive the whole approval window
+      // (they inject at the first tool boundary after resume). EXPIRE on a
+      // missing key is a no-op.
+      await this.redis.expire(KEYS.steers(streamId), ttl);
     } else {
       const pipeline = this.redis.pipeline();
       if (remSet) {
@@ -549,6 +579,7 @@ export class RedisJobStore implements IJobStore {
       }
       pipeline.expire(KEYS.chunks(streamId), ttl);
       pipeline.expire(KEYS.runSteps(streamId), ttl);
+      pipeline.expire(KEYS.steers(streamId), ttl);
       await pipeline.exec();
     }
     return true;
@@ -1090,6 +1121,16 @@ export class RedisJobStore implements IJobStore {
 
   async drainSteers(streamId: string): Promise<SteerQueueItem[]> {
     const raw = await this.redis.eval(STEER_DRAIN_LUA, 1, KEYS.steers(streamId));
+    return this.parseSteerItems(raw);
+  }
+
+  async closeAndDrainSteers(streamId: string): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.eval(
+      STEER_CLOSE_DRAIN_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+    );
     return this.parseSteerItems(raw);
   }
 

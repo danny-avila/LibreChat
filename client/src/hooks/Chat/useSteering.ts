@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
@@ -102,9 +102,17 @@ export default function useSteering({
     [duringRunActive, messages],
   );
 
+  /** Whether a steer can reach the live run right now — independent of the
+   *  user's default action, so the per-send menu can always override to
+   *  steer when it's genuinely available. */
+  const canSteer = hasRealConvoId && !pausedOnApproval;
   /** Steering needs a live server-side job; degrade to queue otherwise. */
-  const effectiveAction: DuringRunAction =
-    !hasRealConvoId || pausedOnApproval ? 'queue' : defaultAction;
+  const effectiveAction: DuringRunAction = canSteer ? defaultAction : 'queue';
+
+  /** Live submission state for POST callbacks — the closure value can be
+   *  stale by the time the steer response arrives. */
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
 
   const upsertSteerChip = useRecoilCallback(
     ({ set }) =>
@@ -128,6 +136,24 @@ export default function useSteering({
         set(store.pendingSteersByConvoId(convoId), (prev) => {
           const next = prev.filter((item) => item.steerId !== localId);
           return steer ? [...next, steer] : next;
+        });
+      },
+    [],
+  );
+
+  /**
+   * Resolves the 202 ACK against the applied-id set: `on_steer_applied` rides
+   * the SSE and can land BEFORE the HTTP response, in which case its removal
+   * already passed — minting a `pending` chip here would strand it forever.
+   */
+  const acknowledgeSteer = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string, localId: string, steer: PendingSteer) => {
+        const applied = snapshot.getLoadable(store.appliedSteerIdsByConvoId(convoId)).getValue();
+        const alreadyApplied = applied.includes(steer.steerId);
+        set(store.pendingSteersByConvoId(convoId), (prev) => {
+          const next = prev.filter((item) => item.steerId !== localId);
+          return alreadyApplied ? next : [...next, steer];
         });
       },
     [],
@@ -183,7 +209,7 @@ export default function useSteering({
         { conversationId, text: trimmed },
         {
           onSuccess: (response) => {
-            replaceSteerChip(conversationId, localId, {
+            acknowledgeSteer(conversationId, localId, {
               steerId: response.steerId,
               text: trimmed,
               status: 'pending',
@@ -193,9 +219,15 @@ export default function useSteering({
           onError: (error) => {
             const code = getSteerErrorCode(error);
             if (code === 'NO_ACTIVE_RUN') {
-              // The run finished before the steer landed — send it as a normal turn.
+              // The run finished before the steer landed. While the final SSE
+              // is still settling, `ask()`'s in-flight guard would drop a
+              // direct send — queue it so the run-end drain fires it instead.
               replaceSteerChip(conversationId, localId, null);
-              sendNow(trimmed);
+              if (isSubmittingRef.current) {
+                enqueue(trimmed);
+              } else {
+                sendNow(trimmed);
+              }
               return;
             }
             if (
@@ -224,6 +256,7 @@ export default function useSteering({
       conversationId,
       upsertSteerChip,
       replaceSteerChip,
+      acknowledgeSteer,
       steerMutation,
       sendNow,
       enqueue,
@@ -311,6 +344,7 @@ export default function useSteering({
   return {
     enabled,
     queueKey,
+    canSteer,
     duringRunActive,
     effectiveAction,
     defaultAction,

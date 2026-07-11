@@ -536,10 +536,14 @@ export default function useResumableSSE(
   const steerRetryRef = useRef<number | null>(null);
 
   /** Removes the pending chip once its steer is injected (the inline content
-   *  part becomes the durable record). */
+   *  part becomes the durable record), and records the id so a 202 ACK that
+   *  arrives AFTER the applied event drops its chip instead of re-minting it. */
   const resolveSteerChip = useRecoilCallback(
     ({ set }) =>
       (conversationId: string, steerId: string) => {
+        set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
+          prev.includes(steerId) ? prev : [...prev, steerId],
+        );
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
           prev.some((steer) => steer.steerId === steerId)
             ? prev.filter((steer) => steer.steerId !== steerId)
@@ -568,10 +572,12 @@ export default function useResumableSSE(
   );
 
   /** Converts steers that never reached an injection boundary into queued
-   *  follow-up messages (run ended or paused with steers still in the store). */
+   *  follow-up messages (reported on the run's final/abort event). Also the
+   *  end-of-run cleanup point for the applied-id set. */
   const convertSteersToQueued = useRecoilCallback(
     ({ set }) =>
       (conversationId: string, steers: TPendingSteer[]) => {
+        set(store.appliedSteerIdsByConvoId(conversationId), []);
         if (steers.length === 0) {
           return;
         }
@@ -741,17 +747,6 @@ export default function useResumableSSE(
         resolveSteerChip(chipConvoId, event.steerId);
       };
 
-      /** Steers stranded by a pause (reported via `on_steers_pending`) become
-       *  queued follow-ups so the user's words survive the approval window. */
-      const handleSteersPending = (payload: { pendingSteers?: TPendingSteer[] } | undefined) => {
-        const steers = payload?.pendingSteers ?? [];
-        if (steers.length === 0) {
-          return;
-        }
-        const convoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
-        convertSteersToQueued(convoId, steers);
-      };
-
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
       logger.log('ResumableSSE', 'Subscribing to stream:', url, { isResume });
@@ -796,10 +791,12 @@ export default function useResumableSSE(
               currentSubmission.conversation?.conversationId ??
               currentStreamId;
             // Steers the run never injected ride the final event; convert them
-            // to queued follow-ups before the run-end signal fires the drain.
-            if (Array.isArray(data.pendingSteers) && data.pendingSteers.length > 0) {
-              convertSteersToQueued(finalConvoId, data.pendingSteers as TPendingSteer[]);
-            }
+            // to queued follow-ups before the run-end signal fires the drain
+            // (also resets the applied-id set for the finished run).
+            convertSteersToQueued(
+              finalConvoId,
+              Array.isArray(data.pendingSteers) ? (data.pendingSteers as TPendingSteer[]) : [],
+            );
             try {
               finalHandler(data, currentSubmission as EventSubmission);
               finalizeUsage(data, { ...currentSubmission, userMessage });
@@ -889,11 +886,6 @@ export default function useResumableSSE(
 
           if (data.event === SteerEvents.ON_STEER_APPLIED) {
             applySteerToMessages(data.data as TSteerAppliedEvent);
-            return;
-          }
-
-          if (data.event === SteerEvents.ON_STEERS_PENDING) {
-            handleSteersPending(data.data as { pendingSteers?: TPendingSteer[] });
             return;
           }
 
@@ -1073,8 +1065,6 @@ export default function useResumableSSE(
                   applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
                 } else if (replayEvent.event === SteerEvents.ON_STEER_APPLIED) {
                   applySteerToMessages(replayEvent.data as TSteerAppliedEvent);
-                } else if (replayEvent.event === SteerEvents.ON_STEERS_PENDING) {
-                  handleSteersPending(replayEvent.data as { pendingSteers?: TPendingSteer[] });
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1104,8 +1094,6 @@ export default function useResumableSSE(
                   applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
                 } else if (pendingEvent.event === SteerEvents.ON_STEER_APPLIED) {
                   applySteerToMessages(pendingEvent.data as TSteerAppliedEvent);
-                } else if (pendingEvent.event === SteerEvents.ON_STEERS_PENDING) {
-                  handleSteersPending(pendingEvent.data as { pendingSteers?: TPendingSteer[] });
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||

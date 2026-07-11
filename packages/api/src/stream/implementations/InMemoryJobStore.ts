@@ -53,6 +53,9 @@ export class InMemoryJobStore implements IJobStore {
   /** Maps streamId -> FIFO queue of pending steer messages. */
   private steerQueues = new Map<string, SteerQueueItem[]>();
 
+  /** Stream ids whose steer queue was closed by a terminal drain. Reopened by createJob. */
+  private closedSteerQueues = new Set<string>();
+
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
 
@@ -121,6 +124,10 @@ export class InMemoryJobStore implements IJobStore {
     // (the controller handles job replacement) falls back to the fresh createdAt
     // and isn't reaped on the previous generation's stale last-activity time.
     this.lastActivity.delete(streamId);
+    // Steer queues are keyed by streamId only, so a replacement must not
+    // inherit the replaced run's undrained steers (or its closed flag).
+    this.steerQueues.delete(streamId);
+    this.closedSteerQueues.delete(streamId);
 
     // Track job by userId (tenant-qualified when available) for efficient user-scoped queries
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
@@ -179,6 +186,7 @@ export class InMemoryJobStore implements IJobStore {
     this.contentState.delete(streamId);
     this.lastActivity.delete(streamId);
     this.steerQueues.delete(streamId);
+    this.closedSteerQueues.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
   }
 
@@ -333,6 +341,7 @@ export class InMemoryJobStore implements IJobStore {
     this.contentState.clear();
     this.userJobMap.clear();
     this.steerQueues.clear();
+    this.closedSteerQueues.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
   }
 
@@ -477,7 +486,7 @@ export class InMemoryJobStore implements IJobStore {
 
   async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
     const job = this.jobs.get(streamId);
-    if (!job || job.status !== 'running') {
+    if (!job || job.status !== 'running' || this.closedSteerQueues.has(streamId)) {
       return STEER_ENQUEUE_NOT_RUNNING;
     }
     let queue = this.steerQueues.get(streamId);
@@ -498,6 +507,11 @@ export class InMemoryJobStore implements IJobStore {
       return [];
     }
     return queue.splice(0);
+  }
+
+  async closeAndDrainSteers(streamId: string): Promise<SteerQueueItem[]> {
+    this.closedSteerQueues.add(streamId);
+    return this.drainSteers(streamId);
   }
 
   async peekSteers(streamId: string): Promise<SteerQueueItem[]> {

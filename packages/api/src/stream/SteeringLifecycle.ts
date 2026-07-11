@@ -45,6 +45,17 @@ export class SteeringLifecycle {
     return this.store.drainSteers(streamId);
   }
 
+  /**
+   * Terminal drain: atomically CLOSE the queue to new steers, then take all
+   * queued items. Finalization paths use this so a steer POST racing the
+   * final/abort event can never be ACKed after the last drain and then
+   * silently cleared — once closed, enqueue rejects (the client falls back to
+   * a normal send) until the next `createJob` reopens the stream id.
+   */
+  closeAndDrain(streamId: string): Promise<SteerQueueItem[]> {
+    return this.store.closeAndDrainSteers(streamId);
+  }
+
   /** Non-destructive FIFO read (status/resume surfaces). */
   peek(streamId: string): Promise<SteerQueueItem[]> {
     return this.store.peekSteers(streamId);

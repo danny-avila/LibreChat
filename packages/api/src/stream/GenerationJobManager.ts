@@ -829,8 +829,9 @@ class GenerationJobManagerClass {
 
     /** Steers that never reached an injection boundary — reported on the abort
      *  final event (and the abort route's JSON) so the client can restore them
-     *  as queued chips instead of silently dropping the user's words. */
-    const pendingSteers = (await this.jobStore.drainSteers(streamId)).map(toPendingSteer);
+     *  as queued chips instead of silently dropping the user's words. The
+     *  close-and-drain rejects any steer POST racing this finalization. */
+    const pendingSteers = (await this.jobStore.closeAndDrainSteers(streamId)).map(toPendingSteer);
 
     /** Text from content parts for fallback token counting */
     const text = shouldPersistAbortContent
