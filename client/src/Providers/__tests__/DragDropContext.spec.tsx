@@ -19,6 +19,7 @@ let mockAgentQueryData: Partial<Agent> | undefined;
 jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => ({ data: mockEndpointsConfig }),
   useGetAgentByIdQuery: () => ({ data: mockAgentQueryData }),
+  useGetStartupConfig: () => ({ data: undefined }),
 }));
 
 jest.mock('../AgentsMapContext', () => ({

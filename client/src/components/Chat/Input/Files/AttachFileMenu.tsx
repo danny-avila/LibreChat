@@ -110,13 +110,15 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
+  const {
+    fileSearchAllowedByAgent,
+    codeAllowedByAgent,
+    provider,
+    model: agentModel,
+  } = useAgentToolPermissions(agentId, ephemeralAgent);
 
   const { confidentlyNonVision } = useImageCapability({
-    model: conversation?.model,
+    model: agentModel ?? conversation?.model,
     spec: conversation?.spec,
   });
 
