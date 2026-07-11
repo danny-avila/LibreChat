@@ -1722,6 +1722,18 @@ function mergeActiveSkillNames(
   return names.size > 0 ? names : undefined;
 }
 
+/**
+ * True for MCP tools on an ephemeral request-scoped connection (runtime body
+ * placeholders), tagged in `createToolInstance`. Their connection is torn down
+ * at request end, so they must run in the foreground rather than be backgrounded.
+ */
+function toolRequiresEphemeralConnection(tool: StructuredToolInterface | undefined): boolean {
+  return (
+    (tool as (StructuredToolInterface & { mcpRequiresEphemeralConnection?: boolean }) | undefined)
+      ?.mcpRequiresEphemeralConnection === true
+  );
+}
+
 function mergeToolConfigurables(
   base: Record<string, unknown> | undefined,
   loaded: Record<string, unknown> | undefined,
@@ -3370,7 +3382,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   });
                 }
 
-                if (backgroundToolSet.has(tc.name) && isBackgroundRequested(tc.args)) {
+                if (
+                  backgroundToolSet.has(tc.name) &&
+                  isBackgroundRequested(tc.args) &&
+                  !toolRequiresEphemeralConnection(toolMap.get(tc.name))
+                ) {
                   return reportResult(dispatchBackgroundToolCall(tc));
                 }
 

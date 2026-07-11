@@ -571,6 +571,40 @@ describe('runCheckBackgroundTask (singleton)', () => {
       expect.objectContaining({ status: 'completed', result: 'RESULT' }),
     );
   });
+
+  it('retrieves a task across turns: the poll is keyed only by id, not the dispatch run/turn', () => {
+    // Turn 1 dispatches under run-turn-1 and the result lands after the turn.
+    const dispatched = backgroundTaskRegistry.create({
+      userId: 'poll_user',
+      conversationId: 'poll_xturn',
+      toolCallId: 'call_xturn',
+      toolName: 'search_mcp_docs',
+      runId: 'run-turn-1',
+      agentId: 'agent-A',
+    });
+    if ('atCapacity' in dispatched) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('poll_user', 'poll_xturn', dispatched.task.id, {
+      content: 'XTURN_RESULT',
+    });
+
+    // Turn 2 (a later run) polls with just the id; get/list carry no run/turn scope.
+    const polled = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'poll_user',
+        conversationId: 'poll_xturn',
+        args: { background_task_id: dispatched.task.id },
+      }),
+    );
+    expect(polled).toEqual(
+      expect.objectContaining({
+        status: 'completed',
+        result: 'XTURN_RESULT',
+        background_task_id: dispatched.task.id,
+      }),
+    );
+  });
 });
 
 describe('stripBackgroundFromToolRegistry', () => {

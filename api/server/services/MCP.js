@@ -887,6 +887,10 @@ function createToolInstance({
   });
   toolInstance.mcp = true;
   toolInstance.mcpRawServerName = serverName;
+  // Ephemeral request-scoped servers (runtime body placeholders) tear their
+  // connection down at request end, so they must never be backgrounded.
+  toolInstance.mcpRequiresEphemeralConnection =
+    requiresEphemeralUserConnection(capturedServerConfig);
   // On Google/Vertex, propagate the union-flattened schema so definitions extracted
   // from this instance don't reach the Gemini converter with unsupported unions.
   toolInstance.mcpJsonSchema = isGoogle ? schema : parameters;

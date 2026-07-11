@@ -168,6 +168,44 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(results[0].content).toContain('RESULT for x');
   });
 
+  it('never backgrounds an ephemeral request-scoped MCP tool: runs it foreground (no detached, leak-free)', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const ephemeralTool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      // Tagged in createToolInstance for servers on a runtime-body-placeholder
+      // connection, which is torn down at request end.
+      mcpRequiresEphemeralConnection: true,
+      invoke: async (input: Record<string, unknown>) => {
+        state.calls += 1;
+        state.lastInput = input;
+        return { content: `RESULT for ${String(input.q)}` };
+      },
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [ephemeralTool] }),
+    });
+    // background IS enabled for this tool, and the model asked to background it
+    const configurable = buildConfig();
+    const metadata = { thread_id: 'exec_convo_ephemeral' };
+
+    const results = await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_eph', name: 'search_mcp_docs', args: { q: 'z', run_in_background: true } },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+
+    // ran synchronously in the foreground: real output inline, not a handle, flag stripped
+    expect(state.calls).toBe(1);
+    expect(state.lastInput).toEqual({ q: 'z' });
+    expect(results[0].content).toContain('RESULT for z');
+    expect(results[0].content).not.toContain('background_task_id');
+  });
+
   it('does not intercept a check_background_task-named tool when background is off for the run', async () => {
     const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
     const collisionTool = {
