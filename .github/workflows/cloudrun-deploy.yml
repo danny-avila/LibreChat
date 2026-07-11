@@ -93,7 +93,7 @@ jobs:
             NODE_ENV=staging
             PORT=3080
             # Database
-            MONGO_URI=${{ secrets.MONGO_URI }}
+            DB_URL=${{ secrets.MONGO_URI }}
             # Session & Security
             CREDS_KEY=${{ secrets.CREDS_KEY }}
             CREDS_IV=${{ secrets.CREDS_IV }}
@@ -144,7 +144,7 @@ jobs:
             NODE_ENV=production
             PORT=3080
             # Database
-            MONGO_URI=${{ secrets.MONGO_URI }}
+            DB_URL=${{ secrets.MONGO_URI }}
             # Session & Security
             CREDS_KEY=${{ secrets.CREDS_KEY }}
             CREDS_IV=${{ secrets.CREDS_IV }}
