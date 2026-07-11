@@ -10,18 +10,19 @@ const { stripImageContentParts } = AgentClient;
  */
 const resolve = (self) => {
   self._imageCapability = undefined;
-  return AgentClient.prototype.resolveModelImageCapability.call(self);
+  return self.resolveModelImageCapability();
 };
 
-const makeSelf = ({ model, endpoint = 'openAI', spec, config = {} }) => ({
-  model,
-  options: {
-    endpoint,
-    agent: { endpoint },
-    spec,
-    req: { config },
-  },
-});
+const makeSelf = ({ model, endpoint = 'openAI', spec, config = {} }) =>
+  Object.assign(Object.create(AgentClient.prototype), {
+    model,
+    options: {
+      endpoint,
+      agent: { endpoint, model_parameters: { model } },
+      spec,
+      req: { config },
+    },
+  });
 
 describe('AgentClient.resolveModelImageCapability', () => {
   it('uses the built-in heuristic for a known vision model', () => {
@@ -61,6 +62,41 @@ describe('AgentClient.resolveModelImageCapability', () => {
     const first = AgentClient.prototype.resolveModelImageCapability.call(self);
     const second = AgentClient.prototype.resolveModelImageCapability.call(self);
     expect(second).toBe(first);
+  });
+});
+
+describe('AgentClient.shouldStripImagesForRun (mixed-model runs)', () => {
+  const agent = (model, endpoint = 'openAI') => ({ endpoint, model_parameters: { model } });
+
+  const runSelf = ({ primary, added = [], config = {} }) =>
+    Object.assign(Object.create(AgentClient.prototype), {
+      model: primary.model_parameters.model,
+      agentConfigs: new Map(added.map((a, i) => [`added-${i}`, a])),
+      options: { endpoint: 'openAI', agent: primary, spec: undefined, req: { config } },
+    });
+
+  const strip = (self) => self.shouldStripImagesForRun();
+
+  it('does not strip when the only agent is vision-capable', () => {
+    expect(strip(runSelf({ primary: agent('gpt-4o') }))).toBe(false);
+  });
+
+  it('does not strip when the primary is an unknown (permissive) model', () => {
+    expect(strip(runSelf({ primary: agent('some-proxy-model') }))).toBe(false);
+  });
+
+  it('strips when the primary model is confidently non-vision', () => {
+    expect(strip(runSelf({ primary: agent('o1-mini') }))).toBe(true);
+  });
+
+  it('strips when a vision-capable primary has a text-only added agent', () => {
+    expect(strip(runSelf({ primary: agent('gpt-4o'), added: [agent('o1-mini')] }))).toBe(true);
+  });
+
+  it('does not strip when every run agent is vision-capable', () => {
+    expect(strip(runSelf({ primary: agent('gpt-4o'), added: [agent('claude-opus-4-x')] }))).toBe(
+      false,
+    );
   });
 });
 

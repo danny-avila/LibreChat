@@ -315,19 +315,17 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * Resolves (and caches) whether the active model can accept image input,
-   * layering explicit config (model spec / endpoint `visionModels`) over the
-   * built-in heuristic. Used to avoid sending images to text-only models, which
-   * OpenAI-compatible providers reject outright.
+   * Resolves whether a single agent's model can accept image input, layering
+   * explicit config (model spec / endpoint `visionModels`) over the built-in
+   * heuristic. The model spec's `vision` flag only applies to the user-selected
+   * (primary) agent, so `useSpec` is false for added/handoff agents.
+   * @param {Agent} agent
+   * @param {{ useSpec?: boolean }} [options]
    * @returns {import('librechat-data-provider').ImageCapabilityResult}
    */
-  resolveModelImageCapability() {
-    if (this._imageCapability) {
-      return this._imageCapability;
-    }
-
+  resolveAgentImageCapability(agent, { useSpec = false } = {}) {
     const appConfig = this.options.req?.config;
-    const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+    const endpoint = agent?.endpoint ?? this.options.endpoint;
 
     let endpointConfig;
     try {
@@ -340,16 +338,50 @@ class AgentClient extends BaseClient {
       endpointConfig = undefined;
     }
 
-    const modelSpec = this.options.spec
-      ? appConfig?.modelSpecs?.list?.find((spec) => spec.name === this.options.spec)
-      : undefined;
+    const modelSpec =
+      useSpec && this.options.spec
+        ? appConfig?.modelSpecs?.list?.find((spec) => spec.name === this.options.spec)
+        : undefined;
 
-    this._imageCapability = getImageCapability({
-      model: this.model,
+    return getImageCapability({
+      model: agent?.model_parameters?.model ?? agent?.model,
       endpointConfig,
       modelSpec,
     });
+  }
+
+  /**
+   * Resolves (and caches) the primary (user-selected) model's image capability.
+   * @returns {import('librechat-data-provider').ImageCapabilityResult}
+   */
+  resolveModelImageCapability() {
+    if (this._imageCapability) {
+      return this._imageCapability;
+    }
+    this._imageCapability = this.resolveAgentImageCapability(this.options.agent, { useSpec: true });
     return this._imageCapability;
+  }
+
+  /**
+   * Whether image parts must be stripped from the shared LLM payload. A single
+   * `payload` is sent to every agent in the run (primary + `agentConfigs`), so
+   * if *any* of them is confidently non-image-capable the images have to go —
+   * otherwise that agent's provider rejects the request. Trades images on a
+   * vision-capable primary for a working run in mixed-model setups.
+   * @returns {boolean}
+   */
+  shouldStripImagesForRun() {
+    if (this._shouldStripImages !== undefined) {
+      return this._shouldStripImages;
+    }
+    const runAgents = [
+      this.options.agent,
+      ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+    ];
+    this._shouldStripImages = runAgents.some((agent, index) =>
+      shouldStripImages(this.resolveAgentImageCapability(agent, { useSpec: index === 0 })),
+    );
+    return this._shouldStripImages;
   }
 
   /**
@@ -451,10 +483,10 @@ class AgentClient extends BaseClient {
      * copy is stripped too so `canonicalTokenCount` reflects what is actually
      * sent and the model isn't budgeted/pruned as if the image were present.
      */
-    const stripImages = shouldStripImages(this.resolveModelImageCapability());
+    const stripImages = this.shouldStripImagesForRun();
     if (stripImages) {
       logger.debug(
-        `[AgentClient] Model "${this.model}" resolved as non-image-capable (source: ${this._imageCapability?.source}); stripping image parts from the LLM payload.`,
+        `[AgentClient] A run agent is non-image-capable (primary "${this.model}" source: ${this.resolveModelImageCapability().source}); stripping image parts from the LLM payload.`,
       );
     }
     const formattedMessages = orderedMessages.map((message, i) => {
