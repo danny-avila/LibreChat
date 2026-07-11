@@ -575,6 +575,19 @@ export type SummaryContentPart = {
   };
 };
 
+/**
+ * A user steering message injected mid-run at a tool-batch boundary.
+ * Persisted inline in the response message's content array (keyed by the
+ * type name like `text`/`think` so token counting reads it for free);
+ * replayed as a user message on subsequent turns by `formatAgentMessages`.
+ */
+export type SteerContentPart = {
+  type: ContentTypes.STEER;
+  steer: string;
+  steerId?: string;
+  createdAt?: number;
+};
+
 export type TMessageContentParts =
   | ({
       type: ContentTypes.ERROR;
@@ -582,6 +595,7 @@ export type TMessageContentParts =
       error?: string;
     } & ContentMetadata)
   | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | (SteerContentPart & ContentMetadata)
   | ({
       type: ContentTypes.TEXT;
       text?: string | TextData;

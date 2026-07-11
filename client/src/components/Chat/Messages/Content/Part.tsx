@@ -21,6 +21,7 @@ import {
   FileAuthoringCall,
   BashCall,
   SubagentCall,
+  SteerBubble,
 } from './Parts';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
@@ -70,6 +71,10 @@ const Part = memo(function Part({
         question={askUserQuestion.ask_user_question.question}
       />
     );
+  }
+
+  if (part.type === ContentTypes.STEER) {
+    return <SteerBubble steer={part[ContentTypes.STEER]} />;
   }
 
   if (part.type === ContentTypes.ERROR) {

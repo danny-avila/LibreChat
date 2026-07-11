@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
-import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   request,
   Constants,
@@ -10,6 +10,7 @@ import {
   ErrorTypes,
   StepEvents,
   apiBaseUrl,
+  SteerEvents,
   UsageEvents,
   createPayload,
   ApprovalEvents,
@@ -22,7 +23,9 @@ import type {
   TPayload,
   TSubmission,
   TConversation,
+  TPendingSteer,
   EventSubmission,
+  TSteerAppliedEvent,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { ActiveJobsResponse } from '~/data-provider';
@@ -30,7 +33,9 @@ import type { TResData } from '~/common';
 import {
   logger,
   clearAllDrafts,
+  applySteerPart,
   applyPendingAction,
+  findSteerMessageIndex,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
   countTaggedApprovalParts,
@@ -525,6 +530,70 @@ export default function useResumableSSE(
   /** Pending action whose tool-call content part hasn't rendered yet — retried
    *  on the next frame so a fast pause-before-render race still attaches. */
   const pendingActionRetryRef = useRef<number | null>(null);
+  /** Steer event whose target response message hasn't rendered yet — same
+   *  bounded next-frame retry as pending actions, on its own handle so the
+   *  two retries can't cancel each other. */
+  const steerRetryRef = useRef<number | null>(null);
+
+  /** Removes the pending chip once its steer is injected (the inline content
+   *  part becomes the durable record). */
+  const resolveSteerChip = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, steerId: string) => {
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.some((steer) => steer.steerId === steerId)
+            ? prev.filter((steer) => steer.steerId !== steerId)
+            : prev,
+        );
+      },
+    [],
+  );
+
+  /** Replaces the chip list with the server's still-queued steers (reconnect).
+   *  Local `failed` entries are kept so their text stays recoverable. */
+  const seedSteerChips = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, steers: TPendingSteer[]) => {
+        set(store.pendingSteersByConvoId(conversationId), (prev) => [
+          ...steers.map((steer) => ({
+            steerId: steer.steerId,
+            text: steer.text,
+            status: 'pending' as const,
+            createdAt: steer.createdAt ?? Date.now(),
+          })),
+          ...prev.filter((steer) => steer.status === 'failed'),
+        ]);
+      },
+    [],
+  );
+
+  /** Converts steers that never reached an injection boundary into queued
+   *  follow-up messages (run ended or paused with steers still in the store). */
+  const convertSteersToQueued = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, steers: TPendingSteer[]) => {
+        if (steers.length === 0) {
+          return;
+        }
+        const steerIds = new Set(steers.map((steer) => steer.steerId));
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.filter((steer) => !steerIds.has(steer.steerId)),
+        );
+        set(store.queuedMessagesByConvoId(conversationId), (prev) => [
+          ...prev,
+          ...steers
+            .filter((steer) => !prev.some((queued) => queued.id === steer.steerId))
+            .map((steer) => ({
+              id: steer.steerId,
+              text: steer.text,
+              createdAt: steer.createdAt ?? Date.now(),
+            })),
+        ]);
+      },
+    [],
+  );
+
+  const setRunEnd = useSetRecoilState(store.runEndByIndex(runIndex));
 
   const {
     stepHandler,
@@ -640,6 +709,49 @@ export default function useResumableSSE(
         }
       };
 
+      /**
+       * Places an injected steer part on the in-flight response message and
+       * resolves its pending chip. Same bounded next-frame retry as pending
+       * actions for the inject-before-render race (the assistant placeholder
+       * can land a few frames after the created event under load).
+       */
+      const applySteerToMessages = (event: TSteerAppliedEvent, attempt = 0) => {
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            steerRetryRef.current = requestAnimationFrame(() =>
+              applySteerToMessages(event, attempt + 1),
+            );
+          }
+        };
+        const messages = getMessages() ?? [];
+        const index = findSteerMessageIndex(messages, event);
+        if (index < 0) {
+          retryNextFrame();
+          return;
+        }
+        const updated = applySteerPart(messages[index], event);
+        if (updated !== messages[index]) {
+          const nextMessages = [...messages];
+          nextMessages[index] = updated;
+          setMessages(nextMessages);
+          syncStepMessage(updated);
+        }
+        const chipConvoId =
+          event.conversationId ?? currentSubmission.conversation?.conversationId ?? currentStreamId;
+        resolveSteerChip(chipConvoId, event.steerId);
+      };
+
+      /** Steers stranded by a pause (reported via `on_steers_pending`) become
+       *  queued follow-ups so the user's words survive the approval window. */
+      const handleSteersPending = (payload: { pendingSteers?: TPendingSteer[] } | undefined) => {
+        const steers = payload?.pendingSteers ?? [];
+        if (steers.length === 0) {
+          return;
+        }
+        const convoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
+        convertSteersToQueued(convoId, steers);
+      };
+
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
       logger.log('ResumableSSE', 'Subscribing to stream:', url, { isResume });
@@ -679,6 +791,15 @@ export default function useResumableSSE(
             if (optimisticStreamIdsRef.current.has(currentStreamId)) {
               clearAllDrafts(Constants.NEW_CONVO);
             }
+            const finalConvoId =
+              data.conversation?.conversationId ??
+              currentSubmission.conversation?.conversationId ??
+              currentStreamId;
+            // Steers the run never injected ride the final event; convert them
+            // to queued follow-ups before the run-end signal fires the drain.
+            if (Array.isArray(data.pendingSteers) && data.pendingSteers.length > 0) {
+              convertSteersToQueued(finalConvoId, data.pendingSteers as TPendingSteer[]);
+            }
             try {
               finalHandler(data, currentSubmission as EventSubmission);
               finalizeUsage(data, { ...currentSubmission, userMessage });
@@ -687,6 +808,15 @@ export default function useResumableSSE(
               setIsSubmitting(false);
               setShowStopButton(false);
             }
+            // One-shot run-end signal for the queue drain. Written AFTER
+            // finalHandler so `isSubmitting` has flipped false by the time the
+            // drain effect observes it (both land in the same Recoil batch).
+            setRunEnd({
+              conversationId: finalConvoId,
+              outcome: data.aborted === true ? 'aborted' : 'completed',
+              startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+              endedAt: Date.now(),
+            });
             // Clear handler maps on stream completion to prevent memory leaks
             clearStepMaps();
             // Optimistically remove from active jobs
@@ -754,6 +884,16 @@ export default function useResumableSSE(
           if (data.event === ApprovalEvents.ON_PENDING_ACTION) {
             applyPendingActionToMessages(data.data as Agents.PendingAction);
             setIsSubmitting(true);
+            return;
+          }
+
+          if (data.event === SteerEvents.ON_STEER_APPLIED) {
+            applySteerToMessages(data.data as TSteerAppliedEvent);
+            return;
+          }
+
+          if (data.event === SteerEvents.ON_STEERS_PENDING) {
+            handleSteersPending(data.data as { pendingSteers?: TPendingSteer[] });
             return;
           }
 
@@ -901,6 +1041,18 @@ export default function useResumableSSE(
               applyPendingActionToMessages(data.resumeState.pendingAction as Agents.PendingAction);
             }
 
+            /**
+             * Re-seed steer chips from the server's still-queued steers.
+             * Injected steers are already inside `aggregatedContent`, so this
+             * covers exactly the remainder a reloading client can't know about.
+             */
+            if (data.resumeState?.pendingSteers?.length > 0) {
+              seedSteerChips(
+                currentSubmission.conversation?.conversationId ?? currentStreamId,
+                data.resumeState.pendingSteers as TPendingSteer[],
+              );
+            }
+
             if (data.resumeState?.titleEvent) {
               titleHandler(data.resumeState.titleEvent);
             }
@@ -919,6 +1071,10 @@ export default function useResumableSSE(
                   // A pause that landed after the resume snapshot must still render its
                   // controls (mirror the live handler), not fall through to stepHandler.
                   applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
+                } else if (replayEvent.event === SteerEvents.ON_STEER_APPLIED) {
+                  applySteerToMessages(replayEvent.data as TSteerAppliedEvent);
+                } else if (replayEvent.event === SteerEvents.ON_STEERS_PENDING) {
+                  handleSteersPending(replayEvent.data as { pendingSteers?: TPendingSteer[] });
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -946,6 +1102,10 @@ export default function useResumableSSE(
                   // so the approval / ask-user controls render (else the stream sits paused
                   // with no UI until a full status reload).
                   applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
+                } else if (pendingEvent.event === SteerEvents.ON_STEER_APPLIED) {
+                  applySteerToMessages(pendingEvent.data as TSteerAppliedEvent);
+                } else if (pendingEvent.event === SteerEvents.ON_STEERS_PENDING) {
+                  handleSteersPending(pendingEvent.data as { pendingSteers?: TPendingSteer[] });
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1125,6 +1285,11 @@ export default function useResumableSSE(
 
           setIsSubmitting(false);
           setShowStopButton(false);
+          setRunEnd({
+            conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
+            outcome: 'error',
+            endedAt: Date.now(),
+          });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
@@ -1178,6 +1343,11 @@ export default function useResumableSSE(
           }
           setIsSubmitting(false);
           setShowStopButton(false);
+          setRunEnd({
+            conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
+            outcome: 'error',
+            endedAt: Date.now(),
+          });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
@@ -1271,6 +1441,10 @@ export default function useResumableSSE(
       backfillUsage,
       resetLive,
       seedLive,
+      setRunEnd,
+      resolveSteerChip,
+      seedSteerChips,
+      convertSteersToQueued,
     ],
   );
 
@@ -1467,6 +1641,10 @@ export default function useResumableSSE(
       if (pendingActionRetryRef.current != null) {
         cancelAnimationFrame(pendingActionRetryRef.current);
         pendingActionRetryRef.current = null;
+      }
+      if (steerRetryRef.current != null) {
+        cancelAnimationFrame(steerRetryRef.current);
+        steerRetryRef.current = null;
       }
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;

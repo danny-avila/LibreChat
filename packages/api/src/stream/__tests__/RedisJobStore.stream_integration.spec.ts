@@ -1852,4 +1852,154 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
   });
+
+  describe('Steering Queue', () => {
+    function buildSteer(steerId: string, text: string) {
+      return { steerId, text, userId: 'steer-user', createdAt: Date.now() };
+    }
+
+    test('enqueue is status-guarded and FIFO drain is atomic take-all', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_NOT_RUNNING } = await import('../interfaces/IJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-fifo-${Date.now()}`;
+      expect(await store.enqueueSteer(streamId, buildSteer('s0', 'no job'))).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.enqueueSteer(streamId, buildSteer('s1', 'first'))).toBe(1);
+      expect(await store.enqueueSteer(streamId, buildSteer('s2', 'second'))).toBe(2);
+
+      expect((await store.peekSteers(streamId)).map((s) => s.text)).toEqual(['first', 'second']);
+      expect((await store.drainSteers(streamId)).map((s) => s.text)).toEqual(['first', 'second']);
+      expect(await store.drainSteers(streamId)).toEqual([]);
+
+      // Terminal job refuses new steers atomically (Lua status guard)
+      await store.updateJob(streamId, { status: 'complete', completedAt: Date.now() });
+      expect(await store.enqueueSteer(streamId, buildSteer('s3', 'late'))).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+
+      await store.destroy();
+    });
+
+    test('enforces the queue depth cap', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_QUEUE_FULL, STEER_QUEUE_MAX_DEPTH } = await import(
+        '../interfaces/IJobStore'
+      );
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-cap-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+
+      for (let i = 0; i < STEER_QUEUE_MAX_DEPTH; i++) {
+        expect(await store.enqueueSteer(streamId, buildSteer(`s${i}`, `text ${i}`))).toBe(i + 1);
+      }
+      expect(await store.enqueueSteer(streamId, buildSteer('overflow', 'too many'))).toBe(
+        STEER_ENQUEUE_QUEUE_FULL,
+      );
+
+      await store.destroy();
+    });
+
+    test('terminal transitions and deleteJob remove the steers key', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-cleanup-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'leftover'));
+
+      await store.updateJob(streamId, { status: 'aborted', completedAt: Date.now() });
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      // Recreate + enqueue, then hard delete
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s2', 'leftover again'));
+      await store.deleteJob(streamId);
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      await store.destroy();
+    });
+
+    test('getContentParts splices on_steer_applied chunks at their recorded index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-recon-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+
+      const chunks = [
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            index: 0,
+            stepDetails: { type: 'message_creation', message_creation: {} },
+          },
+        },
+        {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: 'Before steer.' } } },
+        },
+        {
+          event: 'on_steer_applied',
+          data: {
+            steerId: 'steer-1',
+            index: 1,
+            part: { type: 'steer', steer: 'change course', steerId: 'steer-1' },
+          },
+        },
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-2',
+            // Emitted with the already-shifted index (offset wrapper)
+            index: 2,
+            stepDetails: { type: 'message_creation', message_creation: {} },
+          },
+        },
+        {
+          event: 'on_message_delta',
+          data: { id: 'step-2', delta: { content: { type: 'text', text: 'After steer.' } } },
+        },
+      ];
+      for (const chunk of chunks) {
+        await store.appendChunk(streamId, chunk);
+      }
+
+      const result = await store.getContentParts(streamId);
+      expect(result).not.toBeNull();
+      const parts = result!.content as Array<{ type?: string; steer?: string; text?: unknown }>;
+      expect(parts).toHaveLength(3);
+      expect(parts[1]).toMatchObject({ type: 'steer', steer: 'change course' });
+      expect(parts[0]?.type).toBe('text');
+      expect(parts[2]?.type).toBe('text');
+
+      await store.destroy();
+    });
+  });
 });

@@ -1,5 +1,5 @@
+import type { Agents, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
 
 /**
  * Job status enum.
@@ -139,6 +139,27 @@ export function isPendingActionStale(job: Pick<SerializableJobData, 'pendingActi
 }
 
 /**
+ * A user steering message queued for mid-run injection. Enqueued by the steer
+ * route on any instance; drained FIFO by the owning process's run-scoped
+ * PostToolBatch hook at the next tool-batch boundary.
+ */
+export interface SteerQueueItem {
+  steerId: string;
+  text: string;
+  userId: string;
+  createdAt: number;
+}
+
+/** Maximum steers a single run can have queued at once. */
+export const STEER_QUEUE_MAX_DEPTH = 10;
+
+/** `enqueueSteer` rejection: the job is missing or not `running`. */
+export const STEER_ENQUEUE_NOT_RUNNING = -1;
+
+/** `enqueueSteer` rejection: the queue is at {@link STEER_QUEUE_MAX_DEPTH}. */
+export const STEER_ENQUEUE_QUEUE_FULL = -2;
+
+/**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
  */
 export interface JobStatusTransition {
@@ -242,6 +263,8 @@ export interface AbortResult {
   text: string;
   /** Collected usage metadata from all models for token spending */
   collectedUsage: UsageMetadata[];
+  /** Steers drained at abort time (never injected); surfaced to the client for restore */
+  pendingSteers?: TPendingSteer[];
 }
 
 /**
@@ -460,6 +483,26 @@ export interface IJobStore {
    * @returns Array of usage metadata or empty array
    */
   getCollectedUsage(streamId: string): UsageMetadata[];
+
+  // ===== Steering Queue Methods =====
+  // FIFO queue of mid-run user messages, keyed by streamId. Writable from any
+  // instance (the steer route), drained only by the run's owning process.
+
+  /**
+   * Atomically append a steer, guarded on the job being `running`. Returns the
+   * new queue depth, {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing
+   * or not running, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
+   */
+  enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
+
+  /** Atomically take ALL queued steers, FIFO. Empty array when none. */
+  drainSteers(streamId: string): Promise<SteerQueueItem[]>;
+
+  /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
+  peekSteers(streamId: string): Promise<SteerQueueItem[]>;
+
+  /** Drop any queued steers (terminal cleanup backstop). */
+  clearSteers(streamId: string): Promise<void>;
 }
 
 /**

@@ -11,6 +11,7 @@ export enum ContentTypes {
   INPUT_AUDIO = 'input_audio',
   AGENT_UPDATE = 'agent_update',
   SUMMARY = 'summary',
+  STEER = 'steer',
   ERROR = 'error',
 }
 
@@ -56,6 +57,41 @@ export enum UsageEvents {
 export enum ApprovalEvents {
   ON_PENDING_ACTION = 'on_pending_action',
 }
+
+/**
+ * Steering event names. `on_steer_applied` streams to live clients when a
+ * queued steer message is injected at a tool-batch boundary; reconnecting
+ * clients recover injected steers from `aggregatedContent` and still-queued
+ * ones from `resumeState.pendingSteers`. `on_steers_pending` reports steers
+ * that never reached an injection boundary (run paused on HITL) so the
+ * client can convert them to queued follow-ups.
+ */
+export enum SteerEvents {
+  ON_STEER_APPLIED = 'on_steer_applied',
+  ON_STEERS_PENDING = 'on_steers_pending',
+}
+
+/** A steer message queued server-side but not yet injected into the run. */
+export type TPendingSteer = {
+  steerId: string;
+  text: string;
+  createdAt?: number;
+};
+
+/** Payload of the `on_steer_applied` SSE event. */
+export type TSteerAppliedEvent = {
+  steerId: string;
+  /** Absolute content index the steer part was injected at. */
+  index: number;
+  part: {
+    type: ContentTypes.STEER;
+    [ContentTypes.STEER]: string;
+    steerId?: string;
+    createdAt?: number;
+  };
+  responseMessageId?: string;
+  conversationId?: string;
+};
 
 /** Mirrors TokenBudgetBreakdown from @librechat/agents (data-provider cannot import it). */
 export type TTokenBudgetBreakdown = {

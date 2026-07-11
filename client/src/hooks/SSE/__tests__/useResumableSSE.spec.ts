@@ -58,6 +58,9 @@ const mockActiveRunAtom = { key: 'activeRun' };
 const mockAbortScrollAtom = { key: 'abortScroll' };
 const mockSubmissionAtom = { key: 'submission' };
 const mockShowStopButtonAtom = { key: 'showStopButton' };
+const mockRunEndAtom = { key: 'runEnd' };
+const mockPendingSteersAtom = { key: 'pendingSteers' };
+const mockQueuedMessagesAtom = { key: 'queuedMessages' };
 const mockSetActiveRun = jest.fn();
 const mockSetAbortScroll = jest.fn();
 const mockSetSubmission = jest.fn();
@@ -89,6 +92,9 @@ jest.mock('@tanstack/react-query', () => ({
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
   useSetRecoilState: mockUseSetRecoilState,
+  // The hook's steer-chip/queue callbacks need a RecoilRoot; these tests
+  // render bare, so return inert callbacks (chip state is not under test here).
+  useRecoilCallback: () => jest.fn(),
 }));
 
 jest.mock('~/store', () => ({
@@ -98,6 +104,9 @@ jest.mock('~/store', () => ({
     abortScrollFamily: jest.fn(() => mockAbortScrollAtom),
     submissionByIndex: jest.fn(() => mockSubmissionAtom),
     showStopButtonByIndex: jest.fn(() => mockShowStopButtonAtom),
+    runEndByIndex: jest.fn(() => mockRunEndAtom),
+    pendingSteersByConvoId: jest.fn(() => mockPendingSteersAtom),
+    queuedMessagesByConvoId: jest.fn(() => mockQueuedMessagesAtom),
   },
 }));
 

@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { apiBaseUrl, request, EModelEndpoint } from 'librechat-data-provider';
-import type { Agents, TEphemeralAgent } from 'librechat-data-provider';
+import type { Agents, TEphemeralAgent, TPendingSteer } from 'librechat-data-provider';
 
 export interface AbortStreamParams {
   /** The stream ID to abort (if known) */
@@ -13,6 +13,8 @@ export interface AbortStreamResponse {
   success: boolean;
   aborted?: string;
   error?: string;
+  /** Steers that never reached an injection boundary; restored as queued chips. */
+  pendingSteers?: TPendingSteer[];
 }
 
 /**
@@ -138,5 +140,39 @@ export const submitAskAnswer = async (params: SubmitAskAnswerParams): Promise<Re
 export function useSubmitAskAnswerMutation() {
   return useMutation({
     mutationFn: submitAskAnswer,
+  });
+}
+
+export interface SteerMessageParams {
+  conversationId: string;
+  text: string;
+}
+
+/** Successful steer ACK: the server queued the message for mid-run injection. */
+export interface SteerMessageResponse {
+  status: 'queued';
+  steerId: string;
+  position: number;
+  conversationId: string;
+}
+
+/**
+ * Queue a mid-run steering message against the conversation's active run.
+ * The server injects it at the next tool-batch boundary and streams an
+ * `on_steer_applied` event over the existing SSE; this only fires the POST.
+ * Rejections carry a `code` the caller degrades on (NO_ACTIVE_RUN → normal
+ * send, RUN_PAUSED / STEER_UNSUPPORTED → client-side queue).
+ */
+export const steerMessage = async (params: SteerMessageParams): Promise<SteerMessageResponse> => {
+  return request.post(
+    `${apiBaseUrl()}/api/agents/chat/steer`,
+    params,
+  ) as Promise<SteerMessageResponse>;
+};
+
+/** React Query mutation hook for steering; the injection arrives on the SSE. */
+export function useSteerMessageMutation() {
+  return useMutation({
+    mutationFn: steerMessage,
   });
 }

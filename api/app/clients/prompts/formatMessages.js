@@ -229,6 +229,35 @@ const formatAgentMessages = (payload) => {
       } else if (part.type === ContentTypes.THINK) {
         hasReasoning = true;
         continue;
+      } else if (part.type === ContentTypes.STEER) {
+        /*
+        A mid-run steer: user speech persisted inline in the assistant message.
+        Flush any accumulated assistant text first so ordering is preserved, then
+        replay the steer as a standalone user message. `lastAIMessage` is NOT
+        reset — the aggregator emits a fresh text-with-tool_call_ids part for any
+        post-steer tool step, and preceding tool_call parts already pushed their
+        ToolMessages, so the HumanMessage lands after them (valid provider order).
+         */
+        if (currentContent.length > 0) {
+          const content = currentContent
+            .reduce((acc, curr) => {
+              if (curr.type === ContentTypes.TEXT) {
+                return `${acc}${curr[ContentTypes.TEXT]}\n`;
+              }
+              return acc;
+            }, '')
+            .trim();
+          if (content.length > 0) {
+            messages.push(new AIMessage({ content }));
+          }
+          currentContent = [];
+        }
+        messages.push(
+          new HumanMessage({
+            content: part[ContentTypes.STEER] ?? '',
+            additional_kwargs: { source: 'steer' },
+          }),
+        );
       } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
         continue;
       } else {

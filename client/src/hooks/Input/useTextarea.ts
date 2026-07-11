@@ -39,12 +39,15 @@ export default function useTextarea({
   setIsScrollable,
   disabled = false,
   placeholder,
+  allowSubmitWhileGenerating = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
   setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
   placeholder?: string;
+  /** Lets Enter submit during a run (during-run steering/queuing routes it). */
+  allowSubmitWhileGenerating?: boolean;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
@@ -181,7 +184,7 @@ export default function useTextarea({
         const scrollable = checkIfScrollable(textAreaRef.current);
         scrollable && setIsScrollable(scrollable);
       }
-      if (e.key === 'Enter' && isSubmitting) {
+      if (e.key === 'Enter' && isSubmitting && !allowSubmitWhileGenerating) {
         return;
       }
 
@@ -253,6 +256,7 @@ export default function useTextarea({
     },
     [
       isSubmitting,
+      allowSubmitWhileGenerating,
       checkHealth,
       filesLoading,
       enterToSend,

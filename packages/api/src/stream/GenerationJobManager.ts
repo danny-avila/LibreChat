@@ -31,6 +31,7 @@ import {
 } from '~/app/metrics';
 import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
+import { SteeringLifecycle, toPendingSteer } from './SteeringLifecycle';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
@@ -187,6 +188,8 @@ class GenerationJobManagerClass {
   private jobStore: IJobStore;
   /** Guarded human-review lifecycle (pause / resolve / expire) over the store. */
   private _approvals: ApprovalLifecycle;
+  /** FIFO steering queue (enqueue / drain / peek / clear) over the store. */
+  private _steering: SteeringLifecycle;
   /** Event pub/sub transport - swappable for Redis Pub/Sub, etc. */
   private eventTransport: IEventTransport;
 
@@ -223,6 +226,7 @@ class GenerationJobManagerClass {
     this.jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
     this._approvals = new ApprovalLifecycle(this.jobStore);
+    this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = options?.eventTransport ?? new InMemoryEventTransport();
     this._cleanupOnComplete = options?.cleanupOnComplete ?? true;
   }
@@ -282,6 +286,7 @@ class GenerationJobManagerClass {
 
     this.jobStore = services.jobStore;
     this._approvals = new ApprovalLifecycle(this.jobStore);
+    this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
@@ -710,6 +715,11 @@ class GenerationJobManagerClass {
     this.runStepBuffers?.delete(streamId);
     this.replayEventWriteQueues.delete(streamId);
     this.tokenUsageWriteQueues.delete(streamId);
+    // Backstop: finalization paths drain leftovers before completing; anything
+    // still queued here can never be injected or reported, so drop it.
+    this.jobStore.clearSteers(streamId).catch((err) => {
+      logger.warn(`[GenerationJobManager] Failed to clear steer queue for ${streamId}:`, err);
+    });
 
     // For error jobs, DON'T delete immediately - keep around so late-connecting
     // clients can receive the error. This handles the race condition where error
@@ -817,6 +827,11 @@ class GenerationJobManagerClass {
     /** Collected usage for all models */
     const collectedUsage = this.jobStore.getCollectedUsage(streamId);
 
+    /** Steers that never reached an injection boundary — reported on the abort
+     *  final event (and the abort route's JSON) so the client can restore them
+     *  as queued chips instead of silently dropping the user's words. */
+    const pendingSteers = (await this.jobStore.drainSteers(streamId)).map(toPendingSteer);
+
     /** Text from content parts for fallback token counting */
     const text = shouldPersistAbortContent
       ? parseTextParts(abortContent as TMessageContentParts[])
@@ -862,6 +877,7 @@ class GenerationJobManagerClass {
       aborted: true,
       // Flag for early abort - no messages saved, frontend should go to new chat
       earlyAbort: isEarlyAbort,
+      ...(pendingSteers.length > 0 && { pendingSteers }),
     } satisfies t.FinalEvent as t.ServerSentEvent;
 
     if (runtime) {
@@ -899,6 +915,7 @@ class GenerationJobManagerClass {
       finalEvent: abortFinalEvent,
       text,
       collectedUsage,
+      ...(pendingSteers.length > 0 && { pendingSteers }),
     };
   }
 
@@ -1562,6 +1579,19 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * The FIFO steering queue for mid-run user messages:
+   * `steering.enqueue()` / `drain()` / `peek()` / `clear()`.
+   *
+   * The steer route enqueues from any instance; the owning process's
+   * run-scoped PostToolBatch hook drains at the next tool-batch boundary.
+   * Finalization paths drain leftovers into the final/abort events so the
+   * client can convert them to queued follow-ups.
+   */
+  get steering(): SteeringLifecycle {
+    return this._steering;
+  }
+
+  /**
    * Get resume state for reconnecting clients.
    */
   async getResumeState(streamId: string): Promise<t.ResumeState | null> {
@@ -1611,6 +1641,9 @@ class GenerationJobManagerClass {
       }
     }
 
+    /** Steers still queued (not yet injected); injected ones are already in aggregatedContent. */
+    const pendingSteers = (await this.jobStore.peekSteers(streamId)).map(toPendingSteer);
+
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
       runStepsLength: runSteps.length,
@@ -1638,6 +1671,7 @@ class GenerationJobManagerClass {
         jobData.status === 'requires_action' && !isPendingActionStale(jobData)
           ? toClientPendingAction(jobData.pendingAction)
           : undefined,
+      pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     };
   }
 

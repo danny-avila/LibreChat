@@ -225,6 +225,27 @@ export default function useResumeOnLoad(
     [],
   );
 
+  /** Restore pending-steer chips for steers the server still has queued
+   *  (injected ones already live inside the resumed aggregatedContent). */
+  const restoreSteerChips = useRecoilCallback(
+    ({ set }) =>
+      (activeConversationId: string, pendingSteers: Agents.ResumeState['pendingSteers']) => {
+        if (!pendingSteers || pendingSteers.length === 0) {
+          return;
+        }
+        set(store.pendingSteersByConvoId(activeConversationId), (prev) => [
+          ...pendingSteers.map((steer) => ({
+            steerId: steer.steerId,
+            text: steer.text,
+            status: 'pending' as const,
+            createdAt: steer.createdAt ?? Date.now(),
+          })),
+          ...prev.filter((steer) => steer.status === 'failed'),
+        ]);
+      },
+    [],
+  );
+
   // Check for active stream when conversation changes
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
   const loadedMessages = messagesLoaded ? getMessages() : undefined;
@@ -343,6 +364,7 @@ export default function useResumeOnLoad(
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
       restoreResumeBranch(streamStatus.resumeState, messages, conversationId);
+      restoreSteerChips(conversationId, streamStatus.resumeState.pendingSteers);
       const submission = buildSubmissionFromResumeState(
         streamStatus.resumeState,
         streamStatus.streamId,
@@ -386,6 +408,7 @@ export default function useResumeOnLoad(
     getMessages,
     setSubmission,
     restoreResumeBranch,
+    restoreSteerChips,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking

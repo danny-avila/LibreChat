@@ -3,12 +3,18 @@ import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type {
   SerializableJobData,
+  SteerQueueItem,
   UsageMetadata,
   IJobStore,
   JobStatus,
   JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
-import { isPendingActionStale } from '~/stream/interfaces/IJobStore';
+import {
+  STEER_ENQUEUE_NOT_RUNNING,
+  STEER_ENQUEUE_QUEUE_FULL,
+  STEER_QUEUE_MAX_DEPTH,
+  isPendingActionStale,
+} from '~/stream/interfaces/IJobStore';
 
 /**
  * Content state for a job - volatile, in-memory only.
@@ -43,6 +49,9 @@ export class InMemoryJobStore implements IJobStore {
    * inactivity (a hung generation) rather than age (a long but live stream).
    */
   private lastActivity = new Map<string, number>();
+
+  /** Maps streamId -> FIFO queue of pending steer messages. */
+  private steerQueues = new Map<string, SteerQueueItem[]>();
 
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
@@ -169,6 +178,7 @@ export class InMemoryJobStore implements IJobStore {
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     this.lastActivity.delete(streamId);
+    this.steerQueues.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
   }
 
@@ -322,6 +332,7 @@ export class InMemoryJobStore implements IJobStore {
     this.jobs.clear();
     this.contentState.clear();
     this.userJobMap.clear();
+    this.steerQueues.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
   }
 
@@ -458,5 +469,43 @@ export class InMemoryJobStore implements IJobStore {
    */
   clearContentState(streamId: string): void {
     this.contentState.delete(streamId);
+  }
+
+  // ===== Steering Queue Methods =====
+  // Single-threaded event loop makes each read-check-write indivisible, so
+  // the status guard and depth cap are exact without extra locking.
+
+  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+    const job = this.jobs.get(streamId);
+    if (!job || job.status !== 'running') {
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+    let queue = this.steerQueues.get(streamId);
+    if (!queue) {
+      queue = [];
+      this.steerQueues.set(streamId, queue);
+    }
+    if (queue.length >= STEER_QUEUE_MAX_DEPTH) {
+      return STEER_ENQUEUE_QUEUE_FULL;
+    }
+    queue.push(item);
+    return queue.length;
+  }
+
+  async drainSteers(streamId: string): Promise<SteerQueueItem[]> {
+    const queue = this.steerQueues.get(streamId);
+    if (!queue || queue.length === 0) {
+      return [];
+    }
+    return queue.splice(0);
+  }
+
+  async peekSteers(streamId: string): Promise<SteerQueueItem[]> {
+    const queue = this.steerQueues.get(streamId);
+    return queue ? [...queue] : [];
+  }
+
+  async clearSteers(streamId: string): Promise<void> {
+    this.steerQueues.delete(streamId);
   }
 }

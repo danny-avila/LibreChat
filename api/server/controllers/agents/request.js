@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { Constants, ViolationTypes, isEphemeralAgentId } = require('librechat-data-provider');
 const {
   sendEvent,
+  toPendingSteer,
   getViolationInfo,
   buildMessageFiles,
   getReferencedQuotes,
@@ -756,6 +757,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await titleEventPromise;
         }
 
+        // Steers that never reached an injection boundary (queued after the last
+        // tool batch, or the run had none). Drained here — before the terminal
+        // transition clears the queue — and reported on the final event so the
+        // client converts them to queued follow-up messages.
+        let pendingSteers;
+        try {
+          const leftoverSteers = await GenerationJobManager.steering.drain(streamId);
+          if (leftoverSteers.length > 0) {
+            pendingSteers = leftoverSteers.map(toPendingSteer);
+          }
+        } catch (err) {
+          logger.warn(`[ResumableAgentController] Failed to drain leftover steers`, err);
+        }
+
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
@@ -763,6 +778,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
@@ -783,6 +799,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response, unfinished: true },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {

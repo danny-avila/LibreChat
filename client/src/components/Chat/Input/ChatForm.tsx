@@ -25,10 +25,14 @@ import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import DuringRunActionsMenu from './DuringRunActionsMenu';
+import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
+import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
+import useSteering from '~/hooks/Chat/useSteering';
 import FileFormChat from './Files/FileFormChat';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
@@ -57,6 +61,7 @@ interface ChatFormProps {
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  stopGenerating: () => void;
 }
 
 const ChatForm = memo(function ChatForm({
@@ -70,6 +75,7 @@ const ChatForm = memo(function ChatForm({
   setFilesLoading,
   newConversation,
   handleStopGenerating,
+  stopGenerating,
 }: ChatFormProps) {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -181,6 +187,17 @@ const ChatForm = memo(function ChatForm({
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
+  const sendNow = useCallback((text: string) => submitMessage({ text }), [submitMessage]);
+  const steering = useSteering({
+    index,
+    conversationId,
+    conversation,
+    isSubmitting,
+    answerModeActive: answerMode.active,
+    sendNow,
+    stopGenerating,
+  });
+
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
@@ -200,6 +217,8 @@ const ChatForm = memo(function ChatForm({
     placeholder: answerMode.active
       ? (answerMode.otherLabel ?? localize('com_ui_something_else'))
       : placeholder,
+    // Enter stays live during a run when it can steer/queue instead of send.
+    allowSubmitWhileGenerating: steering.duringRunActive,
   });
 
   useQueryParams({ textAreaRef });
@@ -263,6 +282,14 @@ const ChatForm = memo(function ChatForm({
         if (answerMode.active && answerMode.submitText(data.text)) {
           return;
         }
+        // During a run, a submit steers or queues per the effective action
+        // instead of starting a new turn (which would be dropped anyway).
+        if (steering.duringRunActive) {
+          if (steering.submitDuringRun(data.text)) {
+            methods.reset();
+          }
+          return;
+        }
         return submitMessage(data);
       })}
       className={cn(
@@ -318,6 +345,9 @@ const ChatForm = memo(function ChatForm({
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <PendingManualSkillsChips conversationId={conversationId} />
             {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
+            {steering.enabled && (
+              <PendingSteerChips conversationId={conversationId} steering={steering} />
+            )}
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}
@@ -431,7 +461,23 @@ const ChatForm = memo(function ChatForm({
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
                 {isSubmitting && showStopButton && !answerMode.active ? (
-                  <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+                  <div className="flex items-center gap-1.5">
+                    {steering.duringRunActive && (textValue?.trim() ?? '') !== '' && (
+                      <>
+                        <DuringRunActionsMenu
+                          steering={steering}
+                          getText={() => methods.getValues('text')}
+                          onConsumed={() => methods.reset()}
+                        />
+                        <DuringRunSendButton
+                          ref={submitButtonRef}
+                          control={methods.control}
+                          action={steering.effectiveAction}
+                        />
+                      </>
+                    )}
+                    <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+                  </div>
                 ) : (
                   endpoint && (
                     <SendButton
@@ -472,6 +518,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     setFilesLoading,
     newConversation,
     handleStopGenerating,
+    stopGenerating,
   } = useChatContext();
 
   /**
@@ -512,6 +559,12 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     [],
   );
 
+  const stopRef = useRef(stopGenerating);
+  stopRef.current = stopGenerating;
+  const stableStop = useCallback(() => {
+    void stopRef.current();
+  }, []);
+
   return (
     <ChatForm
       index={index}
@@ -524,6 +577,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}
+      stopGenerating={stableStop}
     />
   );
 }

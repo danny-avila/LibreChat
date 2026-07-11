@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Run, Providers, Constants } from '@librechat/agents';
+import { Run, Providers, Constants, HookRegistry } from '@librechat/agents';
 import {
   KnownEndpoints,
   EModelEndpoint,
@@ -17,6 +17,7 @@ import type {
   StandardGraphConfig,
   LCToolRegistry,
   SubagentConfig,
+  HookCallback,
   AgentInputs,
   GenericTool,
   RunConfig,
@@ -43,6 +44,7 @@ import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { isSteeringSupported } from '~/agents/steering/runtime';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
@@ -942,6 +944,7 @@ export async function createRun({
   calibrationRatio,
   appConfig,
   subagentUsageSink,
+  steering,
   hitlCapable = false,
   streaming = true,
   streamUsage = true,
@@ -985,6 +988,15 @@ export async function createRun({
    * Switch to the `RunConfig` pick once the dependency is bumped.
    */
   subagentUsageSink?: (event: SubagentUsageEvent) => void;
+  /**
+   * The run-scoped steer-drain hook (a `PostToolBatch` callback built via
+   * `createSteerDrainHook`). Registered on the run's hook registry independent
+   * of the tool-approval policy — steering needs neither HITL nor a
+   * checkpointer (injection merges via the messages reducer inside the tool
+   * node). Only the resumable agents controller passes this; the
+   * OpenAI-compatible and Responses controllers have no job/SSE surface.
+   */
+  steering?: { hook: HookCallback<'PostToolBatch'> };
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1327,6 +1339,20 @@ export async function createRun({
   }
 
   /**
+   * The run's hook registry: the HITL policy hooks (when approval is enabled)
+   * plus the steer-drain PostToolBatch hook. Steering registers independently
+   * of the approval policy and requires no checkpointer, but is hard-gated on
+   * SDK support — draining on an SDK that ignores `injectedMessages` would
+   * silently drop the user's words (the steer controller 501s in that case;
+   * this guard is defense in depth).
+   */
+  let hooks = hitl?.hooks;
+  if (steering != null && isSteeringSupported()) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [steering.hook] });
+  }
+
+  /**
    * Built as a variable (not an inline literal) so the extra
    * `subagentUsageSink` field passes assignability against SDK versions
    * whose `RunConfig` predates it (<= 3.2.33, where it is ignored at
@@ -1381,7 +1407,11 @@ export async function createRun({
     // HITL opt-in: the `humanInTheLoop` switch + the PreToolUse policy hook. Spread
     // here (not just `compileOptions.checkpointer` above) so an `ask` decision raises
     // a real interrupt — without these the run would never pause. Absent when disabled.
-    ...(hitl && { humanInTheLoop: hitl.humanInTheLoop, hooks: hitl.hooks }),
+    // The steer-drain hook rides the same registry but independently of the approval
+    // policy: a PostToolBatch-only registry keeps the SDK's eager execution fast paths
+    // (it gates on result-altering hooks, not registry presence).
+    ...(hitl && { humanInTheLoop: hitl.humanInTheLoop }),
+    ...(hooks && { hooks }),
   };
   const run = await Run.create(runConfig);
 

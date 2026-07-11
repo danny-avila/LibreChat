@@ -300,6 +300,77 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
   default: [],
 });
 
+/**
+ * A steer message submitted mid-run. Server truth: `sending` covers the POST
+ * in flight, `pending` means the server queued it (awaiting a tool-batch
+ * boundary), `failed` keeps the text recoverable after a rejected POST. The
+ * chip disappears when `on_steer_applied` lands (the inline content part
+ * becomes the durable record).
+ */
+export type PendingSteer = {
+  steerId: string;
+  text: string;
+  status: 'sending' | 'pending' | 'failed';
+  createdAt: number;
+};
+
+/**
+ * Per-conversation steers awaiting injection. Reconciled against the server:
+ * `on_steer_applied` removes its chip; `sync`/`resumeState.pendingSteers`
+ * replaces the list on reconnect; run-end reports convert leftovers into
+ * `queuedMessagesByConvoId` entries.
+ */
+const pendingSteersByConvoId = atomFamily<PendingSteer[], string>({
+  key: 'pendingSteersByConvoId',
+  default: [],
+});
+
+/** A message composed during a run, queued to send after it finishes. */
+export type QueuedMessage = {
+  id: string;
+  text: string;
+  createdAt: number;
+};
+
+/**
+ * Per-conversation client-side queue of follow-up messages. Drained one per
+ * run completion by `useQueueDrain` (each dequeued message starts a normal
+ * turn whose own final event drains the next).
+ */
+const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
+  key: 'queuedMessagesByConvoId',
+  default: [],
+});
+
+/**
+ * One-shot run-termination signal written by the SSE final/error handlers and
+ * consumed (reset to null) by `useQueueDrain`. Keyed by chat index like
+ * `isSubmittingFamily`. Carrying the outcome lets the drain skip auto-send on
+ * user aborts/errors while `startedAsNewConvo` migrates a queue keyed under
+ * `Constants.NEW_CONVO` to the real conversation id.
+ */
+export type RunEnd = {
+  conversationId: string | null;
+  outcome: 'completed' | 'aborted' | 'error';
+  startedAsNewConvo?: boolean;
+  endedAt: number;
+};
+
+const runEndByIndex = atomFamily<RunEnd | null, string | number>({
+  key: 'runEndByIndex',
+  default: null,
+});
+
+/**
+ * One-shot override armed by "interrupt & send": the next `aborted` run-end
+ * drains the queue exactly once (a plain Stop press leaves queued chips for
+ * manual send).
+ */
+const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
+  key: 'drainAfterAbortByIndex',
+  default: false,
+});
+
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
   key: 'globalAudioURLByIndex',
   default: null,
@@ -466,5 +537,9 @@ export default {
   showSkillsPopoverFamily,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
+  pendingSteersByConvoId,
+  queuedMessagesByConvoId,
+  runEndByIndex,
+  drainAfterAbortByIndex,
   updateConversationSelector,
 };

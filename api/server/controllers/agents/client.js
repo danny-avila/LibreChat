@@ -45,6 +45,10 @@ const {
   agentRequestsAskUserQuestion,
   attachAskUserQuestionArgs,
   createContentIndexOffsetHandlers,
+  createSteerIndexOffsetHandlers,
+  createSteerDrainHook,
+  isSteeringSupported,
+  toPendingSteer,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -79,6 +83,7 @@ const {
 } = require('@librechat/agents');
 const {
   Constants,
+  SteerEvents,
   UsageEvents,
   Permissions,
   VisionModes,
@@ -189,6 +194,11 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {Array<Record<string, unknown>> | null} */
     this.memoryPayload = null;
+    /** Mutable content-index shift shared with the steer offset handlers.
+     *  Incremented each time a steer part is spliced into `contentParts`, so
+     *  SDK-emitted indices that arrive after an injection land past it.
+     *  @type {import('@librechat/api').SteerOffsetState} */
+    this.steerOffsetState = { offset: 0 };
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -237,6 +247,58 @@ class AgentClient extends BaseClient {
       }
     }
     buffer.clear();
+  }
+
+  /**
+   * Apply one drained steer to host state: append the steer content part at
+   * the live content index, bump the shared index offset so subsequent SDK
+   * step indices land past it, and emit `on_steer_applied` so the live client
+   * replaces its pending chip with the inline part (the emitted chunk also
+   * reaches the Redis chunk log for reconnect reconstruction).
+   *
+   * @param {string} streamId
+   * @param {import('@librechat/api').SteerQueueItem} item
+   */
+  async applySteerPart(streamId, item) {
+    const index = this.contentParts.length;
+    const part = {
+      type: ContentTypes.STEER,
+      [ContentTypes.STEER]: item.text,
+      steerId: item.steerId,
+      createdAt: item.createdAt,
+    };
+    this.contentParts.push(part);
+    this.steerOffsetState.offset += 1;
+    await GenerationJobManager.emitChunk(streamId, {
+      event: SteerEvents.ON_STEER_APPLIED,
+      data: {
+        steerId: item.steerId,
+        index,
+        part,
+        responseMessageId: this.responseMessageId,
+        conversationId: this.conversationId,
+      },
+    });
+  }
+
+  /**
+   * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
+   * drain hook, or `undefined` when there is no resumable job surface or the
+   * installed SDK cannot inject hook messages (draining would drop them).
+   *
+   * @param {string | undefined} streamId
+   */
+  buildSteerWiring(streamId) {
+    if (!streamId || !isSteeringSupported()) {
+      return undefined;
+    }
+    return {
+      hook: createSteerDrainHook({
+        streamId,
+        jobCreatedAt: this.jobCreatedAt,
+        applySteer: (item) => this.applySteerPart(streamId, item),
+      }),
+    };
   }
 
   setOptions(_options) {}
@@ -1225,6 +1287,9 @@ class AgentClient extends BaseClient {
       (part, index) =>
         index >= this.contentParts.length - 1 ||
         part.type === ContentTypes.TOOL_CALL ||
+        // Steer parts are user speech, not intermediate agent output — dropping
+        // one would erase the user's words from the persisted turn.
+        part.type === ContentTypes.STEER ||
         part.tool_call_ids,
     );
   }
@@ -1365,6 +1430,20 @@ class AgentClient extends BaseClient {
       event: ApprovalEvents.ON_PENDING_ACTION,
       data: toClientPendingAction(pendingAction),
     });
+    // Steers queued while running can't be injected once the run is paused —
+    // drain and report them so the client converts them to queued follow-ups
+    // instead of leaving them stranded in the store for the approval window.
+    try {
+      const strandedSteers = await GenerationJobManager.steering.drain(streamId);
+      if (strandedSteers.length > 0) {
+        await GenerationJobManager.emitChunk(streamId, {
+          event: SteerEvents.ON_STEERS_PENDING,
+          data: { pendingSteers: strandedSteers.map(toPendingSteer) },
+        });
+      }
+    } catch (err) {
+      logger.warn(`[AgentClient] Failed to report stranded steers on pause ${streamId}`, err);
+    }
     logger.debug(
       `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
     );
@@ -1607,6 +1686,7 @@ class AgentClient extends BaseClient {
           );
         }
 
+        const streamId = this.options.req?._resumableStreamId;
         run = await createRun({
           agents,
           messages,
@@ -1615,13 +1695,20 @@ class AgentClient extends BaseClient {
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
+          // Mid-run steering: drain queued user messages at each tool-batch
+          // boundary and inject them into graph state. The offset wrapper
+          // shifts SDK content indices past any spliced steer parts.
+          steering: this.buildSteerWiring(streamId),
           indexTokenCountMap,
           initialSummary,
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
-          customHandlers: this.options.eventHandlers,
+          customHandlers: createSteerIndexOffsetHandlers(
+            this.options.eventHandlers,
+            this.steerOffsetState,
+          ),
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tenantId: this.options.req?.user?.tenantId,
@@ -1651,7 +1738,6 @@ class AgentClient extends BaseClient {
           this._resolveRun = null;
         }
 
-        const streamId = this.options.req?._resumableStreamId;
         if (streamId && run.Graph) {
           GenerationJobManager.setGraph(streamId, run.Graph);
         }
@@ -1930,6 +2016,7 @@ class AgentClient extends BaseClient {
       // graph otherwise has no `Graph.sessions` entries (especially cross-replica).
       const initialSessions = buildInitialToolSessions({ skillSessions, agents });
 
+      const streamId = this.options.req?._resumableStreamId;
       run = await createRun({
         agents,
         // State (messages, tool calls) is rehydrated from the checkpoint by
@@ -1938,6 +2025,9 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        // Steering stays live across a pause/resume cycle: steers queued while
+        // the resumed segment runs drain at its tool-batch boundaries.
+        steering: this.buildSteerWiring(streamId),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so a deferred tool the paused call targets
         // would be absent from the rebuilt toolMap; these names (captured at pause)
@@ -1949,10 +2039,15 @@ class AgentClient extends BaseClient {
         // The rebuilt graph numbers content indices from 0, but the aggregator was
         // just seeded with the pre-pause parts at those same indices — shift every
         // resumed step index past the seed, or the new output merges into (or, on a
-        // type mismatch, is silently dropped against) the pre-pause content.
-        customHandlers: createContentIndexOffsetHandlers(
-          this.options.eventHandlers,
-          Array.isArray(seedContent) ? seedContent : [],
+        // type mismatch, is silently dropped against) the pre-pause content. The
+        // steer wrapper composes on top: resumed indices shift by seed + any
+        // steer parts spliced in while the resumed segment streams.
+        customHandlers: createSteerIndexOffsetHandlers(
+          createContentIndexOffsetHandlers(
+            this.options.eventHandlers,
+            Array.isArray(seedContent) ? seedContent : [],
+          ),
+          this.steerOffsetState,
         ),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
@@ -1976,7 +2071,6 @@ class AgentClient extends BaseClient {
         this._resolveRun = null;
       }
 
-      const streamId = this.options.req?._resumableStreamId;
       // Do NOT cache the rebuilt graph on resume: it was created with `messages: []`, so
       // RedisJobStore.getContentParts() (which prefers a cached graph over reconstructing
       // from the chunk log) would return only the resumed segment and drop the pre-pause

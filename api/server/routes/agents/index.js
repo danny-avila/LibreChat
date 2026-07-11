@@ -15,11 +15,13 @@ const { logger } = require('@librechat/data-schemas');
 const {
   uaParser,
   checkBan,
+  moderateText,
   requireJwtAuth,
   messageIpLimiter,
   configMiddleware,
   messageUserLimiter,
 } = require('~/server/middleware');
+const SteerController = require('~/server/controllers/agents/steer');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -379,12 +381,27 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       }
     }
 
-    return res.json({ success: true, aborted: jobStreamId });
+    return res.json({
+      success: true,
+      aborted: jobStreamId,
+      // Steers that never reached an injection boundary — restored client-side
+      // as queued chips so the user's words aren't dropped with the abort.
+      ...(abortResult.pendingSteers?.length > 0 && { pendingSteers: abortResult.pendingSteers }),
+    });
   }
 
   logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
   return res.status(404).json({ error: 'Job not found', streamId: jobStreamId });
 });
+
+/**
+ * @route POST /chat/steer
+ * @desc Queue a mid-run user message for injection at the next tool boundary
+ * @access Private
+ * @description Mounted before chatRouter to bypass buildEndpointOption middleware;
+ * `moderateText` screens the steer text exactly like a typed message.
+ */
+router.post('/chat/steer', configMiddleware, moderateText, SteerController);
 
 router.use('/', v1);
 

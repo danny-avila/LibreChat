@@ -5,12 +5,17 @@ import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import type {
   SerializableJobData,
+  SteerQueueItem,
   UsageMetadata,
   IJobStore,
   JobStatus,
   JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
-import { isPendingActionStale } from '~/stream/interfaces/IJobStore';
+import {
+  STEER_ENQUEUE_NOT_RUNNING,
+  STEER_QUEUE_MAX_DEPTH,
+  isPendingActionStale,
+} from '~/stream/interfaces/IJobStore';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
@@ -104,6 +109,35 @@ const RUNSTEPS_SAVE_LUA =
   'redis.call("EXPIRE", KEYS[1], target) ' +
   'return 1';
 
+/**
+ * Atomically append a steer, guarded on the job hash still being `running`.
+ * Both keys share the {streamId} hash tag (single slot), so the script is
+ * atomic on cluster too — a steer can never land on a completed/aborted job,
+ * and the depth cap can't be raced past by concurrent enqueues.
+ *
+ *   KEYS: [job, steers]
+ *   ARGV: [itemJson, ttl, maxDepth]
+ *   Returns: new depth, -1 (not running), or -2 (queue full)
+ */
+const STEER_ENQUEUE_LUA =
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
+  'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
+  'redis.call("RPUSH", KEYS[2], ARGV[1]) ' +
+  'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
+  'return redis.call("LLEN", KEYS[2])';
+
+/**
+ * Atomic take-all: read the whole queue FIFO and delete the key in one step,
+ * so two concurrent drains can never both deliver the same steer.
+ *
+ *   KEYS: [steers]
+ *   Returns: array of item JSON strings (possibly empty)
+ */
+const STEER_DRAIN_LUA =
+  'local items = redis.call("LRANGE", KEYS[1], 0, -1) ' +
+  'redis.call("DEL", KEYS[1]) ' +
+  'return items';
+
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
 const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
 
@@ -124,6 +158,8 @@ const KEYS = {
   chunks: (streamId: string) => `stream:{${streamId}}:chunks`,
   /** Run steps: stream:{streamId}:runsteps */
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
+  /** Pending steer messages (FIFO list): stream:{streamId}:steers */
+  steers: (streamId: string) => `stream:{${streamId}}:steers`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
@@ -373,6 +409,7 @@ export class RedisJobStore implements IJobStore {
       await this.redis.expire(key, this.ttl.completed);
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
+      await this.redis.del(KEYS.steers(streamId));
 
       if (this.ttl.chunksAfterComplete === 0) {
         await this.redis.del(KEYS.chunks(streamId));
@@ -394,6 +431,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.expire(key, this.ttl.completed);
       pipeline.srem(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
+      pipeline.del(KEYS.steers(streamId));
 
       if (this.ttl.chunksAfterComplete === 0) {
         pipeline.del(KEYS.chunks(streamId));
@@ -543,6 +581,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.job(streamId));
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
+      pipeline.del(KEYS.steers(streamId));
       await pipeline.exec();
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
@@ -554,6 +593,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.job(streamId));
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
+      pipeline.del(KEYS.steers(streamId));
       pipeline.srem(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
@@ -930,7 +970,23 @@ export class RedisJobStore implements IJobStore {
 
     for (const chunk of chunks) {
       const event = chunk as { event?: string; data?: unknown };
-      if (!event.event || !event.data || !validEvents.has(event.event)) {
+      if (!event.event || !event.data) {
+        continue;
+      }
+
+      // Steer parts are host-authored (the SDK aggregator doesn't know the
+      // event), so splice them at their recorded index — SDK events after the
+      // injection were emitted with already-shifted indices, so both sources
+      // land disjoint.
+      if (event.event === 'on_steer_applied') {
+        const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof steerData.index === 'number' && steerData.part != null) {
+          contentParts[steerData.index] = steerData.part;
+        }
+        continue;
+      }
+
+      if (!validEvents.has(event.event)) {
         continue;
       }
 
@@ -1012,6 +1068,57 @@ export class RedisJobStore implements IJobStore {
     pipeline.del(KEYS.chunks(streamId));
     pipeline.del(KEYS.runSteps(streamId));
     await pipeline.exec();
+  }
+
+  // ===== Steering Queue Methods =====
+
+  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+    const result = await this.redis.eval(
+      STEER_ENQUEUE_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      JSON.stringify(item),
+      String(this.ttl.running),
+      String(STEER_QUEUE_MAX_DEPTH),
+    );
+    if (typeof result !== 'number') {
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+    return result;
+  }
+
+  async drainSteers(streamId: string): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.eval(STEER_DRAIN_LUA, 1, KEYS.steers(streamId));
+    return this.parseSteerItems(raw);
+  }
+
+  async peekSteers(streamId: string): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.lrange(KEYS.steers(streamId), 0, -1);
+    return this.parseSteerItems(raw);
+  }
+
+  async clearSteers(streamId: string): Promise<void> {
+    await this.redis.del(KEYS.steers(streamId));
+  }
+
+  /** A malformed entry is dropped (logged) rather than poisoning the drain. */
+  private parseSteerItems(raw: unknown): SteerQueueItem[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const items: SteerQueueItem[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') {
+        continue;
+      }
+      try {
+        items.push(JSON.parse(entry) as SteerQueueItem);
+      } catch {
+        logger.warn('[RedisJobStore] Dropping malformed steer queue entry');
+      }
+    }
+    return items;
   }
 
   /**
