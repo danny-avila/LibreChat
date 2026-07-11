@@ -105,8 +105,13 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
-/** Content-part types that carry image data, mirroring the agents formatter. */
-const IMAGE_CONTENT_TYPES = new Set([ContentTypes.IMAGE_URL, 'image']);
+/**
+ * Content-part types that carry image data. Covers the OpenAI-style `image_url`
+ * / `image` blocks and LibreChat's `image_file` parts (how image-generation tool
+ * results are persisted, see ToolService), so none survive into the payload of a
+ * non-image-capable model.
+ */
+const IMAGE_CONTENT_TYPES = new Set([ContentTypes.IMAGE_URL, ContentTypes.IMAGE_FILE, 'image']);
 
 /**
  * Removes image content parts from a formatted LLM-payload message in place, so
@@ -440,10 +445,11 @@ class AgentClient extends BaseClient {
     /**
      * When the model can't accept images, strip image content parts from the
      * LLM payload for every message — current and historical/resent — so
-     * text-only providers don't reject the request. Applied to the formatted
-     * payload only (not the memory copy or persisted message), so the user's
-     * uploaded image still renders in the UI; mirrors the payload-only YouTube
-     * injection below.
+     * text-only providers don't reject the request. The persisted message and
+     * its UI rendering are untouched (the user still sees their uploaded image);
+     * only the formatted payload and its token accounting change. The memory
+     * copy is stripped too so `canonicalTokenCount` reflects what is actually
+     * sent and the model isn't budgeted/pruned as if the image were present.
      */
     const stripImages = shouldStripImages(this.resolveModelImageCapability());
     if (stripImages) {
@@ -457,14 +463,15 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
-      if (stripImages) {
-        stripImageContentParts(formattedMessage);
-      }
       const memoryFormattedMessage = formatMessage({
         message,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      if (stripImages) {
+        stripImageContentParts(formattedMessage);
+        stripImageContentParts(memoryFormattedMessage);
+      }
 
       /**
        * Bind file context to the message it belongs to. Historical attachments

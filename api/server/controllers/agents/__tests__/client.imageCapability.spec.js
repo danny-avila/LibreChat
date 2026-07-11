@@ -91,6 +91,18 @@ describe('stripImageContentParts (real formatMessage payloads)', () => {
     expect(formatted.content).toEqual([{ type: 'text', text: 'see' }]);
   });
 
+  it('removes image_file parts (image-generation tool results)', () => {
+    const formatted = {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'here is your image' },
+        { type: 'image_file', image_file: { file_id: 'abc' } },
+      ],
+    };
+    stripImageContentParts(formatted);
+    expect(formatted.content).toEqual([{ type: 'text', text: 'here is your image' }]);
+  });
+
   it('leaves plain string content untouched', () => {
     const formatted = formatMessage({ message: { role: 'user', text: 'just text' } });
     stripImageContentParts(formatted);
