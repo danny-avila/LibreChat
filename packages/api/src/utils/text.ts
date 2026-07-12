@@ -3,6 +3,10 @@ import { logger } from '@librechat/data-schemas';
 /** Token count function that can be sync or async */
 export type TokenCountFn = (text: string) => number | Promise<number>;
 
+export function normalizeString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+}
+
 /**
  * Safety buffer multiplier applied to character position estimates during truncation.
  *

@@ -14,6 +14,7 @@ beforeAll(async () => {
   if (!mongoose.models.Config) {
     mongoose.model<IConfig>('Config', configSchema);
   }
+  await mongoose.models.Config.init();
   methods = createConfigMethods(mongoose);
 });
 
@@ -585,6 +586,39 @@ describe('expectEmpty atomic guard', () => {
     );
     expect(result).toBeTruthy();
     expect(result!.priority).toBe(99);
+  });
+
+  it('upsertConfig with preservePriority inserts with the requested priority', async () => {
+    const result = await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      {},
+      10,
+      undefined,
+      { expectEmpty: true, preservePriority: true },
+    );
+
+    expect(result).toBeTruthy();
+    expect(result!.priority).toBe(10);
+  });
+
+  it('upsertConfig with preservePriority keeps an empty existing doc priority', async () => {
+    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 5);
+
+    const result = await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      {},
+      99,
+      undefined,
+      { expectEmpty: true, preservePriority: true },
+    );
+
+    expect(result).toBeTruthy();
+    expect(result!.priority).toBe(5);
+    expect(result!.configVersion).toBe(2);
   });
 
   it('upsertConfig with expectEmpty returns null when existing doc has non-empty overrides', async () => {

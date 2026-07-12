@@ -37,6 +37,14 @@ export type TModelSpec = {
   showOnLanding?: boolean;
   /** Conversation starter prompts shown on the chat landing while this spec is active. */
   conversation_starters?: string[];
+  /**
+   * When false, the spec is omitted from the model selector menu and from the
+   * client startup config, but remains usable when invoked explicitly by name
+   * via the `spec` field (server-side resolution uses the full, unfiltered list).
+   * Unlike `showIconInMenu` (which only hides the icon), this hides the whole entry.
+   * Defaults to true (listed).
+   */
+  showInMenu?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
   /** Hide the chat input tool badge row while this model spec is active. */
@@ -44,6 +52,9 @@ export type TModelSpec = {
   webSearch?: boolean;
   fileSearch?: boolean;
   executeCode?: boolean;
+  memory?: boolean;
+  /** Equip the spec's ephemeral agent with the `ask_user_question` HITL tool. */
+  askUserQuestion?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
@@ -70,12 +81,15 @@ export const tModelSpecSchema = z.object({
   showIconInHeader: z.boolean().optional(),
   showOnLanding: z.boolean().optional(),
   conversation_starters: z.array(z.string()).optional(),
+  showInMenu: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
   hideBadgeRow: z.boolean().optional(),
   webSearch: z.boolean().optional(),
   fileSearch: z.boolean().optional(),
   executeCode: z.boolean().optional(),
+  memory: z.boolean().optional(),
+  askUserQuestion: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),

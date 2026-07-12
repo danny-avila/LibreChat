@@ -186,6 +186,25 @@ export function resolveModelSpecPromptPrefixVariables<T extends { promptPrefix?:
   };
 }
 
+/**
+ * Drops specs marked `showInMenu: false` so they are not advertised to clients
+ * (the model selector menu and the startup config). Such specs remain resolvable
+ * server-side by name, so a caller that sets `spec: "<name>"` can still use them.
+ * Returns the config unchanged when there is no list. Apply before `sanitizeModelSpecs`.
+ */
+export function excludeHiddenModelSpecs<T extends Partial<TSpecsConfig> | null | undefined>(
+  modelSpecs: T,
+): T {
+  if (!modelSpecs?.list || !Array.isArray(modelSpecs.list)) {
+    return modelSpecs;
+  }
+
+  return {
+    ...modelSpecs,
+    list: modelSpecs.list.filter((modelSpec) => modelSpec?.showInMenu !== false),
+  } as T;
+}
+
 export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | undefined>(
   modelSpecs: T,
 ): T {

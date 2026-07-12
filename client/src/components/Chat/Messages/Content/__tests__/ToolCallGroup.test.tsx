@@ -1,15 +1,21 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import ToolCallGroup from '../ToolCallGroup';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { scheduleMessageContentLayoutReconcile } from '~/hooks';
+import ToolCallGroup from '../ToolCallGroup';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
     if (key === 'com_ui_used_n_tools') {
       return `Used ${values?.[0]} tools`;
+    }
+    if (key === 'com_ui_asked_n_questions') {
+      return `Asked ${values?.[0]} questions`;
+    }
+    if (key === 'com_ui_asking_n_questions') {
+      return `Asking ${values?.[0]} questions`;
     }
     if (key === 'com_ui_via_server') {
       return `via ${values?.[0]}`;
@@ -40,6 +46,11 @@ jest.mock('../ToolOutput', () => ({
 jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'chevron'}</span>,
   Users: () => <span>{'users'}</span>,
+  MessageCircleQuestion: () => <span data-testid="question-icon">{'question'}</span>,
+}));
+
+jest.mock('~/utils/approval', () => ({
+  ASK_USER_QUESTION: 'ask_user_question',
 }));
 
 jest.mock('~/utils', () => ({
@@ -252,5 +263,50 @@ describe('ToolCallGroup image hoisting', () => {
       'data-tool-names',
       'bash_tool,bash_tool',
     );
+  });
+
+  it('labels a homogeneous ask_user_question group as its own category', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('q1', 'blue', 'ask_user_question'), idx: 0 },
+        { part: makePart('q2', 'staging', 'ask_user_question'), idx: 1 },
+      ],
+    });
+
+    // Own verb, not "Used N tools"; question glyph instead of stacked wrenches;
+    // raw-name summary suppressed (like subagent groups).
+    expect(screen.getByRole('button', { name: 'Asked 2 questions' })).toBeInTheDocument();
+    expect(screen.queryByText('Used 2 tools')).not.toBeInTheDocument();
+    expect(screen.getByTestId('question-icon')).toBeInTheDocument();
+    expect(screen.queryByTestId('stacked-icons')).not.toBeInTheDocument();
+    expect(screen.queryByText(/— ask_user_question/)).not.toBeInTheDocument();
+  });
+
+  it('uses the present tense while a multi-question turn is still streaming', () => {
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [
+        { part: makePart('q1', 'blue', 'ask_user_question'), idx: 0 },
+        // Second question not yet answered (no output) — turn still in flight.
+        { part: makePart('q2', '', 'ask_user_question'), idx: 1 },
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
+  });
+
+  it('keeps the generic "Used N tools" label for a mixed group containing a question', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('t1', 'result', 'web_search'), idx: 0 },
+        { part: makePart('q1', 'blue', 'ask_user_question'), idx: 1 },
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    expect(screen.getByTestId('stacked-icons')).toBeInTheDocument();
   });
 });

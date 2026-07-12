@@ -38,17 +38,30 @@ jest.mock('~/hooks', () => ({
       opts ? `${key}|${JSON.stringify(opts)}` : key,
 }));
 
+// The nav no longer renders HoverCard, but `~/utils` transitively imports the
+// dual CJS/ESM @librechat/client whose dist pulls ESM-only @ariakit subpaths
+// that jest cannot resolve. Stub the module so the unit under test stays isolated.
 jest.mock('@librechat/client', () => ({
   HoverCard: ({ children }: { children: ReactNode }) => <>{children}</>,
   HoverCardTrigger: ({ children, asChild }: { children: ReactNode; asChild?: boolean }) =>
     asChild ? children : <div>{children}</div>,
   HoverCardPortal: ({ children }: { children: ReactNode }) => <>{children}</>,
-  HoverCardContent: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <div data-testid="hover-card-content" className={className}>
-      {children}
-    </div>
-  ),
+  HoverCardContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
+
+if (typeof window.matchMedia !== 'function') {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList;
+}
 
 type IOEntry = Pick<IntersectionObserverEntry, 'target' | 'isIntersecting'>;
 
@@ -110,7 +123,13 @@ if (typeof (global as { PointerEvent?: unknown }).PointerEvent === 'undefined') 
     PointerEventPolyfill;
 }
 
-import MessageNav from '../MessageNav';
+import type { TMessage } from 'librechat-data-provider';
+import MessageNav, {
+  buildEntry,
+  buildFallbackEntry,
+  magnifyFalloff,
+  ribDimsFor,
+} from '../MessageNav';
 
 function buildMessage(overrides: Partial<TestMessage> = {}): TestMessage {
   return {
@@ -121,6 +140,8 @@ function buildMessage(overrides: Partial<TestMessage> = {}): TestMessage {
     ...overrides,
   };
 }
+
+const asTMessage = (m: TestMessage): TMessage => m as unknown as TMessage;
 
 function buildDom(messages: TestMessage[]): {
   scrollable: HTMLDivElement;
@@ -229,51 +250,27 @@ describe('MessageNav', () => {
         'c',
       ]);
     });
-  });
 
-  describe('indicator styling', () => {
-    it('uses narrower width for user turns and wider for assistant turns', () => {
-      const messages = [
-        buildMessage({ messageId: 'u', text: 'user msg', isCreatedByUser: true }),
-        buildMessage({ messageId: 'a', text: 'assistant msg' }),
-        buildMessage({ messageId: 'u2', text: 'more user', isCreatedByUser: true }),
-      ];
-      const { container } = renderNav(messages);
-      const [userInd, assistantInd] = container.querySelectorAll('[data-msg-id]');
-      expect(userInd.className).toContain('w-4');
-      expect(userInd.className).not.toContain('w-6');
-      expect(assistantInd.className).toContain('w-6');
-      expect(assistantInd.className).not.toContain('w-4');
-    });
-  });
-
-  describe('preview text', () => {
-    it('uses message text from React Query data when available', () => {
-      const messages = [
-        buildMessage({ messageId: 'a', text: 'alpha-preview', isCreatedByUser: true }),
-        buildMessage({ messageId: 'b', text: 'bravo-preview' }),
-        buildMessage({ messageId: 'c', text: 'charlie-preview', isCreatedByUser: true }),
-      ];
-      const { container } = renderNav(messages);
-      const previews = container.querySelectorAll('[data-testid="hover-card-content"] p');
-      expect(previews).toHaveLength(3);
-      expect(previews[0]).toHaveTextContent('alpha-preview');
-      expect(previews[1]).toHaveTextContent('bravo-preview');
-    });
-
-    it('falls back to DOM text when a message is not in React Query data', () => {
+    it('renders one rib per message even when a message nests duplicate .message-render nodes', () => {
       mockUseGetMessagesByConvoId.mockReturnValue({ data: [] });
       const scrollable = document.createElement('div');
       scrollable.className = 'scrollbar-gutter-stable';
       const content = document.createElement('div');
       scrollable.appendChild(content);
-      for (const [i, id] of ['x', 'y', 'z'].entries()) {
+      for (const [i, id] of ['a', 'b', 'c'].entries()) {
         const div = document.createElement('div');
         div.id = id;
         div.className = 'message-render';
-        div.textContent = `dom-text-${id}`;
-        Object.defineProperty(div, 'offsetTop', { value: i * 200 });
-        Object.defineProperty(div, 'offsetHeight', { value: 150 });
+        div.textContent = `msg-${id}`;
+        if (id === 'b') {
+          const part = document.createElement('div');
+          part.id = id;
+          part.className = 'message-render';
+          part.textContent = 'msg-b-part';
+          div.appendChild(part);
+        }
+        Object.defineProperty(div, 'offsetTop', { value: i * 200, configurable: true });
+        Object.defineProperty(div, 'offsetHeight', { value: 150, configurable: true });
         content.appendChild(div);
       }
       document.body.appendChild(scrollable);
@@ -283,39 +280,127 @@ describe('MessageNav', () => {
         jest.advanceTimersByTime(250);
       });
 
-      const previews = container.querySelectorAll('[data-testid="hover-card-content"] p');
-      expect(previews[0]).toHaveTextContent('dom-text-x');
-      expect(previews[2]).toHaveTextContent('dom-text-z');
+      const indicators = container.querySelectorAll('[data-msg-id]');
+      expect(Array.from(indicators).map((el) => el.getAttribute('data-msg-id'))).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
     });
+  });
 
-    it('truncates previews longer than 80 chars with an ellipsis', () => {
-      const long = 'a'.repeat(120);
+  describe('indicator styling', () => {
+    it('gives every message rib the same short resting width regardless of role', () => {
       const messages = [
-        buildMessage({ messageId: 'a', text: long, isCreatedByUser: true }),
-        buildMessage({ messageId: 'b', text: 'short' }),
-        buildMessage({ messageId: 'c', text: 'also short', isCreatedByUser: true }),
+        buildMessage({ messageId: 'u', text: 'user msg', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a', text: 'assistant msg' }),
+        buildMessage({ messageId: 'u2', text: 'more user', isCreatedByUser: true }),
       ];
       const { container } = renderNav(messages);
-      const preview = container.querySelectorAll('[data-testid="hover-card-content"] p')[0];
-      const text = preview?.textContent ?? '';
-      expect(text.endsWith('...')).toBe(true);
-      expect(text.length).toBe(83);
+      const [userInd, assistantInd] = container.querySelectorAll('[data-msg-id]');
+      const userLine = userInd.querySelector('span');
+      const assistantLine = assistantInd.querySelector('span');
+      expect(userLine?.className).toContain('w-4');
+      expect(assistantLine?.className).toContain('w-4');
     });
 
-    it('skips sparse content entries when deriving preview text', () => {
+    it('lights up only the in-viewport ribs at rest (no hover)', () => {
       const messages = [
-        buildMessage({
-          messageId: 'a',
-          text: '',
-          isCreatedByUser: true,
-          content: [undefined, { type: 'text', text: 'content-preview' }],
-        }),
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
         buildMessage({ messageId: 'b', text: 'bravo' }),
         buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
       ];
       const { container } = renderNav(messages);
-      const preview = container.querySelectorAll('[data-testid="hover-card-content"] p')[0];
-      expect(preview).toHaveTextContent('content-preview');
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('a')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+
+      const ribA = container.querySelector('[data-msg-id="a"]') as HTMLElement;
+      const ribB = container.querySelector('[data-msg-id="b"]') as HTMLElement;
+      expect(ribA.className).toContain('opacity-100');
+      expect(ribA.className).not.toContain('opacity-40');
+      expect(ribB.className).toContain('opacity-40');
+    });
+  });
+
+  describe('preview text', () => {
+    it('uses message text from React Query data when available', () => {
+      const entry = buildEntry(
+        'a',
+        asTMessage(buildMessage({ messageId: 'a', text: 'alpha-preview' })),
+      );
+      expect(entry.preview).toBe('alpha-preview');
+    });
+
+    it('falls back to DOM text content for messages without React Query data', () => {
+      const node = document.createElement('div');
+      node.className = 'message-render';
+      node.textContent = 'dom-text-x';
+      const entry = buildFallbackEntry(node, 'x');
+      expect(entry.preview).toBe('dom-text-x');
+      expect(entry.isUser).toBe(false);
+    });
+
+    it('marks fallback entries containing a user turn as user messages', () => {
+      const node = document.createElement('div');
+      node.className = 'message-render';
+      const turn = document.createElement('div');
+      turn.className = 'user-turn';
+      turn.textContent = 'hi';
+      node.appendChild(turn);
+      expect(buildFallbackEntry(node, 'u').isUser).toBe(true);
+    });
+
+    it('truncates previews longer than 80 chars with an ellipsis', () => {
+      const entry = buildEntry(
+        'a',
+        asTMessage(buildMessage({ messageId: 'a', text: 'a'.repeat(120) })),
+      );
+      expect(entry.preview.endsWith('...')).toBe(true);
+      expect(entry.preview.length).toBe(83);
+    });
+
+    it('skips sparse content entries when deriving preview text', () => {
+      const entry = buildEntry(
+        'a',
+        asTMessage(
+          buildMessage({
+            messageId: 'a',
+            text: '',
+            content: [undefined, { type: 'text', text: 'content-preview' }],
+          }),
+        ),
+      );
+      expect(entry.preview).toBe('content-preview');
+    });
+  });
+
+  describe('rib magnification', () => {
+    it('peaks at the pointer and decays to zero at the influence radius', () => {
+      expect(magnifyFalloff(0, 50)).toBeCloseTo(1);
+      expect(magnifyFalloff(50, 50)).toBe(0);
+      expect(magnifyFalloff(100, 50)).toBe(0);
+    });
+
+    it('decreases monotonically with distance within the radius', () => {
+      const near = magnifyFalloff(10, 50);
+      const mid = magnifyFalloff(25, 50);
+      const far = magnifyFalloff(40, 50);
+      expect(near).toBeGreaterThan(mid);
+      expect(mid).toBeGreaterThan(far);
+    });
+
+    it('magnifies every message rib uniformly and keeps the end marker square', () => {
+      const user = ribDimsFor({ id: 'u', isUser: true, preview: '' });
+      const assistant = ribDimsFor({ id: 'a', isUser: false, preview: '' });
+      const end = ribDimsFor({ id: 'e', isUser: false, preview: '', isEnd: true });
+      expect(assistant.baseW).toBe(user.baseW);
+      expect(assistant.peakW).toBe(user.peakW);
+      expect(user.peakW).toBeGreaterThan(user.baseW);
+      expect(end.baseW).toBe(end.baseH);
+      expect(end.peakW).toBe(end.peakH);
     });
   });
 
@@ -395,10 +480,8 @@ describe('MessageNav', () => {
       expect(current).toHaveLength(1);
       expect(current[0]).toHaveAttribute('data-msg-id', 'a');
 
-      for (const id of ['a', 'b', 'c']) {
-        const indicator = container.querySelector(`[data-msg-id="${id}"] span`);
-        expect(indicator?.className).toContain('h-[5px]');
-      }
+      const activeLine = container.querySelector('[aria-current="true"] span');
+      expect(activeLine?.className).toContain('bg-gray-800');
     });
 
     it('chevron buttons expose a disabled state when there is nothing to navigate to', () => {
@@ -756,6 +839,176 @@ describe('MessageNav', () => {
 
       const navButtons = container.querySelectorAll('[data-msg-id]');
       expect(Array.from(navButtons)).not.toContain(document.activeElement);
+    });
+  });
+
+  describe('click to jump', () => {
+    it('jumps to the hovered (focused) message when the column is clicked off a rib line', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container, scrollable } = renderNav(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      const writes: number[] = [];
+      Object.defineProperty(scrollable, 'scrollTop', {
+        get: () => 0,
+        set: (v: number) => writes.push(v),
+        configurable: true,
+      });
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(120);
+      });
+
+      act(() => {
+        fireEvent.click(column);
+        jest.advanceTimersByTime(32);
+      });
+
+      expect(writes.length).toBeGreaterThan(0);
+    });
+
+    it('highlights only the hovered rib white, dimming the rest', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(20);
+      });
+
+      const ribs = Array.from(container.querySelectorAll('[data-msg-id]'));
+      const white = ribs.filter((r) => r.querySelector('span')?.className.includes('bg-gray-800'));
+      expect(white).toHaveLength(1);
+      expect(white[0]).toHaveAttribute('data-msg-id', 'a');
+    });
+  });
+
+  describe('keyboard accessibility', () => {
+    function setupFocusableNav() {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const result = renderNav(messages);
+      const column = result.container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      return { ...result, column };
+    }
+
+    it('highlights and previews a rib when it receives keyboard focus, like hover', () => {
+      const { container, column } = setupFocusableNav();
+      const ribA = container.querySelector('[data-msg-id="a"]') as HTMLElement;
+
+      act(() => {
+        ribA.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        jest.advanceTimersByTime(80);
+      });
+
+      expect(ribA.querySelector('span')?.className).toContain('bg-gray-800');
+      const tip = document.body.querySelector('[role="tooltip"]');
+      expect(tip).not.toBeNull();
+      expect(tip).toHaveTextContent('alpha');
+      expect(column).toBeDefined();
+    });
+
+    it('clears the highlight and preview when focus leaves the rail', () => {
+      const { container } = setupFocusableNav();
+      const ribA = container.querySelector('[data-msg-id="a"]') as HTMLElement;
+
+      act(() => {
+        ribA.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        jest.advanceTimersByTime(80);
+      });
+      act(() => {
+        ribA.dispatchEvent(
+          new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }),
+        );
+      });
+
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+      const white = Array.from(container.querySelectorAll('[data-msg-id] span')).filter((s) =>
+        s.className.includes('bg-gray-800'),
+      );
+      expect(white).toHaveLength(0);
+    });
+  });
+
+  describe('preview live sync', () => {
+    it('refreshes the open tooltip text when the hovered message updates in place', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent('alpha');
+
+      // Message text updates in place (e.g. streaming). A re-render happens without
+      // the pointer leaving the rail; the tooltip should reflect the new preview.
+      mockUseGetMessagesByConvoId.mockReturnValue({
+        data: [
+          buildMessage({ messageId: 'a', text: 'alpha streamed more', isCreatedByUser: true }),
+          buildMessage({ messageId: 'b', text: 'bravo' }),
+          buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+        ],
+      });
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('a')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(20);
+      });
+      act(() => {
+        jest.advanceTimersByTime(260);
+      });
+
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent(
+        'alpha streamed more',
+      );
+    });
+  });
+
+  describe('browser compatibility', () => {
+    it('uses legacy MediaQueryList listeners when addEventListener is unavailable', () => {
+      const original = window.matchMedia;
+      const addListener = jest.fn();
+      const removeListener = jest.fn();
+      window.matchMedia = (() => ({ matches: false, addListener, removeListener })) as never;
+      try {
+        const messages = [
+          buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+          buildMessage({ messageId: 'b', text: 'bravo' }),
+          buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+        ];
+        let result: ReturnType<typeof renderNav> | undefined;
+        expect(() => {
+          result = renderNav(messages);
+        }).not.toThrow();
+        expect(addListener).toHaveBeenCalledTimes(1);
+        result?.unmount();
+        expect(removeListener).toHaveBeenCalledTimes(1);
+      } finally {
+        window.matchMedia = original;
+      }
     });
   });
 

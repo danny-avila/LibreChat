@@ -1,6 +1,7 @@
 import { Document, Types } from 'mongoose';
 import type {
   GraphEdge,
+  MemoryScope,
   AgentToolOptions,
   AgentToolResources,
   AgentSubagentsConfig,
@@ -50,5 +51,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   tool_options?: AgentToolOptions;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
   tenantId?: string;
 }

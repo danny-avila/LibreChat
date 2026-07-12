@@ -1,5 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
@@ -209,6 +209,11 @@ export type SupportContact = {
   email?: string;
 };
 
+export type AgentOwnerContact = {
+  name?: string;
+  email?: string;
+};
+
 /**
  * Specifies who can invoke a tool.
  * - 'direct': LLM can call directly
@@ -286,6 +291,7 @@ export type Agent = {
   version?: number;
   category?: string;
   support_contact?: SupportContact;
+  owner_contact?: AgentOwnerContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
   /** Optional allowlist of skill ObjectIds. Only applies when `skills_enabled`. */
@@ -295,6 +301,8 @@ export type Agent = {
   skills_enabled?: boolean;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -323,6 +331,7 @@ export type AgentCreateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentUpdateParams = {
@@ -350,6 +359,7 @@ export type AgentUpdateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentListParams = {

@@ -5,8 +5,10 @@ const {
   needsRefresh,
   MCPOAuthHandler,
   MCPTokenStorage,
+  getAppConfigOptionsFromUser,
   normalizeHttpError,
   extractWebSearchEnvVars,
+  deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
 const {
@@ -58,13 +60,7 @@ const sanitizeUserForResponse = (user) => {
 };
 
 const getUserController = async (req, res) => {
-  const appConfig =
-    req.config ??
-    (await getAppConfig({
-      role: req.user?.role,
-      userId: req.user?.id,
-      tenantId: req.user?.tenantId,
-    }));
+  const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   /** @type {IUser} */
   const userData = sanitizeUserForResponse(req.user);
   if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
@@ -86,11 +82,14 @@ const getUserController = async (req, res) => {
 
 const getTermsStatusController = async (req, res) => {
   try {
-    const user = await db.getUserById(req.user.id, 'termsAccepted');
+    const user = await db.getUserById(req.user.id, 'termsAccepted termsAcceptedAt');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.status(200).json({ termsAccepted: !!user.termsAccepted });
+    res.status(200).json({
+      termsAccepted: !!user.termsAccepted,
+      termsAcceptedAt: user.termsAcceptedAt || null,
+    });
   } catch (error) {
     logger.error('Error fetching terms acceptance status:', error);
     res.status(500).json({ message: 'Error fetching terms acceptance status' });
@@ -99,11 +98,14 @@ const getTermsStatusController = async (req, res) => {
 
 const acceptTermsController = async (req, res) => {
   try {
-    const user = await db.updateUser(req.user.id, { termsAccepted: true });
+    const user = await db.acceptTerms(req.user.id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.status(200).json({ message: 'Terms accepted successfully' });
+    res.status(200).json({
+      message: 'Terms accepted successfully',
+      termsAcceptedAt: user.termsAcceptedAt,
+    });
   } catch (error) {
     logger.error('Error accepting terms:', error);
     res.status(500).json({ message: 'Error accepting terms' });
@@ -196,13 +198,7 @@ const deleteUserMcpServers = async (userId) => {
 };
 
 const updateUserPluginsController = async (req, res) => {
-  const appConfig =
-    req.config ??
-    (await getAppConfig({
-      role: req.user?.role,
-      userId: req.user?.id,
-      tenantId: req.user?.tenantId,
-    }));
+  const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   const { user } = req;
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {
@@ -354,7 +350,20 @@ const deleteUserController = async (req, res) => {
     await db.deleteBalances({ user: user._id });
     await db.deletePresets(user.id);
     try {
-      await db.deleteConvos(user.id);
+      const convoDeletion = await db.deleteConvos(user.id);
+      // HITL: prune the deleted conversations' durable checkpoints — a paused run's
+      // checkpoint would otherwise persist until the Mongo TTL. Never throws.
+      const appConfig =
+        req.config ??
+        (await getAppConfig({
+          role: req.user?.role,
+          userId: req.user?.id,
+          tenantId: req.user?.tenantId,
+        }));
+      await deleteAgentCheckpoints(
+        convoDeletion?.conversationIds,
+        appConfig?.endpoints?.agents?.checkpointer,
+      );
     } catch (error) {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }

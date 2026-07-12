@@ -2907,4 +2907,112 @@ describe('sanitizeGeminiSchema', () => {
       },
     });
   });
+
+  it('strips unresolvable `$ref` keys that survive ref resolution (Gemini rejects them)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        recurrence: { $ref: 'https://example.com/external.json', description: 'Recurrence rule' },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        recurrence: { description: 'Recurrence rule' },
+      },
+    });
+  });
+});
+
+describe('resolveJsonSchemaRefs local pointer refs', () => {
+  it('resolves a `#/properties/...` pointer against the root schema', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        body: {
+          type: 'object' as const,
+          properties: {
+            start: {
+              type: 'object' as const,
+              properties: {
+                dateTime: { type: 'string' as const },
+                timeZone: { type: 'string' as const },
+              },
+            },
+            end: { $ref: '#/properties/body/properties/start' },
+          },
+        },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.body?.properties?.end).toEqual({
+      type: 'object',
+      properties: {
+        dateTime: { type: 'string' },
+        timeZone: { type: 'string' },
+      },
+    });
+    expect(JSON.stringify(resolved)).not.toContain('$ref');
+  });
+
+  it('resolves pointers that traverse array indices (e.g. anyOf members)', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        daysOfWeek: {
+          type: 'array' as const,
+          items: {
+            anyOf: [{ type: 'string' as const, enum: ['monday', 'tuesday'] }],
+          },
+        },
+        firstDayOfWeek: { $ref: '#/properties/daysOfWeek/items/anyOf/0' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.firstDayOfWeek).toEqual({
+      type: 'string',
+      enum: ['monday', 'tuesday'],
+    });
+  });
+
+  it('breaks mutually circular local pointers without hanging', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        a: { $ref: '#/properties/b' },
+        b: { $ref: '#/properties/a' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.a).toEqual({ type: 'object' });
+    expect(resolved.properties?.b).toEqual({ type: 'object' });
+  });
+
+  it('keeps dangling local pointers as-is', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        broken: { $ref: '#/properties/missing/nested' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.broken).toEqual({ $ref: '#/properties/missing/nested' });
+  });
+
+  it('unescapes RFC 6901 tokens (~0 → ~, ~1 → /) in pointer segments', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        'a/b': { type: 'string' as const },
+        alias: { $ref: '#/properties/a~1b' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.alias).toEqual({ type: 'string' });
+  });
 });

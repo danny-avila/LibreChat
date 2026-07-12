@@ -166,6 +166,10 @@ export interface PurgeAuditLogResult {
 }
 
 export interface VerifyAuditChainOptions {
+  /** Stop verification early when the caller has gone away. */
+  isCancelled?: () => boolean;
+  /** Maximum rows to inspect before returning a bounded, non-OK result. */
+  maxRows?: number;
   /** When the chain no longer starts at `seq: 1` (a prefix was purged), the
    * verifier requires this boundary to distinguish an authorized retention purge
    * from an attacker deleting the oldest rows. Without it, a non-genesis start

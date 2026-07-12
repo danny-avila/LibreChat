@@ -261,6 +261,62 @@ describe('useResumeOnLoad', () => {
     );
   });
 
+  it('strips the paused user/assistant rows from submission.messages (no duplicate on resume)', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [{ type: 'text', text: 'Streaming...' }],
+          responseMessageId: RESPONSE_MESSAGE_ID,
+          conversationId: CONVERSATION_ID,
+          sender: 'Agent',
+          userMessage: {
+            messageId: USER_MESSAGE_ID,
+            parentMessageId: Constants.NO_PARENT,
+            conversationId: CONVERSATION_ID,
+            text: 'Hello',
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      // The reloaded DB array already holds the paused user row + the partial
+      // (unfinished) assistant row under the same ids the resume re-supplies.
+      messages: [
+        buildUserMessage(CONVERSATION_ID),
+        {
+          messageId: RESPONSE_MESSAGE_ID,
+          parentMessageId: USER_MESSAGE_ID,
+          conversationId: CONVERSATION_ID,
+          text: '',
+          isCreatedByUser: false,
+          unfinished: true,
+        } as TMessage,
+      ],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    const ids = (submission?.messages ?? []).map((m) => m.messageId);
+    // Stripped from the flat array (re-supplied via the placeholders + final event)...
+    expect(ids).not.toContain(USER_MESSAGE_ID);
+    expect(ids).not.toContain(RESPONSE_MESSAGE_ID);
+    // ...but still carried on the placeholders for re-insertion.
+    expect(submission?.userMessage?.messageId).toBe(USER_MESSAGE_ID);
+    expect(submission?.initialResponse?.messageId).toBe(RESPONSE_MESSAGE_ID);
+  });
+
   it('restores the branch that owns a pending OAuth resume user message', async () => {
     const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
     const branchOneResponse = {

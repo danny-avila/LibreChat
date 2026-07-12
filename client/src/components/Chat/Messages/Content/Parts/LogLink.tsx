@@ -27,7 +27,7 @@ interface AttachmentLinkOptions {
  * Files with these sources are stored on the LibreChat server and should
  * use the /api/files/download endpoint instead of direct URL access.
  */
-const isLocallyStoredSource = (source?: string): boolean => {
+export const isLocallyStoredSource = (source?: string): boolean => {
   if (!source) {
     return false;
   }
@@ -54,7 +54,16 @@ export const useAttachmentLink = ({
   const { refetch: downloadFromApi } = useFileDownload(user, file_id, { source });
   const { refetch: downloadFromUrl } = useCodeOutputDownload(href);
 
-  const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
+  /**
+   * Triggers the download and reports whether a file was actually
+   * delivered: `true` once a download is initiated, `false` on a fetch
+   * error or an empty/denied response (e.g. an expired code-output URL or
+   * a 404 share download). Callers that show success feedback should gate
+   * it on this result rather than on the promise merely resolving.
+   */
+  const handleDownload = async (
+    event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>,
+  ): Promise<boolean> => {
     event.preventDefault();
     try {
       // In a shared view, a snapshotted file's href is rewritten to the share
@@ -63,12 +72,12 @@ export const useAttachmentLink = ({
       // original href / code-output path still works when snapshots are disabled.
       if (shareId && file_id && href.startsWith('/api/share/')) {
         triggerDownload(sharedFileDownload(shareId, file_id), filename);
-        return;
+        return true;
       }
 
       if (!useLocalDownload && isHttpDownloadTarget(href)) {
         triggerDownload(href, filename);
-        return;
+        return true;
       }
 
       const stream = useLocalDownload ? await downloadFromApi() : await downloadFromUrl();
@@ -78,11 +87,13 @@ export const useAttachmentLink = ({
           status: 'error',
           message: 'Error downloading file',
         });
-        return;
+        return false;
       }
       triggerDownload(stream.data, filename);
+      return true;
     } catch (error) {
       console.error('Error downloading file:', error);
+      return false;
     }
   };
 

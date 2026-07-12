@@ -53,12 +53,14 @@ jest.mock('~/server/middleware', () => {
     setTwoFactorTempUser: pass,
     twoFactorTempLimiter: pass,
     checkBan: pass,
+    validateEmailLogin: pass,
     requireLocalAuth: pass,
     requireLdapAuth: pass,
     registerLimiter: pass,
     checkInviteUser: pass,
     validateRegistration: pass,
     resetPasswordLimiter: pass,
+    resetPasswordSubmissionLimiter: pass,
     validatePasswordReset: pass,
     requireJwtAuth: jest.fn((req, res, next) => {
       if (req.headers.authorization !== 'Bearer ok') {
