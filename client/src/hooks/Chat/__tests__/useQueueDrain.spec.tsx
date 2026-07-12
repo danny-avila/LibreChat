@@ -9,7 +9,10 @@ import store from '~/store';
 const INDEX = 0;
 const CONVO_ID = 'convo-drain';
 
-function setup(initialize?: (snapshot: MutableSnapshot) => void) {
+function setup(
+  initialize?: (snapshot: MutableSnapshot) => void,
+  activeConversationId: string | undefined = CONVO_ID,
+) {
   const ask = jest.fn();
   const setters: {
     setRunEnd?: (value: RunEnd | null) => void;
@@ -28,7 +31,7 @@ function setup(initialize?: (snapshot: MutableSnapshot) => void) {
       store.queuedMessagesByConvoId(Constants.NEW_CONVO),
     );
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
-    useQueueDrain(INDEX, ask);
+    useQueueDrain(INDEX, activeConversationId, ask);
     return null;
   }
 
@@ -68,6 +71,20 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' }, emptyOverrides);
+  });
+
+  it('does not drain into a different active conversation', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'stay put')]);
+    }, 'some-other-convo');
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    // Neither drained nor consumed: the signal waits for the user to return.
+    expect(ask).not.toHaveBeenCalled();
   });
 
   it('passes a queued message`s attachments through as overrideFiles', async () => {

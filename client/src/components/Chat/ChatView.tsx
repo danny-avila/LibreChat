@@ -75,7 +75,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading);
 
   // Auto-send queued follow-up messages once a run finishes cleanly.
-  useQueueDrain(index, chatHelpers.ask);
+  useQueueDrain(index, conversationId, chatHelpers.ask);
 
   let content: JSX.Element | null | undefined;
   const isLandingPage =

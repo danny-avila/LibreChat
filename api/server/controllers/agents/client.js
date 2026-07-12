@@ -48,6 +48,8 @@ const {
   createSteerIndexOffsetHandlers,
   createSteerDrainHook,
   isSteeringSupported,
+  buildSteerMedia,
+  stampSteerPartMedia,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -97,7 +99,6 @@ const {
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { buildSteerMedia, stampSteerPartMedia } = require('~/server/services/Files/steering');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -301,7 +302,13 @@ class AgentClient extends BaseClient {
         streamId,
         jobCreatedAt: this.jobCreatedAt,
         applySteer: (item, media) => this.applySteerPart(streamId, item, media),
-        buildMedia: (item) => buildSteerMedia({ client: this, req: this.options.req, item }),
+        buildMedia: (item) =>
+          buildSteerMedia({
+            client: this,
+            user: this.options.req?.user,
+            item,
+            getFiles: db.getFiles,
+          }),
       }),
     };
   }
@@ -590,11 +597,12 @@ class AgentClient extends BaseClient {
        *  shrink the window like any other resent media. */
       const stamped = await stampSteerPartMedia({
         client: this,
-        req: this.options.req,
+        user: this.options.req?.user,
         payload,
         // addPreviousAttachments already fetched steer-part refs in its single
         // per-turn historical-files query — no second round trip.
         docsById: this.authorizedHistoricalFiles,
+        getFiles: db.getFiles,
       });
       for (const { index, media } of stamped) {
         const mediaParts = media.filter((mediaPart) => mediaPart?.type !== ContentTypes.TEXT);

@@ -73,11 +73,22 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     expect(oversized.body.code).toBe('TOO_MANY_FILES');
   });
 
-  it('501s when the installed SDK cannot inject hook messages', async () => {
+  it('501s when the installed SDK cannot inject hook messages (running job)', async () => {
     mockIsSupported.mockReturnValue(false);
-    const result = await handleSteerRequest(user, { conversationId: 'c1', text: 'hello' });
+    const streamId = 'steer-req-unsupported';
+    await GenerationJobManager.createJob(streamId, user.id);
+    const result = await handleSteerRequest(user, { conversationId: streamId, text: 'hello' });
     expect(result.status).toBe(501);
     expect(result.body.code).toBe('STEER_UNSUPPORTED');
+  });
+
+  it('404s before the capability gate when the run already finished', async () => {
+    // A steer racing completion on an unsupported SDK must send-now (404),
+    // not strand text in a queue with no run-end signal left to drain it.
+    mockIsSupported.mockReturnValue(false);
+    const result = await handleSteerRequest(user, { conversationId: 'finished', text: 'x' });
+    expect(result.status).toBe(404);
+    expect(result.body.code).toBe('NO_ACTIVE_RUN');
   });
 
   it('404s when the job is missing or terminal', async () => {

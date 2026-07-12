@@ -45,6 +45,29 @@ const JOB_CAS_LUA =
   'return 1';
 
 /**
+ * Atomic job (re)creation for the two same-slot keys: reset the steer queue
+ * and write the job hash in ONE script. A `/chat/steer` request can then
+ * never interleave between the queue reset and the hash write — the enqueue
+ * script observes either the old hash (its status guards apply and its list
+ * dies with it) or the fully initialized replacement with an empty queue, so
+ * a steer accepted against one run can never be drained into another.
+ *
+ *   KEYS: [job, steers]
+ *   ARGV: [ttl, hdelCount, ...hdelFields, ...hsetPairs]
+ */
+const JOB_CREATE_LUA =
+  'redis.call("DEL", KEYS[2]) ' +
+  'local ttl = tonumber(ARGV[1]) ' +
+  'local hdelCount = tonumber(ARGV[2]) ' +
+  'local idx = 3 ' +
+  'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
+  'local hset = {} ' +
+  'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'redis.call("HSET", KEYS[1], unpack(hset)) ' +
+  'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'return 1';
+
+/**
  * XADD a chunk + set the chunk-stream TTL to the right window WITHOUT ever shrinking it.
  *
  * During a live stream the running TTL is refreshed on every chunk. But a job paused
@@ -364,16 +387,24 @@ export class RedisJobStore implements IJobStore {
 
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
-    // The steer queue is keyed by streamId only — a replacement must not
-    // inherit the replaced run's undrained steers. The DEL runs BEFORE the
-    // job hash is (re)written as `running`: a steer POST 202-accepted against
-    // the NEW job can then never be wiped by this reset, and anything landing
-    // in the DEL→HSET window is still status-guarded by the old hash.
+    // Steer-queue reset + job-hash write happen ATOMICALLY (same-slot Lua):
+    // a steer POST can never land between them, so a replacement can neither
+    // inherit the replaced run's undrained steers nor lose/steal a steer
+    // 202-accepted against either run (see JOB_CREATE_LUA).
+    const hsetPairs = Object.entries(this.serializeJob(job)).flat();
+    await this.redis.eval(
+      JOB_CREATE_LUA,
+      2,
+      key,
+      KEYS.steers(streamId),
+      String(this.ttl.running),
+      String(staleHitlFields.length),
+      ...staleHitlFields,
+      ...hsetPairs,
+    );
+    // Set-membership bookkeeping lives on other slots; ordering after the
+    // atomic hash write is safe (scanners tolerate momentary lag).
     if (this.isCluster) {
-      await this.redis.del(KEYS.steers(streamId));
-      await this.redis.hset(key, this.serializeJob(job));
-      await this.redis.hdel(key, ...staleHitlFields);
-      await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
@@ -382,10 +413,6 @@ export class RedisJobStore implements IJobStore {
       }
     } else {
       const pipeline = this.redis.pipeline();
-      pipeline.del(KEYS.steers(streamId));
-      pipeline.hset(key, this.serializeJob(job));
-      pipeline.hdel(key, ...staleHitlFields);
-      pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);

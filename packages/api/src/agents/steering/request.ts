@@ -102,10 +102,6 @@ export async function handleSteerRequest(
     return { status: 400, body: { code: filesError } };
   }
 
-  if (!isSteeringSupported()) {
-    return { status: 501, body: { code: 'STEER_UNSUPPORTED' } };
-  }
-
   /** streamId === conversationId for resumable agent jobs */
   const streamId = conversationId;
   const job = await GenerationJobManager.getJob(streamId);
@@ -121,6 +117,13 @@ export async function handleSteerRequest(
   }
   if (job.status === 'requires_action') {
     return { status: 409, body: { code: 'RUN_PAUSED' } };
+  }
+
+  /** AFTER the job checks: a steer racing run completion must get 404 (the
+   *  client sends immediately) — a 501 here would queue it client-side with
+   *  no remaining run-end signal to ever drain it. */
+  if (!isSteeringSupported()) {
+    return { status: 501, body: { code: 'STEER_UNSUPPORTED' } };
   }
 
   const item = {

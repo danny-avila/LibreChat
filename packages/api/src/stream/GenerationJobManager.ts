@@ -813,6 +813,20 @@ class GenerationJobManagerClass {
       runtime.abortController.abort();
     }
 
+    /** Steers that never reached an injection boundary — reported on the abort
+     *  final event (and the abort route's JSON) so the client can restore them
+     *  as queued chips instead of silently dropping the user's words. The
+     *  close-and-drain rejects any steer POST racing this finalization, and
+     *  the createdAt guard keeps it off a replacement job's queue. Runs
+     *  BEFORE the content snapshot below: a drain hook that already popped a
+     *  steer and applied its part gets captured by the snapshot, so the text
+     *  surfaces either here (pendingSteers) or there (inline part) — an
+     *  encode still in flight across the abort remains inherently racy
+     *  cross-instance, but the window no longer includes completed applies. */
+    const pendingSteers = (
+      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
+    ).map(toPendingSteer);
+
     /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
@@ -826,15 +840,6 @@ class GenerationJobManagerClass {
 
     /** Collected usage for all models */
     const collectedUsage = this.jobStore.getCollectedUsage(streamId);
-
-    /** Steers that never reached an injection boundary — reported on the abort
-     *  final event (and the abort route's JSON) so the client can restore them
-     *  as queued chips instead of silently dropping the user's words. The
-     *  close-and-drain rejects any steer POST racing this finalization, and
-     *  the createdAt guard keeps it off a replacement job's queue. */
-    const pendingSteers = (
-      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
-    ).map(toPendingSteer);
 
     /** Text from content parts for fallback token counting */
     const text = shouldPersistAbortContent

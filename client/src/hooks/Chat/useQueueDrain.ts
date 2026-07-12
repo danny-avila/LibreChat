@@ -20,7 +20,11 @@ import store from '~/store';
  * - Migrates a queue keyed under `NEW_CONVO` to the real conversation id when
  *   the finished run started as a new-conversation submission.
  */
-export default function useQueueDrain(index: string | number, ask: TAskFunction) {
+export default function useQueueDrain(
+  index: string | number,
+  activeConversationId: string | undefined,
+  ask: TAskFunction,
+) {
   const runEnd = useRecoilValue(store.runEndByIndex(index));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
 
@@ -77,6 +81,17 @@ export default function useQueueDrain(index: string | number, ask: TAskFunction)
     if (runEnd == null || isSubmitting) {
       return;
     }
+    /**
+     * `ask` is the MOUNTED view's sender: if the user navigated away between
+     * the final SSE and this effect, draining here would submit conversation
+     * A's follow-up into conversation B. Leave the signal unconsumed — the
+     * drain fires when the user returns to the finished conversation (a
+     * NEW_CONVO-started run's signal carries the real id, which the created
+     * navigation has already made the active route).
+     */
+    if (runEnd.conversationId !== activeConversationId) {
+      return;
+    }
     const next = drainNext();
     if (next == null) {
       return;
@@ -92,5 +107,5 @@ export default function useQueueDrain(index: string | number, ask: TAskFunction)
         overrideManualSkills: [],
       },
     );
-  }, [runEnd, isSubmitting, drainNext, ask]);
+  }, [runEnd, isSubmitting, activeConversationId, drainNext, ask]);
 }
