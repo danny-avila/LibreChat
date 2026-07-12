@@ -489,8 +489,13 @@ export default function useChatFunctions({
 
     if (setFiles && reuseFiles === true) {
       currentMsg.files = [...submissionFiles];
-      setFiles(new Map());
-      setFilesToDelete({});
+      // Caller-supplied overrideFiles were consumed elsewhere (queued
+      // during-run messages take theirs out of the composer at queue time) —
+      // clearing here would eat attachments staged for the user's NEXT send.
+      if (isRegenerate) {
+        setFiles(new Map());
+        setFilesToDelete({});
+      }
     } else if (setFiles && files && files.size > 0) {
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,

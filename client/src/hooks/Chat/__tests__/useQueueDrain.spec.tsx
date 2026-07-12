@@ -68,6 +68,22 @@ describe('useQueueDrain', () => {
     expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' });
   });
 
+  it('passes a queued message`s attachments through as overrideFiles', async () => {
+    const files = [{ file_id: 'f1', filepath: '/uploads/f1.png', type: 'image/png' }];
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'with media'), files },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'with media' }, { overrideFiles: files });
+  });
+
   it('does not drain on user abort or error outcomes', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'kept')]);

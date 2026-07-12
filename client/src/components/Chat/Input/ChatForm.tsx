@@ -3,7 +3,7 @@ import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import {
   useTextarea,
@@ -187,13 +187,19 @@ const ChatForm = memo(function ChatForm({
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
-  const sendNow = useCallback((text: string) => submitMessage({ text }), [submitMessage]);
+  const sendNow = useCallback(
+    (text: string, overrideFiles?: TMessage['files']) => submitMessage({ text, overrideFiles }),
+    [submitMessage],
+  );
   const steering = useSteering({
     index,
     conversationId,
     conversation,
     isSubmitting,
     answerModeActive: answerMode.active,
+    files,
+    setFiles,
+    filesLoading,
     sendNow,
     stopGenerating,
   });
@@ -473,6 +479,7 @@ const ChatForm = memo(function ChatForm({
                           ref={submitButtonRef}
                           control={methods.control}
                           action={steering.effectiveAction}
+                          disabled={filesLoading}
                         />
                       </>
                     )}

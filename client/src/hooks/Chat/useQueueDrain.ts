@@ -78,8 +78,13 @@ export default function useQueueDrain(index: string | number, ask: TAskFunction)
       return;
     }
     const next = drainNext();
-    if (next != null) {
-      ask({ text: next.text });
+    if (next == null) {
+      return;
     }
+    if (next.files && next.files.length > 0) {
+      ask({ text: next.text }, { overrideFiles: next.files });
+      return;
+    }
+    ask({ text: next.text });
   }, [runEnd, isSubmitting, drainNext, ask]);
 }

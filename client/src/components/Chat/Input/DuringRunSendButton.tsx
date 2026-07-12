@@ -10,6 +10,8 @@ import { cn } from '~/utils';
 type DuringRunSendButtonProps = {
   control: Control<{ text: string }>;
   action: DuringRunAction;
+  /** External hold (e.g. uploads in flight), mirroring the normal send button. */
+  disabled?: boolean;
 };
 
 /**
@@ -34,7 +36,7 @@ const DuringRunSendButton = React.memo(
             ref={ref}
             aria-label={label}
             id="during-run-send-button"
-            disabled={!content}
+            disabled={!content || props.disabled === true}
             className={cn(
               'rounded-full bg-surface-secondary p-1.5 text-text-primary outline-offset-4 transition-all duration-200 hover:bg-surface-tertiary disabled:cursor-not-allowed disabled:opacity-10',
             )}

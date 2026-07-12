@@ -57,15 +57,16 @@ function DuringRunActionsMenu({
           className={MENU_ITEM_CLASS}
           // Gate on availability, not the default action — this menu exists to
           // override a queue-preferring default with an explicit steer.
+          // Attachments degrade to queue inside steerFromComposer (text-only channel).
           disabled={!steering.canSteer}
-          onClick={() => runAction((text) => steering.submitSteer(text))}
+          onClick={() => runAction((text) => steering.steerFromComposer(text))}
         >
           <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
           {localize('com_ui_steer_send')}
         </Ariakit.MenuItem>
         <Ariakit.MenuItem
           className={MENU_ITEM_CLASS}
-          onClick={() => runAction((text) => steering.enqueue(text))}
+          onClick={() => runAction((text) => steering.queueFromComposer(text))}
         >
           <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />
           {localize('com_ui_queue_send')}

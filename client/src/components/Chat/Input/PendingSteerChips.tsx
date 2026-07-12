@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Zap, Clock, X, RotateCcw, Send } from 'lucide-react';
+import { Zap, Clock, X, RotateCcw, Send, Paperclip } from 'lucide-react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -101,10 +101,21 @@ function PendingSteerChips({
           <span className="max-w-[16rem] truncate" title={message.text}>
             {message.text}
           </span>
+          {(message.files?.length ?? 0) > 0 && (
+            <span className="flex shrink-0 items-center gap-0.5 text-xs">
+              <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+              {message.files?.length}
+              <span className="sr-only">
+                {localize('com_ui_queued_attachment_count', {
+                  0: String(message.files?.length ?? 0),
+                })}
+              </span>
+            </span>
+          )}
           <button
             type="button"
             aria-label={localize('com_ui_send_now')}
-            onClick={() => steering.sendQueuedNow(message.id, message.text)}
+            onClick={() => steering.sendQueuedNow(message.id, message.text, message.files)}
             className={ACTION_BTN_CLASS}
           >
             <Send className="h-3.5 w-3.5" aria-hidden="true" />

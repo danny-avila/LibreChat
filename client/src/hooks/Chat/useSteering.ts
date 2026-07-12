@@ -4,8 +4,10 @@ import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
+import type { ExtendedFile, FileSetter } from '~/common';
 import type { PendingSteer } from '~/store/families';
 import { useGetMessagesByConvoId, useSteerMessageMutation } from '~/data-provider';
+import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
@@ -58,8 +60,13 @@ export interface UseSteeringParams {
   conversation: TConversation | null;
   isSubmitting: boolean;
   answerModeActive: boolean;
-  /** Submits text as a normal new turn (used when a steer races run completion). */
-  sendNow: (text: string) => void;
+  /** Composer attachments — consumed into queued items (steering is text-only). */
+  files?: Map<string, ExtendedFile>;
+  setFiles?: FileSetter;
+  /** Uploads still in flight: during-run submits are held like the send button. */
+  filesLoading?: boolean;
+  /** Submits text (and optional attachments) as a normal new turn. */
+  sendNow: (text: string, files?: TMessage['files']) => void;
   /** Stops the current generation (used by interrupt & send). */
   stopGenerating: () => void;
 }
@@ -77,11 +84,15 @@ export default function useSteering({
   conversation,
   isSubmitting,
   answerModeActive,
+  files,
+  setFiles,
+  filesLoading = false,
   sendNow,
   stopGenerating,
 }: UseSteeringParams) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const setFilesToDelete = useSetFilesToDelete();
   const steerMutation = useSteerMessageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
 
@@ -161,18 +172,42 @@ export default function useSteering({
 
   const enqueue = useRecoilCallback(
     ({ set }) =>
-      (text: string, options?: { front?: boolean }) => {
+      (text: string, options?: { front?: boolean; files?: TMessage['files'] }) => {
         const trimmed = text.trim();
         if (trimmed.length === 0) {
           return;
         }
-        const item = { id: v4(), text: trimmed, createdAt: Date.now() };
+        const item = {
+          id: v4(),
+          text: trimmed,
+          createdAt: Date.now(),
+          ...(options?.files && options.files.length > 0 && { files: options.files }),
+        };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
           options?.front ? [item, ...prev] : [...prev, item],
         );
       },
     [queueKey],
   );
+
+  /** Consumes completed composer attachments into message file refs (clearing
+   *  the composer) so they pair with THIS queued message instead of gluing
+   *  onto whatever `ask` vacuums up next. */
+  const takeComposerFiles = useCallback((): TMessage['files'] => {
+    if (files == null || files.size === 0 || setFiles == null) {
+      return undefined;
+    }
+    const taken = Array.from(files.values()).map((file) => ({
+      file_id: file.file_id,
+      filepath: file.filepath,
+      type: file.type ?? '',
+      height: file.height,
+      width: file.width,
+    }));
+    setFiles(new Map());
+    setFilesToDelete({});
+    return taken;
+  }, [files, setFiles, setFilesToDelete]);
 
   const removeQueued = useRecoilCallback(
     ({ set }) =>
@@ -265,6 +300,38 @@ export default function useSteering({
     ],
   );
 
+  /** Composer-originated steer: media can't ride the text-only steer channel,
+   *  so a message with attachments queues as one unit (text + files) rather
+   *  than splitting the words from their media. */
+  const steerFromComposer = useCallback(
+    (text: string): boolean => {
+      const trimmed = text.trim();
+      if (trimmed.length === 0 || filesLoading) {
+        return false;
+      }
+      if (files != null && files.size > 0) {
+        enqueue(trimmed, { files: takeComposerFiles() });
+        showToast({ message: localize('com_ui_steer_attachments_queued'), status: 'info' });
+        return true;
+      }
+      return submitSteer(trimmed);
+    },
+    [filesLoading, files, enqueue, takeComposerFiles, showToast, localize, submitSteer],
+  );
+
+  /** Composer-originated queue: carries the composer's attachments. */
+  const queueFromComposer = useCallback(
+    (text: string): boolean => {
+      const trimmed = text.trim();
+      if (trimmed.length === 0 || filesLoading) {
+        return false;
+      }
+      enqueue(trimmed, { files: takeComposerFiles() });
+      return true;
+    },
+    [filesLoading, enqueue, takeComposerFiles],
+  );
+
   /** Retry a failed chip through the normal steer path. */
   const retrySteer = useCallback(
     (steerId: string, text: string) => {
@@ -292,19 +359,22 @@ export default function useSteering({
 
   /** Chip action: send a queued message into the live run instead. Keys on
    *  steer availability, not the default action — a queue-preferring user
-   *  clicking send-now explicitly asked to inject into the live run. */
+   *  clicking send-now explicitly asked to inject into the live run. Items
+   *  with media never steer (text-only channel): they send as a normal turn
+   *  when idle or move back to the queue front. */
   const sendQueuedNow = useCallback(
-    (id: string, text: string) => {
+    (id: string, text: string, queuedFiles?: TMessage['files']) => {
       removeQueued(id);
-      if (duringRunActive && canSteer) {
+      const hasMedia = (queuedFiles?.length ?? 0) > 0;
+      if (duringRunActive && canSteer && !hasMedia) {
         submitSteer(text);
         return;
       }
       if (!isSubmitting) {
-        sendNow(text);
+        sendNow(text, queuedFiles);
         return;
       }
-      enqueue(text, { front: true });
+      enqueue(text, { front: true, files: queuedFiles });
     },
     [removeQueued, duringRunActive, canSteer, submitSteer, isSubmitting, sendNow, enqueue],
   );
@@ -313,15 +383,15 @@ export default function useSteering({
   const interruptAndSend = useCallback(
     (text: string): boolean => {
       const trimmed = text.trim();
-      if (trimmed.length === 0) {
+      if (trimmed.length === 0 || filesLoading) {
         return false;
       }
-      enqueue(trimmed, { front: true });
+      enqueue(trimmed, { front: true, files: takeComposerFiles() });
       armDrainAfterAbort();
       stopGenerating();
       return true;
     },
-    [enqueue, armDrainAfterAbort, stopGenerating],
+    [filesLoading, enqueue, takeComposerFiles, armDrainAfterAbort, stopGenerating],
   );
 
   /** Routes a during-run submit to the effective action. Returns true when consumed. */
@@ -330,17 +400,12 @@ export default function useSteering({
       if (!duringRunActive) {
         return false;
       }
-      const trimmed = text.trim();
-      if (trimmed.length === 0) {
-        return false;
+      if (effectiveAction === 'steer') {
+        return steerFromComposer(text);
       }
-      if (effectiveAction === 'steer' && submitSteer(trimmed)) {
-        return true;
-      }
-      enqueue(trimmed);
-      return true;
+      return queueFromComposer(text);
     },
-    [duringRunActive, effectiveAction, submitSteer, enqueue],
+    [duringRunActive, effectiveAction, steerFromComposer, queueFromComposer],
   );
 
   return {
@@ -352,6 +417,8 @@ export default function useSteering({
     defaultAction,
     pausedOnApproval,
     submitDuringRun,
+    steerFromComposer,
+    queueFromComposer,
     submitSteer,
     retrySteer,
     removeSteer,
