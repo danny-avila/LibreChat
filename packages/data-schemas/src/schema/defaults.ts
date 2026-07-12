@@ -190,6 +190,9 @@ export const conversationPreset: {
   reasoning_context: {
     type: StringConstructor;
   };
+  priorityProcessing: {
+    type: BooleanConstructor;
+  };
   /** Verbosity control */
   verbosity: {
     type: StringConstructor;
@@ -362,6 +365,9 @@ export const conversationPreset: {
   },
   reasoning_context: {
     type: String,
+  },
+  priorityProcessing: {
+    type: Boolean,
   },
   /** Verbosity control */
   verbosity: {
