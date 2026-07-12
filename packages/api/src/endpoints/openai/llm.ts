@@ -575,8 +575,9 @@ export function getOpenAILLMConfig({
   let hasModelKwargs = false;
   let reasoningEffort = reasoning_effort;
   let reasoningSummary = reasoning_summary;
-  let reasoningMode = reasoning_mode;
-  let reasoningContext = reasoning_context;
+  let reasoningMode: 'standard' | 'pro' | null | undefined = reasoning_mode;
+  let reasoningContext: 'auto' | 'current_turn' | 'all_turns' | null | undefined =
+    reasoning_context;
 
   if (verbosity != null && verbosity !== '' && useOpenRouter) {
     llmConfig.verbosity = verbosity;

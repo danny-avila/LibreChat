@@ -90,5 +90,6 @@ export function azureConfigSetup(config: Partial<TCustomConfig>): TAzureConfig {
     assistantModels,
     assistantGroups: Array.from(assistantGroups),
     ...azureConfiguration,
+    tokenConfig: azureConfiguration.tokenConfig as TAzureConfig['tokenConfig'],
   };
 }

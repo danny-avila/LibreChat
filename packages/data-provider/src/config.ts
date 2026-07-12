@@ -1052,6 +1052,7 @@ export const azureEndpointSchema = z
         titlePrompt: true,
         titleTiming: true,
         titlePromptTemplate: true,
+        tokenConfig: true,
       })
       .partial(),
   );

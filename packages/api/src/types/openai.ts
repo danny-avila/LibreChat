@@ -4,6 +4,7 @@ import type { BindToolsInput } from '@librechat/agents/langchain/language_models
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
 import type { TConfig } from 'librechat-data-provider';
 import type { AzureOptions } from './azure';
+import type { EndpointTokenConfig } from './tokens';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
 
@@ -56,4 +57,5 @@ export interface LLMConfigResult<T = OAIClientOptions> {
 
 export type OpenAIConfigResult = LLMConfigResult<OAIClientOptions> & {
   configOptions?: OpenAIConfiguration;
+  endpointTokenConfig?: EndpointTokenConfig;
 };
