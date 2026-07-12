@@ -477,9 +477,7 @@ endpoints:
   #               cacheWrite: 6.25
   #
   # GPT-5.6 managed prompt caching sends a privacy-preserving prompt_cache_key
-  # to Azure but does not send OpenAI's explicit breakpoint controls. Native
-  # Programmatic Tool Calling is opt-in in the agent model panel and does not
-  # require LibreChat's Code API. GPT-5.6 multi-agent beta is not supported.
+  # to Azure but does not send OpenAI's explicit breakpoint controls.
 
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
