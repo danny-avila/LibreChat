@@ -571,6 +571,18 @@ mcpServers:
       authorization_type: bearer
     timeout: 60000
 
+  # Quo (formerly OpenPhone) business phone/SMS — call logs, texts, contacts.
+  # Official remote MCP server; OAuth 2.1 with per-user browser sign-in and
+  # automatic client registration (no manually-registered app/client_id needed,
+  # unlike Asana). `startup: false` so it only connects once a user clicks
+  # connect, same as the other OAuth-gated servers.
+  quo:
+    type: streamable-http
+    url: https://mcp.quo.com/mcp
+    startup: false
+    chatMenu: true
+    serverInstructions: "Use for Quo (business phone/SMS) call logs, texts, and contacts."
+
   # Note: PDF reading is handled via execute_code (Python pdfplumber/pymupdf).
   # @modelcontextprotocol/server-pdf is omitted — it requires pdfjs-dist as a
   # peer dep that npx does not install, causing a crash on every init.
