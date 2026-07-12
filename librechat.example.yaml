@@ -650,6 +650,21 @@ endpoints:
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
+    # DaoXE Example
+    # Multi-model multi-protocol AI API gateway (Chat Completions / Responses / Anthropic Messages).
+    # Models are account-scoped — enable fetch so LibreChat discovers the exact IDs for your key.
+    # Not available in mainland China.
+    - name: 'DaoXE'
+      apiKey: '${DAOXE_API_KEY}'
+      baseURL: 'https://daoxe.com/v1'
+      models:
+        default: ['placeholder-model-id']
+        fetch: true
+      titleConvo: true
+      titleModel: 'current_model'
+      modelDisplayLabel: 'DaoXE'
+      iconURL: 'https://daoxe.com/logo.png'
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
