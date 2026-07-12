@@ -19,6 +19,7 @@ import {
   backgroundTaskRegistry,
   runCheckBackgroundTask,
   claimBackgroundArtifact,
+  restoreBackgroundArtifact,
   isBackgroundRequested,
   stripRunInBackgroundArg,
   buildBackgroundHandleContent,
@@ -3390,6 +3391,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           },
                         );
                       } catch (callbackError) {
+                        restoreBackgroundArtifact({
+                          userId: backgroundUserId,
+                          conversationId: backgroundConversationId,
+                          taskId: pending.taskId,
+                          artifact: pending.artifact,
+                        });
                         logger.warn(
                           '[background] toolEndCallback error delivering artifact on poll:',
                           callbackError,

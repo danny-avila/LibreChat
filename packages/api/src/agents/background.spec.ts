@@ -430,6 +430,34 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.artifact).toBeUndefined();
   });
 
+  it('restores a claimed artifact after a failed delivery so a later claim retries', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_art_retry',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'DONE',
+      artifact: { files: ['a.png'] },
+    });
+
+    const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
+    expect(claimed?.artifact).toEqual({ files: ['a.png'] });
+    // delivery failed: restore, then a fresh claim gets the same artifact once
+    registry.restoreArtifact('u1', 'c1', created.task.id, claimed?.artifact);
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toEqual({
+      toolName: 'search_mcp_docs',
+      artifact: { files: ['a.png'] },
+      content: 'DONE',
+    });
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+  });
+
   it('reaps a stuck running task past the running TTL (frees the slot)', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({

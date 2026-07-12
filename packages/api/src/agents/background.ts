@@ -601,7 +601,8 @@ export class BackgroundTaskRegistryClass {
   /**
    * Returns a completed task's artifact exactly once, marking it delivered and
    * clearing it. The poll turn routes it to a live `toolEndCallback` so the
-   * artifact isn't lost with the finalized dispatch turn.
+   * artifact isn't lost with the finalized dispatch turn. If delivery fails,
+   * `restoreArtifact` puts it back so a later poll can retry.
    */
   claimArtifact(
     userId: string,
@@ -617,6 +618,20 @@ export class BackgroundTaskRegistryClass {
     task.artifactDelivered = true;
     task.artifact = undefined;
     return { toolName: task.toolName, artifact, content: task.result };
+  }
+
+  /**
+   * Puts a claimed artifact back after a failed delivery so the next poll
+   * retries it. No-op if the task was swept or already holds an artifact.
+   */
+  restoreArtifact(userId: string, conversationId: string, taskId: string, artifact: unknown): void {
+    const bucket = this.buckets.get(this.key(userId, conversationId));
+    const task = bucket?.tasks.get(taskId);
+    if (!task || task.artifact != null) {
+      return;
+    }
+    task.artifact = artifact;
+    task.artifactDelivered = false;
   }
 
   fail(userId: string, conversationId: string, taskId: string, error: string): void {
@@ -740,11 +755,31 @@ export function claimBackgroundArtifact(params: {
   userId: string;
   conversationId: string;
   args: unknown;
-}): { toolName: string; artifact: unknown; content?: string } | undefined {
+}): { taskId: string; toolName: string; artifact: unknown; content?: string } | undefined {
   const rawId = coerceArgsObject(params.args)?.background_task_id;
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
   if (!taskId) {
     return undefined;
   }
-  return backgroundTaskRegistry.claimArtifact(params.userId, params.conversationId, taskId);
+  const claimed = backgroundTaskRegistry.claimArtifact(
+    params.userId,
+    params.conversationId,
+    taskId,
+  );
+  return claimed ? { taskId, ...claimed } : undefined;
+}
+
+/** Reverses a `claimBackgroundArtifact` after a failed delivery (see `restoreArtifact`). */
+export function restoreBackgroundArtifact(params: {
+  userId: string;
+  conversationId: string;
+  taskId: string;
+  artifact: unknown;
+}): void {
+  backgroundTaskRegistry.restoreArtifact(
+    params.userId,
+    params.conversationId,
+    params.taskId,
+    params.artifact,
+  );
 }

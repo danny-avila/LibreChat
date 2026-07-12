@@ -329,4 +329,70 @@ describe('createToolExecuteHandler — background tool calls', () => {
     });
     expect(toolEndCalls).toHaveLength(1);
   });
+
+  it('retries artifact delivery on the next poll when the callback fails (artifact not lost)', async () => {
+    const artifactTool = {
+      name: 'search_mcp_docs',
+      description: 'returns an artifact',
+      schema: z.object({ q: z.string() }),
+      invoke: async () => ({ content: 'RESULT', artifact: { files: ['a.png'] } }),
+    } as unknown as StructuredToolInterface;
+    const toolEndCalls: Array<{ name?: string; artifact?: unknown }> = [];
+    let failNextDelivery = true;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [artifactTool] }),
+      toolEndCallback: (async (data: { output?: { name?: string; artifact?: unknown } }) => {
+        if (failNextDelivery) {
+          failNextDelivery = false;
+          throw new Error('transient storage failure');
+        }
+        toolEndCalls.push({ name: data.output?.name, artifact: data.output?.artifact });
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+    });
+    const configurable = buildConfig(['search_mcp_docs']);
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_art', name: 'search_mcp_docs', args: { q: 'img', run_in_background: true } },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_art_retry', run_id: 'run-artifact' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const handleId = JSON.parse(dispatch[0].content).background_task_id;
+
+    // first poll: delivery fails, but the poll itself still succeeds
+    const poll1 = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handleId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_art_retry', run_id: 'run-poll' },
+    });
+    expect(JSON.parse(poll1[0].content).status).toBe('completed');
+    expect(toolEndCalls).toHaveLength(0);
+
+    // second poll: the restored artifact is re-claimed and delivered
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll2',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handleId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_art_retry', run_id: 'run-poll2' },
+    });
+    expect(toolEndCalls).toHaveLength(1);
+    expect(toolEndCalls[0]).toEqual({ name: 'search_mcp_docs', artifact: { files: ['a.png'] } });
+  });
 });
