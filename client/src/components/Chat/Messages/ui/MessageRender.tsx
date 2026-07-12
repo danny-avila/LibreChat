@@ -31,6 +31,24 @@ type MessageRenderProps = {
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
 >;
 
+export function areMessageFilesEqual(
+  prevFiles: TMessage['files'],
+  nextFiles: TMessage['files'],
+): boolean {
+  if (prevFiles === nextFiles) {
+    return true;
+  }
+  const prevLength = prevFiles?.length ?? 0;
+  const nextLength = nextFiles?.length ?? 0;
+  if (prevLength !== nextLength) {
+    return false;
+  }
+  if (prevLength === 0) {
+    return true;
+  }
+  return prevFiles?.every((file, index) => file === nextFiles?.[index]) ?? true;
+}
+
 /**
  * Custom comparator for React.memo: compares `message` by key fields instead of reference
  * because `buildTree` creates new message objects on every streaming update for ALL messages,
@@ -82,7 +100,7 @@ function areMessageRenderPropsEqual(prev: MessageRenderProps, next: MessageRende
     prevMsg.endpoint === nextMsg.endpoint &&
     prevMsg.iconURL === nextMsg.iconURL &&
     prevMsg.feedback?.rating === nextMsg.feedback?.rating &&
-    (prevMsg.files?.length ?? 0) === (nextMsg.files?.length ?? 0) &&
+    areMessageFilesEqual(prevMsg.files, nextMsg.files) &&
     (prevMsg.quotes?.length ?? 0) === (nextMsg.quotes?.length ?? 0)
   );
 }
