@@ -262,6 +262,10 @@ const formatAgentMessages = (payload) => {
             additional_kwargs: { source: 'steer' },
           }),
         );
+        /** A post-steer tool_call must mint a FRESH assistant anchor —
+         *  attaching to the pre-steer one would emit its ToolMessage after
+         *  the HumanMessage while the call sat before it (invalid order). */
+        lastAIMessage = null;
       } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
         continue;
       } else {

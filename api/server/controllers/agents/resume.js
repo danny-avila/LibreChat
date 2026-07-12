@@ -16,6 +16,7 @@ const {
   filterMalformedContentParts,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
+  toPendingSteer,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -343,6 +344,24 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     return;
   }
 
+  // Steers that never reached an injection boundary during the resumed
+  // segment — mirror the normal request path's terminal drain: the atomic
+  // close (createdAt-guarded) rejects a steer POST racing this finalization,
+  // and the leftovers ride the final event as queued follow-ups instead of
+  // being 202-ACKed and then silently cleared by completeJob.
+  let pendingSteers;
+  try {
+    const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+      streamId,
+      job.createdAt,
+    );
+    if (leftoverSteers.length > 0) {
+      pendingSteers = leftoverSteers.map(toPendingSteer);
+    }
+  } catch (drainErr) {
+    logger.warn('[ResumeAgentController] Failed to drain leftover steers', drainErr);
+  }
+
   const finalEvent = {
     final: true,
     conversation,
@@ -361,6 +380,7 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
         })
       : null,
     responseMessage: { ...responseMessage },
+    ...(pendingSteers && { pendingSteers }),
   };
 
   await GenerationJobManager.emitDone(streamId, finalEvent);

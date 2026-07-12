@@ -169,7 +169,7 @@ describe('useSteering', () => {
       act(() => {
         result.current.submitSteer('too late');
       });
-      expect(sendNow).toHaveBeenCalledWith('too late', undefined);
+      expect(sendNow).toHaveBeenCalledWith('too late', []);
     });
 
     it('queues + toasts when the run is paused (RUN_PAUSED)', () => {

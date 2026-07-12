@@ -81,11 +81,15 @@ async function buildSteerMedia({ client, req, item }) {
   if (filter == null) {
     return undefined;
   }
-  const fileDocs = await getFiles(filter, {}, {});
-  if (!Array.isArray(fileDocs) || fileDocs.length === 0) {
+  const rawDocs = await getFiles(filter, {}, {});
+  if (!Array.isArray(rawDocs) || rawDocs.length === 0) {
     logger.warn(`[buildSteerMedia] No authorized files for steer=${item.steerId}`);
     return undefined;
   }
+  // `$in` results come back in database order — restore the composer order so
+  // "compare the first and second image" means what the user saw.
+  const docsById = new Map(rawDocs.map((file) => [file.file_id, file]));
+  const fileDocs = ids.map((id) => docsById.get(id)).filter(Boolean);
   return encodeSteerContent({ client, text: item.text, steerId: item.steerId, fileDocs });
 }
 

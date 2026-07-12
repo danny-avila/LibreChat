@@ -364,13 +364,16 @@ export class RedisJobStore implements IJobStore {
 
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
+    // The steer queue is keyed by streamId only — a replacement must not
+    // inherit the replaced run's undrained steers. The DEL runs BEFORE the
+    // job hash is (re)written as `running`: a steer POST 202-accepted against
+    // the NEW job can then never be wiped by this reset, and anything landing
+    // in the DEL→HSET window is still status-guarded by the old hash.
     if (this.isCluster) {
+      await this.redis.del(KEYS.steers(streamId));
       await this.redis.hset(key, this.serializeJob(job));
       await this.redis.hdel(key, ...staleHitlFields);
       await this.redis.expire(key, this.ttl.running);
-      // The steer queue is keyed by streamId only — a replacement must not
-      // inherit the replaced run's undrained steers.
-      await this.redis.del(KEYS.steers(streamId));
       await this.redis.sadd(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
@@ -379,10 +382,10 @@ export class RedisJobStore implements IJobStore {
       }
     } else {
       const pipeline = this.redis.pipeline();
+      pipeline.del(KEYS.steers(streamId));
       pipeline.hset(key, this.serializeJob(job));
       pipeline.hdel(key, ...staleHitlFields);
       pipeline.expire(key, this.ttl.running);
-      pipeline.del(KEYS.steers(streamId));
       pipeline.sadd(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);

@@ -285,11 +285,13 @@ export default function useSteering({
               // The run finished before the steer landed. While the final SSE
               // is still settling, `ask()`'s in-flight guard would drop a
               // direct send — queue it so the run-end drain fires it instead.
+              // The explicit empty array stops `ask` from vacuuming composer
+              // files staged for a DIFFERENT draft.
               replaceSteerChip(conversationId, localId, null);
               if (isSubmittingRef.current) {
                 enqueue(trimmed, { files });
               } else {
-                sendNow(trimmed, files);
+                sendNow(trimmed, files ?? []);
               }
               return;
             }
@@ -393,7 +395,9 @@ export default function useSteering({
         return;
       }
       if (!isSubmitting) {
-        sendNow(text, queuedFiles);
+        // Explicit (possibly empty) override: the queued item is the full
+        // submission context, never the composer's staged files.
+        sendNow(text, queuedFiles ?? []);
         return;
       }
       enqueue(text, { front: true, files: queuedFiles });

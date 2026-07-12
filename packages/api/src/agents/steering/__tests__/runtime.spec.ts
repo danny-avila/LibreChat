@@ -29,14 +29,20 @@ function buildSteer(steerId: string, text: string): SteerQueueItem {
 }
 
 describe('isSteeringSupported', () => {
-  it('mirrors the installed SDK capability flag', () => {
+  it('mirrors the installed SDK capability flag AND replay support', () => {
     // CI runs against the published SDK pin (possibly pre-injectedMessages);
     // local dev may run against a capability-bearing build. The probe must
-    // track the flag exactly in both worlds — false means the steer route
-    // 501s and createRun skips the drain wiring instead of dropping messages.
+    // track BOTH halves of the contract exactly in every world — false means
+    // the steer route 501s and createRun skips the drain wiring. Requiring
+    // ContentTypes.STEER guards the release window where injection shipped
+    // without the formatAgentMessages replay branch: creating steer parts
+    // there would leak them into provider-facing assistant content.
+    const sdk = agentsSdk as {
+      HOOK_INJECTED_MESSAGES_CAPABLE?: boolean;
+      ContentTypes?: { STEER?: string };
+    };
     const capable =
-      (agentsSdk as { HOOK_INJECTED_MESSAGES_CAPABLE?: boolean }).HOOK_INJECTED_MESSAGES_CAPABLE ===
-      true;
+      sdk.HOOK_INJECTED_MESSAGES_CAPABLE === true && sdk.ContentTypes?.STEER === 'steer';
     expect(isSteeringSupported()).toBe(capable);
   });
 });

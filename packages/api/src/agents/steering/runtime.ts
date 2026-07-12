@@ -24,18 +24,26 @@ type SteerDrainOutput = HookOutputByEvent['PostToolBatch'] & {
 };
 
 /**
- * Whether the installed `@librechat/agents` converts hook-returned
- * `injectedMessages` into graph-state HumanMessages at the PostToolBatch
- * boundary. Steering wiring MUST gate on this: draining the queue on an SDK
- * that ignores `injectedMessages` would silently drop the user's words.
+ * Whether the installed `@librechat/agents` supports the FULL steering
+ * contract — both halves are required before any steer part may be created:
+ * 1. `HOOK_INJECTED_MESSAGES_CAPABLE`: hook-returned `injectedMessages`
+ *    convert into graph-state HumanMessages at the PostToolBatch boundary
+ *    (draining the queue without this silently drops the user's words).
+ * 2. `ContentTypes.STEER`: the SDK's `formatAgentMessages` replays persisted
+ *    steer parts as user turns on later prompts (the replay branch ships in
+ *    the same SDK commit as the enum member). Without it, a persisted steer
+ *    part would fall through the formatter's catch-all INTO the assistant's
+ *    provider content — so an SDK that can inject but not replay must still
+ *    501 the steer route.
  * Read via the namespace so an older SDK yields `undefined` (→ false)
  * instead of a missing-binding failure.
  */
 export function isSteeringSupported(): boolean {
-  return (
-    (agentsSdk as { HOOK_INJECTED_MESSAGES_CAPABLE?: boolean }).HOOK_INJECTED_MESSAGES_CAPABLE ===
-    true
-  );
+  const sdk = agentsSdk as {
+    HOOK_INJECTED_MESSAGES_CAPABLE?: boolean;
+    ContentTypes?: { STEER?: string };
+  };
+  return sdk.HOOK_INJECTED_MESSAGES_CAPABLE === true && sdk.ContentTypes?.STEER === 'steer';
 }
 
 /** Encoded multimodal content for a steer that carried attachments. */
