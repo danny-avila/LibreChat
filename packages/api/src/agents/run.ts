@@ -339,6 +339,12 @@ type RunAgent = Omit<Agent, 'tools'> & {
    * is actually registered.
    */
   codeEnvAvailable?: boolean;
+  /**
+   * Per-agent stateful-session gate set by `initializeAgent`: the admin
+   * `stateful_code_sessions` capability AND the agent's builder opt-in AND
+   * `codeEnvAvailable`. Walked here to gate `toolExecution.sandbox`.
+   */
+  statefulCodeSessions?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -776,6 +782,39 @@ function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
     return !included.includes(ASK_USER_QUESTION_TOOL_NAME);
   }
   return appConfig?.filteredTools?.includes(ASK_USER_QUESTION_TOOL_NAME) === true;
+}
+
+/**
+ * Whether any agent reachable in the run — primary, handoff/parallel, or a
+ * nested subagent — resolved `statefulCodeSessions` during initialization
+ * (admin `stateful_code_sessions` capability AND the agent's builder opt-in
+ * AND a working code env). Walks `subagentAgentConfigs` like
+ * {@link anyAgentHasCodeEnv}; when true, `createRun` opts the run's remote
+ * sandbox tools into stateful runtime sessions via `toolExecution.sandbox`.
+ * Off by default: the capability is absent from `defaultAgentCapabilities`,
+ * agents opt in individually, and the SDK derives the session hint from
+ * `thread_id` (= conversationId), so this is never a trust boundary.
+ */
+export function anyAgentHasStatefulSessions(agents: Array<RunAgent | null | undefined>): boolean {
+  const visited = new Set<string>();
+  const pending = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (agent.statefulCodeSessions === true) {
+      return true;
+    }
+    for (const child of agent.subagentAgentConfigs ?? []) {
+      if (child != null && !visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -1288,6 +1327,9 @@ export async function createRun({
    * and the resume route). When disabled, nothing attaches and the run is identical
    * to before this feature shipped.
    */
+  // Per-agent truth resolved by initializeAgent (admin capability AND builder
+  // opt-in AND code env) — the run opts in when any reachable agent did.
+  const statefulCodeSessions = anyAgentHasStatefulSessions(agents);
   // Resolve the effective policy through the single seam so per-agent / per-skill
   // sources can layer in later without touching this call site (see
   // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
@@ -1387,6 +1429,15 @@ export async function createRun({
     }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
+    }),
+    // Best-effort stateful runtime sessions on the remote Code API. The SDK
+    // stamps a per-conversation session hint on execute_code/bash requests and
+    // hedges those tools' descriptions; the transport is otherwise unchanged.
+    // `engine` is omitted (defaults to `sandbox`) and the hint defaults to
+    // thread_id. Requires @librechat/agents with `toolExecution.sandbox`;
+    // older versions ignore the field.
+    ...(statefulCodeSessions && {
+      toolExecution: { sandbox: { statefulSessions: true } },
     }),
     // HITL opt-in: the `humanInTheLoop` switch + the PreToolUse policy hook. Spread
     // here (not just `compileOptions.checkpointer` above) so an `ask` decision raises
