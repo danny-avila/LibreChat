@@ -169,7 +169,7 @@ describe('useSteering', () => {
       act(() => {
         result.current.submitSteer('too late');
       });
-      expect(sendNow).toHaveBeenCalledWith('too late');
+      expect(sendNow).toHaveBeenCalledWith('too late', undefined);
     });
 
     it('queues + toasts when the run is paused (RUN_PAUSED)', () => {
@@ -333,22 +333,23 @@ describe('useSteering', () => {
       return { ...rendered, setFiles, sendNow, stopGenerating };
     }
 
-    it('routes a steer submit with attachments to the queue as one unit', () => {
+    it('steers with the composer attachments as one unit', () => {
       const { result, setFiles } = setupWithFiles();
       let consumed = false;
       act(() => {
         consumed = result.current.steering.submitDuringRun('look at this image');
       });
       expect(consumed).toBe(true);
-      expect(mockMutate).not.toHaveBeenCalled();
-      expect(result.current.queue).toEqual([
-        expect.objectContaining({
+      expect(mockMutate).toHaveBeenCalledWith(
+        {
+          conversationId: CONVO_ID,
           text: 'look at this image',
           files: [expect.objectContaining({ file_id: 'file-1' })],
-        }),
-      ]);
+        },
+        expect.anything(),
+      );
+      expect(result.current.queue).toEqual([]);
       expect(setFiles).toHaveBeenCalledWith(new Map());
-      expect(mockShowToast).toHaveBeenCalled();
     });
 
     it('holds during-run submits while uploads are in flight', () => {
@@ -362,18 +363,17 @@ describe('useSteering', () => {
       expect(mockMutate).not.toHaveBeenCalled();
     });
 
-    it('never steers a queued item that carries media', () => {
+    it('steers a queued media item with its own files during a live run', () => {
       const { result, sendNow } = setupWithFiles();
       act(() => {
         result.current.steering.sendQueuedNow('q-media', 'media message', queuedFiles);
       });
-      // Run is live and steerable, but media can't ride the steer channel —
-      // the item moves to the queue front instead.
-      expect(mockMutate).not.toHaveBeenCalled();
       expect(sendNow).not.toHaveBeenCalled();
-      expect(result.current.queue).toEqual([
-        expect.objectContaining({ text: 'media message', files: queuedFiles }),
-      ]);
+      expect(mockMutate).toHaveBeenCalledWith(
+        { conversationId: CONVO_ID, text: 'media message', files: queuedFiles },
+        expect.anything(),
+      );
+      expect(result.current.queue).toEqual([]);
     });
 
     it('sends a media item as a normal turn with its own files when idle', () => {

@@ -233,20 +233,22 @@ export default function useSteering({
   );
 
   const submitSteer = useCallback(
-    (text: string): boolean => {
+    (text: string, steerFiles?: TMessage['files']): boolean => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || !hasRealConvoId) {
         return false;
       }
+      const files = steerFiles && steerFiles.length > 0 ? steerFiles : undefined;
       const localId = `local-${v4()}`;
       upsertSteerChip(conversationId, {
         steerId: localId,
         text: trimmed,
         status: 'sending',
         createdAt: Date.now(),
+        ...(files && { files }),
       });
       steerMutation.mutate(
-        { conversationId, text: trimmed },
+        { conversationId, text: trimmed, ...(files && { files }) },
         {
           onSuccess: (response) => {
             acknowledgeSteer(conversationId, localId, {
@@ -254,6 +256,7 @@ export default function useSteering({
               text: trimmed,
               status: 'pending',
               createdAt: Date.now(),
+              ...(files && { files }),
             });
           },
           onError: (error) => {
@@ -264,9 +267,9 @@ export default function useSteering({
               // direct send — queue it so the run-end drain fires it instead.
               replaceSteerChip(conversationId, localId, null);
               if (isSubmittingRef.current) {
-                enqueue(trimmed);
+                enqueue(trimmed, { files });
               } else {
-                sendNow(trimmed);
+                sendNow(trimmed, files);
               }
               return;
             }
@@ -276,7 +279,7 @@ export default function useSteering({
               code === 'STEER_QUEUE_FULL'
             ) {
               replaceSteerChip(conversationId, localId, null);
-              enqueue(trimmed);
+              enqueue(trimmed, { files });
               showToast({ message: localize('com_ui_steer_paused_queued'), status: 'info' });
               return;
             }
@@ -285,6 +288,7 @@ export default function useSteering({
               text: trimmed,
               status: 'failed',
               createdAt: Date.now(),
+              ...(files && { files }),
             });
           },
         },
@@ -305,23 +309,18 @@ export default function useSteering({
     ],
   );
 
-  /** Composer-originated steer: media can't ride the text-only steer channel,
-   *  so a message with attachments queues as one unit (text + files) rather
-   *  than splitting the words from their media. */
+  /** Composer-originated steer: consumes the composer's attachments so they
+   *  ride the steer as one unit (the server re-fetches + encodes them at the
+   *  injection boundary). Files are taken only after the guards pass. */
   const steerFromComposer = useCallback(
     (text: string): boolean => {
       const trimmed = text.trim();
-      if (trimmed.length === 0 || filesLoading) {
+      if (trimmed.length === 0 || filesLoading || !hasRealConvoId) {
         return false;
       }
-      if (files != null && files.size > 0) {
-        enqueue(trimmed, { files: takeComposerFiles() });
-        showToast({ message: localize('com_ui_steer_attachments_queued'), status: 'info' });
-        return true;
-      }
-      return submitSteer(trimmed);
+      return submitSteer(trimmed, takeComposerFiles());
     },
-    [filesLoading, files, enqueue, takeComposerFiles, showToast, localize, submitSteer],
+    [filesLoading, hasRealConvoId, takeComposerFiles, submitSteer],
   );
 
   /** Composer-originated queue: carries the composer's attachments. */
@@ -339,9 +338,9 @@ export default function useSteering({
 
   /** Retry a failed chip through the normal steer path. */
   const retrySteer = useCallback(
-    (steerId: string, text: string) => {
+    (steerId: string, text: string, steerFiles?: TMessage['files']) => {
       replaceSteerChip(conversationId, steerId, null);
-      submitSteer(text);
+      submitSteer(text, steerFiles);
     },
     [conversationId, replaceSteerChip, submitSteer],
   );
@@ -355,24 +354,22 @@ export default function useSteering({
 
   /** Convert a failed/unsent steer chip into a queued follow-up. */
   const convertSteerToQueue = useCallback(
-    (steerId: string, text: string) => {
+    (steerId: string, text: string, steerFiles?: TMessage['files']) => {
       replaceSteerChip(conversationId, steerId, null);
-      enqueue(text);
+      enqueue(text, { files: steerFiles });
     },
     [conversationId, replaceSteerChip, enqueue],
   );
 
   /** Chip action: send a queued message into the live run instead. Keys on
    *  steer availability, not the default action — a queue-preferring user
-   *  clicking send-now explicitly asked to inject into the live run. Items
-   *  with media never steer (text-only channel): they send as a normal turn
-   *  when idle or move back to the queue front. */
+   *  clicking send-now explicitly asked to inject into the live run. The
+   *  item's attachments ride the steer. */
   const sendQueuedNow = useCallback(
     (id: string, text: string, queuedFiles?: TMessage['files']) => {
       removeQueued(id);
-      const hasMedia = (queuedFiles?.length ?? 0) > 0;
-      if (duringRunActive && canSteer && !hasMedia) {
-        submitSteer(text);
+      if (duringRunActive && canSteer) {
+        submitSteer(text, queuedFiles);
         return;
       }
       if (!isSubmitting) {

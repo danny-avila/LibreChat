@@ -9,11 +9,13 @@ import { GenerationJobManager } from '~/stream/GenerationJobManager';
  * locally — not as `InjectedMessage` — because the field ships in
  * `@librechat/agents` versions with `HOOK_INJECTED_MESSAGES_CAPABLE`; older
  * SDKs ignore it at runtime and their `PostToolBatchHookOutput` predates it.
- * Switch to the SDK types once the dependency is bumped.
+ * Switch to the SDK types once the dependency is bumped. Content mirrors the
+ * SDK's `string | MessageContentComplex[]` (arrays pass through to a
+ * multimodal HumanMessage unchanged).
  */
 interface SteerInjectedMessage {
   role: 'user';
-  content: string;
+  content: string | Array<Record<string, unknown>>;
   source: 'steer';
 }
 
@@ -36,6 +38,14 @@ export function isSteeringSupported(): boolean {
   );
 }
 
+/** Encoded multimodal content for a steer that carried attachments. */
+export interface SteerMediaResult {
+  /** Full ordered content array for graph injection (text part included). */
+  content: Array<Record<string, unknown>>;
+  /** Validated file refs (from the DB, not the client) for the persisted part. */
+  files?: SteerQueueItem['files'];
+}
+
 export interface SteerDrainHookOptions {
   streamId: string;
   /**
@@ -50,14 +60,22 @@ export interface SteerDrainHookOptions {
    * `on_steer_applied` SSE event. Called FIFO, before the graph injection is
    * returned. Failures are logged per item and never block the injection.
    */
-  applySteer: (item: SteerQueueItem) => void | Promise<void>;
+  applySteer: (item: SteerQueueItem, media?: SteerMediaResult) => void | Promise<void>;
+  /**
+   * Resolves a steer's attachment refs into encoded model content (owner-scoped
+   * fetch + provider encoding, host-side). Only consulted for items that carry
+   * files. Any failure degrades that steer to text-only — the user's words are
+   * never dropped because an attachment could not be encoded.
+   */
+  buildMedia?: (item: SteerQueueItem) => Promise<SteerMediaResult | undefined>;
 }
 
 /**
  * Build the run-scoped `PostToolBatch` hook that drains the job's steer queue
  * at each tool-batch boundary and injects each steer into graph state as its
  * own user message (`role: 'user'`, `source: 'steer'` — never consolidated
- * with hook context).
+ * with hook context). Steers with attachments inject as multimodal content
+ * arrays via `buildMedia`.
  *
  * Subagent scopes are skipped (`input.agentId` set): a steer targets the
  * top-level conversation, not a child agent's context. Hook errors are
@@ -65,7 +83,7 @@ export interface SteerDrainHookOptions {
  * run.
  */
 export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<'PostToolBatch'> {
-  const { streamId, jobCreatedAt, applySteer } = opts;
+  const { streamId, jobCreatedAt, applySteer, buildMedia } = opts;
   return async (input: HookInputByEvent['PostToolBatch']): Promise<SteerDrainOutput> => {
     if (input.agentId != null) {
       return {};
@@ -80,22 +98,33 @@ export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<
     if (steers.length === 0) {
       return {};
     }
+    const injectedMessages: SteerInjectedMessage[] = [];
     for (const item of steers) {
+      let media: SteerMediaResult | undefined;
+      if (buildMedia != null && (item.files?.length ?? 0) > 0) {
+        try {
+          media = await buildMedia(item);
+        } catch (error) {
+          logger.error(
+            `[steering] Failed to encode steer media for ${streamId} steer=${item.steerId}; injecting text only:`,
+            error,
+          );
+        }
+      }
       try {
-        await applySteer(item);
+        await applySteer(item, media);
       } catch (error) {
         logger.error(
           `[steering] Failed to apply steer part for ${streamId} steer=${item.steerId}:`,
           error,
         );
       }
-    }
-    return {
-      injectedMessages: steers.map((item) => ({
+      injectedMessages.push({
         role: 'user' as const,
-        content: item.text,
+        content: media?.content ?? item.text,
         source: 'steer' as const,
-      })),
-    };
+      });
+    }
+    return { injectedMessages };
   };
 }

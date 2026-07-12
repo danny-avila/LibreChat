@@ -565,6 +565,7 @@ export default function useResumableSSE(
             text: steer.text,
             status: 'pending' as const,
             createdAt: steer.createdAt ?? Date.now(),
+            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
           })),
           ...prev.filter((steer) => steer.status === 'failed'),
         ]);
@@ -592,6 +593,7 @@ export default function useResumableSSE(
             steerId: steer.steerId,
             text: steer.text,
             createdAt: steer.createdAt,
+            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
           }));
         if (settled.length > 0) {
           convertSteersToQueued(conversationId, settled);

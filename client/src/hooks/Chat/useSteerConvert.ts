@@ -36,6 +36,7 @@ export default function useSteerConvert() {
               id: steer.steerId,
               text: steer.text,
               createdAt: steer.createdAt ?? Date.now(),
+              ...(steer.files && steer.files.length > 0 && { files: steer.files }),
             })),
         ]);
       },

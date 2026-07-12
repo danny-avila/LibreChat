@@ -254,7 +254,10 @@ const formatAgentMessages = (payload) => {
         }
         messages.push(
           new HumanMessage({
-            content: part[ContentTypes.STEER] ?? '',
+            content:
+              Array.isArray(part.media) && part.media.length > 0
+                ? part.media
+                : (part[ContentTypes.STEER] ?? ''),
             additional_kwargs: { source: 'steer' },
           }),
         );

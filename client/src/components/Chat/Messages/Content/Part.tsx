@@ -74,7 +74,7 @@ const Part = memo(function Part({
   }
 
   if (part.type === ContentTypes.STEER) {
-    return <SteerBubble steer={part[ContentTypes.STEER]} />;
+    return <SteerBubble steer={part[ContentTypes.STEER]} files={part.files} />;
   }
 
   if (part.type === ContentTypes.ERROR) {

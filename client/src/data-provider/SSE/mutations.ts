@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { apiBaseUrl, request, EModelEndpoint } from 'librechat-data-provider';
-import type { Agents, TEphemeralAgent, TPendingSteer } from 'librechat-data-provider';
+import type { Agents, TMessage, TEphemeralAgent, TPendingSteer } from 'librechat-data-provider';
 
 export interface AbortStreamParams {
   /** The stream ID to abort (if known) */
@@ -146,6 +146,8 @@ export function useSubmitAskAnswerMutation() {
 export interface SteerMessageParams {
   conversationId: string;
   text: string;
+  /** Attachment refs steered with the message (already uploaded). */
+  files?: TMessage['files'];
 }
 
 /** Successful steer ACK: the server queued the message for mid-run injection. */

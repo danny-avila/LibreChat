@@ -1,4 +1,4 @@
-import type { Agents, TPendingSteer } from 'librechat-data-provider';
+import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 
 /**
@@ -156,6 +156,10 @@ export interface SteerQueueItem {
   text: string;
   userId: string;
   createdAt: number;
+  /** Attachment refs steered with the message. Display metadata only — the
+   *  drain re-fetches each file by id scoped to the run's user and encodes
+   *  fresh, so nothing here is trusted beyond identifying the file. */
+  files?: Partial<TFile>[];
 }
 
 /** Maximum steers a single run can have queued at once. */

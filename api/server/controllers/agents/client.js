@@ -97,6 +97,7 @@ const {
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { buildSteerMedia, stampSteerPartMedia } = require('~/server/services/Files/steering');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -257,14 +258,18 @@ class AgentClient extends BaseClient {
    *
    * @param {string} streamId
    * @param {import('@librechat/api').SteerQueueItem} item
+   * @param {import('@librechat/api').SteerMediaResult} [media] - encoded attachment
+   *   content; only the validated file REFS persist on the part (encoded data is
+   *   re-derived per turn, like any other user media)
    */
-  async applySteerPart(streamId, item) {
+  async applySteerPart(streamId, item, media) {
     const index = this.contentParts.length;
     const part = {
       type: ContentTypes.STEER,
       [ContentTypes.STEER]: item.text,
       steerId: item.steerId,
       createdAt: item.createdAt,
+      ...(media?.files?.length && { files: media.files }),
     };
     this.contentParts.push(part);
     this.steerOffsetState.offset += 1;
@@ -295,7 +300,8 @@ class AgentClient extends BaseClient {
       hook: createSteerDrainHook({
         streamId,
         jobCreatedAt: this.jobCreatedAt,
-        applySteer: (item) => this.applySteerPart(streamId, item),
+        applySteer: (item, media) => this.applySteerPart(streamId, item, media),
+        buildMedia: (item) => buildSteerMedia({ client: this, req: this.options.req, item }),
       }),
     };
   }
@@ -574,6 +580,12 @@ class AgentClient extends BaseClient {
     }
 
     payload = formattedMessages;
+    if (this.options.resendFiles) {
+      /** Persisted steer parts of past turns replay with their attachments:
+       *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
+       *  transient `media` array (same resend semantics as message files). */
+      await stampSteerPartMedia({ client: this, req: this.options.req, payload });
+    }
     this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;

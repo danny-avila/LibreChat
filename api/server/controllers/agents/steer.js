@@ -10,6 +10,40 @@ const {
 /** Character cap for a single steer message (env-overridable). */
 const STEER_MAX_LENGTH = parseInt(process.env.STEER_MAX_LENGTH ?? '', 10) || 16000;
 
+/** Attachment cap per steer, mirroring the composer's practical limits. */
+const STEER_MAX_FILES = 10;
+
+/**
+ * Sanitizes client-supplied attachment refs down to display metadata. Only
+ * `file_id` is meaningful server-side — the drain re-fetches each file scoped
+ * to the run's user before encoding, so ownership is enforced by that query,
+ * not by anything carried here.
+ */
+function sanitizeSteerFiles(rawFiles) {
+  if (!Array.isArray(rawFiles) || rawFiles.length === 0) {
+    return { files: undefined };
+  }
+  if (rawFiles.length > STEER_MAX_FILES) {
+    return { error: 'TOO_MANY_FILES' };
+  }
+  const files = [];
+  for (const raw of rawFiles) {
+    if (raw == null || typeof raw !== 'object' || typeof raw.file_id !== 'string') {
+      return { error: 'INVALID_FILES' };
+    }
+    files.push({
+      file_id: raw.file_id,
+      ...(typeof raw.type === 'string' && { type: raw.type }),
+      ...(typeof raw.filepath === 'string' && { filepath: raw.filepath }),
+      ...(typeof raw.filename === 'string' && { filename: raw.filename }),
+      ...(typeof raw.height === 'number' && { height: raw.height }),
+      ...(typeof raw.width === 'number' && { width: raw.width }),
+      ...(typeof raw.bytes === 'number' && { bytes: raw.bytes }),
+    });
+  }
+  return { files };
+}
+
 /** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
 function hasTenantMismatch(job, user) {
   return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
@@ -48,6 +82,11 @@ const SteerController = async (req, res) => {
       return res.status(413).json({ code: 'STEER_TOO_LONG', maxLength: STEER_MAX_LENGTH });
     }
 
+    const { files, error: filesError } = sanitizeSteerFiles(req.body?.files);
+    if (filesError) {
+      return res.status(400).json({ code: filesError });
+    }
+
     if (!isSteeringSupported()) {
       return res.status(501).json({ code: 'STEER_UNSUPPORTED' });
     }
@@ -69,7 +108,13 @@ const SteerController = async (req, res) => {
       return res.status(409).json({ code: 'RUN_PAUSED' });
     }
 
-    const item = { steerId: randomUUID(), text, userId, createdAt: Date.now() };
+    const item = {
+      steerId: randomUUID(),
+      text,
+      userId,
+      createdAt: Date.now(),
+      ...(files && { files }),
+    };
     const depth = await GenerationJobManager.steering.enqueue(streamId, item);
     if (depth === STEER_ENQUEUE_NOT_RUNNING) {
       return res.status(404).json({ code: 'NO_ACTIVE_RUN' });

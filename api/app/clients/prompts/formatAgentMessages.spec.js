@@ -594,5 +594,30 @@ describe('formatAgentMessages', () => {
       expect(result.map((m) => m.constructor)).toEqual([AIMessage, HumanMessage]);
       expect(result[1].content).toBe('trailing steer');
     });
+
+    it('prefers stamped media content for multimodal steers', () => {
+      const media = [
+        { type: 'text', text: 'see the chart' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,abc', detail: 'auto' } },
+      ];
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: ContentTypes.STEER,
+              [ContentTypes.STEER]: 'see the chart',
+              files: [{ file_id: 'f1' }],
+              media,
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(HumanMessage);
+      expect(result[0].content).toEqual(media);
+    });
   });
 });

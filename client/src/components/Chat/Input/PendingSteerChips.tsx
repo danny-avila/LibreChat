@@ -115,7 +115,7 @@ function QueuedRow({
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
   const fileCount = message.files?.length ?? 0;
-  const canSteerNow = steering.duringRunActive && steering.canSteer && fileCount === 0;
+  const canSteerNow = steering.duringRunActive && steering.canSteer;
   const showPrimary = canSteerNow || !steering.duringRunActive;
 
   const entries: MenuEntry[] = [
@@ -194,14 +194,14 @@ function SteerRow({
           icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
           onClick: () => {
             steering.removeSteer(steer.steerId);
-            onEditToComposer(steer.text);
+            onEditToComposer(steer.text, steer.files);
           },
         },
         {
           key: 'queue',
           label: localize('com_ui_convert_to_queue'),
           icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
-          onClick: () => steering.convertSteerToQueue(steer.steerId, steer.text),
+          onClick: () => steering.convertSteerToQueue(steer.steerId, steer.text, steer.files),
         },
         toggleEntry,
       ]

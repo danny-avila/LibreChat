@@ -586,6 +586,9 @@ export type SteerContentPart = {
   steer: string;
   steerId?: string;
   createdAt?: number;
+  /** Attachments steered with the message; re-encoded per turn on replay
+   *  like any other user-message media (refs only, never encoded data). */
+  files?: Partial<TFile>[];
 };
 
 export type TMessageContentParts =

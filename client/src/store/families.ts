@@ -318,6 +318,8 @@ export type PendingSteer = {
   text: string;
   status: 'sending' | 'pending' | 'failed';
   createdAt: number;
+  /** Attachments steered with the message (refs; already uploaded). */
+  files?: TMessage['files'];
 };
 
 /**

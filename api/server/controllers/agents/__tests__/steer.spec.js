@@ -195,5 +195,68 @@ describe('SteerController', () => {
     expect(streamId).toBe(CONVO_ID);
     expect(item).toMatchObject({ text: 'focus on tests', userId: USER_ID });
     expect(typeof item.createdAt).toBe('number');
+    expect(item.files).toBeUndefined();
+  });
+
+  it('sanitizes attachment refs down to known fields', async () => {
+    const app = buildApp();
+    mockGetJob.mockResolvedValue(runningJob());
+    mockEnqueue.mockResolvedValueOnce(1);
+
+    const res = await request(app)
+      .post('/chat/steer')
+      .send({
+        conversationId: CONVO_ID,
+        text: 'see the image',
+        files: [
+          {
+            file_id: 'f1',
+            type: 'image/png',
+            filepath: '/uploads/f1.png',
+            filename: 'shot.png',
+            height: 10,
+            width: 20,
+            bytes: 999,
+            user: 'someone-else',
+            embedded: true,
+          },
+        ],
+      });
+
+    expect(res.status).toBe(202);
+    const [, item] = mockEnqueue.mock.calls[0];
+    expect(item.files).toEqual([
+      {
+        file_id: 'f1',
+        type: 'image/png',
+        filepath: '/uploads/f1.png',
+        filename: 'shot.png',
+        height: 10,
+        width: 20,
+        bytes: 999,
+      },
+    ]);
+  });
+
+  it('400s on malformed or oversized file lists', async () => {
+    const app = buildApp();
+    mockGetJob.mockResolvedValue(runningJob());
+
+    const malformed = await request(app)
+      .post('/chat/steer')
+      .send({ conversationId: CONVO_ID, text: 'x', files: [{ nope: true }] });
+    expect(malformed.status).toBe(400);
+    expect(malformed.body.code).toBe('INVALID_FILES');
+
+    const oversized = await request(app)
+      .post('/chat/steer')
+      .send({
+        conversationId: CONVO_ID,
+        text: 'x',
+        files: Array.from({ length: 11 }, (_, i) => ({ file_id: `f${i}` })),
+      });
+    expect(oversized.status).toBe(400);
+    expect(oversized.body.code).toBe('TOO_MANY_FILES');
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 });

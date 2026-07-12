@@ -1,3 +1,4 @@
+import type { TFile } from './files';
 import { inputTokensIncludesCache } from '../schemas';
 
 export enum ContentTypes {
@@ -74,6 +75,7 @@ export type TPendingSteer = {
   steerId: string;
   text: string;
   createdAt?: number;
+  files?: Partial<TFile>[];
 };
 
 /** Payload of the `on_steer_applied` SSE event. */
@@ -86,6 +88,7 @@ export type TSteerAppliedEvent = {
     [ContentTypes.STEER]: string;
     steerId?: string;
     createdAt?: number;
+    files?: Partial<TFile>[];
   };
   responseMessageId?: string;
   conversationId?: string;

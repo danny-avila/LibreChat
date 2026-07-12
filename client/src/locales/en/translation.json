@@ -1852,7 +1852,6 @@
   "com_ui_stack_trace": "Stack Trace",
   "com_ui_status_prefix": "Status:",
   "com_ui_steer": "Steer",
-  "com_ui_steer_attachments_queued": "Messages with attachments are queued and will send after the response finishes",
   "com_ui_steer_failed": "Steering failed",
   "com_ui_steer_paused_queued": "The agent is waiting for your review — your message was queued instead",
   "com_ui_steer_pending": "Steering…",

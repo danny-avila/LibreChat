@@ -4,7 +4,12 @@ import type { IJobStore, SteerQueueItem } from '~/stream/interfaces/IJobStore';
 
 /** Client-safe projection of a queued steer (drops the server-only userId). */
 export function toPendingSteer(item: SteerQueueItem): TPendingSteer {
-  return { steerId: item.steerId, text: item.text, createdAt: item.createdAt };
+  return {
+    steerId: item.steerId,
+    text: item.text,
+    createdAt: item.createdAt,
+    ...(item.files && item.files.length > 0 && { files: item.files }),
+  };
 }
 
 /**

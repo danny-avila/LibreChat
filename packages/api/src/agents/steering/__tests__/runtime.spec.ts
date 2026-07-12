@@ -134,4 +134,68 @@ describe('createSteerDrainHook', () => {
       { role: 'user', content: 'survives', source: 'steer' },
     ]);
   });
+
+  it('injects encoded media content for steers that carry files', async () => {
+    const streamId = `drain-media-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const files = [{ file_id: 'f1', type: 'image/png' }];
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'see image'),
+      files,
+    });
+    await GenerationJobManager.steering.enqueue(streamId, buildSteer('s2', 'text only'));
+
+    const media = {
+      content: [
+        { type: 'text', text: 'see image' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,x', detail: 'auto' } },
+      ],
+      files,
+    };
+    const buildMedia = jest.fn(async () => media);
+    const applied: Array<{ text: string; media?: unknown }> = [];
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: (item, itemMedia) => {
+        applied.push({ text: item.text, media: itemMedia });
+      },
+      buildMedia,
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    // buildMedia is consulted only for items that carry files.
+    expect(buildMedia).toHaveBeenCalledTimes(1);
+    expect(applied).toEqual([
+      { text: 'see image', media },
+      { text: 'text only', media: undefined },
+    ]);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: media.content, source: 'steer' },
+      { role: 'user', content: 'text only', source: 'steer' },
+    ]);
+  });
+
+  it('degrades to text-only injection when media encoding fails', async () => {
+    const streamId = `drain-media-error-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'words survive'),
+      files: [{ file_id: 'f-gone' }],
+    });
+
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+      buildMedia: async () => {
+        throw new Error('encode failed');
+      },
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: 'words survive', source: 'steer' },
+    ]);
+  });
 });
