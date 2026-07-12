@@ -1,3 +1,4 @@
+import * as agentsSdk from '@librechat/agents';
 import type { PostToolBatchHookInput, PostToolBatchHookOutput } from '@librechat/agents';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 
@@ -28,8 +29,15 @@ function buildSteer(steerId: string, text: string): SteerQueueItem {
 }
 
 describe('isSteeringSupported', () => {
-  it('is true against the injectedMessages-capable SDK', () => {
-    expect(isSteeringSupported()).toBe(true);
+  it('mirrors the installed SDK capability flag', () => {
+    // CI runs against the published SDK pin (possibly pre-injectedMessages);
+    // local dev may run against a capability-bearing build. The probe must
+    // track the flag exactly in both worlds — false means the steer route
+    // 501s and createRun skips the drain wiring instead of dropping messages.
+    const capable =
+      (agentsSdk as { HOOK_INJECTED_MESSAGES_CAPABLE?: boolean }).HOOK_INJECTED_MESSAGES_CAPABLE ===
+      true;
+    expect(isSteeringSupported()).toBe(capable);
   });
 });
 
