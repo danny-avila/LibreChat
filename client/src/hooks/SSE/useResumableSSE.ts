@@ -50,6 +50,7 @@ import {
   streamStatusQueryKey,
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
@@ -572,31 +573,31 @@ export default function useResumableSSE(
   );
 
   /** Converts steers that never reached an injection boundary into queued
-   *  follow-up messages (reported on the run's final/abort event). Also the
-   *  end-of-run cleanup point for the applied-id set. */
-  const convertSteersToQueued = useRecoilCallback(
-    ({ set }) =>
-      (conversationId: string, steers: TPendingSteer[]) => {
-        set(store.appliedSteerIdsByConvoId(conversationId), []);
-        if (steers.length === 0) {
-          return;
+   *  follow-up messages (reported on the run's final/abort event; the abort
+   *  HTTP response consumes the same data as a fallback in useChatHelpers). */
+  const convertSteersToQueued = useSteerConvert();
+
+  /** Error events carry no `pendingSteers` payload (the server drops its copy
+   *  on failure), but every acknowledged chip's text is local — convert them
+   *  to queued follow-ups so the user's words survive a failed run. `sending`
+   *  chips settle through their own POST callbacks (404 falls back to
+   *  queue/send) and `failed` chips keep their manual controls. */
+  const convertLocalSteersToQueued = useRecoilCallback(
+    ({ snapshot }) =>
+      (conversationId: string) => {
+        const chips = snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue();
+        const settled = chips
+          .filter((steer) => steer.status === 'pending')
+          .map((steer) => ({
+            steerId: steer.steerId,
+            text: steer.text,
+            createdAt: steer.createdAt,
+          }));
+        if (settled.length > 0) {
+          convertSteersToQueued(conversationId, settled);
         }
-        const steerIds = new Set(steers.map((steer) => steer.steerId));
-        set(store.pendingSteersByConvoId(conversationId), (prev) =>
-          prev.filter((steer) => !steerIds.has(steer.steerId)),
-        );
-        set(store.queuedMessagesByConvoId(conversationId), (prev) => [
-          ...prev,
-          ...steers
-            .filter((steer) => !prev.some((queued) => queued.id === steer.steerId))
-            .map((steer) => ({
-              id: steer.steerId,
-              text: steer.text,
-              createdAt: steer.createdAt ?? Date.now(),
-            })),
-        ]);
       },
-    [],
+    [convertSteersToQueued],
   );
 
   const setRunEnd = useSetRecoilState(store.runEndByIndex(runIndex));
@@ -1273,6 +1274,9 @@ export default function useResumableSSE(
 
           setIsSubmitting(false);
           setShowStopButton(false);
+          convertLocalSteersToQueued(
+            currentSubmission.conversation?.conversationId ?? currentStreamId,
+          );
           setRunEnd({
             conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
             outcome: 'error',
@@ -1331,6 +1335,9 @@ export default function useResumableSSE(
           }
           setIsSubmitting(false);
           setShowStopButton(false);
+          convertLocalSteersToQueued(
+            currentSubmission.conversation?.conversationId ?? currentStreamId,
+          );
           setRunEnd({
             conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
             outcome: 'error',
@@ -1433,6 +1440,7 @@ export default function useResumableSSE(
       resolveSteerChip,
       seedSteerChips,
       convertSteersToQueued,
+      convertLocalSteersToQueued,
     ],
   );
 

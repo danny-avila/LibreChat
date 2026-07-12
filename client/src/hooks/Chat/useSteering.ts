@@ -290,11 +290,13 @@ export default function useSteering({
     [conversationId, replaceSteerChip, enqueue],
   );
 
-  /** Chip action: send a queued message into the live run instead. */
+  /** Chip action: send a queued message into the live run instead. Keys on
+   *  steer availability, not the default action — a queue-preferring user
+   *  clicking send-now explicitly asked to inject into the live run. */
   const sendQueuedNow = useCallback(
     (id: string, text: string) => {
       removeQueued(id);
-      if (duringRunActive && effectiveAction === 'steer') {
+      if (duringRunActive && canSteer) {
         submitSteer(text);
         return;
       }
@@ -304,7 +306,7 @@ export default function useSteering({
       }
       enqueue(text, { front: true });
     },
-    [removeQueued, duringRunActive, effectiveAction, submitSteer, isSubmitting, sendNow, enqueue],
+    [removeQueued, duringRunActive, canSteer, submitSteer, isSubmitting, sendNow, enqueue],
   );
 
   /** Abort the current run and auto-send this text once the abort settles. */

@@ -272,5 +272,23 @@ describe('useSteering', () => {
       expect(result.current.queue.map((item) => item.text)).toEqual(['two']);
       expect(mockMutate).not.toHaveBeenCalled();
     });
+
+    it('sendQueuedNow steers whenever steering is available, even under the queue preference', () => {
+      const { result } = setupWithState({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'queue');
+      });
+      act(() => {
+        result.current.steering.enqueue('send me now');
+      });
+      const queuedId = result.current.queue[0].id;
+      act(() => {
+        result.current.steering.sendQueuedNow(queuedId, 'send me now');
+      });
+      expect(result.current.queue).toEqual([]);
+      expect(mockMutate).toHaveBeenCalledWith(
+        { conversationId: CONVO_ID, text: 'send me now' },
+        expect.anything(),
+      );
+    });
   });
 });

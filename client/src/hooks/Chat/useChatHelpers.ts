@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useSetRecoilState } from 'recoil';
+import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
+import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAbortStreamMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
-import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import { getMessageCacheIds } from './cache';
 import store from '~/store';
 
@@ -19,6 +20,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
   const queryClient = useQueryClient();
   const abortMutation = useAbortStreamMutation();
+  const convertSteersToQueued = useSteerConvert();
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -146,8 +148,15 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
-        await abortMutation.mutateAsync({ conversationId });
+        const response = await abortMutation.mutateAsync({ conversationId });
         console.log('[useChatHelpers] Abort mutation succeeded');
+        // Steers the run never injected ride the abort response. Consume them
+        // here as well as on the SSE final event — clearing submissions below
+        // can close the stream before that event lands, and conversion
+        // dedupes by steer id so double delivery is a no-op.
+        if (Array.isArray(response?.pendingSteers)) {
+          convertSteersToQueued(conversationId, response.pendingSteers);
+        }
         // The SSE will receive a `done` event with `aborted: true` and clean up
         // We still clear submissions as a fallback
         clearAllSubmissions();
@@ -161,7 +170,15 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       console.log('[useChatHelpers] Assistants endpoint, just clearing submissions');
       clearAllSubmissions();
     }
-  }, [conversationId, endpoint, endpointType, abortMutation, clearAllSubmissions, queryClient]);
+  }, [
+    conversationId,
+    endpoint,
+    endpointType,
+    abortMutation,
+    convertSteersToQueued,
+    clearAllSubmissions,
+    queryClient,
+  ]);
 
   const handleStopGenerating = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
