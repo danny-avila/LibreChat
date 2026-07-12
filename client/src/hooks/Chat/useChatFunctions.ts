@@ -496,7 +496,10 @@ export default function useChatFunctions({
         setFiles(new Map());
         setFilesToDelete({});
       }
-    } else if (setFiles && files && files.size > 0) {
+    } else if (setFiles && files && files.size > 0 && overrideFiles == null) {
+      // `overrideFiles` (even empty) is authoritative for the submission:
+      // auto-drained queued messages must never vacuum up attachments the
+      // user has staged in the composer for their NEXT message.
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,

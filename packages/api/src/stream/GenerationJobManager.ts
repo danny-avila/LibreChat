@@ -830,8 +830,11 @@ class GenerationJobManagerClass {
     /** Steers that never reached an injection boundary — reported on the abort
      *  final event (and the abort route's JSON) so the client can restore them
      *  as queued chips instead of silently dropping the user's words. The
-     *  close-and-drain rejects any steer POST racing this finalization. */
-    const pendingSteers = (await this.jobStore.closeAndDrainSteers(streamId)).map(toPendingSteer);
+     *  close-and-drain rejects any steer POST racing this finalization, and
+     *  the createdAt guard keeps it off a replacement job's queue. */
+    const pendingSteers = (
+      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
+    ).map(toPendingSteer);
 
     /** Text from content parts for fallback token counting */
     const text = shouldPersistAbortContent

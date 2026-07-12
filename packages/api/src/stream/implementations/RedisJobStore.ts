@@ -131,14 +131,20 @@ const STEER_ENQUEUE_LUA =
 
 /**
  * Atomic take-all: read the whole queue FIFO and delete the key in one step,
- * so two concurrent drains can never both deliver the same steer.
+ * so two concurrent drains can never both deliver the same steer. When an
+ * expected `createdAt` is supplied, the drain is additionally guarded against
+ * job replacement INSIDE the script — a stale run's hook can never consume a
+ * replacement job's queue (the check-then-drain would otherwise race
+ * `createJob`).
  *
- *   KEYS: [steers]
+ *   KEYS: [job, steers]
+ *   ARGV: [expectedCreatedAt or ""]
  *   Returns: array of item JSON strings (possibly empty)
  */
 const STEER_DRAIN_LUA =
-  'local items = redis.call("LRANGE", KEYS[1], 0, -1) ' +
-  'redis.call("DEL", KEYS[1]) ' +
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'redis.call("DEL", KEYS[2]) ' +
   'return items';
 
 /**
@@ -146,12 +152,16 @@ const STEER_DRAIN_LUA =
  * job hash (only when the hash still exists — a bare HSET would resurrect a
  * deleted job as a stray hash), then take the whole queue. Once closed,
  * {@link STEER_ENQUEUE_LUA} rejects, so a steer POST racing finalization can
- * never be ACKed after the last drain and then silently cleared.
+ * never be ACKed after the last drain and then silently cleared. The same
+ * expected-`createdAt` guard as {@link STEER_DRAIN_LUA} keeps a stale run's
+ * finalization from closing (and stealing) a replacement job's queue.
  *
  *   KEYS: [job, steers]
+ *   ARGV: [expectedCreatedAt or ""]
  *   Returns: array of item JSON strings (possibly empty)
  */
 const STEER_CLOSE_DRAIN_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
   'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], "steersClosed", "1") end ' +
   'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
   'redis.call("DEL", KEYS[2]) ' +
@@ -1119,17 +1129,27 @@ export class RedisJobStore implements IJobStore {
     return result;
   }
 
-  async drainSteers(streamId: string): Promise<SteerQueueItem[]> {
-    const raw = await this.redis.eval(STEER_DRAIN_LUA, 1, KEYS.steers(streamId));
+  async drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.eval(
+      STEER_DRAIN_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
     return this.parseSteerItems(raw);
   }
 
-  async closeAndDrainSteers(streamId: string): Promise<SteerQueueItem[]> {
+  async closeAndDrainSteers(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerQueueItem[]> {
     const raw = await this.redis.eval(
       STEER_CLOSE_DRAIN_LUA,
       2,
       KEYS.job(streamId),
       KEYS.steers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     );
     return this.parseSteerItems(raw);
   }

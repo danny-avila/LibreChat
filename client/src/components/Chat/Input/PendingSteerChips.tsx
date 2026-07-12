@@ -233,7 +233,7 @@ function SteerRow({
           <button
             type="button"
             className={PRIMARY_BTN_CLASS}
-            onClick={() => steering.retrySteer(steer.steerId, steer.text)}
+            onClick={() => steering.retrySteer(steer.steerId, steer.text, steer.files)}
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             {localize('com_ui_steer_retry')}

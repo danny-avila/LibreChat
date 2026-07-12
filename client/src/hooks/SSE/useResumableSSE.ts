@@ -813,7 +813,13 @@ export default function useResumableSSE(
             // drain effect observes it (both land in the same Recoil batch).
             setRunEnd({
               conversationId: finalConvoId,
-              outcome: data.aborted === true ? 'aborted' : 'completed',
+              // A Stop that lands before completion can arrive as a final with
+              // `unfinished: true` and no `aborted` flag (request.js's
+              // wasAbortedBeforeComplete branch) — it must not auto-drain.
+              outcome:
+                data.aborted === true || data.responseMessage?.unfinished === true
+                  ? 'aborted'
+                  : 'completed',
               startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
               endedAt: Date.now(),
             });

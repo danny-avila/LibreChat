@@ -42,6 +42,8 @@ function setup(initialize?: (snapshot: MutableSnapshot) => void) {
   return { ask, setters };
 }
 
+const emptyOverrides = { overrideFiles: [], overrideQuotes: [], overrideManualSkills: [] };
+
 const queuedMessage = (id: string, text: string) => ({ id, text, createdAt: Date.now() });
 
 const runEnd = (overrides: Partial<RunEnd> = {}): RunEnd => ({
@@ -65,7 +67,7 @@ describe('useQueueDrain', () => {
     });
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
-    expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' });
+    expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' }, emptyOverrides);
   });
 
   it('passes a queued message`s attachments through as overrideFiles', async () => {
@@ -81,7 +83,10 @@ describe('useQueueDrain', () => {
     });
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
-    expect(ask).toHaveBeenCalledWith({ text: 'with media' }, { overrideFiles: files });
+    expect(ask).toHaveBeenCalledWith(
+      { text: 'with media' },
+      { overrideFiles: files, overrideQuotes: [], overrideManualSkills: [] },
+    );
   });
 
   it('does not drain on user abort or error outcomes', async () => {
@@ -109,7 +114,9 @@ describe('useQueueDrain', () => {
     act(() => {
       setters.setRunEnd!(runEnd({ outcome: 'aborted' }));
     });
-    await waitFor(() => expect(ask).toHaveBeenCalledWith({ text: 'interrupt text' }));
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith({ text: 'interrupt text' }, emptyOverrides),
+    );
 
     // Flag consumed: a second abort does NOT drain
     act(() => {
@@ -135,7 +142,7 @@ describe('useQueueDrain', () => {
     act(() => {
       setters.setIsSubmitting!(false);
     });
-    await waitFor(() => expect(ask).toHaveBeenCalledWith({ text: 'deferred' }));
+    await waitFor(() => expect(ask).toHaveBeenCalledWith({ text: 'deferred' }, emptyOverrides));
   });
 
   it('migrates a NEW_CONVO-keyed queue when the run started as a new conversation', async () => {
@@ -150,7 +157,9 @@ describe('useQueueDrain', () => {
       setters.setRunEnd!(runEnd({ startedAsNewConvo: true }));
     });
 
-    await waitFor(() => expect(ask).toHaveBeenCalledWith({ text: 'queued before convo existed' }));
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith({ text: 'queued before convo existed' }, emptyOverrides),
+    );
   });
 
   it('consumes the run-end signal (no double fire on re-render)', async () => {

@@ -508,17 +508,24 @@ export interface IJobStore {
    */
   enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
 
-  /** Atomically take ALL queued steers, FIFO. Empty array when none. */
-  drainSteers(streamId: string): Promise<SteerQueueItem[]>;
+  /**
+   * Atomically take ALL queued steers, FIFO. Empty array when none. With
+   * `expectedCreatedAt`, the drain is refused (atomically, inside the store)
+   * when the live job's `createdAt` differs — a stale run's drain must never
+   * consume a replacement job's queue.
+   */
+  drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
 
   /**
    * Atomically CLOSE the queue to new steers, then take all queued items
    * FIFO. Used by the terminal paths (final event, abort) so a steer POST
    * racing finalization can never be 202-ACKed after the last drain and then
    * silently cleared — once closed, `enqueueSteer` rejects until the next
-   * `createJob` reopens the stream id.
+   * `createJob` reopens the stream id. `expectedCreatedAt` guards exactly
+   * like {@link drainSteers}: a stale run's finalization can neither close
+   * nor steal a replacement job's queue.
    */
-  closeAndDrainSteers(streamId: string): Promise<SteerQueueItem[]>;
+  closeAndDrainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
 
   /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
   peekSteers(streamId: string): Promise<SteerQueueItem[]>;

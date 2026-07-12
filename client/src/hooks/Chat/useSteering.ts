@@ -157,16 +157,36 @@ export default function useSteering({
    * Resolves the 202 ACK against the applied-id set: `on_steer_applied` rides
    * the SSE and can land BEFORE the HTTP response, in which case its removal
    * already passed — minting a `pending` chip here would strand it forever.
+   * An ACK landing AFTER the run ended (final/abort/error already processed,
+   * server queue drained or dropped) converts straight to a queued follow-up:
+   * no later event will ever resolve a `pending` chip for a finished run.
    */
   const acknowledgeSteer = useRecoilCallback(
     ({ snapshot, set }) =>
       (convoId: string, localId: string, steer: PendingSteer) => {
         const applied = snapshot.getLoadable(store.appliedSteerIdsByConvoId(convoId)).getValue();
         const alreadyApplied = applied.includes(steer.steerId);
+        const runOver = !isSubmittingRef.current;
         set(store.pendingSteersByConvoId(convoId), (prev) => {
           const next = prev.filter((item) => item.steerId !== localId);
-          return alreadyApplied ? next : [...next, steer];
+          return alreadyApplied || runOver ? next : [...next, steer];
         });
+        if (alreadyApplied || !runOver) {
+          return;
+        }
+        set(store.queuedMessagesByConvoId(convoId), (prev) =>
+          prev.some((queued) => queued.id === steer.steerId)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id: steer.steerId,
+                  text: steer.text,
+                  createdAt: steer.createdAt,
+                  ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+                },
+              ],
+        );
       },
     [],
   );

@@ -28,17 +28,22 @@ export default function useSteerConvert() {
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
           prev.filter((steer) => !steerIds.has(steer.steerId)),
         );
-        set(store.queuedMessagesByConvoId(conversationId), (prev) => [
-          ...prev,
-          ...steers
+        set(store.queuedMessagesByConvoId(conversationId), (prev) => {
+          const fresh = steers
             .filter((steer) => !prev.some((queued) => queued.id === steer.steerId))
             .map((steer) => ({
               id: steer.steerId,
               text: steer.text,
               createdAt: steer.createdAt ?? Date.now(),
               ...(steer.files && steer.files.length > 0 && { files: steer.files }),
-            })),
-        ]);
+            }));
+          if (fresh.length === 0) {
+            return prev;
+          }
+          // Merge chronologically: a steer accepted BEFORE the user queued a
+          // later follow-up must drain first, even though it converts last.
+          return [...prev, ...fresh].sort((a, b) => a.createdAt - b.createdAt);
+        });
       },
     [],
   );

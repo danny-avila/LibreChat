@@ -239,6 +239,7 @@ export default function useResumeOnLoad(
             text: steer.text,
             status: 'pending' as const,
             createdAt: steer.createdAt ?? Date.now(),
+            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
           })),
           ...prev.filter((steer) => steer.status === 'failed'),
         ]);

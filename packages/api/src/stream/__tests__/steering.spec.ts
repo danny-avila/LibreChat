@@ -119,6 +119,20 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect((await manager.steering.peek(streamId)).map((s) => s.text)).toEqual(['kept']);
       expect((await manager.steering.drain(streamId)).map((s) => s.text)).toEqual(['kept']);
     });
+
+    test('drain with a stale expectedCreatedAt refuses and preserves the queue', async () => {
+      const streamId = 'steer-drain-stale';
+      const job = await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('kept for the live run'));
+
+      expect(await manager.steering.drain(streamId, job.createdAt - 1)).toEqual([]);
+      expect((await manager.steering.peek(streamId)).map((s) => s.text)).toEqual([
+        'kept for the live run',
+      ]);
+      expect((await manager.steering.drain(streamId, job.createdAt)).map((s) => s.text)).toEqual([
+        'kept for the live run',
+      ]);
+    });
   });
 
   describe('closeAndDrain', () => {
@@ -148,6 +162,27 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
 
       await manager.createJob(streamId, 'user-1');
       expect(await manager.steering.peek(streamId)).toEqual([]);
+    });
+
+    test('a stale run cannot close or steal a replacement queue', async () => {
+      const streamId = 'steer-close-stale';
+      const oldJob = await manager.createJob(streamId, 'user-1');
+      // Distinct createdAt: replacement in the same millisecond is
+      // indistinguishable by design (the guard keys on creation time).
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const newJob = await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('belongs to the new run'));
+
+      // Old run finalizes late: guarded close must neither drain nor close.
+      expect(await manager.steering.closeAndDrain(streamId, oldJob.createdAt)).toEqual([]);
+      expect((await manager.steering.peek(streamId)).map((s) => s.text)).toEqual([
+        'belongs to the new run',
+      ]);
+      expect(await manager.steering.enqueue(streamId, buildSteer('still open'))).toBe(2);
+
+      expect(
+        (await manager.steering.closeAndDrain(streamId, newJob.createdAt)).map((s) => s.text),
+      ).toEqual(['belongs to the new run', 'still open']);
     });
   });
 

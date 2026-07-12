@@ -501,7 +501,12 @@ export class InMemoryJobStore implements IJobStore {
     return queue.length;
   }
 
-  async drainSteers(streamId: string): Promise<SteerQueueItem[]> {
+  /** With `expectedCreatedAt`, refuses when the job was replaced — a stale
+   *  run's drain must never consume (or close) a replacement job's queue. */
+  async drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     const queue = this.steerQueues.get(streamId);
     if (!queue || queue.length === 0) {
       return [];
@@ -509,7 +514,13 @@ export class InMemoryJobStore implements IJobStore {
     return queue.splice(0);
   }
 
-  async closeAndDrainSteers(streamId: string): Promise<SteerQueueItem[]> {
+  async closeAndDrainSteers(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerQueueItem[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     this.closedSteerQueues.add(streamId);
     return this.drainSteers(streamId);
   }

@@ -81,10 +81,16 @@ export default function useQueueDrain(index: string | number, ask: TAskFunction)
     if (next == null) {
       return;
     }
-    if (next.files && next.files.length > 0) {
-      ask({ text: next.text }, { overrideFiles: next.files });
-      return;
-    }
-    ask({ text: next.text });
+    // The queued item is the FULL submission context: explicit (possibly
+    // empty) overrides stop `ask` from vacuuming up files, quotes, or skill
+    // picks the user has staged in the composer for their NEXT message.
+    ask(
+      { text: next.text },
+      {
+        overrideFiles: next.files ?? [],
+        overrideQuotes: [],
+        overrideManualSkills: [],
+      },
+    );
   }, [runEnd, isSubmitting, drainNext, ask]);
 }

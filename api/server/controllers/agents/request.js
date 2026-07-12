@@ -765,7 +765,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // the client converts them to queued follow-up messages.
         let pendingSteers;
         try {
-          const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(streamId);
+          const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+            streamId,
+            jobCreatedAt,
+          );
           if (leftoverSteers.length > 0) {
             pendingSteers = leftoverSteers.map(toPendingSteer);
           }
@@ -873,7 +876,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // instead of a 202 whose payload would vanish with the job. Text
           // recovery is client-side — acknowledged chips convert to queued.
           try {
-            await GenerationJobManager.steering.closeAndDrain(streamId);
+            await GenerationJobManager.steering.closeAndDrain(streamId, jobCreatedAt);
           } catch (drainErr) {
             logger.warn(
               `[ResumableAgentController] Failed to close steer queue on error`,

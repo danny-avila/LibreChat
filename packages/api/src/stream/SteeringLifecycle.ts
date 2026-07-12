@@ -45,9 +45,10 @@ export class SteeringLifecycle {
     return depth;
   }
 
-  /** Atomically take ALL queued steers, FIFO. */
-  drain(streamId: string): Promise<SteerQueueItem[]> {
-    return this.store.drainSteers(streamId);
+  /** Atomically take ALL queued steers, FIFO. `expectedCreatedAt` refuses the
+   *  drain inside the store when the job was replaced. */
+  drain(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    return this.store.drainSteers(streamId, expectedCreatedAt);
   }
 
   /**
@@ -56,9 +57,11 @@ export class SteeringLifecycle {
    * final/abort event can never be ACKed after the last drain and then
    * silently cleared — once closed, enqueue rejects (the client falls back to
    * a normal send) until the next `createJob` reopens the stream id.
+   * `expectedCreatedAt` keeps a stale run's finalization from closing or
+   * stealing a replacement job's queue.
    */
-  closeAndDrain(streamId: string): Promise<SteerQueueItem[]> {
-    return this.store.closeAndDrainSteers(streamId);
+  closeAndDrain(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    return this.store.closeAndDrainSteers(streamId, expectedCreatedAt);
   }
 
   /** Non-destructive FIFO read (status/resume surfaces). */

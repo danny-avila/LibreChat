@@ -88,13 +88,10 @@ export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<
     if (input.agentId != null) {
       return {};
     }
-    if (jobCreatedAt != null) {
-      const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
-      if (!liveJob || liveJob.createdAt !== jobCreatedAt) {
-        return {};
-      }
-    }
-    const steers = await GenerationJobManager.steering.drain(streamId);
+    // The replacement guard lives INSIDE the store's atomic drain: a separate
+    // check-then-drain could still consume a replacement job's queue if
+    // createJob landed between the two steps.
+    const steers = await GenerationJobManager.steering.drain(streamId, jobCreatedAt);
     if (steers.length === 0) {
       return {};
     }
