@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Clock, Code2 } from 'lucide-react';
+import { Clock, Code2, Zap } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Button, Spinner, Checkbox, Skeleton, TooltipAnchor } from '@librechat/client';
 import type { MouseEvent } from 'react';
@@ -69,18 +69,21 @@ export default function McpSection({ item }: Props) {
   const [autoSelectPending, setAutoSelectPending] = useState(false);
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
-  const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(
-    agentsConfig?.capabilities,
-  );
+  const { deferredToolsEnabled, programmaticToolsEnabled, backgroundToolsEnabled } =
+    useAgentCapabilities(agentsConfig?.capabilities);
   const {
     isToolDeferred,
     isToolProgrammatic,
+    isToolBackground,
     toggleToolDefer,
     toggleToolProgrammatic,
+    toggleToolBackground,
     areAllToolsDeferred,
     areAllToolsProgrammatic,
+    areAllToolsBackground,
     toggleDeferAll,
     toggleProgrammaticAll,
+    toggleBackgroundAll,
   } = useMCPToolOptions();
 
   const serverName = item.server.serverName;
@@ -128,6 +131,7 @@ export default function McpSection({ item }: Props) {
   const allSelected = hasTools && selectedTools.length === tools.length;
   const allDeferred = areAllToolsDeferred(tools);
   const allProgrammatic = areAllToolsProgrammatic(tools);
+  const allBackground = areAllToolsBackground(tools);
   const statusIconProps = getServerStatusIconProps(serverName);
   const configDialogProps = getConfigDialogProps();
   const connectionState = statusIconProps?.serverStatus?.connectionState;
@@ -192,7 +196,9 @@ export default function McpSection({ item }: Props) {
   return (
     <div className="flex flex-col gap-5">
       {item.description && (
-        <p className="text-sm leading-relaxed text-text-secondary">{item.description}</p>
+        <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
+          {item.description}
+        </p>
       )}
 
       <div className="flex flex-col">
@@ -304,7 +310,38 @@ export default function McpSection({ item }: Props) {
                   }
                 />
               )}
-              {(deferredToolsEnabled || programmaticToolsEnabled) && (
+              {backgroundToolsEnabled && (
+                <TooltipAnchor
+                  description={
+                    allBackground
+                      ? localize('com_ui_mcp_unbackground_all')
+                      : localize('com_ui_mcp_background_all')
+                  }
+                  side="top"
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => toggleBackgroundAll(tools)}
+                      aria-pressed={allBackground}
+                      aria-label={
+                        allBackground
+                          ? localize('com_ui_mcp_unbackground_all')
+                          : localize('com_ui_mcp_background_all')
+                      }
+                      className={cn(
+                        'flex size-7 items-center justify-center rounded-md transition-colors',
+                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                        allBackground
+                          ? 'text-sky-600 dark:text-sky-500'
+                          : 'text-text-secondary hover:text-text-primary',
+                      )}
+                    >
+                      <Zap className="size-4" aria-hidden="true" />
+                    </button>
+                  }
+                />
+              )}
+              {(deferredToolsEnabled || programmaticToolsEnabled || backgroundToolsEnabled) && (
                 <span className="mx-1 h-4 w-px bg-border-light" aria-hidden="true" />
               )}
               <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs text-text-secondary">
@@ -340,11 +377,14 @@ export default function McpSection({ item }: Props) {
                   isSelected={selectedTools.includes(tool.tool_id)}
                   isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
                   isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
+                  isBackground={backgroundToolsEnabled && isToolBackground(tool.tool_id)}
                   deferredToolsEnabled={deferredToolsEnabled}
                   programmaticToolsEnabled={programmaticToolsEnabled}
+                  backgroundToolsEnabled={backgroundToolsEnabled}
                   onToggleSelect={() => toggleToolSelect(tool.tool_id)}
                   onToggleDefer={() => toggleToolDefer(tool.tool_id)}
                   onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
+                  onToggleBackground={() => toggleToolBackground(tool.tool_id)}
                 />
               ))}
             </div>

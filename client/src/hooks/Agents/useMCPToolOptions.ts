@@ -7,12 +7,16 @@ interface UseMCPToolOptionsReturn {
   formToolOptions: AgentToolOptions | undefined;
   isToolDeferred: (toolId: string) => boolean;
   isToolProgrammatic: (toolId: string) => boolean;
+  isToolBackground: (toolId: string) => boolean;
   toggleToolDefer: (toolId: string) => void;
   toggleToolProgrammatic: (toolId: string) => void;
+  toggleToolBackground: (toolId: string) => void;
   areAllToolsDeferred: (tools: AgentToolType[]) => boolean;
   areAllToolsProgrammatic: (tools: AgentToolType[]) => boolean;
+  areAllToolsBackground: (tools: AgentToolType[]) => boolean;
   toggleDeferAll: (tools: AgentToolType[]) => void;
   toggleProgrammaticAll: (tools: AgentToolType[]) => void;
+  toggleBackgroundAll: (tools: AgentToolType[]) => void;
 }
 
 export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
@@ -27,6 +31,11 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
   const isToolProgrammatic = useCallback(
     (toolId: string): boolean =>
       formToolOptions?.[toolId]?.allowed_callers?.includes('code_execution') === true,
+    [formToolOptions],
+  );
+
+  const isToolBackground = useCallback(
+    (toolId: string): boolean => formToolOptions?.[toolId]?.run_in_background === true,
     [formToolOptions],
   );
 
@@ -93,6 +102,33 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
     [getValues, setValue],
   );
 
+  const toggleToolBackground = useCallback(
+    (toolId: string) => {
+      const currentOptions = getValues('tool_options') || {};
+      const currentToolOptions = currentOptions[toolId] || {};
+      const newBackground = !currentToolOptions.run_in_background;
+
+      const updatedOptions: AgentToolOptions = { ...currentOptions };
+
+      if (newBackground) {
+        updatedOptions[toolId] = {
+          ...currentToolOptions,
+          run_in_background: true,
+        };
+      } else {
+        const { run_in_background: _, ...restOptions } = currentToolOptions;
+        if (Object.keys(restOptions).length === 0) {
+          delete updatedOptions[toolId];
+        } else {
+          updatedOptions[toolId] = restOptions;
+        }
+      }
+
+      setValue('tool_options', updatedOptions, { shouldDirty: true });
+    },
+    [getValues, setValue],
+  );
+
   const areAllToolsDeferred = useCallback(
     (tools: AgentToolType[]): boolean =>
       tools.length > 0 &&
@@ -107,6 +143,13 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
         (tool) =>
           formToolOptions?.[tool.tool_id]?.allowed_callers?.includes('code_execution') === true,
       ),
+    [formToolOptions],
+  );
+
+  const areAllToolsBackground = useCallback(
+    (tools: AgentToolType[]): boolean =>
+      tools.length > 0 &&
+      tools.every((tool) => formToolOptions?.[tool.tool_id]?.run_in_background === true),
     [formToolOptions],
   );
 
@@ -169,15 +212,48 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
     [getValues, setValue, areAllToolsProgrammatic],
   );
 
+  const toggleBackgroundAll = useCallback(
+    (tools: AgentToolType[]) => {
+      if (tools.length === 0) return;
+
+      const shouldBackground = !areAllToolsBackground(tools);
+      const currentOptions = getValues('tool_options') || {};
+      const updatedOptions: AgentToolOptions = { ...currentOptions };
+
+      for (const tool of tools) {
+        if (shouldBackground) {
+          updatedOptions[tool.tool_id] = {
+            ...(updatedOptions[tool.tool_id] || {}),
+            run_in_background: true,
+          };
+        } else {
+          if (updatedOptions[tool.tool_id]) {
+            delete updatedOptions[tool.tool_id].run_in_background;
+            if (Object.keys(updatedOptions[tool.tool_id]).length === 0) {
+              delete updatedOptions[tool.tool_id];
+            }
+          }
+        }
+      }
+
+      setValue('tool_options', updatedOptions, { shouldDirty: true });
+    },
+    [getValues, setValue, areAllToolsBackground],
+  );
+
   return {
     formToolOptions,
     isToolDeferred,
     isToolProgrammatic,
+    isToolBackground,
     toggleToolDefer,
     toggleToolProgrammatic,
+    toggleToolBackground,
     areAllToolsDeferred,
     areAllToolsProgrammatic,
+    areAllToolsBackground,
     toggleDeferAll,
     toggleProgrammaticAll,
+    toggleBackgroundAll,
   };
 }

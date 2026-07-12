@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { TooltipAnchor } from '@librechat/client';
-import { Check, Clock, Code2, Info } from 'lucide-react';
+import { Check, Clock, Code2, Info, Zap } from 'lucide-react';
 import type { AgentToolType } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -10,11 +10,14 @@ interface MCPToolItemProps {
   isSelected: boolean;
   isDeferred: boolean;
   isProgrammatic: boolean;
+  isBackground: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
+  backgroundToolsEnabled: boolean;
   onToggleSelect: () => void;
   onToggleDefer: () => void;
   onToggleProgrammatic: () => void;
+  onToggleBackground: () => void;
 }
 
 const iconButton =
@@ -28,8 +31,11 @@ export default function MCPToolItem({
   onToggleSelect,
   isProgrammatic,
   onToggleProgrammatic,
+  isBackground,
+  onToggleBackground,
   deferredToolsEnabled,
   programmaticToolsEnabled,
+  backgroundToolsEnabled,
 }: MCPToolItemProps) {
   const localize = useLocalize();
   const [expanded, setExpanded] = useState(false);
@@ -102,6 +108,26 @@ export default function MCPToolItem({
                   )}
                 >
                   <Code2 className="size-4" aria-hidden="true" />
+                </button>
+              }
+            />
+          )}
+          {backgroundToolsEnabled && (
+            <TooltipAnchor
+              description={localize('com_ui_mcp_click_to_background')}
+              side="top"
+              render={
+                <button
+                  type="button"
+                  onClick={onToggleBackground}
+                  aria-pressed={isBackground}
+                  aria-label={localize('com_ui_mcp_background')}
+                  className={cn(
+                    iconButton,
+                    isBackground ? 'text-sky-500' : 'text-text-secondary hover:text-text-primary',
+                  )}
+                >
+                  <Zap className="size-4" aria-hidden="true" />
                 </button>
               }
             />
