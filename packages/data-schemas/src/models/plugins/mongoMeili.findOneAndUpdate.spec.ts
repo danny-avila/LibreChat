@@ -1,7 +1,10 @@
 /**
  * `meiliEnabled` is a module-level constant evaluated when `mongoMeili` is first
- * imported, so these env vars must be set before the plugin module is loaded.
- * The plugin is therefore imported lazily inside `beforeAll`.
+ * imported, so the MeiliSearch env vars must be set before the plugin module is
+ * loaded. The plugin is therefore imported lazily inside `beforeAll`, after the
+ * env is set, and the prior values are restored in `afterAll` so this suite does
+ * not leak `meiliEnabled: true` into other test files that share the Jest
+ * worker's `process.env`.
  *
  * This suite covers the `saveConvo` code path, which calls `findOneAndUpdate`
  * with `includeResultMetadata: true`. Mongoose then resolves the query to the raw
@@ -9,14 +12,13 @@
  * before invoking the indexing hook (regression test for conversation titles not
  * syncing to MeiliSearch).
  */
-process.env.SEARCH = 'true';
-process.env.MEILI_HOST = 'foo';
-process.env.MEILI_MASTER_KEY = 'bar';
-
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+
+const MEILI_ENV_KEYS = ['SEARCH', 'MEILI_HOST', 'MEILI_MASTER_KEY'] as const;
+const savedMeiliEnv: Partial<Record<(typeof MEILI_ENV_KEYS)[number], string | undefined>> = {};
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -55,6 +57,13 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
   let conversationModel: SchemaWithMeiliMethods;
 
   beforeAll(async () => {
+    for (const key of MEILI_ENV_KEYS) {
+      savedMeiliEnv[key] = process.env[key];
+    }
+    process.env.SEARCH = 'true';
+    process.env.MEILI_HOST = 'foo';
+    process.env.MEILI_MASTER_KEY = 'bar';
+
     ({ createConversationModel } = await import('~/models/convo'));
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
@@ -64,6 +73,13 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
   afterAll(async () => {
     await mongoose.disconnect();
     await mongoServer.stop();
+    for (const key of MEILI_ENV_KEYS) {
+      if (savedMeiliEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = savedMeiliEnv[key];
+      }
+    }
   });
 
   beforeEach(async () => {
