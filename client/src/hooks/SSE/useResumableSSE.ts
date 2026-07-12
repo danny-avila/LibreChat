@@ -1047,12 +1047,14 @@ export default function useResumableSSE(
              * Injected steers are already inside `aggregatedContent`, so this
              * covers exactly the remainder a reloading client can't know about.
              */
-            if (data.resumeState?.pendingSteers?.length > 0) {
-              seedSteerChips(
-                currentSubmission.conversation?.conversationId ?? currentStreamId,
-                data.resumeState.pendingSteers as TPendingSteer[],
-              );
-            }
+            // Always reconcile against the server's still-queued list: a steer
+            // applied while this client was disconnected is absent here (its
+            // inline part rides aggregatedContent instead), so an EMPTY list
+            // must clear stale local pending chips, not leave them stranded.
+            seedSteerChips(
+              currentSubmission.conversation?.conversationId ?? currentStreamId,
+              (data.resumeState?.pendingSteers ?? []) as TPendingSteer[],
+            );
 
             if (data.resumeState?.titleEvent) {
               titleHandler(data.resumeState.titleEvent);

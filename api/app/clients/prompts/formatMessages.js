@@ -239,16 +239,17 @@ const formatAgentMessages = (payload) => {
         ToolMessages, so the HumanMessage lands after them (valid provider order).
          */
         if (currentContent.length > 0) {
-          const content = currentContent
-            .reduce((acc, curr) => {
-              if (curr.type === ContentTypes.TEXT) {
-                return `${acc}${curr[ContentTypes.TEXT]}\n`;
-              }
-              return acc;
-            }, '')
-            .trim();
-          if (content.length > 0) {
-            messages.push(new AIMessage({ content }));
+          if (currentContent.some((curr) => curr.type !== ContentTypes.TEXT)) {
+            /** Non-text parts (images, files) must survive the flush intact —
+             *  folding to text here would drop them from replayed history. */
+            messages.push(new AIMessage({ content: currentContent }));
+          } else {
+            const content = currentContent
+              .reduce((acc, curr) => `${acc}${curr[ContentTypes.TEXT] ?? ''}\n`, '')
+              .trim();
+            if (content.length > 0) {
+              messages.push(new AIMessage({ content }));
+            }
           }
           currentContent = [];
         }

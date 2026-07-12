@@ -137,7 +137,7 @@ describe('stampSteerPartMedia', () => {
     const message = { role: 'assistant', content: originalContent };
     const payload = [{ role: 'user', content: 'hi' }, message];
 
-    await stampSteerPartMedia({ client, req, payload });
+    const stamped = await stampSteerPartMedia({ client, req, payload });
 
     expect(getFiles).toHaveBeenCalledTimes(1);
     expect(message.content).not.toBe(originalContent);
@@ -145,6 +145,32 @@ describe('stampSteerPartMedia', () => {
     expect(message.content[1]).not.toBe(steerPart);
     expect(message.content[1].media).toEqual([{ type: 'text', text: 'inline steer' }, imagePart]);
     expect(steerPart.media).toBeUndefined();
+    expect(stamped).toEqual([
+      { index: 1, media: [{ type: 'text', text: 'inline steer' }, imagePart] },
+    ]);
+  });
+
+  it('consumes prefetched docs without issuing a second query', async () => {
+    const client = createClient({ image_urls: [imagePart] });
+    const steerPart = {
+      type: ContentTypes.STEER,
+      [ContentTypes.STEER]: 'prefetched steer',
+      steerId: 's2',
+      files: [{ file_id: 'f1' }, { file_id: 'unauthorized' }],
+    };
+    const message = { role: 'assistant', content: [steerPart] };
+
+    const stamped = await stampSteerPartMedia({
+      client,
+      req,
+      payload: [message],
+      docsById: new Map([['f1', imageDoc]]),
+    });
+
+    expect(getFiles).not.toHaveBeenCalled();
+    expect(stamped).toHaveLength(1);
+    expect(stamped[0].index).toBe(0);
+    expect(client.processAttachments).toHaveBeenCalledWith(expect.anything(), [imageDoc]);
   });
 
   it('does nothing when no steer part carries files', async () => {

@@ -583,8 +583,33 @@ class AgentClient extends BaseClient {
     if (this.options.resendFiles) {
       /** Persisted steer parts of past turns replay with their attachments:
        *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
-       *  transient `media` array (same resend semantics as message files). */
-      await stampSteerPartMedia({ client: this, req: this.options.req, payload });
+       *  transient `media` array (same resend semantics as message files).
+       *  The stamp lands after the loop above finalized its counts, so the
+       *  re-encoded media (minus the text part the steer part already counted)
+       *  is folded into the budget here — large steered attachments must
+       *  shrink the window like any other resent media. */
+      const stamped = await stampSteerPartMedia({
+        client: this,
+        req: this.options.req,
+        payload,
+        // addPreviousAttachments already fetched steer-part refs in its single
+        // per-turn historical-files query — no second round trip.
+        docsById: this.authorizedHistoricalFiles,
+      });
+      for (const { index, media } of stamped) {
+        const mediaParts = media.filter((mediaPart) => mediaPart?.type !== ContentTypes.TEXT);
+        if (mediaParts.length === 0) {
+          continue;
+        }
+        const mediaTokens = countFormattedMessageTokens(
+          { role: 'user', content: mediaParts },
+          encoding,
+        );
+        if (Number.isFinite(mediaTokens) && mediaTokens > 0) {
+          indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + mediaTokens;
+          promptTokenTotal += mediaTokens;
+        }
+      }
     }
     this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;

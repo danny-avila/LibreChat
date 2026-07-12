@@ -1,20 +1,13 @@
 const { logger } = require('@librechat/data-schemas');
 const { formatMessage } = require('@librechat/agents');
-const { prependFileContext } = require('@librechat/api');
+const { prependFileContext, toSteerFileRef } = require('@librechat/api');
 const { ContentTypes } = require('librechat-data-provider');
 const { getFiles } = require('~/models');
 
-/** Fields persisted on the steer content part / surfaced to clients. */
+/** Fields persisted on the steer content part / surfaced to clients
+ *  (shared picker — single source of truth for the ref shape). */
 function toSteerFileRefs(files) {
-  return files.map((file) => ({
-    file_id: file.file_id,
-    ...(file.type != null && { type: file.type }),
-    ...(file.filepath != null && { filepath: file.filepath }),
-    ...(file.filename != null && { filename: file.filename }),
-    ...(file.height != null && { height: file.height }),
-    ...(file.width != null && { width: file.width }),
-    ...(file.bytes != null && { bytes: file.bytes }),
-  }));
+  return files.map(toSteerFileRef).filter(Boolean);
 }
 
 function collectFileIds(files) {
@@ -109,56 +102,74 @@ async function buildSteerMedia({ client, req, item }) {
  * @param {object} params.client - the AgentClient owning the run (BaseClient encode methods)
  * @param {ServerRequest} params.req
  * @param {Array<{ role?: string; content?: unknown }>} params.payload
+ * @param {Map<string, object>} [params.docsById] - owner-scoped file docs already
+ *   fetched this turn (`addPreviousAttachments` collects steer-part refs into its
+ *   single historical-files query); when present, NO extra query is issued —
+ *   an id missing from the map is unauthorized or deleted, exactly as if the
+ *   fallback query had excluded it.
+ * @returns {Promise<Array<{ index: number; media: Array<object> }>>} one entry
+ *   per stamped part (payload index + the stamped content array) so the caller
+ *   can fold the re-encoded media into its token accounting — the stamp runs
+ *   after the message loop finalized its counts.
  */
-async function stampSteerPartMedia({ client, req, payload }) {
+async function stampSteerPartMedia({ client, req, payload, docsById }) {
   const stampTargets = [];
-  for (const message of payload) {
+  for (let index = 0; index < payload.length; index++) {
+    const message = payload[index];
     if (message?.role !== 'assistant' || !Array.isArray(message.content)) {
       continue;
     }
     for (const part of message.content) {
       if (part?.type === ContentTypes.STEER && Array.isArray(part.files) && part.files.length > 0) {
-        stampTargets.push({ message, part });
+        stampTargets.push({ message, part, index });
       }
     }
   }
   if (stampTargets.length === 0) {
-    return;
+    return [];
   }
 
-  const allIds = collectFileIds(stampTargets.flatMap(({ part }) => part.files));
-  const filter = buildOwnerFilter(allIds, req?.user);
-  if (filter == null) {
-    return;
+  let resolvedDocsById = docsById;
+  if (resolvedDocsById == null) {
+    const allIds = collectFileIds(stampTargets.flatMap(({ part }) => part.files));
+    const filter = buildOwnerFilter(allIds, req?.user);
+    if (filter == null) {
+      return [];
+    }
+    const fileDocs = await getFiles(filter, {}, {});
+    if (!Array.isArray(fileDocs) || fileDocs.length === 0) {
+      return [];
+    }
+    resolvedDocsById = new Map(fileDocs.map((file) => [file.file_id, file]));
   }
-  const fileDocs = await getFiles(filter, {}, {});
-  if (!Array.isArray(fileDocs) || fileDocs.length === 0) {
-    return;
-  }
-  const docsById = new Map(fileDocs.map((file) => [file.file_id, file]));
 
-  for (const { message, part } of stampTargets) {
-    const docs = part.files.map((file) => docsById.get(file?.file_id)).filter(Boolean);
-    if (docs.length === 0) {
-      continue;
-    }
-    try {
-      const { content } = await encodeSteerContent({
-        client,
-        text: part[ContentTypes.STEER] ?? '',
-        steerId: part.steerId ?? 'replay',
-        fileDocs: docs,
-      });
-      message.content = message.content.map((candidate) =>
-        candidate === part ? { ...candidate, media: content } : candidate,
-      );
-    } catch (error) {
-      logger.warn(
-        `[stampSteerPartMedia] Failed to re-encode steer media (steer=${part.steerId}); replaying text only`,
-        error,
-      );
-    }
-  }
+  const stamped = await Promise.all(
+    stampTargets.map(async ({ message, part, index }) => {
+      const docs = part.files.map((file) => resolvedDocsById.get(file?.file_id)).filter(Boolean);
+      if (docs.length === 0) {
+        return null;
+      }
+      try {
+        const { content } = await encodeSteerContent({
+          client,
+          text: part[ContentTypes.STEER] ?? '',
+          steerId: part.steerId ?? 'replay',
+          fileDocs: docs,
+        });
+        message.content = message.content.map((candidate) =>
+          candidate === part ? { ...candidate, media: content } : candidate,
+        );
+        return { index, media: content };
+      } catch (error) {
+        logger.warn(
+          `[stampSteerPartMedia] Failed to re-encode steer media (steer=${part.steerId}); replaying text only`,
+          error,
+        );
+        return null;
+      }
+    }),
+  );
+  return stamped.filter(Boolean);
 }
 
 module.exports = { buildSteerMedia, stampSteerPartMedia };

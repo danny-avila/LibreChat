@@ -1,34 +1,8 @@
-/**
- * Unit tests for the steer controller (POST /agents/chat/steer).
- *
- * Drives the real `SteerController` over supertest with `GenerationJobManager`
- * mocked. Covers the guard ladder (validation, SDK capability, job liveness,
- * ownership/tenant, paused state), the enqueue rejection codes, and the
- * 202 accepted shape.
- */
-
 const express = require('express');
 const request = require('supertest');
 
-const USER_ID = 'user-1';
-const TENANT_ID = 'tenant-1';
-const CONVO_ID = 'convo-steer-123';
-
-const mockLogger = {
-  debug: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  info: jest.fn(),
-};
-
-const mockEnqueue = jest.fn();
-const mockGetJob = jest.fn();
-const mockIsSteeringSupported = jest.fn(() => true);
-
-const mockGenerationJobManager = {
-  getJob: (...args) => mockGetJob(...args),
-  steering: { enqueue: (...args) => mockEnqueue(...args) },
-};
+const mockHandleSteerRequest = jest.fn();
+const mockLogger = { warn: jest.fn(), error: jest.fn(), debug: jest.fn(), info: jest.fn() };
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -37,13 +11,19 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
-  GenerationJobManager: mockGenerationJobManager,
-  isSteeringSupported: (...args) => mockIsSteeringSupported(...args),
+  handleSteerRequest: (...args) => mockHandleSteerRequest(...args),
 }));
 
 const SteerController = require('~/server/controllers/agents/steer');
 
-function buildApp(user = { id: USER_ID, tenantId: TENANT_ID }) {
+/**
+ * The guard ladder itself (validation, file sanitization, ownership, enqueue
+ * codes) is typed logic in `@librechat/api` and is covered against the REAL
+ * in-memory job manager by `packages/api/src/agents/steering/__tests__/request.spec.ts`.
+ * This spec only pins the thin wrapper contract: pass-through of user/body,
+ * verbatim status/body serialization, and the 500 failure envelope.
+ */
+function buildApp(user = { id: 'user-1', tenantId: 'tenant-1' }) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -54,209 +34,52 @@ function buildApp(user = { id: USER_ID, tenantId: TENANT_ID }) {
   return app;
 }
 
-function runningJob(overrides = {}) {
-  return {
-    status: 'running',
-    createdAt: Date.now(),
-    metadata: { userId: USER_ID, tenantId: TENANT_ID },
-    ...overrides,
-  };
-}
-
-describe('SteerController', () => {
+describe('SteerController (wrapper)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockIsSteeringSupported.mockReturnValue(true);
   });
 
-  it('400s on a missing or placeholder conversationId', async () => {
-    const app = buildApp();
-    const missing = await request(app).post('/chat/steer').send({ text: 'hello' });
-    expect(missing.status).toBe(400);
-    expect(missing.body.code).toBe('INVALID_CONVERSATION');
+  it('serializes the handler result verbatim', async () => {
+    mockHandleSteerRequest.mockResolvedValue({
+      status: 202,
+      body: { status: 'queued', steerId: 's1', position: 1, conversationId: 'c1' },
+    });
 
-    const placeholder = await request(app)
+    const res = await request(buildApp())
       .post('/chat/steer')
-      .send({ conversationId: 'new', text: 'hello' });
-    expect(placeholder.status).toBe(400);
-  });
+      .send({ conversationId: 'c1', text: 'hello', files: [{ file_id: 'f1' }] });
 
-  it('400s on empty or whitespace-only text', async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: '   ' });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('EMPTY_TEXT');
-  });
-
-  it('413s past the length cap', async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'x'.repeat(16001) });
-    expect(res.status).toBe(413);
-    expect(res.body.code).toBe('STEER_TOO_LONG');
-  });
-
-  it('501s when the installed SDK cannot inject hook messages', async () => {
-    mockIsSteeringSupported.mockReturnValue(false);
-    const app = buildApp();
-    const res = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer me' });
-    expect(res.status).toBe(501);
-    expect(res.body.code).toBe('STEER_UNSUPPORTED');
-    expect(mockEnqueue).not.toHaveBeenCalled();
-  });
-
-  it('404s when the job is missing or terminal', async () => {
-    const app = buildApp();
-    mockGetJob.mockResolvedValueOnce(undefined);
-    const missing = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer' });
-    expect(missing.status).toBe(404);
-    expect(missing.body.code).toBe('NO_ACTIVE_RUN');
-
-    mockGetJob.mockResolvedValueOnce(runningJob({ status: 'complete' }));
-    const terminal = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer' });
-    expect(terminal.status).toBe(404);
-  });
-
-  it('403s for another user or tenant', async () => {
-    const app = buildApp();
-    mockGetJob.mockResolvedValueOnce(runningJob({ metadata: { userId: 'someone-else' } }));
-    const wrongUser = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer' });
-    expect(wrongUser.status).toBe(403);
-
-    mockGetJob.mockResolvedValueOnce(
-      runningJob({ metadata: { userId: USER_ID, tenantId: 'other-tenant' } }),
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({
+      status: 'queued',
+      steerId: 's1',
+      position: 1,
+      conversationId: 'c1',
+    });
+    expect(mockHandleSteerRequest).toHaveBeenCalledWith(
+      { id: 'user-1', tenantId: 'tenant-1' },
+      { conversationId: 'c1', text: 'hello', files: [{ file_id: 'f1' }] },
     );
-    const wrongTenant = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer' });
-    expect(wrongTenant.status).toBe(403);
-    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
-  it('409s while the run is paused for human review', async () => {
-    const app = buildApp();
-    mockGetJob.mockResolvedValueOnce(runningJob({ status: 'requires_action' }));
-    const res = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer' });
+  it('passes rejection statuses through untouched', async () => {
+    mockHandleSteerRequest.mockResolvedValue({ status: 409, body: { code: 'RUN_PAUSED' } });
+
+    const res = await request(buildApp()).post('/chat/steer').send({ conversationId: 'c1' });
+
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('RUN_PAUSED');
-    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
-  it('maps enqueue rejections: raced completion → 404, full queue → 429', async () => {
-    const app = buildApp();
-    mockGetJob.mockResolvedValue(runningJob());
+  it('500s with STEER_FAILED when the handler throws', async () => {
+    mockHandleSteerRequest.mockRejectedValue(new Error('store down'));
 
-    mockEnqueue.mockResolvedValueOnce(-1);
-    const raced = await request(app)
+    const res = await request(buildApp())
       .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer' });
-    expect(raced.status).toBe(404);
-    expect(raced.body.code).toBe('NO_ACTIVE_RUN');
+      .send({ conversationId: 'c1', text: 'x' });
 
-    mockEnqueue.mockResolvedValueOnce(-2);
-    const full = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'steer' });
-    expect(full.status).toBe(429);
-    expect(full.body.code).toBe('STEER_QUEUE_FULL');
-  });
-
-  it('202s with steerId + position and sanitizes the text', async () => {
-    const app = buildApp();
-    mockGetJob.mockResolvedValue(runningJob());
-    mockEnqueue.mockResolvedValueOnce(2);
-
-    const res = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: '  focus on tests\0  ' });
-
-    expect(res.status).toBe(202);
-    expect(res.body).toMatchObject({
-      status: 'queued',
-      position: 2,
-      conversationId: CONVO_ID,
-    });
-    expect(typeof res.body.steerId).toBe('string');
-
-    const [streamId, item] = mockEnqueue.mock.calls[0];
-    expect(streamId).toBe(CONVO_ID);
-    expect(item).toMatchObject({ text: 'focus on tests', userId: USER_ID });
-    expect(typeof item.createdAt).toBe('number');
-    expect(item.files).toBeUndefined();
-  });
-
-  it('sanitizes attachment refs down to known fields', async () => {
-    const app = buildApp();
-    mockGetJob.mockResolvedValue(runningJob());
-    mockEnqueue.mockResolvedValueOnce(1);
-
-    const res = await request(app)
-      .post('/chat/steer')
-      .send({
-        conversationId: CONVO_ID,
-        text: 'see the image',
-        files: [
-          {
-            file_id: 'f1',
-            type: 'image/png',
-            filepath: '/uploads/f1.png',
-            filename: 'shot.png',
-            height: 10,
-            width: 20,
-            bytes: 999,
-            user: 'someone-else',
-            embedded: true,
-          },
-        ],
-      });
-
-    expect(res.status).toBe(202);
-    const [, item] = mockEnqueue.mock.calls[0];
-    expect(item.files).toEqual([
-      {
-        file_id: 'f1',
-        type: 'image/png',
-        filepath: '/uploads/f1.png',
-        filename: 'shot.png',
-        height: 10,
-        width: 20,
-        bytes: 999,
-      },
-    ]);
-  });
-
-  it('400s on malformed or oversized file lists', async () => {
-    const app = buildApp();
-    mockGetJob.mockResolvedValue(runningJob());
-
-    const malformed = await request(app)
-      .post('/chat/steer')
-      .send({ conversationId: CONVO_ID, text: 'x', files: [{ nope: true }] });
-    expect(malformed.status).toBe(400);
-    expect(malformed.body.code).toBe('INVALID_FILES');
-
-    const oversized = await request(app)
-      .post('/chat/steer')
-      .send({
-        conversationId: CONVO_ID,
-        text: 'x',
-        files: Array.from({ length: 11 }, (_, i) => ({ file_id: `f${i}` })),
-      });
-    expect(oversized.status).toBe(400);
-    expect(oversized.body.code).toBe('TOO_MANY_FILES');
-    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe('STEER_FAILED');
+    expect(mockLogger.error).toHaveBeenCalled();
   });
 });

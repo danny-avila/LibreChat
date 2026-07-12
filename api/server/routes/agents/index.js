@@ -401,7 +401,9 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
  * @access Private
  * @description Mounted before chatRouter to bypass buildEndpointOption middleware,
  * but a steer is model-bound user text, so it carries the same guards as a normal
- * message: the configured IP/user rate limiters, `moderateText`, and the PII filter.
+ * message IN THE SAME ORDER as chat.js: the configured IP/user rate limiters,
+ * the PII filter FIRST (blocked sensitive text must never reach the external
+ * moderation endpoint), then `moderateText`.
  */
 const steerLimiters = [];
 if (isEnabled(LIMIT_MESSAGE_IP)) {
@@ -414,8 +416,8 @@ router.post(
   '/chat/steer',
   configMiddleware,
   ...steerLimiters,
-  moderateText,
   createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  moderateText,
   SteerController,
 );
 

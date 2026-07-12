@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useSetRecoilState } from 'recoil';
 import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useRecoilState, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
@@ -21,6 +21,32 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const queryClient = useQueryClient();
   const abortMutation = useAbortStreamMutation();
   const convertSteersToQueued = useSteerConvert();
+
+  /**
+   * Interrupt & send fallback: clearing submissions below can tear down the
+   * SSE before its aborted-final event is processed, and only that event
+   * writes the run-end signal the queue drain consumes. When the one-shot
+   * interrupt flag is armed and no run-end has landed yet, write it here from
+   * the abort response so the queued follow-up still auto-sends. If the SSE
+   * final DOES arrive later, its signal finds the flag already consumed and
+   * an `aborted` outcome drains nothing — no double fire.
+   */
+  const signalInterruptDrain = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string) => {
+        const armed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
+        const runEnd = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
+        if (!armed || runEnd != null) {
+          return;
+        }
+        set(store.runEndByIndex(index), {
+          conversationId: convoId,
+          outcome: 'aborted',
+          endedAt: Date.now(),
+        });
+      },
+    [index],
+  );
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -157,6 +183,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         if (Array.isArray(response?.pendingSteers)) {
           convertSteersToQueued(conversationId, response.pendingSteers);
         }
+        signalInterruptDrain(conversationId);
         // The SSE will receive a `done` event with `aborted: true` and clean up
         // We still clear submissions as a fallback
         clearAllSubmissions();
@@ -176,6 +203,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     endpointType,
     abortMutation,
     convertSteersToQueued,
+    signalInterruptDrain,
     clearAllSubmissions,
     queryClient,
   ]);
