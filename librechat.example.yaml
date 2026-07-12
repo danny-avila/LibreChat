@@ -444,6 +444,43 @@ endpoints:
   #   headers:
   #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
 
+  # Azure OpenAI logical-model routing with optional priority processing.
+  # The model selector still shows one logical model. Priority off sends
+  # `service_tier: default`; priority on sends `service_tier: priority`.
+  # Azure may serve a priority request at the default tier, and LibreChat
+  # accounts against the tier reported by the provider.
+  # azureOpenAI:
+  #   groups:
+  #     - group: gpt-5-6
+  #       apiKey: '${AZURE_OPENAI_API_KEY}'
+  #       instanceName: 'my-openai-resource'
+  #       version: 'v1'
+  #       models:
+  #         # Same deployment/resource with request-level tier switching.
+  #         gpt-5.6:
+  #           deploymentName: 'gpt-5-6-sol'
+  #           priority: true
+  #         # Alternate deployment/resource. Omitted fields inherit from the group
+  #         # and standard model route. tokenConfig contains per-million priority
+  #         # rates and is required when local balance/context-cost accounting is on.
+  #         gpt-5.6-terra:
+  #           deploymentName: 'gpt-5-6-terra'
+  #           priority:
+  #             deploymentName: 'gpt-5-6-terra-priority'
+  #             instanceName: 'optional-priority-resource'
+  #             apiKey: '${AZURE_PRIORITY_API_KEY}'
+  #             tokenConfig:
+  #               prompt: 5
+  #               completion: 30
+  #               context: 1050000
+  #               cacheRead: 0.5
+  #               cacheWrite: 6.25
+  #
+  # GPT-5.6 managed prompt caching sends a privacy-preserving prompt_cache_key
+  # to Azure but does not send OpenAI's explicit breakpoint controls. Native
+  # Programmatic Tool Calling is opt-in in the agent model panel and does not
+  # require LibreChat's Code API. GPT-5.6 multi-agent beta is not supported.
+
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
   # anthropic:

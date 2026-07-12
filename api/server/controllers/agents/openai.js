@@ -706,6 +706,21 @@ const OpenAIChatCompletionController = async (req, res) => {
         handle: (_event, data, metadata) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
+            const reportedTier = data?.output?.response_metadata?.service_tier;
+            if (reportedTier === 'default' || reportedTier === 'priority') {
+              usage.serviceTier = reportedTier;
+            } else if (agent.model_parameters?.priorityProcessing != null) {
+              usage.serviceTier =
+                agent.model_parameters.priorityProcessing === true ? 'priority' : 'default';
+              usage.serviceTierInferred = true;
+              logger.warn(
+                '[OpenAIChatCompletionController] Provider omitted service_tier; using requested tier',
+                {
+                  model: agent.model_parameters?.model,
+                  requestedServiceTier: usage.serviceTier,
+                },
+              );
+            }
             const taggedUsage = markSummarizationUsage(usage, metadata);
             collectedUsage.push(taggedUsage);
             const target = isStreaming ? tracker : aggregator;

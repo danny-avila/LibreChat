@@ -1,5 +1,6 @@
 import {
   AnthropicEffort,
+  ImageDetail,
   ReasoningEffort,
   ReasoningMode,
   ReasoningContext,
@@ -8,6 +9,7 @@ import {
   compactGoogleSchema,
   eAnthropicEffortSchema,
   eReasoningEffortSchema,
+  eImageDetailSchema,
   eReasoningModeSchema,
   eReasoningContextSchema,
 } from './schemas';
@@ -618,6 +620,14 @@ describe('ReasoningContext', () => {
     expect(eReasoningContextSchema.parse('auto')).toBe('auto');
     expect(eReasoningContextSchema.parse('current_turn')).toBe('current_turn');
     expect(eReasoningContextSchema.parse('all_turns')).toBe('all_turns');
+    expect(eReasoningContextSchema.parse('')).toBe('');
     expect(() => eReasoningContextSchema.parse('next_turn')).toThrow();
+  });
+});
+
+describe('GPT-5.6 image detail', () => {
+  it('accepts original and rejects unknown values', () => {
+    expect(eImageDetailSchema.parse(ImageDetail.original)).toBe('original');
+    expect(() => eImageDetailSchema.parse('raw')).toThrow();
   });
 });

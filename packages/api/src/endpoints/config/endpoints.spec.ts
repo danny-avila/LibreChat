@@ -83,16 +83,29 @@ describe('createEndpointsConfigService', () => {
       const deps = createMockDeps({
         getAppConfig: jest.fn().mockResolvedValue(
           appConfig({
-            endpoints: { [EModelEndpoint.azureOpenAI]: { modelNames: ['gpt-4'] } },
+            endpoints: {
+              [EModelEndpoint.azureOpenAI]: {
+                modelNames: ['gpt-4', 'gpt-5.6'],
+                priorityModels: ['gpt-5.6'],
+                groupMap: {
+                  secret: {
+                    apiKey: 'must-not-leak',
+                    baseURL: 'https://must-not-leak.example.com',
+                  },
+                },
+              },
+            },
           }),
         ),
       });
       const { getEndpointsConfig } = createEndpointsConfigService(deps);
       const result = await getEndpointsConfig(fakeReq());
 
-      expect(result?.[EModelEndpoint.azureOpenAI]).toEqual(
-        expect.objectContaining({ userProvide: false }),
-      );
+      expect(result?.[EModelEndpoint.azureOpenAI]).toEqual({
+        userProvide: false,
+        priorityModels: ['gpt-5.6'],
+        order: 4,
+      });
     });
 
     it('adds azureAssistants when azure has assistants config', async () => {

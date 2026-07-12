@@ -1,6 +1,7 @@
 import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type {
   BaseInitializeParams,
+  EndpointTokenConfig,
   InitializeResultBase,
   OpenAIConfigOptions,
   UserKeyValues,
@@ -12,8 +13,47 @@ import {
   checkUserKeyExpiry,
   getAzureCredentials,
 } from '~/utils';
+import { createOpenAIIdentifier } from '~/utils/identity';
 import { validateEndpointURL } from '~/auth';
 import { getOpenAIConfig } from './config';
+
+function getStablePromptIdentity(
+  body: Record<string, unknown>,
+  modelParameters?: Record<string, unknown>,
+): string {
+  const agent =
+    body.agent && typeof body.agent === 'object'
+      ? (body.agent as Record<string, unknown>)
+      : undefined;
+  const tools = Array.isArray(agent?.tools) ? agent.tools : [];
+  return JSON.stringify({
+    agentId:
+      (typeof body.agent_id === 'string' && body.agent_id) ||
+      (typeof agent?.id === 'string' && agent.id) ||
+      '',
+    instructions:
+      (typeof agent?.instructions === 'string' && agent.instructions) ||
+      (typeof modelParameters?.promptPrefix === 'string' && modelParameters.promptPrefix) ||
+      '',
+    tools,
+  });
+}
+
+function toBillingTokenRates(rates: {
+  prompt: number;
+  completion: number;
+  context: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}): EndpointTokenConfig[string] {
+  return {
+    prompt: rates.prompt,
+    completion: rates.completion,
+    context: rates.context,
+    ...(rates.cacheRead != null && { read: rates.cacheRead }),
+    ...(rates.cacheWrite != null && { write: rates.cacheWrite }),
+  };
+}
 
 /**
  * Initializes OpenAI options for agent usage. This function always returns configuration
@@ -87,6 +127,8 @@ export async function initializeOpenAI({
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
   const azureConfig = isAzureOpenAI && appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
   let isServerless = false;
+  let standardTokenConfig: EndpointTokenConfig | undefined;
+  let priorityTokenConfig: EndpointTokenConfig[string] | undefined;
 
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
@@ -95,12 +137,23 @@ export async function initializeOpenAI({
       baseURL: configBaseURL,
       headers = {},
       serverless,
+      tokenConfig,
     } = mapModelToAzureConfig({
       modelName: modelName || '',
       modelGroupMap,
       groupMap,
+      serviceTier: model_parameters?.priorityProcessing === true ? 'priority' : 'default',
     });
     isServerless = serverless === true;
+    standardTokenConfig = azureConfig.tokenConfig
+      ? Object.fromEntries(
+          Object.entries(azureConfig.tokenConfig).map(([model, rates]) => [
+            model,
+            toBillingTokenRates(rates),
+          ]),
+        )
+      : undefined;
+    priorityTokenConfig = tokenConfig ? toBillingTokenRates(tokenConfig) : undefined;
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
     if (configBaseURL) {
@@ -176,10 +229,39 @@ export async function initializeOpenAI({
     throw new Error(`${endpoint} API Key not provided.`);
   }
 
+  const isGPT56 = /^gpt-5\.6(?:-|$)/i.test(modelName ?? '');
+  const officialOpenAI =
+    endpoint === EModelEndpoint.openAI &&
+    (!baseURL || /^https:\/\/api\.openai\.com(?:\/|$)/i.test(baseURL));
+  const firstPartyAzure = isAzureOpenAI && !isServerless;
+  const managedIdentityEnabled = isGPT56 && (officialOpenAI || firstPartyAzure);
+  const userId = req.user?.id ?? '';
+  const tenantId = req.user?.tenantId;
+  const promptCacheEnabled = model_parameters?.promptCache === true;
+  const stablePromptIdentity = getStablePromptIdentity(
+    req.body as Record<string, unknown>,
+    model_parameters,
+  );
+
   const modelOptions = {
     ...(model_parameters ?? {}),
     model: modelName,
-    user: req.user?.id,
+    user: userId,
+    firstPartyOpenAI: managedIdentityEnabled,
+    ...(managedIdentityEnabled && {
+      safety_identifier: createOpenAIIdentifier('safety', [tenantId, userId]),
+    }),
+    ...(managedIdentityEnabled &&
+      promptCacheEnabled && {
+        promptCacheKey: createOpenAIIdentifier('cache', [
+          tenantId,
+          userId,
+          endpoint,
+          modelName,
+          stablePromptIdentity,
+        ]),
+        promptCacheExplicit: officialOpenAI,
+      }),
   };
 
   const finalClientOptions: OpenAIConfigOptions = {
@@ -210,6 +292,15 @@ export async function initializeOpenAI({
 
   if (streamRate) {
     options.llmConfig._lc_stream_delay = streamRate;
+  }
+
+  if (standardTokenConfig || (modelName && priorityTokenConfig)) {
+    options.endpointTokenConfig = {
+      ...(standardTokenConfig ?? {}),
+      ...(modelName && priorityTokenConfig
+        ? { [`${modelName}:priority`]: priorityTokenConfig }
+        : {}),
+    };
   }
 
   return options;

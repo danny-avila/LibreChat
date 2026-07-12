@@ -45,6 +45,9 @@ export const knownOpenAIParams: Set<string> = new Set([
   'reasoning',
   'zdrEnabled',
   'service_tier',
+  'safety_identifier',
+  'promptCacheKey',
+  'promptCacheExplicit',
   'supportsStrictToolCalling',
   'useResponsesApi',
   'configuration',
@@ -536,6 +539,8 @@ export function getOpenAILLMConfig({
     reasoning_summary,
     reasoning_mode,
     reasoning_context,
+    priorityProcessing,
+    firstPartyOpenAI,
     verbosity,
     web_search,
     promptCache,
@@ -544,7 +549,11 @@ export function getOpenAILLMConfig({
     presence_penalty,
     ...modelOptions
   } = cleanedModelOptions as Partial<
-    t.OpenAIParameters & { promptCache?: boolean; promptCacheTtl?: '5m' | '1h' }
+    t.OpenAIParameters & {
+      promptCache?: boolean;
+      promptCacheTtl?: '5m' | '1h';
+      firstPartyOpenAI?: boolean;
+    }
   >;
 
   const llmConfig = Object.assign(
@@ -730,6 +739,20 @@ export function getOpenAILLMConfig({
       }) || hasModelKwargs;
   }
 
+  const isGPT56 = /^gpt-5\.6(?:-|$)/i.test(modelOptions.model ?? '');
+  const supportsGPT56 = isOpenAIEndpoint(endpoint) && firstPartyOpenAI === true && isGPT56;
+  const supportsGPT56Responses = supportsGPT56 && llmConfig.useResponsesApi === true;
+  if (!supportsGPT56Responses) {
+    reasoningMode = undefined;
+    reasoningContext = undefined;
+  }
+  if (!supportsGPT56 && reasoningEffort === 'max') {
+    reasoningEffort = undefined;
+  }
+  if (supportsGPT56) {
+    llmConfig.service_tier = priorityProcessing === true ? 'priority' : 'default';
+  }
+
   if (llmConfig.max_tokens != null) {
     llmConfig.maxTokens = llmConfig.max_tokens;
     delete llmConfig.max_tokens;
@@ -763,6 +786,8 @@ export function getOpenAILLMConfig({
     if (promptCacheTtlValue != null) {
       llmConfig.promptCacheTtl = promptCacheTtlValue;
     }
+  } else if (enablePromptCache === true && supportsGPT56) {
+    llmConfig.promptCache = true;
   }
 
   /**

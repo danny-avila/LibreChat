@@ -50,11 +50,16 @@ export default function Parameters() {
       defaultParams.filter((param) => param != null),
       overriddenEndpointKey,
       model,
+      {
+        provider,
+        useResponsesApi: conversation?.useResponsesApi === true,
+        priorityModels: endpointsConfig[provider]?.priorityModels,
+      },
     );
     return modelAwareParams.map(
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );
-  }, [endpointType, endpointsConfig, model, provider]);
+  }, [conversation?.useResponsesApi, endpointType, endpointsConfig, model, provider]);
 
   useEffect(() => {
     if (!parameters) {

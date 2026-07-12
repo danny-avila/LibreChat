@@ -6,6 +6,7 @@ export interface ITransaction extends Document {
   conversationId?: string;
   tokenType: 'prompt' | 'completion' | 'credits';
   model?: string;
+  serviceTier?: 'default' | 'priority';
   context?: string;
   valueKey?: string;
   rate?: number;
@@ -41,6 +42,10 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     model: {
       type: String,
       index: true,
+    },
+    serviceTier: {
+      type: String,
+      enum: ['default', 'priority'],
     },
     context: {
       type: String,

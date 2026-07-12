@@ -11,6 +11,7 @@ interface GetMultiplierParams {
   model?: string;
   endpointTokenConfig?: EndpointTokenConfig;
   inputTokenCount?: number;
+  serviceTier?: 'default' | 'priority';
 }
 
 interface GetCacheMultiplierParams {
@@ -18,6 +19,7 @@ interface GetCacheMultiplierParams {
   model?: string;
   endpointTokenConfig?: EndpointTokenConfig;
   inputTokenCount?: number;
+  serviceTier?: 'default' | 'priority';
 }
 
 export interface PricingFns {
@@ -32,6 +34,7 @@ interface BaseTxData {
   messageId?: string;
   conversationId: string;
   endpointTokenConfig?: EndpointTokenConfig;
+  serviceTier?: 'default' | 'priority';
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
 }
@@ -77,6 +80,7 @@ export interface StructuredTokenUsage {
 export interface TxMetadata {
   user: string;
   model?: string;
+  serviceTier?: 'default' | 'priority';
   context: string;
   messageId?: string;
   conversationId: string;
@@ -94,9 +98,24 @@ function calculateTokenValue(
   txData: StandardTxData,
   pricing: PricingFns,
 ): { tokenValue: number; rate: number } {
-  const { tokenType, model, endpointTokenConfig, inputTokenCount, rawAmount, valueKey } = txData;
+  const {
+    tokenType,
+    model,
+    serviceTier,
+    endpointTokenConfig,
+    inputTokenCount,
+    rawAmount,
+    valueKey,
+  } = txData;
   const multiplier = Math.abs(
-    pricing.getMultiplier({ valueKey, tokenType, model, endpointTokenConfig, inputTokenCount }),
+    pricing.getMultiplier({
+      valueKey,
+      tokenType,
+      model,
+      serviceTier,
+      endpointTokenConfig,
+      inputTokenCount,
+    }),
   );
   let rate = multiplier;
   let tokenValue = rawAmount * multiplier;
@@ -111,7 +130,7 @@ function calculateStructuredTokenValue(
   txData: StructuredTxData,
   pricing: PricingFns,
 ): { tokenValue: number; rate: number; rawAmount: number; rateDetail?: Record<string, number> } {
-  const { tokenType, model, endpointTokenConfig, inputTokenCount } = txData;
+  const { tokenType, model, serviceTier, endpointTokenConfig, inputTokenCount } = txData;
 
   if (!tokenType) {
     return { tokenValue: txData.rawAmount ?? 0, rate: 0, rawAmount: txData.rawAmount ?? 0 };
@@ -121,6 +140,7 @@ function calculateStructuredTokenValue(
     const inputMultiplier = pricing.getMultiplier({
       tokenType: 'prompt',
       model,
+      serviceTier,
       endpointTokenConfig,
       inputTokenCount,
     });
@@ -128,6 +148,7 @@ function calculateStructuredTokenValue(
       pricing.getCacheMultiplier({
         cacheType: 'write',
         model,
+        serviceTier,
         endpointTokenConfig,
         inputTokenCount,
       }) ?? inputMultiplier;
@@ -135,6 +156,7 @@ function calculateStructuredTokenValue(
       pricing.getCacheMultiplier({
         cacheType: 'read',
         model,
+        serviceTier,
         endpointTokenConfig,
         inputTokenCount,
       }) ?? inputMultiplier;
@@ -169,6 +191,7 @@ function calculateStructuredTokenValue(
   const multiplier = pricing.getMultiplier({
     tokenType,
     model,
+    serviceTier,
     endpointTokenConfig,
     inputTokenCount,
   });

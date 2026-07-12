@@ -241,6 +241,10 @@ export interface UsageMetadata {
   model?: string;
   /** Provider identifier that generated this usage */
   provider?: string;
+  /** Actual processing tier reported by OpenAI or Azure OpenAI. */
+  serviceTier?: 'default' | 'priority';
+  /** True when the provider omitted its tier and LibreChat used the requested tier. */
+  serviceTierInferred?: boolean;
   /** Agent that produced this usage (graph agent id / subagent agent id). Lets
    *  multi-endpoint graphs price each call with its own endpoint token config. */
   agentId?: string;
