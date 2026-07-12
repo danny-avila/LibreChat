@@ -243,6 +243,10 @@ export interface ToolExecuteOptions {
     file_path: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** Per-conversation stateful runtime-session hint (thread_id); forwarded so a
+     *  host file op that is the first sandbox call joins the same runtime session
+     *  as bash_tool instead of the Code API's default session. */
+    runtime_session_hint?: string;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
   /**
@@ -256,6 +260,8 @@ export interface ToolExecuteOptions {
     content: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** @see readSandboxFile.runtime_session_hint */
+    runtime_session_hint?: string;
     req?: ServerRequest;
   }) => Promise<{
     stdout?: string;
@@ -1274,6 +1280,7 @@ async function handleSandboxFileFallback(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1442,6 +1449,7 @@ async function loadSandboxTextForAuthoring({
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1516,6 +1524,7 @@ async function writeSandboxTextForAuthoring({
       content,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
   } catch (error) {
@@ -3523,6 +3532,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       stepId: tc.stepId,
                       turn: tc.turn,
                     };
+
+                    /* Stateful runtime-session hint: the SDK resolves it onto
+                     * the request for execute_code/bash (orthogonal to the
+                     * transient exec-session below — a first call has a hint but
+                     * no session yet). The remote executors read it off
+                     * `config.toolCall._runtime_session_hint`; without this the
+                     * event-driven ON_TOOL_EXECUTE path drops it and every
+                     * conversation collapses onto the Code API's `default`
+                     * session (no per-conversation isolation). */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
+                    }
 
                     if (
                       tc.codeSessionContext &&

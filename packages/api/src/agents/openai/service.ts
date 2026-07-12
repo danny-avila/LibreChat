@@ -146,6 +146,13 @@ interface InitializeAgentParams {
    * skips the expansion (same semantics as the in-repo controllers).
    */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether the admin-level `stateful_code_sessions` capability is enabled.
+   * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
+   * OpenAI-compatible route resolves stateful sessions identically to the
+   * in-repo controllers; absent / `undefined` disables the feature.
+   */
+  statefulSessionsAvailable?: boolean;
 }
 
 /**
@@ -444,6 +451,17 @@ export async function createAgentChatCompletion(
             AgentCapabilities.execute_code,
           )
         : undefined;
+    /** Mirror `codeEnvAvailable` for the stateful-session gate so an agent with
+     *  `execute_code`, the app `stateful_code_sessions` capability, and its own
+     *  builder opt-in resolves stateful sessions on this route too — otherwise
+     *  `statefulCodeSessions` stays false and `createRun` never sends
+     *  `toolExecution.sandbox`. */
+    const statefulSessionsAvailable =
+      agentsConfig != null && typeof agentsConfig === 'object'
+        ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(
+            AgentCapabilities.stateful_code_sessions,
+          )
+        : undefined;
 
     // Initialize the agent first to check for disableStreaming
     const initializedAgent = await deps.initializeAgent({
@@ -460,6 +478,7 @@ export async function createAgentChatCompletion(
       allowedProviders,
       isInitialAgent: true,
       codeEnvAvailable,
+      statefulSessionsAvailable,
     });
 
     // Determine if streaming is enabled (check both request and agent config)

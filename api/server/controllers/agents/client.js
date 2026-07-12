@@ -774,6 +774,7 @@ class AgentClient extends BaseClient {
             : memoryConfig.agent?.provider,
         },
         codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
+        statefulSessionsAvailable: memoryCapabilities.has(AgentCapabilities.stateful_code_sessions),
       },
       {
         getFiles: db.getFiles,

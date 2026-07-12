@@ -290,6 +290,14 @@ export type InitializedAgent = Agent & {
    * (`packages/api/src/agents/added.ts`), so the check is uniform.
    */
   codeEnvAvailable: boolean;
+  /**
+   * Whether stateful code sessions are active *for this agent*: the admin
+   * `stateful_code_sessions` capability AND the agent's builder opt-in
+   * (`agent.stateful_code_sessions`) AND `codeEnvAvailable`. Resolved once
+   * here; `createRun` walks this per-agent value to gate the run-level
+   * `toolExecution.sandbox` config.
+   */
+  statefulCodeSessions: boolean;
   /** Whether host-side skill file authoring is available for this agent/run. */
   skillAuthoringAvailable: boolean;
   /** Host-side file authoring tool names registered for this run. */
@@ -412,6 +420,8 @@ export interface InitializeAgentParams {
    * tool is registered.
    */
   backgroundToolsAvailable?: boolean;
+  /** Whether stateful code sessions are available (stateful_code_sessions capability enabled) */
+  statefulSessionsAvailable?: boolean;
   /** Whether inline memory tools are available (memory capability enabled, memory
    *  configured, and the user permitted). When true and the agent lists the `memory`
    *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
@@ -1084,6 +1094,14 @@ export async function initializeAgent(
    */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
   const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  /** Per-agent stateful-session truth: the admin capability AND the agent's
+   *  own builder opt-in AND a working code env. Resolved once here so the
+   *  registered bash description, the tool factories, and `createRun`'s
+   *  `toolExecution.sandbox` gate all agree for this agent. */
+  const effectiveStatefulSessions =
+    effectiveCodeEnvAvailable &&
+    params.statefulSessionsAvailable === true &&
+    agent.stateful_code_sessions === true;
   if (effectiveCodeEnvAvailable) {
     const codeExecResult = registerCodeExecutionTools({
       toolRegistry,
@@ -1091,6 +1109,7 @@ export async function initializeAgent(
       includeBash: true,
       includeSkillFileInstructions: false,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
+      statefulSessions: effectiveStatefulSessions,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
   } else if (agentRequestsCodeExec) {
@@ -1254,6 +1273,7 @@ export async function initializeAgent(
       contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
       listSkillsByAccess: db?.listSkillsByAccess,
       codeEnvAvailable: effectiveCodeEnvAvailable,
+      statefulSessions: effectiveStatefulSessions,
       userId: req.user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
@@ -1329,6 +1349,7 @@ export async function initializeAgent(
     baseContextTokens,
     memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
+    statefulCodeSessions: effectiveStatefulSessions,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
     skillAuthoringAvailable,

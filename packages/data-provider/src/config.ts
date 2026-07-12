@@ -565,6 +565,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
+  stateful_code_sessions = 'stateful_code_sessions',
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
@@ -2012,6 +2013,9 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.6',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5.5',
   'gpt-5.5-pro',
   'chat-latest',
@@ -2366,6 +2370,10 @@ export enum CacheKeys {
    */
   OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
   /**
+   * Key for cached authenticated user documents.
+   */
+  AUTH_USER_DOC = 'AUTH_USER_DOC',
+  /**
    * Key for OpenID session.
    */
   OPENID_SESSION = 'OPENID_SESSION',
@@ -2378,6 +2386,8 @@ export enum CacheKeys {
    */
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
 }
+
+export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
 
 /**
  * Enum for violation types, used to identify, log, and cache violations.

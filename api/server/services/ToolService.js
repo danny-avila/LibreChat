@@ -1490,6 +1490,18 @@ async function loadToolsForExecution({
     enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
     agent?.tools?.includes(Tools.execute_code) === true;
 
+  /**
+   * Opt bash_tool into the hedged stateful-session description. Gated on code
+   * execution being enabled AND the admin `stateful_code_sessions` capability
+   * AND the agent's own builder opt-in; off by default. Sets prompt text only
+   * (the wire hint is set at run config). PTC keeps its stateless prompt in
+   * v1. Older @librechat/agents ignore the param.
+   */
+  const statefulCodeSessions =
+    codeExecutionEnabled &&
+    enabledCapabilities?.has(AgentCapabilities.stateful_code_sessions) === true &&
+    agent?.stateful_code_sessions === true;
+
   const isPTC =
     isPTCRequested &&
     enabledCapabilities.has(AgentCapabilities.programmatic_tools) &&
@@ -1541,6 +1553,7 @@ async function loadToolsForExecution({
     try {
       const bashTool = createBashExecutionTool({
         authHeaders: () => getCodeApiAuthHeaders(req),
+        statefulSessions: statefulCodeSessions,
       });
       allLoadedTools.push(bashTool);
     } catch (error) {

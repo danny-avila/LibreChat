@@ -150,6 +150,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
+  const statefulSessionsAvailable = enabledCapabilities.has(
+    AgentCapabilities.stateful_code_sessions,
+  );
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
   const skillDbMethods = getSkillDbMethods();
 
@@ -408,6 +411,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
       backgroundToolsAvailable,
+      statefulSessionsAvailable,
       memoryAvailable,
       skillStates,
       defaultActiveOnShare,
@@ -485,6 +489,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       defaultActiveOnShare,
       codeEnvAvailable,
       backgroundToolsAvailable,
+      statefulSessionsAvailable,
       memoryAvailable,
     },
     {
@@ -558,6 +563,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     defaultActiveOnShare,
     codeEnvAvailable,
     backgroundToolsAvailable,
+    statefulSessionsAvailable,
     memoryAvailable,
   });
 
@@ -702,6 +708,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
            * host ON_TOOL_EXECUTE background interceptor, so injecting the
            * schema would advertise a poll tool the host can't honor. Backgrounding
            * subagent work is the durable follow-up. */
+          statefulSessionsAvailable,
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,

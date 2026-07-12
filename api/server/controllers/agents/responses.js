@@ -460,6 +460,9 @@ const createResponse = async (req, res) => {
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        statefulSessionsAvailable: enabledCapabilities.has(
+          AgentCapabilities.stateful_code_sessions,
+        ),
         skillStates,
         defaultActiveOnShare,
         manualSkills,
@@ -538,6 +541,9 @@ const createResponse = async (req, res) => {
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+          statefulSessionsAvailable: enabledCapabilities.has(
+            AgentCapabilities.stateful_code_sessions,
+          ),
         },
         {
           getAgent: db.getAgent,
