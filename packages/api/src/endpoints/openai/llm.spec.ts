@@ -1,7 +1,9 @@
 import {
   Verbosity,
   EModelEndpoint,
+  ReasoningMode,
   ReasoningEffort,
+  ReasoningContext,
   ReasoningSummary,
   ReasoningParameterFormat,
 } from 'librechat-data-provider';
@@ -501,6 +503,29 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
     });
 
+    it('should include reasoning_mode and reasoning_context in the custom reasoning object', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        modelOptions: {
+          model: 'provider/gpt-5.6',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_mode: ReasoningMode.pro,
+          reasoning_context: ReasoningContext.all_turns,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+        mode: ReasoningMode.pro,
+        context: ReasoningContext.all_turns,
+      });
+      expect(result.llmConfig).not.toHaveProperty('reasoning_mode');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_context');
+    });
+
     it('should apply reasoning format to default reasoning params', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
@@ -639,6 +664,46 @@ describe('getOpenAILLMConfig', () => {
         effort: ReasoningEffort.medium,
         summary: ReasoningSummary.detailed,
       });
+    });
+
+    it('should build the OpenAI Responses reasoning object from mode and context alone', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.6',
+          reasoning_mode: ReasoningMode.pro,
+          reasoning_context: ReasoningContext.current_turn,
+          useResponsesApi: true,
+        },
+      });
+
+      expect(result.llmConfig.reasoning).toEqual({
+        mode: ReasoningMode.pro,
+        context: ReasoningContext.current_turn,
+      });
+    });
+
+    it('should omit reasoning_mode and reasoning_context on OpenAI Chat Completions', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.6',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_mode: ReasoningMode.pro,
+          reasoning_context: ReasoningContext.all_turns,
+        },
+      });
+
+      /** Chat Completions uses reasoning_effort; mode/context are Responses-only
+       *  and must never leak as top-level params or a reasoning object. */
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+      expect(result.llmConfig).not.toHaveProperty('reasoning_mode');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_context');
     });
   });
 
@@ -1014,6 +1079,24 @@ describe('getOpenAILLMConfig', () => {
           model: 'anthropic/claude-3-sonnet',
           reasoning_effort: ReasoningEffort.high,
           reasoning_summary: ReasoningSummary.detailed,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
+    });
+
+    it('should exclude reasoning_mode and reasoning_context from OpenRouter reasoning object', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-3-sonnet',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_mode: ReasoningMode.pro,
+          reasoning_context: ReasoningContext.all_turns,
         },
       });
 
