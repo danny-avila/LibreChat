@@ -78,6 +78,28 @@ function DuringRunActionsMenu({
           <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />
           {localize('com_ui_interrupt_send')}
         </Ariakit.MenuItem>
+        <Ariakit.MenuSeparator className="my-1 border-border-light" />
+        <Ariakit.MenuItem
+          className={MENU_ITEM_CLASS}
+          // Flips the Enter-during-run default (same setting as Settings → Chat);
+          // shown as the mode you would switch TO. Does not consume the composer.
+          onClick={() => {
+            steering.setDefaultAction(steering.defaultAction === 'steer' ? 'queue' : 'steer');
+            menu.hide();
+          }}
+        >
+          {steering.defaultAction === 'steer' ? (
+            <>
+              <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />
+              {localize('com_ui_turn_on_queueing')}
+            </>
+          ) : (
+            <>
+              <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
+              {localize('com_ui_turn_on_steering')}
+            </>
+          )}
+        </Ariakit.MenuItem>
       </Ariakit.Menu>
     </>
   );

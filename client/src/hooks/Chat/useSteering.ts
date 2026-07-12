@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useToastContext } from '@librechat/client';
-import { useRecoilValue, useRecoilCallback } from 'recoil';
+import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
@@ -95,6 +95,7 @@ export default function useSteering({
   const setFilesToDelete = useSetFilesToDelete();
   const steerMutation = useSteerMessageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
+  const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
 
   const endpoint = conversation?.endpointType ?? conversation?.endpoint;
   const steerable = !isAssistantsEndpoint(endpoint);
@@ -203,6 +204,10 @@ export default function useSteering({
       type: file.type ?? '',
       height: file.height,
       width: file.width,
+      // Retained beyond the submission shape so "Edit message" can restore
+      // the attachment into the composer with its real name and size.
+      filename: file.filename,
+      bytes: file.size,
     }));
     setFiles(new Map());
     setFilesToDelete({});
@@ -416,6 +421,7 @@ export default function useSteering({
     effectiveAction,
     defaultAction,
     pausedOnApproval,
+    setDefaultAction,
     submitDuringRun,
     steerFromComposer,
     queueFromComposer,

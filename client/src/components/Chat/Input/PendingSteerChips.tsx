@@ -1,31 +1,274 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Zap, Clock, X, RotateCcw, Send, Paperclip } from 'lucide-react';
+import * as Ariakit from '@ariakit/react';
+import {
+  X,
+  Zap,
+  Send,
+  Clock,
+  Pencil,
+  Trash2,
+  Paperclip,
+  RotateCcw,
+  MoreHorizontal,
+} from 'lucide-react';
+import type { TMessage } from 'librechat-data-provider';
+import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const CHIP_CLASS =
-  'inline-flex max-w-full items-center gap-1 rounded-2xl border border-border-light bg-surface-secondary px-2.5 py-1.5 text-sm text-text-secondary';
-const ACTION_BTN_CLASS =
-  '-mr-0.5 shrink-0 rounded-full p-0.5 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
+const ROW_CLASS =
+  'flex w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary';
+const PRIMARY_BTN_CLASS =
+  'flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
+const ICON_BTN_CLASS =
+  'shrink-0 rounded-full p-1 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
+const MENU_CLASS =
+  'z-50 min-w-[13rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none';
+const MENU_ITEM_CLASS =
+  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-primary data-[active-item]:bg-surface-tertiary aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
+
+type MenuEntry = {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+};
+
+/** Per-row "…" overflow menu (edit / mode toggle / conversions). */
+function RowMenu({ label, entries }: { label: string; entries: MenuEntry[] }) {
+  const menu = Ariakit.useMenuStore({ placement: 'top-end' });
+  return (
+    <>
+      <Ariakit.MenuButton store={menu} aria-label={label} className={ICON_BTN_CLASS}>
+        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+      </Ariakit.MenuButton>
+      <Ariakit.Menu store={menu} portal gutter={6} className={MENU_CLASS}>
+        {entries.map((entry) => (
+          <Ariakit.MenuItem
+            key={entry.key}
+            className={MENU_ITEM_CLASS}
+            onClick={() => {
+              entry.onClick();
+              menu.hide();
+            }}
+          >
+            {entry.icon}
+            {entry.label}
+          </Ariakit.MenuItem>
+        ))}
+      </Ariakit.Menu>
+    </>
+  );
+}
+
+function AttachmentCount({ count, label }: { count: number; label: string }) {
+  if (count === 0) {
+    return null;
+  }
+  return (
+    <span className="flex shrink-0 items-center gap-0.5 text-xs text-text-secondary">
+      <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+      {count}
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
 
 /**
- * Chip row above the textarea for during-run messages:
- * - Steer chips (Zap): submitted mid-run, awaiting injection. `sending` pulses
- *   while the POST is in flight; `pending` is server-queued (the chip clears
- *   when `on_steer_applied` lands and the inline bubble takes over); `failed`
- *   keeps the text recoverable with retry / queue / dismiss actions.
- * - Queued chips (Clock): client-side follow-ups auto-sent after the run
- *   completes, with steer-now (while the run is live) and remove actions.
+ * The overflow item that flips the Enter-during-run default. Shown as the
+ * OPPOSITE of the current default (the action you would switch to), matching
+ * the reference UX ("Turn on queueing" while steer is the default).
+ */
+function useDefaultToggleEntry(steering: SteeringControls): MenuEntry {
+  const localize = useLocalize();
+  return useMemo(() => {
+    const next = steering.defaultAction === 'steer' ? 'queue' : 'steer';
+    return {
+      key: 'toggle-default',
+      label:
+        next === 'queue'
+          ? localize('com_ui_turn_on_queueing')
+          : localize('com_ui_turn_on_steering'),
+      icon:
+        next === 'queue' ? (
+          <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />
+        ) : (
+          <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
+        ),
+      onClick: () => steering.setDefaultAction(next),
+    };
+  }, [steering, localize]);
+}
+
+function QueuedRow({
+  message,
+  steering,
+  onEditToComposer,
+}: {
+  message: QueuedMessage;
+  steering: SteeringControls;
+  onEditToComposer: (text: string, files?: TMessage['files']) => void;
+}) {
+  const localize = useLocalize();
+  const toggleEntry = useDefaultToggleEntry(steering);
+  const fileCount = message.files?.length ?? 0;
+  const canSteerNow = steering.duringRunActive && steering.canSteer && fileCount === 0;
+  const showPrimary = canSteerNow || !steering.duringRunActive;
+
+  const entries: MenuEntry[] = [
+    {
+      key: 'edit',
+      label: localize('com_ui_edit_message'),
+      icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => {
+        steering.removeQueued(message.id);
+        onEditToComposer(message.text, message.files);
+      },
+    },
+    toggleEntry,
+  ];
+
+  return (
+    <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
+      <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate" title={message.text}>
+        {message.text}
+      </span>
+      <AttachmentCount
+        count={fileCount}
+        label={localize('com_ui_queued_attachment_count', { 0: String(fileCount) })}
+      />
+      {showPrimary && (
+        <button
+          type="button"
+          className={PRIMARY_BTN_CLASS}
+          onClick={() => steering.sendQueuedNow(message.id, message.text, message.files)}
+        >
+          {canSteerNow ? (
+            <>
+              <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
+              {localize('com_ui_steer')}
+            </>
+          ) : (
+            <>
+              <Send className="h-4 w-4" aria-hidden="true" />
+              {localize('com_ui_send_now')}
+            </>
+          )}
+        </button>
+      )}
+      <button
+        type="button"
+        aria-label={localize('com_ui_remove_queued')}
+        onClick={() => steering.removeQueued(message.id)}
+        className={ICON_BTN_CLASS}
+      >
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+    </div>
+  );
+}
+
+function SteerRow({
+  steer,
+  steering,
+  onEditToComposer,
+}: {
+  steer: PendingSteer;
+  steering: SteeringControls;
+  onEditToComposer: (text: string, files?: TMessage['files']) => void;
+}) {
+  const localize = useLocalize();
+  const toggleEntry = useDefaultToggleEntry(steering);
+  const failed = steer.status === 'failed';
+
+  const entries: MenuEntry[] = failed
+    ? [
+        {
+          key: 'edit',
+          label: localize('com_ui_edit_message'),
+          icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+          onClick: () => {
+            steering.removeSteer(steer.steerId);
+            onEditToComposer(steer.text);
+          },
+        },
+        {
+          key: 'queue',
+          label: localize('com_ui_convert_to_queue'),
+          icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+          onClick: () => steering.convertSteerToQueue(steer.steerId, steer.text),
+        },
+        toggleEntry,
+      ]
+    : [toggleEntry];
+
+  return (
+    <div
+      role="listitem"
+      className={cn(ROW_CLASS, failed && 'border-red-500/60')}
+      data-steer-status={steer.status}
+      data-testid="steer-message-row"
+    >
+      <Zap
+        className={cn(
+          'h-4 w-4 shrink-0',
+          failed ? 'text-red-500' : 'text-amber-500',
+          steer.status === 'sending' && 'animate-pulse',
+        )}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1 truncate" title={steer.text}>
+        {steer.text}
+      </span>
+      <span className={cn('shrink-0 text-xs', failed ? 'text-red-500' : 'text-text-secondary')}>
+        {failed ? localize('com_ui_steer_failed') : localize('com_ui_steer_pending')}
+      </span>
+      {failed && (
+        <>
+          <button
+            type="button"
+            className={PRIMARY_BTN_CLASS}
+            onClick={() => steering.retrySteer(steer.steerId, steer.text)}
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            {localize('com_ui_steer_retry')}
+          </button>
+          <button
+            type="button"
+            aria-label={localize('com_ui_remove_queued')}
+            onClick={() => steering.removeSteer(steer.steerId)}
+            className={ICON_BTN_CLASS}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </>
+      )}
+      <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+    </div>
+  );
+}
+
+/**
+ * Stacked rows above the composer for during-run messages, mirroring the
+ * reference UI: each row shows the message, a primary Steer/Send action,
+ * delete, and an overflow menu with Edit message + the default-mode toggle.
+ * - Steer rows (Zap): submitted mid-run, awaiting injection; `failed` keeps
+ *   the text recoverable with retry / edit / queue actions.
+ * - Queued rows (Clock): client-side follow-ups auto-sent after the run.
  */
 function PendingSteerChips({
   conversationId,
   steering,
+  onEditToComposer,
 }: {
   conversationId: string;
   steering: SteeringControls;
+  onEditToComposer: (text: string, files?: TMessage['files']) => void;
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
@@ -37,98 +280,26 @@ function PendingSteerChips({
 
   return (
     <div
-      className="flex flex-wrap gap-1.5 px-2 pt-2"
+      className="flex flex-col gap-1.5 px-2 pt-2"
       role="list"
       aria-label={localize('com_ui_queued_messages')}
       data-testid="pending-steer-chips"
     >
       {steers.map((steer) => (
-        <span
-          role="listitem"
+        <SteerRow
           key={steer.steerId}
-          className={cn(CHIP_CLASS, steer.status === 'failed' && 'border-red-500/60')}
-          data-steer-status={steer.status}
-        >
-          <Zap
-            className={cn(
-              'h-4 w-4 shrink-0',
-              steer.status === 'failed' ? 'text-red-500' : 'text-amber-500',
-              steer.status === 'sending' && 'animate-pulse',
-            )}
-            aria-hidden="true"
-          />
-          <span className="max-w-[16rem] truncate" title={steer.text}>
-            {steer.text}
-          </span>
-          <span className="sr-only">
-            {steer.status === 'failed'
-              ? localize('com_ui_steer_failed')
-              : localize('com_ui_steer_pending')}
-          </span>
-          {steer.status === 'failed' && (
-            <>
-              <button
-                type="button"
-                aria-label={localize('com_ui_steer_retry')}
-                onClick={() => steering.retrySteer(steer.steerId, steer.text)}
-                className={ACTION_BTN_CLASS}
-              >
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label={localize('com_ui_convert_to_queue')}
-                onClick={() => steering.convertSteerToQueue(steer.steerId, steer.text)}
-                className={ACTION_BTN_CLASS}
-              >
-                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label={localize('com_ui_remove_queued')}
-                onClick={() => steering.removeSteer(steer.steerId)}
-                className={ACTION_BTN_CLASS}
-              >
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </>
-          )}
-        </span>
+          steer={steer}
+          steering={steering}
+          onEditToComposer={onEditToComposer}
+        />
       ))}
       {queued.map((message) => (
-        <span role="listitem" key={message.id} className={CHIP_CLASS}>
-          <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
-          <span className="max-w-[16rem] truncate" title={message.text}>
-            {message.text}
-          </span>
-          {(message.files?.length ?? 0) > 0 && (
-            <span className="flex shrink-0 items-center gap-0.5 text-xs">
-              <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
-              {message.files?.length}
-              <span className="sr-only">
-                {localize('com_ui_queued_attachment_count', {
-                  0: String(message.files?.length ?? 0),
-                })}
-              </span>
-            </span>
-          )}
-          <button
-            type="button"
-            aria-label={localize('com_ui_send_now')}
-            onClick={() => steering.sendQueuedNow(message.id, message.text, message.files)}
-            className={ACTION_BTN_CLASS}
-          >
-            <Send className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label={localize('com_ui_remove_queued')}
-            onClick={() => steering.removeQueued(message.id)}
-            className={ACTION_BTN_CLASS}
-          >
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </span>
+        <QueuedRow
+          key={message.id}
+          message={message}
+          steering={steering}
+          onEditToComposer={onEditToComposer}
+        />
       ))}
     </div>
   );

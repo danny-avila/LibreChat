@@ -191,6 +191,38 @@ const ChatForm = memo(function ChatForm({
     (text: string, overrideFiles?: TMessage['files']) => submitMessage({ text, overrideFiles }),
     [submitMessage],
   );
+  /** Chip "Edit message": the text replaces the composer draft and the chip's
+   *  attachments merge back into the composer file map (already uploaded, so
+   *  they restore as completed entries — same shape as draft recovery). */
+  const editToComposer = useCallback(
+    (text: string, chipFiles?: TMessage['files']) => {
+      methods.setValue('text', text, { shouldDirty: true });
+      if (chipFiles != null && chipFiles.length > 0) {
+        setFiles((prev) => {
+          const next = new Map(prev);
+          for (const file of chipFiles) {
+            if (!file.file_id) {
+              continue;
+            }
+            next.set(file.file_id, {
+              file_id: file.file_id,
+              filename: file.filename,
+              filepath: file.filepath,
+              type: file.type ?? '',
+              height: file.height,
+              width: file.width,
+              size: file.bytes ?? 0,
+              progress: 1,
+              attached: true,
+            });
+          }
+          return next;
+        });
+      }
+      textAreaRef.current?.focus();
+    },
+    [methods, setFiles],
+  );
   const steering = useSteering({
     index,
     conversationId,
@@ -352,7 +384,11 @@ const ChatForm = memo(function ChatForm({
             <PendingManualSkillsChips conversationId={conversationId} />
             {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
             {steering.enabled && (
-              <PendingSteerChips conversationId={conversationId} steering={steering} />
+              <PendingSteerChips
+                conversationId={conversationId}
+                steering={steering}
+                onEditToComposer={editToComposer}
+              />
             )}
             {/* WIP */}
             <EditBadges
