@@ -44,12 +44,16 @@ jest.mock('~/hooks', () => ({
   useMCPToolOptions: () => ({
     isToolDeferred: () => false,
     isToolProgrammatic: () => false,
+    isToolBackground: () => false,
     toggleToolDefer: jest.fn(),
     toggleToolProgrammatic: jest.fn(),
+    toggleToolBackground: jest.fn(),
     areAllToolsDeferred: () => false,
     areAllToolsProgrammatic: () => false,
+    areAllToolsBackground: () => false,
     toggleDeferAll: jest.fn(),
     toggleProgrammaticAll: jest.fn(),
+    toggleBackgroundAll: jest.fn(),
   }),
 }));
 
