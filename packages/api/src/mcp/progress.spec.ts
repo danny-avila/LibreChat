@@ -62,6 +62,23 @@ describe('createToolProgressEmitter', () => {
     expect(emitted).toHaveLength(4);
   });
 
+  it('drops non-finite wire values instead of forwarding them', () => {
+    const emitted: StreamEvent[] = [];
+    const emit = createToolProgressEmitter({
+      toolCallId: 'call_1',
+      emit: (event) => {
+        emitted.push(event);
+      },
+      minIntervalMs: 0,
+    });
+    emit({ progress: Infinity, total: 10 });
+    emit({ progress: NaN });
+    expect(emitted).toHaveLength(0);
+    emit({ progress: 2, total: Infinity });
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].data).toEqual({ toolCallId: 'call_1', progress: 2 });
+  });
+
   it('never throws when the emit sink fails', () => {
     const emit = createToolProgressEmitter({
       toolCallId: 'call_1',

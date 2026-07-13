@@ -174,7 +174,12 @@ export default function ToolCall({
       return liveProgress.message;
     }
     if (liveProgress != null && liveProgress.total != null && liveProgress.total > 0) {
-      const asLabel = (value: number) => (Number.isInteger(value) ? `${value}` : value.toFixed(1));
+      const asLabel = (value: number) => {
+        if (Number.isInteger(value) || !Number.isFinite(value)) {
+          return `${value}`;
+        }
+        return value.toFixed(1);
+      };
       return localize('com_ui_tool_progress', {
         0: asLabel(liveProgress.progress),
         1: asLabel(liveProgress.total),

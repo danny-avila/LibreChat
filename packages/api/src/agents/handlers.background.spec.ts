@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
-import { CHECK_BACKGROUND_TASK_NAME } from './background';
+import { BACKGROUND_PROGRESS_SINK, CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
 interface BatchInput {
@@ -340,7 +340,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
         _input: Record<string, unknown>,
         config?: { configurable?: Record<string, unknown> },
       ) => {
-        const sink = config?.configurable?.backgroundProgressSink as
+        const sink = config?.configurable?.[BACKGROUND_PROGRESS_SINK] as
           | ((update: { progress: number; total?: number; message?: string }) => void)
           | undefined;
         sink?.({ progress: 3, total: 4, message: 'crunching' });

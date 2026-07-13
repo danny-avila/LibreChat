@@ -19,7 +19,7 @@ export function buildToolProgressEvent(
   const data: ToolProgressEvent = {
     toolCallId,
     progress: update.progress,
-    ...(update.total != null ? { total: update.total } : {}),
+    ...(Number.isFinite(update.total) ? { total: update.total } : {}),
     ...(typeof update.message === 'string' && update.message !== ''
       ? { message: update.message.slice(0, MAX_PROGRESS_MESSAGE_CHARS) }
       : {}),
@@ -44,8 +44,16 @@ export function createToolProgressEmitter(params: {
   let lastEmitAt = Number.NEGATIVE_INFINITY;
   let emittedFinal = false;
   return (update: ToolProgressUpdate): void => {
+    /** JSON.parse admits non-finite numbers (`1e999` → Infinity), so guard the
+     *  wire values before they reach clients or the throttle arithmetic. */
+    if (!Number.isFinite(update.progress)) {
+      return;
+    }
     const now = Date.now();
-    const isFinal = update.total != null && update.total > 0 && update.progress >= update.total;
+    const isFinal =
+      Number.isFinite(update.total) && (update.total as number) > 0
+        ? update.progress >= (update.total as number)
+        : false;
     if (!(isFinal && !emittedFinal) && now - lastEmitAt < minIntervalMs) {
       return;
     }
