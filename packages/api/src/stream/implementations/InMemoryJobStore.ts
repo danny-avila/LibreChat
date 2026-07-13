@@ -18,7 +18,7 @@ import {
 import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
-export const PARKED_STEERS_TTL_MS = 5 * 60 * 1000;
+export const PARKED_STEERS_TTL_MS: number = 5 * 60 * 1000;
 
 /**
  * Content state for a job - volatile, in-memory only.
