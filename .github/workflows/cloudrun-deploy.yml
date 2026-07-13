@@ -101,6 +101,7 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           env_vars: |
             NODE_ENV=staging
+            CONFIG_PATH=/app/librechat.config.yaml
             ALLOW_EMAIL_LOGIN=${{ secrets.ALLOW_EMAIL_LOGIN }}
             ALLOW_PASSWORD_RESET=${{ secrets.ALLOW_PASSWORD_RESET }}
             ALLOW_REGISTRATION=${{ secrets.ALLOW_REGISTRATION }}
@@ -198,6 +199,7 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           env_vars: |
             NODE_ENV=production
+            CONFIG_PATH=/app/librechat.config.yaml
             ALLOW_EMAIL_LOGIN=${{ secrets.ALLOW_EMAIL_LOGIN }}
             ALLOW_PASSWORD_RESET=${{ secrets.ALLOW_PASSWORD_RESET }}
             ALLOW_REGISTRATION=${{ secrets.ALLOW_REGISTRATION }}
