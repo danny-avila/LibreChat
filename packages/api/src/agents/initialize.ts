@@ -51,7 +51,7 @@ import {
   isFileAuthoringToolDefinition,
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
-import { requiresEphemeralUserConnection } from '~/mcp/utils';
+import { normalizeServerName, requiresEphemeralUserConnection } from '~/mcp/utils';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -1178,7 +1178,15 @@ export async function initializeAgent(
    */
   let backgroundToolNames: string[] | undefined;
   if (params.backgroundToolsAvailable === true) {
-    const mcpConfig = req.config?.mcpConfig;
+    /** Tool names embed `normalizeServerName(server)` (see MCP.js tool keys)
+     *  while `mcpConfig` keys the original name, so index the ephemeral
+     *  servers by their normalized form. */
+    const ephemeralServerNames = new Set<string>();
+    for (const [serverName, serverConfig] of Object.entries(req.config?.mcpConfig ?? {})) {
+      if (serverConfig != null && requiresEphemeralUserConnection(serverConfig)) {
+        ephemeralServerNames.add(normalizeServerName(serverName));
+      }
+    }
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
       toolRegistry,
@@ -1193,9 +1201,9 @@ export async function initializeAgent(
         if (delimiterIndex < 0) {
           return false;
         }
-        const serverConfig =
-          mcpConfig?.[toolName.slice(delimiterIndex + Constants.mcp_delimiter.length)];
-        return serverConfig != null && requiresEphemeralUserConnection(serverConfig);
+        return ephemeralServerNames.has(
+          toolName.slice(delimiterIndex + Constants.mcp_delimiter.length),
+        );
       },
     });
     toolDefinitions = backgroundResult.toolDefinitions;
