@@ -73,7 +73,7 @@ describe('useQueueDrain', () => {
     expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' }, emptyOverrides);
   });
 
-  it('does not drain into a different active conversation', async () => {
+  it('parks a mismatched signal instead of draining into the wrong conversation', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'stay put')]);
     }, 'some-other-convo');
@@ -83,8 +83,19 @@ describe('useQueueDrain', () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 25));
-    // Neither drained nor consumed: the signal waits for the user to return.
+    // Not sent through the mounted (wrong-conversation) sender; the signal is
+    // parked under its own conversation, freeing the shared index slot.
     expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('drains a parked signal when the user returns to that conversation', async () => {
+    const { ask } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'welcome back')]);
+      set(store.pendingRunEndByConvoId(CONVO_ID), runEnd());
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'welcome back' }, emptyOverrides);
   });
 
   it('passes a queued message`s attachments through as overrideFiles', async () => {

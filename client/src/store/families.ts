@@ -342,6 +342,9 @@ export type QueuedMessage = {
   text: string;
   createdAt: number;
   files?: TMessage['files'];
+  /** Front-inserted by "Interrupt & send": stays ahead of chronologically
+   *  older items when leftover steers are merged back into the queue. */
+  priority?: boolean;
 };
 
 /**
@@ -352,6 +355,17 @@ export type QueuedMessage = {
 const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   key: 'queuedMessagesByConvoId',
   default: [],
+});
+
+/**
+ * Run-end signals whose conversation was NOT active when they arrived —
+ * parked here (keyed by conversation) so a later run finishing on the same
+ * chat index cannot overwrite them; `useQueueDrain` consumes the parked
+ * signal when the user returns to that conversation.
+ */
+const pendingRunEndByConvoId = atomFamily<RunEnd | null, string>({
+  key: 'pendingRunEndByConvoId',
+  default: null,
 });
 
 /**
@@ -564,6 +578,7 @@ export default {
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
   runEndByIndex,
+  pendingRunEndByConvoId,
   drainAfterAbortByIndex,
   appliedSteerIdsByConvoId,
   updateConversationSelector,

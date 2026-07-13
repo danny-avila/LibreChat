@@ -48,6 +48,19 @@ describe('useSteerConvert', () => {
     expect(result.current.applied).toEqual(['srv-applied', 'srv-queued']);
   });
 
+  it('keeps interrupt front-inserts ahead of chronologically older steers', () => {
+    const { result } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'urgent', text: 'interrupt message', createdAt: 100, priority: true },
+      ]);
+    });
+    act(() => {
+      // Older steer (createdAt 50) converts after the interrupt was queued.
+      result.current.convert(CONVO_ID, [{ steerId: 'old', text: 'older steer', createdAt: 50 }]);
+    });
+    expect(result.current.queue.map((item) => item.id)).toEqual(['urgent', 'old']);
+  });
+
   it('is idempotent across double delivery (abort response + final SSE event)', () => {
     const { result } = setup();
     const steers = [{ steerId: 'srv-2', text: 'delivered twice', createdAt: 5 }];

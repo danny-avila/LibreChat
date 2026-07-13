@@ -203,6 +203,7 @@ export default function useSteering({
           text: trimmed,
           createdAt: Date.now(),
           ...(options?.files && options.files.length > 0 && { files: options.files }),
+          ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
           options?.front ? [item, ...prev] : [...prev, item],
@@ -301,6 +302,14 @@ export default function useSteering({
               code === 'STEER_QUEUE_FULL'
             ) {
               replaceSteerChip(conversationId, localId, null);
+              // The rejection can land AFTER the final SSE consumed the
+              // run-end signal (common on an unsupported SDK near run end):
+              // queueing then has nothing left to drain it, so mirror the
+              // NO_ACTIVE_RUN fallback and send once submission settled.
+              if (!isSubmittingRef.current) {
+                sendNow(trimmed, files ?? []);
+                return;
+              }
               enqueue(trimmed, { files });
               showToast({ message: localize('com_ui_steer_paused_queued'), status: 'info' });
               return;

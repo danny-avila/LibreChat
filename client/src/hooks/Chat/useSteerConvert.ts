@@ -1,5 +1,6 @@
 import { useRecoilCallback } from 'recoil';
 import type { TPendingSteer } from 'librechat-data-provider';
+import type { QueuedMessage } from '~/store/families';
 import store from '~/store';
 
 /**
@@ -40,9 +41,15 @@ export default function useSteerConvert() {
           if (fresh.length === 0) {
             return prev;
           }
-          // Merge chronologically: a steer accepted BEFORE the user queued a
-          // later follow-up must drain first, even though it converts last.
-          return [...prev, ...fresh].sort((a, b) => a.createdAt - b.createdAt);
+          // Merge chronologically — a steer accepted BEFORE the user queued a
+          // later follow-up must drain first — EXCEPT explicit front-inserts
+          // ("Interrupt & send"), whose urgency outranks age.
+          const merged: QueuedMessage[] = [...prev, ...fresh];
+          return merged.sort(
+            (a, b) =>
+              Number(b.priority ?? false) - Number(a.priority ?? false) ||
+              a.createdAt - b.createdAt,
+          );
         });
       },
     [],

@@ -26,6 +26,9 @@ export default function useQueueDrain(
   ask: TAskFunction,
 ) {
   const runEnd = useRecoilValue(store.runEndByIndex(index));
+  const parkedRunEnd = useRecoilValue(
+    store.pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
+  );
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
 
   // Fully synchronous reads (getLoadable): a useRecoilCallback snapshot is
@@ -34,13 +37,43 @@ export default function useQueueDrain(
   const drainNext = useRecoilCallback(
     ({ snapshot, set }) =>
       (): QueuedMessage | null => {
-        const end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
+        let end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
+        let fromParked = false;
+        if (
+          end != null &&
+          end.conversationId != null &&
+          end.conversationId !== activeConversationId
+        ) {
+          /**
+           * `ask` is the MOUNTED view's sender — draining another
+           * conversation's follow-up here would submit it into the wrong
+           * chat. Park the signal under ITS conversation (freeing the shared
+           * index slot so a later run cannot overwrite it) and drain when
+           * the user returns.
+           */
+          set(store.pendingRunEndByConvoId(end.conversationId), end);
+          set(store.runEndByIndex(index), null);
+          end = null;
+        }
+        if (end == null && activeConversationId) {
+          const parked = snapshot
+            .getLoadable(store.pendingRunEndByConvoId(activeConversationId))
+            .getValue();
+          if (parked != null) {
+            end = parked;
+            fromParked = true;
+          }
+        }
         if (end == null) {
           return null;
         }
         // Consume the signal first — a hard double-fire guard even if the
         // effect re-runs before Recoil propagates.
-        set(store.runEndByIndex(index), null);
+        if (fromParked && activeConversationId) {
+          set(store.pendingRunEndByConvoId(activeConversationId), null);
+        } else {
+          set(store.runEndByIndex(index), null);
+        }
 
         const interruptArmed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
         if (interruptArmed) {
@@ -74,22 +107,11 @@ export default function useQueueDrain(
         }
         return next;
       },
-    [index],
+    [index, activeConversationId],
   );
 
   useEffect(() => {
-    if (runEnd == null || isSubmitting) {
-      return;
-    }
-    /**
-     * `ask` is the MOUNTED view's sender: if the user navigated away between
-     * the final SSE and this effect, draining here would submit conversation
-     * A's follow-up into conversation B. Leave the signal unconsumed — the
-     * drain fires when the user returns to the finished conversation (a
-     * NEW_CONVO-started run's signal carries the real id, which the created
-     * navigation has already made the active route).
-     */
-    if (runEnd.conversationId !== activeConversationId) {
+    if ((runEnd == null && parkedRunEnd == null) || isSubmitting) {
       return;
     }
     const next = drainNext();
@@ -107,5 +129,5 @@ export default function useQueueDrain(
         overrideManualSkills: [],
       },
     );
-  }, [runEnd, isSubmitting, activeConversationId, drainNext, ask]);
+  }, [runEnd, parkedRunEnd, isSubmitting, activeConversationId, drainNext, ask]);
 }

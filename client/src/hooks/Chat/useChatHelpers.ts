@@ -189,6 +189,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         clearAllSubmissions();
       } catch (error) {
         console.error('[useChatHelpers] Abort failed:', error);
+        // An abort that 404s (run completed first) still needs the interrupt
+        // fallback: without a run-end signal the queued interrupt message
+        // strands and the armed flag would leak onto a later run.
+        signalInterruptDrain(conversationId);
         // Fall back to clearing submissions
         clearAllSubmissions();
       }

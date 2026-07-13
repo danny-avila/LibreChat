@@ -48,7 +48,7 @@ const SteerBubble = memo(function SteerBubble({
               imagePath={file.preview ?? file.filepath ?? ''}
               height={file.height ?? 1920}
               width={file.width ?? 1080}
-              altText={file.filename ?? 'Attached image'}
+              altText={file.filename ?? localize('com_ui_attached_image')}
             />
           ))}
         </div>
