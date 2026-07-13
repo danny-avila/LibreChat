@@ -68,20 +68,15 @@ async function typeDuringRun(page: Page, text: string) {
 
 test.describe('mid-run steering and queuing', () => {
   /**
-   * KNOWN GAP (documented in the task report): the applied-at-tool-boundary
-   * contract — the pending steer-part flipping to a persisted part (no
-   * `data-steer-pending`) inside the live response — is dead with
-   * @librechat/agents 3.2.62. The SDK's event-driven ToolNode (any run whose
-   * tools ride `toolDefinitions`, i.e. every LibreChat tool run) fires
-   * `PostToolBatch` with the TOP-LEVEL agent's id in `input.agentId`,
-   * violating the SDK's own hook contract ("`agentId` is only set … inside a
-   * subagent scope"), so `createSteerDrainHook`'s subagent skip swallows the
-   * drain. The steer therefore degrades to the run-end leftover path: the
-   * pending part leaves the thread and the text auto-sends as the next turn.
-   * This test asserts that degradation contract; flip it to assert an applied
-   * steer-part surviving in-thread once the SDK fix lands.
+   * The applied-steer contract (requires @librechat/agents ≥ 3.2.63, where
+   * top-level `PostToolBatch` hook inputs carry no subagent-scope `agentId`):
+   * a steer submitted mid-run appears in-thread immediately as an optimistic
+   * user message, is injected at the next tool-batch boundary — the pending
+   * marker drops as `on_steer_applied` swaps in the persisted part — and
+   * SURVIVES inside the response after run end, with no degradation to a
+   * queued follow-up turn.
    */
-  test('steers mid-run: pending part appears immediately and the words survive run end (degrades to follow-up turn)', async ({
+  test('steers mid-run: pending part appears immediately and applies at the next tool boundary', async ({
     page,
   }) => {
     test.setTimeout(150000);
@@ -112,7 +107,11 @@ test.describe('mid-run steering and queuing', () => {
       timeout: 10000,
     });
 
-    // The run genuinely crossed a tool boundary while the steer was queued.
+    // Injected at the tool-batch boundary: the optimistic entry becomes the
+    // persisted part (pending marker drops) while the run is still going.
+    await expect(appliedSteerParts(page).filter({ hasText: steerText })).toHaveCount(1, {
+      timeout: 60000,
+    });
     await expect(messagesView(page).getByRole('button', { name: /remember_fact/ })).toBeVisible({
       timeout: 60000,
     });
@@ -120,18 +119,13 @@ test.describe('mid-run steering and queuing', () => {
       timeout: 60000,
     });
 
-    // Degradation contract (see header comment): the un-applied steer leaves
-    // the thread at run end and auto-sends as the next user turn, followed by
-    // a fresh assistant response — the user's words are never dropped.
-    await expect(messageTurns(page)).toHaveCount(6, { timeout: 30000 });
+    // The steer stays INSIDE the response after run end — a user message at
+    // its injection point, not a queued follow-up turn (4 turns: the setup
+    // pair plus this pair).
+    await expect(messageTurns(page)).toHaveCount(4);
     await expect(pendingSteerParts(page)).toHaveCount(0);
-    await expect(appliedSteerParts(page)).toHaveCount(0);
-    const steerTurn = messageTurns(page).nth(4);
-    await expect(steerTurn).toContainText(steerText);
-    await expect(steerTurn.locator('.user-turn')).toBeVisible();
-    const steerReply = messageTurns(page).nth(5);
-    await expect(steerReply).toContainText(MOCK_REPLY_TEXT, { timeout: 30000 });
-    await expect(steerReply.locator('.agent-turn')).toBeVisible();
+    await expect(appliedSteerParts(page).filter({ hasText: steerText })).toHaveCount(1);
+    await expect(queuedRows(page)).toHaveCount(0);
   });
 
   test('queues with Cmd/Ctrl+Enter during a run and auto-sends after clean completion', async ({
