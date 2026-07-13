@@ -238,6 +238,13 @@ export type ToolOptions = {
    * @default ['direct']
    */
   allowed_callers?: AllowedCaller[];
+  /**
+   * If true (and the `run_in_background` capability is enabled), the tool's
+   * schema gains a `run_in_background` boolean so the model can dispatch the
+   * call detached and poll its result via `check_background_task`.
+   * @default false
+   */
+  run_in_background?: boolean;
 };
 
 /**

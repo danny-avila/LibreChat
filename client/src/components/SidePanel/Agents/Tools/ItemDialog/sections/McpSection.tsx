@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Clock, Code2 } from 'lucide-react';
+import { Clock, Code2, Zap } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Button, Spinner, Checkbox, Skeleton, TooltipAnchor } from '@librechat/client';
+import { Button, Spinner, Checkbox, Skeleton } from '@librechat/client';
 import type { MouseEvent } from 'react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { McpItem } from '../../items/types';
@@ -18,6 +18,7 @@ import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
+import OptionToggle from '../../../OptionToggle';
 import MCPToolItem from '../../../MCPToolItem';
 import { Collapse } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -75,18 +76,21 @@ export default function McpSection({ item }: Props) {
   const [autoSelectPending, setAutoSelectPending] = useState(false);
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
-  const { deferredToolsEnabled, programmaticToolsEnabled } = useAgentCapabilities(
-    agentsConfig?.capabilities,
-  );
+  const { deferredToolsEnabled, programmaticToolsEnabled, backgroundToolsEnabled } =
+    useAgentCapabilities(agentsConfig?.capabilities);
   const {
     isToolDeferred,
     isToolProgrammatic,
+    isToolBackground,
     toggleToolDefer,
     toggleToolProgrammatic,
+    toggleToolBackground,
     areAllToolsDeferred,
     areAllToolsProgrammatic,
+    areAllToolsBackground,
     toggleDeferAll,
     toggleProgrammaticAll,
+    toggleBackgroundAll,
   } = useMCPToolOptions();
 
   const serverName = item.server.serverName;
@@ -149,6 +153,7 @@ export default function McpSection({ item }: Props) {
   const allSelected = hasTools && selectedTools.length === tools.length;
   const allDeferred = areAllToolsDeferred(tools);
   const allProgrammatic = areAllToolsProgrammatic(tools);
+  const allBackground = areAllToolsBackground(tools);
   const statusIconProps = getServerStatusIconProps(serverName);
   const configDialogProps = getConfigDialogProps();
   const connectionState = statusIconProps?.serverStatus?.connectionState;
@@ -246,7 +251,9 @@ export default function McpSection({ item }: Props) {
   return (
     <div className="flex flex-col gap-5">
       {item.description && (
-        <p className="text-sm leading-relaxed text-text-secondary">{item.description}</p>
+        <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
+          {item.description}
+        </p>
       )}
 
       <div className="flex flex-col">
@@ -297,68 +304,42 @@ export default function McpSection({ item }: Props) {
           {hasTools && (
             <div className="flex items-center gap-0.5">
               {deferredToolsEnabled && (
-                <TooltipAnchor
-                  description={
-                    allDeferred
-                      ? localize('com_ui_mcp_undefer_all')
-                      : localize('com_ui_mcp_defer_all')
-                  }
-                  side="top"
-                  render={
-                    <button
-                      type="button"
-                      onClick={() => toggleDeferAll(tools)}
-                      aria-pressed={allDeferred}
-                      aria-label={
-                        allDeferred
-                          ? localize('com_ui_mcp_undefer_all')
-                          : localize('com_ui_mcp_defer_all')
-                      }
-                      className={cn(
-                        'flex size-7 items-center justify-center rounded-md transition-colors',
-                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                        allDeferred
-                          ? 'text-amber-600 dark:text-amber-500'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      <Clock className="size-4" aria-hidden="true" />
-                    </button>
-                  }
+                <OptionToggle
+                  icon={Clock}
+                  size="md"
+                  pressed={allDeferred}
+                  label={localize(allDeferred ? 'com_ui_mcp_undefer_all' : 'com_ui_mcp_defer_all')}
+                  activeClass="text-amber-600 dark:text-amber-500"
+                  onToggle={() => toggleDeferAll(tools)}
                 />
               )}
               {programmaticToolsEnabled && (
-                <TooltipAnchor
-                  description={
+                <OptionToggle
+                  icon={Code2}
+                  size="md"
+                  pressed={allProgrammatic}
+                  label={localize(
                     allProgrammatic
-                      ? localize('com_ui_mcp_unprogrammatic_all')
-                      : localize('com_ui_mcp_programmatic_all')
-                  }
-                  side="top"
-                  render={
-                    <button
-                      type="button"
-                      onClick={() => toggleProgrammaticAll(tools)}
-                      aria-pressed={allProgrammatic}
-                      aria-label={
-                        allProgrammatic
-                          ? localize('com_ui_mcp_unprogrammatic_all')
-                          : localize('com_ui_mcp_programmatic_all')
-                      }
-                      className={cn(
-                        'flex size-7 items-center justify-center rounded-md transition-colors',
-                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                        allProgrammatic
-                          ? 'text-violet-600 dark:text-violet-500'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      <Code2 className="size-4" aria-hidden="true" />
-                    </button>
-                  }
+                      ? 'com_ui_mcp_unprogrammatic_all'
+                      : 'com_ui_mcp_programmatic_all',
+                  )}
+                  activeClass="text-violet-600 dark:text-violet-500"
+                  onToggle={() => toggleProgrammaticAll(tools)}
                 />
               )}
-              {(deferredToolsEnabled || programmaticToolsEnabled) && (
+              {backgroundToolsEnabled && (
+                <OptionToggle
+                  icon={Zap}
+                  size="md"
+                  pressed={allBackground}
+                  label={localize(
+                    allBackground ? 'com_ui_mcp_unbackground_all' : 'com_ui_mcp_background_all',
+                  )}
+                  activeClass="text-sky-600 dark:text-sky-500"
+                  onToggle={() => toggleBackgroundAll(tools)}
+                />
+              )}
+              {(deferredToolsEnabled || programmaticToolsEnabled || backgroundToolsEnabled) && (
                 <span className="mx-1 h-4 w-px bg-border-light" aria-hidden="true" />
               )}
               <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs text-text-secondary">
@@ -394,11 +375,14 @@ export default function McpSection({ item }: Props) {
                   isSelected={selectedTools.includes(tool.tool_id)}
                   isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
                   isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
+                  isBackground={backgroundToolsEnabled && isToolBackground(tool.tool_id)}
                   deferredToolsEnabled={deferredToolsEnabled}
                   programmaticToolsEnabled={programmaticToolsEnabled}
+                  backgroundToolsEnabled={backgroundToolsEnabled}
                   onToggleSelect={() => toggleToolSelect(tool.tool_id)}
                   onToggleDefer={() => toggleToolDefer(tool.tool_id)}
                   onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
+                  onToggleBackground={() => toggleToolBackground(tool.tool_id)}
                 />
               ))}
             </div>

@@ -36,6 +36,11 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
+  CHECK_BACKGROUND_TASK_NAME,
+  stripBackgroundFromToolRegistry,
+  stripBackgroundFromToolDefinitions,
+} from '~/agents/background';
+import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
@@ -331,6 +336,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
+  backgroundToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -871,6 +878,14 @@ function buildSubagentConfigs(
   if (allowSelf) {
     const selfName = agentInput.name ?? agent.name ?? 'self';
     countSubagentConfig(state);
+    /**
+     * Self-spawn reuses the parent's AgentInputs. When the parent has background
+     * tools, provide a sanitized copy so the isolated child — which runs the
+     * direct/child-graph path rather than the host background interceptor —
+     * doesn't advertise `run_in_background` / `check_background_task`. The
+     * resolver keeps a provided `agentInputs` even with `self: true`.
+     */
+    const hasBackground = (agent.backgroundToolNames?.length ?? 0) > 0;
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -878,6 +893,21 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
+      ...(hasBackground
+        ? {
+            agentInputs: {
+              ...agentInput,
+              toolDefinitions: stripBackgroundFromToolDefinitions(
+                agentInput.toolDefinitions,
+                agent.backgroundToolNames,
+              ),
+              toolRegistry: stripBackgroundFromToolRegistry(
+                agentInput.toolRegistry,
+                agent.backgroundToolNames,
+              ),
+            },
+          }
+        : {}),
     });
   }
 
@@ -913,6 +943,24 @@ function buildSubagentConfigs(
      * source so children truly start fresh.
      */
     const childInputs = toInput(child, { isSubagent: true });
+    /**
+     * A child reachable as a top-level/handoff agent is initialized WITH the
+     * background capability, then reused here as a subagent. Isolated child
+     * graphs run subagent tools without the host background dispatch/poll
+     * behavior, so strip the injected `run_in_background` param + the
+     * `check_background_task` def (defs AND registry) so the child doesn't
+     * advertise a background contract it can't honor. Mirrors the self-spawn path.
+     */
+    if ((child.backgroundToolNames?.length ?? 0) > 0) {
+      childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
+        childInputs.toolDefinitions,
+        child.backgroundToolNames,
+      );
+      childInputs.toolRegistry = stripBackgroundFromToolRegistry(
+        childInputs.toolRegistry,
+        child.backgroundToolNames,
+      );
+    }
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
@@ -1409,6 +1457,16 @@ export async function createRun({
         Constants.EXECUTE_CODE,
         Constants.BASH_TOOL,
         ASK_USER_QUESTION_TOOL_NAME,
+        /**
+         * Background-capable tools: eager execution could launch the detached
+         * task with speculative/partial args before the final tool call, and a
+         * background side effect (unlike a foreground eager mismatch) can't be
+         * canceled once dispatched. The poll tool is excluded for the same
+         * reason: collecting a task's artifact is a one-shot claim that must
+         * not fire from a speculative snapshot the SDK may later discard.
+         */
+        CHECK_BACKGROUND_TASK_NAME,
+        ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
       ],
     },
     // Let host file-authoring tools share the code-execution sandbox session so

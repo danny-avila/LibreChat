@@ -578,6 +578,7 @@ export enum AgentCapabilities {
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
+  run_in_background = 'run_in_background',
 }
 
 export const defaultAssistantsVersion = {
@@ -2728,6 +2729,8 @@ export enum Constants {
   BASH_PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_bash',
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
+  /** Poll tool for retrieving the status/result of a backgrounded tool call. */
+  CHECK_BACKGROUND_TASK = 'check_background_task',
 }
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */

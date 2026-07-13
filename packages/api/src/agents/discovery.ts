@@ -96,6 +96,13 @@ export interface DiscoverConnectedAgentsParams {
    * `set_memory` + `delete_memory` pair only when the parent run permits it.
    */
   memoryAvailable?: InitializeAgentParams['memoryAvailable'];
+  /**
+   * Run-level `run_in_background` capability gate. Forwarded verbatim so a
+   * handoff/connected agent's own event-driven tools with
+   * `tool_options[tool].run_in_background` get the injected param + poll tool,
+   * matching how the same agent behaves when run as the primary.
+   */
+  backgroundToolsAvailable?: InitializeAgentParams['backgroundToolsAvailable'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -165,6 +172,7 @@ export async function discoverConnectedAgents(
     skillStates,
     defaultActiveOnShare,
     codeEnvAvailable,
+    backgroundToolsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
   } = params;
@@ -270,6 +278,7 @@ export async function discoverConnectedAgents(
         skillStates,
         defaultActiveOnShare,
         codeEnvAvailable,
+        backgroundToolsAvailable,
         statefulSessionsAvailable,
         memoryAvailable,
       },

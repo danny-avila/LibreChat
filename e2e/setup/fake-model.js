@@ -29,6 +29,8 @@ const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
+const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
@@ -45,6 +47,10 @@ const BASH_TOOL_NAME = 'bash_tool';
 const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
+const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
+const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
+const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
+const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
 const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
 const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
@@ -593,6 +599,112 @@ function fileAuthoringResponses(operation, toolNames) {
   };
 }
 
+function findLastToolMessageText(messages, requiredToken) {
+  for (let index = (messages ?? []).length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (!message || messageType(message) !== 'tool') {
+      continue;
+    }
+    const content = getContentText(message.content);
+    if (content.includes(requiredToken)) {
+      return content;
+    }
+  }
+  return '';
+}
+
+/**
+ * Turn 1 of the background e2e: emit the MCP tool call with the injected
+ * `run_in_background: true` arg, then (second model invocation, after the
+ * executor returned the synthetic handle) acknowledge the handle. Streaming
+ * `status=running` from the handle proves the dispatch returned before the
+ * tool finished — the non-blocking contract — without timing assertions.
+ */
+function backgroundDispatchResponses(name, toolNames) {
+  if (!toolNames.has(BACKGROUND_TOOL_NAME)) {
+    return {
+      responses: [`E2E background unavailable: ${BACKGROUND_TOOL_NAME} was not advertised.`],
+    };
+  }
+  if (!toolNames.has(CHECK_BACKGROUND_TASK_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E background unavailable: ${CHECK_BACKGROUND_TASK_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: BACKGROUND_DISPATCH_TOOL_CALL_ID,
+        name: BACKGROUND_TOOL_NAME,
+        args: { text: `bg-${name}`, delay_ms: 1500, run_in_background: true },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const handleText = findLastToolMessageText(streamMessages, 'background_task_id');
+      if (!handleText) {
+        return null;
+      }
+      const taskId = handleText.match(/"background_task_id":"([^"]+)"/)?.[1] ?? 'missing';
+      const status = handleText.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+      return { responses: [`E2E background dispatched id=${taskId} status=${status}`] };
+    },
+  };
+}
+
+/**
+ * Turn 2 of the background e2e: recover the task id from the replayed turn-1
+ * handle in history, poll `check_background_task` with it, and stream the
+ * collected status + echoed text — proving the detached result survived turn
+ * end and was retrieved cross-turn.
+ */
+function backgroundCollectResponses(messages, toolNames) {
+  if (!toolNames.has(CHECK_BACKGROUND_TASK_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E background unavailable: ${CHECK_BACKGROUND_TASK_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  const historyText = collectPromptText((messages ?? []).map((message) => message?.content)).join(
+    '\n',
+  );
+  const taskIds = [...historyText.matchAll(/"background_task_id":"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  const taskId = taskIds[taskIds.length - 1];
+  if (!taskId) {
+    return {
+      responses: ['E2E background collect failed: no background_task_id found in history.'],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: BACKGROUND_COLLECT_TOOL_CALL_ID,
+        name: CHECK_BACKGROUND_TASK_TOOL_NAME,
+        args: { background_task_id: taskId },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      /** Only the poll result (`serializeTask`) carries a `progress` key — the
+       *  replayed dispatch handle in history does not. */
+      const pollText = findLastToolMessageText(streamMessages, '"progress"');
+      if (!pollText) {
+        return null;
+      }
+      const status = pollText.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+      const echo = pollText.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
+      return { responses: [`E2E background collected status=${status} echo=${echo}`] };
+    },
+  };
+}
+
 function resolveResponses({ agents, messages, text, toolNames }) {
   const reply = replyResponses(text);
   if (reply) {
@@ -633,6 +745,15 @@ function resolveResponses({ agents, messages, text, toolNames }) {
       },
       toolNames,
     );
+  }
+
+  const backgroundDispatchName = getMarkerValue(text, BACKGROUND_DISPATCH_MARKER);
+  if (backgroundDispatchName) {
+    return backgroundDispatchResponses(backgroundDispatchName, toolNames);
+  }
+
+  if (text.includes(BACKGROUND_COLLECT_MARKER)) {
+    return backgroundCollectResponses(messages, toolNames);
   }
 
   const editSkillName = getRequestedSkillName(text, EDIT_SKILL_MARKER);
