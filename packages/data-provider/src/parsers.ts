@@ -399,6 +399,19 @@ export function parseTextParts(
         result += ' ';
       }
       result += textValue;
+    } else if (part.type === ContentTypes.STEER) {
+      /** Mid-run user speech is visible conversation text — include it so
+       *  search indexing / audio extraction see the steered words. */
+      const textValue = typeof part.steer === 'string' ? part.steer : '';
+      if (
+        result.length > 0 &&
+        textValue.length > 0 &&
+        result[result.length - 1] !== ' ' &&
+        textValue[0] !== ' '
+      ) {
+        result += ' ';
+      }
+      result += textValue;
     } else if (part.type === ContentTypes.THINK && !skipReasoning) {
       const textValue = typeof part.think === 'string' ? part.think : '';
       if (

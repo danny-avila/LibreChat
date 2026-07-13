@@ -604,15 +604,19 @@ class AgentClient extends BaseClient {
         docsById: this.authorizedHistoricalFiles,
         getFiles: db.getFiles,
       });
-      for (const { index, media } of stamped) {
-        const mediaParts = media.filter((mediaPart) => mediaPart?.type !== ContentTypes.TEXT);
-        if (mediaParts.length === 0) {
-          continue;
-        }
-        const mediaTokens = countFormattedMessageTokens(
-          { role: 'user', content: mediaParts },
-          encoding,
-        );
+      for (const { index, media, steerText } of stamped) {
+        /** Count the FULL stamped content and subtract only the steer body
+         *  (already counted inside the assistant message): extracted file
+         *  context prepended into the text part must hit the budget too, or
+         *  large steered documents bypass pruning. */
+        const fullTokens = countFormattedMessageTokens({ role: 'user', content: media }, encoding);
+        const bodyTokens = steerText
+          ? countFormattedMessageTokens(
+              { role: 'user', content: [{ type: ContentTypes.TEXT, text: steerText }] },
+              encoding,
+            )
+          : 0;
+        const mediaTokens = Math.max(0, (fullTokens ?? 0) - (bodyTokens ?? 0));
         if (Number.isFinite(mediaTokens) && mediaTokens > 0) {
           indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + mediaTokens;
           promptTokenTotal += mediaTokens;

@@ -380,6 +380,9 @@ export type RunEnd = {
   outcome: 'completed' | 'aborted' | 'error';
   startedAsNewConvo?: boolean;
   endedAt: number;
+  /** Armed "Interrupt & send" flag traveling with a PARKED signal, so
+   *  another run on the same pane can neither consume nor clear it. */
+  interruptArmed?: boolean;
 };
 
 const runEndByIndex = atomFamily<RunEnd | null, string | number>({

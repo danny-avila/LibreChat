@@ -218,8 +218,20 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   const pendingLive = job.status === 'requires_action' && !isPendingActionStale({ pendingAction });
   const isActive = job.status === 'running' || pendingLive;
 
+  /** Acknowledged steers the terminal drains parked because no subscriber was
+   *  live to receive the final/abort event — claim-on-read (cleared once
+   *  returned) so the reloading client restores them as queued follow-ups. */
+  let unrecoveredSteers;
+  if (!isActive) {
+    const claimed = await GenerationJobManager.steering.claim(conversationId);
+    if (claimed.length > 0) {
+      unrecoveredSteers = claimed;
+    }
+  }
+
   res.json({
     active: isActive,
+    ...(unrecoveredSteers && { unrecoveredSteers }),
     streamId: conversationId,
     status: job.status,
     aggregatedContent: resumeState?.aggregatedContent ?? [],

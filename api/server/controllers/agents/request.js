@@ -771,6 +771,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
           if (leftoverSteers.length > 0) {
             pendingSteers = leftoverSteers.map(toPendingSteer);
+            // Parked BEFORE the final event: a client with no live subscriber
+            // recovers these via /chat/status (claim-on-read) within the
+            // post-terminal TTL — the SSE copy alone is transient.
+            await GenerationJobManager.steering.park(streamId, pendingSteers);
           }
         } catch (err) {
           logger.warn(`[ResumableAgentController] Failed to drain leftover steers`, err);
@@ -876,7 +880,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // instead of a 202 whose payload would vanish with the job. Text
           // recovery is client-side — acknowledged chips convert to queued.
           try {
-            await GenerationJobManager.steering.closeAndDrain(streamId, jobCreatedAt);
+            const erroredLeftovers = await GenerationJobManager.steering.closeAndDrain(
+              streamId,
+              jobCreatedAt,
+            );
+            if (erroredLeftovers.length > 0) {
+              // The error event is a bare string — park the acknowledged
+              // steers so a reloaded/disconnected client can still recover
+              // them via /chat/status instead of losing them with the queue.
+              await GenerationJobManager.steering.park(
+                streamId,
+                erroredLeftovers.map(toPendingSteer),
+              );
+            }
           } catch (drainErr) {
             logger.warn(
               `[ResumableAgentController] Failed to close steer queue on error`,

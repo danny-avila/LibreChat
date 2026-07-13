@@ -73,4 +73,42 @@ export class SteeringLifecycle {
   clear(streamId: string): Promise<void> {
     return this.store.clearSteers(streamId);
   }
+
+  /**
+   * Parks terminally-drained leftovers on the job hash so a client with NO
+   * live subscriber (closed tab, reload racing the final event) can still
+   * recover them via the status route within the post-terminal TTL. Live
+   * clients keep using the final/abort event copy; recovery is idempotent
+   * (queued chips dedupe by steer id).
+   */
+  async park(streamId: string, steers: TPendingSteer[]): Promise<void> {
+    if (steers.length === 0) {
+      return;
+    }
+    try {
+      await this.store.updateJob(streamId, { unrecoveredSteers: JSON.stringify(steers) });
+    } catch (error) {
+      logger.warn(`[SteeringLifecycle] Failed to park leftover steers: ${streamId}`, error);
+    }
+  }
+
+  /**
+   * Claim-on-read: returns parked leftovers and clears them, so a second
+   * reload cannot re-mint chips the user already dismissed.
+   */
+  async claim(streamId: string): Promise<TPendingSteer[]> {
+    const job = await this.store.getJob(streamId);
+    const raw = job?.unrecoveredSteers;
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw) as TPendingSteer[];
+      await this.store.updateJob(streamId, { unrecoveredSteers: '' });
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      logger.warn(`[SteeringLifecycle] Failed to claim leftover steers: ${streamId}`, error);
+      return [];
+    }
+  }
 }

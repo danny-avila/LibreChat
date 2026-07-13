@@ -4,6 +4,7 @@ import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { StreamStatusResponse } from '~/data-provider';
 import { getBranchSiblingIndexesForTarget, applyPendingAction } from '~/utils';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
 
@@ -227,6 +228,8 @@ export default function useResumeOnLoad(
 
   /** Restore pending-steer chips for steers the server still has queued
    *  (injected ones already live inside the resumed aggregatedContent). */
+  const convertSteersToQueued = useSteerConvert();
+
   const restoreSteerChips = useRecoilCallback(
     ({ set }) =>
       (activeConversationId: string, pendingSteers: Agents.ResumeState['pendingSteers']) => {
@@ -348,6 +351,12 @@ export default function useResumeOnLoad(
 
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
+      // A terminal drain may have parked acknowledged steers no subscriber
+      // received (tab closed / reload racing the final event) — the status
+      // claim returns them exactly once; restore as queued follow-up chips.
+      if (conversationId && (streamStatus.unrecoveredSteers?.length ?? 0) > 0) {
+        convertSteersToQueued(conversationId, streamStatus.unrecoveredSteers ?? []);
+      }
       processedConvoRef.current = conversationId;
       return;
     }
@@ -410,6 +419,7 @@ export default function useResumeOnLoad(
     setSubmission,
     restoreResumeBranch,
     restoreSteerChips,
+    convertSteersToQueued,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking

@@ -124,6 +124,16 @@ export interface SerializableJobData {
    * `updateJob` — listed here so cleanup paths can reference the key name.
    */
   steersClosed?: boolean;
+
+  /**
+   * Serialized `TPendingSteer[]` parked by the terminal drains for clients
+   * with NO live subscriber (closed tab, reload mid-final): the final/abort
+   * SSE is transient, so acknowledged steers are recoverable from here via
+   * the status route (claim-on-read) for the job hash's post-terminal TTL.
+   * Cleared when a replacement run starts (a client had to be alive to start
+   * it, and live clients recover through the event/chip paths).
+   */
+  unrecoveredSteers?: string;
 }
 
 /**

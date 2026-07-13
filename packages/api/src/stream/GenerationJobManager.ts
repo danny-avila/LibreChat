@@ -826,6 +826,9 @@ class GenerationJobManagerClass {
     const pendingSteers = (
       await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
     ).map(toPendingSteer);
+    // No-subscriber recovery: the abort response/final are transient, so park
+    // the leftovers for /chat/status claim-on-read within the terminal TTL.
+    await this.steering.park(streamId, pendingSteers);
 
     /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);

@@ -357,6 +357,9 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     );
     if (leftoverSteers.length > 0) {
       pendingSteers = leftoverSteers.map(toPendingSteer);
+      // Same no-subscriber recovery as the normal final path (claim-on-read
+      // via /chat/status within the post-terminal TTL).
+      await GenerationJobManager.steering.park(streamId, pendingSteers);
     }
   } catch (drainErr) {
     logger.warn('[ResumeAgentController] Failed to drain leftover steers', drainErr);

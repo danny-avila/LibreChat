@@ -36,7 +36,7 @@ export default function useQueueDrain(
   // awaits may interleave with the reads.
   const drainNext = useRecoilCallback(
     ({ snapshot, set }) =>
-      (): QueuedMessage | null => {
+      (): { next: QueuedMessage; conversationId: string } | null => {
         let end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         let fromParked = false;
         if (
@@ -49,9 +49,18 @@ export default function useQueueDrain(
            * conversation's follow-up here would submit it into the wrong
            * chat. Park the signal under ITS conversation (freeing the shared
            * index slot so a later run cannot overwrite it) and drain when
-           * the user returns.
+           * the user returns. The armed interrupt flag travels WITH the
+           * parked signal: leaving it on the index would let another run on
+           * this pane consume it (or drain the wrong conversation).
            */
-          set(store.pendingRunEndByConvoId(end.conversationId), end);
+          const armedNow = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
+          if (armedNow) {
+            set(store.drainAfterAbortByIndex(index), false);
+          }
+          set(store.pendingRunEndByConvoId(end.conversationId), {
+            ...end,
+            ...(armedNow && { interruptArmed: true }),
+          });
           set(store.runEndByIndex(index), null);
           end = null;
         }
@@ -75,10 +84,11 @@ export default function useQueueDrain(
           set(store.runEndByIndex(index), null);
         }
 
-        const interruptArmed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
-        if (interruptArmed) {
+        const indexArmed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
+        if (indexArmed) {
           set(store.drainAfterAbortByIndex(index), false);
         }
+        const interruptArmed = indexArmed || end.interruptArmed === true;
 
         const conversationId = end.conversationId;
         if (!conversationId) {
@@ -105,23 +115,34 @@ export default function useQueueDrain(
         if (remainder.length !== ownQueue.length || shouldMigrate || next != null) {
           set(store.queuedMessagesByConvoId(conversationId), remainder);
         }
-        return next;
+        return next ? { next, conversationId } : null;
       },
     [index, activeConversationId],
+  );
+
+  const restoreQueued = useRecoilCallback(
+    ({ set }) =>
+      (convoId: string, item: QueuedMessage) => {
+        set(store.queuedMessagesByConvoId(convoId), (prev) =>
+          prev.some((queued) => queued.id === item.id) ? prev : [item, ...prev],
+        );
+      },
+    [],
   );
 
   useEffect(() => {
     if ((runEnd == null && parkedRunEnd == null) || isSubmitting) {
       return;
     }
-    const next = drainNext();
-    if (next == null) {
+    const drained = drainNext();
+    if (drained == null) {
       return;
     }
+    const { next, conversationId } = drained;
     // The queued item is the FULL submission context: explicit (possibly
     // empty) overrides stop `ask` from vacuuming up files, quotes, or skill
     // picks the user has staged in the composer for their NEXT message.
-    ask(
+    const accepted = ask(
       { text: next.text },
       {
         overrideFiles: next.files ?? [],
@@ -129,5 +150,12 @@ export default function useQueueDrain(
         overrideManualSkills: [],
       },
     );
-  }, [runEnd, parkedRunEnd, isSubmitting, activeConversationId, drainNext, ask]);
+    if (accepted === false) {
+      // `ask` refused without sending (e.g. the conversation history is not
+      // in the query cache yet, right after navigating back). Restore the
+      // item so the user's text is never silently dropped — the chip stays
+      // available for manual send.
+      restoreQueued(conversationId, next);
+    }
+  }, [runEnd, parkedRunEnd, isSubmitting, activeConversationId, drainNext, restoreQueued, ask]);
 }

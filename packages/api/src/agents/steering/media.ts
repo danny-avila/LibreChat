@@ -48,6 +48,9 @@ interface SteerPart {
 export interface StampedSteerMedia {
   index: number;
   media: Array<Record<string, unknown>>;
+  /** The bare steer body, so token accounting can subtract what the
+   *  assistant message already counted (file context must still count). */
+  steerText: string;
 }
 
 function collectFileIds(files: Partial<TFile>[] | undefined): string[] {
@@ -233,7 +236,11 @@ export async function stampSteerPartMedia({
         message.content = (message.content as SteerPart[]).map((candidate) =>
           candidate === part ? { ...candidate, media: content } : candidate,
         );
-        return { index, media: content };
+        return {
+          index,
+          media: content,
+          steerText: (part[ContentTypes.STEER] as string | undefined) ?? '',
+        };
       } catch (error) {
         logger.warn(
           `[stampSteerPartMedia] Failed to re-encode steer media (steer=${part.steerId}); replaying text only`,

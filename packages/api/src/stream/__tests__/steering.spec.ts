@@ -186,6 +186,43 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
   });
 
+  describe('park / claim (no-subscriber recovery)', () => {
+    test('parked leftovers are claimable exactly once', async () => {
+      const streamId = 'steer-park';
+      await manager.createJob(streamId, 'user-1');
+      const leftovers: TPendingSteer[] = [
+        { steerId: 'p1', text: 'unreceived words', createdAt: Date.now() },
+      ];
+      await manager.steering.park(streamId, leftovers);
+
+      expect(await manager.steering.claim(streamId)).toEqual(leftovers);
+      // Claim-on-read: a second reload cannot re-mint dismissed chips.
+      expect(await manager.steering.claim(streamId)).toEqual([]);
+    });
+
+    test('parked leftovers survive completeJob within the terminal TTL', async () => {
+      const streamId = 'steer-park-terminal';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.park(streamId, [
+        { steerId: 'p2', text: 'post-terminal recovery', createdAt: Date.now() },
+      ]);
+      await manager.completeJob(streamId);
+
+      expect((await manager.steering.claim(streamId)).map((s) => s.steerId)).toEqual(['p2']);
+    });
+
+    test('a replacement run clears parked leftovers', async () => {
+      const streamId = 'steer-park-replaced';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.park(streamId, [
+        { steerId: 'p3', text: 'stale', createdAt: Date.now() },
+      ]);
+      await manager.createJob(streamId, 'user-1');
+
+      expect(await manager.steering.claim(streamId)).toEqual([]);
+    });
+  });
+
   describe('terminal cleanup', () => {
     test('completeJob clears any leftover steers', async () => {
       const streamId = 'steer-complete';

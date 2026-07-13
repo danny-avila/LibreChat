@@ -186,7 +186,11 @@ describe('stampSteerPartMedia', () => {
     expect(content[1].media).toEqual([{ type: 'text', text: 'inline steer' }, imagePart]);
     expect(steerPart).not.toHaveProperty('media');
     expect(stamped).toEqual([
-      { index: 1, media: [{ type: 'text', text: 'inline steer' }, imagePart] },
+      {
+        index: 1,
+        media: [{ type: 'text', text: 'inline steer' }, imagePart],
+        steerText: 'inline steer',
+      },
     ]);
   });
 

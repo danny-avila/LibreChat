@@ -303,6 +303,10 @@ export class RedisJobStore implements IJobStore {
    * For cross-replica abort, the abort handler falls back to text-based token counting.
    */
   private localCollectedUsageCache = new Map<string, UsageMetadata[]>();
+  /** Same-instance HOST content view (includes host-authored parts like
+   *  steers, which the SDK graph never sees). Preferred over the graph cache
+   *  on local reads; cross-instance reads reconstruct from chunks. */
+  private localContentParts = new Map<string, WeakRef<Agents.MessageContentComplex[]>>();
 
   /** Cleanup interval in ms (1 minute) */
   private cleanupIntervalMs = 60000;
@@ -383,6 +387,9 @@ export class RedisJobStore implements IJobStore {
       // A replacement must start with an open steer channel — the closed flag
       // belongs to the finalized run this hash is being reused from.
       'steersClosed',
+      // Parked leftovers belong to the finalized run too: a live client had
+      // to start this replacement, and live clients recover via events/chips.
+      'unrecoveredSteers',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
@@ -637,6 +644,7 @@ export class RedisJobStore implements IJobStore {
 
   async deleteJob(streamId: string): Promise<void> {
     this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
     const job = await this.getJob(streamId);
     const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
@@ -645,6 +653,7 @@ export class RedisJobStore implements IJobStore {
 
   private async deleteJobInternal(streamId: string, userJobsKey: string | null): Promise<void> {
     this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
 
     if (this.isCluster) {
@@ -721,6 +730,7 @@ export class RedisJobStore implements IJobStore {
             await this.redis.srem(KEYS.runningJobs, streamId);
             await this.redis.srem(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -729,6 +739,7 @@ export class RedisJobStore implements IJobStore {
             await this.redis.srem(KEYS.runningJobs, streamId);
             await this.redis.sadd(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -743,6 +754,7 @@ export class RedisJobStore implements IJobStore {
               await this.redis.srem(KEYS.userJobs(job.userId, job.tenantId), streamId);
             }
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -793,6 +805,7 @@ export class RedisJobStore implements IJobStore {
           if (!job) {
             await this.redis.srem(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -964,13 +977,47 @@ export class RedisJobStore implements IJobStore {
     this.localGraphCache.set(streamId, new WeakRef(graph));
   }
 
+  /** Splice-inserts host-authored steer parts (from `on_steer_applied`
+   *  chunks) into an SDK-graph content view, ascending by recorded index so
+   *  each host-view position lands exactly where live clients saw it. */
+  private async overlayHostSteerParts(
+    streamId: string,
+    parts: Agents.MessageContentComplex[],
+  ): Promise<Agents.MessageContentComplex[]> {
+    const chunks = await this.getChunks(streamId);
+    if (chunks.length === 0) {
+      return parts;
+    }
+    const steers: Array<{ index: number; part: Agents.MessageContentComplex }> = [];
+    for (const chunk of chunks) {
+      const event = chunk as { event?: string; data?: unknown };
+      if (event.event !== 'on_steer_applied') {
+        continue;
+      }
+      const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+      if (typeof steerData.index === 'number' && steerData.part != null) {
+        steers.push({ index: steerData.index, part: steerData.part });
+      }
+    }
+    if (steers.length === 0) {
+      return parts;
+    }
+    steers.sort((a, b) => a.index - b.index);
+    const merged = [...parts];
+    for (const steer of steers) {
+      merged.splice(Math.min(steer.index, merged.length), 0, steer.part);
+    }
+    return merged;
+  }
+
   /**
-   * No-op for Redis - content parts are reconstructed from chunks.
-   * Metadata (agentId, groupId) is embedded directly on content parts by the agent runtime.
+   * Cache the HOST-authored content array (WeakRef; owned by the run closure).
+   * This is the authoritative same-instance view: host-only parts (steers)
+   * live here but never inside the SDK graph, so preferring it over the graph
+   * cache keeps same-instance reconnect/abort/status reads steer-complete.
    */
-  setContentParts(): void {
-    // Content parts are reconstructed from chunks during getContentParts
-    // No separate storage needed
+  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
+    this.localContentParts.set(streamId, new WeakRef(contentParts));
   }
 
   /**
@@ -1003,7 +1050,23 @@ export class RedisJobStore implements IJobStore {
   async getContentParts(streamId: string): Promise<{
     content: Agents.MessageContentComplex[];
   } | null> {
-    // 1. Try local graph cache first (fast path for same-instance reconnect)
+    // 1. Prefer the HOST content array (same-instance fast path): it already
+    // contains host-authored steer parts the SDK graph never sees.
+    const hostRef = this.localContentParts.get(streamId);
+    if (hostRef) {
+      const hostParts = hostRef.deref();
+      if (hostParts && hostParts.length > 0) {
+        return { content: hostParts };
+      }
+      if (!hostParts) {
+        this.localContentParts.delete(streamId);
+      }
+    }
+
+    // 2. Local graph cache (runs wired before setContentParts): the SDK view
+    // lacks host-authored steer parts, so overlay them from the chunk log —
+    // insert (not assign): the graph array is UNSHIFTED, while recorded steer
+    // indices are host-view positions that already account for prior steers.
     const graphRef = this.localGraphCache.get(streamId);
     if (graphRef) {
       const graph = graphRef.deref();
@@ -1011,7 +1074,7 @@ export class RedisJobStore implements IJobStore {
         const localParts = graph.getContentParts();
         if (localParts && localParts.length > 0) {
           return {
-            content: localParts,
+            content: await this.overlayHostSteerParts(streamId, localParts),
           };
         }
       } else {
@@ -1123,6 +1186,7 @@ export class RedisJobStore implements IJobStore {
   clearContentState(streamId: string): void {
     // Clear local caches immediately
     this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
 
     // Fire and forget - async cleanup for Redis
