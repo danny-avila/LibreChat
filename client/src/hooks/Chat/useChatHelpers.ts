@@ -10,6 +10,7 @@ import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAbortStreamMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
+import { useAbortCleanup } from './abort';
 import store from '~/store';
 
 // this to be set somewhere else
@@ -21,6 +22,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const queryClient = useQueryClient();
   const abortMutation = useAbortStreamMutation();
   const convertSteersToQueued = useSteerConvert();
+  const { captureSubmission, clearSubmissionsUnlessReplaced } = useAbortCleanup(index);
 
   /**
    * Interrupt & send fallback: clearing submissions below can tear down the
@@ -178,6 +180,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         activeJobIds: (old?.activeJobIds ?? []).filter((id) => id !== conversationId),
       }));
 
+      // The aborted run's final SSE can land (and the interrupt drain can
+      // start the NEXT submission) while the abort response is in flight —
+      // the fallback clear below must not tear down that new run.
+      const submissionAtAbort = captureSubmission();
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
         const response = await abortMutation.mutateAsync({ conversationId });
@@ -192,7 +198,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         signalInterruptDrain(conversationId);
         // The SSE will receive a `done` event with `aborted: true` and clean up
         // We still clear submissions as a fallback
-        clearAllSubmissions();
+        clearSubmissionsUnlessReplaced(submissionAtAbort);
       } catch (error) {
         console.error('[useChatHelpers] Abort failed:', error);
         // An abort that 404s (run completed first) still needs the interrupt
@@ -200,7 +206,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         // strands and the armed flag would leak onto a later run.
         signalInterruptDrain(conversationId);
         // Fall back to clearing submissions
-        clearAllSubmissions();
+        clearSubmissionsUnlessReplaced(submissionAtAbort);
       }
     } else {
       // For assistants endpoints, just clear submissions (existing behavior)
@@ -212,8 +218,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     endpoint,
     endpointType,
     abortMutation,
+    captureSubmission,
     convertSteersToQueued,
     signalInterruptDrain,
+    clearSubmissionsUnlessReplaced,
     clearAllSubmissions,
     queryClient,
   ]);
