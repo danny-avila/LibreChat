@@ -50,8 +50,8 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
-import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { normalizeServerName, requiresEphemeralUserConnection } from '~/mcp/utils';
+import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';

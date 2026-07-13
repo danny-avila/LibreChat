@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import type { UseFormGetValues, UseFormSetValue } from 'react-hook-form';
 import type { AgentToolOptions, AllowedCaller, AgentToolType } from 'librechat-data-provider';
+import type { UseFormGetValues, UseFormSetValue } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 
 type BooleanToolOptionKey = 'defer_loading' | 'run_in_background';

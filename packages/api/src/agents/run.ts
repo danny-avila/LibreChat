@@ -36,14 +36,14 @@ import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
-  ASK_USER_QUESTION_TOOL_NAME,
-  createAskUserQuestionTool,
-} from '~/agents/hitl/askUserQuestionTool';
-import {
   CHECK_BACKGROUND_TASK_NAME,
   stripBackgroundFromToolRegistry,
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
+import {
+  ASK_USER_QUESTION_TOOL_NAME,
+  createAskUserQuestionTool,
+} from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
