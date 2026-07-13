@@ -1,17 +1,19 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
+import { useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
 import { Input } from '@librechat/client';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
+import { cn, getIconKey, validateEmail, createProviderOption } from '~/utils';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import FileContext from '~/nj/components/Agents/FileContext';
 import AgentCategorySelector from './AgentCategorySelector';
 import FileSearch from '~/nj/components/Agents/FileSearch';
 import TipComponent from '~/nj/components/TipComponent';
-import { cn, getIconKey, validateEmail } from '~/utils';
 import { useAgentFileEntries } from './Tools/hooks';
 import { useAgentPanelContext } from '~/Providers';
 import ToolsSection from './Tools/ToolsSection';
@@ -20,6 +22,7 @@ import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
+import store from '~/store';
 
 const fieldClass = 'h-9';
 const sectionLabelClass = 'font-semibold';
@@ -40,6 +43,15 @@ export default function AgentConfig() {
   const agent = useWatch({ control, name: 'agent' });
   const agent_id = useWatch({ control, name: 'id' });
   const { contextFiles, knowledgeFiles } = useAgentFileEntries();
+
+  // NJ: We don't allow users to select their model, so we have to set it by default
+  const defaultPreset = useRecoilValue(store.defaultPreset);
+  useEffect(() => {
+    if (defaultPreset?.endpoint && defaultPreset?.model) {
+      methods.setValue('provider', createProviderOption(defaultPreset.endpoint));
+      methods.setValue('model', defaultPreset.model);
+    }
+  }, [defaultPreset, methods]);
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
   let Icon: IconComponentTypes | null | undefined;
