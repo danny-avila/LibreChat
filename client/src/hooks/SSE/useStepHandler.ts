@@ -292,7 +292,24 @@ export default function useStepHandler({
     [],
   );
 
-  /** Also clears the live tool-progress atoms — same transient lifecycle. */
+  /**
+   * Live tool progress is meaningful only for the run that produced it, and
+   * providers reuse tool-call ids (e.g. `call_0`) across turns — so these
+   * atoms clear at the start of every new submission (`clearStepMaps`),
+   * unlike the subagent atoms which persist until conversation switch.
+   */
+  const resetToolProgressAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const toolCallId of knownToolProgressAtomKeys.current) {
+          reset(toolProgressByToolCallId(toolCallId));
+        }
+        knownToolProgressAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  /** Also clears the live tool-progress atoms (conversation-switch boundary). */
   const resetSubagentAtoms = useRecoilCallback(
     ({ reset }) =>
       (): void => {
@@ -300,12 +317,9 @@ export default function useStepHandler({
           reset(subagentProgressByToolCallId(toolCallId));
         }
         knownSubagentAtomKeys.current.clear();
-        for (const toolCallId of knownToolProgressAtomKeys.current) {
-          reset(toolProgressByToolCallId(toolCallId));
-        }
-        knownToolProgressAtomKeys.current.clear();
+        resetToolProgressAtoms();
       },
-    [],
+    [resetToolProgressAtoms],
   );
 
   /**
@@ -1125,6 +1139,7 @@ export default function useStepHandler({
     subagentRunToToolCallId.current.clear();
     claimedSubagentToolCallIds.current.clear();
     pendingSubagentBuffer.current.clear();
+    resetToolProgressAtoms();
     /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
      *  to be able to reopen the SubagentCall dialog after completion to
      *  audit what the child did. `resetSubagentAtoms` is returned below
@@ -1133,7 +1148,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, []);
+  }, [resetToolProgressAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.

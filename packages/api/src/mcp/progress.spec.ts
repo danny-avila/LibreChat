@@ -52,6 +52,14 @@ describe('createToolProgressEmitter', () => {
     emit({ progress: 10, total: 10 });
     expect(emitted).toHaveLength(3);
     expect((emitted[2].data as { progress: number }).progress).toBe(10);
+
+    // repeated terminal notifications no longer bypass the throttle
+    emit({ progress: 10, total: 10 });
+    emit({ progress: 10, total: 10 });
+    expect(emitted).toHaveLength(3);
+    jest.setSystemTime(600);
+    emit({ progress: 10, total: 10 });
+    expect(emitted).toHaveLength(4);
   });
 
   it('never throws when the emit sink fails', () => {

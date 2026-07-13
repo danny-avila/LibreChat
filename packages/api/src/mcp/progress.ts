@@ -30,9 +30,10 @@ export function buildToolProgressEvent(
 /**
  * Per-call emitter for streaming MCP progress to the live tool-call card.
  * Throttles to one event per `minIntervalMs` so a chatty server can't flood
- * the stream; the terminal notification (`progress >= total`) always passes.
- * Emission failures are swallowed — progress is best-effort and must never
- * fail the tool call.
+ * the stream; the FIRST terminal notification (`progress >= total`) bypasses
+ * the throttle so completion is never dropped, while repeated terminal spam
+ * falls back to the normal interval. Emission failures are swallowed —
+ * progress is best-effort and must never fail the tool call.
  */
 export function createToolProgressEmitter(params: {
   toolCallId: string;
@@ -41,11 +42,15 @@ export function createToolProgressEmitter(params: {
 }): (update: ToolProgressUpdate) => void {
   const minIntervalMs = params.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
   let lastEmitAt = Number.NEGATIVE_INFINITY;
+  let emittedFinal = false;
   return (update: ToolProgressUpdate): void => {
     const now = Date.now();
     const isFinal = update.total != null && update.total > 0 && update.progress >= update.total;
-    if (!isFinal && now - lastEmitAt < minIntervalMs) {
+    if (!(isFinal && !emittedFinal) && now - lastEmitAt < minIntervalMs) {
       return;
+    }
+    if (isFinal) {
+      emittedFinal = true;
     }
     lastEmitAt = now;
     try {

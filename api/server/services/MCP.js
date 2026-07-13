@@ -829,9 +829,11 @@ function createToolInstance({
       if (onToolProgress == null && toolCall.id != null) {
         onToolProgress = createToolProgressEmitter({
           toolCallId: toolCall.id,
+          /** Transient emit: progress must never land in the Redis chunk log
+           *  or resume reconstruction — live subscribers only. */
           emit: (eventData) =>
             streamId
-              ? GenerationJobManager.emitChunk(streamId, eventData)
+              ? GenerationJobManager.emitTransientEvent(streamId, eventData)
               : sendEvent(res, eventData),
         });
       }
