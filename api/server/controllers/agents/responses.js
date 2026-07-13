@@ -757,10 +757,13 @@ const createResponse = async (req, res) => {
                 usage.serviceTier =
                   agent.model_parameters.priorityProcessing === true ? 'priority' : 'default';
                 usage.serviceTierInferred = true;
-                logger.warn('[createResponse] Provider omitted service_tier; using requested tier', {
-                  model: agent.model_parameters?.model,
-                  requestedServiceTier: usage.serviceTier,
-                });
+                logger.warn(
+                  '[createResponse] Provider omitted service_tier; using requested tier',
+                  {
+                    model: agent.model_parameters?.model,
+                    requestedServiceTier: usage.serviceTier,
+                  },
+                );
               }
               const taggedUsage = markSummarizationUsage(usage, metadata);
               collectedUsage.push(taggedUsage);
@@ -949,10 +952,13 @@ const createResponse = async (req, res) => {
                 usage.serviceTier =
                   agent.model_parameters.priorityProcessing === true ? 'priority' : 'default';
                 usage.serviceTierInferred = true;
-                logger.warn('[createResponse] Provider omitted service_tier; using requested tier', {
-                  model: agent.model_parameters?.model,
-                  requestedServiceTier: usage.serviceTier,
-                });
+                logger.warn(
+                  '[createResponse] Provider omitted service_tier; using requested tier',
+                  {
+                    model: agent.model_parameters?.model,
+                    requestedServiceTier: usage.serviceTier,
+                  },
+                );
               }
               const taggedUsage = markSummarizationUsage(usage, metadata);
               collectedUsage.push(taggedUsage);
