@@ -40,6 +40,7 @@ export default function useTextarea({
   disabled = false,
   placeholder,
   allowSubmitWhileGenerating = false,
+  onDuringRunModifier,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
@@ -48,6 +49,9 @@ export default function useTextarea({
   placeholder?: string;
   /** Lets Enter submit during a run (during-run steering/queuing routes it). */
   allowSubmitWhileGenerating?: boolean;
+  /** During-run modifier chords: ⌘/Ctrl+Enter = the non-default action,
+   *  ⌥/Alt+Enter = interrupt & send. Enter itself submits the default. */
+  onDuringRunModifier?: (kind: 'other' | 'interrupt') => void;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
@@ -196,6 +200,28 @@ export default function useTextarea({
       // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
       const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
 
+      if (
+        e.key === 'Enter' &&
+        isSubmitting &&
+        allowSubmitWhileGenerating &&
+        onDuringRunModifier != null &&
+        !isComposingInput
+      ) {
+        if (e.altKey) {
+          e.preventDefault();
+          onDuringRunModifier('interrupt');
+          return;
+        }
+        // Only when plain Enter is the submit key — for Ctrl/Cmd+Enter
+        // submitters (enterToSend off or a rebound chord) the chord must
+        // keep meaning "submit the default action".
+        if ((e.ctrlKey || e.metaKey) && enterToSend && submitOverride === undefined) {
+          e.preventDefault();
+          onDuringRunModifier('other');
+          return;
+        }
+      }
+
       const submitMessage = () => {
         const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
         if (globalAudio) {
@@ -257,6 +283,7 @@ export default function useTextarea({
     [
       isSubmitting,
       allowSubmitWhileGenerating,
+      onDuringRunModifier,
       checkHealth,
       filesLoading,
       enterToSend,

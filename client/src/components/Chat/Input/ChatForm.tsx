@@ -25,7 +25,6 @@ import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
-import DuringRunActionsMenu from './DuringRunActionsMenu';
 import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -236,6 +235,26 @@ const ChatForm = memo(function ChatForm({
     stopGenerating,
   });
 
+  /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
+   *  interrupt & send — the counterpart of Enter's `submitDuringRun`. */
+  const handleDuringRunModifier = useCallback(
+    (kind: 'other' | 'interrupt') => {
+      const text = methods.getValues('text');
+      let consumed = false;
+      if (kind === 'interrupt') {
+        consumed = steering.interruptAndSend(text);
+      } else if (steering.effectiveAction === 'steer') {
+        consumed = steering.queueFromComposer(text);
+      } else {
+        consumed = steering.steerFromComposer(text);
+      }
+      if (consumed) {
+        methods.reset();
+      }
+    },
+    [methods, steering],
+  );
+
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
@@ -257,6 +276,7 @@ const ChatForm = memo(function ChatForm({
       : placeholder,
     // Enter stays live during a run when it can steer/queue instead of send.
     allowSubmitWhileGenerating: steering.duringRunActive,
+    onDuringRunModifier: steering.duringRunActive ? handleDuringRunModifier : undefined,
   });
 
   useQueryParams({ textAreaRef });
@@ -300,6 +320,23 @@ const ChatForm = memo(function ChatForm({
   }, [backupBadges, setBadges, setIsEditingBadges]);
 
   const isMoreThanThreeRows = visualRowCount > 3;
+
+  /** One button slot while a run is generating: with composer text the send
+   *  button takes over (Enter steers/queues; hover reveals all actions);
+   *  clearing the text restores Stop. */
+  const duringRunSlot =
+    steering.duringRunActive && (textValue?.trim() ?? '') !== '' ? (
+      <DuringRunSendButton
+        ref={submitButtonRef}
+        control={methods.control}
+        steering={steering}
+        getText={() => methods.getValues('text')}
+        onConsumed={() => methods.reset()}
+        disabled={filesLoading}
+      />
+    ) : (
+      <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+    );
 
   const baseClasses = useMemo(
     () =>
@@ -502,39 +539,20 @@ const ChatForm = memo(function ChatForm({
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                {isSubmitting && showStopButton && !answerMode.active ? (
-                  <div className="flex items-center gap-1.5">
-                    {steering.duringRunActive && (textValue?.trim() ?? '') !== '' && (
-                      <>
-                        <DuringRunActionsMenu
-                          steering={steering}
-                          getText={() => methods.getValues('text')}
-                          onConsumed={() => methods.reset()}
-                        />
-                        <DuringRunSendButton
-                          ref={submitButtonRef}
-                          control={methods.control}
-                          action={steering.effectiveAction}
-                          disabled={filesLoading}
-                        />
-                      </>
+                {isSubmitting && showStopButton && !answerMode.active
+                  ? duringRunSlot
+                  : endpoint && (
+                      <SendButton
+                        ref={submitButtonRef}
+                        control={methods.control}
+                        disabled={
+                          filesLoading ||
+                          disableInputs ||
+                          isNotAppendable ||
+                          (isSubmitting && !answerMode.active)
+                        }
+                      />
                     )}
-                    <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-                  </div>
-                ) : (
-                  endpoint && (
-                    <SendButton
-                      ref={submitButtonRef}
-                      control={methods.control}
-                      disabled={
-                        filesLoading ||
-                        disableInputs ||
-                        isNotAppendable ||
-                        (isSubmitting && !answerMode.active)
-                      }
-                    />
-                  )
-                )}
               </div>
             </div>
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}

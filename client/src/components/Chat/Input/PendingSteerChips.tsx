@@ -173,7 +173,7 @@ function QueuedRow({
   );
 }
 
-function SteerRow({
+function FailedSteerRow({
   steer,
   steering,
   onEditToComposer,
@@ -184,70 +184,53 @@ function SteerRow({
 }) {
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
-  const failed = steer.status === 'failed';
 
-  const entries: MenuEntry[] = failed
-    ? [
-        {
-          key: 'edit',
-          label: localize('com_ui_edit_message'),
-          icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
-          onClick: () => {
-            steering.removeSteer(steer.steerId);
-            onEditToComposer(steer.text, steer.files);
-          },
-        },
-        {
-          key: 'queue',
-          label: localize('com_ui_convert_to_queue'),
-          icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
-          onClick: () => steering.convertSteerToQueue(steer.steerId, steer.text, steer.files),
-        },
-        toggleEntry,
-      ]
-    : [toggleEntry];
+  const entries: MenuEntry[] = [
+    {
+      key: 'edit',
+      label: localize('com_ui_edit_message'),
+      icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => {
+        steering.removeSteer(steer.steerId);
+        onEditToComposer(steer.text, steer.files);
+      },
+    },
+    {
+      key: 'queue',
+      label: localize('com_ui_convert_to_queue'),
+      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      onClick: () => steering.convertSteerToQueue(steer.steerId, steer.text, steer.files),
+    },
+    toggleEntry,
+  ];
 
   return (
     <div
       role="listitem"
-      className={cn(ROW_CLASS, failed && 'border-red-500/60')}
-      data-steer-status={steer.status}
+      className={cn(ROW_CLASS, 'border-red-500/60')}
       data-testid="steer-message-row"
     >
-      <Zap
-        className={cn(
-          'h-4 w-4 shrink-0',
-          failed ? 'text-red-500' : 'text-amber-500',
-          steer.status === 'sending' && 'animate-pulse',
-        )}
-        aria-hidden="true"
-      />
+      <Zap className="h-4 w-4 shrink-0 text-red-500" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate" title={steer.text}>
         {steer.text}
       </span>
-      <span className={cn('shrink-0 text-xs', failed ? 'text-red-500' : 'text-text-secondary')}>
-        {failed ? localize('com_ui_steer_failed') : localize('com_ui_steer_pending')}
-      </span>
-      {failed && (
-        <>
-          <button
-            type="button"
-            className={PRIMARY_BTN_CLASS}
-            onClick={() => steering.retrySteer(steer.steerId, steer.text, steer.files)}
-          >
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            {localize('com_ui_steer_retry')}
-          </button>
-          <button
-            type="button"
-            aria-label={localize('com_ui_remove_queued')}
-            onClick={() => steering.removeSteer(steer.steerId)}
-            className={ICON_BTN_CLASS}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </>
-      )}
+      <span className="shrink-0 text-xs text-red-500">{localize('com_ui_steer_failed')}</span>
+      <button
+        type="button"
+        className={PRIMARY_BTN_CLASS}
+        onClick={() => steering.retrySteer(steer.steerId, steer.text, steer.files)}
+      >
+        <RotateCcw className="h-4 w-4" aria-hidden="true" />
+        {localize('com_ui_steer_retry')}
+      </button>
+      <button
+        type="button"
+        aria-label={localize('com_ui_remove_queued')}
+        onClick={() => steering.removeSteer(steer.steerId)}
+        className={ICON_BTN_CLASS}
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
       <RowMenu label={localize('com_ui_more_options')} entries={entries} />
     </div>
   );
@@ -255,10 +238,11 @@ function SteerRow({
 
 /**
  * Stacked rows above the composer for during-run messages, mirroring the
- * reference UI: each row shows the message, a primary Steer/Send action,
- * delete, and an overflow menu with Edit message + the default-mode toggle.
- * - Steer rows (Zap): submitted mid-run, awaiting injection; `failed` keeps
- *   the text recoverable with retry / edit / queue actions.
+ * reference UI: each row shows the message, a primary action, delete, and an
+ * overflow menu with Edit message + the default-mode toggle.
+ * - Failed steer rows (Zap, red): the POST failed, so the text never entered
+ *   the thread — kept recoverable with retry / edit / queue actions.
+ *   (Sending/pending steers render in-thread as user messages instead.)
  * - Queued rows (Clock): client-side follow-ups auto-sent after the run.
  */
 function PendingSteerChips({
@@ -273,8 +257,9 @@ function PendingSteerChips({
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
+  const failedSteers = useMemo(() => steers.filter((steer) => steer.status === 'failed'), [steers]);
 
-  if (steers.length === 0 && queued.length === 0) {
+  if (failedSteers.length === 0 && queued.length === 0) {
     return null;
   }
 
@@ -285,8 +270,8 @@ function PendingSteerChips({
       aria-label={localize('com_ui_queued_messages')}
       data-testid="pending-steer-chips"
     >
-      {steers.map((steer) => (
-        <SteerRow
+      {failedSteers.map((steer) => (
+        <FailedSteerRow
           key={steer.steerId}
           steer={steer}
           steering={steering}

@@ -21,7 +21,7 @@ import {
   FileAuthoringCall,
   BashCall,
   SubagentCall,
-  SteerBubble,
+  SteerPart,
 } from './Parts';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
@@ -74,7 +74,9 @@ const Part = memo(function Part({
   }
 
   if (part.type === ContentTypes.STEER) {
-    return <SteerBubble steer={part[ContentTypes.STEER]} files={part.files} />;
+    return (
+      <SteerPart steer={part[ContentTypes.STEER]} files={part.files} createdAt={part.createdAt} />
+    );
   }
 
   if (part.type === ContentTypes.ERROR) {
