@@ -242,6 +242,54 @@ describe('useSteering', () => {
       ]);
     });
 
+    it('does not duplicate a chip already reseeded under the server id (SSE reconnect)', () => {
+      mockMutate.mockImplementation((_params, { onSuccess }) => {
+        onSuccess({ steerId: 'srv-3', status: 'queued', position: 1, conversationId: CONVO_ID });
+      });
+      const { result } = setupWithState({}, ({ set }) => {
+        // seedSteerChips already re-minted this chip from resumeState before
+        // the 202 ACK landed — the ACK must upsert, not append.
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          { steerId: 'srv-3', text: 'reseeded', status: 'pending', createdAt: 1 },
+        ]);
+      });
+      act(() => {
+        result.current.steering.submitSteer('reseeded');
+      });
+      expect(result.current.chips.filter((chip) => chip.steerId === 'srv-3')).toHaveLength(1);
+    });
+
+    it('restores the queued item (same id, front) when sendNow refuses', () => {
+      const refusingSendNow = jest.fn().mockReturnValue(false);
+      const { result } = setupWithState({ isSubmitting: false, sendNow: refusingSendNow });
+      act(() => {
+        result.current.steering.enqueue('refused send');
+        result.current.steering.enqueue('still behind');
+      });
+      const [first, second] = result.current.queue;
+      act(() => {
+        result.current.steering.sendQueuedNow(first.id, first.text);
+      });
+      expect(refusingSendNow).toHaveBeenCalledWith('refused send', []);
+      // `ask` refused without sending — the ORIGINAL item returns to the front.
+      expect(result.current.queue.map((item) => item.id)).toEqual([first.id, second.id]);
+      expect(result.current.queue[0]).toEqual(first);
+    });
+
+    it('does not restore the queued item when sendNow accepts', () => {
+      const acceptingSendNow = jest.fn().mockReturnValue(undefined);
+      const { result } = setupWithState({ isSubmitting: false, sendNow: acceptingSendNow });
+      act(() => {
+        result.current.steering.enqueue('accepted send');
+      });
+      const queuedId = result.current.queue[0].id;
+      act(() => {
+        result.current.steering.sendQueuedNow(queuedId, 'accepted send');
+      });
+      expect(acceptingSendNow).toHaveBeenCalledWith('accepted send', []);
+      expect(result.current.queue).toEqual([]);
+    });
+
     it('interruptAndSend queues at the front, arms the drain flag, and stops the run', () => {
       const { result, stopGenerating } = setupWithState();
       act(() => {

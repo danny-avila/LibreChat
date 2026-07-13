@@ -158,13 +158,16 @@ describe('createSteerDrainHook', () => {
       ],
       files,
     };
-    const buildMedia = jest.fn(async () => media);
-    const applied: Array<{ text: string; media?: unknown }> = [];
+    const calls: string[] = [];
+    const buildMedia = jest.fn(async (item: SteerQueueItem) => {
+      calls.push(`media:${item.steerId}`);
+      return media;
+    });
     const hook = createSteerDrainHook({
       streamId,
       jobCreatedAt: job.createdAt,
-      applySteer: (item, itemMedia) => {
-        applied.push({ text: item.text, media: itemMedia });
+      applySteer: (item) => {
+        calls.push(`apply:${item.steerId}`);
       },
       buildMedia,
     });
@@ -172,13 +175,40 @@ describe('createSteerDrainHook', () => {
     const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
     // buildMedia is consulted only for items that carry files.
     expect(buildMedia).toHaveBeenCalledTimes(1);
-    expect(applied).toEqual([
-      { text: 'see image', media },
-      { text: 'text only', media: undefined },
-    ]);
+    expect(calls).toEqual(['apply:s1', 'media:s1', 'apply:s2']);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: media.content, source: 'steer' },
       { role: 'user', content: 'text only', source: 'steer' },
+    ]);
+  });
+
+  it('persists the steer part BEFORE media encoding (abort-safe ordering)', async () => {
+    const streamId = `drain-apply-first-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('s1', 'must land first'),
+      files: [{ file_id: 'f1' }],
+    });
+
+    // Simulates an abort mid-encode: the part must already be applied.
+    let appliedBeforeEncode = false;
+    let partApplied = false;
+    const hook = createSteerDrainHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: () => {
+        partApplied = true;
+      },
+      buildMedia: async () => {
+        appliedBeforeEncode = partApplied;
+        throw new Error('aborted mid-encode');
+      },
+    });
+
+    const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
+    expect(appliedBeforeEncode).toBe(true);
+    expect(output.injectedMessages).toEqual([
+      { role: 'user', content: 'must land first', source: 'steer' },
     ]);
   });
 

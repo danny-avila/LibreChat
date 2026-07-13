@@ -257,20 +257,22 @@ class AgentClient extends BaseClient {
    * replaces its pending chip with the inline part (the emitted chunk also
    * reaches the Redis chunk log for reconnect reconstruction).
    *
+   * Runs BEFORE the drain hook's media encode so an abort during the encode
+   * cannot lose the steer. File refs persist from the queue item (sanitized at
+   * enqueue); replay/token accounting re-fetch owner-scoped and re-encode per
+   * turn (stampSteerPartMedia), so unauthorized ids drop out there.
+   *
    * @param {string} streamId
    * @param {import('@librechat/api').SteerQueueItem} item
-   * @param {import('@librechat/api').SteerMediaResult} [media] - encoded attachment
-   *   content; only the validated file REFS persist on the part (encoded data is
-   *   re-derived per turn, like any other user media)
    */
-  async applySteerPart(streamId, item, media) {
+  async applySteerPart(streamId, item) {
     const index = this.contentParts.length;
     const part = {
       type: ContentTypes.STEER,
       [ContentTypes.STEER]: item.text,
       steerId: item.steerId,
       createdAt: item.createdAt,
-      ...(media?.files?.length && { files: media.files }),
+      ...(item.files?.length && { files: item.files }),
     };
     this.contentParts.push(part);
     this.steerOffsetState.offset += 1;
@@ -301,7 +303,7 @@ class AgentClient extends BaseClient {
       hook: createSteerDrainHook({
         streamId,
         jobCreatedAt: this.jobCreatedAt,
-        applySteer: (item, media) => this.applySteerPart(streamId, item, media),
+        applySteer: (item) => this.applySteerPart(streamId, item),
         buildMedia: (item) =>
           buildSteerMedia({
             client: this,

@@ -15,9 +15,10 @@ import {
   STEER_QUEUE_MAX_DEPTH,
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
+import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
-const PARKED_STEERS_TTL_MS = 5 * 60 * 1000;
+export const PARKED_STEERS_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Content state for a job - volatile, in-memory only.
@@ -229,6 +230,13 @@ export class InMemoryJobStore implements IJobStore {
     const toDelete: string[] = [];
     let staleRunning = 0;
 
+    // Expired parked steers are otherwise only purged by a claim.
+    for (const [streamId, parked] of this.parkedSteers) {
+      if (parked.expiresAt <= now) {
+        this.parkedSteers.delete(streamId);
+      }
+    }
+
     for (const [streamId, job] of this.jobs) {
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
       if (isFinished && job.completedAt) {
@@ -241,6 +249,9 @@ export class InMemoryJobStore implements IJobStore {
         // finalize it (aborted) so it stops occupying the user slot and its
         // content state is reclaimed, mirroring ApprovalLifecycle.expire().
         // Skipping it (active-list filter) alone would leave it resident.
+        // 202-accepted steers frozen across the pause are parked first —
+        // deleting the job would silently drop them otherwise.
+        this.parkQueuedSteers(streamId, job, now);
         job.status = 'aborted';
         job.completedAt = now;
         job.error = 'Approval expired before a decision was made';
@@ -561,12 +572,30 @@ export class InMemoryJobStore implements IJobStore {
     });
   }
 
-  async claimParkedSteers(streamId: string): Promise<string | undefined> {
+  /** Non-owner fragments leave the payload untouched (mirrors the Redis Lua gate). */
+  async claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined> {
     const parked = this.parkedSteers.get(streamId);
-    if (!parked) {
+    if (!parked || !parked.payload.includes(ownerFragment)) {
       return undefined;
     }
     this.parkedSteers.delete(streamId);
     return parked.expiresAt > Date.now() ? parked.payload : undefined;
+  }
+
+  /** Approval-expiry finalization must not drop 202-accepted steers with the job. */
+  private parkQueuedSteers(streamId: string, job: SerializableJobData, now: number): void {
+    const queue = this.steerQueues.get(streamId);
+    if (!queue || queue.length === 0) {
+      return;
+    }
+    this.parkedSteers.set(streamId, {
+      payload: JSON.stringify({
+        userId: job.userId,
+        ...(job.tenantId != null && { tenantId: job.tenantId }),
+        steers: queue.map(toPendingSteer),
+      }),
+      expiresAt: now + PARKED_STEERS_TTL_MS,
+    });
+    this.steerQueues.delete(streamId);
   }
 }

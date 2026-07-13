@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
+import type { Agents, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import type {
   SerializableJobData,
@@ -16,6 +16,7 @@ import {
   STEER_QUEUE_MAX_DEPTH,
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
+import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
@@ -203,15 +204,22 @@ const STEER_REMOVE_LUA =
 
 /**
  * Claim-on-read for parked steers: return AND delete in one atomic step so a
- * second reload cannot re-mint chips the user already dismissed. Single key
- * (cluster-safe); GETDEL is avoided only for older-Redis compatibility.
+ * second reload cannot re-mint chips the user already dismissed. The owner
+ * gate runs INSIDE the same step — a payload not containing the requester's
+ * `"userId":"…"` fragment (ARGV[1], plain-substring match) returns the empty
+ * sentinel WITHOUT deleting, so a non-owner probe can never destroy the
+ * owner's recovery, even transiently. Single key (cluster-safe); GETDEL is
+ * avoided only for older-Redis compatibility.
  *
  *   KEYS: [parkedSteers]
- *   Returns: the parked payload JSON, or nil
+ *   ARGV: [ownerFragment]
+ *   Returns: the parked payload JSON, '' when not the owner, or nil
  */
 const CLAIM_PARKED_LUA =
   'local v = redis.call("GET", KEYS[1]) ' +
-  'if v then redis.call("DEL", KEYS[1]) end ' +
+  'if not v then return v end ' +
+  'if not string.find(v, ARGV[1], 1, true) then return "" end ' +
+  'redis.call("DEL", KEYS[1]) ' +
   'return v';
 
 /**
@@ -869,7 +877,17 @@ export class RedisJobStore implements IJobStore {
           // transitionStatus runs the terminal content cleanup (sets, chunks,
           // run-steps, userJobs, completed TTL).
           if (isPendingActionStale(job)) {
-            await this.transitionStatus(streamId, {
+            // Snapshot 202-accepted steers BEFORE the terminal cleanup DELs the
+            // queue key; enqueue is frozen while paused, so this is exact.
+            // Parked only if the CAS wins — a lost CAS means the run resumed
+            // and the live queue must stay untouched.
+            let parkableSteers: TPendingSteer[] = [];
+            try {
+              parkableSteers = (await this.peekSteers(streamId)).map(toPendingSteer);
+            } catch (err) {
+              logger.warn(`[RedisJobStore] Failed to snapshot steers pre-expiry ${streamId}:`, err);
+            }
+            const expired = await this.transitionStatus(streamId, {
               from: 'requires_action',
               to: 'aborted',
               clear: ['pendingAction', 'pendingActionId'],
@@ -884,6 +902,20 @@ export class RedisJobStore implements IJobStore {
               // to protect — so it falls back to the status-only check.)
               expectActionId: job.pendingAction?.actionId,
             });
+            if (expired && parkableSteers.length > 0) {
+              try {
+                await this.parkSteers(
+                  streamId,
+                  JSON.stringify({
+                    userId: job.userId,
+                    ...(job.tenantId != null && { tenantId: job.tenantId }),
+                    steers: parkableSteers,
+                  }),
+                );
+              } catch (err) {
+                logger.warn(`[RedisJobStore] Failed to park steers on expiry ${streamId}:`, err);
+              }
+            }
             return 1;
           }
 
@@ -1316,11 +1348,15 @@ export class RedisJobStore implements IJobStore {
     await this.redis.set(KEYS.parkedSteers(streamId), payload, 'EX', this.ttl.completed);
   }
 
-  async claimParkedSteers(streamId: string): Promise<string | undefined> {
-    const claimed = (await this.redis.eval(CLAIM_PARKED_LUA, 1, KEYS.parkedSteers(streamId))) as
-      | string
-      | null;
-    return claimed ?? undefined;
+  async claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined> {
+    const claimed = (await this.redis.eval(
+      CLAIM_PARKED_LUA,
+      1,
+      KEYS.parkedSteers(streamId),
+      ownerFragment,
+    )) as string | null;
+    // '' is the non-owner sentinel (payload left in place) — reads as "nothing".
+    return claimed ? claimed : undefined;
   }
 
   /** A malformed entry is dropped (logged) rather than poisoning the drain. */

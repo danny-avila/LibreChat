@@ -4,8 +4,8 @@ import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
+import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { ExtendedFile, FileSetter } from '~/common';
-import type { PendingSteer } from '~/store/families';
 import { useGetMessagesByConvoId, useSteerMessageMutation } from '~/data-provider';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
@@ -65,8 +65,10 @@ export interface UseSteeringParams {
   setFiles?: FileSetter;
   /** Uploads still in flight: during-run submits are held like the send button. */
   filesLoading?: boolean;
-  /** Submits text (and optional attachments) as a normal new turn. */
-  sendNow: (text: string, files?: TMessage['files']) => void;
+  /** Submits text (and optional attachments) as a normal new turn.
+   *  Returns `false` when `ask` refused without sending (in-flight guard,
+   *  history not cached yet) so callers can restore instead of dropping. */
+  sendNow: (text: string, files?: TMessage['files']) => false | void;
   /** Stops the current generation (used by interrupt & send). */
   stopGenerating: () => void;
 }
@@ -169,7 +171,10 @@ export default function useSteering({
         const runOver = !isSubmittingRef.current;
         set(store.pendingSteersByConvoId(convoId), (prev) => {
           const next = prev.filter((item) => item.steerId !== localId);
-          return alreadyApplied || runOver ? next : [...next, steer];
+          // Upsert: an SSE reconnect may have reseeded the chip under the
+          // server id already — appending again would duplicate it.
+          const alreadySeeded = next.some((item) => item.steerId === steer.steerId);
+          return alreadyApplied || runOver || alreadySeeded ? next : [...next, steer];
         });
         if (alreadyApplied || !runOver) {
           return;
@@ -240,6 +245,31 @@ export default function useSteering({
       (id: string) => {
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
           prev.filter((item) => item.id !== id),
+        );
+      },
+    [queueKey],
+  );
+
+  /** Capture-then-remove, so a refused send can restore the ORIGINAL item. */
+  const takeQueued = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (id: string): QueuedMessage | undefined => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        const taken = queue.find((item) => item.id === id);
+        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
+          prev.filter((item) => item.id !== id),
+        );
+        return taken;
+      },
+    [queueKey],
+  );
+
+  /** Front restore mirroring useQueueDrain: same id, never duplicated. */
+  const restoreQueued = useRecoilCallback(
+    ({ set }) =>
+      (item: QueuedMessage) => {
+        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
+          prev.some((queued) => queued.id === item.id) ? prev : [item, ...prev],
         );
       },
     [queueKey],
@@ -398,7 +428,7 @@ export default function useSteering({
    *  item's attachments ride the steer. */
   const sendQueuedNow = useCallback(
     (id: string, text: string, queuedFiles?: TMessage['files']) => {
-      removeQueued(id);
+      const taken = takeQueued(id);
       if (duringRunActive && canSteer) {
         submitSteer(text, queuedFiles);
         return;
@@ -406,12 +436,33 @@ export default function useSteering({
       if (!isSubmitting) {
         // Explicit (possibly empty) override: the queued item is the full
         // submission context, never the composer's staged files.
-        sendNow(text, queuedFiles ?? []);
+        const accepted = sendNow(text, queuedFiles ?? []);
+        if (accepted === false) {
+          // `ask` refused without sending — restore the chip so the user's
+          // text is never silently dropped (mirrors useQueueDrain).
+          restoreQueued(
+            taken ?? {
+              id,
+              text,
+              createdAt: Date.now(),
+              ...(queuedFiles && queuedFiles.length > 0 && { files: queuedFiles }),
+            },
+          );
+        }
         return;
       }
       enqueue(text, { front: true, files: queuedFiles });
     },
-    [removeQueued, duringRunActive, canSteer, submitSteer, isSubmitting, sendNow, enqueue],
+    [
+      takeQueued,
+      duringRunActive,
+      canSteer,
+      submitSteer,
+      isSubmitting,
+      sendNow,
+      restoreQueued,
+      enqueue,
+    ],
   );
 
   /** Abort the current run and auto-send this text once the abort settles. */

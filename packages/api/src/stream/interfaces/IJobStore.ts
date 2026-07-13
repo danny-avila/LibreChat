@@ -552,9 +552,16 @@ export interface IJobStore {
    */
   parkSteers(streamId: string, payload: string): Promise<void>;
 
-  /** Claim-on-read: atomically return AND remove the parked payload, so a
-   *  second reload cannot re-mint chips the user already dismissed. */
-  claimParkedSteers(streamId: string): Promise<string | undefined>;
+  /**
+   * Claim-on-read: atomically return AND remove the parked payload, so a
+   * second reload cannot re-mint chips the user already dismissed. The
+   * removal is gated on `ownerFragment` (an opaque substring of the
+   * serialized payload, e.g. `"userId":"u1"`) INSIDE the same atomic step —
+   * a non-owner probe returns nothing and leaves the payload untouched
+   * instead of deleting it ahead of the owner check. Stores stay
+   * schema-free: the caller parses and authorizes the returned payload.
+   */
+  claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined>;
 
   /** Drop any queued steers (terminal cleanup backstop). */
   clearSteers(streamId: string): Promise<void>;

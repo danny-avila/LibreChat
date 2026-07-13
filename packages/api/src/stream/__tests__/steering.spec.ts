@@ -1,16 +1,17 @@
 import { SteerEvents } from 'librechat-data-provider';
-import type { TPendingSteer } from 'librechat-data-provider';
+import type { TPendingSteer, Agents } from 'librechat-data-provider';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type { ResumeState } from '~/types';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
   STEER_QUEUE_MAX_DEPTH,
 } from '~/stream/interfaces/IJobStore';
+import { PARKED_STEERS_TTL_MS, InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
+import { synthesizeAppliedSteerEvents, toPendingSteer } from '~/stream/SteeringLifecycle';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
-import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
-import { synthesizeAppliedSteerEvents } from '~/stream/SteeringLifecycle';
 
 jest.spyOn(console, 'log').mockImplementation();
 
@@ -285,6 +286,48 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect((await manager.steering.claim(streamId, owner)).map((s) => s.steerId)).toEqual(['p5']);
     });
 
+    test('a non-owner claim never deletes the payload, even transiently (no re-park)', async () => {
+      const streamId = 'steer-park-atomic';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.park(
+        streamId,
+        [{ steerId: 'p6', text: 'owner only', createdAt: Date.now() }],
+        owner,
+      );
+
+      // The owner gate runs INSIDE the store's atomic claim: a rejected probe
+      // must not go through the old delete-then-re-park path, which briefly
+      // left nothing for a concurrent owner claim.
+      const parkSpy = jest.spyOn(manager.getJobStore(), 'parkSteers');
+      expect(await manager.steering.claim(streamId, { userId: 'intruder' })).toEqual([]);
+      expect(parkSpy).not.toHaveBeenCalled();
+      expect((await manager.steering.claim(streamId, owner)).map((s) => s.steerId)).toEqual(['p6']);
+      parkSpy.mockRestore();
+    });
+
+    test('periodic store cleanup sweeps expired parked steers', async () => {
+      const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const base = Date.now();
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
+      try {
+        await store.parkSteers(
+          'steer-park-sweep',
+          JSON.stringify({ userId: 'user-1', steers: [{ steerId: 'p7', text: 'stale' }] }),
+        );
+        nowSpy.mockReturnValue(base + PARKED_STEERS_TTL_MS + 1);
+        await store.cleanup();
+        // Back inside the window: had the sweep NOT removed the entry, this
+        // claim would return it (expiry is otherwise only checked at read).
+        nowSpy.mockReturnValue(base);
+        expect(await store.claimParkedSteers('steer-park-sweep', '"userId":"user-1"')).toBe(
+          undefined,
+        );
+      } finally {
+        nowSpy.mockRestore();
+        await store.destroy();
+      }
+    });
+
     test('a replacement run clears parked leftovers', async () => {
       const streamId = 'steer-park-replaced';
       await manager.createJob(streamId, 'user-1');
@@ -329,6 +372,23 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
 
       await manager.completeJob(streamId);
       expect(await manager.steering.peek(streamId)).toEqual([]);
+    });
+
+    test('completeJob backstop parks 202-accepted steers instead of dropping them', async () => {
+      // Direct error-path callers (init failures, unhandled generation errors)
+      // reach completeJob WITHOUT the controllers' close-and-park — the
+      // backstop itself must leave the words claimable via /chat/status.
+      const streamId = 'steer-complete-error';
+      await manager.createJob(streamId, 'user-1');
+      const steer = buildSteer('survives the boom');
+      await manager.steering.enqueue(streamId, steer);
+
+      await manager.completeJob(streamId, 'boom');
+
+      expect(await manager.steering.peek(streamId)).toEqual([]);
+      expect(
+        (await manager.steering.claim(streamId, { userId: 'user-1' })).map((s) => s.steerId),
+      ).toEqual([steer.steerId]);
     });
 
     test('abortJob drains leftovers into pendingSteers on the result and final event', async () => {
@@ -391,6 +451,67 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       const content = [{ type: 'steer', steerId: 'g4' }];
 
       expect(synthesizeAppliedSteerEvents(snapshot, [queued('g4')], content, meta)).toEqual([]);
+    });
+  });
+
+  describe('subscribeWithResume steer-gap reconciliation', () => {
+    function staleSnapshot(streamId: string, pendingSteers: TPendingSteer[]): ResumeState {
+      return {
+        runSteps: [],
+        aggregatedContent: [],
+        conversationId: streamId,
+        responseMessageId: 'msg-gap',
+        pendingSteers,
+      };
+    }
+
+    test('refreshes the snapshot when a steer was ADDED in the gap', async () => {
+      const streamId = 'steer-gap-added';
+      await manager.createJob(streamId, 'user-1');
+      const kept = buildSteer('kept');
+      const added = buildSteer('added in gap');
+      await manager.steering.enqueue(streamId, kept);
+      await manager.steering.enqueue(streamId, added);
+
+      jest
+        .spyOn(manager, 'getResumeState')
+        .mockResolvedValue(staleSnapshot(streamId, [toPendingSteer(kept)]));
+
+      const result = await manager.subscribeWithResume(streamId, jest.fn());
+      expect(result.resumeState?.pendingSteers?.map((s) => s.steerId)).toEqual([
+        kept.steerId,
+        added.steerId,
+      ]);
+      expect(result.pendingEvents).toEqual([]);
+    });
+
+    test('reconciles an equal-length id swap (one drained + one added)', async () => {
+      const streamId = 'steer-gap-swap';
+      await manager.createJob(streamId, 'user-1');
+      const drained = buildSteer('drained in gap');
+      const added = buildSteer('added in gap');
+      await manager.steering.enqueue(streamId, added);
+
+      const appliedPart = {
+        type: 'steer',
+        steer: drained.text,
+        steerId: drained.steerId,
+      };
+      manager.setContentParts(streamId, [appliedPart] as unknown as Agents.MessageContentComplex[]);
+
+      jest
+        .spyOn(manager, 'getResumeState')
+        .mockResolvedValue(staleSnapshot(streamId, [toPendingSteer(drained)]));
+
+      const result = await manager.subscribeWithResume(streamId, jest.fn());
+      // Same length, different ids: the live projection must win…
+      expect(result.resumeState?.pendingSteers?.map((s) => s.steerId)).toEqual([added.steerId]);
+      // …and the drained steer's applied part is re-surfaced as a gap event.
+      expect(result.pendingEvents).toHaveLength(1);
+      const event = result.pendingEvents[0] as { event: string; data: Record<string, unknown> };
+      expect(event.event).toBe(SteerEvents.ON_STEER_APPLIED);
+      expect(event.data.steerId).toBe(drained.steerId);
+      expect(event.data.index).toBe(0);
     });
   });
 

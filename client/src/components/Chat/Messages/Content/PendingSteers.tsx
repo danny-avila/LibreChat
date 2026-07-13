@@ -6,6 +6,64 @@ import { SteerPart } from './Parts';
 import store from '~/store';
 
 /**
+ * One not-yet-applied steer. Owns the cancel affordance so the mutation hook
+ * (and its QueryClient requirement) only exists while a steer is actually
+ * on screen — the parent slot renders on every streaming message.
+ *
+ * Cancel is optimistic: the entry leaves the thread immediately;
+ * `removed: false` needs no handling (the steer already injected or the run
+ * ended — the events own the outcome). Only a failed POST restores the
+ * entry, since the server would still inject the supposedly-cancelled words.
+ */
+const PendingSteerItem = memo(function PendingSteerItem({
+  steer,
+  conversationId,
+}: {
+  steer: PendingSteer;
+  conversationId: string;
+}) {
+  const cancelMutation = useCancelSteerMutation();
+
+  const removeEntry = useRecoilCallback(
+    ({ set }) =>
+      (steerId: string) => {
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.filter((item) => item.steerId !== steerId),
+        );
+      },
+    [conversationId],
+  );
+  const restoreEntry = useRecoilCallback(
+    ({ set }) =>
+      (entry: PendingSteer) => {
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.some((item) => item.steerId === entry.steerId) ? prev : [...prev, entry],
+        );
+      },
+    [conversationId],
+  );
+
+  const cancelSteer = useCallback(() => {
+    removeEntry(steer.steerId);
+    cancelMutation.mutate(
+      { conversationId, steerId: steer.steerId },
+      { onError: () => restoreEntry(steer) },
+    );
+  }, [conversationId, steer, removeEntry, restoreEntry, cancelMutation]);
+
+  return (
+    <SteerPart
+      steer={steer.text}
+      files={steer.files}
+      steerId={steer.steerId}
+      createdAt={steer.createdAt}
+      pending
+      onCancel={steer.status === 'pending' ? cancelSteer : undefined}
+    />
+  );
+});
+
+/**
  * Steers the server hasn't applied yet, rendered in-thread at the end of the
  * streaming assistant message — the projected injection point, since the next
  * tool-batch boundary is always after everything streamed so far. A submitted
@@ -21,61 +79,14 @@ const PendingSteers = memo(function PendingSteers({
 }) {
   const convoKey = conversationId ?? '';
   const steers = useRecoilValue(store.pendingSteersByConvoId(convoKey));
-  const cancelMutation = useCancelSteerMutation();
-
-  const removeEntry = useRecoilCallback(
-    ({ set }) =>
-      (steerId: string) => {
-        set(store.pendingSteersByConvoId(convoKey), (prev) =>
-          prev.filter((item) => item.steerId !== steerId),
-        );
-      },
-    [convoKey],
-  );
-  const restoreEntry = useRecoilCallback(
-    ({ set }) =>
-      (entry: PendingSteer) => {
-        set(store.pendingSteersByConvoId(convoKey), (prev) =>
-          prev.some((item) => item.steerId === entry.steerId) ? prev : [...prev, entry],
-        );
-      },
-    [convoKey],
-  );
-
-  /** Optimistic: the entry leaves the thread immediately; `removed: false`
-   *  needs no handling (the steer already injected or the run ended — the
-   *  events own the outcome). Only a failed POST restores the entry, since
-   *  the server would still inject the supposedly-cancelled words. */
-  const cancelSteer = useCallback(
-    (entry: PendingSteer) => {
-      if (!conversationId) {
-        return;
-      }
-      removeEntry(entry.steerId);
-      cancelMutation.mutate(
-        { conversationId, steerId: entry.steerId },
-        { onError: () => restoreEntry(entry) },
-      );
-    },
-    [conversationId, removeEntry, restoreEntry, cancelMutation],
-  );
-
-  if (steers.length === 0) {
+  if (steers.length === 0 || !conversationId) {
     return null;
   }
   return (
     <>
       {steers.map((steer) =>
         steer.status === 'failed' ? null : (
-          <SteerPart
-            key={steer.steerId}
-            steer={steer.text}
-            files={steer.files}
-            steerId={steer.steerId}
-            createdAt={steer.createdAt}
-            pending
-            onCancel={steer.status === 'pending' ? () => cancelSteer(steer) : undefined}
-          />
+          <PendingSteerItem key={steer.steerId} steer={steer} conversationId={conversationId} />
         ),
       )}
     </>

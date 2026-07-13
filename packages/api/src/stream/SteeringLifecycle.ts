@@ -25,6 +25,12 @@ interface ParkedSteers extends SteerOwner {
   steers: TPendingSteer[];
 }
 
+/** The exact JSON substring the stores gate the atomic claim on — matches the
+ *  `userId` member as {@link SteeringLifecycle.park} serializes it. */
+export function toOwnerFragment(userId: string): string {
+  return `"userId":${JSON.stringify(userId)}`;
+}
+
 /**
  * Synthesize the `on_steer_applied` events a reconnecting subscriber missed in
  * the snapshot→subscribe window: any snapshot steer no longer in the live
@@ -170,14 +176,16 @@ export class SteeringLifecycle {
 
   /**
    * Claim-on-read: returns parked leftovers and clears them, so a second
-   * reload cannot re-mint chips the user already dismissed. Ownership is
-   * checked against the payload itself; a non-owner gets nothing and the
-   * payload is re-parked so it cannot destroy the owner's recovery.
+   * reload cannot re-mint chips the user already dismissed. The user check
+   * runs INSIDE the store's atomic claim (substring gate on the payload), so
+   * a non-owner probe never deletes the payload — not even transiently. The
+   * parse below stays authoritative (a steer text could embed the fragment);
+   * a tenant mismatch re-parks so it cannot destroy the owner's recovery.
    */
   async claim(streamId: string, requester: SteerOwner): Promise<TPendingSteer[]> {
     let raw: string | undefined;
     try {
-      raw = await this.store.claimParkedSteers(streamId);
+      raw = await this.store.claimParkedSteers(streamId, toOwnerFragment(requester.userId));
     } catch (error) {
       logger.warn(`[SteeringLifecycle] Failed to claim leftover steers: ${streamId}`, error);
       return [];

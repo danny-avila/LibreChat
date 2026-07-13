@@ -2066,13 +2066,86 @@ describe('RedisJobStore Integration Tests', () => {
       expect(await ioredisClient.ttl(`stream:{${streamId}}:parked`)).toBeGreaterThan(0);
 
       // Claim-on-read: exactly once.
-      expect(await store.claimParkedSteers(streamId)).toBe(payload);
-      expect(await store.claimParkedSteers(streamId)).toBeUndefined();
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBe(payload);
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBeUndefined();
 
       // A replacement run resets any parked payload atomically with creation.
       await store.parkSteers(streamId, payload);
       await store.createJob(streamId, 'steer-user', streamId);
-      expect(await store.claimParkedSteers(streamId)).toBeUndefined();
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBeUndefined();
+
+      await store.destroy();
+    });
+
+    test('a non-owner claim leaves the parked payload untouched (atomic owner gate)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-parked-owner-${Date.now()}`;
+      const payload = JSON.stringify({
+        userId: 'steer-user',
+        steers: [{ steerId: 'p1', text: 'owner only', createdAt: 1 }],
+      });
+      await store.parkSteers(streamId, payload);
+
+      // The Lua gate rejects WITHOUT deleting: no delete-then-re-park window
+      // in which a concurrent owner claim would find nothing.
+      expect(await store.claimParkedSteers(streamId, '"userId":"intruder"')).toBeUndefined();
+      expect(await ioredisClient.get(`stream:{${streamId}}:parked`)).toBe(payload);
+
+      // The owner still claims exactly once.
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBe(payload);
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(0);
+
+      await store.destroy();
+    });
+
+    test('expiry cleanup parks queued steers before the terminal transition drops the queue', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-expiry-park-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId, 'tenant-1');
+      await store.enqueueSteer(streamId, buildSteer('s1', 'frozen across the pause'));
+
+      // Pause on an ALREADY-expired action so the next cleanup pass reaps it
+      // (mirrors how the requires_action index treats a lapsed approval).
+      const expiredAction = { ...buildPendingAction(streamId), expiresAt: Date.now() - 1000 };
+      const paused = await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: expiredAction, pendingActionId: expiredAction.actionId },
+      });
+      expect(paused).toBe(true);
+
+      await store.cleanup();
+
+      // The job finalized (aborted) and the queue key is gone…
+      const job = await store.getJob(streamId);
+      expect(job?.status).toBe('aborted');
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      // …but the 202-accepted steer is claimable by its owner.
+      const claimed = await store.claimParkedSteers(streamId, '"userId":"steer-user"');
+      expect(claimed).toBeDefined();
+      const parsed = JSON.parse(claimed as string) as {
+        userId: string;
+        tenantId?: string;
+        steers: Array<{ steerId: string; text: string }>;
+      };
+      expect(parsed.userId).toBe('steer-user');
+      expect(parsed.tenantId).toBe('tenant-1');
+      expect(parsed.steers.map((s) => s.text)).toEqual(['frozen across the pause']);
 
       await store.destroy();
     });

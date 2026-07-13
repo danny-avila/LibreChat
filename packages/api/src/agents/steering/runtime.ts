@@ -39,7 +39,7 @@ export function isSteeringSupported(): boolean {
 export interface SteerMediaResult {
   /** Full ordered content array for graph injection (text part included). */
   content: Array<Record<string, unknown>>;
-  /** Validated file refs (from the DB, not the client) for the persisted part. */
+  /** Validated file refs (from the DB, not the client). */
   files?: SteerQueueItem['files'];
 }
 
@@ -54,10 +54,13 @@ export interface SteerDrainHookOptions {
   /**
    * Applies one drained steer to host state — appends the steer content part
    * at the live content index, bumps the shared index offset, and emits the
-   * `on_steer_applied` SSE event. Called FIFO, before the graph injection is
-   * returned. Failures are logged per item and never block the injection.
+   * `on_steer_applied` SSE event. Called FIFO, BEFORE the item's media encode:
+   * once a steer leaves the durable queue, the part must be persisted before
+   * any slow/abortable work, or an abort during the encode loses the user's
+   * words (the terminal drain sees an empty queue and the content snapshot
+   * lacks the part). Failures are logged per item and never block injection.
    */
-  applySteer: (item: SteerQueueItem, media?: SteerMediaResult) => void | Promise<void>;
+  applySteer: (item: SteerQueueItem) => void | Promise<void>;
   /**
    * Resolves a steer's attachment refs into encoded model content (owner-scoped
    * fetch + provider encoding, host-side). Only consulted for items that carry
@@ -94,6 +97,14 @@ export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<
     }
     const injectedMessages: InjectedMessage[] = [];
     for (const item of steers) {
+      try {
+        await applySteer(item);
+      } catch (error) {
+        logger.error(
+          `[steering] Failed to apply steer part for ${streamId} steer=${item.steerId}:`,
+          error,
+        );
+      }
       let media: SteerMediaResult | undefined;
       if (buildMedia != null && (item.files?.length ?? 0) > 0) {
         try {
@@ -104,14 +115,6 @@ export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<
             error,
           );
         }
-      }
-      try {
-        await applySteer(item, media);
-      } catch (error) {
-        logger.error(
-          `[steering] Failed to apply steer part for ${streamId} steer=${item.steerId}:`,
-          error,
-        );
       }
       injectedMessages.push({
         role: 'user' as const,

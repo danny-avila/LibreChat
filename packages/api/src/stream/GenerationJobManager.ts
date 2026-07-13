@@ -721,11 +721,28 @@ class GenerationJobManagerClass {
     this.runStepBuffers?.delete(streamId);
     this.replayEventWriteQueues.delete(streamId);
     this.tokenUsageWriteQueues.delete(streamId);
-    // Backstop: finalization paths drain leftovers before completing; anything
-    // still queued here can never be injected or reported, so drop it.
-    this.jobStore.clearSteers(streamId).catch((err) => {
-      logger.warn(`[GenerationJobManager] Failed to clear steer queue for ${streamId}:`, err);
-    });
+    // Backstop for direct terminal callers (init failures, unhandled errors)
+    // that never ran the controllers' close-and-park: close the queue, then
+    // park any 202-accepted leftovers for /chat/status claim-on-read instead
+    // of silently clearing them. Paths that already drained find an empty
+    // queue and no-op; the createdAt guard (re-checked inside the store's
+    // atomic drain) keeps a stale completion off a replacement job's queue.
+    // Runs BEFORE the terminal status write — the Redis terminal cleanup DELs
+    // the queue key.
+    try {
+      const jobData = await this.jobStore.getJob(streamId);
+      if (jobData) {
+        const leftovers = (
+          await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
+        ).map(toPendingSteer);
+        await this._steering.park(streamId, leftovers, {
+          userId: jobData.userId,
+          tenantId: jobData.tenantId,
+        });
+      }
+    } catch (err) {
+      logger.warn(`[GenerationJobManager] Failed to park leftover steers for ${streamId}:`, err);
+    }
 
     // For error jobs, DON'T delete immediately - keep around so late-connecting
     // clients can receive the error. This handles the race condition where error
@@ -1177,10 +1194,17 @@ class GenerationJobManagerClass {
     // buffer, where this re-check is a cheap no-op). Without it the client
     // keeps a pending entry and misses the inline part until the final event.
     // The applied part is durable in the store's content view — re-surface it.
+    // Reconciled by steerId SETS, not length: a steer ADDED in the gap (or one
+    // drained + one added, leaving the length equal) must also refresh the
+    // snapshot to the live projection or the client renders a stale queue.
     const snapshotSteers = resumeState?.pendingSteers;
     if (resumeState && snapshotSteers != null && snapshotSteers.length > 0) {
       const liveQueue = await this.jobStore.peekSteers(streamId);
-      if (liveQueue.length < snapshotSteers.length) {
+      const liveIds = new Set(liveQueue.map((item) => item.steerId));
+      const queueChanged =
+        liveQueue.length !== snapshotSteers.length ||
+        snapshotSteers.some((steer) => !liveIds.has(steer.steerId));
+      if (queueChanged) {
         const livePending = liveQueue.map(toPendingSteer);
         resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
         const contentResult = await this.jobStore.getContentParts(streamId);
