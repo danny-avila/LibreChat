@@ -90,6 +90,13 @@ describe('PendingSteers (in-thread optimistic steers)', () => {
     expect(screen.getByText('Danny')).toBeInTheDocument();
   });
 
+  it('anchors each steer for the message-nav rail', () => {
+    renderSlot([{ steerId: 's1', text: 'navigable words', status: 'pending', createdAt: 1 }]);
+    const part = screen.getByTestId('steer-part');
+    expect(part).toHaveAttribute('id', 'steer-s1');
+    expect(part).toHaveClass('steer-render');
+  });
+
   it('falls back to the generic user label when username display is off', () => {
     renderSlot([{ steerId: 's1', text: 'anonymous words', status: 'pending', createdAt: 1 }], {
       usernameDisplay: false,

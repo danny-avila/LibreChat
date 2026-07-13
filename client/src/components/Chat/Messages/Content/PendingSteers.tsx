@@ -29,6 +29,7 @@ const PendingSteers = memo(function PendingSteers({
             key={steer.steerId}
             steer={steer.text}
             files={steer.files}
+            steerId={steer.steerId}
             createdAt={steer.createdAt}
             pending
           />

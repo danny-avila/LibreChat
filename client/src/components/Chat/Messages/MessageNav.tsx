@@ -47,6 +47,10 @@ export function buildEntry(id: string, msg: TMessage): MessageEntry {
 }
 
 const USER_TURN_SELECTOR = '.user-turn';
+const STEER_RENDER_CLASS = 'steer-render';
+/** One query, document order: steer nodes interleave at their in-thread
+ *  position INSIDE the response that absorbed them. */
+const ENTRY_NODE_SELECTOR = `.message-render, .${STEER_RENDER_CLASS}`;
 
 export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
   const isUser = node.querySelector(USER_TURN_SELECTOR) != null;
@@ -58,8 +62,23 @@ export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry 
   };
 }
 
+/** A mid-run steer is a user message, so its rib reads as one; the preview
+ *  comes from the part's text body, skipping the author header. */
+export function buildSteerEntry(node: HTMLElement, id: string): MessageEntry {
+  const raw = (
+    node.querySelector('.message-content')?.textContent ??
+    node.textContent ??
+    ''
+  ).trim();
+  return {
+    id,
+    isUser: true,
+    preview: raw.slice(0, 80) + (raw.length > 80 ? '...' : ''),
+  };
+}
+
 function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
-  const nodes = root.querySelectorAll<HTMLElement>('.message-render');
+  const nodes = root.querySelectorAll<HTMLElement>(ENTRY_NODE_SELECTOR);
   const entries: MessageEntry[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < nodes.length; i++) {
@@ -69,6 +88,10 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
       continue;
     }
     seen.add(id);
+    if (node.classList.contains(STEER_RENDER_CLASS)) {
+      entries.push(buildSteerEntry(node, id));
+      continue;
+    }
     const msg = messagesById.get(id);
     entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
   }

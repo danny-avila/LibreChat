@@ -28,11 +28,14 @@ const USER_ICON: TMessageIcon = { isCreatedByUser: true };
 const SteerPart = memo(function SteerPart({
   steer,
   files,
+  steerId,
   createdAt,
   pending = false,
 }: {
   steer: string;
   files?: TMessage['files'];
+  /** Anchors the part for the message-nav rail (`#steer-<id>` rib target). */
+  steerId?: string;
   createdAt?: number;
   pending?: boolean;
 }) {
@@ -67,7 +70,8 @@ const SteerPart = memo(function SteerPart({
 
   return (
     <div
-      className={cn('group relative my-4 flex w-full gap-3', pending && 'opacity-80')}
+      id={steerId ? `steer-${steerId}` : undefined}
+      className={cn('steer-render group relative my-4 flex w-full gap-3', pending && 'opacity-80')}
       data-testid="steer-part"
       data-steer-pending={pending || undefined}
     >

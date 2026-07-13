@@ -75,7 +75,12 @@ const Part = memo(function Part({
 
   if (part.type === ContentTypes.STEER) {
     return (
-      <SteerPart steer={part[ContentTypes.STEER]} files={part.files} createdAt={part.createdAt} />
+      <SteerPart
+        steer={part[ContentTypes.STEER]}
+        files={part.files}
+        steerId={part.steerId}
+        createdAt={part.createdAt}
+      />
     );
   }
 
