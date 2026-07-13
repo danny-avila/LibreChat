@@ -901,6 +901,26 @@ function buildSubagentConfigs(
   return configs;
 }
 
+interface UserTraceContext {
+  userId?: string;
+}
+
+function buildUserTraceContext(
+  user?: IUser | null,
+  userIdField?: 'email' | 'username' | 'name' | 'id',
+): UserTraceContext {
+  if (userIdField === 'id') {
+    return { userId: user?.id ? String(user.id) : undefined };
+  }
+  if (userIdField === 'username') {
+    return { userId: user?.username || undefined };
+  }
+  if (userIdField === 'name') {
+    return { userId: user?.name || user?.email || undefined };
+  }
+  return { userId: user?.email || user?.username || undefined };
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -1365,6 +1385,7 @@ export async function createRun({
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
     langfuse: buildLangfuseConfig({ appConfig, tenantId: tenantId ?? user?.tenantId }),
+    user: buildUserTraceContext(user, appConfig?.config?.tracing?.userIdField),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
