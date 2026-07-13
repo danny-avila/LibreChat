@@ -60,7 +60,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
         },
         [fileMap],
       ),
-      enabled: !!fileMap,
+      enabled: !!conversationId && conversationId !== Constants.SEARCH,
     },
     { isStreaming: isSubmitting },
   );

@@ -168,6 +168,7 @@ const openRouterAnthropicVerbosityByEffort: Record<
   medium: 'medium',
   high: 'high',
   xhigh: 'xhigh',
+  max: 'max',
 };
 
 function isStringVerbosity(value: unknown): value is string {

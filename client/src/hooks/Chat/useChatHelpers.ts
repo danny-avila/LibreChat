@@ -79,9 +79,15 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     [queryParam, queryClient, conversationId],
   );
 
-  const getMessages = useCallback(() => {
-    return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
-  }, [queryParam, queryClient]);
+  const getMessages = useCallback(
+    (targetConversationId?: string | null) => {
+      return queryClient.getQueryData<TMessage[]>([
+        QueryKeys.messages,
+        targetConversationId ?? queryParam,
+      ]);
+    },
+    [queryParam, queryClient],
+  );
 
   /* Conversation */
   // const setActiveConvos = useSetRecoilState(store.activeConversations);

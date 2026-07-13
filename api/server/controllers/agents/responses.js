@@ -459,6 +459,9 @@ const createResponse = async (req, res) => {
           ephemeralSkillsToggle,
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        statefulSessionsAvailable: enabledCapabilities.has(
+          AgentCapabilities.stateful_code_sessions,
+        ),
         skillStates,
         defaultActiveOnShare,
         manualSkills,
@@ -536,6 +539,9 @@ const createResponse = async (req, res) => {
           defaultActiveOnShare,
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+          statefulSessionsAvailable: enabledCapabilities.has(
+            AgentCapabilities.stateful_code_sessions,
+          ),
         },
         {
           getAgent: db.getAgent,

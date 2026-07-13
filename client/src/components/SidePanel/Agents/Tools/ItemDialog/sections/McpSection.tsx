@@ -13,9 +13,9 @@ import {
   useMCPToolOptions,
 } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
+import { mcpAllToken, mcpServerToken } from '../../items/selectors';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
-import { mcpServerToken } from '../../items/selectors';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
 import MCPToolItem from '../../../MCPToolItem';
@@ -61,8 +61,14 @@ interface Props {
 export default function McpSection({ item }: Props) {
   const localize = useLocalize();
   const { control, getValues, setValue } = useFormContext<AgentForm>();
-  const { getServerStatusIconProps, getConfigDialogProps, initializeServer, getOAuthUrl } =
-    useMCPServerManager();
+  const {
+    getServerStatusIconProps,
+    getConfigDialogProps,
+    initializeServer,
+    isConnectionDeferred,
+    resetConnectionDeferred,
+    getOAuthUrl,
+  } = useMCPServerManager();
   const [oauthOpen, setOauthOpen] = useState(false);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [prevConnected, setPrevConnected] = useState(false);
@@ -85,6 +91,7 @@ export default function McpSection({ item }: Props) {
 
   const serverName = item.server.serverName;
   const serverToken = mcpServerToken(serverName);
+  const serverAllToken = mcpAllToken(serverName);
   /** Live server data — `item.server` is a snapshot from card click and goes stale once
    * the MCP query refetches (e.g., after a server connects), so read from the live map. */
   const liveServer = mcpServersMap.get(serverName) ?? item.server;
@@ -94,22 +101,36 @@ export default function McpSection({ item }: Props) {
   /** Subscribe to the tools field so selection toggles re-render this section.
    * `getValues` is a non-reactive read and left the checkboxes visually stale. */
   const formTools = (useWatch({ control, name: 'tools' }) ?? []) as string[];
+  /** Attached via the server-wide `mcp_all` wildcard — used by request-scoped
+   * servers whose tools resolve at chat-turn time and can't be listed here. */
+  const isWildcardAttached = formTools.includes(serverAllToken);
 
+  /** The `mcp_all` wildcard grants every server tool at runtime, so when the
+   * server's tools ARE enumerable (e.g. it stopped being request-scoped), fold
+   * the wildcard into the display as "all selected" — otherwise the dialog
+   * would show unchecked boxes while runtime grants everything. Any selection
+   * interaction then rewrites the form with concrete tool ids (the wildcard is
+   * stripped by `updateFormTools`), converting the attachment on first touch. */
   const getSelectedTools = (): string[] =>
-    tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
+    isWildcardAttached
+      ? tools.map((t) => t.tool_id)
+      : tools.filter((t) => formTools.includes(t.tool_id)).map((t) => t.tool_id);
 
   /** Replace this server's tool selection while keeping the server attached: the
    * placeholder token is always rewritten, so deselect-all leaves the server
-   * pinned with zero tools; only an explicit remove detaches it. */
+   * pinned with zero tools; only an explicit remove detaches it. The `mcp_all`
+   * wildcard is also stripped unless explicitly re-passed in `next`, so a
+   * per-tool selection always supersedes a stale wildcard (e.g. after a server
+   * stops being request-scoped and its tools become enumerable). */
   const updateFormTools = useCallback(
     (next: string[]) => {
       const current = (getValues('tools') ?? []) as string[];
       const otherTools = current.filter(
-        (t) => t !== serverToken && !tools.some((st) => st.tool_id === t),
+        (t) => t !== serverToken && t !== serverAllToken && !tools.some((st) => st.tool_id === t),
       );
       setValue('tools', [...otherTools, serverToken, ...next], { shouldDirty: true });
     },
-    [getValues, setValue, serverToken, tools],
+    [getValues, setValue, serverToken, serverAllToken, tools],
   );
 
   const toggleToolSelect = (toolId: string) => {
@@ -155,14 +176,42 @@ export default function McpSection({ item }: Props) {
   /** Connecting from this dialog implies the user wants the server's tools:
    * once the connection settles and the tools arrive (query refetch for direct
    * connects, polling for OAuth), select them all — an effect because both
-   * signals come from external systems, not from anything rendered here. */
+   * signals come from external systems, not from anything rendered here.
+   *
+   * Request-scoped servers (runtime `{{LIBRECHAT_BODY_*}}` placeholders) defer
+   * their connection to the next chat turn, so no tool list will ever arrive —
+   * attach the whole server via the `mcp_all` wildcard instead; the backend
+   * resolves it into the server's full tool set at turn time. Keying on the
+   * manager's init state (not the awaited response) also covers connects that
+   * happen behind the customUserVars config dialog, which this component does
+   * not await. */
+  const serverDeferred = isConnectionDeferred(serverName);
   useEffect(() => {
-    if (!autoSelectPending || !isConnected || !hasTools) {
+    if (!autoSelectPending) {
+      return;
+    }
+    if (serverDeferred && !hasTools) {
+      setAutoSelectPending(false);
+      if (!isWildcardAttached) {
+        updateFormTools([serverAllToken]);
+      }
+      return;
+    }
+    if (!isConnected || !hasTools) {
       return;
     }
     setAutoSelectPending(false);
     updateFormTools(tools.map((t) => t.tool_id));
-  }, [autoSelectPending, isConnected, hasTools, tools, updateFormTools]);
+  }, [
+    autoSelectPending,
+    serverDeferred,
+    isConnected,
+    hasTools,
+    tools,
+    updateFormTools,
+    isWildcardAttached,
+    serverAllToken,
+  ]);
 
   /** Connect inline from this first dialog. Servers with custom user variables are
    * routed to the config dialog (which sets the vars and initializes); others
@@ -171,6 +220,11 @@ export default function McpSection({ item }: Props) {
   const handleConnect = async (e: MouseEvent) => {
     setAutoSelectPending(true);
     if (statusIconProps != null && statusIconProps.hasCustomUserVars) {
+      /** A stale deferred flag from an earlier attempt must not fire the
+       * auto-attach effect while the config dialog is open — only this
+       * attempt's outcome (recorded on save → initialize) counts. The direct
+       * path below needs no reset: initializeServer clears it up front. */
+      resetConnectionDeferred(serverName);
       statusIconProps.onConfigClick(e);
       return;
     }
@@ -361,7 +415,9 @@ export default function McpSection({ item }: Props) {
           </Collapse>
           <Collapse open={!hasTools && !toolsLoading}>
             <p className="rounded-xl border border-dashed border-border-light p-3 text-center text-xs text-text-tertiary">
-              {localize('com_ui_tools_mcp_no_tools')}
+              {localize(
+                isWildcardAttached ? 'com_ui_tools_mcp_runtime_tools' : 'com_ui_tools_mcp_no_tools',
+              )}
             </p>
           </Collapse>
         </div>

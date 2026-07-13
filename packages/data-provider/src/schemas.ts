@@ -202,6 +202,7 @@ export enum ReasoningEffort {
   medium = 'medium',
   high = 'high',
   xhigh = 'xhigh',
+  max = 'max',
 }
 
 export enum ReasoningParameterFormat {

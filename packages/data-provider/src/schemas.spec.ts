@@ -1,9 +1,11 @@
 import {
   AnthropicEffort,
+  ReasoningEffort,
   googleSettings,
   anthropicSettings,
   compactGoogleSchema,
   eAnthropicEffortSchema,
+  eReasoningEffortSchema,
 } from './schemas';
 
 describe('anthropicSettings', () => {
@@ -565,5 +567,22 @@ describe('AnthropicEffort', () => {
 
   it('rejects unknown effort values', () => {
     expect(() => eAnthropicEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningEffort', () => {
+  it('exposes max as the highest OpenAI reasoning effort, after xhigh', () => {
+    expect(ReasoningEffort.max).toBe('max');
+    const keys = Object.keys(ReasoningEffort);
+    expect(keys.indexOf('max')).toBeGreaterThan(keys.indexOf('xhigh'));
+  });
+
+  it('accepts max through the zod schema', () => {
+    expect(eReasoningEffortSchema.parse('max')).toBe('max');
+    expect(eReasoningEffortSchema.parse(ReasoningEffort.max)).toBe('max');
+  });
+
+  it('still rejects unknown effort values', () => {
+    expect(() => eReasoningEffortSchema.parse('ultra')).toThrow();
   });
 });
