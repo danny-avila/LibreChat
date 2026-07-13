@@ -46,12 +46,14 @@ export default function OrchestrationHub({ currentAgentId }: OrchestrationHubPro
             render={({ field }) => <AgentSubagents field={field} currentAgentId={currentAgentId} />}
           />
         )}
+        {/* NJ: Hiding AgentHandoffs, buggy atm
         <Controller
           name="edges"
           control={control}
           defaultValue={[]}
           render={({ field }) => <AgentHandoffs field={field} currentAgentId={currentAgentId} />}
         />
+        */}
         {chainEnabled && (
           <Controller
             name="agent_ids"
