@@ -121,6 +121,15 @@ const processAddedConvo = async ({
         ? req.config.modelSpecs.list.find((modelSpec) => modelSpec.name === addedConvo.spec)
         : null;
 
+    /**
+     * Carry the spec's image-capability declaration onto the added agent so a
+     * spec-declared text-only model (e.g. a renamed proxy) is stripped from the
+     * shared LLM payload in mixed-model runs, matching the primary agent's path.
+     */
+    if (selectedModelSpec && typeof selectedModelSpec.vision === 'boolean') {
+      addedAgent.vision = selectedModelSpec.vision;
+    }
+
     if (
       addedAgent &&
       isEphemeralAgentId(addedAgent.id) &&

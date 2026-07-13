@@ -66,13 +66,20 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
     agentsMap,
   ]);
 
-  /** For saved agents `conversation.model` is cleared; the model lives on the agent. */
+  /**
+   * For saved agents `conversation.model` is cleared; the model lives on the
+   * agent, either under `model_parameters.model` or the schema's top-level
+   * `model`. Mirror `useAgentToolPermissions`' fallback chain so a saved
+   * text-only agent is recognized (not treated as unknown/permissive).
+   */
   const activeModel = useMemo(() => {
     const isAgents = isAgentsEndpoint(conversation?.endpoint);
     if (isAgents && conversation?.agent_id) {
       return (
         agentData?.model_parameters?.model ??
+        agentData?.model ??
         agentsMap?.[conversation.agent_id]?.model_parameters?.model ??
+        agentsMap?.[conversation.agent_id]?.model ??
         conversation?.model
       );
     }

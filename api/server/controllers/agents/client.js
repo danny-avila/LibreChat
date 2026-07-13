@@ -121,15 +121,18 @@ const IMAGE_CONTENT_TYPES = new Set([ContentTypes.IMAGE_URL, ContentTypes.IMAGE_
  * in `content` (e.g. an image-generation tool's artifact fed back as context).
  * String content has no image parts and is left untouched.
  * @param {{ content?: unknown }} formattedMessage
+ * @returns {boolean} Whether any image part was removed (used to force a token recount).
  */
 const stripImageContentParts = (formattedMessage) => {
   if (!Array.isArray(formattedMessage.content)) {
-    return;
+    return false;
   }
   const filtered = formattedMessage.content.filter(
     (part) => !part || !IMAGE_CONTENT_TYPES.has(part.type),
   );
+  const removed = filtered.length !== formattedMessage.content.length;
   formattedMessage.content = filtered.length > 0 ? filtered : '';
+  return removed;
 };
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
@@ -318,8 +321,10 @@ class AgentClient extends BaseClient {
   /**
    * Resolves whether a single agent's model can accept image input, layering
    * explicit config (model spec / endpoint `visionModels`) over the built-in
-   * heuristic. The model spec's `vision` flag only applies to the user-selected
-   * (primary) agent, so `useSpec` is false for added/handoff agents.
+   * heuristic. The user-selected (primary) agent reads its declaration from the
+   * run's model spec (`useSpec`); added/handoff agents carry their own resolved
+   * `vision` flag on the agent config (copied from their spec in `addedConvo`),
+   * so a spec-declared text-only added model is caught here too.
    * @param {Agent} agent
    * @param {{ useSpec?: boolean }} [options]
    * @returns {import('librechat-data-provider').ImageCapabilityResult}
@@ -348,6 +353,7 @@ class AgentClient extends BaseClient {
       model: agent?.model_parameters?.model ?? agent?.model,
       endpointConfig,
       modelSpec,
+      vision: typeof agent?.vision === 'boolean' ? agent.vision : undefined,
     });
   }
 
@@ -501,9 +507,10 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      let strippedImages = false;
       if (stripImages) {
         stripImageContentParts(formattedMessage);
-        stripImageContentParts(memoryFormattedMessage);
+        strippedImages = stripImageContentParts(memoryFormattedMessage);
       }
 
       /**
@@ -537,9 +544,16 @@ class AgentClient extends BaseClient {
        * `message.quotes` persisted, so the stored count would undercount the
        * quote block this turn prepends. Recounting from the quote-merged memory
        * copy keeps context accounting accurate (and self-heals stale counts).
+       *
+       * Also recount when image parts were just stripped: a historical image
+       * message carries a persisted, image-inclusive `tokenCount`, so reusing it
+       * would over-budget the now image-free payload and prune/summarize
+       * unnecessarily. Recounting from the stripped memory copy keeps the count
+       * aligned with what the text-only model actually receives.
        */
       const needsCanonicalTokenCount =
         !hasDbTokenCount ||
+        strippedImages ||
         (this.isVisionModel && (message.image_urls || message.files)) ||
         (Array.isArray(message.quotes) && message.quotes.length > 0);
 

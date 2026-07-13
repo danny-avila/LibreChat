@@ -152,6 +152,30 @@ describe('DragDropContext endpointType resolution', () => {
     });
   });
 
+  describe('confidentlyNonVision resolution for saved agents', () => {
+    it('recognizes a saved agent whose model lives on the top-level agent.model', () => {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentQueryData = { provider: EModelEndpoint.openAI, model: 'o1-mini' } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.confidentlyNonVision).toBe(true);
+    });
+
+    it('falls back to agentsMap top-level model when the fetched agent omits it', () => {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentsMap = { 'agent-1': { provider: EModelEndpoint.openAI, model: 'o1-mini' } };
+      mockAgentQueryData = { provider: EModelEndpoint.openAI } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.confidentlyNonVision).toBe(true);
+    });
+
+    it('stays permissive for a vision-capable saved agent model', () => {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentQueryData = { provider: EModelEndpoint.openAI, model: 'gpt-4o' } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.confidentlyNonVision).toBe(false);
+    });
+  });
+
   describe('agents endpoint without provider', () => {
     it('falls back to agents when no agent_id', () => {
       mockConversation = { endpoint: EModelEndpoint.agents };

@@ -98,6 +98,24 @@ describe('AgentClient.shouldStripImagesForRun (mixed-model runs)', () => {
       false,
     );
   });
+
+  it('strips when an added agent is spec-declared text-only on an unknown model', () => {
+    const added = {
+      endpoint: 'openAI',
+      model_parameters: { model: 'renamed-proxy' },
+      vision: false,
+    };
+    expect(strip(runSelf({ primary: agent('gpt-4o'), added: [added] }))).toBe(true);
+  });
+
+  it('does not strip for a spec-declared vision:true added agent on an unknown model', () => {
+    const added = {
+      endpoint: 'openAI',
+      model_parameters: { model: 'renamed-proxy' },
+      vision: true,
+    };
+    expect(strip(runSelf({ primary: agent('gpt-4o'), added: [added] }))).toBe(false);
+  });
 });
 
 describe('stripImageContentParts (real formatMessage payloads)', () => {
@@ -152,5 +170,19 @@ describe('stripImageContentParts (real formatMessage payloads)', () => {
     stripImageContentParts(formatted);
     expect(formatted.content).not.toHaveLength(0);
     expect(JSON.stringify(formatted.content)).not.toContain('image_url');
+  });
+
+  it('reports whether it removed any image parts (drives token recount)', () => {
+    const withImage = formatMessage({
+      message: {
+        role: 'user',
+        text: 'hi',
+        image_urls: [{ type: 'image_url', image_url: { url: 'x' } }],
+      },
+    });
+    expect(stripImageContentParts(withImage)).toBe(true);
+
+    const textOnly = formatMessage({ message: { role: 'user', text: 'hi' } });
+    expect(stripImageContentParts(textOnly)).toBe(false);
   });
 });
