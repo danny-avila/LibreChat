@@ -5,6 +5,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AgentCapabilities, EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import type { AgentForm, ExtendedFile } from '~/common';
+import FileSearchCheckbox from '~/nj/components/SidePanel/Agents/FileSearchCheckbox';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import { useAgentFileConfig, useLazyEffect, useLocalize } from '~/hooks';
 import AddFilesButton from '~/nj/components/Agents/AddFilesButton';
@@ -76,6 +77,7 @@ export default function FileSearch({
           Upload any documents you want the agent to search through — like policy documents,
           research papers, and other work files.
         </p>
+        <FileSearchCheckbox />
       </div>
 
       {fileSearchChecked && (
