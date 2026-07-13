@@ -2030,5 +2030,22 @@
   "com_farmer_validation_non_negative": "ऋणात्मकं न भवितुम् अर्हति",
   "com_farmer_validation_fix_errors": "कृपया प्रस्तोतुं पूर्वं त्रुटीः निवारयन्तु।",
   "com_user_message": "भवान्",
-  "com_ui_feedback_what_worked_what_not": "किं सम्यक् कार्यम् अकरोत्, किं च न अकरोत् इति अस्मभ्यं कथयत।"
+  "com_ui_feedback_what_worked_what_not": "किं सम्यक् कार्यम् अकरोत्, किं च न अकरोत् इति अस्मभ्यं कथयत।",
+  "com_ui_feedback_tag_useful_crop_recommendations": "उपयोगिन्यः सस्य-अनुशंसाः",
+  "com_ui_feedback_tag_helpful_information": "सहायक-सूचना",
+  "com_ui_feedback_tag_trust_advice": "अहं परामर्शे विश्वसिमि",
+  "com_ui_feedback_tag_matches_area": "परामर्शः मम क्षेत्रानुकूलः अस्ति",
+  "com_ui_feedback_tag_matches_current_season": "परामर्शः वर्तमान-ऋतुनुकूलः अस्ति",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "सस्यस्य/समस्यायाः सम्यक् अभिज्ञानं कृतम्",
+  "com_ui_feedback_tag_very_satisfied": "अतीव सन्तुष्टः",
+  "com_ui_feedback_tag_recommend_to_others": "अन्येभ्यः अपि अनुशंसां करिष्यामि",
+  "com_ui_feedback_tag_user_friendly_language": "उपयोक्तृ-अनुकूल-भाषा",
+  "com_ui_feedback_tag_slow_response": "मन्दः प्रतिसादः",
+  "com_ui_feedback_tag_missing_outdated_information": "अनुपलब्धा अथवा पुरातनी सूचना",
+  "com_ui_feedback_tag_dont_trust_advice": "अहं परामर्शे न विश्वसिमि",
+  "com_ui_feedback_tag_not_suitable_for_region": "परामर्शः मम क्षेत्राय उपयुक्तः नास्ति",
+  "com_ui_feedback_tag_doesnt_match_season": "परामर्शः ऋतुना सह न मेलति",
+  "com_ui_feedback_tag_not_satisfied": "सन्तुष्टः नास्मि",
+  "com_ui_feedback_tag_will_not_recommend": "अनुशंसां न करिष्यामि",
+  "com_ui_feedback_tag_inappropriate_response": "अनुचितः प्रतिसादः"
 }

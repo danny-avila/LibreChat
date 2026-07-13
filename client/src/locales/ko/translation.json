@@ -1159,5 +1159,22 @@
   "com_farmer_option_under_graduate": "학부 재학",
   "com_farmer_option_graduate": "학사 졸업",
   "com_farmer_option_post_graduate": "대학원 졸업",
-  "com_ui_feedback_what_worked_what_not": "무엇이 잘 작동했고 무엇이 그렇지 않았는지 알려주세요."
+  "com_ui_feedback_what_worked_what_not": "무엇이 잘 작동했고 무엇이 그렇지 않았는지 알려주세요.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "유용한 작물 추천",
+  "com_ui_feedback_tag_helpful_information": "도움이 되는 정보",
+  "com_ui_feedback_tag_trust_advice": "조언을 신뢰합니다",
+  "com_ui_feedback_tag_matches_area": "조언이 제 지역에 적합합니다",
+  "com_ui_feedback_tag_matches_current_season": "조언이 현재 계절에 적합합니다",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "작물/문제를 정확하게 식별했습니다",
+  "com_ui_feedback_tag_very_satisfied": "매우 만족합니다",
+  "com_ui_feedback_tag_recommend_to_others": "다른 사람에게 추천하겠습니다",
+  "com_ui_feedback_tag_user_friendly_language": "사용자 친화적인 언어",
+  "com_ui_feedback_tag_slow_response": "응답이 느립니다",
+  "com_ui_feedback_tag_missing_outdated_information": "정보가 누락되었거나 오래되었습니다",
+  "com_ui_feedback_tag_dont_trust_advice": "조언을 신뢰하지 않습니다",
+  "com_ui_feedback_tag_not_suitable_for_region": "조언이 제 지역에 적합하지 않습니다",
+  "com_ui_feedback_tag_doesnt_match_season": "조언이 계절에 맞지 않습니다",
+  "com_ui_feedback_tag_not_satisfied": "만족하지 않습니다",
+  "com_ui_feedback_tag_will_not_recommend": "추천하지 않겠습니다",
+  "com_ui_feedback_tag_inappropriate_response": "부적절한 응답"
 }

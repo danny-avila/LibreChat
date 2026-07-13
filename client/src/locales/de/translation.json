@@ -1511,5 +1511,22 @@
   "com_farmer_option_under_graduate": "Bachelor-Student",
   "com_farmer_option_graduate": "Absolvent",
   "com_farmer_option_post_graduate": "Postgraduierter",
-  "com_ui_feedback_what_worked_what_not": "Teilen Sie uns mit, was gut funktioniert hat und was nicht."
+  "com_ui_feedback_what_worked_what_not": "Teilen Sie uns mit, was gut funktioniert hat und was nicht.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "Nützliche Pflanzenempfehlungen",
+  "com_ui_feedback_tag_helpful_information": "Hilfreiche Informationen",
+  "com_ui_feedback_tag_trust_advice": "Ich vertraue dem Rat",
+  "com_ui_feedback_tag_matches_area": "Der Rat passt zu meiner Region",
+  "com_ui_feedback_tag_matches_current_season": "Der Rat passt zur aktuellen Saison",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "Pflanze/Problem korrekt erkannt",
+  "com_ui_feedback_tag_very_satisfied": "Sehr zufrieden",
+  "com_ui_feedback_tag_recommend_to_others": "Werde es anderen empfehlen",
+  "com_ui_feedback_tag_user_friendly_language": "Benutzerfreundliche Sprache",
+  "com_ui_feedback_tag_slow_response": "Langsame Antwort",
+  "com_ui_feedback_tag_missing_outdated_information": "Fehlende oder veraltete Informationen",
+  "com_ui_feedback_tag_dont_trust_advice": "Ich vertraue dem Rat nicht",
+  "com_ui_feedback_tag_not_suitable_for_region": "Der Rat ist für meine Region nicht geeignet",
+  "com_ui_feedback_tag_doesnt_match_season": "Der Rat passt nicht zur Saison",
+  "com_ui_feedback_tag_not_satisfied": "Nicht zufrieden",
+  "com_ui_feedback_tag_will_not_recommend": "Werde es nicht weiterempfehlen",
+  "com_ui_feedback_tag_inappropriate_response": "Unangemessene Antwort"
 }

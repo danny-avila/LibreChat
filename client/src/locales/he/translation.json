@@ -1349,5 +1349,22 @@
   "com_farmer_option_under_graduate": "לפני תואר ראשון",
   "com_farmer_option_graduate": "בוגר",
   "com_farmer_option_post_graduate": "בוגר תואר מתקדם",
-  "com_ui_feedback_what_worked_what_not": "ספרו לנו מה עבד היטב ומה לא."
+  "com_ui_feedback_what_worked_what_not": "ספרו לנו מה עבד היטב ומה לא.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "המלצות שימושיות לגידולים",
+  "com_ui_feedback_tag_helpful_information": "מידע מועיל",
+  "com_ui_feedback_tag_trust_advice": "אני סומך על העצה",
+  "com_ui_feedback_tag_matches_area": "העצה מתאימה לאזור שלי",
+  "com_ui_feedback_tag_matches_current_season": "העצה מתאימה לעונה הנוכחית",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "הגידול/הבעיה זוהו נכון",
+  "com_ui_feedback_tag_very_satisfied": "מרוצה מאוד",
+  "com_ui_feedback_tag_recommend_to_others": "אמליץ לאחרים",
+  "com_ui_feedback_tag_user_friendly_language": "שפה ידידותית למשתמש",
+  "com_ui_feedback_tag_slow_response": "תגובה איטית",
+  "com_ui_feedback_tag_missing_outdated_information": "מידע חסר או מיושן",
+  "com_ui_feedback_tag_dont_trust_advice": "אני לא סומך על העצה",
+  "com_ui_feedback_tag_not_suitable_for_region": "העצה אינה מתאימה לאזור שלי",
+  "com_ui_feedback_tag_doesnt_match_season": "העצה אינה מתאימה לעונה",
+  "com_ui_feedback_tag_not_satisfied": "לא מרוצה",
+  "com_ui_feedback_tag_will_not_recommend": "לא אמליץ",
+  "com_ui_feedback_tag_inappropriate_response": "תגובה לא הולמת"
 }

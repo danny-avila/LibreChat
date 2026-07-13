@@ -2030,5 +2030,22 @@
   "com_farmer_validation_smartphones_range": "स्मार्टफोनहरूको सङ्ख्या ० र २० को बीचमा हुनुपर्छ",
   "com_user_message": "तपाईं",
   "com_banner_message": "यो एप्लिकेसन हाल विकासको क्रममा छ र यो परीक्षण र प्रमाणीकरण उद्देश्यका लागि मात्र प्रदान गरिएको छ",
-  "com_ui_feedback_what_worked_what_not": "के राम्रोसँग काम गर्‍यो र के गरेन, हामीलाई बताउनुहोस्।"
+  "com_ui_feedback_what_worked_what_not": "के राम्रोसँग काम गर्‍यो र के गरेन, हामीलाई बताउनुहोस्।",
+  "com_ui_feedback_tag_useful_crop_recommendations": "उपयोगी बाली सिफारिसहरू",
+  "com_ui_feedback_tag_helpful_information": "सहयोगी जानकारी",
+  "com_ui_feedback_tag_trust_advice": "म सल्लाहमा विश्वास गर्छु",
+  "com_ui_feedback_tag_matches_area": "सल्लाह मेरो क्षेत्रअनुसार उपयुक्त छ",
+  "com_ui_feedback_tag_matches_current_season": "सल्लाह हालको मौसमअनुसार उपयुक्त छ",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "बाली/समस्या सही रूपमा पहिचान गरिएको छ",
+  "com_ui_feedback_tag_very_satisfied": "धेरै सन्तुष्ट",
+  "com_ui_feedback_tag_recommend_to_others": "अरूलाई पनि सिफारिस गर्नेछु",
+  "com_ui_feedback_tag_user_friendly_language": "प्रयोगकर्तामैत्री भाषा",
+  "com_ui_feedback_tag_slow_response": "ढिलो प्रतिक्रिया",
+  "com_ui_feedback_tag_missing_outdated_information": "जानकारी छुटेको वा पुरानो छ",
+  "com_ui_feedback_tag_dont_trust_advice": "म सल्लाहमा विश्वास गर्दिनँ",
+  "com_ui_feedback_tag_not_suitable_for_region": "सल्लाह मेरो क्षेत्रका लागि उपयुक्त छैन",
+  "com_ui_feedback_tag_doesnt_match_season": "सल्लाह मौसमअनुसार उपयुक्त छैन",
+  "com_ui_feedback_tag_not_satisfied": "सन्तुष्ट छैन",
+  "com_ui_feedback_tag_will_not_recommend": "सिफारिस गर्नेछैनँ",
+  "com_ui_feedback_tag_inappropriate_response": "अनुपयुक्त प्रतिक्रिया"
 }

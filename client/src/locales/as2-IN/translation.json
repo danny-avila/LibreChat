@@ -2030,5 +2030,22 @@
   "com_farmer_validation_smartphones_range": "स्मार्ट फननि अनजिमाया 0 निफ्राय 20 नि गेजेराव जानांगोन",
   "com_user_message": "नोंथां",
   "com_banner_message": "एप्लिकेसनआ दा दिहुनगासिनो दं आरो बेखौ खालि टेस्ट आरो भ्यालिडेसननि थाखायल' होनाय जादों",
-  "com_ui_feedback_what_worked_what_not": "माब्लाबा मोजां जादोंमोन आरो माब्लाबा मोजां जानायाखै, बेनि फिदबेकखौ हो।"
+  "com_ui_feedback_what_worked_what_not": "माब्लाबा मोजां जादोंमोन आरो माब्लाबा मोजां जानायाखै, बेनि फिदबेकखौ हो।",
+  "com_ui_feedback_tag_useful_crop_recommendations": "आबादनि थाखाय खामानि गोबां सुबुंथि",
+  "com_ui_feedback_tag_helpful_information": "मदद होनाय फोरमायथिहोग्रा",
+  "com_ui_feedback_tag_trust_advice": "आं सुबुंथिखौ फोथायो",
+  "com_ui_feedback_tag_matches_area": "सुबुंथिया आंनि ओनसोलजों गोरोबो",
+  "com_ui_feedback_tag_matches_current_season": "सुबुंथिया दानि बोथोरजों गोरोबो",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "आबाद/जेंनाखौ गेबें महरै सिनायथिबाय",
+  "com_ui_feedback_tag_very_satisfied": "जोबोद सन्तुस्ट",
+  "com_ui_feedback_tag_recommend_to_others": "गुबुननोबो सुबुंथि होगोन",
+  "com_ui_feedback_tag_user_friendly_language": "बाहायग्रा गोरोबनाय राव",
+  "com_ui_feedback_tag_slow_response": "लासै फिन होनाय",
+  "com_ui_feedback_tag_missing_outdated_information": "जेबो जाहोन गैजासे नेवसिबाय",
+  "com_ui_feedback_tag_dont_trust_advice": "आं सुबुंथिखौ फोथाया",
+  "com_ui_feedback_tag_not_suitable_for_region": "सुबुंथिया आंनि ओनसोलनि थाखाय गोरोबा",
+  "com_ui_feedback_tag_doesnt_match_season": "सुबुंथिया बोथोरजों गोरोबा",
+  "com_ui_feedback_tag_not_satisfied": "सन्तुस्ट नङा",
+  "com_ui_feedback_tag_will_not_recommend": "गुबुननो सुबुंथि होनाय नङा",
+  "com_ui_feedback_tag_inappropriate_response": "गोरोबनाय नङै फिन होनाय"
 }

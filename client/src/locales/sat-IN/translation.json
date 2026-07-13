@@ -2030,5 +2030,22 @@
   "com_farmer_validation_smartphones_range": "ᱥᱢᱟᱨᱴᱯᱷᱳᱱ ᱠᱚᱨᱮᱭᱟᱜ ᱮᱞ ᱫᱚ ᱐ ᱟᱨ ᱒᱐ ᱛᱟᱞᱟ ᱨᱮ ᱦᱩᱭᱩᱜ ᱞᱟᱹᱠᱛᱤᱭᱟ",
   "com_user_message": "ᱟᱢ",
   "com_banner_message": "ᱱᱚᱣᱟ ᱮᱯᱞᱤᱠᱮᱥᱚᱱ ᱫᱚ ᱱᱤᱛᱚᱜ ᱰᱮᱵᱷᱮᱞᱚᱯᱢᱮᱱᱴ ᱨᱮ ᱢᱮᱱᱟᱜ-ᱟ ᱟᱨ ᱱᱚᱣᱟ ᱫᱚ ᱠᱷᱟᱹᱞᱤ ᱴᱮᱥᱴᱤᱝ ᱟᱨ ᱯᱨᱚᱢᱟᱱ ᱞᱟᱹᱜᱤᱫ ᱮᱢ ᱟᱠᱟᱱᱟ",
-  "com_ui_feedback_what_worked_what_not": "ᱪᱮᱫ ᱵᱷᱟᱞ ᱠᱟᱹᱢᱤ ᱠᱮᱫᱟ ᱟᱨ ᱪᱮᱫ ᱵᱷᱟᱞ ᱠᱟᱹᱢᱤ ᱵᱟᱹᱭ ᱠᱮᱫᱟ, ᱚᱱᱟ ᱟᱢᱟᱜ ᱞᱟᱹᱭ ᱢᱮ."
+  "com_ui_feedback_what_worked_what_not": "ᱪᱮᱫ ᱵᱷᱟᱞ ᱠᱟᱹᱢᱤ ᱠᱮᱫᱟ ᱟᱨ ᱪᱮᱫ ᱵᱷᱟᱞ ᱠᱟᱹᱢᱤ ᱵᱟᱹᱭ ᱠᱮᱫᱟ, ᱚᱱᱟ ᱟᱢᱟᱜ ᱞᱟᱹᱭ ᱢᱮ.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "ᱠᱟᱹᱢᱤᱭᱟᱹ ᱪᱟᱥ ᱯᱟᱹᱛᱭᱟᱹᱣ ᱠᱚ",
+  "com_ui_feedback_tag_helpful_information": "ᱜᱚᱲᱚᱣᱟᱱ ᱵᱟᱰᱟᱭ",
+  "com_ui_feedback_tag_trust_advice": "ᱤᱧ ᱯᱟᱹᱛᱭᱟᱹᱣ ᱨᱮ ᱵᱷᱚᱨᱥᱟ ᱢᱮᱱᱟᱜᱼᱟ",
+  "com_ui_feedback_tag_matches_area": "ᱯᱟᱹᱛᱭᱟᱹᱣ ᱤᱧᱟᱹᱜ ᱴᱚᱴᱷᱟ ᱥᱟᱶ ᱢᱮᱥᱟᱜᱼᱟ",
+  "com_ui_feedback_tag_matches_current_season": "ᱯᱟᱹᱛᱭᱟᱹᱣ ᱱᱤᱛᱚᱜ ᱨᱮᱭᱟᱜ ᱨᱤᱛᱩ ᱥᱟᱶ ᱢᱮᱥᱟᱜᱼᱟ",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "ᱪᱟᱥ/ᱢᱩᱥᱠᱤᱞ ᱴᱷᱤᱠ ᱛᱮ ᱩᱨᱩᱢ ᱟᱠᱟᱱᱟ",
+  "com_ui_feedback_tag_very_satisfied": "ᱟᱹᱰᱤ ᱥᱟᱱᱛᱚᱥ",
+  "com_ui_feedback_tag_recommend_to_others": "ᱮᱴᱟᱜ ᱠᱚᱣᱟᱜ ᱦᱚᱸ ᱯᱟᱹᱛᱭᱟᱹᱣ ᱮᱢᱟᱠᱚᱣᱟᱹᱧ",
+  "com_ui_feedback_tag_user_friendly_language": "ᱵᱮᱵᱷᱟᱨᱤᱡ ᱥᱩᱵᱤᱫᱷᱟᱹ ᱯᱟᱹᱨᱥᱤ",
+  "com_ui_feedback_tag_slow_response": "ᱵᱟᱹᱭ ᱵᱟᱹᱭ ᱛᱮ ᱨᱩᱣᱟᱹᱲ",
+  "com_ui_feedback_tag_missing_outdated_information": "ᱵᱟᱰᱟᱭ ᱵᱟᱹᱱᱩᱜᱼᱟ ᱟᱨ ᱵᱟᱝ ᱢᱟᱨᱮ ᱜᱮᱭᱟ",
+  "com_ui_feedback_tag_dont_trust_advice": "ᱤᱧ ᱯᱟᱹᱛᱭᱟᱹᱣ ᱨᱮ ᱵᱷᱚᱨᱥᱟ ᱵᱟᱹᱱᱩᱜᱼᱟ",
+  "com_ui_feedback_tag_not_suitable_for_region": "ᱯᱟᱹᱛᱭᱟᱹᱣ ᱤᱧᱟᱹᱜ ᱴᱚᱴᱷᱟ ᱞᱟᱹᱜᱤᱫ ᱵᱟᱭ ᱡᱩᱛᱟᱹᱜᱼᱟ",
+  "com_ui_feedback_tag_doesnt_match_season": "ᱯᱟᱹᱛᱭᱟᱹᱣ ᱨᱤᱛᱩ ᱥᱟᱶ ᱵᱟᱭ ᱢᱮᱥᱟᱜᱼᱟ",
+  "com_ui_feedback_tag_not_satisfied": "ᱵᱟᱹᱧ ᱥᱟᱱᱛᱚᱥᱟ",
+  "com_ui_feedback_tag_will_not_recommend": "ᱯᱟᱹᱛᱭᱟᱹᱣ ᱵᱟᱹᱧ ᱮᱢᱟ",
+  "com_ui_feedback_tag_inappropriate_response": "ᱵᱟᱭ ᱡᱩᱛᱟᱹᱜ ᱨᱩᱣᱟᱹᱲ"
 }

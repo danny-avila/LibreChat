@@ -1397,5 +1397,22 @@
   "com_farmer_option_under_graduate": "学部在学中",
   "com_farmer_option_graduate": "学士",
   "com_farmer_option_post_graduate": "大学院修了",
-  "com_ui_feedback_what_worked_what_not": "何がうまくいき、何がうまくいかなかったかを教えてください。"
+  "com_ui_feedback_what_worked_what_not": "何がうまくいき、何がうまくいかなかったかを教えてください。",
+  "com_ui_feedback_tag_useful_crop_recommendations": "役立つ作物の推奨",
+  "com_ui_feedback_tag_helpful_information": "役立つ情報",
+  "com_ui_feedback_tag_trust_advice": "アドバイスを信頼します",
+  "com_ui_feedback_tag_matches_area": "アドバイスが私の地域に適しています",
+  "com_ui_feedback_tag_matches_current_season": "アドバイスが現在の季節に適しています",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "作物／問題を正しく特定しました",
+  "com_ui_feedback_tag_very_satisfied": "非常に満足",
+  "com_ui_feedback_tag_recommend_to_others": "他の人にも勧めます",
+  "com_ui_feedback_tag_user_friendly_language": "ユーザーに分かりやすい言葉",
+  "com_ui_feedback_tag_slow_response": "応答が遅い",
+  "com_ui_feedback_tag_missing_outdated_information": "情報が不足している、または古い",
+  "com_ui_feedback_tag_dont_trust_advice": "アドバイスを信頼できません",
+  "com_ui_feedback_tag_not_suitable_for_region": "アドバイスが私の地域に適していません",
+  "com_ui_feedback_tag_doesnt_match_season": "アドバイスが季節に適していません",
+  "com_ui_feedback_tag_not_satisfied": "満足していません",
+  "com_ui_feedback_tag_will_not_recommend": "他の人には勧めません",
+  "com_ui_feedback_tag_inappropriate_response": "不適切な応答"
 }
