@@ -9,8 +9,8 @@ import {
 } from 'librechat-data-provider';
 import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { requiresEphemeralUserConnection, filterChatSelectableMCPServers } from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
-import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -159,7 +159,9 @@ export async function loadAddedAgent(
     return result as unknown as Agent;
   }
 
-  const mcpServers = new Set<string>(ephemeralAgent?.mcp);
+  const mcpServers = new Set<string>(
+    filterChatSelectableMCPServers(ephemeralAgent?.mcp, appConfig?.mcpConfig),
+  );
   const userId = req.user?.id ?? '';
 
   const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;

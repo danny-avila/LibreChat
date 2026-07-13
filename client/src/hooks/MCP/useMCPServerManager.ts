@@ -97,6 +97,7 @@ export function useMCPServerManager({
     conversationId,
     storageContextKey,
     servers: selectableServers,
+    isServersLoaded: !isLoading && loadedServers != null,
   });
   const mcpValuesRef = useRef(mcpValues);
 

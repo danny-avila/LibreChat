@@ -199,6 +199,25 @@ export function requiresEphemeralUserConnection(config: UserScopedConnectionConf
 }
 
 /**
+ * Strip chat-hidden (`chatMenu: false`) servers from an ephemeral chat selection.
+ * Fails open: names absent from `mcpConfig` are kept, so DB/user-sourced or
+ * request-tier overlay servers are never wrongly dropped. Pass only the chat-picker
+ * selection, not spec-pinned `modelSpec.mcpServers` (intentional even when hidden).
+ */
+export function filterChatSelectableMCPServers(
+  selectedServers?: string[] | null,
+  mcpConfig?: Record<string, Pick<ParsedServerConfig, 'chatMenu'> | undefined> | null,
+): string[] {
+  if (!Array.isArray(selectedServers) || selectedServers.length === 0) {
+    return [];
+  }
+  if (mcpConfig == null) {
+    return [...selectedServers];
+  }
+  return selectedServers.filter((serverName) => mcpConfig[serverName]?.chatMenu !== false);
+}
+
+/**
  * Returns true when a server requires a per-user connection instead of an
  * app-shared connection.
  */
