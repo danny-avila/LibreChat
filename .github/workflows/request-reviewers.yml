@@ -2,7 +2,7 @@ name: Pickaroo Reviewers
 
 on:
   pull_request:
-    types: ["labeled"]
+    types: ['labeled']
 
 jobs:
   pr-review:
@@ -11,9 +11,9 @@ jobs:
     secrets: inherit # required because the underlying workflow accesses org secrets
     permissions: {} # we're not using the default GITHUB_TOKEN
     with:
-      include_users: "dlew AnJuHyppolite casewalker"
+      include_users: 'AnJuHyppolite casewalker'
       number_of_reviewers: 2 # should always pick the other two members of the team
-      channel_id: "C0590CD1EE8" # resx-eng
+      channel_id: 'C0590CD1EE8' # resx-eng
   pr-show:
     if: contains(github.event.pull_request.labels.*.name, 'pr-show')
     uses: newjersey/innovation-shared-actions/.github/workflows/pickaroo.yml@main
@@ -21,4 +21,4 @@ jobs:
     permissions: {}
     with:
       show: true
-      channel_id: "C0590CD1EE8" # resx-eng
+      channel_id: 'C0590CD1EE8' # resx-eng
