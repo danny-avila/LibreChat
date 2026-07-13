@@ -2030,5 +2030,22 @@
   "com_farmer_validation_smartphones_range": "स्मार्ट फोनांची संख्या 0 ते 20 मदीं आसूंक जाय",
   "com_user_message": "तुमी",
   "com_banner_message": "हें ॲप्लिकेशन सद्या तयार जाता आनी तें फकत चाचणी (testing) आनी पडताळणीच्या (validation) उद्देशान दिल्लें आसा",
-  "com_ui_feedback_what_worked_what_not": "कितें बरे जालें आनी कितें बरे जाले ना, तें आमकां सांगात."
+  "com_ui_feedback_what_worked_what_not": "कितें बरे जालें आनी कितें बरे जाले ना, तें आमकां सांगात.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "उपेगी पिकांच्या शिफारशी",
+  "com_ui_feedback_tag_helpful_information": "उपेगी म्हायती",
+  "com_ui_feedback_tag_trust_advice": "हांव सल्ल्याचेर विस्वास दवरतां",
+  "com_ui_feedback_tag_matches_area": "सल्लो म्हज्या वाठाराक जुळटा",
+  "com_ui_feedback_tag_matches_current_season": "सल्लो सद्याच्या मोसामाक जुळटा",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "पीक/समस्या बरोबर वळखली",
+  "com_ui_feedback_tag_very_satisfied": "खूब समाधानी",
+  "com_ui_feedback_tag_recommend_to_others": "हेरांकय शिफारस करतलों",
+  "com_ui_feedback_tag_user_friendly_language": "वापरप्याक सोपी भास",
+  "com_ui_feedback_tag_slow_response": "सावकाश प्रतिसाद",
+  "com_ui_feedback_tag_missing_outdated_information": "म्हायती ना वा पोरणी आसा",
+  "com_ui_feedback_tag_dont_trust_advice": "हांव सल्ल्याचेर विस्वास दवरना",
+  "com_ui_feedback_tag_not_suitable_for_region": "सल्लो म्हज्या वाठाराक योग्य ना",
+  "com_ui_feedback_tag_doesnt_match_season": "सल्लो मोसामाक जुळना",
+  "com_ui_feedback_tag_not_satisfied": "समाधानी ना",
+  "com_ui_feedback_tag_will_not_recommend": "शिफारस करचो ना",
+  "com_ui_feedback_tag_inappropriate_response": "अयोग्य प्रतिसाद"
 }

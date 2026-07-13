@@ -2030,5 +2030,22 @@
   "com_farmer_validation_smartphones_range": "স্মাৰ্টফোনৰ সংখ্যা ০ ৰ পৰা ২০ ৰ ভিতৰত হ’ব লাগিব",
   "com_user_message": "আপুনি",
   "com_banner_message": "এপ্লিকেচনটো বৰ্তমান বিকাশৰ পৰ্যায়ত আছে আৰু কেৱল পৰীক্ষা আৰু নিশ্চিতকৰণৰ বাবেহে আগবঢ়োৱা হৈছে",
-  "com_ui_feedback_what_worked_what_not": "কি ভাল লাগিল, আৰু কি ভাল নালাগিল, আমাক জনাওক।"
+  "com_ui_feedback_what_worked_what_not": "কি ভাল লাগিল, আৰু কি ভাল নালাগিল, আমাক জনাওক।",
+  "com_ui_feedback_tag_useful_crop_recommendations": "উপযোগী শস্যৰ পৰামৰ্শ",
+  "com_ui_feedback_tag_helpful_information": "সহায়ক তথ্য",
+  "com_ui_feedback_tag_trust_advice": "মই পৰামৰ্শটো বিশ্বাস কৰোঁ",
+  "com_ui_feedback_tag_matches_area": "পৰামৰ্শটো মোৰ অঞ্চলৰ সৈতে মিল খায়",
+  "com_ui_feedback_tag_matches_current_season": "পৰামৰ্শটো বৰ্তমান ঋতুৰ সৈতে মিল খায়",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "শস্য/সমস্যা সঠিকভাৱে চিনাক্ত কৰা হৈছে",
+  "com_ui_feedback_tag_very_satisfied": "অতি সন্তুষ্ট",
+  "com_ui_feedback_tag_recommend_to_others": "আনকো পৰামৰ্শ দিম",
+  "com_ui_feedback_tag_user_friendly_language": "ব্যৱহাৰকাৰী-বান্ধৱ ভাষা",
+  "com_ui_feedback_tag_slow_response": "লেহেমীয়া সঁহাৰি",
+  "com_ui_feedback_tag_missing_outdated_information": "তথ্য অনুপস্থিত বা পুৰণি",
+  "com_ui_feedback_tag_dont_trust_advice": "মই পৰামৰ্শটো বিশ্বাস নকৰোঁ",
+  "com_ui_feedback_tag_not_suitable_for_region": "পৰামৰ্শটো মোৰ অঞ্চলৰ বাবে উপযুক্ত নহয়",
+  "com_ui_feedback_tag_doesnt_match_season": "পৰামৰ্শটো ঋতুৰ সৈতে মিল নাখায়",
+  "com_ui_feedback_tag_not_satisfied": "সন্তুষ্ট নহয়",
+  "com_ui_feedback_tag_will_not_recommend": "আনক পৰামৰ্শ নিদিওঁ",
+  "com_ui_feedback_tag_inappropriate_response": "অনুপযুক্ত সঁহাৰি"
 }

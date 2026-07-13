@@ -2030,5 +2030,22 @@
   "com_farmer_validation_smartphones_range": "स्मार्टफोनक संख्या 0 सँ 20 क बीच होबय चाही",
   "com_user_message": "अहाँ",
   "com_banner_message": "एप्लिकेशन एखन विकासक चरण मे अछि आ एकरा केवल परीक्षण आ सत्यापनक उद्देश्य सँ प्रदान कएल गे",
-  "com_ui_feedback_what_worked_what_not": "कृपया हमरा बताउ जे की नीक सँ काज केलक आ की नहि केलक।"
+  "com_ui_feedback_what_worked_what_not": "कृपया हमरा बताउ जे की नीक सँ काज केलक आ की नहि केलक।",
+  "com_ui_feedback_tag_useful_crop_recommendations": "उपयोगी फसल सिफारिश",
+  "com_ui_feedback_tag_helpful_information": "मददगार जानकारी",
+  "com_ui_feedback_tag_trust_advice": "हमरा सलाह पर भरोसा अछि",
+  "com_ui_feedback_tag_matches_area": "सलाह हमर क्षेत्रक अनुसार अछि",
+  "com_ui_feedback_tag_matches_current_season": "सलाह वर्तमान मौसमक अनुसार अछि",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "फसल/समस्याक सही पहचान भेल",
+  "com_ui_feedback_tag_very_satisfied": "बहुत संतुष्ट",
+  "com_ui_feedback_tag_recommend_to_others": "दोसरोक सिफारिश करब",
+  "com_ui_feedback_tag_user_friendly_language": "उपयोगकर्ता-अनुकूल भाषा",
+  "com_ui_feedback_tag_slow_response": "धीमा जवाब",
+  "com_ui_feedback_tag_missing_outdated_information": "जानकारी गायब वा पुरान अछि",
+  "com_ui_feedback_tag_dont_trust_advice": "हमरा सलाह पर भरोसा नहि अछि",
+  "com_ui_feedback_tag_not_suitable_for_region": "सलाह हमर क्षेत्रक लेल उपयुक्त नहि अछि",
+  "com_ui_feedback_tag_doesnt_match_season": "सलाह मौसमक अनुसार नहि अछि",
+  "com_ui_feedback_tag_not_satisfied": "संतुष्ट नहि",
+  "com_ui_feedback_tag_will_not_recommend": "सिफारिश नहि करब",
+  "com_ui_feedback_tag_inappropriate_response": "अनुचित जवाब"
 }

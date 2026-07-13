@@ -2030,5 +2030,22 @@
   "com_farmer_validation_smartphones_range": "اسمارٽ فونز جو تعداد 0 کان 20 جي وچ ۾ هجڻ گهرجي",
   "com_user_message": "توهان",
   "com_banner_message": "هي ايپليڪيشن اڃا تياري جي مرحلي ۾ آهي ۽ فقط ٽيسٽنگ لاءِ آهي",
-  "com_ui_feedback_what_worked_what_not": "اسان کي ٻڌايو ته ڇا سٺو ڪم ڪيو ۽ ڇا نه ڪيو."
+  "com_ui_feedback_what_worked_what_not": "اسان کي ٻڌايو ته ڇا سٺو ڪم ڪيو ۽ ڇا نه ڪيو.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "فصلن لاءِ فائديمند سفارشون",
+  "com_ui_feedback_tag_helpful_information": "مددگار معلومات",
+  "com_ui_feedback_tag_trust_advice": "مون کي صلاح تي ڀروسو آهي",
+  "com_ui_feedback_tag_matches_area": "صلاح منهنجي علائقي سان مطابقت رکي ٿي",
+  "com_ui_feedback_tag_matches_current_season": "صلاح موجوده موسم سان مطابقت رکي ٿي",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "فصل/مسئلي جي صحيح سڃاڻپ ڪئي وئي",
+  "com_ui_feedback_tag_very_satisfied": "تمام گهڻو مطمئن",
+  "com_ui_feedback_tag_recommend_to_others": "ٻين کي به سفارش ڪندس",
+  "com_ui_feedback_tag_user_friendly_language": "استعمال ڪندڙ لاءِ آسان ٻولي",
+  "com_ui_feedback_tag_slow_response": "سست جواب",
+  "com_ui_feedback_tag_missing_outdated_information": "معلومات غائب يا پراڻي آهي",
+  "com_ui_feedback_tag_dont_trust_advice": "مون کي صلاح تي ڀروسو ناهي",
+  "com_ui_feedback_tag_not_suitable_for_region": "صلاح منهنجي علائقي لاءِ مناسب ناهي",
+  "com_ui_feedback_tag_doesnt_match_season": "صلاح موسم سان مطابقت نٿي رکي",
+  "com_ui_feedback_tag_not_satisfied": "مطمئن ناهيان",
+  "com_ui_feedback_tag_will_not_recommend": "سفارش نه ڪندس",
+  "com_ui_feedback_tag_inappropriate_response": "نامناسب جواب"
 }

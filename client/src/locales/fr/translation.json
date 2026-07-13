@@ -1358,5 +1358,22 @@
   "com_farmer_option_under_graduate": "Licence",
   "com_farmer_option_graduate": "Diplômé",
   "com_farmer_option_post_graduate": "Post-diplômé",
-  "com_ui_feedback_what_worked_what_not": "Dites-nous ce qui a bien fonctionné ou ce qui n'a pas fonctionné."
+  "com_ui_feedback_what_worked_what_not": "Dites-nous ce qui a bien fonctionné ou ce qui n'a pas fonctionné.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "Recommandations de cultures utiles",
+  "com_ui_feedback_tag_helpful_information": "Informations utiles",
+  "com_ui_feedback_tag_trust_advice": "Je fais confiance aux conseils",
+  "com_ui_feedback_tag_matches_area": "Les conseils correspondent à ma région",
+  "com_ui_feedback_tag_matches_current_season": "Les conseils correspondent à la saison actuelle",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "Culture/problème correctement identifié",
+  "com_ui_feedback_tag_very_satisfied": "Très satisfait",
+  "com_ui_feedback_tag_recommend_to_others": "Je recommanderai à d'autres",
+  "com_ui_feedback_tag_user_friendly_language": "Langage convivial",
+  "com_ui_feedback_tag_slow_response": "Réponse lente",
+  "com_ui_feedback_tag_missing_outdated_information": "Informations manquantes ou obsolètes",
+  "com_ui_feedback_tag_dont_trust_advice": "Je ne fais pas confiance aux conseils",
+  "com_ui_feedback_tag_not_suitable_for_region": "Les conseils ne conviennent pas à ma région",
+  "com_ui_feedback_tag_doesnt_match_season": "Les conseils ne correspondent pas à la saison",
+  "com_ui_feedback_tag_not_satisfied": "Pas satisfait",
+  "com_ui_feedback_tag_will_not_recommend": "Je ne recommanderai pas",
+  "com_ui_feedback_tag_inappropriate_response": "Réponse inappropriée"
 }

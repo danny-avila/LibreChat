@@ -1332,5 +1332,22 @@
   "com_farmer_option_under_graduate": "Неповна вища освіта",
   "com_farmer_option_graduate": "Вища освіта",
   "com_farmer_option_post_graduate": "Післядипломна освіта",
-  "com_ui_feedback_what_worked_what_not": "Розкажіть нам, що спрацювало добре, а що ні."
+  "com_ui_feedback_what_worked_what_not": "Розкажіть нам, що спрацювало добре, а що ні.",
+  "com_ui_feedback_tag_useful_crop_recommendations": "Корисні рекомендації щодо сільськогосподарських культур",
+  "com_ui_feedback_tag_helpful_information": "Корисна інформація",
+  "com_ui_feedback_tag_trust_advice": "Я довіряю пораді",
+  "com_ui_feedback_tag_matches_area": "Порада відповідає моєму регіону",
+  "com_ui_feedback_tag_matches_current_season": "Порада відповідає поточному сезону",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "Культуру/проблему правильно визначено",
+  "com_ui_feedback_tag_very_satisfied": "Дуже задоволений",
+  "com_ui_feedback_tag_recommend_to_others": "Рекомендуватиму іншим",
+  "com_ui_feedback_tag_user_friendly_language": "Зрозуміла для користувача мова",
+  "com_ui_feedback_tag_slow_response": "Повільна відповідь",
+  "com_ui_feedback_tag_missing_outdated_information": "Відсутня або застаріла інформація",
+  "com_ui_feedback_tag_dont_trust_advice": "Я не довіряю пораді",
+  "com_ui_feedback_tag_not_suitable_for_region": "Порада не підходить для мого регіону",
+  "com_ui_feedback_tag_doesnt_match_season": "Порада не відповідає сезону",
+  "com_ui_feedback_tag_not_satisfied": "Не задоволений",
+  "com_ui_feedback_tag_will_not_recommend": "Не рекомендуватиму",
+  "com_ui_feedback_tag_inappropriate_response": "Недоречна відповідь"
 }

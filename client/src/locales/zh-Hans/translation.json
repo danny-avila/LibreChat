@@ -1392,5 +1392,22 @@
   "com_farmer_option_under_graduate": "本科以下",
   "com_farmer_option_graduate": "本科",
   "com_farmer_option_post_graduate": "研究生",
-  "com_ui_feedback_what_worked_what_not": "请告诉我们哪些地方做得好，哪些地方做得不好。"
+  "com_ui_feedback_what_worked_what_not": "请告诉我们哪些地方做得好，哪些地方做得不好。",
+  "com_ui_feedback_tag_useful_crop_recommendations": "有用的作物推荐",
+  "com_ui_feedback_tag_helpful_information": "有帮助的信息",
+  "com_ui_feedback_tag_trust_advice": "我信任这些建议",
+  "com_ui_feedback_tag_matches_area": "建议适合我的地区",
+  "com_ui_feedback_tag_matches_current_season": "建议符合当前季节",
+  "com_ui_feedback_tag_correctly_identified_crop_problem": "正确识别了作物/问题",
+  "com_ui_feedback_tag_very_satisfied": "非常满意",
+  "com_ui_feedback_tag_recommend_to_others": "会推荐给其他人",
+  "com_ui_feedback_tag_user_friendly_language": "用户友好的语言",
+  "com_ui_feedback_tag_slow_response": "响应缓慢",
+  "com_ui_feedback_tag_missing_outdated_information": "信息缺失或已过时",
+  "com_ui_feedback_tag_dont_trust_advice": "我不信任这些建议",
+  "com_ui_feedback_tag_not_suitable_for_region": "建议不适合我的地区",
+  "com_ui_feedback_tag_doesnt_match_season": "建议不符合当前季节",
+  "com_ui_feedback_tag_not_satisfied": "不满意",
+  "com_ui_feedback_tag_will_not_recommend": "不会推荐",
+  "com_ui_feedback_tag_inappropriate_response": "不恰当的回复"
 }
