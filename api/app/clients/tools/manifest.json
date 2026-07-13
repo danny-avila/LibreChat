@@ -45,6 +45,20 @@
     ]
   },
   {
+    "name": "Azure OpenAI Sora",
+    "pluginKey": "video_gen_oai",
+    "description": "Generate videos using a Sora deployment on Azure OpenAI",
+    "icon": "assets/openai.svg",
+    "agentsOnly": true,
+    "authConfig": [
+      {
+        "authField": "VIDEO_GEN_OAI_API_KEY",
+        "label": "Azure OpenAI API Key",
+        "description": "Your Azure OpenAI API key for Sora video generation"
+      }
+    ]
+  },
+  {
     "name": "Wolfram",
     "pluginKey": "wolfram",
     "description": "Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.",

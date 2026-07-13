@@ -1,5 +1,6 @@
 export * from './Attachment';
 export * from './OpenAIImageGen';
+export * from './OpenAIVideoGen';
 
 export { default as Text } from './Text';
 export { default as Reasoning } from './Reasoning';

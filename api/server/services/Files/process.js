@@ -1182,10 +1182,10 @@ async function retrieveAndProcessFile({
  */
 function base64ToBuffer(base64String) {
   try {
-    const typeMatch = base64String.match(/^data:([A-Za-z-+/]+);base64,/);
+    const typeMatch = base64String.match(/^data:([\w.+-]+\/[\w.+-]+);base64,/);
     const type = typeMatch ? typeMatch[1] : '';
 
-    const base64Data = base64String.replace(/^data:([A-Za-z-+/]+);base64,/, '');
+    const base64Data = base64String.replace(/^data:([\w.+-]+\/[\w.+-]+);base64,/, '');
 
     if (!base64Data) {
       throw new Error('Invalid base64 string');
@@ -1242,6 +1242,68 @@ async function saveBase64Image(
       width: image.width,
       ...(await getRetentionExpiry(req)),
       height: image.height,
+      tenantId: req.user.tenantId,
+    },
+    true,
+  );
+}
+
+async function saveBase64File(url, { req, file_id: _file_id, filename: _filename, context }) {
+  const appConfig = req.config;
+  const file_id = _file_id ?? v4();
+  const configuredMaxBytes = Number.parseInt(process.env.VIDEO_GEN_OAI_MAX_SIZE_BYTES, 10);
+  const maxBytes =
+    Number.isSafeInteger(configuredMaxBytes) && configuredMaxBytes > 0
+      ? configuredMaxBytes
+      : 25 * megabyte;
+  const prefix = 'data:video/mp4;base64,';
+  const encodedLength = typeof url === 'string' ? url.length - prefix.length : -1;
+  const maxEncodedLength = Math.ceil(maxBytes / 3) * 4;
+  if (!url?.startsWith(prefix) || encodedLength < 1) {
+    throw new Error('Generated video must use a video/mp4 data URL');
+  }
+  if (encodedLength > maxEncodedLength) {
+    throw new Error(`Generated video exceeds the ${maxBytes}-byte size limit`);
+  }
+  const encodedVideo = url.slice(prefix.length);
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encodedVideo)) {
+    throw new Error('Generated video contains invalid base64 data');
+  }
+  const { buffer, type: declaredType } = base64ToBuffer(url);
+  if (buffer.length > maxBytes) {
+    throw new Error(`Generated video exceeds the ${maxBytes}-byte size limit`);
+  }
+  const detectedType = await determineFileType(buffer, true);
+  if (declaredType !== 'video/mp4' || detectedType?.mime !== 'video/mp4') {
+    throw new Error('Generated video must be a valid MP4 file');
+  }
+  const type = 'video/mp4';
+  const extension = 'mp4';
+  const filename = `${file_id}-${_filename}.${extension}`;
+  const source = getFileStrategy(appConfig, { context });
+  const { saveBuffer } = getStrategyFunctions(source);
+  if (!saveBuffer) {
+    throw new Error(`File strategy "${source}" does not support generated video storage`);
+  }
+  const filepath = await saveBuffer({
+    userId: req.user.id,
+    fileName: filename,
+    buffer,
+    tenantId: req.user.tenantId,
+  });
+  const storageMetadata = getStorageMetadata({ filepath, source });
+  return await db.createFile(
+    {
+      type,
+      source,
+      context,
+      file_id,
+      filepath,
+      ...storageMetadata,
+      filename,
+      user: req.user.id,
+      bytes: buffer.length,
+      ...(await getRetentionExpiry(req)),
       tenantId: req.user.tenantId,
     },
     true,
@@ -1330,6 +1392,7 @@ module.exports = {
   filterFile,
   processFileURL,
   saveBase64Image,
+  saveBase64File,
   processImageFile,
   uploadImageBuffer,
   sweepExpiredFiles,

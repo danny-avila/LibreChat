@@ -33,6 +33,7 @@ describe('getToolIconType - ACTN-01: Action delimiter detection', () => {
     expect(getToolIconType('image_gen_oai')).toBe('image_gen');
     expect(getToolIconType('image_edit_oai')).toBe('image_gen');
     expect(getToolIconType('gemini_image_gen')).toBe('image_gen');
+    expect(getToolIconType('video_gen_oai')).toBe('video_gen');
     expect(getToolIconType(`${Constants.LC_TRANSFER_TO_}agent1`)).toBe('agent_handoff');
   });
 });

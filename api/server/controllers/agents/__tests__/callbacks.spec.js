@@ -61,11 +61,12 @@ jest.mock('~/server/services/Tools/credentials', () => ({
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
+  saveBase64File: jest.fn(),
   saveBase64Image: jest.fn(),
 }));
 
 describe('createToolEndCallback', () => {
-  let req, res, artifactPromises, createToolEndCallback;
+  let req, res, artifactPromises, createToolEndCallback, createResponsesToolEndCallback;
   let logger;
 
   beforeEach(() => {
@@ -77,6 +78,7 @@ describe('createToolEndCallback', () => {
     // Now require the module after all mocks are set up
     const callbacks = require('../callbacks');
     createToolEndCallback = callbacks.createToolEndCallback;
+    createResponsesToolEndCallback = callbacks.createResponsesToolEndCallback;
 
     req = {
       user: { id: 'user123' },
@@ -252,6 +254,110 @@ describe('createToolEndCallback', () => {
 
       expect(artifactPromises).toHaveLength(0);
       expect(res.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('video artifacts', () => {
+    it('persists a video_url artifact with the video generation context', async () => {
+      const { saveBase64File } = require('~/server/services/Files/process');
+      saveBase64File.mockResolvedValue({
+        file_id: 'video-id',
+        filename: 'video_gen_oai_video_mock-id.mp4',
+        filepath: '/uploads/video-id.mp4',
+        type: 'video/mp4',
+      });
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const output = {
+        name: 'video_gen_oai',
+        tool_call_id: 'tool-video',
+        artifact: {
+          content: [
+            {
+              type: 'video_url',
+              video_url: { url: 'data:video/mp4;base64,AQID' },
+            },
+          ],
+          file_ids: ['video-id'],
+        },
+      };
+      const metadata = {
+        run_id: 'run-video',
+        thread_id: 'thread-video',
+        provider: 'azureOpenAI',
+      };
+
+      await toolEndCallback({ output }, metadata);
+      const [attachment] = await Promise.all(artifactPromises);
+
+      expect(saveBase64File).toHaveBeenCalledWith(
+        'data:video/mp4;base64,AQID',
+        expect.objectContaining({
+          req,
+          file_id: 'video-id',
+          filename: 'video_gen_oai_video_mock-id',
+          context: 'video_generation',
+        }),
+      );
+      expect(attachment).toEqual(
+        expect.objectContaining({
+          file_id: 'video-id',
+          messageId: 'run-video',
+          toolCallId: 'tool-video',
+          conversationId: 'thread-video',
+        }),
+      );
+    });
+
+    it('persists video_url artifacts in the Responses API callback', async () => {
+      const { saveBase64File } = require('~/server/services/Files/process');
+      saveBase64File.mockResolvedValue({
+        file_id: 'responses-video-id',
+        filename: 'video_gen_oai_video_mock-id.mp4',
+        filepath: '/uploads/responses-video-id.mp4',
+        type: 'video/mp4',
+      });
+      const tracker = { nextSequence: jest.fn(() => 1) };
+      const toolEndCallback = createResponsesToolEndCallback({
+        req,
+        res,
+        tracker,
+        artifactPromises,
+      });
+
+      await toolEndCallback(
+        {
+          output: {
+            name: 'video_gen_oai',
+            tool_call_id: 'responses-tool-video',
+            artifact: {
+              content: [
+                {
+                  type: 'video_url',
+                  video_url: { url: 'data:video/mp4;base64,AQID' },
+                },
+              ],
+              file_ids: ['responses-video-id'],
+            },
+          },
+        },
+        { run_id: 'run-video', thread_id: 'thread-video', provider: 'azureOpenAI' },
+      );
+      const [attachment] = await Promise.all(artifactPromises);
+
+      expect(saveBase64File).toHaveBeenCalledWith(
+        'data:video/mp4;base64,AQID',
+        expect.objectContaining({
+          req,
+          file_id: 'responses-video-id',
+          context: 'video_generation',
+        }),
+      );
+      expect(attachment).toEqual(
+        expect.objectContaining({
+          file_id: 'responses-video-id',
+          toolCallId: 'responses-tool-video',
+        }),
+      );
     });
   });
 
