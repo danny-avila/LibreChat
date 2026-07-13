@@ -544,6 +544,16 @@ export class InMemoryJobStore implements IJobStore {
     this.steerQueues.delete(streamId);
   }
 
+  async removeSteer(streamId: string, steerId: string): Promise<boolean> {
+    const queue = this.steerQueues.get(streamId);
+    const index = queue?.findIndex((item) => item.steerId === steerId) ?? -1;
+    if (queue == null || index < 0) {
+      return false;
+    }
+    queue.splice(index, 1);
+    return true;
+  }
+
   async parkSteers(streamId: string, payload: string): Promise<void> {
     this.parkedSteers.set(streamId, {
       payload,

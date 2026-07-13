@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { X } from 'lucide-react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
@@ -31,6 +32,7 @@ const SteerPart = memo(function SteerPart({
   steerId,
   createdAt,
   pending = false,
+  onCancel,
 }: {
   steer: string;
   files?: TMessage['files'];
@@ -38,6 +40,8 @@ const SteerPart = memo(function SteerPart({
   steerId?: string;
   createdAt?: number;
   pending?: boolean;
+  /** Cancels a steer still waiting on its injection boundary (pending only). */
+  onCancel?: () => void;
 }) {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -71,7 +75,12 @@ const SteerPart = memo(function SteerPart({
   return (
     <div
       id={steerId ? `steer-${steerId}` : undefined}
-      className={cn('steer-render group relative my-4 flex w-full gap-3', pending && 'opacity-80')}
+      className={cn(
+        /* Outdented past the response's icon column so the steer sits flush
+         * with top-level message rows — it reads as a regular user message. */
+        'steer-render group relative my-4 -ml-9 flex w-[calc(100%+2.25rem)] gap-3',
+        pending && 'opacity-80',
+      )}
       data-testid="steer-part"
       data-steer-pending={pending || undefined}
     >
@@ -84,6 +93,17 @@ const SteerPart = memo(function SteerPart({
         <h2 className={cn('select-none font-semibold', fontSize)}>
           {label}
           <MessageTimestamp value={timestamp} />
+          {onCancel != null && (
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label={localize('com_ui_steer_cancel')}
+              data-testid="steer-cancel"
+              className="ml-2 rounded-full p-0.5 align-middle text-text-secondary opacity-0 transition-opacity duration-200 hover:bg-surface-tertiary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy group-hover:opacity-100"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
         </h2>
         <div className="flex flex-col items-start gap-2">
           {(imageFiles.length > 0 || otherFiles.length > 0) && (

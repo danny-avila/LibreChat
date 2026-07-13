@@ -127,6 +127,16 @@ export class SteeringLifecycle {
     return this.store.peekSteers(streamId);
   }
 
+  /**
+   * User-cancelled before injection. Races with a drain settle inside the
+   * store's atomic removal — `false` means the steer already injected (the
+   * inline part is authoritative) or the run ended (the terminal paths own
+   * delivery), and the cancel is simply too late.
+   */
+  cancel(streamId: string, steerId: string): Promise<boolean> {
+    return this.store.removeSteer(streamId, steerId);
+  }
+
   /** Drop any queued steers (terminal cleanup backstop). */
   clear(streamId: string): Promise<void> {
     return this.store.clearSteers(streamId);

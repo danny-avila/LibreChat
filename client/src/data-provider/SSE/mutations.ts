@@ -178,3 +178,32 @@ export function useSteerMessageMutation() {
     mutationFn: steerMessage,
   });
 }
+
+export interface CancelSteerParams {
+  conversationId: string;
+  steerId: string;
+}
+
+export interface CancelSteerResponse {
+  removed?: boolean;
+}
+
+/**
+ * Cancels a still-queued steer before injection. `removed: false` means the
+ * cancel lost its race (already injected, or the run ended) — not an error;
+ * the client defers to the events it will receive.
+ */
+export const cancelSteerMessage = async (
+  params: CancelSteerParams,
+): Promise<CancelSteerResponse> => {
+  return request.post(
+    `${apiBaseUrl()}/api/agents/chat/steer/cancel`,
+    params,
+  ) as Promise<CancelSteerResponse>;
+};
+
+export function useCancelSteerMutation() {
+  return useMutation({
+    mutationFn: cancelSteerMessage,
+  });
+}

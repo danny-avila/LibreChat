@@ -1,5 +1,7 @@
-import { memo } from 'react';
-import { useRecoilValue } from 'recoil';
+import { memo, useCallback } from 'react';
+import { useRecoilValue, useRecoilCallback } from 'recoil';
+import type { PendingSteer } from '~/store/families';
+import { useCancelSteerMutation } from '~/data-provider';
 import { SteerPart } from './Parts';
 import store from '~/store';
 
@@ -17,7 +19,47 @@ const PendingSteers = memo(function PendingSteers({
 }: {
   conversationId?: string | null;
 }) {
-  const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId ?? ''));
+  const convoKey = conversationId ?? '';
+  const steers = useRecoilValue(store.pendingSteersByConvoId(convoKey));
+  const cancelMutation = useCancelSteerMutation();
+
+  const removeEntry = useRecoilCallback(
+    ({ set }) =>
+      (steerId: string) => {
+        set(store.pendingSteersByConvoId(convoKey), (prev) =>
+          prev.filter((item) => item.steerId !== steerId),
+        );
+      },
+    [convoKey],
+  );
+  const restoreEntry = useRecoilCallback(
+    ({ set }) =>
+      (entry: PendingSteer) => {
+        set(store.pendingSteersByConvoId(convoKey), (prev) =>
+          prev.some((item) => item.steerId === entry.steerId) ? prev : [...prev, entry],
+        );
+      },
+    [convoKey],
+  );
+
+  /** Optimistic: the entry leaves the thread immediately; `removed: false`
+   *  needs no handling (the steer already injected or the run ended — the
+   *  events own the outcome). Only a failed POST restores the entry, since
+   *  the server would still inject the supposedly-cancelled words. */
+  const cancelSteer = useCallback(
+    (entry: PendingSteer) => {
+      if (!conversationId) {
+        return;
+      }
+      removeEntry(entry.steerId);
+      cancelMutation.mutate(
+        { conversationId, steerId: entry.steerId },
+        { onError: () => restoreEntry(entry) },
+      );
+    },
+    [conversationId, removeEntry, restoreEntry, cancelMutation],
+  );
+
   if (steers.length === 0) {
     return null;
   }
@@ -32,6 +74,7 @@ const PendingSteers = memo(function PendingSteers({
             steerId={steer.steerId}
             createdAt={steer.createdAt}
             pending
+            onCancel={steer.status === 'pending' ? () => cancelSteer(steer) : undefined}
           />
         ),
       )}

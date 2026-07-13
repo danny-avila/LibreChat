@@ -27,6 +27,11 @@ export interface SteerRequestBody {
   files?: unknown;
 }
 
+export interface SteerCancelBody {
+  conversationId?: unknown;
+  steerId?: unknown;
+}
+
 /** HTTP-shaped outcome the thin route wrapper serializes verbatim. */
 export interface SteerRequestResult {
   status: number;
@@ -145,4 +150,40 @@ export async function handleSteerRequest(
     status: 202,
     body: { status: 'queued', steerId: item.steerId, position: depth, conversationId },
   };
+}
+
+/**
+ * Cancel a queued steer before injection. `removed: false` is advisory, not
+ * an error (200): the cancel lost its race — the steer already injected (the
+ * inline part is authoritative) or the run reached a terminal path that owns
+ * delivery — and the client should defer to the events it will receive. A
+ * missing job reads the same way: nothing is left to cancel from.
+ */
+export async function handleSteerCancel(
+  user: SteerRequestUser,
+  body: SteerCancelBody,
+): Promise<SteerRequestResult> {
+  const conversationId = body.conversationId;
+  if (typeof conversationId !== 'string' || !conversationId || conversationId === 'new') {
+    return { status: 400, body: { code: 'INVALID_CONVERSATION' } };
+  }
+  if (typeof body.steerId !== 'string' || body.steerId.length === 0) {
+    return { status: 400, body: { code: 'INVALID_STEER_ID' } };
+  }
+
+  const streamId = conversationId;
+  const job = await GenerationJobManager.getJob(streamId);
+  if (!job) {
+    return { status: 200, body: { removed: false } };
+  }
+  if (job.metadata?.userId && job.metadata.userId !== user.id) {
+    logger.warn(`[handleSteerCancel] Unauthorized cancel attempt for ${streamId} by ${user.id}`);
+    return { status: 403, body: { code: 'UNAUTHORIZED' } };
+  }
+  if (hasTenantMismatch(job.metadata, user)) {
+    return { status: 403, body: { code: 'UNAUTHORIZED' } };
+  }
+
+  const removed = await GenerationJobManager.steering.cancel(streamId, body.steerId);
+  return { status: 200, body: { removed } };
 }

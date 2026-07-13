@@ -3,8 +3,8 @@ import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/poli
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { STEER_QUEUE_MAX_DEPTH } from '~/stream/interfaces/IJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import { handleSteerRequest, handleSteerCancel } from '../request';
 import { isSteeringSupported } from '../runtime';
-import { handleSteerRequest } from '../request';
 
 jest.mock('../runtime', () => ({
   ...jest.requireActual('../runtime'),
@@ -190,5 +190,62 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
         bytes: 999,
       },
     ]);
+  });
+});
+
+describe('handleSteerCancel (real in-memory job manager)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsSupported.mockReturnValue(true);
+    GenerationJobManager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  async function queueSteer(streamId: string): Promise<string> {
+    await GenerationJobManager.createJob(streamId, 'user-1');
+    const result = await handleSteerRequest(user, { conversationId: streamId, text: 'cancel me' });
+    expect(result.status).toBe(202);
+    return result.body.steerId as string;
+  }
+
+  it('400s on invalid input', async () => {
+    expect((await handleSteerCancel(user, { steerId: 's1' })).status).toBe(400);
+    const badId = await handleSteerCancel(user, { conversationId: 'c1', steerId: '' });
+    expect(badId.status).toBe(400);
+    expect(badId.body.code).toBe('INVALID_STEER_ID');
+  });
+
+  it('removes a queued steer and reports a lost race as removed:false', async () => {
+    const steerId = await queueSteer('cancel-ok');
+    const cancelled = await handleSteerCancel(user, { conversationId: 'cancel-ok', steerId });
+    expect(cancelled).toEqual({ status: 200, body: { removed: true } });
+    expect(await GenerationJobManager.steering.peek('cancel-ok')).toEqual([]);
+
+    const again = await handleSteerCancel(user, { conversationId: 'cancel-ok', steerId });
+    expect(again).toEqual({ status: 200, body: { removed: false } });
+  });
+
+  it('treats a missing job as a lost race, not an error', async () => {
+    const result = await handleSteerCancel(user, { conversationId: 'gone', steerId: 's1' });
+    expect(result).toEqual({ status: 200, body: { removed: false } });
+  });
+
+  it('403s another user and leaves the steer queued', async () => {
+    const steerId = await queueSteer('cancel-foreign');
+    const result = await handleSteerCancel(
+      { id: 'intruder' },
+      { conversationId: 'cancel-foreign', steerId },
+    );
+    expect(result.status).toBe(403);
+    expect((await GenerationJobManager.steering.peek('cancel-foreign')).length).toBe(1);
   });
 });

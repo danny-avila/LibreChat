@@ -1,7 +1,17 @@
 export { createSteerDrainHook, isSteeringSupported } from './runtime';
 export type { SteerDrainHookOptions, SteerMediaResult } from './runtime';
-export { handleSteerRequest, getSteerMaxLength, STEER_MAX_FILES } from './request';
-export type { SteerRequestUser, SteerRequestBody, SteerRequestResult } from './request';
+export {
+  handleSteerRequest,
+  handleSteerCancel,
+  getSteerMaxLength,
+  STEER_MAX_FILES,
+} from './request';
+export type {
+  SteerRequestUser,
+  SteerRequestBody,
+  SteerCancelBody,
+  SteerRequestResult,
+} from './request';
 export { buildSteerMedia, stampSteerPartMedia } from './media';
 export type { SteerMediaClient, SteerFileFetcher, StampedSteerMedia } from './media';
 export { createSteerIndexOffsetHandlers } from './offset';

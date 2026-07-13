@@ -538,6 +538,10 @@ export interface IJobStore {
   /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
   peekSteers(streamId: string): Promise<SteerQueueItem[]>;
 
+  /** Remove ONE queued steer by id (user-cancelled before injection).
+   *  False when it was no longer queued — already drained or run ended. */
+  removeSteer(streamId: string, steerId: string): Promise<boolean>;
+
   /**
    * Persist terminally-drained steers under their OWN bounded-TTL key so a
    * client with no live subscriber can recover them via the status route.

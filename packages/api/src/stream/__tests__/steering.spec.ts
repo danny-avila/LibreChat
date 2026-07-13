@@ -137,6 +137,31 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
   });
 
+  describe('cancel', () => {
+    test('removes exactly the cancelled steer and preserves queue order', async () => {
+      const streamId = 'steer-cancel';
+      await manager.createJob(streamId, 'user-1');
+      const first = buildSteer('first');
+      const second = buildSteer('second');
+      await manager.steering.enqueue(streamId, first);
+      await manager.steering.enqueue(streamId, second);
+
+      expect(await manager.steering.cancel(streamId, first.steerId)).toBe(true);
+      expect((await manager.steering.peek(streamId)).map((s) => s.text)).toEqual(['second']);
+    });
+
+    test('returns false when the steer already left the queue', async () => {
+      const streamId = 'steer-cancel-late';
+      await manager.createJob(streamId, 'user-1');
+      const steer = buildSteer('drained before cancel');
+      await manager.steering.enqueue(streamId, steer);
+      await manager.steering.drain(streamId);
+
+      expect(await manager.steering.cancel(streamId, steer.steerId)).toBe(false);
+      expect(await manager.steering.cancel('nonexistent', steer.steerId)).toBe(false);
+    });
+  });
+
   describe('closeAndDrain', () => {
     test('takes all items and rejects later enqueues until the stream id is reused', async () => {
       const streamId = 'steer-close';

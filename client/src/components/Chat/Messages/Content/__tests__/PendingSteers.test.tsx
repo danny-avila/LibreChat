@@ -1,12 +1,18 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { PendingSteer } from '~/store/families';
 import PendingSteers from '../PendingSteers';
 import store from '~/store';
 
+const mockCancelMutate = jest.fn();
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+}));
+
+jest.mock('~/data-provider', () => ({
+  useCancelSteerMutation: () => ({ mutate: mockCancelMutate }),
 }));
 
 jest.mock('~/hooks/AuthContext', () => ({
@@ -95,6 +101,35 @@ describe('PendingSteers (in-thread optimistic steers)', () => {
     const part = screen.getByTestId('steer-part');
     expect(part).toHaveAttribute('id', 'steer-s1');
     expect(part).toHaveClass('steer-render');
+  });
+
+  it('cancels a pending steer server-side and removes it from the thread', () => {
+    renderSlot([
+      { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
+      { steerId: 'local-1', text: 'still posting', status: 'sending', createdAt: 2 },
+    ]);
+    // Only the server-acknowledged steer is cancellable — a 'sending' entry
+    // has no server id yet.
+    const cancels = screen.getAllByTestId('steer-cancel');
+    expect(cancels).toHaveLength(1);
+
+    fireEvent.click(cancels[0]);
+    expect(mockCancelMutate).toHaveBeenCalledWith(
+      { conversationId: CONVO_ID, steerId: 's-ack' },
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
+    expect(screen.queryByText('waiting on boundary')).toBeNull();
+    expect(screen.getByText('still posting')).toBeInTheDocument();
+  });
+
+  it('restores the entry when the cancel POST fails', () => {
+    renderSlot([{ steerId: 's-err', text: 'network flake', status: 'pending', createdAt: 1 }]);
+    fireEvent.click(screen.getByTestId('steer-cancel'));
+    expect(screen.queryByText('network flake')).toBeNull();
+
+    const options = mockCancelMutate.mock.calls[0][1] as { onError: () => void };
+    act(() => options.onError());
+    expect(screen.getByText('network flake')).toBeInTheDocument();
   });
 
   it('falls back to the generic user label when username display is off', () => {

@@ -447,6 +447,19 @@ router.post(
   SteerController,
 );
 
+/**
+ * @route POST /chat/steer/cancel
+ * @desc Remove a still-queued steer before injection (no model-bound content,
+ * so no PII/moderation pass — just the shared rate limiters)
+ * @access Private
+ */
+router.post(
+  '/chat/steer/cancel',
+  configMiddleware,
+  ...steerLimiters,
+  SteerController.SteerCancelController,
+);
+
 router.use('/', v1);
 
 const chatRouter = express.Router();

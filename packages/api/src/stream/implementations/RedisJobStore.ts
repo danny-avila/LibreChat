@@ -172,6 +172,36 @@ const STEER_DRAIN_LUA =
   'return items';
 
 /**
+ * Remove ONE queued steer by id without disturbing the rest: the list is
+ * rebuilt atomically, so a concurrent drain either delivers the steer or the
+ * cancel wins — never a torn queue. ARGV[1] is the JSON fragment
+ * `"steerId":"<id>"` matched as a plain substring against each serialized
+ * item (ids are server-generated UUIDs, no escaping ambiguity). The list TTL
+ * survives the rebuild.
+ *
+ *   KEYS: [steers]
+ *   ARGV: [steerIdFragment]
+ *   Returns: 1 when removed, 0 when not found
+ */
+const STEER_REMOVE_LUA =
+  'local items = redis.call("LRANGE", KEYS[1], 0, -1) ' +
+  'if #items == 0 then return 0 end ' +
+  'local kept = {} ' +
+  'local removed = 0 ' +
+  'for i = 1, #items do ' +
+  'if removed == 0 and string.find(items[i], ARGV[1], 1, true) then removed = 1 ' +
+  'else kept[#kept + 1] = items[i] end ' +
+  'end ' +
+  'if removed == 0 then return 0 end ' +
+  'local ttl = redis.call("PTTL", KEYS[1]) ' +
+  'redis.call("DEL", KEYS[1]) ' +
+  'if #kept > 0 then ' +
+  'redis.call("RPUSH", KEYS[1], unpack(kept)) ' +
+  'if ttl > 0 then redis.call("PEXPIRE", KEYS[1], ttl) end ' +
+  'end ' +
+  'return 1';
+
+/**
  * Claim-on-read for parked steers: return AND delete in one atomic step so a
  * second reload cannot re-mint chips the user already dismissed. Single key
  * (cluster-safe); GETDEL is avoided only for older-Redis compatibility.
@@ -1270,6 +1300,16 @@ export class RedisJobStore implements IJobStore {
 
   async clearSteers(streamId: string): Promise<void> {
     await this.redis.del(KEYS.steers(streamId));
+  }
+
+  async removeSteer(streamId: string, steerId: string): Promise<boolean> {
+    const removed = (await this.redis.eval(
+      STEER_REMOVE_LUA,
+      1,
+      KEYS.steers(streamId),
+      `"steerId":"${steerId}"`,
+    )) as number;
+    return removed === 1;
   }
 
   async parkSteers(streamId: string, payload: string): Promise<void> {

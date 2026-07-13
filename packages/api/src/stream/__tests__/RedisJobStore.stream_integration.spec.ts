@@ -2019,6 +2019,29 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('removeSteer takes one item, keeps order, and preserves the list TTL', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-remove-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('c1', 'keep me first'));
+      await store.enqueueSteer(streamId, buildSteer('c2', 'cancel me'));
+      await store.enqueueSteer(streamId, buildSteer('c3', 'keep me last'));
+
+      expect(await store.removeSteer(streamId, 'c2')).toBe(true);
+      expect(await store.removeSteer(streamId, 'c2')).toBe(false);
+      expect((await store.peekSteers(streamId)).map((s) => s.steerId)).toEqual(['c1', 'c3']);
+      expect(await ioredisClient.ttl(`stream:{${streamId}}:steers`)).toBeGreaterThan(0);
+
+      await store.destroy();
+    });
+
     test('parked steers survive deleteJob, claim exactly once, and reset on createJob', async () => {
       if (!ioredisClient) {
         return;
