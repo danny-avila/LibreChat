@@ -707,6 +707,179 @@ describe('getOpenAILLMConfig', () => {
     });
   });
 
+  describe('GPT-5.6 Responses API Requirement', () => {
+    it.each(['gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6'])(
+      'should default to Responses API for %s when reasoning_effort is set',
+      (model) => {
+        const result = getOpenAILLMConfig({
+          apiKey: 'test-api-key',
+          streaming: true,
+          endpoint: EModelEndpoint.openAI,
+          modelOptions: {
+            model,
+            reasoning_effort: ReasoningEffort.high,
+          },
+        });
+
+        expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+        expect(result.llmConfig.reasoning).toEqual({ effort: ReasoningEffort.high });
+        expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+      },
+    );
+
+    it('should NOT default to Responses API without reasoning params', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+    });
+
+    it('should NOT default to Responses API when reasoning_effort is none', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.none,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+      expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.none);
+    });
+
+    it('should respect an explicit useResponsesApi: false', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.high,
+          useResponsesApi: false,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('useResponsesApi', false);
+      expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+    });
+
+    it.each(['gpt-5', 'gpt-5-pro', 'gpt-5.4-nano', 'gpt-5.5-preview', 'gpt-5-chat', 'o3-mini'])(
+      'should NOT default to Responses API for %s',
+      (model) => {
+        const result = getOpenAILLMConfig({
+          apiKey: 'test-api-key',
+          streaming: true,
+          endpoint: EModelEndpoint.openAI,
+          modelOptions: {
+            model,
+            reasoning_effort: ReasoningEffort.high,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+        expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+      },
+    );
+
+    it('should NOT default to Responses API for non-OpenAI endpoints', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+    });
+
+    it('should default to Responses API when reasoning_effort comes from defaultParams', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        defaultParams: {
+          reasoning_effort: ReasoningEffort.medium,
+        },
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+      expect(result.llmConfig.reasoning).toEqual({ effort: ReasoningEffort.medium });
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should evaluate the final model when addParams overrides it to GPT-5.6', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-4o',
+          reasoning_effort: ReasoningEffort.high,
+        },
+        addParams: {
+          model: 'gpt-5.6-terra',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('model', 'gpt-5.6-terra');
+      expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+      expect(result.llmConfig.reasoning).toEqual({ effort: ReasoningEffort.high });
+    });
+
+    it('should NOT default to Responses API when addParams overrides GPT-5.6 away', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.high,
+        },
+        addParams: {
+          model: 'gpt-4.1',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('model', 'gpt-4.1');
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+      expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+    });
+
+    it('should NOT default to Responses API when dropParams removes reasoning_effort', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.high,
+        },
+        dropParams: ['reasoning_effort'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+  });
+
   describe('Default and Add Parameters', () => {
     it('should apply default parameters when fields are undefined', () => {
       const result = getOpenAILLMConfig({

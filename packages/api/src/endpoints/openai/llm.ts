@@ -1,5 +1,6 @@
 import {
   EModelEndpoint,
+  ReasoningEffort,
   ReasoningParameterFormat,
   removeNullishValues,
   supportsAdaptiveThinking,
@@ -117,6 +118,30 @@ function getReasoningObject({
 
 function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
   return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
+}
+
+/**
+ * GPT-5.6 models reject function tools combined with `reasoning_effort` in
+ * `/v1/chat/completions` (400: "To use function tools, use /v1/responses or
+ * set reasoning_effort to 'none'"), so reasoning requires the Responses API.
+ */
+const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
+
+function requiresResponsesApiForReasoning({
+  model,
+  reasoningEffort,
+}: {
+  model?: string;
+  reasoningEffort?: string | null;
+}): boolean {
+  if (typeof model !== 'string' || !responsesApiRequiredPattern.test(model)) {
+    return false;
+  }
+  return (
+    reasoningEffort != null &&
+    reasoningEffort !== ReasoningEffort.unset &&
+    reasoningEffort !== ReasoningEffort.none
+  );
 }
 
 function removeReasoningField(target: Record<string, unknown>, field: string) {
@@ -720,6 +745,23 @@ export function getOpenAILLMConfig({
     if (promptCacheTtlValue != null) {
       llmConfig.promptCacheTtl = promptCacheTtlValue;
     }
+  }
+
+  /**
+   * Default GPT-5.6 reasoning requests to the Responses API unless explicitly set.
+   * Reads `llmConfig.model` (reflects `addParams` overrides) and skips when
+   * `dropParams` removes the reasoning payload later anyway.
+   */
+  const reasoningDropped =
+    dropParams != null &&
+    (dropParams.includes('reasoning_effort') || dropParams.includes('reasoning'));
+  if (
+    endpoint === EModelEndpoint.openAI &&
+    llmConfig.useResponsesApi == null &&
+    !reasoningDropped &&
+    requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
+  ) {
+    llmConfig.useResponsesApi = true;
   }
 
   if (!useOpenRouter) {
