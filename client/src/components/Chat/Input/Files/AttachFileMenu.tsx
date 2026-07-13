@@ -19,12 +19,17 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
-  isPermissiveMimeConfig,
+  getConfiguredMimeAccept,
+  bedrockDocumentMimeTypes,
   defaultAgentCapabilities,
   bedrockDocumentExtensions,
   isDocumentSupportedProvider,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
+import type {
+  TConversation,
+  EndpointFileConfig,
+  MimeUploadCapability,
+} from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useAgentToolPermissions,
@@ -48,6 +53,22 @@ type FileUploadType =
   | 'image_document'
   | 'image_document_extended'
   | 'image_document_video_audio';
+
+/** What each provider upload path can actually send, used to scope the picker filter to selectable files. */
+const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
+  image: { categories: ['image'] },
+  document: { categories: ['document'] },
+  image_document: { categories: ['image', 'document'] },
+  image_document_extended: {
+    categories: ['image', 'document'],
+    documentMimeTypes: bedrockDocumentMimeTypes,
+  },
+  /** Google/Vertex/OpenRouter media path: documents are limited to PDF (see isProviderAttachType). */
+  image_document_video_audio: {
+    categories: ['image', 'document', 'audio', 'video'],
+    documentMimeTypes: ['application/pdf'],
+  },
+};
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -130,11 +151,19 @@ const AttachFileMenu = ({
       inputRef.current.value = '';
       const imagePrefix = confidentlyNonVision ? '' : 'image/*,.heif,.heic';
       const withImage = (rest: string) => [imagePrefix, rest].filter(Boolean).join(',') || rest;
-      if (
-        fileType !== undefined &&
-        isPermissiveMimeConfig(endpointFileConfig?.supportedMimeTypes)
-      ) {
-        inputRef.current.accept = '';
+      const scopeToCapability = (capability: MimeUploadCapability): MimeUploadCapability =>
+        confidentlyNonVision
+          ? { ...capability, categories: capability.categories.filter((c) => c !== 'image') }
+          : capability;
+      const configuredAccept =
+        fileType !== undefined
+          ? getConfiguredMimeAccept(
+              endpointFileConfig?.supportedMimeTypes,
+              scopeToCapability(fileTypeCapabilities[fileType]),
+            )
+          : undefined;
+      if (configuredAccept != null) {
+        inputRef.current.accept = configuredAccept;
       } else if (fileType === 'image') {
         inputRef.current.accept = imagePrefix;
       } else if (fileType === 'document') {

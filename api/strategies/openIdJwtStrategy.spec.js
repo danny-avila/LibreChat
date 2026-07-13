@@ -3,6 +3,12 @@ const { SystemRoles } = require('librechat-data-provider');
 // --- Capture JwtStrategy inputs ---
 let capturedStrategyOptions;
 let capturedVerifyCallback;
+const mockAuthUserDocCacheStore = {
+  get: jest.fn(),
+  set: jest.fn(),
+  delete: jest.fn(),
+};
+const mockGetLogStores = jest.fn(() => mockAuthUserDocCacheStore);
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
     capturedStrategyOptions = opts;
@@ -28,6 +34,11 @@ jest.mock('@librechat/api', () => ({
   getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
   normalizeOpenIdIssuer: jest.requireActual('@librechat/api').normalizeOpenIdIssuer,
+  buildAuthUserDocCacheKey: jest.fn(() => 'auth-user-doc-key'),
+  getAuthUserDocCacheMode: jest.fn(() => 'off'),
+  getCachedAuthUserDoc: jest.fn(),
+  invalidateCachedAuthUserDoc: jest.fn(),
+  setCachedAuthUserDoc: jest.fn(),
   getHttpsProxyAgent: jest.fn(() => undefined),
   math: jest.fn((val, fallback) => fallback),
 }));
@@ -43,13 +54,34 @@ jest.mock('~/server/services/Files/strategies', () => ({
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({}),
 }));
-jest.mock('~/cache/getLogStores', () =>
-  jest.fn().mockReturnValue({ get: jest.fn(), set: jest.fn() }),
-);
+jest.mock('~/cache/getLogStores', () => mockGetLogStores);
 
-const { findOpenIDUser } = require('@librechat/api');
+const {
+  buildAuthUserDocCacheKey,
+  findOpenIDUser,
+  getAuthUserDocCacheMode,
+  getCachedAuthUserDoc,
+  invalidateCachedAuthUserDoc,
+  setCachedAuthUserDoc,
+} = require('@librechat/api');
 const openIdJwtLogin = require('./openIdJwtStrategy');
 const { findUser, updateUser } = require('~/models');
+
+function resetAuthUserDocCacheMocks() {
+  mockAuthUserDocCacheStore.get.mockResolvedValue(undefined);
+  mockAuthUserDocCacheStore.set.mockResolvedValue(undefined);
+  mockAuthUserDocCacheStore.delete.mockResolvedValue(undefined);
+  mockGetLogStores.mockReturnValue(mockAuthUserDocCacheStore);
+  buildAuthUserDocCacheKey.mockReturnValue('auth-user-doc-key');
+  getAuthUserDocCacheMode.mockReturnValue('off');
+  getCachedAuthUserDoc.mockResolvedValue(undefined);
+  invalidateCachedAuthUserDoc.mockResolvedValue(undefined);
+  setCachedAuthUserDoc.mockResolvedValue(undefined);
+}
+
+beforeEach(() => {
+  resetAuthUserDocCacheMocks();
+});
 
 function withEnv(env, callback) {
   const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
@@ -345,6 +377,103 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBe('the-access-token');
     expect(user.federatedTokens.id_token).toBe('the-id-token');
     expect(user.federatedTokens.access_token).not.toBe(user.federatedTokens.id_token);
+  });
+});
+
+describe('openIdJwtStrategy – auth user document cache', () => {
+  const payload = {
+    sub: 'oidc-123',
+    email: 'test@example.com',
+    iss: 'https://issuer.example.com',
+    exp: 9999999999,
+  };
+
+  const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+
+  const baseUser = {
+    _id: { toString: () => 'user-abc' },
+    role: SystemRoles.USER,
+    provider: 'openid',
+    email: 'test@example.com',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetAuthUserDocCacheMocks();
+    updateUser.mockResolvedValue({});
+    openIdJwtLogin(mockOpenIdConfig);
+  });
+
+  it('does not initialize the cache store while cache mode is off', async () => {
+    findOpenIDUser.mockResolvedValue({ user: { ...baseUser }, error: null, migration: false });
+
+    await invokeVerify(req, payload);
+
+    expect(findOpenIDUser).toHaveBeenCalled();
+    expect(mockGetLogStores).not.toHaveBeenCalled();
+    expect(getCachedAuthUserDoc).not.toHaveBeenCalled();
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('uses the cached user document in on mode without a database lookup', async () => {
+    const cachedUser = {
+      _id: 'cached-user',
+      role: SystemRoles.USER,
+      provider: 'openid',
+      email: 'cached@example.com',
+    };
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue(cachedUser);
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(buildAuthUserDocCacheKey).toHaveBeenCalledWith({
+      strategy: 'openid-jwt',
+      subject: payload.sub,
+      issuer: 'https://issuer.example.com',
+    });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(user).toMatchObject({
+      id: 'cached-user',
+      email: 'cached@example.com',
+      idOnTheSource: null,
+    });
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
+    expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('populates the cache after a miss with the fresh user document', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue(undefined);
+    findOpenIDUser.mockResolvedValue({ user: { ...baseUser }, error: null, migration: false });
+
+    await invokeVerify(req, payload);
+
+    expect(findOpenIDUser).toHaveBeenCalled();
+    expect(setCachedAuthUserDoc).toHaveBeenCalledWith(
+      mockAuthUserDocCacheStore,
+      'auth-user-doc-key',
+      expect.objectContaining({ id: 'user-abc' }),
+    );
+    expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('invalidates instead of populating when login mutates the user', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    findOpenIDUser.mockResolvedValue({
+      user: { ...baseUser, role: undefined },
+      error: null,
+      migration: false,
+    });
+
+    await invokeVerify(req, payload);
+
+    expect(updateUser).toHaveBeenCalledWith('user-abc', { role: SystemRoles.USER });
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
+    expect(invalidateCachedAuthUserDoc).toHaveBeenCalledWith(mockAuthUserDocCacheStore, {
+      userId: 'user-abc',
+      cacheKey: 'auth-user-doc-key',
+    });
   });
 });
 

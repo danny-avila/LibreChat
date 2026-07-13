@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useSetRecoilState } from 'recoil';
+import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
+import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useAbortStreamMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
-import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import { getMessageCacheIds } from './cache';
 import store from '~/store';
 
@@ -51,9 +51,15 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     [queryParam, queryClient, conversationId],
   );
 
-  const getMessages = useCallback(() => {
-    return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
-  }, [queryParam, queryClient]);
+  const getMessages = useCallback(
+    (targetConversationId?: string | null) => {
+      return queryClient.getQueryData<TMessage[]>([
+        QueryKeys.messages,
+        targetConversationId ?? queryParam,
+      ]);
+    },
+    [queryParam, queryClient],
+  );
 
   /* Conversation */
   // const setActiveConvos = useSetRecoilState(store.activeConversations);

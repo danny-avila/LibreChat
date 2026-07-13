@@ -1,5 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
@@ -285,6 +285,8 @@ export type Agent = {
   edges?: GraphEdge[];
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
+  /** Per-agent opt-in for stateful code sessions (requires the app-level capability). */
+  stateful_code_sessions?: boolean;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -301,6 +303,8 @@ export type Agent = {
   skills_enabled?: boolean;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -321,6 +325,7 @@ export type AgentCreateParams = {
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -329,6 +334,7 @@ export type AgentCreateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentUpdateParams = {
@@ -348,6 +354,7 @@ export type AgentUpdateParams = {
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -356,6 +363,7 @@ export type AgentUpdateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentListParams = {

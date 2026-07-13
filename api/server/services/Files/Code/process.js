@@ -990,7 +990,7 @@ const primeFiles = async (options) => {
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @returns {Promise<{content: string} | null>}
  */
-async function readSandboxFile({ file_path, session_id, files, req }) {
+async function readSandboxFile({ file_path, session_id, files, runtime_session_hint, req }) {
   const baseURL = getCodeBaseURL();
   if (!baseURL) {
     return null;
@@ -1005,6 +1005,9 @@ async function readSandboxFile({ file_path, session_id, files, req }) {
   const postData = { lang: 'bash', code: `cat ${safePath}` };
   if (session_id) {
     postData.session_id = session_id;
+  }
+  if (runtime_session_hint) {
+    postData.runtime_session_hint = runtime_session_hint;
   }
   if (files && files.length > 0) {
     postData.files = files;
@@ -1056,7 +1059,14 @@ async function readSandboxFile({ file_path, session_id, files, req }) {
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @returns {Promise<{stdout?: string, stderr?: string, session_id?: string, files?: Array<Object>} | null>}
  */
-async function writeSandboxFile({ file_path, content, session_id, files, req }) {
+async function writeSandboxFile({
+  file_path,
+  content,
+  session_id,
+  files,
+  runtime_session_hint,
+  req,
+}) {
   const baseURL = getCodeBaseURL();
   if (!baseURL) {
     return null;
@@ -1089,6 +1099,9 @@ async function writeSandboxFile({ file_path, content, session_id, files, req }) 
   const postData = { lang: 'bash', code };
   if (session_id) {
     postData.session_id = session_id;
+  }
+  if (runtime_session_hint) {
+    postData.runtime_session_hint = runtime_session_hint;
   }
   if (files && files.length > 0) {
     postData.files = files;

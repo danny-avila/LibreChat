@@ -202,6 +202,7 @@ export enum ReasoningEffort {
   medium = 'medium',
   high = 'high',
   xhigh = 'xhigh',
+  max = 'max',
 }
 
 export enum ReasoningParameterFormat {
@@ -344,6 +345,8 @@ export const defaultAgentFormValues = {
   subagents: undefined as
     | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
     | undefined,
+  /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+  memory_scope: undefined as MemoryScope | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -837,11 +840,23 @@ export const tMessageSchema = z.object({
   quotes: z.array(z.string()).optional(),
 });
 
+/**
+ * Which memory partition an agent reads/writes.
+ * `user` = the shared personal pool (default); `agent` = a partition
+ * isolated per (user, agent) so the agent only sees its own memories.
+ */
+export enum MemoryScope {
+  user = 'user',
+  agent = 'agent',
+}
+
 export type MemoryArtifact = {
   key: string;
   value?: string;
   tokenCount?: number;
   type: 'update' | 'delete' | 'error';
+  /** Agent partition the write targeted; absent = shared personal pool */
+  agentId?: string;
 };
 
 export type UIResource = {
