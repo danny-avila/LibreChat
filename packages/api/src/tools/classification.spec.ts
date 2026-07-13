@@ -1,3 +1,4 @@
+import { Providers } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { GenericTool } from '@librechat/agents';
 import type { LCToolRegistry } from './classification';
@@ -336,6 +337,77 @@ describe('classification.ts', () => {
 
       expect(result.toolDefinitions.some((d) => d.name === 'tool_search')).toBe(true);
       expect(result.toolRegistry?.has('tool_search')).toBe(true);
+    });
+
+    type ToolSearchParams = {
+      properties?: Record<string, { oneOf?: unknown[]; type?: string }>;
+    };
+
+    it('should sanitize the tool_search schema for Google providers (no union types)', async () => {
+      const loadedTools: GenericTool[] = [createMCPTool('tool1')];
+
+      const agentToolOptions: AgentToolOptions = {
+        tool1: { defer_loading: true },
+      };
+
+      const result = await buildToolClassification({
+        loadedTools,
+        userId: 'user1',
+        agentId: 'agent1',
+        agentToolOptions,
+        deferredToolsEnabled: true,
+        definitionsOnly: true,
+        provider: Providers.GOOGLE,
+      });
+
+      const toolSearchDef = result.toolDefinitions.find((d) => d.name === 'tool_search');
+      const params = toolSearchDef?.parameters as ToolSearchParams | undefined;
+      expect(params?.properties?.mcp_server?.oneOf).toBeUndefined();
+      expect(params?.properties?.mcp_server?.type).toBe('string');
+    });
+
+    it('should sanitize the tool_search instance schema for Vertex AI provider', async () => {
+      const loadedTools: GenericTool[] = [createMCPTool('tool1')];
+
+      const agentToolOptions: AgentToolOptions = {
+        tool1: { defer_loading: true },
+      };
+
+      const result = await buildToolClassification({
+        loadedTools,
+        userId: 'user1',
+        agentId: 'agent1',
+        agentToolOptions,
+        deferredToolsEnabled: true,
+        provider: Providers.VERTEXAI,
+      });
+
+      const toolSearchTool = result.additionalTools.find((t) => t.name === 'tool_search');
+      const schema = (toolSearchTool as unknown as { schema: ToolSearchParams }).schema;
+      expect(schema.properties?.mcp_server?.oneOf).toBeUndefined();
+      expect(schema.properties?.mcp_server?.type).toBe('string');
+    });
+
+    it('should keep the original tool_search schema for non-Google providers', async () => {
+      const loadedTools: GenericTool[] = [createMCPTool('tool1')];
+
+      const agentToolOptions: AgentToolOptions = {
+        tool1: { defer_loading: true },
+      };
+
+      const result = await buildToolClassification({
+        loadedTools,
+        userId: 'user1',
+        agentId: 'agent1',
+        agentToolOptions,
+        deferredToolsEnabled: true,
+        definitionsOnly: true,
+        provider: Providers.OPENAI,
+      });
+
+      const toolSearchDef = result.toolDefinitions.find((d) => d.name === 'tool_search');
+      const params = toolSearchDef?.parameters as ToolSearchParams | undefined;
+      expect(Array.isArray(params?.properties?.mcp_server?.oneOf)).toBe(true);
     });
 
     it('should add PTC definition when definitionsOnly=true and capabilities allow programmatic tools', async () => {

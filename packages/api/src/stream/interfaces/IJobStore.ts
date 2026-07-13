@@ -202,12 +202,20 @@ export interface UsageMetadata {
     cache_creation?: number;
     /** Tokens read from cache */
     cache_read?: number;
+    /** OpenAI GPT-5.6+ cache-write tokens (billed above the input rate) */
+    cache_write_tokens?: number;
   };
   /**
    * Anthropic-style cache creation tokens.
    * Present for Claude models. Mutually exclusive with input_token_details.
    */
   cache_creation_input_tokens?: number;
+  /**
+   * OpenAI GPT-5.6+ cache-write tokens, reported at the top level of
+   * `prompt_tokens_details`/`input_tokens_details`. Distinct from cached
+   * (read) tokens and billed at a premium over the input rate.
+   */
+  cache_write_tokens?: number;
   /**
    * Anthropic-style cache read tokens.
    * Present for Claude models. Mutually exclusive with input_token_details.

@@ -565,6 +565,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
+  stateful_code_sessions = 'stateful_code_sessions',
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
@@ -573,6 +574,7 @@ export enum AgentCapabilities {
   context = 'context',
   skills = 'skills',
   memory = 'memory',
+  ask_user_question = 'ask_user_question',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -689,6 +691,7 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.context,
   AgentCapabilities.skills,
   AgentCapabilities.memory,
+  AgentCapabilities.ask_user_question,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -1782,6 +1785,11 @@ export const contextPruningSchema = z.object({
   minPrunableToolChars: z.number().min(0).optional(),
 });
 
+export const retainRecentConfigSchema = z.object({
+  turns: z.number().min(0).max(20).optional(),
+  tokens: z.number().positive().optional(),
+});
+
 export const summarizationConfigSchema = z.object({
   enabled: z.boolean().optional(),
   provider: z.string().optional(),
@@ -1793,6 +1801,7 @@ export const summarizationConfigSchema = z.object({
   reserveRatio: z.number().min(0).max(1).optional(),
   maxSummaryTokens: z.number().positive().optional(),
   contextPruning: contextPruningSchema.optional(),
+  retainRecent: retainRecentConfigSchema.optional(),
 });
 
 export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
@@ -2002,6 +2011,9 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.6',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5.5',
   'gpt-5.5-pro',
   'chat-latest',
@@ -2283,6 +2295,10 @@ export enum CacheKeys {
    */
   ROLES = 'ROLES',
   /**
+   * Key for cached group memberships used to resolve ACL user principals.
+   */
+  USER_PRINCIPALS = 'USER_PRINCIPALS',
+  /**
    * Key for the title generation cache.
    */
   GEN_TITLE = 'GEN_TITLE',
@@ -2352,6 +2368,10 @@ export enum CacheKeys {
    */
   OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
   /**
+   * Key for cached authenticated user documents.
+   */
+  AUTH_USER_DOC = 'AUTH_USER_DOC',
+  /**
    * Key for OpenID session.
    */
   OPENID_SESSION = 'OPENID_SESSION',
@@ -2364,6 +2384,8 @@ export enum CacheKeys {
    */
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
 }
+
+export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
 
 /**
  * Enum for violation types, used to identify, log, and cache violations.

@@ -9,7 +9,7 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
@@ -21,6 +21,7 @@ const {
   GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   createStreamServices,
+  deleteAgentCheckpoint,
   initializeFileStorage,
   initializeDeploymentSkills,
   loadToolApprovalHooks,
@@ -84,6 +85,19 @@ const configureGenerationStreams = () => {
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
   GenerationJobManager.initialize();
+  // Prune the paused run's durable checkpoint when its approval EXPIRES (periodic sweeper
+  // or a stale submit) instead of leaving it until the Mongo TTL. streamId === conversationId
+  // === the LangGraph thread_id. Config is resolved lazily per expiry so the prune always
+  // targets the currently configured checkpoint collections.
+  GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
+    // Resolve config in the PAUSED JOB's tenant/user scope — the expiry runs outside any
+    // request context. Passing ids to getAppConfig only keys the cache; the Config query
+    // itself is ALS-scoped by the tenant-isolation plugin, so ENTER the tenant context.
+    await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
+      const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
+      await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
+    });
+  });
 };
 
 const startServer = async () => {

@@ -34,13 +34,19 @@ const {
   getTransactionsConfig,
   resolveRecursionLimit,
   buildPendingAction,
+  toClientPendingAction,
   computeAgentRequestFingerprint,
   extractDiscoveredToolsFromHistory,
+  sanitizeResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
   deleteAgentCheckpoint,
+  agentRequestsAskUserQuestion,
+  attachAskUserQuestionArgs,
+  createContentIndexOffsetHandlers,
   getRequestMemories,
+  getMemoryAgentId,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
@@ -531,10 +537,34 @@ class AgentClient extends BaseClient {
      *  keys + token metadata) is reserved for agents that can call
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     const memories = await this.useMemory();
+    /** Partition the loaded memories belong to (the primary agent's). */
+    const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
     const buildMemoryContext = (text) =>
       text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
-    const memoryContext = buildMemoryContext(memories?.withoutKeys);
-    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
+    /** Resolves formatted memories for an agent's own partition. A defined
+     *  `memories` means the run-level gates (permission, opt-out, config)
+     *  passed; agents on other partitions fetch through the request-scoped
+     *  cache so repeated partitions share one query. */
+    const getAgentPartitionMemories = async (agent) => {
+      if (!memories) {
+        return undefined;
+      }
+      const agentPartition = getMemoryAgentId(agent);
+      if (agentPartition === loadedMemoryAgentId) {
+        return memories;
+      }
+      try {
+        return await getRequestMemories({
+          req: this.options.req,
+          userId: this.options.req.user.id + '',
+          agentId: agentPartition,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+      } catch (error) {
+        logger.error('[AgentClient] Error loading partition memories', error);
+        return undefined;
+      }
+    };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -583,15 +613,17 @@ class AgentClient extends BaseClient {
     const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
-      allAgents.map(({ agent, agentId }) => {
+      allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
         const agentHasMemory = agentHasInlineMemoryTools(agent);
-        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
-        if (
-          agentMemoryContext &&
-          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
-        ) {
-          agentRunContextParts.push(agentMemoryContext);
+        if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+          const partitionMemories = await getAgentPartitionMemories(agent);
+          const agentMemoryContext = buildMemoryContext(
+            agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          );
+          if (agentMemoryContext) {
+            agentRunContextParts.push(agentMemoryContext);
+          }
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -669,6 +701,8 @@ class AgentClient extends BaseClient {
     }
 
     const userId = this.options.req.user.id + '';
+    /** Memory partition of the primary agent; undefined = shared personal pool */
+    const memoryAgentId = getMemoryAgentId(this.options.agent);
     this.processMemory = undefined;
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
@@ -676,6 +710,7 @@ class AgentClient extends BaseClient {
         const { withKeys, withoutKeys } = await getRequestMemories({
           req: this.options.req,
           userId,
+          agentId: memoryAgentId,
           getFormattedMemories: db.getFormattedMemories,
         });
         return { withKeys, withoutKeys };
@@ -739,6 +774,7 @@ class AgentClient extends BaseClient {
             : memoryConfig.agent?.provider,
         },
         codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
+        statefulSessionsAvailable: memoryCapabilities.has(AgentCapabilities.stateful_code_sessions),
       },
       {
         getFiles: db.getFiles,
@@ -781,6 +817,7 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      agentId: memoryAgentId,
       config,
       messageId,
       streamId,
@@ -800,6 +837,7 @@ class AgentClient extends BaseClient {
       ({ withKeys } = await getRequestMemories({
         req: this.options.req,
         userId,
+        agentId: memoryAgentId,
         getFormattedMemories: db.getFormattedMemories,
       }));
     } catch (error) {
@@ -1222,10 +1260,25 @@ class AgentClient extends BaseClient {
     // paused on. The resume payload omits them and they aren't part of the fingerprint, so
     // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
     // these from the DB record server-side, so this is belt-and-suspenders for them.)
+    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
     const resumeContext = pickResumeContext(this.options.req?.body);
-    const resolvedModelParameters = this.options.agent?.model_parameters;
-    if (resolvedModelParameters && typeof resolvedModelParameters === 'object') {
+    const resolvedModelParameters = sanitizeResumeModelParameters(
+      this.options.agent?.model_parameters,
+    );
+    if (resolvedModelParameters) {
       resumeContext.model_parameters = resolvedModelParameters;
+    }
+    // Persist the question onto the paused ask tool_call's args NOW: an
+    // abandoned/expired/stopped pause never reaches the answer-resume stamp,
+    // and the streamed args were dropped (name-less chunks) — without this the
+    // unfinished turn saves an empty ask part the record card can't render.
+    if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
+      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      if (stamped !== this.contentParts) {
+        this.contentParts.length = 0;
+        this.contentParts.push(...stamped);
+      }
     }
     const pendingAction = buildPendingAction(interrupt.payload, {
       streamId,
@@ -1311,7 +1364,7 @@ class AgentClient extends BaseClient {
     }
     await GenerationJobManager.emitChunk(streamId, {
       event: ApprovalEvents.ON_PENDING_ACTION,
-      data: pendingAction,
+      data: toClientPendingAction(pendingAction),
     });
     logger.debug(
       `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
@@ -1615,7 +1668,18 @@ class AgentClient extends BaseClient {
         // conversation (one that expired or was aborted while paused) so this fresh
         // turn starts clean instead of rehydrating a stale interrupt — thread_id is
         // the stable conversationId. No-op when HITL is off or nothing is orphaned.
-        if (streamId && isHITLEnabled(agentsEConfig?.toolApproval)) {
+        // Deliberately UNCONDITIONAL per HITL turn: any cheaper gate (job metadata,
+        // a Redis flag) can go stale across replicas/restarts and skip the prune
+        // exactly when an orphan exists, while these are two indexed, usually-empty
+        // deleteMany ops — correctness over a micro-optimization.
+        // The gate mirrors createRun's checkpointer condition: the approval policy
+        // OR an ask_user_question-capable agent (which attaches a checkpointer
+        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
+        // or Stop would otherwise rehydrate here and silently duplicate context.
+        if (
+          streamId &&
+          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion))
+        ) {
           await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
         }
 
@@ -1743,35 +1807,13 @@ class AgentClient extends BaseClient {
         this._resolveRun = null;
       }
 
-      // HITL: a turn that completed (or errored) without pausing leaves a dead
-      // checkpoint. thread_id is the conversationId — stable across turns — so it
-      // MUST be pruned before the next turn, or LangGraph would resume this turn's
-      // state instead of starting fresh. Skip when paused (the checkpoint is needed
-      // to resume) or when HITL is off (none was written). The Mongo TTL is the backstop.
-      const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
-      if (!this.pendingApproval && isHITLEnabled(agentsEConfig?.toolApproval)) {
-        try {
-          // Job-replacement guard: only prune if THIS generation is still the live job.
-          // A newer request can replace this one on the same conversationId; if this
-          // (older) run's finally lands after the newer run paused, pruning by
-          // conversationId would delete the NEWER run's checkpoint and break its /resume.
-          const resumableStreamId = this.options.req?._resumableStreamId;
-          let replaced = false;
-          if (resumableStreamId && this.jobCreatedAt != null) {
-            const liveJob = await GenerationJobManager.getJobStore().getJob(resumableStreamId);
-            replaced = !liveJob || liveJob.createdAt !== this.jobCreatedAt;
-          }
-          if (replaced) {
-            logger.debug('[AgentClient] Skipping checkpoint prune — job was replaced', {
-              streamId: resumableStreamId,
-            });
-          } else {
-            await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
-          }
-        } catch (err) {
-          logger.warn('[AgentClient] Failed to prune checkpoint after completion', err);
-        }
-      }
+      // HITL: a non-paused turn deliberately prunes nothing here. The lazy checkpointer
+      // (LazyMongoSaver) never persists a clean-exit checkpoint, so there is
+      // nothing this turn left to delete. A checkpoint orphaned by a PRIOR abandoned pause
+      // is cleared by the pre-run prune (before processStream) on the next turn, with the
+      // Mongo TTL as the backstop. Dropping this post-completion prune also removes its
+      // job-replacement race: an older run's late finally can no longer delete a newer
+      // paused run's checkpoint, because there is no longer a clean-path prune to race.
 
       run = null;
       config = null;
@@ -1905,7 +1947,14 @@ class AgentClient extends BaseClient {
         initialSessions,
         runId: this.responseMessageId,
         signal: abortController.signal,
-        customHandlers: this.options.eventHandlers,
+        // The rebuilt graph numbers content indices from 0, but the aggregator was
+        // just seeded with the pre-pause parts at those same indices — shift every
+        // resumed step index past the seed, or the new output merges into (or, on a
+        // type mismatch, is silently dropped against) the pre-pause content.
+        customHandlers: createContentIndexOffsetHandlers(
+          this.options.eventHandlers,
+          Array.isArray(seedContent) ? seedContent : [],
+        ),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
         tenantId: this.options.req?.user?.tenantId,

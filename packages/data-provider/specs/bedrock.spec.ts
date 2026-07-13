@@ -92,6 +92,16 @@ describe('supportsAdaptiveThinking', () => {
     expect(supportsAdaptiveThinking('claude-sonnet-4-7')).toBe(true);
   });
 
+  test('should return true for double-digit claude-sonnet-4 minors', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-10')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-sonnet-4.10')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-4-10-sonnet')).toBe(true);
+  });
+
+  test('should not parse Sonnet 4 date suffixes as double-digit minors', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-20250514')).toBe(false);
+  });
+
   test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {
     expect(supportsAdaptiveThinking('anthropic.claude-sonnet-4-6')).toBe(true);
   });
@@ -164,6 +174,16 @@ describe('supportsContext1m', () => {
 
   test('should return true for claude-sonnet-4-6', () => {
     expect(supportsContext1m('claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for double-digit claude-sonnet-4 minors', () => {
+    expect(supportsContext1m('claude-sonnet-4-10')).toBe(true);
+    expect(supportsContext1m('claude-sonnet-4.10')).toBe(true);
+    expect(supportsContext1m('claude-4-10-sonnet')).toBe(true);
+  });
+
+  test('should not treat Sonnet 4 date suffixes as 1M context models', () => {
+    expect(supportsContext1m('claude-sonnet-4-20250514')).toBe(false);
   });
 
   test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {
@@ -1222,6 +1242,17 @@ describe('bedrockInputParser', () => {
       expect(output.maxOutputTokens).toBeUndefined();
     });
 
+    test('defaults Bedrock Claude Sonnet 4.6 adaptive maxTokens to its Bedrock max output when unset', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-sonnet-4-6',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(output.maxTokens).toBe(64000);
+      expect(output.maxOutputTokens).toBeUndefined();
+    });
+
     test('should respect user-provided maxTokens for adaptive model', () => {
       const parsed = bedrockInputParser.parse({
         model: 'anthropic.claude-opus-4-6-v1',
@@ -1289,7 +1320,7 @@ describe('bedrockInputParser', () => {
     // thinking models here but are not matched by the family-first reset()
     // regex; they must still resolve to the real ceiling, not the 8192 fallback.
     test.each([
-      ['anthropic.claude-4-7-sonnet', 64000],
+      ['anthropic.claude-4-7-sonnet', 128000],
       ['claude-5-sonnet', 128000],
       ['anthropic.claude-4-8-opus', 128000],
     ])('defaults number-first adaptive alias %s to its real max output', (model, expected) => {

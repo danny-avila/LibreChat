@@ -1,6 +1,7 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import type * as t from '~/common';
+import { usePopoverZIndex } from './OriginalDialog';
 import { cn } from '~/utils';
 import './Dropdown.css';
 
@@ -71,10 +72,12 @@ const Menu: React.FC<MenuProps> = ({
   finalFocus,
   unmountOnHide,
   preserveTabOrder,
+  style,
   ...props
 }) => {
   const menuStore = Ariakit.useMenuStore();
   const menu = Ariakit.useMenuContext();
+  const zIndex = usePopoverZIndex();
   return (
     <Ariakit.Menu
       id={menuId}
@@ -85,7 +88,8 @@ const Menu: React.FC<MenuProps> = ({
       finalFocus={finalFocus}
       unmountOnHide={unmountOnHide}
       preserveTabOrder={preserveTabOrder}
-      className={cn('popover-ui z-40', className)}
+      style={{ zIndex, ...style }}
+      className={cn('popover-ui', className)}
       {...props}
     >
       {items

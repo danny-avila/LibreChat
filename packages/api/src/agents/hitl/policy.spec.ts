@@ -6,9 +6,12 @@ import {
   buildToolApprovalPayload,
   buildAskUserQuestionPayload,
   buildPendingAction,
+  toClientPendingAction,
   computeAgentRequestFingerprint,
+  sanitizeResumeModelParameters,
   pickResumeContext,
   applyResumeContext,
+  exemptAskUserQuestionFromApproval,
 } from './policy';
 
 describe('resolveToolApprovalPolicy', () => {
@@ -257,6 +260,104 @@ describe('buildPendingAction', () => {
   });
 });
 
+describe('toClientPendingAction', () => {
+  const payload: Agents.ToolApprovalInterruptPayload = {
+    type: 'tool_approval',
+    action_requests: [{ name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_abc' }],
+    review_configs: [
+      { action_name: 'shell', tool_call_id: 'call_abc', allowed_decisions: ['approve', 'reject'] },
+    ],
+  };
+
+  test('omits server-only replay state, keeping the fields the client renders from', () => {
+    const full = buildPendingAction(payload, {
+      streamId: 'stream-1',
+      conversationId: 'conv-1',
+      requestFingerprint: 'fp-hash',
+      resumeContext: {
+        endpoint: 'agents',
+        model_parameters: { temperature: 0.5 },
+      },
+    });
+
+    const clientSafe = toClientPendingAction(full);
+    expect(clientSafe).toBeDefined();
+    expect(clientSafe?.resumeContext).toBeUndefined();
+    expect(clientSafe?.requestFingerprint).toBeUndefined();
+    expect(clientSafe?.actionId).toBe(full.actionId);
+    expect(clientSafe?.streamId).toBe('stream-1');
+    expect(clientSafe?.payload).toBe(full.payload);
+    // Non-mutating: the stored record keeps its replay state for the resume route.
+    expect(full.resumeContext).toBeDefined();
+    expect(full.requestFingerprint).toBe('fp-hash');
+  });
+
+  test('passes through nullish input', () => {
+    expect(toClientPendingAction(undefined)).toBeUndefined();
+    expect(toClientPendingAction(null)).toBeUndefined();
+  });
+});
+
+describe('sanitizeResumeModelParameters', () => {
+  test('strips provider credentials and transport config across provider shapes', () => {
+    const sanitized = sanitizeResumeModelParameters({
+      model: 'gpt-5',
+      temperature: 0.2,
+      maxTokens: 1024,
+      max_tokens: 512,
+      apiKey: 'sk-server-secret',
+      azureOpenAIApiKey: 'azure-secret',
+      azureOpenAIApiInstanceName: 'internal-resource',
+      anthropicApiUrl: 'https://internal-gateway.example',
+      configuration: {
+        baseURL: 'https://internal-gateway.example',
+        defaultHeaders: { Authorization: 'Bearer server-secret' },
+      },
+      clientOptions: { defaultHeaders: { 'x-api-key': 'anthropic-secret' } },
+      customHeaders: { 'Ocp-Apim-Subscription-Key': 'gateway-secret' },
+      authOptions: { credentials: { private_key: 'google-secret' } },
+      credentials: { accessKeyId: 'aws-id', secretAccessKey: 'aws-secret' },
+      client: { config: { token: { token: 'bedrock-bearer' } } },
+      endpointHost: 'vpce.internal.example',
+      baseURL: 'https://internal-gateway.example',
+    });
+
+    expect(sanitized).toEqual({
+      model: 'gpt-5',
+      temperature: 0.2,
+      maxTokens: 1024,
+      max_tokens: 512,
+    });
+  });
+
+  test('keeps user-level params while stripping nested secret keys from custom params', () => {
+    const sanitized = sanitizeResumeModelParameters({
+      maxTokens: 2048,
+      stop: ['a', 'b'],
+      custom: { safe: true, api_key: 'x', token: 'y' },
+    });
+
+    expect(sanitized).toEqual({
+      maxTokens: 2048,
+      stop: ['a', 'b'],
+      custom: { safe: true },
+    });
+  });
+
+  test('drops function values and returns undefined for non-object input', () => {
+    const sanitized = sanitizeResumeModelParameters({
+      temperature: 1,
+      fetch: () => undefined,
+    });
+    expect(sanitized).toEqual({ temperature: 1 });
+
+    expect(sanitizeResumeModelParameters(undefined)).toBeUndefined();
+    expect(sanitizeResumeModelParameters(null)).toBeUndefined();
+    expect(sanitizeResumeModelParameters('sk-secret')).toBeUndefined();
+    expect(sanitizeResumeModelParameters(['sk-secret'])).toBeUndefined();
+  });
+});
+
 describe('computeAgentRequestFingerprint', () => {
   it('is stable for the same graph-determining fields (ignoring other body keys)', () => {
     const a = computeAgentRequestFingerprint({
@@ -429,5 +530,24 @@ describe('pickResumeContext / applyResumeContext', () => {
     applyResumeContext(reloadedBody, action.resumeContext);
     expect(reloadedBody.ephemeralAgent).toEqual({ execute_code: true });
     expect(reloadedBody.promptPrefix).toBe('p');
+  });
+});
+
+describe('exemptAskUserQuestionFromApproval', () => {
+  const NAME = 'ask_user_question';
+  it('adds the tool to allow when the admin did not mention it', () => {
+    expect(exemptAskUserQuestionFromApproval({ enabled: true }, NAME)?.allow).toEqual([NAME]);
+    expect(
+      exemptAskUserQuestionFromApproval({ enabled: true, allow: ['calculator'] }, NAME)?.allow,
+    ).toEqual(['calculator', NAME]);
+  });
+  it('respects explicit admin entries in any list', () => {
+    const asked = { enabled: true, ask: [NAME] };
+    expect(exemptAskUserQuestionFromApproval(asked, NAME)).toBe(asked);
+    const denied = { enabled: true, deny: [NAME] };
+    expect(exemptAskUserQuestionFromApproval(denied, NAME)).toBe(denied);
+  });
+  it('passes undefined through', () => {
+    expect(exemptAskUserQuestionFromApproval(undefined, NAME)).toBeUndefined();
   });
 });

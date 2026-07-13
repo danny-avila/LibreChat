@@ -1,14 +1,30 @@
 import mongoose, { FilterQuery } from 'mongoose';
-import type { RefillIntervalUnit } from 'librechat-data-provider';
+import {
+  AUTH_USER_DOC_BY_ID_PREFIX,
+  CacheKeys,
+  type RefillIntervalUnit,
+} from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import type { CacheStore } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
 
+interface UserMethodDeps {
+  getCache?: (key: string) => CacheStore | undefined;
+}
+
+function isAuthUserDocCacheEnabled(): boolean {
+  return process.env.AUTH_USER_CACHE_MODE === 'on';
+}
+
 /** Factory function that takes mongoose instance and returns the methods */
-export function createUserMethods(mongoose: typeof import('mongoose')): {
+export function createUserMethods(
+  mongoose: typeof import('mongoose'),
+  deps: UserMethodDeps = {},
+): {
   findUser: (
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
@@ -248,10 +264,34 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
       $set: updateData,
       $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
     };
-    return await User.findByIdAndUpdate(userId, updateOperation, {
+    const updated = await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
     }).lean<IUser>();
+    await invalidateAuthUserDocCache(userId);
+    return updated;
+  }
+
+  async function invalidateAuthUserDocCache(userId: string): Promise<void> {
+    if (!isAuthUserDocCacheEnabled()) {
+      return;
+    }
+    const cache = deps.getCache?.(CacheKeys.AUTH_USER_DOC);
+    if (!cache?.get || !cache?.delete) {
+      return;
+    }
+    try {
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cachedKeys = await cache.get(indexKey);
+      if (Array.isArray(cachedKeys)) {
+        await Promise.all(
+          cachedKeys.map((key) => (typeof key === 'string' ? cache.delete?.(key) : undefined)),
+        );
+      }
+      await cache.delete(indexKey);
+    } catch {
+      // Cache invalidation must not make a user update fail.
+    }
   }
 
   /**
@@ -262,7 +302,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
    */
   async function acceptTerms(userId: string): Promise<IUser | null> {
     const User = mongoose.models.User;
-    return await User.findByIdAndUpdate(
+    const updated = await User.findByIdAndUpdate(
       userId,
       [
         {
@@ -274,6 +314,10 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
       ],
       { new: true, runValidators: true },
     ).lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return updated;
   }
 
   /**
@@ -301,6 +345,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
       if (result.deletedCount === 0) {
         return { deletedCount: 0, message: 'No user found with that ID.' };
       }
+      await invalidateAuthUserDocCache(userId);
       return { deletedCount: result.deletedCount, message: 'User was deleted successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -355,10 +400,14 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
       },
     };
 
-    return await User.findByIdAndUpdate(userId, updateOperation, {
+    const updated = await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
     }).lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return updated;
   }
 
   /**

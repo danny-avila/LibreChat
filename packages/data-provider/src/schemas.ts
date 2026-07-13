@@ -202,6 +202,7 @@ export enum ReasoningEffort {
   medium = 'medium',
   high = 'high',
   xhigh = 'xhigh',
+  max = 'max',
 }
 
 export enum ReasoningParameterFormat {
@@ -274,6 +275,21 @@ export enum ThinkingLevel {
   high = 'high',
 }
 
+/** OpenAI Responses API `reasoning.mode` (GPT-5.6+). */
+export enum ReasoningMode {
+  unset = '',
+  standard = 'standard',
+  pro = 'pro',
+}
+
+/** OpenAI Responses API `reasoning.context` (GPT-5.6+). */
+export enum ReasoningContext {
+  unset = '',
+  auto = 'auto',
+  current_turn = 'current_turn',
+  all_turns = 'all_turns',
+}
+
 export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
@@ -295,6 +311,8 @@ export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
 export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
+export const eReasoningModeSchema = z.nativeEnum(ReasoningMode);
+export const eReasoningContextSchema = z.nativeEnum(ReasoningContext);
 
 export const defaultAssistantFormValues = {
   assistant: '',
@@ -344,6 +362,8 @@ export const defaultAgentFormValues = {
   subagents: undefined as
     | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
     | undefined,
+  /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+  memory_scope: undefined as MemoryScope | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -487,6 +507,8 @@ const CLAUDE_4_64K_MAX_OUTPUT = 64000 as const;
 const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
+const CLAUDE_SONNET_128K_OUTPUT_PATTERN =
+  /claude-sonnet[-.]?(?:4[-.]?(?:[6-9]|\d{2})|[5-9]|\d{2,})(?=$|[^0-9])/;
 
 /**
  * Claude "Mythos-class" model families — new top-level classes (peers of
@@ -547,7 +569,7 @@ export const anthropicSettings = {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
-      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
+      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -580,7 +602,7 @@ export const anthropicSettings = {
         return value;
       }
 
-      if (/claude-sonnet[-.]?(?:[5-9]|\d{2,})/.test(modelName)) {
+      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
         if (value > ANTHROPIC_MAX_OUTPUT) {
           return ANTHROPIC_MAX_OUTPUT;
         }
@@ -835,11 +857,23 @@ export const tMessageSchema = z.object({
   quotes: z.array(z.string()).optional(),
 });
 
+/**
+ * Which memory partition an agent reads/writes.
+ * `user` = the shared personal pool (default); `agent` = a partition
+ * isolated per (user, agent) so the agent only sees its own memories.
+ */
+export enum MemoryScope {
+  user = 'user',
+  agent = 'agent',
+}
+
 export type MemoryArtifact = {
   key: string;
   value?: string;
   tokenCount?: number;
   type: 'update' | 'delete' | 'error';
+  /** Agent partition the write targeted; absent = shared personal pool */
+  agentId?: string;
 };
 
 export type UIResource = {
@@ -956,6 +990,9 @@ export const tConversationSchema = z.object({
   /* OpenAI: Reasoning models only */
   reasoning_effort: eReasoningEffortSchema.optional().nullable(),
   reasoning_summary: eReasoningSummarySchema.optional().nullable(),
+  /* OpenAI Responses API: reasoning mode (standard/pro) + context */
+  reasoning_mode: eReasoningModeSchema.optional().nullable(),
+  reasoning_context: eReasoningContextSchema.optional().nullable(),
   /* OpenAI: Verbosity control */
   verbosity: eVerbositySchema.optional().nullable(),
   /* OpenAI: use Responses API */
@@ -1072,6 +1109,10 @@ export const tQueryParamsSchema = tConversationSchema
     reasoning_effort: true,
     /** @endpoints openAI, custom, azureOpenAI */
     reasoning_summary: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_mode: true,
+    /** @endpoints openAI, custom, azureOpenAI */
+    reasoning_context: true,
     /** @endpoints openAI, custom, azureOpenAI */
     verbosity: true,
     /** @endpoints openAI, custom, azureOpenAI */
@@ -1387,6 +1428,8 @@ export const openAIBaseSchema = tConversationSchema.pick({
   max_tokens: true,
   reasoning_effort: true,
   reasoning_summary: true,
+  reasoning_mode: true,
+  reasoning_context: true,
   verbosity: true,
   useResponsesApi: true,
   web_search: true,
