@@ -1734,6 +1734,30 @@ function toolRequiresEphemeralConnection(tool: StructuredToolInterface | undefin
 const EMPTY_BACKGROUND_TOOL_SET: ReadonlySet<string> = new Set();
 
 /**
+ * Authenticated user id for background-task scoping. The in-repo routes merge
+ * `req` into the tool-execute configurable, but external hosts of the exported
+ * OpenAI-compatible service inject their own `loadTools` and may not — fall
+ * back to the run configurable's user identity so tasks are never registered
+ * under an empty user id (which would collapse isolation to conversationId).
+ */
+function resolveBackgroundUserId(configurable: Record<string, unknown> | undefined): string {
+  const req = configurable?.req as ServerRequest | undefined;
+  if (req?.user?.id) {
+    return req.user.id;
+  }
+  const userId = configurable?.user_id;
+  if (typeof userId === 'string' && userId !== '') {
+    return userId;
+  }
+  const user = configurable?.user;
+  if (typeof user === 'string') {
+    return user;
+  }
+  const idFromUser = (user as { id?: string } | undefined)?.id;
+  return typeof idFromUser === 'string' ? idFromUser : '';
+}
+
+/**
  * True when the tool's own schema declares `run_in_background` (zod shape or
  * raw JSON schema), i.e. the parameter belongs to the tool rather than being
  * host-injected — such a tool must receive the argument untouched.
@@ -3278,7 +3302,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const backgroundReq = backgroundEnabledForRun
               ? (mergedConfigurable?.req as ServerRequest | undefined)
               : undefined;
-            const backgroundUserId = backgroundReq?.user?.id ?? '';
+            const backgroundUserId = backgroundEnabledForRun
+              ? resolveBackgroundUserId(mergedConfigurable)
+              : '';
             const backgroundConversationId = backgroundEnabledForRun
               ? (((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
                 (mergedConfigurable?.thread_id as string | undefined) ??

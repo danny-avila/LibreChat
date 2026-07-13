@@ -330,6 +330,61 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(toolEndCalls).toHaveLength(1);
   });
 
+  it('scopes tasks by configurable user_id when req is absent (external service hosts)', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeSearchTool(state)] }),
+    });
+    const configurable = {
+      user_id: 'exec_user_external',
+      backgroundToolNames: ['search_mcp_docs'],
+    };
+    const metadata = { thread_id: 'exec_convo_external', run_id: 'run-external' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_ext', name: 'search_mcp_docs', args: { q: 'ping', run_in_background: true } },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const handleId = JSON.parse(dispatch[0].content).background_task_id;
+    const poll = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_ext_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handleId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_external', run_id: 'run-external-poll' },
+    });
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('completed');
+    expect(polled.result).toContain('RESULT for ping');
+
+    // a different user id cannot see the task (isolation is not conversation-only)
+    const foreign = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_foreign_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handleId },
+        },
+      ],
+      agentId: 'a',
+      configurable: { user_id: 'someone_else', backgroundToolNames: ['search_mcp_docs'] },
+      metadata: { thread_id: 'exec_convo_external', run_id: 'run-foreign' },
+    });
+    expect(JSON.parse(foreign[0].content).status).toBe('not_found');
+  });
+
   it('errors immediately (like foreground) when a background-requested tool failed to load', async () => {
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [] }),
