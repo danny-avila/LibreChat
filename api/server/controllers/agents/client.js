@@ -68,6 +68,7 @@ const {
   appendYouTubeVideoParts,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
+  maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
   Callback,
@@ -1385,6 +1386,16 @@ class AgentClient extends BaseClient {
       if (!abortController) {
         abortController = new AbortController();
       }
+
+      /** Fire-and-forget: boot the per-conversation stateful sandbox in
+       *  parallel with generation so the first execute_code/bash call lands
+       *  on a warm VM. No-op unless a reachable agent resolved
+       *  `statefulCodeSessions`. */
+      maybePrewarmCodeSandbox({
+        req: this.options.req,
+        conversationId: this.conversationId,
+        agents: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+      });
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];

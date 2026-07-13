@@ -1639,6 +1639,7 @@
   "com_ui_running": "Running...",
   "com_ui_running_command": "Running command",
   "com_ui_running_n_agents": "Running {{0}} agents",
+  "com_ui_sandbox_starting": "Starting sandbox environment",
   "com_ui_save": "Save",
   "com_ui_save_badge_changes": "Save badge changes?",
   "com_ui_save_changes": "Save Changes",

@@ -151,6 +151,8 @@ const Part = memo(function Part({
     const isToolCall =
       'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
     if (isToolCall) {
+      const toolCallId =
+        'id' in toolCall && typeof toolCall.id === 'string' ? toolCall.id : undefined;
       const card = (() => {
         if (isBashProgrammaticToolCall(toolCall.name, toolCall.args)) {
           return (
@@ -163,6 +165,7 @@ const Part = memo(function Part({
               commandField="code"
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
+              toolCallId={toolCallId}
             />
           );
         } else if (
@@ -179,6 +182,7 @@ const Part = memo(function Part({
               args={toolCall.args}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
+              toolCallId={toolCallId}
             />
           );
         } else if (
@@ -279,6 +283,7 @@ const Part = memo(function Part({
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
+              toolCallId={toolCallId}
             />
           );
         } else if (toolCall.name === Tools.web_search) {

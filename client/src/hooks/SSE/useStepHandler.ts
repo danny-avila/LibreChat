@@ -17,6 +17,7 @@ import type {
   SummaryContentPart,
   TMessageContentParts,
   SubagentUpdateEvent,
+  SandboxStartingEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -26,8 +27,8 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { subagentProgressByToolCallId, sandboxStartingByToolCallId } from '~/store';
 import { isAskUserQuestionPart } from '~/utils/approval';
-import { subagentProgressByToolCallId } from '~/store';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
@@ -55,7 +56,8 @@ type TStepEvent =
   | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
-  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent };
+  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
+  | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -280,6 +282,30 @@ export default function useStepHandler({
           reset(subagentProgressByToolCallId(toolCallId));
         }
         knownSubagentAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  /** Tool-call ids whose sandbox-starting atom is set, so completion can clear them. */
+  const knownSandboxAtomKeys = useRef(new Set<string>());
+
+  const setSandboxStarting = useRecoilCallback(
+    ({ set }) =>
+      (toolCallId: string): void => {
+        knownSandboxAtomKeys.current.add(toolCallId);
+        set(sandboxStartingByToolCallId(toolCallId), true);
+      },
+    [],
+  );
+
+  const clearSandboxStarting = useRecoilCallback(
+    ({ reset }) =>
+      (toolCallId?: string | null): void => {
+        if (!toolCallId || !knownSandboxAtomKeys.current.has(toolCallId)) {
+          return;
+        }
+        knownSandboxAtomKeys.current.delete(toolCallId);
+        reset(sandboxStartingByToolCallId(toolCallId));
       },
     [],
   );
@@ -934,6 +960,7 @@ export default function useStepHandler({
         const { result } = stepEvent.data;
 
         const { id: stepId } = result;
+        clearSandboxStarting(result.tool_call?.id);
 
         const runStep = stepMap.current.get(stepId);
         let responseMessageId = runStep?.runId ?? '';
@@ -977,6 +1004,8 @@ export default function useStepHandler({
             }),
           );
         }
+      } else if (stepEvent.event === StepEvents.ON_SANDBOX_STARTING) {
+        setSandboxStarting(stepEvent.data.tool_call_id);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
@@ -1082,6 +1111,8 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
+      setSandboxStarting,
+      clearSandboxStarting,
       onSkillAuthoringComplete,
     ],
   );

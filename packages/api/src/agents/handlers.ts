@@ -40,6 +40,7 @@ import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
   output: {
@@ -3717,6 +3718,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         metadata,
                       } as Record<string, unknown>,
                     );
+
+                    /* Only sandbox-bound calls carry a runtime session hint, so
+                     * this refreshes the prewarm module's warm window without
+                     * inspecting tool names. */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      markSandboxReady(tc.runtimeSessionHint);
+                    }
 
                     // Code-execution tools emit per-call boilerplate
                     // ("Note: ..." paragraphs and `| <annotation>` per-file
