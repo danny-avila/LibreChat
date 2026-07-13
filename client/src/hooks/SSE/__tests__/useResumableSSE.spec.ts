@@ -236,7 +236,7 @@ const advanceRetryTimer = async (ms: number) => {
   await flushMicrotasks();
 };
 
-describe('useResumableSSE - 404 error path', () => {
+describe('useResumableSSE', () => {
   beforeEach(() => {
     mockSSEInstances.length = 0;
     localStorage.clear();
@@ -1608,6 +1608,59 @@ describe('useResumableSSE - 404 error path', () => {
       });
     });
 
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('ignores responseCode === 0 after FINAL instead of reconnecting a completed stream', async () => {
+    jest.useFakeTimers();
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    const finalPayload = {
+      final: true,
+      conversation: { conversationId: CONV_ID },
+      requestMessage: {
+        messageId: 'msg-1',
+        conversationId: CONV_ID,
+        text: 'Hello',
+        isCreatedByUser: true,
+      },
+      responseMessage: {
+        messageId: 'resp-1',
+        parentMessageId: 'msg-1',
+        conversationId: CONV_ID,
+        text: 'Done',
+        isCreatedByUser: false,
+      },
+    };
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify(finalPayload),
+      });
+    });
+
+    expect(sse.close).toHaveBeenCalled();
+    mockSetIsSubmitting.mockClear();
+    mockSetShowStopButton.mockClear();
+
+    await act(async () => {
+      sse._emit('error', { responseCode: 0 });
+    });
+    await advanceRetryTimer(1000);
+
+    expect(mockSSEInstances).toHaveLength(sseCount);
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(true);
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
     expect(mockErrorHandler).not.toHaveBeenCalled();
     unmount();
   });

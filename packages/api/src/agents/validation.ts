@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_SUBAGENTS, ViolationTypes, ErrorTypes } from 'librechat-data-provider';
+import { MemoryScope, MAX_SUBAGENTS, ViolationTypes, ErrorTypes } from 'librechat-data-provider';
 import type { Agent, TModelsConfig } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 
@@ -388,6 +388,7 @@ export const agentBaseSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     /** @deprecated Use edges instead */
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
@@ -442,6 +443,7 @@ export const agentBaseSchema: z.ZodObject<
     >;
     end_after_tools: z.ZodOptional<z.ZodBoolean>;
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
+    stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -688,11 +690,13 @@ export const agentBaseSchema: z.ZodObject<
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   skills_enabled: z.boolean().optional(),
+  memory_scope: z.nativeEnum(MemoryScope).optional(),
   /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
   edges: z.array(graphEdgeSchema).optional(),
   end_after_tools: z.boolean().optional(),
   hide_sequential_outputs: z.boolean().optional(),
+  stateful_code_sessions: z.boolean().optional(),
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
   conversation_starters: z.array(z.string()).optional(),
@@ -732,6 +736,7 @@ export const agentCreateSchema: z.ZodObject<
     model_parameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
       z.ZodArray<
@@ -785,6 +790,7 @@ export const agentCreateSchema: z.ZodObject<
     >;
     end_after_tools: z.ZodOptional<z.ZodBoolean>;
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
+    stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -1042,6 +1048,7 @@ export const agentUpdateSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
       z.ZodArray<
@@ -1095,6 +1102,7 @@ export const agentUpdateSchema: z.ZodObject<
     >;
     end_after_tools: z.ZodOptional<z.ZodBoolean>;
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
+    stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;

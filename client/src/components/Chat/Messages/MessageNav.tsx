@@ -109,8 +109,8 @@ function computeTargetScroll(
 
 type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
 
-const RIB_END: RibDims = { baseW: 4, baseH: 4, peakW: 6, peakH: 6 };
-const RIB_MESSAGE: RibDims = { baseW: 16, baseH: 3, peakW: 52, peakH: 6 };
+const RIB_END: RibDims = { baseW: 3, baseH: 3, peakW: 4.5, peakH: 4.5 };
+const RIB_MESSAGE: RibDims = { baseW: 12, baseH: 3, peakW: 39, peakH: 6 };
 
 /** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
 const MAG_INFLUENCE = 50;
@@ -150,7 +150,7 @@ const MessageIndicator = memo(function MessageIndicator({
   label: string;
   onSelect: (id: string) => void;
 }) {
-  const baseSize = entry.isEnd ? 'h-1 w-1' : 'h-[3px] w-4';
+  const baseSize = entry.isEnd ? 'mr-1.5 h-[3px] w-[3px]' : 'h-[3px] w-3';
   return (
     <button
       type="button"
@@ -175,7 +175,7 @@ const MessageIndicator = memo(function MessageIndicator({
 });
 
 const chevronButtonClasses = cn(
-  'rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
+  '-mr-1 rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
   'group-hover/nav:text-text-secondary group-hover/nav:opacity-100',
   'group-focus-within/nav:text-text-secondary group-focus-within/nav:opacity-100',
   'group-hover/nav:hover:text-text-primary',
