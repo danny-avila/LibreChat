@@ -120,6 +120,21 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(shouldSignalSandboxStart('convo-1')).toBe(true);
   });
 
+  it('prewarms again after a short cold-after window even within the fire cooldown', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    jest.setSystemTime(new Date('2026-07-13T00:00:00Z'));
+    process.env.CODE_SANDBOX_COLD_AFTER_MS = '30000';
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    jest.setSystemTime(new Date('2026-07-13T00:00:45Z'));
+    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('does not mark the sandbox ready when the 2xx body fails to drain', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -172,5 +187,16 @@ describe('shouldSignalSandboxStart / markSandboxReady', () => {
     expect(shouldSignalSandboxStart('convo-1')).toBe(false);
     jest.setSystemTime(new Date('2026-07-13T00:00:02Z'));
     expect(shouldSignalSandboxStart('convo-1')).toBe(true);
+  });
+
+  it('never signals when the kill switch is on, even for tracked conversations', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-13T00:00:00Z'));
+    process.env.CODE_SANDBOX_PREWARM = 'false';
+    process.env.CODE_SANDBOX_COLD_AFTER_MS = '1000';
+    markSandboxReady('convo-1');
+    jest.setSystemTime(new Date('2026-07-13T00:00:05Z'));
+    expect(shouldSignalSandboxStart('convo-1')).toBe(false);
+    delete process.env.CODE_SANDBOX_PREWARM;
   });
 });

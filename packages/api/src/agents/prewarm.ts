@@ -7,7 +7,9 @@ import { anyAgentHasStatefulSessions } from './run';
 type PrewarmAgents = Parameters<typeof anyAgentHasStatefulSessions>[0];
 
 interface SandboxState {
+  /** When the last prewarm request was fired; 0 when only real execs touched the entry. */
   firedAt: number;
+  /** When the sandbox last confirmed a completed request (prewarm or real exec). */
   readyAt: number | null;
 }
 
@@ -44,10 +46,11 @@ function pruneOldestEntries(): void {
     return;
   }
   let oldestKey: string | null = null;
-  let oldestFiredAt = Infinity;
+  let oldestTouchedAt = Infinity;
   for (const [key, state] of sandboxStateByConversation) {
-    if (state.firedAt < oldestFiredAt) {
-      oldestFiredAt = state.firedAt;
+    const touchedAt = Math.max(state.firedAt, state.readyAt ?? 0);
+    if (touchedAt < oldestTouchedAt) {
+      oldestTouchedAt = touchedAt;
       oldestKey = key;
     }
   }
@@ -69,10 +72,9 @@ export function markSandboxReady(conversationId: string): void {
   const state = sandboxStateByConversation.get(conversationId);
   if (state) {
     state.readyAt = now;
-    state.firedAt = now;
     return;
   }
-  sandboxStateByConversation.set(conversationId, { firedAt: now, readyAt: now });
+  sandboxStateByConversation.set(conversationId, { firedAt: 0, readyAt: now });
   pruneOldestEntries();
 }
 
@@ -81,10 +83,11 @@ export function markSandboxReady(conversationId: string): void {
  * conversation's code tool call. True only for conversations tracked as
  * stateful (an entry exists) whose sandbox has not confirmed ready within
  * the warm window — stateless deployments never get an entry and never
- * signal, preserving existing behavior.
+ * signal, preserving existing behavior. The `CODE_SANDBOX_PREWARM=false`
+ * kill switch silences this too, reverting the full feature to baseline.
  */
 export function shouldSignalSandboxStart(conversationId?: string | null): boolean {
-  if (!conversationId) {
+  if (!conversationId || prewarmDisabled()) {
     return false;
   }
   const state = sandboxStateByConversation.get(conversationId);
@@ -141,7 +144,14 @@ export function maybePrewarmCodeSandbox(params: {
   const now = Date.now();
   const state = sandboxStateByConversation.get(conversationId);
   const withinWarmWindow = state?.readyAt != null && now - state.readyAt <= coldAfterMs();
-  const prewarmInFlight = state != null && now - state.firedAt <= PREWARM_INFLIGHT_COOLDOWN_MS;
+  /* In-flight means a fired prewarm that no completion (readyAt) has caught
+   * up with — real execs refreshing readyAt must not extend this, or a
+   * cold-after window shorter than the cooldown could suppress needed
+   * prewarms between the two thresholds. */
+  const prewarmInFlight =
+    state != null &&
+    now - state.firedAt <= PREWARM_INFLIGHT_COOLDOWN_MS &&
+    (state.readyAt == null || state.readyAt < state.firedAt);
   if (withinWarmWindow || prewarmInFlight) {
     return;
   }

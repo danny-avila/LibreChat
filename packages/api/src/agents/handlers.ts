@@ -3555,10 +3555,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     }
 
-                    /* Host-handled read_file/create_file/edit_file reach the
-                     * sandbox too (they return before the generic invoke path's
-                     * marker below), so refresh the warm window here as well. */
+                    /* Sandbox-routed create_file/edit_file return before the
+                     * generic invoke path's marker below, so refresh the warm
+                     * window here. Gated on `isSandboxFileAuthoringCall`:
+                     * skill-path writes and skill/read_file calls on this
+                     * branch may resolve without touching the Code API, and
+                     * under-marking only costs a redundant cold-boot label. */
                     if (
+                      isSandboxFileAuthoringCall &&
                       handlerResult.status === 'success' &&
                       tc.runtimeSessionHint != null &&
                       tc.runtimeSessionHint !== ''
