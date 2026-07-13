@@ -40,6 +40,7 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import {
+  CHECK_BACKGROUND_TASK_NAME,
   stripBackgroundFromToolRegistry,
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
@@ -1460,8 +1461,11 @@ export async function createRun({
          * Background-capable tools: eager execution could launch the detached
          * task with speculative/partial args before the final tool call, and a
          * background side effect (unlike a foreground eager mismatch) can't be
-         * canceled once dispatched.
+         * canceled once dispatched. The poll tool is excluded for the same
+         * reason: collecting a task's artifact is a one-shot claim that must
+         * not fire from a speculative snapshot the SDK may later discard.
          */
+        CHECK_BACKGROUND_TASK_NAME,
         ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
       ],
     },

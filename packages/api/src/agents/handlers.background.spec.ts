@@ -330,6 +330,79 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(toolEndCalls).toHaveLength(1);
   });
 
+  it('errors immediately (like foreground) when a background-requested tool failed to load', async () => {
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [] }),
+    });
+    const results = (await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_missing', name: 'search_mcp_docs', args: { q: 'x', run_in_background: true } },
+      ],
+      agentId: 'a',
+      configurable: buildConfig(['search_mcp_docs']),
+      metadata: { thread_id: 'exec_convo_missing', run_id: 'run-missing' },
+    })) as Array<{ content: string; status?: string; errorMessage?: string }>;
+
+    expect(results[0].status).toBe('error');
+    expect(results[0].errorMessage).toBe('Tool search_mcp_docs not found');
+    expect(results[0].content).not.toContain('background_task_id');
+  });
+
+  it('strips a run_in_background arg imitated onto a tool this agent never opted in', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeSearchTool(state)] }),
+    });
+    // background is enabled for the run via another tool; search_mcp_docs is NOT opted in
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_foreign',
+          name: 'search_mcp_docs',
+          args: { q: 'hello', run_in_background: true },
+        },
+      ],
+      agentId: 'a',
+      configurable: buildConfig(['other_tool']),
+      metadata: { thread_id: 'exec_convo_foreign', run_id: 'run-foreign' },
+    });
+
+    expect(state.calls).toBe(1);
+    expect(state.lastInput).toEqual({ q: 'hello' });
+  });
+
+  it('forwards run_in_background untouched to a tool whose own schema declares it', async () => {
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const owningTool = {
+      name: 'owns_the_param',
+      description: 'declares run_in_background itself',
+      schema: z.object({ q: z.string(), run_in_background: z.boolean().optional() }),
+      invoke: async (input: Record<string, unknown>) => {
+        state.calls += 1;
+        state.lastInput = input;
+        return { content: 'OWNED' };
+      },
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [owningTool] }),
+    });
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_owned',
+          name: 'owns_the_param',
+          args: { q: 'hello', run_in_background: true },
+        },
+      ],
+      agentId: 'a',
+      configurable: buildConfig(['other_tool']),
+      metadata: { thread_id: 'exec_convo_owned', run_id: 'run-owned' },
+    });
+
+    expect(state.calls).toBe(1);
+    expect(state.lastInput).toEqual({ q: 'hello', run_in_background: true });
+  });
+
   it('retries artifact delivery on the next poll when the callback fails (artifact not lost)', async () => {
     const artifactTool = {
       name: 'search_mcp_docs',

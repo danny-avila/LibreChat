@@ -29,13 +29,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
-import { Tools, Constants } from 'librechat-data-provider';
 import { Constants as AgentConstants } from '@librechat/agents';
+import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
+import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
 export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
@@ -69,13 +70,12 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
    * by the foreground `toolEndCallback`; a detached run stores only content, so
    * backgrounding them would silently drop those sources/files. Image-generation
    * tools are artifact-first — their files can't be reliably attached to an
-   * already-saved turn — so they're excluded rather than degraded.
+   * already-saved turn — so they're excluded rather than degraded. Sourced from
+   * the shared `imageGenTools` set plus the OAI toolkit ids it doesn't cover.
    */
   Tools.web_search,
   Tools.file_search,
-  'dalle',
-  'flux',
-  'gemini_image_gen',
+  ...imageGenTools,
   'image_gen_oai',
   'image_edit_oai',
 ]);
@@ -115,6 +115,12 @@ function coerceArgsObject(args: unknown): Record<string, unknown> | undefined {
 /** Whether tool-call args request background dispatch (handles stringified args). */
 export function isBackgroundRequested(args: unknown): boolean {
   return coerceArgsObject(args)?.[RUN_IN_BACKGROUND_ARG] === true;
+}
+
+/** Whether tool-call args carry the `run_in_background` key at all (any value). */
+export function hasRunInBackgroundArg(args: unknown): boolean {
+  const obj = coerceArgsObject(args);
+  return obj != null && RUN_IN_BACKGROUND_ARG in obj;
 }
 
 /**
@@ -322,8 +328,15 @@ export function applyBackgroundToolCalls(params: {
   toolRegistry: LCToolRegistry | undefined;
   toolOptions: AgentToolOptions | undefined;
   enabled: boolean;
+  /**
+   * Extra host-context exclusion (e.g. tools of ephemeral request-scoped MCP
+   * servers, whose connection dies at request end): a `true` return skips the
+   * param injection entirely so the model is never shown an option the
+   * executor would silently downgrade to foreground.
+   */
+  excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; enabled: boolean; backgroundToolNames: string[] } {
-  const { toolRegistry, toolOptions } = params;
+  const { toolRegistry, toolOptions, excludeTool } = params;
   const defs = params.toolDefinitions ?? [];
   if (!params.enabled || !toolOptions) {
     return { toolDefinitions: defs, enabled: false, backgroundToolNames: [] };
@@ -332,7 +345,7 @@ export function applyBackgroundToolCalls(params: {
   const backgroundToolNames: string[] = [];
   const nextDefs = defs.map((def) => {
     const optedIn = toolOptions[def.name]?.run_in_background === true;
-    if (!optedIn || !isBackgroundEligibleToolName(def.name)) {
+    if (!optedIn || !isBackgroundEligibleToolName(def.name) || excludeTool?.(def.name) === true) {
       return def;
     }
     if (!canInjectRunInBackgroundParam(def)) {
@@ -434,7 +447,7 @@ const MAX_RESULT_CHARS = 100_000;
 
 function toStoredContent(content: unknown): string {
   const asString = typeof content === 'string' ? content : JSON.stringify(content ?? '');
-  return asString.length > MAX_RESULT_CHARS ? asString.slice(0, MAX_RESULT_CHARS) : asString;
+  return truncateMiddle(asString, MAX_RESULT_CHARS);
 }
 
 /**
@@ -601,8 +614,11 @@ export class BackgroundTaskRegistryClass {
   /**
    * Returns a completed task's artifact exactly once, marking it delivered and
    * clearing it. The poll turn routes it to a live `toolEndCallback` so the
-   * artifact isn't lost with the finalized dispatch turn. If delivery fails,
-   * `restoreArtifact` puts it back so a later poll can retry.
+   * artifact isn't lost with the finalized dispatch turn. If handing it to the
+   * callback throws synchronously, `restoreArtifact` puts it back so a later
+   * poll can retry. Note the callback's own persistence is fire-and-forget
+   * (failures are swallowed downstream), so delivery is at-most-once — the
+   * same semantics a foreground tool's artifact has.
    */
   claimArtifact(
     userId: string,
@@ -621,8 +637,9 @@ export class BackgroundTaskRegistryClass {
   }
 
   /**
-   * Puts a claimed artifact back after a failed delivery so the next poll
-   * retries it. No-op if the task was swept or already holds an artifact.
+   * Puts a claimed artifact back after a synchronous delivery failure so the
+   * next poll retries it. No-op if the task was swept or already holds an
+   * artifact.
    */
   restoreArtifact(userId: string, conversationId: string, taskId: string, artifact: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));

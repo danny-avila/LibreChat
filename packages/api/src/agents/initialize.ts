@@ -51,6 +51,7 @@ import {
   isFileAuthoringToolDefinition,
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -1177,11 +1178,26 @@ export async function initializeAgent(
    */
   let backgroundToolNames: string[] | undefined;
   if (params.backgroundToolsAvailable === true) {
+    const mcpConfig = req.config?.mcpConfig;
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
       toolRegistry,
       toolOptions: agent.tool_options,
       enabled: true,
+      /** Tools of ephemeral request-scoped MCP servers (runtime body
+       *  placeholders) never get the param: their connection dies at request
+       *  end, so the executor would only downgrade the call to foreground.
+       *  Unknown servers stay eligible — the executor's per-instance tag is
+       *  the fail-safe for those. */
+      excludeTool: (toolName) => {
+        const delimiterIndex = toolName.indexOf(Constants.mcp_delimiter);
+        if (delimiterIndex < 0) {
+          return false;
+        }
+        const serverConfig =
+          mcpConfig?.[toolName.slice(delimiterIndex + Constants.mcp_delimiter.length)];
+        return serverConfig != null && requiresEphemeralUserConnection(serverConfig);
+      },
     });
     toolDefinitions = backgroundResult.toolDefinitions;
     if (backgroundResult.backgroundToolNames.length > 0) {

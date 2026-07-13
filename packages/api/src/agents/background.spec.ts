@@ -44,6 +44,8 @@ describe('isBackgroundEligibleToolName', () => {
       'web_search',
       'file_search',
       'dalle',
+      'dall-e',
+      'stable-diffusion',
       'flux',
       'gemini_image_gen',
       'image_gen_oai',
@@ -187,6 +189,30 @@ describe('applyBackgroundToolCalls', () => {
     expect(result.enabled).toBe(false);
     expect(result.backgroundToolNames).toEqual([]);
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
+  });
+
+  it('skips a tool the host excludeTool predicate rejects (e.g. ephemeral MCP server)', () => {
+    const defs = [mcpDef('ephemeral_mcp__body_server'), mcpDef('search_mcp_docs')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        ephemeral_mcp__body_server: { run_in_background: true },
+        search_mcp_docs: { run_in_background: true },
+      },
+      enabled: true,
+      excludeTool: (name) => name === 'ephemeral_mcp__body_server',
+    });
+    expect(result.backgroundToolNames).toEqual(['search_mcp_docs']);
+    const ephemeralDef = result.toolDefinitions.find(
+      (d) => d.name === 'ephemeral_mcp__body_server',
+    );
+    expect(
+      (ephemeralDef?.parameters as { properties?: Record<string, unknown> }).properties?.[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeUndefined();
   });
 
   it('skips a non-object (string-input) schema without rewriting it', () => {
@@ -428,6 +454,23 @@ describe('BackgroundTaskRegistryClass', () => {
     // second claim yields nothing (delivered once), and the artifact is freed
     expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
     expect(registry.get('u1', 'c1', created.task.id)?.artifact).toBeUndefined();
+  });
+
+  it('truncates an oversized stored result with an explicit marker (not a silent cut)', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_big',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u1', 'c1', created.task.id, { content: 'x'.repeat(150_000) });
+    const stored = registry.get('u1', 'c1', created.task.id)?.result ?? '';
+    expect(stored.length).toBeLessThanOrEqual(100_000);
+    expect(stored).toContain('[truncated: 150000 chars exceeded 100000 limit]');
   });
 
   it('restores a claimed artifact after a failed delivery so a later claim retries', () => {

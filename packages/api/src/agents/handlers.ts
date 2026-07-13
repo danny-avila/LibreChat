@@ -21,11 +21,13 @@ import {
   claimBackgroundArtifact,
   restoreBackgroundArtifact,
   isBackgroundRequested,
+  hasRunInBackgroundArg,
   stripRunInBackgroundArg,
   buildBackgroundHandleContent,
   buildBackgroundCapacityContent,
   stripBackgroundFromToolDefinitions,
   CHECK_BACKGROUND_TASK_NAME,
+  RUN_IN_BACKGROUND_ARG,
 } from './background';
 import {
   CREATE_FILE_TOOL_NAME,
@@ -34,7 +36,7 @@ import {
   isCodeSessionToolName,
 } from './tools';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
-import { logAxiosError, runOutsideTracing } from '~/utils';
+import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -286,22 +288,6 @@ type ToolInputSchemaKind = {
   object: boolean;
   string: boolean;
 };
-
-function truncateMiddle(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-
-  const indicator = `\n\n... [truncated: ${value.length} chars exceeded ${maxChars} limit] ...\n\n`;
-  const available = maxChars - indicator.length;
-  if (available <= 0) {
-    return value.slice(0, maxChars);
-  }
-
-  const headSize = Math.ceil(available * 0.7);
-  const tailSize = available - headSize;
-  return value.slice(0, headSize) + indicator + value.slice(value.length - tailSize);
-}
 
 function stringifyThrownValue(error: unknown): string {
   try {
@@ -1742,6 +1728,26 @@ function toolRequiresEphemeralConnection(tool: StructuredToolInterface | undefin
   return (
     (tool as (StructuredToolInterface & { mcpRequiresEphemeralConnection?: boolean }) | undefined)
       ?.mcpRequiresEphemeralConnection === true
+  );
+}
+
+/**
+ * True when the tool's own schema declares `run_in_background` (zod shape or
+ * raw JSON schema), i.e. the parameter belongs to the tool rather than being
+ * host-injected — such a tool must receive the argument untouched.
+ */
+function toolDeclaresRunInBackgroundParam(tool: StructuredToolInterface): boolean {
+  const schema = (
+    tool as StructuredToolInterface & {
+      schema?: { shape?: Record<string, unknown>; properties?: Record<string, unknown> };
+    }
+  ).schema;
+  if (schema == null) {
+    return false;
+  }
+  return (
+    schema.shape?.[RUN_IN_BACKGROUND_ARG] != null ||
+    schema.properties?.[RUN_IN_BACKGROUND_ARG] != null
   );
 }
 
@@ -3282,6 +3288,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               | string
               | undefined;
             const dispatchBackgroundToolCall = (tc: ToolCallRequest): ToolExecuteResult => {
+              /** A tool that failed to load must error immediately (matching the
+               *  foreground path) — a synthetic "started" handle would tell the
+               *  model a side effect is in flight that never executed. */
+              const tool = toolMap.get(tc.name);
+              if (!tool) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'error' as const,
+                  content: '',
+                  errorMessage: `Tool ${tc.name} not found`,
+                };
+              }
               const created = backgroundTaskRegistry.create({
                 userId: backgroundUserId,
                 conversationId: backgroundConversationId,
@@ -3302,50 +3320,37 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const { task, isNew } = created;
               if (isNew) {
-                const tool = toolMap.get(tc.name);
-                if (!tool) {
-                  backgroundTaskRegistry.fail(
-                    backgroundUserId,
-                    backgroundConversationId,
-                    task.id,
-                    `Tool ${tc.name} not found`,
-                  );
-                } else {
-                  const strippedArgs = stripRunInBackgroundArg(tc.args);
-                  void (async () => {
-                    try {
-                      const result = (await tool.invoke(
-                        normalizeToolInvokeArgs(strippedArgs, tool),
-                        {
-                          toolCall: { id: tc.id, stepId: tc.stepId, turn: tc.turn },
-                          configurable: mergedConfigurable,
-                          metadata,
-                        } as Record<string, unknown>,
-                      )) as { content?: unknown; artifact?: unknown };
-                      /** Hold any artifact (images, files, UI resources,
-                       *  citations) on the task instead of routing it through
-                       *  this dispatch turn's callback: a slow background call
-                       *  resolves after the turn finalized, when its
-                       *  artifactPromises are already awaited and the stream is
-                       *  closed, so that push would be silently dropped. The poll
-                       *  turn delivers it live in `check_background_task`. */
-                      backgroundTaskRegistry.complete(
-                        backgroundUserId,
-                        backgroundConversationId,
-                        task.id,
-                        { content: result.content, artifact: result.artifact },
-                      );
-                    } catch (toolError) {
-                      const { message } = getSafeToolError(toolError);
-                      backgroundTaskRegistry.fail(
-                        backgroundUserId,
-                        backgroundConversationId,
-                        task.id,
-                        message,
-                      );
-                    }
-                  })();
-                }
+                const strippedArgs = stripRunInBackgroundArg(tc.args);
+                void (async () => {
+                  try {
+                    const result = (await tool.invoke(normalizeToolInvokeArgs(strippedArgs, tool), {
+                      toolCall: { id: tc.id, stepId: tc.stepId, turn: tc.turn },
+                      configurable: mergedConfigurable,
+                      metadata,
+                    } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
+                    /** Hold any artifact (images, files, UI resources,
+                     *  citations) on the task instead of routing it through
+                     *  this dispatch turn's callback: a slow background call
+                     *  resolves after the turn finalized, when its
+                     *  artifactPromises are already awaited and the stream is
+                     *  closed, so that push would be silently dropped. The poll
+                     *  turn delivers it live in `check_background_task`. */
+                    backgroundTaskRegistry.complete(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      { content: result.content, artifact: result.artifact },
+                    );
+                  } catch (toolError) {
+                    const { message } = getSafeToolError(toolError);
+                    backgroundTaskRegistry.fail(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      message,
+                    );
+                  }
+                })();
               }
               return {
                 toolCallId: tc.id,
@@ -3391,6 +3396,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           },
                         );
                       } catch (callbackError) {
+                        /** Only synchronous callback throws land here (e.g. a
+                         *  malformed artifact shape); the callback's downstream
+                         *  persistence is fire-and-forget, so a storage failure
+                         *  is at-most-once — the same semantics as a foreground
+                         *  artifact. */
                         restoreBackgroundArtifact({
                           userId: backgroundUserId,
                           conversationId: backgroundConversationId,
@@ -3660,13 +3670,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                     }
 
-                    /** Strip the host-only `run_in_background` flag for
-                     *  background-capable tools even on foreground calls (the
-                     *  model may emit it as `false`), so a strict MCP/action
-                     *  schema doesn't reject an undeclared argument. */
-                    const foregroundArgs = backgroundToolSet.has(tc.name)
-                      ? stripRunInBackgroundArg(tc.args)
-                      : tc.args;
+                    /** Strip the host-only `run_in_background` flag on foreground
+                     *  calls (the model may emit it as `false`, or imitate it from
+                     *  another agent's history on a tool this agent never opted
+                     *  in), so a strict MCP/action schema doesn't reject an
+                     *  undeclared argument. Only a tool whose own schema declares
+                     *  the parameter receives it. */
+                    const foregroundArgs =
+                      backgroundToolSet.has(tc.name) ||
+                      (hasRunInBackgroundArg(tc.args) && !toolDeclaresRunInBackgroundParam(tool))
+                        ? stripRunInBackgroundArg(tc.args)
+                        : tc.args;
                     const result = await tool.invoke(
                       normalizeToolInvokeArgs(foregroundArgs, tool),
                       {
