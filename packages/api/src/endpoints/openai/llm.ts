@@ -77,27 +77,39 @@ export const knownOpenAIParams: Set<string> = new Set([
 function hasReasoningParams({
   reasoning_effort,
   reasoning_summary,
+  reasoning_mode,
+  reasoning_context,
 }: {
   reasoning_effort?: string | null;
   reasoning_summary?: string | null;
+  reasoning_mode?: string | null;
+  reasoning_context?: string | null;
 }): boolean {
   return (
     (reasoning_effort != null && reasoning_effort !== '') ||
-    (reasoning_summary != null && reasoning_summary !== '')
+    (reasoning_summary != null && reasoning_summary !== '') ||
+    (reasoning_mode != null && reasoning_mode !== '') ||
+    (reasoning_context != null && reasoning_context !== '')
   );
 }
 
 function getReasoningObject({
   reasoningEffort,
   reasoningSummary,
+  reasoningMode,
+  reasoningContext,
 }: {
   reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
   reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+  reasoningMode?: OpenAILLMConfig['reasoning_mode'];
+  reasoningContext?: OpenAILLMConfig['reasoning_context'];
 }): OpenAI.Reasoning {
   return removeNullishValues(
     {
       effort: reasoningEffort,
       summary: reasoningSummary,
+      mode: reasoningMode,
+      context: reasoningContext,
     },
     true,
   ) as OpenAI.Reasoning;
@@ -107,14 +119,14 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
   return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
 }
 
-function removeReasoningSummary(target: Record<string, unknown>) {
+function removeReasoningField(target: Record<string, unknown>, field: string) {
   const { reasoning } = target;
   if (reasoning == null || typeof reasoning !== 'object' || Array.isArray(reasoning)) {
     return;
   }
 
   const rest = { ...(reasoning as Record<string, unknown>) };
-  delete rest.summary;
+  delete rest[field];
   if (Object.keys(rest).length === 0) {
     delete target.reasoning;
     return;
@@ -146,8 +158,24 @@ function deleteConfigParam({
   if (param === 'reasoning_summary') {
     delete (llmConfig as Record<string, unknown>).reasoning_summary;
     delete modelKwargs.reasoning_summary;
-    removeReasoningSummary(llmConfig as Record<string, unknown>);
-    removeReasoningSummary(modelKwargs);
+    removeReasoningField(llmConfig as Record<string, unknown>, 'summary');
+    removeReasoningField(modelKwargs, 'summary');
+    return;
+  }
+
+  if (param === 'reasoning_mode') {
+    delete (llmConfig as Record<string, unknown>).reasoning_mode;
+    delete modelKwargs.reasoning_mode;
+    removeReasoningField(llmConfig as Record<string, unknown>, 'mode');
+    removeReasoningField(modelKwargs, 'mode');
+    return;
+  }
+
+  if (param === 'reasoning_context') {
+    delete (llmConfig as Record<string, unknown>).reasoning_context;
+    delete modelKwargs.reasoning_context;
+    removeReasoningField(llmConfig as Record<string, unknown>, 'context');
+    removeReasoningField(modelKwargs, 'context');
     return;
   }
 
@@ -285,6 +313,8 @@ function applyReasoningConfig({
   reasoningEffort,
   reasoningFormat,
   reasoningSummary,
+  reasoningMode,
+  reasoningContext,
 }: {
   endpoint?: EModelEndpoint | string | null;
   llmConfig: OpenAILLMConfig;
@@ -292,17 +322,26 @@ function applyReasoningConfig({
   reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
   reasoningFormat?: ReasoningParameterFormat;
   reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+  reasoningMode?: OpenAILLMConfig['reasoning_mode'];
+  reasoningContext?: OpenAILLMConfig['reasoning_context'];
 }): boolean {
   if (
     !hasReasoningParams({
       reasoning_effort: reasoningEffort,
       reasoning_summary: reasoningSummary,
+      reasoning_mode: reasoningMode,
+      reasoning_context: reasoningContext,
     })
   ) {
     return false;
   }
 
-  const reasoning = getReasoningObject({ reasoningEffort, reasoningSummary });
+  const reasoning = getReasoningObject({
+    reasoningEffort,
+    reasoningSummary,
+    reasoningMode,
+    reasoningContext,
+  });
   if (reasoningFormat === ReasoningParameterFormat.disabled) {
     return false;
   }
@@ -452,6 +491,8 @@ export function getOpenAILLMConfig({
   const {
     reasoning_effort,
     reasoning_summary,
+    reasoning_mode,
+    reasoning_context,
     verbosity,
     web_search,
     promptCache,
@@ -482,6 +523,8 @@ export function getOpenAILLMConfig({
   let hasModelKwargs = false;
   let reasoningEffort = reasoning_effort;
   let reasoningSummary = reasoning_summary;
+  let reasoningMode = reasoning_mode;
+  let reasoningContext = reasoning_context;
 
   if (verbosity != null && verbosity !== '' && useOpenRouter) {
     llmConfig.verbosity = verbosity;
@@ -524,6 +567,18 @@ export function getOpenAILLMConfig({
       if (key === 'reasoning_summary') {
         if (!reasoningSummary && typeof value === 'string') {
           reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_mode') {
+        if (!reasoningMode && typeof value === 'string') {
+          reasoningMode = value as OpenAILLMConfig['reasoning_mode'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_context') {
+        if (!reasoningContext && typeof value === 'string') {
+          reasoningContext = value as OpenAILLMConfig['reasoning_context'];
         }
         continue;
       }
@@ -581,6 +636,18 @@ export function getOpenAILLMConfig({
       if (key === 'reasoning_summary') {
         if (typeof value === 'string' || value == null) {
           reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_mode') {
+        if (typeof value === 'string' || value == null) {
+          reasoningMode = value as OpenAILLMConfig['reasoning_mode'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_context') {
+        if (typeof value === 'string' || value == null) {
+          reasoningContext = value as OpenAILLMConfig['reasoning_context'];
         }
         continue;
       }
@@ -664,6 +731,8 @@ export function getOpenAILLMConfig({
         reasoningFormat,
         reasoningEffort,
         reasoningSummary,
+        reasoningMode,
+        reasoningContext,
       }) || hasModelKwargs;
   }
 

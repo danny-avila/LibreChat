@@ -1,11 +1,15 @@
 import {
   AnthropicEffort,
   ReasoningEffort,
+  ReasoningMode,
+  ReasoningContext,
   googleSettings,
   anthropicSettings,
   compactGoogleSchema,
   eAnthropicEffortSchema,
   eReasoningEffortSchema,
+  eReasoningModeSchema,
+  eReasoningContextSchema,
 } from './schemas';
 
 describe('anthropicSettings', () => {
@@ -584,5 +588,36 @@ describe('ReasoningEffort', () => {
 
   it('still rejects unknown effort values', () => {
     expect(() => eReasoningEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningMode', () => {
+  it('exposes standard and pro plus an unset sentinel', () => {
+    expect(ReasoningMode.unset).toBe('');
+    expect(ReasoningMode.standard).toBe('standard');
+    expect(ReasoningMode.pro).toBe('pro');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningModeSchema.parse('standard')).toBe('standard');
+    expect(eReasoningModeSchema.parse('pro')).toBe('pro');
+    expect(eReasoningModeSchema.parse('')).toBe('');
+    expect(() => eReasoningModeSchema.parse('turbo')).toThrow();
+  });
+});
+
+describe('ReasoningContext', () => {
+  it('exposes auto, current_turn, and all_turns plus an unset sentinel', () => {
+    expect(ReasoningContext.unset).toBe('');
+    expect(ReasoningContext.auto).toBe('auto');
+    expect(ReasoningContext.current_turn).toBe('current_turn');
+    expect(ReasoningContext.all_turns).toBe('all_turns');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningContextSchema.parse('auto')).toBe('auto');
+    expect(eReasoningContextSchema.parse('current_turn')).toBe('current_turn');
+    expect(eReasoningContextSchema.parse('all_turns')).toBe('all_turns');
+    expect(() => eReasoningContextSchema.parse('next_turn')).toThrow();
   });
 });
