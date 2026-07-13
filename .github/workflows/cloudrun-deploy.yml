@@ -3,6 +3,15 @@ name: Build & Deploy to Cloud Run (Staging & Production)
 on:
   workflow_dispatch:
     inputs:
+      should_build:
+        description: "Build and Push Image?"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
       deploy_staging:
         description: "Deploy to Staging?"
         required: true
@@ -11,6 +20,7 @@ on:
         options:
           - "false"
           - "true"
+
       deploy_production:
         description: "Deploy to Production?"
         required: true
@@ -34,9 +44,10 @@ env:
 
 jobs:
   build:
+    if: github.event.inputs.should_build == 'true'
     name: Build and Push Image
     runs-on: ubuntu-latest
-    # Always build - deployment requires a fresh image
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,7 +74,6 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:staging
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:production
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
           build-args: |
             NODE_ENV=production
 
@@ -87,35 +97,81 @@ jobs:
         with:
           service: ${{ env.GCP_STAGING_SERVICE }}
           region: ${{ env.GCP_REGION }}
-          image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:staging
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           env_vars: |
             NODE_ENV=staging
-            PORT=3080
-            # Database
-            DB_URL=${{ secrets.MONGO_URI }}
-            # Session & Security
-            CREDS_KEY=${{ secrets.CREDS_KEY }}
-            CREDS_IV=${{ secrets.CREDS_IV }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-            # Redis (optional - for caching and sessions)
-            REDIS_URI=${{ secrets.REDIS_URI }}
-            # Search (optional)
-            MEILI_HOST=${{ secrets.MEILI_HOST }}
-            MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
-            # Domain
-            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER_STAGING }}
-            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT_STAGING }}
-            # LLM API Keys (for cloud-hosted models)
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            ALLOW_EMAIL_LOGIN=${{ secrets.ALLOW_EMAIL_LOGIN }}
+            ALLOW_PASSWORD_RESET=${{ secrets.ALLOW_PASSWORD_RESET }}
+            ALLOW_REGISTRATION=${{ secrets.ALLOW_REGISTRATION }}
+            ALLOW_SHARED_LINKS=${{ secrets.ALLOW_SHARED_LINKS }}
+            ALLOW_SHARED_LINKS_PUBLIC=${{ secrets.ALLOW_SHARED_LINKS_PUBLIC }}
+            ALLOW_SOCIAL_LOGIN=${{ secrets.ALLOW_SOCIAL_LOGIN }}
+            ALLOW_SOCIAL_REGISTRATION=${{ secrets.ALLOW_SOCIAL_REGISTRATION }}
+            ALLOW_UNVERIFIED_EMAIL_LOGIN=${{ secrets.ALLOW_UNVERIFIED_EMAIL_LOGIN }}
             ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-            # Tailscale (for internal MCP server access)
-            TAILSCALE_AUTHKEY=${{ secrets.TAILSCALE_AUTHKEY }}
-            TS_HOSTNAME=ajrasakha-client-staging
-            HTTP_PROXY=http://localhost:1055
-            HTTPS_PROXY=http://localhost:1055
-            GLOBAL_AGENT_HTTP_PROXY=http://localhost:1055
+            ANTHROPIC_MODELS=${{ secrets.ANTHROPIC_MODELS }}
+            APP_TITLE=${{ secrets.APP_TITLE }}
+            BAN_DURATION=${{ secrets.BAN_DURATION }}
+            BAN_INTERVAL=${{ secrets.BAN_INTERVAL }}
+            BAN_VIOLATIONS=${{ secrets.BAN_VIOLATIONS }}
+            CONCURRENT_MESSAGE_MAX=${{ secrets.CONCURRENT_MESSAGE_MAX }}
+            CONCURRENT_VIOLATION_SCORE=${{ secrets.CONCURRENT_VIOLATION_SCORE }}
+            CONFIG_PATH=${{ secrets.CONFIG_PATH }}
+            CONSOLE_JSON=${{ secrets.CONSOLE_JSON }}
+            CREDS_IV=${{ secrets.CREDS_IV }}
+            CREDS_KEY=${{ secrets.CREDS_KEY }}
+            CUSTOM_FOOTER=${{ secrets.CUSTOM_FOOTER }}
+            DEBUG_CONSOLE=${{ secrets.DEBUG_CONSOLE }}
+            DEBUG_LOGGING=${{ secrets.DEBUG_LOGGING }}
+            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT }}
+            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER }}
+            ENDPOINTS=${{ secrets.ENDPOINTS }}
+            FILE_UPLOAD_VIOLATION_SCORE=${{ secrets.FILE_UPLOAD_VIOLATION_SCORE }}
+            FORK_VIOLATION_SCORE=${{ secrets.FORK_VIOLATION_SCORE }}
+            GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            GOOGLE_KEY=${{ secrets.GOOGLE_KEY }}
+            HELP_AND_FAQ_URL=${{ secrets.HELP_AND_FAQ_URL }}
+            HOST=${{ secrets.HOST }}
+            ILLEGAL_MODEL_REQ_SCORE=${{ secrets.ILLEGAL_MODEL_REQ_SCORE }}
+            IMPORT_VIOLATION_SCORE=${{ secrets.IMPORT_VIOLATION_SCORE }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            LGD_API_KEY=${{ secrets.LGD_API_KEY }}
+            LGD_DISTRICTS_API_URL=${{ secrets.LGD_DISTRICTS_API_URL }}
+            LGD_STATES_API_URL=${{ secrets.LGD_STATES_API_URL }}
+            LGD_SUBDISTRICTS_API_URL=${{ secrets.LGD_SUBDISTRICTS_API_URL }}
+            LGD_VILLAGES_API_URL=${{ secrets.LGD_VILLAGES_API_URL }}
+            LIMIT_CONCURRENT_MESSAGES=${{ secrets.LIMIT_CONCURRENT_MESSAGES }}
+            LIMIT_MESSAGE_IP=${{ secrets.LIMIT_MESSAGE_IP }}
+            LIMIT_MESSAGE_USER=${{ secrets.LIMIT_MESSAGE_USER }}
+            LOGIN_MAX=${{ secrets.LOGIN_MAX }}
+            LOGIN_VIOLATION_SCORE=${{ secrets.LOGIN_VIOLATION_SCORE }}
+            LOGIN_WINDOW=${{ secrets.LOGIN_WINDOW }}
+            MESSAGE_IP_MAX=${{ secrets.MESSAGE_IP_MAX }}
+            MESSAGE_IP_WINDOW=${{ secrets.MESSAGE_IP_WINDOW }}
+            MESSAGE_USER_MAX=${{ secrets.MESSAGE_USER_MAX }}
+            MESSAGE_USER_WINDOW=${{ secrets.MESSAGE_USER_WINDOW }}
+            MESSAGE_VIOLATION_SCORE=${{ secrets.MESSAGE_VIOLATION_SCORE }}
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            NON_BROWSER_VIOLATION_SCORE=${{ secrets.NON_BROWSER_VIOLATION_SCORE }}
+            NO_INDEX=${{ secrets.NO_INDEX }}
+            PROXY=${{ secrets.PROXY }}
+            REFRESH_TOKEN_EXPIRY=${{ secrets.REFRESH_TOKEN_EXPIRY }}
+            REGISTER_MAX=${{ secrets.REGISTER_MAX }}
+            REGISTER_WINDOW=${{ secrets.REGISTER_WINDOW }}
+            REGISTRATION_VIOLATION_SCORE=${{ secrets.REGISTRATION_VIOLATION_SCORE }}
+            SESSION_EXPIRY=${{ secrets.SESSION_EXPIRY }}
+            STT_VIOLATION_SCORE=${{ secrets.STT_VIOLATION_SCORE }}
+            TRUST_PROXY=${{ secrets.TRUST_PROXY }}
+            TTS_VIOLATION_SCORE=${{ secrets.TTS_VIOLATION_SCORE }}
+            VAPID_EMAIL=${{ secrets.VAPID_EMAIL }}
+            VAPID_PRIVATE_KEY=${{ secrets.VAPID_PRIVATE_KEY }}
+            VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}
+            VITE_VERIFICATION_SERVICE_URL=${{ secrets.VITE_VERIFICATION_SERVICE_URL }}
+            WEB_WEBHOOK_API_KEY=${{ secrets.WEB_WEBHOOK_API_KEY }}
           flags: --allow-unauthenticated --port=3080 --memory=2Gi --min-instances=0 --timeout=300
 
   deploy_production:
@@ -138,33 +194,79 @@ jobs:
         with:
           service: ${{ env.GCP_PRODUCTION_SERVICE }}
           region: ${{ env.GCP_REGION }}
-          image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKER_IMAGE }}:production
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           env_vars: |
             NODE_ENV=production
-            PORT=3080
-            # Database
-            DB_URL=${{ secrets.MONGO_URI }}
-            # Session & Security
-            CREDS_KEY=${{ secrets.CREDS_KEY }}
-            CREDS_IV=${{ secrets.CREDS_IV }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-            # Redis (optional - for caching and sessions)
-            REDIS_URI=${{ secrets.REDIS_URI }}
-            # Search (optional)
-            MEILI_HOST=${{ secrets.MEILI_HOST }}
-            MEILI_MASTER_KEY=${{ secrets.MEILI_MASTER_KEY }}
-            # Domain
-            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER_PRODUCTION }}
-            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT_PRODUCTION }}
-            # LLM API Keys (for cloud-hosted models)
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            ALLOW_EMAIL_LOGIN=${{ secrets.ALLOW_EMAIL_LOGIN }}
+            ALLOW_PASSWORD_RESET=${{ secrets.ALLOW_PASSWORD_RESET }}
+            ALLOW_REGISTRATION=${{ secrets.ALLOW_REGISTRATION }}
+            ALLOW_SHARED_LINKS=${{ secrets.ALLOW_SHARED_LINKS }}
+            ALLOW_SHARED_LINKS_PUBLIC=${{ secrets.ALLOW_SHARED_LINKS_PUBLIC }}
+            ALLOW_SOCIAL_LOGIN=${{ secrets.ALLOW_SOCIAL_LOGIN }}
+            ALLOW_SOCIAL_REGISTRATION=${{ secrets.ALLOW_SOCIAL_REGISTRATION }}
+            ALLOW_UNVERIFIED_EMAIL_LOGIN=${{ secrets.ALLOW_UNVERIFIED_EMAIL_LOGIN }}
             ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-            # Tailscale (for internal MCP server access)
-            TAILSCALE_AUTHKEY=${{ secrets.TAILSCALE_AUTHKEY }}
-            TS_HOSTNAME=ajrasakha-client-production
-            HTTP_PROXY=http://localhost:1055
-            HTTPS_PROXY=http://localhost:1055
-            GLOBAL_AGENT_HTTP_PROXY=http://localhost:1055
+            ANTHROPIC_MODELS=${{ secrets.ANTHROPIC_MODELS }}
+            APP_TITLE=${{ secrets.APP_TITLE }}
+            BAN_DURATION=${{ secrets.BAN_DURATION }}
+            BAN_INTERVAL=${{ secrets.BAN_INTERVAL }}
+            BAN_VIOLATIONS=${{ secrets.BAN_VIOLATIONS }}
+            CONCURRENT_MESSAGE_MAX=${{ secrets.CONCURRENT_MESSAGE_MAX }}
+            CONCURRENT_VIOLATION_SCORE=${{ secrets.CONCURRENT_VIOLATION_SCORE }}
+            CONFIG_PATH=${{ secrets.CONFIG_PATH }}
+            CONSOLE_JSON=${{ secrets.CONSOLE_JSON }}
+            CREDS_IV=${{ secrets.CREDS_IV }}
+            CREDS_KEY=${{ secrets.CREDS_KEY }}
+            CUSTOM_FOOTER=${{ secrets.CUSTOM_FOOTER }}
+            DEBUG_CONSOLE=${{ secrets.DEBUG_CONSOLE }}
+            DEBUG_LOGGING=${{ secrets.DEBUG_LOGGING }}
+            DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT }}
+            DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER }}
+            ENDPOINTS=${{ secrets.ENDPOINTS }}
+            FILE_UPLOAD_VIOLATION_SCORE=${{ secrets.FILE_UPLOAD_VIOLATION_SCORE }}
+            FORK_VIOLATION_SCORE=${{ secrets.FORK_VIOLATION_SCORE }}
+            GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            GOOGLE_KEY=${{ secrets.GOOGLE_KEY }}
+            HELP_AND_FAQ_URL=${{ secrets.HELP_AND_FAQ_URL }}
+            HOST=${{ secrets.HOST }}
+            ILLEGAL_MODEL_REQ_SCORE=${{ secrets.ILLEGAL_MODEL_REQ_SCORE }}
+            IMPORT_VIOLATION_SCORE=${{ secrets.IMPORT_VIOLATION_SCORE }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            LGD_API_KEY=${{ secrets.LGD_API_KEY }}
+            LGD_DISTRICTS_API_URL=${{ secrets.LGD_DISTRICTS_API_URL }}
+            LGD_STATES_API_URL=${{ secrets.LGD_STATES_API_URL }}
+            LGD_SUBDISTRICTS_API_URL=${{ secrets.LGD_SUBDISTRICTS_API_URL }}
+            LGD_VILLAGES_API_URL=${{ secrets.LGD_VILLAGES_API_URL }}
+            LIMIT_CONCURRENT_MESSAGES=${{ secrets.LIMIT_CONCURRENT_MESSAGES }}
+            LIMIT_MESSAGE_IP=${{ secrets.LIMIT_MESSAGE_IP }}
+            LIMIT_MESSAGE_USER=${{ secrets.LIMIT_MESSAGE_USER }}
+            LOGIN_MAX=${{ secrets.LOGIN_MAX }}
+            LOGIN_VIOLATION_SCORE=${{ secrets.LOGIN_VIOLATION_SCORE }}
+            LOGIN_WINDOW=${{ secrets.LOGIN_WINDOW }}
+            MESSAGE_IP_MAX=${{ secrets.MESSAGE_IP_MAX }}
+            MESSAGE_IP_WINDOW=${{ secrets.MESSAGE_IP_WINDOW }}
+            MESSAGE_USER_MAX=${{ secrets.MESSAGE_USER_MAX }}
+            MESSAGE_USER_WINDOW=${{ secrets.MESSAGE_USER_WINDOW }}
+            MESSAGE_VIOLATION_SCORE=${{ secrets.MESSAGE_VIOLATION_SCORE }}
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            NON_BROWSER_VIOLATION_SCORE=${{ secrets.NON_BROWSER_VIOLATION_SCORE }}
+            NO_INDEX=${{ secrets.NO_INDEX }}
+            PROXY=${{ secrets.PROXY }}
+            REFRESH_TOKEN_EXPIRY=${{ secrets.REFRESH_TOKEN_EXPIRY }}
+            REGISTER_MAX=${{ secrets.REGISTER_MAX }}
+            REGISTER_WINDOW=${{ secrets.REGISTER_WINDOW }}
+            REGISTRATION_VIOLATION_SCORE=${{ secrets.REGISTRATION_VIOLATION_SCORE }}
+            SESSION_EXPIRY=${{ secrets.SESSION_EXPIRY }}
+            STT_VIOLATION_SCORE=${{ secrets.STT_VIOLATION_SCORE }}
+            TRUST_PROXY=${{ secrets.TRUST_PROXY }}
+            TTS_VIOLATION_SCORE=${{ secrets.TTS_VIOLATION_SCORE }}
+            VAPID_EMAIL=${{ secrets.VAPID_EMAIL }}
+            VAPID_PRIVATE_KEY=${{ secrets.VAPID_PRIVATE_KEY }}
+            VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}
+            VITE_VERIFICATION_SERVICE_URL=${{ secrets.VITE_VERIFICATION_SERVICE_URL }}
+            WEB_WEBHOOK_API_KEY=${{ secrets.WEB_WEBHOOK_API_KEY }}
           flags: --allow-unauthenticated --port=3080 --memory=2Gi --min-instances=0 --timeout=300
