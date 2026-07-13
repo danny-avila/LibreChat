@@ -454,6 +454,55 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.artifact).toBeUndefined();
   });
 
+  it('records MCP progress on a running task and serializes it for the poll tool', () => {
+    /** The singleton, because runCheckBackgroundTask serializes through it. */
+    const registry = backgroundTaskRegistry;
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c_progress',
+      toolCallId: 'call_prog',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    registry.setProgress('u1', 'c_progress', created.task.id, {
+      progress: 5,
+      total: 10,
+      message: 'halfway there',
+    });
+    const running = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'u1',
+        conversationId: 'c_progress',
+        args: { background_task_id: created.task.id },
+      }),
+    );
+    expect(running.status).toBe('running');
+    expect(running.progress).toBe(0.5);
+    expect(running.progress_message).toBe('halfway there');
+
+    // absolute count without a total: no derivable fraction, message still updates
+    registry.setProgress('u1', 'c_progress', created.task.id, { progress: 7, message: 'step 7' });
+    expect(registry.get('u1', 'c_progress', created.task.id)?.progress).toBe(0.5);
+    expect(registry.get('u1', 'c_progress', created.task.id)?.progressMessage).toBe('step 7');
+
+    // settling wins: progress serializes as 1 and the message is dropped
+    registry.complete('u1', 'c_progress', created.task.id, { content: 'DONE' });
+    registry.setProgress('u1', 'c_progress', created.task.id, { progress: 0.1, message: 'late' });
+    const settled = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'u1',
+        conversationId: 'c_progress',
+        args: { background_task_id: created.task.id },
+      }),
+    );
+    expect(settled.progress).toBe(1);
+    expect(settled.progress_message).toBeUndefined();
+    expect(registry.get('u1', 'c_progress', created.task.id)?.progressMessage).toBe('step 7');
+  });
+
   it('truncates an oversized stored result with an explicit marker (not a silent cut)', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
