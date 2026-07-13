@@ -196,7 +196,18 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   const job = await GenerationJobManager.getJob(conversationId);
 
   if (!job) {
-    return res.json({ active: false });
+    // The default completeJob path deletes the job record immediately, so the
+    // jobless branch IS the common reload-after-terminal case — parked steers
+    // live under their own bounded-TTL key and the claim authorizes against
+    // the payload's stored owner (no job record is left to check).
+    const claimed = await GenerationJobManager.steering.claim(conversationId, {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+    });
+    return res.json({
+      active: false,
+      ...(claimed.length > 0 && { unrecoveredSteers: claimed }),
+    });
   }
 
   if (job.metadata.userId !== req.user.id) {
@@ -223,7 +234,10 @@ router.get('/chat/status/:conversationId', async (req, res) => {
    *  returned) so the reloading client restores them as queued follow-ups. */
   let unrecoveredSteers;
   if (!isActive) {
-    const claimed = await GenerationJobManager.steering.claim(conversationId);
+    const claimed = await GenerationJobManager.steering.claim(conversationId, {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+    });
     if (claimed.length > 0) {
       unrecoveredSteers = claimed;
     }

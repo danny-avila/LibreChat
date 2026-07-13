@@ -16,6 +16,9 @@ import {
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
 
+/** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
+const PARKED_STEERS_TTL_MS = 5 * 60 * 1000;
+
 /**
  * Content state for a job - volatile, in-memory only.
  * Uses WeakRef to allow garbage collection of graph when no longer needed.
@@ -55,6 +58,10 @@ export class InMemoryJobStore implements IJobStore {
 
   /** Stream ids whose steer queue was closed by a terminal drain. Reopened by createJob. */
   private closedSteerQueues = new Set<string>();
+
+  /** Parked terminally-drained steers — lifecycle-independent of `jobs` (the
+   *  default completeJob path deletes the job record immediately). */
+  private parkedSteers = new Map<string, { payload: string; expiresAt: number }>();
 
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
@@ -125,9 +132,11 @@ export class InMemoryJobStore implements IJobStore {
     // and isn't reaped on the previous generation's stale last-activity time.
     this.lastActivity.delete(streamId);
     // Steer queues are keyed by streamId only, so a replacement must not
-    // inherit the replaced run's undrained steers (or its closed flag).
+    // inherit the replaced run's undrained steers (or its closed flag), and
+    // parked recovery belongs to the replaced run (a live client started this).
     this.steerQueues.delete(streamId);
     this.closedSteerQueues.delete(streamId);
+    this.parkedSteers.delete(streamId);
 
     // Track job by userId (tenant-qualified when available) for efficient user-scoped queries
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
@@ -342,6 +351,7 @@ export class InMemoryJobStore implements IJobStore {
     this.userJobMap.clear();
     this.steerQueues.clear();
     this.closedSteerQueues.clear();
+    this.parkedSteers.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
   }
 
@@ -532,5 +542,21 @@ export class InMemoryJobStore implements IJobStore {
 
   async clearSteers(streamId: string): Promise<void> {
     this.steerQueues.delete(streamId);
+  }
+
+  async parkSteers(streamId: string, payload: string): Promise<void> {
+    this.parkedSteers.set(streamId, {
+      payload,
+      expiresAt: Date.now() + PARKED_STEERS_TTL_MS,
+    });
+  }
+
+  async claimParkedSteers(streamId: string): Promise<string | undefined> {
+    const parked = this.parkedSteers.get(streamId);
+    if (!parked) {
+      return undefined;
+    }
+    this.parkedSteers.delete(streamId);
+    return parked.expiresAt > Date.now() ? parked.payload : undefined;
   }
 }

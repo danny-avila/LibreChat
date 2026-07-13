@@ -1,3 +1,4 @@
+import { SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer } from 'librechat-data-provider';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 import {
@@ -9,6 +10,7 @@ import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTr
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
+import { synthesizeAppliedSteerEvents } from '~/stream/SteeringLifecycle';
 
 jest.spyOn(console, 'log').mockImplementation();
 
@@ -187,39 +189,110 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
   });
 
   describe('park / claim (no-subscriber recovery)', () => {
+    const owner = { userId: 'user-1' };
+
     test('parked leftovers are claimable exactly once', async () => {
       const streamId = 'steer-park';
       await manager.createJob(streamId, 'user-1');
       const leftovers: TPendingSteer[] = [
         { steerId: 'p1', text: 'unreceived words', createdAt: Date.now() },
       ];
-      await manager.steering.park(streamId, leftovers);
+      await manager.steering.park(streamId, leftovers, owner);
 
-      expect(await manager.steering.claim(streamId)).toEqual(leftovers);
+      expect(await manager.steering.claim(streamId, owner)).toEqual(leftovers);
       // Claim-on-read: a second reload cannot re-mint dismissed chips.
-      expect(await manager.steering.claim(streamId)).toEqual([]);
+      expect(await manager.steering.claim(streamId, owner)).toEqual([]);
     });
 
     test('parked leftovers survive completeJob within the terminal TTL', async () => {
       const streamId = 'steer-park-terminal';
       await manager.createJob(streamId, 'user-1');
-      await manager.steering.park(streamId, [
-        { steerId: 'p2', text: 'post-terminal recovery', createdAt: Date.now() },
-      ]);
+      await manager.steering.park(
+        streamId,
+        [{ steerId: 'p2', text: 'post-terminal recovery', createdAt: Date.now() }],
+        owner,
+      );
       await manager.completeJob(streamId);
 
-      expect((await manager.steering.claim(streamId)).map((s) => s.steerId)).toEqual(['p2']);
+      expect((await manager.steering.claim(streamId, owner)).map((s) => s.steerId)).toEqual(['p2']);
+    });
+
+    test('parked leftovers survive the DEFAULT completeJob cleanup (job record deleted)', async () => {
+      // Production default: cleanupOnComplete deletes the job record the
+      // moment the run succeeds — recovery must not depend on it existing.
+      const defaultManager = new GenerationJobManagerClass();
+      defaultManager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 0 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: true,
+      });
+      defaultManager.initialize();
+      try {
+        const streamId = 'steer-park-deleted-job';
+        await defaultManager.createJob(streamId, 'user-1');
+        await defaultManager.steering.park(
+          streamId,
+          [{ steerId: 'p4', text: 'survives job deletion', createdAt: Date.now() }],
+          owner,
+        );
+        await defaultManager.completeJob(streamId);
+
+        expect(await defaultManager.getJob(streamId)).toBeFalsy();
+        expect(
+          (await defaultManager.steering.claim(streamId, owner)).map((s) => s.steerId),
+        ).toEqual(['p4']);
+      } finally {
+        await defaultManager.destroy();
+      }
+    });
+
+    test('a non-owner claim returns nothing and preserves the payload for the owner', async () => {
+      const streamId = 'steer-park-foreign';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.park(
+        streamId,
+        [{ steerId: 'p5', text: 'not yours', createdAt: Date.now() }],
+        owner,
+      );
+
+      expect(await manager.steering.claim(streamId, { userId: 'intruder' })).toEqual([]);
+      expect((await manager.steering.claim(streamId, owner)).map((s) => s.steerId)).toEqual(['p5']);
     });
 
     test('a replacement run clears parked leftovers', async () => {
       const streamId = 'steer-park-replaced';
       await manager.createJob(streamId, 'user-1');
-      await manager.steering.park(streamId, [
-        { steerId: 'p3', text: 'stale', createdAt: Date.now() },
-      ]);
+      await manager.steering.park(
+        streamId,
+        [{ steerId: 'p3', text: 'stale', createdAt: Date.now() }],
+        owner,
+      );
       await manager.createJob(streamId, 'user-1');
 
-      expect(await manager.steering.claim(streamId)).toEqual([]);
+      expect(await manager.steering.claim(streamId, owner)).toEqual([]);
+    });
+
+    test('approval expiry parks queued steers instead of deleting them', async () => {
+      const streamId = 'steer-expire-park';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('frozen across the pause'));
+
+      const payload = buildToolApprovalPayload([
+        { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_exp' },
+      ]);
+      const action = buildPendingAction(payload, {
+        streamId,
+        conversationId: streamId,
+        runId: 'run-exp',
+        responseMessageId: 'msg-exp',
+      });
+      expect(await manager.approvals.pause(streamId, action)).toBe(true);
+
+      expect(await manager.expireApproval(streamId, action.actionId)).toBe(true);
+      expect((await manager.steering.claim(streamId, owner)).map((s) => s.text)).toEqual([
+        'frozen across the pause',
+      ]);
     });
   });
 
@@ -250,6 +323,49 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         ),
       ).toEqual(['unsent one', 'unsent two']);
       expect(await manager.steering.peek(streamId)).toEqual([]);
+    });
+  });
+
+  describe('synthesizeAppliedSteerEvents (snapshot→subscribe gap)', () => {
+    const meta = { conversationId: 'convo-gap', responseMessageId: 'msg-gap' };
+    const queued = (steerId: string): SteerQueueItem => ({
+      steerId,
+      text: 'still queued',
+      userId: 'user-1',
+      createdAt: Date.now(),
+    });
+
+    test('re-surfaces the applied part for a steer that left the queue in the gap', () => {
+      const snapshot: TPendingSteer[] = [
+        { steerId: 'g1', text: 'applied in gap', createdAt: 1 },
+        { steerId: 'g2', text: 'still queued', createdAt: 2 },
+      ];
+      const appliedPart = { type: 'steer', steerId: 'g1', steer: 'applied in gap' };
+      const content = [{ type: 'text' }, appliedPart, { type: 'text' }];
+
+      const events = synthesizeAppliedSteerEvents(snapshot, [queued('g2')], content, meta);
+
+      expect(events).toHaveLength(1);
+      const event = events[0] as { event: string; data: Record<string, unknown> };
+      expect(event.event).toBe(SteerEvents.ON_STEER_APPLIED);
+      expect(event.data.steerId).toBe('g1');
+      expect(event.data.index).toBe(1);
+      expect(event.data.part).toBe(appliedPart);
+      expect(event.data.conversationId).toBe('convo-gap');
+      expect(event.data.responseMessageId).toBe('msg-gap');
+    });
+
+    test('skips a gap steer with no applied part (terminally drained instead)', () => {
+      const snapshot: TPendingSteer[] = [{ steerId: 'g3', text: 'never applied', createdAt: 1 }];
+
+      expect(synthesizeAppliedSteerEvents(snapshot, [], [{ type: 'text' }], meta)).toEqual([]);
+    });
+
+    test('emits nothing when the queue is unchanged', () => {
+      const snapshot: TPendingSteer[] = [{ steerId: 'g4', text: 'untouched', createdAt: 1 }];
+      const content = [{ type: 'steer', steerId: 'g4' }];
+
+      expect(synthesizeAppliedSteerEvents(snapshot, [queued('g4')], content, meta)).toEqual([]);
     });
   });
 

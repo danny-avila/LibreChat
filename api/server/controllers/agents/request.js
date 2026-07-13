@@ -773,8 +773,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             pendingSteers = leftoverSteers.map(toPendingSteer);
             // Parked BEFORE the final event: a client with no live subscriber
             // recovers these via /chat/status (claim-on-read) within the
-            // post-terminal TTL — the SSE copy alone is transient.
-            await GenerationJobManager.steering.park(streamId, pendingSteers);
+            // recovery TTL — the SSE copy alone is transient.
+            await GenerationJobManager.steering.park(streamId, pendingSteers, {
+              userId,
+              tenantId: req.user?.tenantId,
+            });
           }
         } catch (err) {
           logger.warn(`[ResumableAgentController] Failed to drain leftover steers`, err);
@@ -891,6 +894,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               await GenerationJobManager.steering.park(
                 streamId,
                 erroredLeftovers.map(toPendingSteer),
+                { userId, tenantId: req.user?.tenantId },
               );
             }
           } catch (drainErr) {

@@ -1,6 +1,8 @@
 import { logger } from '@librechat/data-schemas';
+import { ContentTypes, SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer } from 'librechat-data-provider';
 import type { IJobStore, SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type { ServerSentEvent } from '~/types';
 
 /** Client-safe projection of a queued steer (drops the server-only userId). */
 export function toPendingSteer(item: SteerQueueItem): TPendingSteer {
@@ -10,6 +12,62 @@ export function toPendingSteer(item: SteerQueueItem): TPendingSteer {
     createdAt: item.createdAt,
     ...(item.files && item.files.length > 0 && { files: item.files }),
   };
+}
+
+/** Who a parked payload belongs to — the claim surface can outlive the job
+ *  record, so ownership must travel with the payload itself. */
+export interface SteerOwner {
+  userId: string;
+  tenantId?: string;
+}
+
+interface ParkedSteers extends SteerOwner {
+  steers: TPendingSteer[];
+}
+
+/**
+ * Synthesize the `on_steer_applied` events a reconnecting subscriber missed in
+ * the snapshot→subscribe window: any snapshot steer no longer in the live
+ * queue was drained in the gap, and its applied part is already durable in the
+ * store's content view — re-emitting it is idempotent client-side (applied-id
+ * dedupe; the part is index-stable). A gap steer with NO matching part was
+ * terminally drained instead; the final event's `pendingSteers` covers it.
+ */
+export function synthesizeAppliedSteerEvents(
+  snapshotSteers: TPendingSteer[],
+  liveQueue: SteerQueueItem[],
+  content: Array<{ type?: string; steerId?: string } | undefined>,
+  meta: { conversationId: string; responseMessageId?: string },
+): ServerSentEvent[] {
+  const liveIds = new Set(liveQueue.map((item) => item.steerId));
+  const appliedBysteerId = new Map<string, { index: number; part: unknown }>();
+  for (let i = 0; i < content.length; i++) {
+    const part = content[i];
+    if (part?.type === ContentTypes.STEER && part.steerId != null) {
+      appliedBysteerId.set(part.steerId, { index: i, part });
+    }
+  }
+  const events: ServerSentEvent[] = [];
+  for (const steer of snapshotSteers) {
+    if (liveIds.has(steer.steerId)) {
+      continue;
+    }
+    const applied = appliedBysteerId.get(steer.steerId);
+    if (!applied) {
+      continue;
+    }
+    events.push({
+      event: SteerEvents.ON_STEER_APPLIED,
+      data: {
+        steerId: steer.steerId,
+        index: applied.index,
+        part: applied.part,
+        conversationId: meta.conversationId,
+        ...(meta.responseMessageId && { responseMessageId: meta.responseMessageId }),
+      },
+    } as ServerSentEvent);
+  }
+  return events;
 }
 
 /**
@@ -75,18 +133,26 @@ export class SteeringLifecycle {
   }
 
   /**
-   * Parks terminally-drained leftovers on the job hash so a client with NO
-   * live subscriber (closed tab, reload racing the final event) can still
-   * recover them via the status route within the post-terminal TTL. Live
-   * clients keep using the final/abort event copy; recovery is idempotent
-   * (queued chips dedupe by steer id).
+   * Parks terminally-drained leftovers under their own bounded-TTL store key
+   * so a client with NO live subscriber (closed tab, reload racing the final
+   * event) can still recover them via the status route — even after the
+   * default `completeJob` path deletes the job record itself. The owner
+   * identity travels WITH the payload for exactly that reason: the jobless
+   * claim path has no job record left to authorize against. Live clients keep
+   * using the final/abort event copy; recovery is idempotent (queued chips
+   * dedupe by steer id).
    */
-  async park(streamId: string, steers: TPendingSteer[]): Promise<void> {
+  async park(streamId: string, steers: TPendingSteer[], owner: SteerOwner): Promise<void> {
     if (steers.length === 0) {
       return;
     }
+    const payload: ParkedSteers = {
+      userId: owner.userId,
+      ...(owner.tenantId != null && { tenantId: owner.tenantId }),
+      steers,
+    };
     try {
-      await this.store.updateJob(streamId, { unrecoveredSteers: JSON.stringify(steers) });
+      await this.store.parkSteers(streamId, JSON.stringify(payload));
     } catch (error) {
       logger.warn(`[SteeringLifecycle] Failed to park leftover steers: ${streamId}`, error);
     }
@@ -94,20 +160,33 @@ export class SteeringLifecycle {
 
   /**
    * Claim-on-read: returns parked leftovers and clears them, so a second
-   * reload cannot re-mint chips the user already dismissed.
+   * reload cannot re-mint chips the user already dismissed. Ownership is
+   * checked against the payload itself; a non-owner gets nothing and the
+   * payload is re-parked so it cannot destroy the owner's recovery.
    */
-  async claim(streamId: string): Promise<TPendingSteer[]> {
-    const job = await this.store.getJob(streamId);
-    const raw = job?.unrecoveredSteers;
+  async claim(streamId: string, requester: SteerOwner): Promise<TPendingSteer[]> {
+    let raw: string | undefined;
+    try {
+      raw = await this.store.claimParkedSteers(streamId);
+    } catch (error) {
+      logger.warn(`[SteeringLifecycle] Failed to claim leftover steers: ${streamId}`, error);
+      return [];
+    }
     if (!raw) {
       return [];
     }
     try {
-      const parsed = JSON.parse(raw) as TPendingSteer[];
-      await this.store.updateJob(streamId, { unrecoveredSteers: '' });
-      return Array.isArray(parsed) ? parsed : [];
+      const parsed = JSON.parse(raw) as ParkedSteers;
+      const ownerMatch =
+        parsed.userId === requester.userId &&
+        (parsed.tenantId == null || parsed.tenantId === requester.tenantId);
+      if (!ownerMatch) {
+        await this.store.parkSteers(streamId, raw);
+        return [];
+      }
+      return Array.isArray(parsed.steers) ? parsed.steers : [];
     } catch (error) {
-      logger.warn(`[SteeringLifecycle] Failed to claim leftover steers: ${streamId}`, error);
+      logger.warn(`[SteeringLifecycle] Failed to parse leftover steers: ${streamId}`, error);
       return [];
     }
   }

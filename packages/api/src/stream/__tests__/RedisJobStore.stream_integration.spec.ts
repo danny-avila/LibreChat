@@ -2019,6 +2019,41 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('parked steers survive deleteJob, claim exactly once, and reset on createJob', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-parked-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      const payload = JSON.stringify({
+        userId: 'steer-user',
+        steers: [{ steerId: 'p1', text: 'kept', createdAt: 1 }],
+      });
+      await store.parkSteers(streamId, payload);
+
+      // Survives full job deletion (the default completeJob path)…
+      await store.deleteJob(streamId);
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
+      // …under its own bounded TTL, not the job's lifecycle.
+      expect(await ioredisClient.ttl(`stream:{${streamId}}:parked`)).toBeGreaterThan(0);
+
+      // Claim-on-read: exactly once.
+      expect(await store.claimParkedSteers(streamId)).toBe(payload);
+      expect(await store.claimParkedSteers(streamId)).toBeUndefined();
+
+      // A replacement run resets any parked payload atomically with creation.
+      await store.parkSteers(streamId, payload);
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.claimParkedSteers(streamId)).toBeUndefined();
+
+      await store.destroy();
+    });
+
     test('getContentParts splices on_steer_applied chunks at their recorded index', async () => {
       if (!ioredisClient) {
         return;

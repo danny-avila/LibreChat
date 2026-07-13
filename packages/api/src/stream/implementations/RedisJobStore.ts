@@ -52,11 +52,12 @@ const JOB_CAS_LUA =
  * dies with it) or the fully initialized replacement with an empty queue, so
  * a steer accepted against one run can never be drained into another.
  *
- *   KEYS: [job, steers]
+ *   KEYS: [job, steers, parkedSteers]
  *   ARGV: [ttl, hdelCount, ...hdelFields, ...hsetPairs]
  */
 const JOB_CREATE_LUA =
   'redis.call("DEL", KEYS[2]) ' +
+  'redis.call("DEL", KEYS[3]) ' +
   'local ttl = tonumber(ARGV[1]) ' +
   'local hdelCount = tonumber(ARGV[2]) ' +
   'local idx = 3 ' +
@@ -171,6 +172,19 @@ const STEER_DRAIN_LUA =
   'return items';
 
 /**
+ * Claim-on-read for parked steers: return AND delete in one atomic step so a
+ * second reload cannot re-mint chips the user already dismissed. Single key
+ * (cluster-safe); GETDEL is avoided only for older-Redis compatibility.
+ *
+ *   KEYS: [parkedSteers]
+ *   Returns: the parked payload JSON, or nil
+ */
+const CLAIM_PARKED_LUA =
+  'local v = redis.call("GET", KEYS[1]) ' +
+  'if v then redis.call("DEL", KEYS[1]) end ' +
+  'return v';
+
+/**
  * Terminal close-then-drain in one atomic step: mark the queue closed on the
  * job hash (only when the hash still exists — a bare HSET would resurrect a
  * deleted job as a stray hash), then take the whole queue. Once closed,
@@ -212,6 +226,9 @@ const KEYS = {
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
   /** Pending steer messages (FIFO list): stream:{streamId}:steers */
   steers: (streamId: string) => `stream:{${streamId}}:steers`,
+  /** Parked terminally-drained steers (own TTL — must outlive the job hash,
+   *  which the default completeJob path deletes immediately) */
+  parkedSteers: (streamId: string) => `stream:{${streamId}}:parked`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
@@ -387,9 +404,6 @@ export class RedisJobStore implements IJobStore {
       // A replacement must start with an open steer channel — the closed flag
       // belongs to the finalized run this hash is being reused from.
       'steersClosed',
-      // Parked leftovers belong to the finalized run too: a live client had
-      // to start this replacement, and live clients recover via events/chips.
-      'unrecoveredSteers',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
@@ -401,9 +415,10 @@ export class RedisJobStore implements IJobStore {
     const hsetPairs = Object.entries(this.serializeJob(job)).flat();
     await this.redis.eval(
       JOB_CREATE_LUA,
-      2,
+      3,
       key,
       KEYS.steers(streamId),
+      KEYS.parkedSteers(streamId),
       String(this.ttl.running),
       String(staleHitlFields.length),
       ...staleHitlFields,
@@ -1255,6 +1270,17 @@ export class RedisJobStore implements IJobStore {
 
   async clearSteers(streamId: string): Promise<void> {
     await this.redis.del(KEYS.steers(streamId));
+  }
+
+  async parkSteers(streamId: string, payload: string): Promise<void> {
+    await this.redis.set(KEYS.parkedSteers(streamId), payload, 'EX', this.ttl.completed);
+  }
+
+  async claimParkedSteers(streamId: string): Promise<string | undefined> {
+    const claimed = (await this.redis.eval(CLAIM_PARKED_LUA, 1, KEYS.parkedSteers(streamId))) as
+      | string
+      | null;
+    return claimed ?? undefined;
   }
 
   /** A malformed entry is dropped (logged) rather than poisoning the drain. */

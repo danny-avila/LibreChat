@@ -124,16 +124,6 @@ export interface SerializableJobData {
    * `updateJob` — listed here so cleanup paths can reference the key name.
    */
   steersClosed?: boolean;
-
-  /**
-   * Serialized `TPendingSteer[]` parked by the terminal drains for clients
-   * with NO live subscriber (closed tab, reload mid-final): the final/abort
-   * SSE is transient, so acknowledged steers are recoverable from here via
-   * the status route (claim-on-read) for the job hash's post-terminal TTL.
-   * Cleared when a replacement run starts (a client had to be alive to start
-   * it, and live clients recover through the event/chip paths).
-   */
-  unrecoveredSteers?: string;
 }
 
 /**
@@ -547,6 +537,20 @@ export interface IJobStore {
 
   /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
   peekSteers(streamId: string): Promise<SteerQueueItem[]>;
+
+  /**
+   * Persist terminally-drained steers under their OWN bounded-TTL key so a
+   * client with no live subscriber can recover them via the status route.
+   * Deliberately independent of the job record — the default `completeJob`
+   * path deletes the job immediately, and recovery must survive that.
+   * Overwrites any prior payload; cleared by `createJob` (a replacement run
+   * invalidates recovery — a live client had to start it).
+   */
+  parkSteers(streamId: string, payload: string): Promise<void>;
+
+  /** Claim-on-read: atomically return AND remove the parked payload, so a
+   *  second reload cannot re-mint chips the user already dismissed. */
+  claimParkedSteers(streamId: string): Promise<string | undefined>;
 
   /** Drop any queued steers (terminal cleanup backstop). */
   clearSteers(streamId: string): Promise<void>;
