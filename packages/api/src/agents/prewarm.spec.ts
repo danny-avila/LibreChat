@@ -19,6 +19,10 @@ function flushAsync(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function mockResponse(init: { ok: boolean; status: number }): Response {
+  return { ...init, arrayBuffer: async () => new ArrayBuffer(0) } as Response;
+}
+
 describe('maybePrewarmCodeSandbox', () => {
   let fetchMock: jest.SpyInstance;
 
@@ -29,7 +33,7 @@ describe('maybePrewarmCodeSandbox', () => {
     delete process.env.CODE_SANDBOX_COLD_AFTER_MS;
     fetchMock = jest
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue({ ok: true, status: 200 } as Response);
+      .mockResolvedValue(mockResponse({ ok: true, status: 200 }));
   });
 
   afterEach(() => {
@@ -110,7 +114,7 @@ describe('maybePrewarmCodeSandbox', () => {
   });
 
   it('treats a non-2xx prewarm response as a failure', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 503 } as Response);
+    fetchMock.mockResolvedValue(mockResponse({ ok: false, status: 503 }));
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
     await flushAsync();
     expect(shouldSignalSandboxStart('convo-1')).toBe(true);

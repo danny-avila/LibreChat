@@ -310,6 +310,17 @@ export default function useStepHandler({
     [],
   );
 
+  const resetSandboxAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const toolCallId of knownSandboxAtomKeys.current) {
+          reset(sandboxStartingByToolCallId(toolCallId));
+        }
+        knownSandboxAtomKeys.current.clear();
+      },
+    [],
+  );
+
   /**
    * Calculate content index for a run step.
    * For edited content scenarios, offset by initialContent length.
@@ -1129,6 +1140,11 @@ export default function useStepHandler({
     subagentRunToToolCallId.current.clear();
     claimedSubagentToolCallIds.current.clear();
     pendingSubagentBuffer.current.clear();
+    /** Unlike subagent atoms below, sandbox-starting flags are transient
+     *  status with no audit value — reset them at this boundary so an
+     *  interrupted cold boot can't leak a stale "starting" label onto a
+     *  later tool call that reuses the same id (e.g. `call_0`). */
+    resetSandboxAtoms();
     /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
      *  to be able to reopen the SubagentCall dialog after completion to
      *  audit what the child did. `resetSubagentAtoms` is returned below
@@ -1137,7 +1153,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, []);
+  }, [resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.

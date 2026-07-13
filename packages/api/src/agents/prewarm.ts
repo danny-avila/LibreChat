@@ -106,6 +106,10 @@ async function sendPrewarmRequest(req: ServerRequest, conversationId: string): P
     body: JSON.stringify({ lang: 'bash', code: 'true', runtime_session_hint: conversationId }),
     signal: AbortSignal.timeout(PREWARM_REQUEST_TIMEOUT_MS),
   });
+  /* Drain before acting on the status: fetch resolves at headers, and the
+   * sandbox is only warm once the exec's body has fully arrived — this also
+   * releases the socket instead of leaving the body for undici to reap. */
+  await response.arrayBuffer().catch(() => undefined);
   if (!response.ok) {
     throw new Error(`prewarm exec returned ${response.status}`);
   }
