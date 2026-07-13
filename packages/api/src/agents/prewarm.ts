@@ -106,13 +106,16 @@ async function sendPrewarmRequest(req: ServerRequest, conversationId: string): P
     body: JSON.stringify({ lang: 'bash', code: 'true', runtime_session_hint: conversationId }),
     signal: AbortSignal.timeout(PREWARM_REQUEST_TIMEOUT_MS),
   });
-  /* Drain before acting on the status: fetch resolves at headers, and the
-   * sandbox is only warm once the exec's body has fully arrived — this also
-   * releases the socket instead of leaving the body for undici to reap. */
-  await response.arrayBuffer().catch(() => undefined);
   if (!response.ok) {
+    await response.arrayBuffer().catch(() => undefined);
     throw new Error(`prewarm exec returned ${response.status}`);
   }
+  /* fetch resolves at headers, but the sandbox is only warm once the exec's
+   * body has fully arrived — a failed drain means the exec did not complete,
+   * so it must propagate as a prewarm failure instead of marking ready.
+   * Draining also releases the socket instead of leaving the body for
+   * undici to reap. */
+  await response.arrayBuffer();
   markSandboxReady(conversationId);
   logger.debug(`[prewarmCodeSandbox] Sandbox warm for conversation ${conversationId}`);
 }

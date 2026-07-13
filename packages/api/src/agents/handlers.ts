@@ -3555,6 +3555,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     }
 
+                    /* Host-handled read_file/create_file/edit_file reach the
+                     * sandbox too (they return before the generic invoke path's
+                     * marker below), so refresh the warm window here as well. */
+                    if (
+                      handlerResult.status === 'success' &&
+                      tc.runtimeSessionHint != null &&
+                      tc.runtimeSessionHint !== ''
+                    ) {
+                      markSandboxReady(tc.runtimeSessionHint);
+                    }
+
                     return handlerResult;
                   }
 

@@ -119,6 +119,19 @@ describe('maybePrewarmCodeSandbox', () => {
     await flushAsync();
     expect(shouldSignalSandboxStart('convo-1')).toBe(true);
   });
+
+  it('does not mark the sandbox ready when the 2xx body fails to drain', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => {
+        throw new Error('body aborted');
+      },
+    } as unknown as Response);
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
+  });
 });
 
 describe('shouldSignalSandboxStart / markSandboxReady', () => {
