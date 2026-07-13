@@ -11,12 +11,12 @@ import {
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
+import store, { toolProgressByToolCallId } from '~/store';
 import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { logger } from '~/utils';
-import store from '~/store';
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -27,6 +27,7 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  toolCallId,
   hideAttachments = false,
   onExpand,
 }: {
@@ -38,6 +39,7 @@ export default function ToolCall({
   output?: string | null;
   attachments?: TAttachment[];
   auth?: string;
+  toolCallId?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
 }) {
@@ -165,6 +167,24 @@ export default function ToolCall({
   const progress = useProgress(initialProgress);
   const showCancelled = cancelled || (errorState && !output);
 
+  /** Live MCP progress (`notifications/progress`) for this call, when streamed. */
+  const liveProgress = useRecoilValue(toolProgressByToolCallId(toolCallId ?? ''));
+  const inProgressText = useMemo(() => {
+    if (liveProgress?.message) {
+      return liveProgress.message;
+    }
+    if (liveProgress != null && liveProgress.total != null && liveProgress.total > 0) {
+      const asLabel = (value: number) => (Number.isInteger(value) ? `${value}` : value.toFixed(1));
+      return localize('com_ui_tool_progress', {
+        0: asLabel(liveProgress.progress),
+        1: asLabel(liveProgress.total),
+      });
+    }
+    return function_name
+      ? localize('com_assistants_running_var', { 0: function_name })
+      : localize('com_assistants_running_action');
+  }, [liveProgress, function_name, localize]);
+
   const handleToggleInfo = useCallback(() => {
     setShowInfo((prev) => {
       const next = !prev;
@@ -207,9 +227,7 @@ export default function ToolCall({
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !showCancelled) {
-            return function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action');
+            return inProgressText;
           }
           return getFinishedText();
         })()}
@@ -218,11 +236,7 @@ export default function ToolCall({
         <ProgressText
           progress={progress}
           onClick={handleToggleInfo}
-          inProgressText={
-            function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action')
-          }
+          inProgressText={inProgressText}
           authText={
             !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }

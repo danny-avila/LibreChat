@@ -17,6 +17,7 @@ import type {
   SummaryContentPart,
   TMessageContentParts,
   SubagentUpdateEvent,
+  ToolProgressEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -26,8 +27,8 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { subagentProgressByToolCallId, toolProgressByToolCallId } from '~/store';
 import { isAskUserQuestionPart } from '~/utils/approval';
-import { subagentProgressByToolCallId } from '~/store';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
@@ -55,7 +56,8 @@ type TStepEvent =
   | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
-  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent };
+  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
+  | { event: StepEvents.ON_TOOL_PROGRESS; data: ToolProgressEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -147,6 +149,7 @@ export default function useStepHandler({
    * `atomFamily` — atoms persist for the app lifetime.
    */
   const knownSubagentAtomKeys = useRef(new Set<string>());
+  const knownToolProgressAtomKeys = useRef(new Set<string>());
 
   const getCurrentMessages = useCallback(
     (messages: TMessage[]) => {
@@ -273,6 +276,23 @@ export default function useStepHandler({
    * subagent spawn), so growth is proportional to messages — the same
    * growth profile as the rest of the conversation state.
    */
+  const applyToolProgress = useRecoilCallback(
+    ({ set }) =>
+      (payload: ToolProgressEvent): void => {
+        if (!payload?.toolCallId) {
+          return;
+        }
+        knownToolProgressAtomKeys.current.add(payload.toolCallId);
+        set(toolProgressByToolCallId(payload.toolCallId), {
+          progress: payload.progress,
+          total: payload.total,
+          message: payload.message,
+        });
+      },
+    [],
+  );
+
+  /** Also clears the live tool-progress atoms — same transient lifecycle. */
   const resetSubagentAtoms = useRecoilCallback(
     ({ reset }) =>
       (): void => {
@@ -280,6 +300,10 @@ export default function useStepHandler({
           reset(subagentProgressByToolCallId(toolCallId));
         }
         knownSubagentAtomKeys.current.clear();
+        for (const toolCallId of knownToolProgressAtomKeys.current) {
+          reset(toolProgressByToolCallId(toolCallId));
+        }
+        knownToolProgressAtomKeys.current.clear();
       },
     [],
   );
@@ -977,6 +1001,8 @@ export default function useStepHandler({
             }),
           );
         }
+      } else if (stepEvent.event === StepEvents.ON_TOOL_PROGRESS) {
+        applyToolProgress(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
@@ -1082,6 +1108,7 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
+      applyToolProgress,
       onSkillAuthoringComplete,
     ],
   );

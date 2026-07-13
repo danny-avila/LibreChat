@@ -20,6 +20,7 @@ const {
   isUserSourced,
   checkAccessWithRequestCache,
   BACKGROUND_PROGRESS_SINK,
+  createToolProgressEmitter,
   requiresEphemeralUserConnection,
   containsGraphTokenPlaceholder,
 } = require('@librechat/api');
@@ -818,10 +819,22 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
-      /** Set per-dispatch by the background executor: forwarding it as the
-       *  SDK's `onprogress` attaches a progressToken to the request, so a
-       *  server emitting `notifications/progress` updates the task mid-flight. */
+      /** Progress routing for `notifications/progress` (the SDK attaches a
+       *  progressToken whenever `onprogress` is passed). A background dispatch
+       *  sets the sink (its card already settled with the synthetic handle),
+       *  so progress feeds the poll registry; a foreground call streams a
+       *  throttled transient event to the live tool-call card instead. */
       const progressSink = config?.configurable?.[BACKGROUND_PROGRESS_SINK];
+      let onToolProgress = typeof progressSink === 'function' ? progressSink : undefined;
+      if (onToolProgress == null && toolCall.id != null) {
+        onToolProgress = createToolProgressEmitter({
+          toolCallId: toolCall.id,
+          emit: (eventData) =>
+            streamId
+              ? GenerationJobManager.emitChunk(streamId, eventData)
+              : sendEvent(res, eventData),
+        });
+      }
 
       const result = await mcpManager.callTool({
         serverName,
@@ -831,7 +844,7 @@ function createToolInstance({
         toolArguments,
         options: {
           signal: derivedSignal,
-          ...(typeof progressSink === 'function' ? { onprogress: progressSink } : {}),
+          ...(onToolProgress ? { onprogress: onToolProgress } : {}),
         },
         user: effectiveUser,
         requestBody: config?.configurable?.requestBody ?? capturedRequestBody,

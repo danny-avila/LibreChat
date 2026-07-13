@@ -40,7 +40,21 @@ export enum StepEvents {
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
   ON_SUBAGENT_UPDATE = 'on_subagent_update',
+  ON_TOOL_PROGRESS = 'on_tool_progress',
 }
+
+/**
+ * Live MCP `notifications/progress` for a running foreground tool call,
+ * correlated by the tool call id. Transient: streamed to live subscribers
+ * only — never persisted or replayed on resume.
+ */
+export type ToolProgressEvent = {
+  toolCallId: string;
+  /** Raw progress value; a completion fraction when `total` is absent. */
+  progress: number;
+  total?: number;
+  message?: string;
+};
 
 /** Token-tracking event names streamed to the client (separate from StepEvents dispatch). */
 export enum UsageEvents {

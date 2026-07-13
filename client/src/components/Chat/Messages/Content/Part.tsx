@@ -310,6 +310,7 @@ const Part = memo(function Part({
             args={toolCall.args ?? ''}
             name={toolCall.name || ''}
             output={toolCall.output ?? ''}
+            toolCallId={toolCall.id}
             initialProgress={toolCall.progress ?? 0.1}
             isSubmitting={isSubmitting}
             attachments={attachments}

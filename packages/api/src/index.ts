@@ -14,6 +14,7 @@ export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
 export * from './mcp/oauth';
+export * from './mcp/progress';
 export * from './mcp/auth';
 export * from './mcp/zod';
 export * from './mcp/errors';
