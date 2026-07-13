@@ -109,7 +109,7 @@ function computeTargetScroll(
 
 type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
 
-const RIB_END: RibDims = { baseW: 3, baseH: 4, peakW: 4.5, peakH: 6 };
+const RIB_END: RibDims = { baseW: 3, baseH: 3, peakW: 4.5, peakH: 4.5 };
 const RIB_MESSAGE: RibDims = { baseW: 12, baseH: 3, peakW: 39, peakH: 6 };
 
 /** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
@@ -150,7 +150,7 @@ const MessageIndicator = memo(function MessageIndicator({
   label: string;
   onSelect: (id: string) => void;
 }) {
-  const baseSize = entry.isEnd ? 'mr-1.5 h-1 w-[3px]' : 'h-[3px] w-3';
+  const baseSize = entry.isEnd ? 'mr-1.5 h-[3px] w-[3px]' : 'h-[3px] w-3';
   return (
     <button
       type="button"
