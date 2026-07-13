@@ -1,27 +1,15 @@
 import * as agentsSdk from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import type { HookCallback, HookInputByEvent, HookOutputByEvent } from '@librechat/agents';
+import type {
+  HookCallback,
+  HookInputByEvent,
+  HookOutputByEvent,
+  InjectedMessage,
+} from '@librechat/agents';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 
-/**
- * Structural mirror of the SDK's hook `injectedMessages` entries. Typed
- * locally — not as `InjectedMessage` — because the field ships in
- * `@librechat/agents` versions with `HOOK_INJECTED_MESSAGES_CAPABLE`; older
- * SDKs ignore it at runtime and their `PostToolBatchHookOutput` predates it.
- * Switch to the SDK types once the dependency is bumped. Content mirrors the
- * SDK's `string | MessageContentComplex[]` (arrays pass through to a
- * multimodal HumanMessage unchanged).
- */
-interface SteerInjectedMessage {
-  role: 'user';
-  content: string | Array<Record<string, unknown>>;
-  source: 'steer';
-}
-
-type SteerDrainOutput = HookOutputByEvent['PostToolBatch'] & {
-  injectedMessages?: SteerInjectedMessage[];
-};
+type SteerDrainOutput = HookOutputByEvent['PostToolBatch'];
 
 /**
  * Whether the installed `@librechat/agents` supports the FULL steering
@@ -35,8 +23,9 @@ type SteerDrainOutput = HookOutputByEvent['PostToolBatch'] & {
  *    part would fall through the formatter's catch-all INTO the assistant's
  *    provider content — so an SDK that can inject but not replay must still
  *    501 the steer route.
- * Read via the namespace so an older SDK yields `undefined` (→ false)
- * instead of a missing-binding failure.
+ * The pinned dependency (^3.2.62) carries both; the runtime probe stays (read
+ * via the namespace so an older install yields `undefined` → false, not a
+ * missing-binding failure) as the defensive gate for mismatched deployments.
  */
 export function isSteeringSupported(): boolean {
   const sdk = agentsSdk as {
@@ -103,7 +92,7 @@ export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<
     if (steers.length === 0) {
       return {};
     }
-    const injectedMessages: SteerInjectedMessage[] = [];
+    const injectedMessages: InjectedMessage[] = [];
     for (const item of steers) {
       let media: SteerMediaResult | undefined;
       if (buildMedia != null && (item.files?.length ?? 0) > 0) {
@@ -126,7 +115,7 @@ export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<
       }
       injectedMessages.push({
         role: 'user' as const,
-        content: media?.content ?? item.text,
+        content: (media?.content ?? item.text) as InjectedMessage['content'],
         source: 'steer' as const,
       });
     }
