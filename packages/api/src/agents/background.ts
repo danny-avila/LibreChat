@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
-import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
@@ -137,17 +137,11 @@ export function stripRunInBackgroundArg(args: unknown): unknown {
   return rest;
 }
 
-const RUN_IN_BACKGROUND_PROPERTY = Object.freeze({
+const RUN_IN_BACKGROUND_PROPERTY: JsonSchemaType = Object.freeze<JsonSchemaType>({
   type: 'boolean',
   description:
     'Set true to run this tool call in the background: it returns immediately with a background_task_id instead of blocking, so you can keep working while it runs. Poll check_background_task with that id to collect the result. The task persists on this server, so you may collect it later in this turn or in a following turn (it does not survive a server restart). Use for a slow call whose result you do not need right away.',
 });
-
-interface JsonSchemaObject {
-  type?: string;
-  properties?: Record<string, unknown>;
-  [key: string]: unknown;
-}
 
 /**
  * Returns a copy of the tool definition with a `run_in_background` boolean
@@ -155,17 +149,17 @@ interface JsonSchemaObject {
  * and MCP defs may be shared), and is a no-op if the property already exists.
  */
 export function injectRunInBackgroundParam(def: LCTool): LCTool {
-  const params = def.parameters as JsonSchemaObject | undefined;
+  const params = def.parameters;
   const existingProps = params?.properties ?? {};
   if (RUN_IN_BACKGROUND_ARG in existingProps) {
     return def;
   }
-  const nextParams: JsonSchemaObject = {
-    ...(params ?? {}),
+  const nextParams: JsonSchemaType = {
+    ...params,
     type: 'object',
     properties: { ...existingProps, [RUN_IN_BACKGROUND_ARG]: RUN_IN_BACKGROUND_PROPERTY },
   };
-  return { ...def, parameters: nextParams as unknown as LCTool['parameters'] };
+  return { ...def, parameters: nextParams };
 }
 
 /**
@@ -176,7 +170,7 @@ export function injectRunInBackgroundParam(def: LCTool): LCTool {
  * would otherwise hijack/strip).
  */
 function canInjectRunInBackgroundParam(def: LCTool): boolean {
-  const params = def.parameters as JsonSchemaObject | undefined;
+  const params = def.parameters;
   if (params == null) {
     return true;
   }
@@ -188,15 +182,12 @@ function canInjectRunInBackgroundParam(def: LCTool): boolean {
 
 /** Returns a copy of the def without the injected `run_in_background` property. */
 function removeRunInBackgroundParam(def: LCTool): LCTool {
-  const params = def.parameters as JsonSchemaObject | undefined;
+  const params = def.parameters;
   if (params?.properties == null || !(RUN_IN_BACKGROUND_ARG in params.properties)) {
     return def;
   }
   const { [RUN_IN_BACKGROUND_ARG]: _omit, ...restProps } = params.properties;
-  return {
-    ...def,
-    parameters: { ...params, properties: restProps } as unknown as LCTool['parameters'],
-  };
+  return { ...def, parameters: { ...params, properties: restProps } };
 }
 
 /**
@@ -211,13 +202,20 @@ export function stripBackgroundFromToolDefinitions(
 ): LCTool[] {
   const defs = toolDefinitions ?? [];
   const bgSet = new Set(backgroundToolNames ?? []);
-  const hasPoll = defs.some((d) => d.name === CHECK_BACKGROUND_TASK_NAME);
-  if (bgSet.size === 0 && !hasPoll) {
-    return defs;
+  const next: LCTool[] = [];
+  let changed = false;
+  for (const def of defs) {
+    if (def.name === CHECK_BACKGROUND_TASK_NAME) {
+      changed = true;
+      continue;
+    }
+    const stripped = bgSet.size > 0 && bgSet.has(def.name) ? removeRunInBackgroundParam(def) : def;
+    if (stripped !== def) {
+      changed = true;
+    }
+    next.push(stripped);
   }
-  return defs
-    .filter((d) => d.name !== CHECK_BACKGROUND_TASK_NAME)
-    .map((d) => (bgSet.has(d.name) ? removeRunInBackgroundParam(d) : d));
+  return changed ? next : defs;
 }
 
 /**
@@ -251,7 +249,7 @@ const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check the status and retrieve the res
 
 Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Background tasks persist on this server across turns, so you can collect a result in a later turn; they do not survive a server restart.`;
 
-const CHECK_BACKGROUND_TASK_PARAMETERS: LCTool['parameters'] = Object.freeze({
+const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchemaType>({
   type: 'object',
   properties: {
     background_task_id: {
@@ -261,13 +259,13 @@ const CHECK_BACKGROUND_TASK_PARAMETERS: LCTool['parameters'] = Object.freeze({
     },
   },
   required: [],
-}) as unknown as LCTool['parameters'];
+});
 
-const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze({
+const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze<LCTool>({
   name: CHECK_BACKGROUND_TASK_NAME,
   description: CHECK_BACKGROUND_TASK_DESCRIPTION,
   parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
-}) as LCTool;
+});
 
 /**
  * Idempotently registers the `check_background_task` poll tool into the run's
@@ -327,7 +325,6 @@ export function applyBackgroundToolCalls(params: {
   toolDefinitions: LCTool[] | undefined;
   toolRegistry: LCToolRegistry | undefined;
   toolOptions: AgentToolOptions | undefined;
-  enabled: boolean;
   /**
    * Extra host-context exclusion (e.g. tools of ephemeral request-scoped MCP
    * servers, whose connection dies at request end): a `true` return skips the
@@ -335,11 +332,11 @@ export function applyBackgroundToolCalls(params: {
    * executor would silently downgrade to foreground.
    */
   excludeTool?: (toolName: string) => boolean;
-}): { toolDefinitions: LCTool[]; enabled: boolean; backgroundToolNames: string[] } {
+}): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
   const { toolRegistry, toolOptions, excludeTool } = params;
   const defs = params.toolDefinitions ?? [];
-  if (!params.enabled || !toolOptions) {
-    return { toolDefinitions: defs, enabled: false, backgroundToolNames: [] };
+  if (!toolOptions || !Object.values(toolOptions).some((o) => o?.run_in_background === true)) {
+    return { toolDefinitions: defs, backgroundToolNames: [] };
   }
 
   const backgroundToolNames: string[] = [];
@@ -367,11 +364,11 @@ export function applyBackgroundToolCalls(params: {
   });
 
   if (backgroundToolNames.length === 0) {
-    return { toolDefinitions: defs, enabled: false, backgroundToolNames: [] };
+    return { toolDefinitions: defs, backgroundToolNames: [] };
   }
 
   const withPoll = registerBackgroundTaskTool({ toolRegistry, toolDefinitions: nextDefs });
-  return { toolDefinitions: withPoll.toolDefinitions, enabled: true, backgroundToolNames };
+  return { toolDefinitions: withPoll.toolDefinitions, backgroundToolNames };
 }
 
 /**
@@ -387,8 +384,14 @@ export function applyBackgroundToolCalls(params: {
  */
 export function synthesizeBackgroundToolOptions(
   tools: string[],
-  enabled: boolean,
+  sources: {
+    ephemeralAgent?: { run_in_background?: boolean } | null;
+    modelSpec?: { runInBackground?: boolean } | null;
+  },
 ): AgentToolOptions | undefined {
+  const enabled =
+    sources.ephemeralAgent?.run_in_background === true ||
+    sources.modelSpec?.runInBackground === true;
   if (!enabled) {
     return undefined;
   }
@@ -408,12 +411,8 @@ export interface BackgroundTask {
   toolName: string;
   toolCallId: string;
   status: BackgroundTaskStatus;
-  /** Coarse progress 0..1 (best-effort): 0 while running, 1 when settled. */
-  progress: number;
   /** Tool result content once completed. */
   result?: string;
-  /** True when the completed tool produced an artifact (not returned inline). */
-  hasArtifact?: boolean;
   /**
    * The completed tool's artifact, held until the poll turn collects it (a
    * backgrounded call's own turn is finalized before the artifact resolves, so
@@ -444,10 +443,35 @@ const RUNNING_TASK_TTL_MS = 30 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
+const MAX_ARTIFACT_CHARS = 10_000_000;
+const GLOBAL_SWEEP_INTERVAL_MS = 60 * 1000;
 
 function toStoredContent(content: unknown): string {
   const asString = typeof content === 'string' ? content : JSON.stringify(content ?? '');
   return truncateMiddle(asString, MAX_RESULT_CHARS);
+}
+
+/**
+ * Bounds retained artifact memory: an artifact is held for up to the completed
+ * TTL, so a runaway payload (huge base64 blobs) is dropped rather than pinned.
+ * Measurement failures (circular refs) keep the artifact.
+ */
+function toStoredArtifact(taskId: string, artifact: unknown): unknown {
+  if (artifact == null) {
+    return undefined;
+  }
+  try {
+    const size = JSON.stringify(artifact)?.length ?? 0;
+    if (size > MAX_ARTIFACT_CHARS) {
+      logger.warn(
+        `[background] Dropping oversized artifact for task ${taskId} (${size} chars > ${MAX_ARTIFACT_CHARS}).`,
+      );
+      return undefined;
+    }
+  } catch {
+    /* unmeasurable artifact: keep it */
+  }
+  return artifact;
 }
 
 /**
@@ -461,38 +485,52 @@ function toStoredContent(content: unknown): string {
  */
 export class BackgroundTaskRegistryClass {
   private readonly buckets = new Map<string, TaskBucket>();
+  private lastGlobalSweepAt = 0;
 
   private key(userId: string, conversationId: string): string {
     return `${userId}::${conversationId}`;
   }
 
+  private sweepBucketTasks(bucket: TaskBucket, now: number): void {
+    for (const [taskId, task] of bucket.tasks) {
+      if (task.status === 'running' && now - task.createdAt > RUNNING_TASK_TTL_MS) {
+        /** Reap a stuck task: freeing the running slot (it no longer counts
+         *  toward the cap) and letting the completed-task TTL evict it. */
+        task.status = 'error';
+        task.error = 'Background task timed out';
+        task.updatedAt = now;
+        continue;
+      }
+      if (task.status !== 'running' && now - task.updatedAt > COMPLETED_TASK_TTL_MS) {
+        bucket.tasks.delete(taskId);
+      }
+    }
+    /** Drop dedupe mappings whose task was evicted (keys are
+     *  `agentId::runId::toolCallId`, so they can't be derived from a task alone). */
+    for (const [dedupeKey, taskId] of bucket.byToolCall) {
+      if (!bucket.tasks.has(taskId)) {
+        bucket.byToolCall.delete(dedupeKey);
+      }
+    }
+  }
+
+  /**
+   * Accessors always sweep the bucket they touch (so TTLs hold exactly for the
+   * data being read), while the all-buckets pass — needed only for idle-bucket
+   * eviction and untouched buckets — is throttled so a hot poll loop isn't
+   * O(total tasks server-wide) on every call.
+   */
   private sweep(now: number): void {
+    if (now - this.lastGlobalSweepAt < GLOBAL_SWEEP_INTERVAL_MS) {
+      return;
+    }
+    this.lastGlobalSweepAt = now;
     for (const [bucketKey, bucket] of this.buckets) {
       if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS) {
         this.buckets.delete(bucketKey);
         continue;
       }
-      for (const [taskId, task] of bucket.tasks) {
-        if (task.status === 'running' && now - task.createdAt > RUNNING_TASK_TTL_MS) {
-          /** Reap a stuck task: freeing the running slot (it no longer counts
-           *  toward the cap) and letting the completed-task TTL evict it. */
-          task.status = 'error';
-          task.progress = 1;
-          task.error = 'Background task timed out';
-          task.updatedAt = now;
-          continue;
-        }
-        if (task.status !== 'running' && now - task.updatedAt > COMPLETED_TASK_TTL_MS) {
-          bucket.tasks.delete(taskId);
-        }
-      }
-      /** Drop dedupe mappings whose task was evicted (keys are
-       *  `agentId::runId::toolCallId`, so they can't be derived from a task alone). */
-      for (const [dedupeKey, taskId] of bucket.byToolCall) {
-        if (!bucket.tasks.has(taskId)) {
-          bucket.byToolCall.delete(dedupeKey);
-        }
-      }
+      this.sweepBucketTasks(bucket, now);
     }
   }
 
@@ -530,6 +568,7 @@ export class BackgroundTaskRegistryClass {
     const now = Date.now();
     this.sweep(now);
     const bucket = this.getBucket(params.userId, params.conversationId, now);
+    this.sweepBucketTasks(bucket, now);
 
     const dedupeKey = `${params.agentId ?? ''}::${params.runId ?? ''}::${params.toolCallId}`;
     const existingId = bucket.byToolCall.get(dedupeKey);
@@ -573,7 +612,6 @@ export class BackgroundTaskRegistryClass {
       toolName: params.toolName,
       toolCallId: params.toolCallId,
       status: 'running',
-      progress: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -604,10 +642,11 @@ export class BackgroundTaskRegistryClass {
   ): void {
     this.update(userId, conversationId, taskId, {
       status: 'completed',
-      progress: 1,
       result: toStoredContent(result.content),
-      hasArtifact: result.artifact != null,
-      artifact: result.artifact ?? undefined,
+      artifact: toStoredArtifact(taskId, result.artifact),
+      /** Marks that an artifact existed even after `claimArtifact` clears it,
+       *  so re-polls keep the "produced an artifact" note. */
+      artifactDelivered: false,
     });
   }
 
@@ -652,7 +691,7 @@ export class BackgroundTaskRegistryClass {
   }
 
   fail(userId: string, conversationId: string, taskId: string, error: string): void {
-    this.update(userId, conversationId, taskId, { status: 'error', progress: 1, error });
+    this.update(userId, conversationId, taskId, { status: 'error', error });
   }
 
   get(userId: string, conversationId: string, taskId: string): BackgroundTask | undefined {
@@ -661,10 +700,12 @@ export class BackgroundTaskRegistryClass {
      *  expired task (and its retained result) alive past the completed TTL. */
     this.sweep(now);
     const bucket = this.buckets.get(this.key(userId, conversationId));
-    if (bucket) {
-      bucket.lastAccess = now;
+    if (!bucket) {
+      return undefined;
     }
-    return bucket?.tasks.get(taskId);
+    bucket.lastAccess = now;
+    this.sweepBucketTasks(bucket, now);
+    return bucket.tasks.get(taskId);
   }
 
   list(userId: string, conversationId: string): BackgroundTask[] {
@@ -675,6 +716,7 @@ export class BackgroundTaskRegistryClass {
       return [];
     }
     bucket.lastAccess = now;
+    this.sweepBucketTasks(bucket, now);
     return [...bucket.tasks.values()].sort((a, b) => a.createdAt - b.createdAt);
   }
 }
@@ -706,7 +748,23 @@ export function buildBackgroundCapacityContent(toolName: string): string {
  * inject megabytes of retained tool output into the next model step. The full
  * result is only returned when a specific `background_task_id` is requested.
  */
-function resultFields(task: BackgroundTask, includeResult: boolean): Record<string, unknown> {
+interface SerializedBackgroundTask {
+  background_task_id: string;
+  tool: string;
+  status: BackgroundTaskStatus;
+  /** Coarse 0..1: no intermediate progress exists, only running vs settled. */
+  progress: number;
+  result?: string;
+  result_available?: boolean;
+  result_chars?: number;
+  note?: string;
+  error?: string;
+}
+
+function resultFields(
+  task: BackgroundTask,
+  includeResult: boolean,
+): Pick<SerializedBackgroundTask, 'result' | 'result_available' | 'result_chars'> {
   if (task.result === undefined) {
     return {};
   }
@@ -719,14 +777,14 @@ function resultFields(task: BackgroundTask, includeResult: boolean): Record<stri
 function serializeTask(
   task: BackgroundTask,
   { includeResult }: { includeResult: boolean },
-): Record<string, unknown> {
+): SerializedBackgroundTask {
   return {
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    progress: task.progress,
+    progress: task.status === 'running' ? 0 : 1,
     ...resultFields(task, includeResult),
-    ...(task.hasArtifact
+    ...(task.artifact != null || task.artifactDelivered === true
       ? { note: 'The tool produced an artifact that is not included inline.' }
       : {}),
     ...(task.error !== undefined ? { error: task.error } : {}),

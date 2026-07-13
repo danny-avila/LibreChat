@@ -128,16 +128,14 @@ describe('injectRunInBackgroundParam', () => {
 });
 
 describe('applyBackgroundToolCalls', () => {
-  it('is a no-op when the capability is disabled', () => {
+  it('is a no-op when no tool opted in (returns the same defs, registers nothing)', () => {
     const defs = [mcpDef('search_mcp_docs')];
     const registry: LCToolRegistry = new Map();
     const result = applyBackgroundToolCalls({
       toolDefinitions: defs,
       toolRegistry: registry,
-      toolOptions: { search_mcp_docs: { run_in_background: true } },
-      enabled: false,
+      toolOptions: { search_mcp_docs: { defer_loading: true } },
     });
-    expect(result.enabled).toBe(false);
     expect(result.toolDefinitions).toBe(defs);
     expect(result.backgroundToolNames).toEqual([]);
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
@@ -150,9 +148,7 @@ describe('applyBackgroundToolCalls', () => {
       toolDefinitions: defs,
       toolRegistry: registry,
       toolOptions: { search_mcp_docs: { run_in_background: true } },
-      enabled: true,
     });
-    expect(result.enabled).toBe(true);
     expect(result.backgroundToolNames).toEqual(['search_mcp_docs']);
 
     const searchDef = result.toolDefinitions.find((d) => d.name === 'search_mcp_docs');
@@ -184,9 +180,7 @@ describe('applyBackgroundToolCalls', () => {
       toolDefinitions: defs,
       toolRegistry: registry,
       toolOptions: { read_file: { run_in_background: true } },
-      enabled: true,
     });
-    expect(result.enabled).toBe(false);
     expect(result.backgroundToolNames).toEqual([]);
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
   });
@@ -201,7 +195,6 @@ describe('applyBackgroundToolCalls', () => {
         ephemeral_mcp__body_server: { run_in_background: true },
         search_mcp_docs: { run_in_background: true },
       },
-      enabled: true,
       excludeTool: (name) => name === 'ephemeral_mcp__body_server',
     });
     expect(result.backgroundToolNames).toEqual(['search_mcp_docs']);
@@ -221,9 +214,7 @@ describe('applyBackgroundToolCalls', () => {
       toolDefinitions: defs,
       toolRegistry: new Map(),
       toolOptions: { legacy_tool: { run_in_background: true } },
-      enabled: true,
     });
-    expect(result.enabled).toBe(false);
     expect(result.backgroundToolNames).toEqual([]);
     expect((result.toolDefinitions[0].parameters as { type: string }).type).toBe('string');
   });
@@ -239,9 +230,7 @@ describe('applyBackgroundToolCalls', () => {
       toolDefinitions: defs,
       toolRegistry: new Map(),
       toolOptions: { owns_it: { run_in_background: true } },
-      enabled: true,
     });
-    expect(result.enabled).toBe(false);
     expect(result.backgroundToolNames).toEqual([]);
   });
 });
@@ -298,14 +287,20 @@ describe('registerBackgroundTaskTool', () => {
 });
 
 describe('synthesizeBackgroundToolOptions', () => {
-  it('returns undefined when disabled', () => {
-    expect(synthesizeBackgroundToolOptions(['search_mcp_docs'], false)).toBeUndefined();
+  it('returns undefined when neither the ephemeral toggle nor the model spec enables it', () => {
+    expect(synthesizeBackgroundToolOptions(['search_mcp_docs'], {})).toBeUndefined();
+    expect(
+      synthesizeBackgroundToolOptions(['search_mcp_docs'], {
+        ephemeralAgent: { run_in_background: false },
+        modelSpec: { runInBackground: false },
+      }),
+    ).toBeUndefined();
   });
 
   it('marks only eligible tools (excludes code/HITL/attachment built-ins)', () => {
     const options = synthesizeBackgroundToolOptions(
       ['search_mcp_docs', 'execute_code', 'ask_user_question', 'web_search', 'lookup_customer'],
-      true,
+      { ephemeralAgent: { run_in_background: true } },
     );
     expect(options).toEqual({
       search_mcp_docs: { run_in_background: true },
@@ -314,7 +309,11 @@ describe('synthesizeBackgroundToolOptions', () => {
   });
 
   it('returns undefined when nothing is eligible', () => {
-    expect(synthesizeBackgroundToolOptions(['execute_code', 'skill'], true)).toBeUndefined();
+    expect(
+      synthesizeBackgroundToolOptions(['execute_code', 'skill'], {
+        modelSpec: { runInBackground: true },
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -338,7 +337,6 @@ describe('BackgroundTaskRegistryClass', () => {
     const task = registry.get('u1', 'c1', created.task.id);
     expect(task?.status).toBe('completed');
     expect(task?.result).toBe('DONE');
-    expect(task?.progress).toBe(1);
   });
 
   it('is idempotent within the same run (never double-dispatches on replay)', () => {
@@ -443,7 +441,7 @@ describe('BackgroundTaskRegistryClass', () => {
       content: 'DONE',
       artifact: { files: ['a.png'] },
     });
-    expect(registry.get('u1', 'c1', created.task.id)?.hasArtifact).toBe(true);
+    expect(registry.get('u1', 'c1', created.task.id)?.artifact).toEqual({ files: ['a.png'] });
 
     const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
     expect(claimed).toEqual({
@@ -714,7 +712,6 @@ describe('stripBackgroundFromToolRegistry', () => {
       toolDefinitions: [searchDef],
       toolRegistry: registry,
       toolOptions: { search_mcp_docs: { run_in_background: true } },
-      enabled: true,
     });
     expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
 

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Clock, Code2, Zap } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Button, Spinner, Checkbox, Skeleton, TooltipAnchor } from '@librechat/client';
+import { Button, Spinner, Checkbox, Skeleton } from '@librechat/client';
 import type { MouseEvent } from 'react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { McpItem } from '../../items/types';
@@ -18,6 +18,7 @@ import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
+import OptionToggle from '../../../OptionToggle';
 import MCPToolItem from '../../../MCPToolItem';
 import { Collapse } from '~/components/ui';
 import { useLocalize } from '~/hooks';
@@ -303,96 +304,39 @@ export default function McpSection({ item }: Props) {
           {hasTools && (
             <div className="flex items-center gap-0.5">
               {deferredToolsEnabled && (
-                <TooltipAnchor
-                  description={
-                    allDeferred
-                      ? localize('com_ui_mcp_undefer_all')
-                      : localize('com_ui_mcp_defer_all')
-                  }
-                  side="top"
-                  render={
-                    <button
-                      type="button"
-                      onClick={() => toggleDeferAll(tools)}
-                      aria-pressed={allDeferred}
-                      aria-label={
-                        allDeferred
-                          ? localize('com_ui_mcp_undefer_all')
-                          : localize('com_ui_mcp_defer_all')
-                      }
-                      className={cn(
-                        'flex size-7 items-center justify-center rounded-md transition-colors',
-                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                        allDeferred
-                          ? 'text-amber-600 dark:text-amber-500'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      <Clock className="size-4" aria-hidden="true" />
-                    </button>
-                  }
+                <OptionToggle
+                  icon={Clock}
+                  size="md"
+                  pressed={allDeferred}
+                  label={localize(allDeferred ? 'com_ui_mcp_undefer_all' : 'com_ui_mcp_defer_all')}
+                  activeClass="text-amber-600 dark:text-amber-500"
+                  onToggle={() => toggleDeferAll(tools)}
                 />
               )}
               {programmaticToolsEnabled && (
-                <TooltipAnchor
-                  description={
+                <OptionToggle
+                  icon={Code2}
+                  size="md"
+                  pressed={allProgrammatic}
+                  label={localize(
                     allProgrammatic
-                      ? localize('com_ui_mcp_unprogrammatic_all')
-                      : localize('com_ui_mcp_programmatic_all')
-                  }
-                  side="top"
-                  render={
-                    <button
-                      type="button"
-                      onClick={() => toggleProgrammaticAll(tools)}
-                      aria-pressed={allProgrammatic}
-                      aria-label={
-                        allProgrammatic
-                          ? localize('com_ui_mcp_unprogrammatic_all')
-                          : localize('com_ui_mcp_programmatic_all')
-                      }
-                      className={cn(
-                        'flex size-7 items-center justify-center rounded-md transition-colors',
-                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                        allProgrammatic
-                          ? 'text-violet-600 dark:text-violet-500'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      <Code2 className="size-4" aria-hidden="true" />
-                    </button>
-                  }
+                      ? 'com_ui_mcp_unprogrammatic_all'
+                      : 'com_ui_mcp_programmatic_all',
+                  )}
+                  activeClass="text-violet-600 dark:text-violet-500"
+                  onToggle={() => toggleProgrammaticAll(tools)}
                 />
               )}
               {backgroundToolsEnabled && (
-                <TooltipAnchor
-                  description={
-                    allBackground
-                      ? localize('com_ui_mcp_unbackground_all')
-                      : localize('com_ui_mcp_background_all')
-                  }
-                  side="top"
-                  render={
-                    <button
-                      type="button"
-                      onClick={() => toggleBackgroundAll(tools)}
-                      aria-pressed={allBackground}
-                      aria-label={
-                        allBackground
-                          ? localize('com_ui_mcp_unbackground_all')
-                          : localize('com_ui_mcp_background_all')
-                      }
-                      className={cn(
-                        'flex size-7 items-center justify-center rounded-md transition-colors',
-                        'hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                        allBackground
-                          ? 'text-sky-600 dark:text-sky-500'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      <Zap className="size-4" aria-hidden="true" />
-                    </button>
-                  }
+                <OptionToggle
+                  icon={Zap}
+                  size="md"
+                  pressed={allBackground}
+                  label={localize(
+                    allBackground ? 'com_ui_mcp_unbackground_all' : 'com_ui_mcp_background_all',
+                  )}
+                  activeClass="text-sky-600 dark:text-sky-500"
+                  onToggle={() => toggleBackgroundAll(tools)}
                 />
               )}
               {(deferredToolsEnabled || programmaticToolsEnabled || backgroundToolsEnabled) && (

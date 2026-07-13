@@ -1183,7 +1183,6 @@ export async function initializeAgent(
       toolDefinitions,
       toolRegistry,
       toolOptions: agent.tool_options,
-      enabled: true,
       /** Tools of ephemeral request-scoped MCP servers (runtime body
        *  placeholders) never get the param: their connection dies at request
        *  end, so the executor would only downgrade the call to foreground.

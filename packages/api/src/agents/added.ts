@@ -159,10 +159,7 @@ export async function loadAddedAgent(
     applyModelSpecSkills(result, modelSpec);
     applyModelSpecSubagents(result, modelSpec);
     const primaryBackgroundToolOptions: AgentToolOptions | undefined =
-      synthesizeBackgroundToolOptions(
-        result.tools as string[],
-        ephemeralAgent?.run_in_background === true || modelSpec?.runInBackground === true,
-      );
+      synthesizeBackgroundToolOptions(result.tools as string[], { ephemeralAgent, modelSpec });
     if (primaryBackgroundToolOptions) {
       result.tool_options = primaryBackgroundToolOptions;
     }
@@ -279,7 +276,7 @@ export async function loadAddedAgent(
 
   const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions(
     tools,
-    ephemeralAgent?.run_in_background === true || modelSpec?.runInBackground === true,
+    { ephemeralAgent, modelSpec },
   );
   if (backgroundToolOptions) {
     result.tool_options = backgroundToolOptions;

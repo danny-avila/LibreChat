@@ -1731,6 +1731,8 @@ function toolRequiresEphemeralConnection(tool: StructuredToolInterface | undefin
   );
 }
 
+const EMPTY_BACKGROUND_TOOL_SET: ReadonlySet<string> = new Set();
+
 /**
  * True when the tool's own schema declares `run_in_background` (zod shape or
  * raw JSON schema), i.e. the parameter belongs to the tool rather than being
@@ -3266,17 +3268,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
              * also gates the `check_background_task` interception and enforces the
              * per-tool opt-in (a tool not in the set never had the param).
              */
-            const backgroundReq = mergedConfigurable?.req as ServerRequest | undefined;
+            const backgroundToolNames = mergedConfigurable?.backgroundToolNames as
+              | string[]
+              | undefined;
+            const backgroundEnabledForRun = (backgroundToolNames?.length ?? 0) > 0;
+            const backgroundToolSet: ReadonlySet<string> = backgroundEnabledForRun
+              ? new Set(backgroundToolNames)
+              : EMPTY_BACKGROUND_TOOL_SET;
+            const backgroundReq = backgroundEnabledForRun
+              ? (mergedConfigurable?.req as ServerRequest | undefined)
+              : undefined;
             const backgroundUserId = backgroundReq?.user?.id ?? '';
-            const backgroundConversationId =
-              ((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
-              (mergedConfigurable?.thread_id as string | undefined) ??
-              (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
-              '';
-            const backgroundToolSet = new Set(
-              (mergedConfigurable?.backgroundToolNames as string[] | undefined) ?? [],
-            );
-            const backgroundEnabledForRun = backgroundToolSet.size > 0;
+            const backgroundConversationId = backgroundEnabledForRun
+              ? (((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+                (mergedConfigurable?.thread_id as string | undefined) ??
+                (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
+                '')
+              : '';
 
             /**
              * Registers the task, returns a synthetic handle immediately, and
@@ -3387,13 +3395,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               artifact: pending.artifact,
                             },
                           },
-                          {
-                            run_id: backgroundRunId,
-                            thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                              | string
-                              | undefined,
-                            ...metadata,
-                          },
+                          (metadata ?? {}) as ToolEndCallbackMetadata,
                         );
                       } catch (callbackError) {
                         /** Only synchronous callback throws land here (e.g. a

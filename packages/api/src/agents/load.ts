@@ -153,7 +153,7 @@ export async function loadEphemeralAgent(
 
   const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions(
     tools,
-    ephemeralAgent?.run_in_background === true || modelSpec?.runInBackground === true,
+    { ephemeralAgent, modelSpec },
   );
   if (backgroundToolOptions) {
     result.tool_options = backgroundToolOptions;
