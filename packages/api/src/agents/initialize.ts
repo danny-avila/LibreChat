@@ -50,7 +50,9 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import { normalizeServerName, requiresEphemeralUserConnection } from '~/mcp/utils';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -256,6 +258,13 @@ export type InitializedAgent = Agent & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
+  /**
+   * Names of this agent's tools that were injected with the `run_in_background`
+   * param (capability enabled AND per-tool opt-in AND eligible). Threaded to the
+   * tool executor via `configurable` so it can enforce the per-tool background
+   * opt-in and gate the `check_background_task` poll tool at execution time.
+   */
+  backgroundToolNames?: string[];
   /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
    *  registered for this agent. Authoritative LibreChat-only signal of the
    *  inline memory opt-in for the execution path, since some contexts hold the
@@ -405,6 +414,13 @@ export interface InitializeAgentParams {
   skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether the `run_in_background` capability is enabled for this run. When
+   * true, tools the agent opted in via `tool_options[name].run_in_background`
+   * get a `run_in_background` schema param and the `check_background_task` poll
+   * tool is registered.
+   */
+  backgroundToolsAvailable?: boolean;
   /** Whether stateful code sessions are available (stateful_code_sessions capability enabled) */
   statefulSessionsAvailable?: boolean;
   /** Whether inline memory tools are available (memory capability enabled, memory
@@ -1154,6 +1170,48 @@ export async function initializeAgent(
     toolDefinitions = fileAuthoringResult.toolDefinitions;
   }
 
+  /**
+   * Inject the `run_in_background` param into eligible opted-in tools and
+   * register the `check_background_task` poll tool. Runs after all built-in
+   * tool registration so the full, final `toolDefinitions` set is considered.
+   * Opt-in is per-tool via `tool_options` for both saved and ephemeral agents.
+   */
+  let backgroundToolNames: string[] | undefined;
+  if (params.backgroundToolsAvailable === true) {
+    /** Tool names embed `normalizeServerName(server)` (see MCP.js tool keys)
+     *  while `mcpConfig` keys the original name, so index the ephemeral
+     *  servers by their normalized form. */
+    const ephemeralServerNames = new Set<string>();
+    for (const [serverName, serverConfig] of Object.entries(req.config?.mcpConfig ?? {})) {
+      if (serverConfig != null && requiresEphemeralUserConnection(serverConfig)) {
+        ephemeralServerNames.add(normalizeServerName(serverName));
+      }
+    }
+    const backgroundResult = applyBackgroundToolCalls({
+      toolDefinitions,
+      toolRegistry,
+      toolOptions: agent.tool_options,
+      /** Tools of ephemeral request-scoped MCP servers (runtime body
+       *  placeholders) never get the param: their connection dies at request
+       *  end, so the executor would only downgrade the call to foreground.
+       *  Unknown servers stay eligible — the executor's per-instance tag is
+       *  the fail-safe for those. */
+      excludeTool: (toolName) => {
+        const delimiterIndex = toolName.indexOf(Constants.mcp_delimiter);
+        if (delimiterIndex < 0) {
+          return false;
+        }
+        return ephemeralServerNames.has(
+          toolName.slice(delimiterIndex + Constants.mcp_delimiter.length),
+        );
+      },
+    });
+    toolDefinitions = backgroundResult.toolDefinitions;
+    if (backgroundResult.backgroundToolNames.length > 0) {
+      backgroundToolNames = backgroundResult.backgroundToolNames;
+    }
+  }
+
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
   const providerTools = resolveProviderToolConflicts({
@@ -1309,6 +1367,7 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    backgroundToolNames,
     actionsEnabled,
     baseContextTokens,
     memoryToolsRegistered: inlineMemoryRegistered,
