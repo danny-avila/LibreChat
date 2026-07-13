@@ -15,11 +15,6 @@ ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 COPY --from=ghcr.io/astral-sh/uv:0.9.5-python3.12-alpine /usr/local/bin/uv /usr/local/bin/uvx /bin/
 RUN uv --version
 
-# Install Infisical CLI
-RUN curl -1sLf \
-    'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.alpine.sh' \
-    | bash && \
-    apk update && apk add infisical
 
 # Set configurable max-old-space-size with default
 ARG NODE_MAX_OLD_SPACE_SIZE=6144
@@ -57,7 +52,7 @@ RUN \
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
-CMD ["sh", "-c", "infisical run --env=\"$INFISICAL_ENVIRONMENT\" --projectId=\"$INFISICAL_PROJECT_ID\" --path=\"$INFISICAL_SECRET_PATH\" -- npm run backend"]
+CMD [ "npm", "run", "backend"]
 
 
 # Optional: for client with nginx routing
