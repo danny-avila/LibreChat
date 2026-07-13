@@ -575,9 +575,8 @@ export function getOpenAILLMConfig({
   let hasModelKwargs = false;
   let reasoningEffort = reasoning_effort;
   let reasoningSummary = reasoning_summary;
-  let reasoningMode: 'standard' | 'pro' | null | undefined = reasoning_mode;
-  let reasoningContext: 'auto' | 'current_turn' | 'all_turns' | null | undefined =
-    reasoning_context;
+  let reasoningMode = reasoning_mode;
+  let reasoningContext = reasoning_context;
 
   if (verbosity != null && verbosity !== '' && useOpenRouter) {
     llmConfig.verbosity = verbosity;
@@ -741,16 +740,18 @@ export function getOpenAILLMConfig({
   }
 
   const isGPT56 = /^gpt-5\.6(?:-|$)/i.test(modelOptions.model ?? '');
-  const supportsGPT56 = isOpenAIEndpoint(endpoint) && firstPartyOpenAI === true && isGPT56;
+  const firstPartyEndpoint = isOpenAIEndpoint(endpoint);
+  const supportsGPT56 = firstPartyEndpoint && isGPT56;
+  const supportsManagedGPT56 = supportsGPT56 && firstPartyOpenAI === true;
   const supportsGPT56Responses = supportsGPT56 && llmConfig.useResponsesApi === true;
-  if (!supportsGPT56Responses) {
+  if (firstPartyEndpoint && !supportsGPT56Responses) {
     reasoningMode = undefined;
     reasoningContext = undefined;
   }
-  if (!supportsGPT56 && reasoningEffort === 'max') {
+  if (firstPartyEndpoint && !supportsGPT56 && reasoningEffort === 'max') {
     reasoningEffort = undefined;
   }
-  if (supportsGPT56) {
+  if (supportsManagedGPT56) {
     llmConfig.service_tier = priorityProcessing === true ? 'priority' : 'default';
   }
 
@@ -787,7 +788,7 @@ export function getOpenAILLMConfig({
     if (promptCacheTtlValue != null) {
       llmConfig.promptCacheTtl = promptCacheTtlValue;
     }
-  } else if (enablePromptCache === true && supportsGPT56) {
+  } else if (enablePromptCache === true && supportsManagedGPT56) {
     llmConfig.promptCache = true;
   }
 

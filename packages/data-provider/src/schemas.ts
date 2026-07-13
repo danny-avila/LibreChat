@@ -261,17 +261,6 @@ export enum ReasoningSummary {
   detailed = 'detailed',
 }
 
-export enum ReasoningMode {
-  standard = 'standard',
-  pro = 'pro',
-}
-
-export enum ReasoningContext {
-  auto = 'auto',
-  currentTurn = 'current_turn',
-  allTurns = 'all_turns',
-}
-
 export enum Verbosity {
   none = '',
   low = 'low',
@@ -323,8 +312,6 @@ export const eReasoningResponseKeySchema = z.nativeEnum(ReasoningResponseKey);
 export const eAnthropicEffortSchema = z.nativeEnum(AnthropicEffort);
 export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
-export const eReasoningModeSchema = z.nativeEnum(ReasoningMode);
-export const eReasoningContextSchema = z.nativeEnum(ReasoningContext);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
 export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
 export const eReasoningModeSchema = z.nativeEnum(ReasoningMode);

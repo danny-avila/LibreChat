@@ -8,8 +8,6 @@ import {
   googleSettings,
   Providers,
   ReasoningEffort,
-  ReasoningMode,
-  ReasoningContext,
   AnthropicEffort,
   ReasoningSummary,
   ReasoningMode,
