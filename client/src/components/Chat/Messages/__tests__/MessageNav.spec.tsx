@@ -300,8 +300,8 @@ describe('MessageNav', () => {
       const [userInd, assistantInd] = container.querySelectorAll('[data-msg-id]');
       const userLine = userInd.querySelector('span');
       const assistantLine = assistantInd.querySelector('span');
-      expect(userLine?.className).toContain('w-4');
-      expect(assistantLine?.className).toContain('w-4');
+      expect(userLine?.className).toContain('w-3');
+      expect(assistantLine?.className).toContain('w-3');
     });
 
     it('lights up only the in-viewport ribs at rest (no hover)', () => {
