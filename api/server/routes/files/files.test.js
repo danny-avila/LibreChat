@@ -936,4 +936,77 @@ describe('File Routes - Delete with Agent Access', () => {
       );
     });
   });
+
+  describe('POST /files/usage', () => {
+    it('marks owned files used and clears the upload TTL', async () => {
+      const ownFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: ownFileId,
+        filename: 'queued.png',
+        filepath: '/uploads/queued.png',
+        bytes: 10,
+        type: 'image/png',
+      });
+      await File.updateOne({ file_id: ownFileId }, { $set: { expiresAt: new Date() } });
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ marked: 1 });
+      const marked = await File.findOne({ file_id: ownFileId }).lean();
+      expect(marked.usage).toBe(1);
+      expect(marked.expiresAt).toBeUndefined();
+    });
+
+    it("is owner-scoped: another user's file stays untouched (best-effort 200)", async () => {
+      await File.updateOne({ file_id: fileId }, { $set: { expiresAt: new Date() } });
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [fileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ marked: 0 });
+      const untouched = await File.findOne({ file_id: fileId }).lean();
+      expect(untouched.usage).toBe(0);
+      expect(untouched.expiresAt).toBeDefined();
+    });
+
+    it('rejects a list over the cap', async () => {
+      const file_ids = Array.from({ length: 11 }, () => uuidv4());
+      const response = await request(app).post('/files/usage').send({ file_ids });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('TOO_MANY_FILES');
+    });
+
+    it('rejects invalid bodies', async () => {
+      expect((await request(app).post('/files/usage').send({})).status).toBe(400);
+      expect((await request(app).post('/files/usage').send({ file_ids: 'f1' })).status).toBe(400);
+      expect(
+        (
+          await request(app)
+            .post('/files/usage')
+            .send({ file_ids: [1] })
+        ).status,
+      ).toBe(400);
+    });
+
+    it('rejects unauthenticated requests', async () => {
+      const bareApp = express();
+      bareApp.use(express.json());
+      bareApp.use((req, res, next) => {
+        req.app.locals = {};
+        next();
+      });
+      bareApp.use('/files', router);
+
+      const response = await request(bareApp)
+        .post('/files/usage')
+        .send({ file_ids: [fileId] });
+      expect(response.status).toBe(401);
+    });
+  });
 });

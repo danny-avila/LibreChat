@@ -1,3 +1,4 @@
+import type { TFile } from './files';
 import { inputTokensIncludesCache } from '../schemas';
 
 export enum ContentTypes {
@@ -11,6 +12,7 @@ export enum ContentTypes {
   INPUT_AUDIO = 'input_audio',
   AGENT_UPDATE = 'agent_update',
   SUMMARY = 'summary',
+  STEER = 'steer',
   ERROR = 'error',
 }
 
@@ -40,7 +42,15 @@ export enum StepEvents {
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
   ON_SUBAGENT_UPDATE = 'on_subagent_update',
+  ON_SANDBOX_STARTING = 'on_sandbox_starting',
 }
+
+/** Payload for {@link StepEvents.ON_SANDBOX_STARTING} — the stateful code
+ * sandbox is cold-booting for the given code tool call. */
+export type SandboxStartingEvent = {
+  tool_call_id: string;
+  runId?: string;
+};
 
 /** Token-tracking event names streamed to the client (separate from StepEvents dispatch). */
 export enum UsageEvents {
@@ -56,6 +66,41 @@ export enum UsageEvents {
 export enum ApprovalEvents {
   ON_PENDING_ACTION = 'on_pending_action',
 }
+
+/**
+ * Steering event names. `on_steer_applied` streams to live clients when a
+ * queued steer message is injected at a tool-batch boundary; reconnecting
+ * clients recover injected steers from `aggregatedContent` and still-queued
+ * ones from `resumeState.pendingSteers`. Steers that never reach a boundary
+ * ride the final/abort events as `pendingSteers`.
+ */
+export enum SteerEvents {
+  ON_STEER_APPLIED = 'on_steer_applied',
+}
+
+/** A steer message queued server-side but not yet injected into the run. */
+export type TPendingSteer = {
+  steerId: string;
+  text: string;
+  createdAt?: number;
+  files?: Partial<TFile>[];
+};
+
+/** Payload of the `on_steer_applied` SSE event. */
+export type TSteerAppliedEvent = {
+  steerId: string;
+  /** Absolute content index the steer part was injected at. */
+  index: number;
+  part: {
+    type: ContentTypes.STEER;
+    [ContentTypes.STEER]: string;
+    steerId?: string;
+    createdAt?: number;
+    files?: Partial<TFile>[];
+  };
+  responseMessageId?: string;
+  conversationId?: string;
+};
 
 /** Mirrors TokenBudgetBreakdown from @librechat/agents (data-provider cannot import it). */
 export type TTokenBudgetBreakdown = {
