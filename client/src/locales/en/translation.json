@@ -1905,6 +1905,7 @@
   "com_ui_tool_name_image_edit": "Image Edit",
   "com_ui_tool_name_image_gen": "Image Generation",
   "com_ui_tool_name_web_search": "Web Search",
+  "com_ui_tool_progress": "{{0}} of {{1}}",
   "com_ui_tool_response_placeholder": "Type a substitute result to return to the agent",
   "com_ui_tools": "Tools",
   "com_ui_tools_configure": "Configure",

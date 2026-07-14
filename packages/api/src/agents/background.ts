@@ -45,6 +45,21 @@ export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
 export const CHECK_BACKGROUND_TASK_NAME: string = Constants.CHECK_BACKGROUND_TASK;
 
 /**
+ * Per-dispatch `configurable` key carrying a progress sink into the detached
+ * invoke. MCP tools forward it as the SDK's `onprogress` request option (which
+ * auto-attaches a `progressToken`), so servers that emit
+ * `notifications/progress` update the task mid-flight. Non-MCP tools ignore it.
+ */
+export const BACKGROUND_PROGRESS_SINK: string = 'backgroundProgressSink';
+
+/** Shape of MCP `notifications/progress` params forwarded by the SDK. */
+export interface BackgroundProgressUpdate {
+  progress: number;
+  total?: number;
+  message?: string;
+}
+
+/**
  * Tools that must never be backgrounded — they either run through the SDK's
  * direct/host-special path (so the host `ON_TOOL_EXECUTE` interception never
  * sees them), depend on synchronous artifact/code-session continuity, or are
@@ -247,7 +262,7 @@ export function stripBackgroundFromToolRegistry(
 
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check the status and retrieve the result of tool calls previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Background tasks persist on this server across turns, so you can collect a result in a later turn; they do not survive a server restart.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Running tasks may include progress (a 0..1 fraction) and progress_message when the tool reports them. Results are not pushed to you; you must call this tool to collect them. Background tasks persist on this server across turns, so you can collect a result in a later turn; they do not survive a server restart.`;
 
 const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchemaType>({
   type: 'object',
@@ -411,6 +426,11 @@ export interface BackgroundTask {
   toolName: string;
   toolCallId: string;
   status: BackgroundTaskStatus;
+  /** Latest reported completion fraction (0..1) while running, when the tool
+   *  emits MCP progress notifications; settled tasks serialize as 1. */
+  progress?: number;
+  /** Latest human-readable progress message from the tool, when reported. */
+  progressMessage?: string;
   /** Tool result content once completed. */
   result?: string;
   /**
@@ -436,14 +456,18 @@ interface TaskBucket {
 
 const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
 const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
-/** Max wall-clock a task may stay `running` before being reaped as timed-out,
- *  so a detached call that never settles (hung network / lost MCP connection)
- *  can't hold a running slot and exhaust the per-conversation cap forever. */
+/** Max SILENCE (no completion, no progress) before a running task is reaped as
+ *  timed-out, so a detached call that never settles (hung network / lost MCP
+ *  connection) can't hold a running slot forever — while a long task that keeps
+ *  reporting progress stays alive up to the absolute cap below. */
 const RUNNING_TASK_TTL_MS = 30 * 60 * 1000;
+/** Absolute running-age ceiling regardless of progress chatter. */
+const MAX_RUNNING_AGE_MS = 6 * 60 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
 const MAX_ARTIFACT_CHARS = 10_000_000;
+const MAX_PROGRESS_MESSAGE_CHARS = 1_000;
 const GLOBAL_SWEEP_INTERVAL_MS = 60 * 1000;
 
 function toStoredContent(content: unknown): string {
@@ -493,7 +517,10 @@ export class BackgroundTaskRegistryClass {
 
   private sweepBucketTasks(bucket: TaskBucket, now: number): void {
     for (const [taskId, task] of bucket.tasks) {
-      if (task.status === 'running' && now - task.createdAt > RUNNING_TASK_TTL_MS) {
+      if (
+        task.status === 'running' &&
+        (now - task.updatedAt > RUNNING_TASK_TTL_MS || now - task.createdAt > MAX_RUNNING_AGE_MS)
+      ) {
         /** Reap a stuck task: freeing the running slot (it no longer counts
          *  toward the cap) and letting the completed-task TTL evict it. */
         task.status = 'error';
@@ -651,6 +678,40 @@ export class BackgroundTaskRegistryClass {
   }
 
   /**
+   * Records an MCP progress notification on a still-running task. Normalizes
+   * the SDK's `{progress, total?}` pair to a 0..1 fraction (absolute counts
+   * without a total carry no derivable fraction and update only the message).
+   * Late notifications after settle/sweep are dropped.
+   */
+  setProgress(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    update: BackgroundProgressUpdate,
+  ): void {
+    const bucket = this.buckets.get(this.key(userId, conversationId));
+    const task = bucket?.tasks.get(taskId);
+    if (!task || task.status !== 'running' || !Number.isFinite(update.progress)) {
+      return;
+    }
+    let fraction: number | undefined;
+    if (Number.isFinite(update.total) && (update.total as number) > 0) {
+      fraction = update.progress / (update.total as number);
+    } else if (update.progress >= 0 && update.progress <= 1) {
+      fraction = update.progress;
+    }
+    if (fraction != null) {
+      task.progress = Math.min(Math.max(fraction, 0), 1);
+    }
+    if (typeof update.message === 'string' && update.message !== '') {
+      task.progressMessage = update.message.slice(0, MAX_PROGRESS_MESSAGE_CHARS);
+    }
+    /** Also treated as liveness: the running reap is silence-based, so an
+     *  actively-reporting long task isn't timed out mid-flight. */
+    task.updatedAt = Date.now();
+  }
+
+  /**
    * Returns a completed task's artifact exactly once, marking it delivered and
    * clearing it. The poll turn routes it to a live `toolEndCallback` so the
    * artifact isn't lost with the finalized dispatch turn. If handing it to the
@@ -721,7 +782,8 @@ export class BackgroundTaskRegistryClass {
   }
 }
 
-export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
+export const backgroundTaskRegistry: BackgroundTaskRegistryClass =
+  new BackgroundTaskRegistryClass();
 
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
 export function buildBackgroundHandleContent(task: BackgroundTask): string {
@@ -752,8 +814,9 @@ interface SerializedBackgroundTask {
   background_task_id: string;
   tool: string;
   status: BackgroundTaskStatus;
-  /** Coarse 0..1: no intermediate progress exists, only running vs settled. */
+  /** 0..1: reported fraction while running (0 when the tool reports none), 1 once settled. */
   progress: number;
+  progress_message?: string;
   result?: string;
   result_available?: boolean;
   result_chars?: number;
@@ -782,7 +845,10 @@ function serializeTask(
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    progress: task.status === 'running' ? 0 : 1,
+    progress: task.status === 'running' ? (task.progress ?? 0) : 1,
+    ...(task.status === 'running' && task.progressMessage != null
+      ? { progress_message: task.progressMessage }
+      : {}),
     ...resultFields(task, includeResult),
     ...(task.artifact != null || task.artifactDelivered === true
       ? { note: 'The tool produced an artifact that is not included inline.' }

@@ -1,5 +1,5 @@
-import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
+import type { Redis, Cluster } from 'ioredis';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 
 /**
@@ -526,6 +526,22 @@ export class RedisEventTransport implements IEventTransport {
       await this.publisher.publish(channel, JSON.stringify(message));
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
+    }
+  }
+
+  /**
+   * Publish an ephemeral chunk without allocating a sequence number: the
+   * subscriber's seq-less fallback delivers it immediately, bypassing the
+   * reorder buffer, so a transient missed pre-subscribe can never leave a
+   * sequence gap that stalls durable chunks. Also skips the INCR round-trip.
+   */
+  async emitTransient(streamId: string, event: unknown): Promise<void> {
+    try {
+      const channel = CHANNELS.events(streamId);
+      const message: PubSubMessage = { type: EventTypes.CHUNK, data: event };
+      await this.publisher.publish(channel, JSON.stringify(message));
+    } catch (err) {
+      logger.error(`[RedisEventTransport] Failed to publish transient chunk:`, err);
     }
   }
 

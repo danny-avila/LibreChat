@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
-import { CHECK_BACKGROUND_TASK_NAME } from './background';
+import { BACKGROUND_PROGRESS_SINK, CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
 interface BatchInput {
@@ -328,6 +328,80 @@ describe('createToolExecuteHandler — background tool calls', () => {
       metadata: { thread_id: 'exec_convo_artifact', run_id: 'run-poll2' },
     });
     expect(toolEndCalls).toHaveLength(1);
+  });
+
+  it('threads a per-dispatch progress sink so a running task reports progress on poll', async () => {
+    let releaseTool: (() => void) | undefined;
+    const progressTool = {
+      name: 'search_mcp_docs',
+      description: 'reports progress mid-flight',
+      schema: z.object({ q: z.string() }),
+      invoke: async (
+        _input: Record<string, unknown>,
+        config?: { configurable?: Record<string, unknown> },
+      ) => {
+        const sink = config?.configurable?.[BACKGROUND_PROGRESS_SINK] as
+          | ((update: { progress: number; total?: number; message?: string }) => void)
+          | undefined;
+        sink?.({ progress: 3, total: 4, message: 'crunching' });
+        await new Promise<void>((resolve) => {
+          releaseTool = resolve;
+        });
+        return { content: 'PROGRESS_DONE' };
+      },
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [progressTool] }),
+    });
+    const configurable = buildConfig(['search_mcp_docs']);
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [
+        { id: 'call_prog', name: 'search_mcp_docs', args: { q: 'x', run_in_background: true } },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_progress', run_id: 'run-progress' },
+    });
+    await flushMicrotasks();
+    const handleId = JSON.parse(dispatch[0].content).background_task_id;
+
+    const running = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_prog_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handleId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_progress', run_id: 'run-progress-poll' },
+    });
+    const midFlight = JSON.parse(running[0].content);
+    expect(midFlight.status).toBe('running');
+    expect(midFlight.progress).toBe(0.75);
+    expect(midFlight.progress_message).toBe('crunching');
+
+    releaseTool?.();
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const done = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_prog_poll2',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handleId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_progress', run_id: 'run-progress-poll2' },
+    });
+    const settled = JSON.parse(done[0].content);
+    expect(settled.status).toBe('completed');
+    expect(settled.progress).toBe(1);
+    expect(settled.result).toContain('PROGRESS_DONE');
   });
 
   it('scopes tasks by configurable user_id when req is absent (external service hosts)', async () => {

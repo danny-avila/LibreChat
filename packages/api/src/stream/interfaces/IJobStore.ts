@@ -488,6 +488,15 @@ export interface IEventTransport {
   /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
   emitChunk(streamId: string, event: unknown): void | Promise<void>;
 
+  /**
+   * Publish an ephemeral chunk OUTSIDE the ordered sequence (best-effort,
+   * unordered relative to durable chunks). Sequenced delivery reorders
+   * strictly by seq, so a transient that consumed a sequence number but was
+   * never persisted/buffered would leave a permanent gap for any subscriber
+   * that missed it live, stalling durable chunks behind the reorder buffer.
+   */
+  emitTransient?(streamId: string, event: unknown): void | Promise<void>;
+
   /** Publish a done event - returns Promise in Redis mode for ordered delivery */
   emitDone(streamId: string, event: unknown): void | Promise<void>;
 

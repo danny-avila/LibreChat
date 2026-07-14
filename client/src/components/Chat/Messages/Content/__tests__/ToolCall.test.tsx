@@ -2,6 +2,8 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools, Constants } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { toolProgressByToolCallId, toolProgressKey } from '~/store';
+import { MessageContext } from '~/Providers';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
@@ -19,6 +21,7 @@ jest.mock('~/hooks', () => ({
       com_assistants_allow_sites_you_trust: 'Only allow sites you trust',
       com_ui_via_server: `via ${values?.[0]}`,
       com_ui_tool_failed: 'failed',
+      com_ui_tool_progress: `${values?.[0]} of ${values?.[1]}`,
     };
     return translations[key] || key;
   },
@@ -66,6 +69,7 @@ jest.mock('../ProgressText', () => ({
   }) => (
     <div data-testid="progress-text" onClick={onClick}>
       {finishedText || inProgressText}
+      <span data-testid="in-progress-text">{inProgressText}</span>
       {subtitle && <span data-testid="subtitle">{subtitle}</span>}
     </div>
   ),
@@ -99,6 +103,51 @@ jest.mock('~/utils', () => ({
 }));
 
 describe('ToolCall', () => {
+  describe('live MCP progress', () => {
+    const renderRunningToolCall = (
+      liveState: { progress: number; total?: number; message?: string } | null,
+    ) =>
+      render(
+        <RecoilRoot
+          initializeState={({ set }) => {
+            if (liveState) {
+              set(toolProgressByToolCallId(toolProgressKey('msg_live', 'call_live')), liveState);
+            }
+          }}
+        >
+          <MessageContext.Provider value={{ messageId: 'msg_live' } as never}>
+            <ToolCall
+              name={`search${Constants.mcp_delimiter}docs`}
+              args=""
+              initialProgress={0.1}
+              isSubmitting={true}
+              toolCallId="call_live"
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>,
+      );
+
+    it('renders the reported progress message while running', () => {
+      renderRunningToolCall({ progress: 3, total: 10, message: 'crunching records' });
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('crunching records');
+    });
+
+    it('renders a localized count when only progress/total are reported', () => {
+      renderRunningToolCall({ progress: 3, total: 10 });
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('3 of 10');
+    });
+
+    it('renders a percentage for fraction-only progress (no total, no message)', () => {
+      renderRunningToolCall({ progress: 0.4 });
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('40%');
+    });
+
+    it('falls back to the running label without live progress', () => {
+      renderRunningToolCall(null);
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('Running search');
+    });
+  });
+
   const mockProps = {
     args: '{"test": "input"}',
     name: 'testFunction',

@@ -9,14 +9,15 @@ import {
   actionDomainSeparator,
 } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
+import store, { toolProgressByToolCallId, toolProgressKey } from '~/store';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
+import { useMessageContext } from '~/Providers';
 import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { logger } from '~/utils';
-import store from '~/store';
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -27,6 +28,7 @@ export default function ToolCall({
   output,
   attachments,
   auth,
+  toolCallId,
   hideAttachments = false,
   onExpand,
 }: {
@@ -38,6 +40,7 @@ export default function ToolCall({
   output?: string | null;
   attachments?: TAttachment[];
   auth?: string;
+  toolCallId?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
 }) {
@@ -165,6 +168,36 @@ export default function ToolCall({
   const progress = useProgress(initialProgress);
   const showCancelled = cancelled || (errorState && !output);
 
+  /** Live MCP progress (`notifications/progress`) for this call, when streamed;
+   *  scoped by the message id since providers reuse tool-call ids across agents. */
+  const { messageId } = useMessageContext();
+  const liveProgress = useRecoilValue(
+    toolProgressByToolCallId(toolCallId ? toolProgressKey(messageId, toolCallId) : ''),
+  );
+  const inProgressText = useMemo(() => {
+    if (liveProgress?.message) {
+      return liveProgress.message;
+    }
+    if (liveProgress != null && liveProgress.total != null && liveProgress.total > 0) {
+      const asLabel = (value: number) => {
+        if (Number.isInteger(value) || !Number.isFinite(value)) {
+          return `${value}`;
+        }
+        return value.toFixed(1);
+      };
+      return localize('com_ui_tool_progress', {
+        0: asLabel(liveProgress.progress),
+        1: asLabel(liveProgress.total),
+      });
+    }
+    if (liveProgress != null && liveProgress.progress >= 0 && liveProgress.progress <= 1) {
+      return `${Math.round(liveProgress.progress * 100)}%`;
+    }
+    return function_name
+      ? localize('com_assistants_running_var', { 0: function_name })
+      : localize('com_assistants_running_action');
+  }, [liveProgress, function_name, localize]);
+
   const handleToggleInfo = useCallback(() => {
     setShowInfo((prev) => {
       const next = !prev;
@@ -207,9 +240,7 @@ export default function ToolCall({
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !showCancelled) {
-            return function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action');
+            return inProgressText;
           }
           return getFinishedText();
         })()}
@@ -218,11 +249,7 @@ export default function ToolCall({
         <ProgressText
           progress={progress}
           onClick={handleToggleInfo}
-          inProgressText={
-            function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action')
-          }
+          inProgressText={inProgressText}
           authText={
             !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
           }

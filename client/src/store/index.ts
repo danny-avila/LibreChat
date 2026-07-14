@@ -16,6 +16,7 @@ export * from './agents';
 export * from './mcp';
 export * from './favorites';
 export * from './subagents';
+export * from './toolProgress';
 export * from './usage';
 
 export default {

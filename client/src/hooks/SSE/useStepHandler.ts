@@ -17,6 +17,7 @@ import type {
   SummaryContentPart,
   TMessageContentParts,
   SubagentUpdateEvent,
+  ToolProgressEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -26,8 +27,8 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { subagentProgressByToolCallId, toolProgressByToolCallId, toolProgressKey } from '~/store';
 import { isAskUserQuestionPart } from '~/utils/approval';
-import { subagentProgressByToolCallId } from '~/store';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
@@ -55,7 +56,8 @@ type TStepEvent =
   | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
-  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent };
+  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
+  | { event: StepEvents.ON_TOOL_PROGRESS; data: ToolProgressEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -147,6 +149,7 @@ export default function useStepHandler({
    * `atomFamily` — atoms persist for the app lifetime.
    */
   const knownSubagentAtomKeys = useRef(new Set<string>());
+  const knownToolProgressAtomKeys = useRef(new Set<string>());
 
   const getCurrentMessages = useCallback(
     (messages: TMessage[]) => {
@@ -273,6 +276,62 @@ export default function useStepHandler({
    * subagent spawn), so growth is proportional to messages — the same
    * growth profile as the rest of the conversation state.
    */
+  const applyToolProgress = useRecoilCallback(
+    ({ set }) =>
+      (payload: ToolProgressEvent): void => {
+        if (!payload?.toolCallId) {
+          return;
+        }
+        const atomKey = toolProgressKey(payload.runId, payload.toolCallId);
+        knownToolProgressAtomKeys.current.add(atomKey);
+        set(toolProgressByToolCallId(atomKey), {
+          progress: payload.progress,
+          total: payload.total,
+          message: payload.message,
+        });
+      },
+    [],
+  );
+
+  /**
+   * Clears live progress for the tool calls of a freshly-started run step:
+   * providers reissue ids (e.g. `call_0`) across tool turns within one run,
+   * so a new call must never inherit a prior call's progress state.
+   */
+  const clearToolProgressForStep = useRecoilCallback(
+    ({ set }) =>
+      (runId: string, toolCallIds: Array<string | undefined>): void => {
+        for (const toolCallId of toolCallIds) {
+          if (!toolCallId) {
+            continue;
+          }
+          const atomKey = toolProgressKey(runId, toolCallId);
+          if (knownToolProgressAtomKeys.current.has(atomKey)) {
+            set(toolProgressByToolCallId(atomKey), null);
+          }
+        }
+      },
+    [],
+  );
+
+  /**
+   * Live tool progress is meaningful only for the run that produced it, and
+   * providers reuse tool-call ids (e.g. `call_0`) across turns — so these
+   * atoms clear at the start of every new submission (`clearStepMaps`),
+   * unlike the subagent atoms which persist until conversation switch.
+   */
+  const resetToolProgressAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const toolCallId of knownToolProgressAtomKeys.current) {
+          reset(toolProgressByToolCallId(toolCallId));
+        }
+        knownToolProgressAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  /** Also clears the live tool-progress atoms (conversation-switch boundary). */
   const resetSubagentAtoms = useRecoilCallback(
     ({ reset }) =>
       (): void => {
@@ -280,8 +339,9 @@ export default function useStepHandler({
           reset(subagentProgressByToolCallId(toolCallId));
         }
         knownSubagentAtomKeys.current.clear();
+        resetToolProgressAtoms();
       },
-    [],
+    [resetToolProgressAtoms],
   );
 
   /**
@@ -618,6 +678,13 @@ export default function useStepHandler({
         }
 
         stepMap.current.set(runStep.id, runStep);
+
+        if (runStep.stepDetails?.type === StepTypes.TOOL_CALLS) {
+          clearToolProgressForStep(
+            responseMessageId,
+            (runStep.stepDetails.tool_calls ?? []).map((toolCall) => toolCall.id),
+          );
+        }
 
         // Calculate content index - use server index, offset by initialContent for edit scenarios
         const contentIndex = runStep.index + initialContent.length;
@@ -977,6 +1044,8 @@ export default function useStepHandler({
             }),
           );
         }
+      } else if (stepEvent.event === StepEvents.ON_TOOL_PROGRESS) {
+        applyToolProgress(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
@@ -1082,6 +1151,8 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
+      applyToolProgress,
+      clearToolProgressForStep,
       onSkillAuthoringComplete,
     ],
   );
@@ -1098,6 +1169,7 @@ export default function useStepHandler({
     subagentRunToToolCallId.current.clear();
     claimedSubagentToolCallIds.current.clear();
     pendingSubagentBuffer.current.clear();
+    resetToolProgressAtoms();
     /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
      *  to be able to reopen the SubagentCall dialog after completion to
      *  audit what the child did. `resetSubagentAtoms` is returned below
@@ -1106,7 +1178,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, []);
+  }, [resetToolProgressAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.

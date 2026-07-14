@@ -74,6 +74,10 @@ export class InMemoryEventTransport implements IEventTransport {
     state?.emitter.emit('chunk', event);
   }
 
+  emitTransient(streamId: string, event: unknown): void {
+    this.emitChunk(streamId, event);
+  }
+
   emitDone(streamId: string, event: unknown): void {
     const state = this.streams.get(streamId);
     state?.emitter.emit('done', event);

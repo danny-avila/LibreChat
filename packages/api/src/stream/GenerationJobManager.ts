@@ -1195,6 +1195,31 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Emit a transient event to live subscribers only: no trackers, no chunk
+   * persistence, no early-event buffering — dropped when nobody can hear it.
+   * For high-frequency ephemeral events (e.g. MCP tool progress) that must
+   * not bloat the Redis chunk log or resume reconstruction. In Redis mode the
+   * subscriber may live on another instance, so the publish always goes out.
+   */
+  async emitTransientEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || runtime.abortController.signal.aborted) {
+      return;
+    }
+    /** A long tool call may emit ONLY progress for minutes: refresh liveness so
+     *  the stale-job reaper doesn't abort an actively-reporting run. */
+    this.jobStore.recordActivity?.(streamId);
+    if (!runtime.hasSubscriber && !this._isRedis) {
+      return;
+    }
+    if (this.eventTransport.emitTransient) {
+      await this.eventTransport.emitTransient(streamId, event);
+    } else {
+      await this.eventTransport.emitChunk(streamId, event);
+    }
+  }
+
+  /**
    * Extract and save run step from event data.
    * The data is already the run step object from the event payload.
    */
