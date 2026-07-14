@@ -454,15 +454,26 @@ export const getFileConfig = (): Promise<TFileConfig> => {
 
 export const uploadImage = (
   data: FormData,
+  startupConfig: config.TStartupConfig | undefined,
+  token: string | undefined,
   signal?: AbortSignal | null,
 ): Promise<f.TFileUpload> => {
   const requestConfig = signal ? { signal } : undefined;
-  return request.postMultiPart(endpoints.images(), data, requestConfig);
+  if (startupConfig?.fileUploadSseEnabled && token)
+    return fetchSseWithPost(endpoints.images(), data, token, requestConfig);
+  else return request.postMultiPart(endpoints.images(), data, requestConfig);
 };
 
-export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise<f.TFileUpload> => {
+export const uploadFile = (
+  data: FormData,
+  startupConfig: config.TStartupConfig | undefined,
+  token: string | undefined,
+  signal?: AbortSignal | null,
+): Promise<f.TFileUpload> => {
   const requestConfig = signal ? { signal } : undefined;
-  return request.postMultiPart(endpoints.files(), data, requestConfig);
+  if (startupConfig?.fileUploadSseEnabled && token)
+    return fetchSseWithPost(endpoints.files(), data, token, requestConfig);
+  else return request.postMultiPart(endpoints.files(), data, requestConfig);
 };
 
 /**
@@ -1400,3 +1411,216 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+class FileUploadError extends Error {
+  public code?: number = 0;
+  public file_id: string;
+  public tool_resource?: a.EToolResources;
+  public display_to_user: boolean = false;
+  public response = { data: { message: '' } };
+
+  constructor(
+    message: string,
+    file_id: string,
+    tool_resource?: a.EToolResources,
+    display_to_user = false,
+    code = 0,
+  ) {
+    super(message);
+    this.name = 'CustomAppError'; // Set the name for clarity
+    this.file_id = file_id;
+    this.tool_resource = tool_resource;
+    this.code = code;
+    this.display_to_user = display_to_user;
+    // response.data.messages are displayed to the user
+    if (display_to_user) this.response.data.message = message;
+
+    // Maintain proper prototype chain for 'instanceof' checks
+    Object.setPrototypeOf(this, FileUploadError.prototype);
+  }
+}
+
+/** Thrown when a fetch-based SSE upload is aborted by the caller (e.g. a user-initiated cancel).
+ * Mirrors axios's `ERR_CANCELED` code so existing cancel-upload UI handling keeps working. */
+class UploadCanceledError extends Error {
+  public code = 'ERR_CANCELED' as const;
+}
+
+interface SseErrorData {
+  message: string;
+  temp_file_id: string;
+  tool_resource?: a.EToolResources;
+  display_to_user: boolean;
+}
+
+interface SseHeartbeatData {
+  keepAlive: number;
+}
+
+interface SseCloseData {
+  closedAt: string;
+}
+
+type SseEvent =
+  | { eventType: 'data'; id: string; message: string; data: f.TFileUpload }
+  | { eventType: 'error'; id: string; message: string; data: SseErrorData }
+  | { eventType: 'heartbeat'; id: string; message: string; data: SseHeartbeatData }
+  | { eventType: 'close'; id: string; message: string; data: SseCloseData }
+  | { eventType: 'message'; id: string; message: string; data: { message: string } };
+
+async function fetchSseWithPost(
+  url: string,
+  formData: FormData,
+  token: string,
+  options?: RequestInit,
+): Promise<f.TFileUpload> {
+  let ret: f.TFileUpload | null = null;
+  let close = false;
+  const onClose = () => {
+    console.log('SSE connection closed.');
+    close = true;
+  };
+
+  try {
+    const onEvent = (event: SseEvent) => {
+      console.debug('SSE Event:', event);
+      if (event.eventType === 'data') {
+        console.log('Data event received.');
+        ret = event.data;
+        close = true;
+      } else if (event.eventType === 'error') {
+        console.error('Error event received:', event.data);
+        throw new FileUploadError(
+          event.data.message,
+          event.data.temp_file_id,
+          event.data.tool_resource,
+          event.data.display_to_user,
+        );
+      } else if (event.eventType === 'heartbeat') {
+        console.debug('Heartbeat received.');
+        // Reset the heartbeat timer
+        clearTimeout(heartBeatTimer);
+        // Start a new heartbeat check timer
+        heartBeatTimer = setTimeout(onNoHeartbeat, 3000);
+      }
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        authorization: 'Bearer ' + token,
+        // Fetch with FormData automatically sets the correct 'multipart/form-data' header.
+      },
+      ...options,
+    });
+
+    if (!response.ok) {
+      let message = `Server responded with status: ${response.status}`;
+      try {
+        const errorBody: { message?: string } = await response.json();
+        if (errorBody.message) {
+          message = errorBody.message;
+        }
+      } catch {
+        // Response body wasn't JSON; fall back to the generic message.
+      }
+      throw new FileUploadError(
+        message,
+        String(formData.get('file_id') ?? ''),
+        (formData.get('tool_resource') as a.EToolResources | null) ?? undefined,
+        true,
+        response.status,
+      );
+    }
+
+    if (!response.body) {
+      throw new Error('No response body received.');
+    }
+
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+
+    const onNoHeartbeat = () => {
+      console.error('No heartbeat detected, closing connection.');
+      reader.cancel('No heartbeat detected from server.');
+    };
+
+    let heartBeatTimer = setTimeout(onNoHeartbeat, 3000);
+
+    let buffer = '';
+    while (!close) {
+      const { value, done } = await reader.read();
+      if (done) {
+        // `reader.cancel()` (heartbeat timeout, or an early server close) resolves the
+        // pending read with `done: true` instead of rejecting — treat it as a failure
+        // rather than silently returning with no data.
+        throw new Error('Upload connection closed unexpectedly before completion.');
+      }
+
+      if (typeof value !== 'string') {
+        console.error('Unexpected chunk type:', typeof value);
+        continue;
+      }
+
+      buffer += value;
+
+      // Split the buffer by double newlines, which terminate an SSE message.
+      const messages = buffer.split('\n\n');
+      buffer = messages.pop() || ''; // Keep the last, incomplete message part in the buffer.
+
+      for (const message of messages) {
+        console.debug('message:', message);
+        const eventData = parseSseMessage(message);
+        if (eventData) {
+          onEvent(eventData);
+          if (eventData.eventType === 'data' || eventData.eventType === 'error') {
+            onClose();
+            break;
+          }
+        }
+      }
+    }
+
+    clearTimeout(heartBeatTimer);
+  } catch (error) {
+    console.error('Fetch SSE Error:');
+    console.error(error);
+    onClose();
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new UploadCanceledError('Upload canceled.');
+    }
+    throw error;
+  }
+
+  if (ret === null) {
+    throw new Error('Upload did not complete: no data received.');
+  }
+  return ret;
+}
+
+// Helper function to parse raw SSE messages.
+function parseSseMessage(message: string): SseEvent | null {
+  const lines = message.split('\n');
+  let id: string | undefined;
+  let data = '';
+  let eventType = 'message';
+
+  for (const line of lines) {
+    if (line.startsWith('id:')) {
+      id = line.substring(3).trim();
+    } else if (line.startsWith('event:')) {
+      eventType = line.substring(6).trim();
+    } else if (line.startsWith('data:')) {
+      data += line.substring(5); // Concatenate multi-line data fields.
+    }
+  }
+
+  try {
+    const parsedData = JSON.parse(data);
+    return { data: parsedData, id: id || 'unknown', eventType, message } as SseEvent;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (e) {
+    console.debug('data was not json, returning as object with message');
+    return { data: { message: data }, id: id || 'unknown', eventType, message } as SseEvent;
+  }
+}

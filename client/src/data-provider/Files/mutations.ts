@@ -11,6 +11,8 @@ import {
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
+import { useAuthContext } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 
 export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
@@ -21,6 +23,8 @@ export const useUploadFileMutation = (
   FormData, // request
   unknown // context
 > => {
+  const { token } = useAuthContext();
+  const { data: startupConfig } = useGetStartupConfig();
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileUpload], {
@@ -30,14 +34,14 @@ export const useUploadFileMutation = (
       const version = body.get('version') ?? '';
       const endpoint = (body.get('endpoint') ?? '') as string;
       if (isAssistantsEndpoint(endpoint) && version === '2') {
-        return dataService.uploadFile(body, signal);
+        return dataService.uploadFile(body, startupConfig, token, signal);
       }
 
       if (width !== '' && height !== '') {
-        return dataService.uploadImage(body, signal);
+        return dataService.uploadImage(body, startupConfig, token, signal);
       }
 
-      return dataService.uploadFile(body, signal);
+      return dataService.uploadFile(body, startupConfig, token, signal);
     },
     ...options,
     onSuccess: (data, formData, context) => {

@@ -2,7 +2,12 @@ const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { verifyAgentUploadPermission, resolveUploadErrorMessage } = require('@librechat/api');
+const {
+  isEnabled,
+  startUploadSseStream,
+  resolveUploadErrorMessage,
+  verifyAgentUploadPermission,
+} = require('@librechat/api');
 const { isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
@@ -17,6 +22,15 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   const metadata = req.body;
   const appConfig = req.config;
+
+  /** Opened only once auth/validation has passed, right before the potentially
+   * long-running upload processing begins — see `startUploadSseStream`. */
+  let sseStream = null;
+  const openSseStreamIfEnabled = () => {
+    if (isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED)) {
+      sseStream = startUploadSseStream(req, res);
+    }
+  };
 
   try {
     filterFile({ req, image: true });
@@ -35,10 +49,12 @@ router.post('/', async (req, res) => {
       if (denied) {
         return;
       }
-      return await processAgentFileUpload({ req, res, metadata });
+      openSseStreamIfEnabled();
+      return await processAgentFileUpload({ req, res, metadata, sseStream });
     }
 
-    await processImageFile({ req, res, metadata });
+    openSseStreamIfEnabled();
+    await processImageFile({ req, res, metadata, sseStream });
   } catch (error) {
     // TODO: delete remote file if it exists
     logger.error('[/files/images] Error processing file:', error);
@@ -55,13 +71,20 @@ router.post('/', async (req, res) => {
     } catch (error) {
       logger.error('[/files/images] Error deleting file:', error);
     }
-    res.status(500).json({ message });
+    if (sseStream) {
+      sseStream.sendError({ message, display_to_user: true, ...metadata });
+    } else {
+      res.status(500).json({ message });
+    }
   } finally {
     try {
       await fs.unlink(req.file.path);
       logger.debug('[/files/images] Temp. image upload file deleted');
     } catch {
       logger.debug('[/files/images] Temp. image upload file already deleted');
+    }
+    if (sseStream) {
+      sseStream.close();
     }
   }
 });

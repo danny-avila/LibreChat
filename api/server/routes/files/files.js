@@ -2,9 +2,11 @@ const fs = require('fs').promises;
 const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
+  isEnabled,
   logAxiosError,
   refreshS3FileUrls,
   handleFilesUsageRequest,
+  startUploadSseStream,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
 } = require('@librechat/api');
@@ -633,6 +635,15 @@ router.post('/', async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
+  /** Opened only once auth/validation has passed, right before the potentially
+   * long-running upload processing begins — see `startUploadSseStream`. */
+  let sseStream = null;
+  const openSseStreamIfEnabled = () => {
+    if (isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED)) {
+      sseStream = startUploadSseStream(req, res);
+    }
+  };
+
   try {
     filterFile({ req });
 
@@ -640,7 +651,8 @@ router.post('/', async (req, res) => {
     metadata.file_id = req.file_id;
 
     if (isAssistantsEndpoint(metadata.endpoint)) {
-      return await processFileUpload({ req, res, metadata });
+      openSseStreamIfEnabled();
+      return await processFileUpload({ req, res, metadata, sseStream });
     }
 
     let skipUploadAuth = false;
@@ -663,7 +675,8 @@ router.post('/', async (req, res) => {
       }
     }
 
-    return await processAgentFileUpload({ req, res, metadata });
+    openSseStreamIfEnabled();
+    return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
     const message = resolveUploadErrorMessage(error);
     logger.error('[/files] Error processing file:', error);
@@ -674,7 +687,17 @@ router.post('/', async (req, res) => {
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
     }
-    res.status(500).json({ message });
+
+    let errorStatusCode = 500;
+    if (error.userErrorStatusCode) {
+      errorStatusCode = error.userErrorStatusCode;
+    }
+
+    if (sseStream) {
+      sseStream.sendError({ message, display_to_user: true, ...metadata });
+    } else {
+      res.status(errorStatusCode).json({ message });
+    }
   } finally {
     if (cleanup) {
       try {
@@ -684,6 +707,9 @@ router.post('/', async (req, res) => {
       }
     } else {
       logger.debug('[/files] File processing completed without cleanup');
+    }
+    if (sseStream) {
+      sseStream.close();
     }
   }
 });

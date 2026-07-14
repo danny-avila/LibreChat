@@ -24,6 +24,7 @@ const {
   sanitizeFilename,
   parseText,
   processAudioFile,
+  sendUploadSuccess,
   getStorageMetadata,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
@@ -447,9 +448,10 @@ const processFileURL = async ({
  * @param {Express.Response} [params.res] - The Express response object.
  * @param {ImageMetadata} params.metadata - Additional metadata for the file.
  * @param {boolean} params.returnFile - Whether to return the file metadata or return response as normal.
+ * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
+const processImageFile = async ({ req, res, metadata, returnFile = false, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
@@ -487,7 +489,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   if (returnFile) {
     return result;
   }
-  res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+  sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
 /**
@@ -554,9 +556,10 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} params.res - The Express response object.
  * @param {FileMetadata} params.metadata - Additional metadata for the file.
+ * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processFileUpload = async ({ req, res, metadata }) => {
+const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -649,7 +652,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
     },
     true,
   );
-  res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+  sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
 /**
@@ -661,9 +664,10 @@ const processFileUpload = async ({ req, res, metadata }) => {
  * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} params.res - The Express response object.
  * @param {FileMetadata} params.metadata - Additional metadata for the file.
+ * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processAgentFileUpload = async ({ req, res, metadata }) => {
+const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
@@ -787,9 +791,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         });
       }
       const result = await db.createFile(fileInfo, true);
-      return res
-        .status(200)
-        .json({ message: 'Agent file uploaded and processed successfully', ...result });
+      sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
@@ -1035,7 +1037,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   const result = await db.createFile(fileInfo, true);
 
-  res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
+  sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };
 
 /**
