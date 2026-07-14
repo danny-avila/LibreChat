@@ -79,4 +79,14 @@ describe('SteerPart author label', () => {
     // assistant response (its text is the trigger's accessible label).
     expect(screen.getByLabelText('com_ui_steered_info')).toBeInTheDocument();
   });
+
+  it('hides the info affordance at rest, revealing it on message hover/focus', () => {
+    renderPart();
+    // Wrapped like the hover buttons: transparent until the message is
+    // hovered (group-hover) or the trigger is focused (focus-within).
+    const wrapper = screen.getByLabelText('com_ui_steered_info').closest('span.opacity-0');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.className).toContain('group-hover:opacity-100');
+    expect(wrapper?.className).toContain('focus-within:opacity-100');
+  });
 });
