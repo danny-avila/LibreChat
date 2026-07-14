@@ -51,6 +51,7 @@ export * from './prompts';
 export * from './projects';
 /* Skills */
 export * from './skills';
+export * from './favorites';
 /* Endpoints */
 export * from './endpoints';
 /* Files */

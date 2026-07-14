@@ -74,6 +74,10 @@ describe('Agent Abort Endpoint', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGenerationJobManager.getJob.mockReset();
+    mockGenerationJobManager.abortJob.mockReset();
+    mockGenerationJobManager.getActiveJobIdsForUser.mockReset();
+    mockSaveMessage.mockReset();
   });
 
   describe('POST /chat/abort', () => {
@@ -117,7 +121,10 @@ describe('Agent Abort Endpoint', () => {
 
         expect(response.status).toBe(200);
         expect(response.body).toEqual({ success: true, aborted: jobStreamId });
-        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(jobStreamId);
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+          jobStreamId,
+          expect.objectContaining({ transformAbortContent: expect.any(Function) }),
+        );
       });
 
       it('should allow abort when job has no userId metadata (backwards compatibility)', async () => {
@@ -289,6 +296,90 @@ describe('Agent Abort Endpoint', () => {
         );
       });
 
+      it('saves the aborted partial as temporary from job metadata, not the request body', async () => {
+        const jobStreamId = 'test-stream-123';
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+
+        // The job was a temporary chat; the stop button posts only conversationId.
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: {
+            userMessage: { messageId: 'user-msg-123' },
+            responseMessageId: 'response-msg-456',
+            conversationId: jobStreamId,
+            isTemporary: true,
+          },
+          content: [{ type: 'text', text: 'Partial...' }],
+          text: 'Partial...',
+        });
+
+        mockSaveMessage.mockResolvedValue();
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId }); // no isTemporary in body
+
+        expect(response.status).toBe(200);
+        expect(mockSaveMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ isTemporary: true }),
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+
+      it('stamps a paused ask_user_question via transformAbortContent, before the final SSE emits', async () => {
+        const jobStreamId = 'test-stream-123';
+        const question = { question: 'Deploy where?', options: [{ label: 'Prod', value: 'prod' }] };
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: {
+            userId: 'test-user-123',
+            pendingAction: { payload: { type: 'ask_user_question', question } },
+          },
+        });
+
+        // abortJob applies the transform; capture it and echo the transformed
+        // content back as the result, mirroring the real (Redis) reconstruction
+        // where the ask tool_call arrives with empty args.
+        let capturedTransform;
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          capturedTransform = options?.transformAbortContent;
+          const rawContent = [
+            { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
+          ];
+          const content = capturedTransform ? capturedTransform(rawContent) : rawContent;
+          return {
+            success: true,
+            jobData: {
+              userMessage: { messageId: 'user-msg-123' },
+              responseMessageId: 'response-msg-456',
+              conversationId: jobStreamId,
+            },
+            content,
+            text: '',
+          };
+        });
+
+        mockSaveMessage.mockResolvedValue();
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        expect(capturedTransform).toEqual(expect.any(Function));
+        // The saved (and, in prod, emitted) content carries the stamped args.
+        // saveMessage(reqLike, responseMessage, opts) — the message is arg #2.
+        const savedMessage = mockSaveMessage.mock.calls[0][1];
+        const askPart = savedMessage.content.find(
+          (p) => p?.tool_call?.name === 'ask_user_question',
+        );
+        expect(JSON.parse(askPart.tool_call.args)).toMatchObject({ question: 'Deploy where?' });
+      });
+
       it('should handle saveMessage errors gracefully', async () => {
         const jobStreamId = 'test-stream-123';
 
@@ -323,6 +414,58 @@ describe('Agent Abort Endpoint', () => {
     });
 
     describe('Job Not Found', () => {
+      it('should skip paused fallback jobs and abort the running job', async () => {
+        mockGenerationJobManager.getJob
+          .mockResolvedValueOnce({
+            status: 'requires_action',
+            metadata: { userId: 'test-user-123' },
+          })
+          .mockResolvedValueOnce({
+            status: 'running',
+            metadata: { userId: 'test-user-123' },
+          });
+        mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue([
+          'paused-stream',
+          'running-stream',
+        ]);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: null,
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'new' });
+
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ success: true, aborted: 'running-stream' });
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+          'running-stream',
+          expect.objectContaining({ transformAbortContent: expect.any(Function) }),
+        );
+      });
+
+      it('should not abort paused fallback jobs', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValueOnce({
+          status: 'requires_action',
+          metadata: { userId: 'test-user-123' },
+        });
+        mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue(['paused-stream']);
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'new' });
+
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({
+          error: 'Job not found',
+          streamId: null,
+        });
+        expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+      });
+
       it('should return 404 when job is not found', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(null);
         mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue([]);

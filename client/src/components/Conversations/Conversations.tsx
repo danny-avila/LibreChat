@@ -58,7 +58,12 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-3">
+        <div
+          ref={registerChild as React.LegacyRef<HTMLDivElement>}
+          style={style}
+          className="px-3"
+          data-testid="convo-list-row"
+        >
           {children}
         </div>
       )}
@@ -340,6 +345,24 @@ const Conversations: FC<ConversationsProps> = ({
     });
     return () => cancelAnimationFrame(frameId);
   }, [flattenedItems, containerRef]);
+
+  /** CellMeasurerCache(fixedWidth) keys heights by row, not width. Rows first measured
+   *  at a narrow width (e.g. mid expand-animation from a collapsed sidebar) would
+   *  otherwise persist their wrapped heights — re-measure when the width changes. */
+  const measuredWidthRef = useRef(0);
+  useEffect(() => {
+    if (listWidth === 0 || listWidth === measuredWidthRef.current) {
+      return;
+    }
+    measuredWidthRef.current = listWidth;
+    const frameId = requestAnimationFrame(() => {
+      cache.clearAll();
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [listWidth, cache, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {

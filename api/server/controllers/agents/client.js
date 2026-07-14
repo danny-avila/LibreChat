@@ -33,7 +33,21 @@ const {
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
+  buildPendingAction,
+  toClientPendingAction,
+  computeAgentRequestFingerprint,
+  extractDiscoveredToolsFromHistory,
+  sanitizeResumeModelParameters,
+  pickResumeContext,
+  getApprovalTtlMs,
+  isHITLEnabled,
+  deleteAgentCheckpoint,
+  agentRequestsAskUserQuestion,
+  attachAskUserQuestionArgs,
+  createContentIndexOffsetHandlers,
+  getRequestMemories,
   createMemoryProcessor,
+  agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
@@ -52,6 +66,7 @@ const {
   hasUrlContextTool,
   appendYouTubeVideoParts,
   resolveYouTubeInjectionConfig,
+  decrementPendingRequest,
 } = require('@librechat/api');
 const {
   Callback,
@@ -67,6 +82,7 @@ const {
   Permissions,
   VisionModes,
   ContentTypes,
+  ApprovalEvents,
   EModelEndpoint,
   PermissionTypes,
   AgentCapabilities,
@@ -516,11 +532,14 @@ class AgentClient extends BaseClient {
       }
     }
 
-    /** Memory context (user preferences/memories) */
-    const withoutKeys = await this.useMemory();
-    const memoryContext = withoutKeys
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
-      : undefined;
+    /** Memory context (user preferences/memories). Keyed context (with memory
+     *  keys + token metadata) is reserved for agents that can call
+     *  `delete_memory`; everyone else gets the unkeyed values only. */
+    const memories = await this.useMemory();
+    const buildMemoryContext = (text) =>
+      text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
+    const memoryContext = buildMemoryContext(memories?.withoutKeys);
+    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -571,8 +590,13 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
-        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
-          agentRunContextParts.push(memoryContext);
+        const agentHasMemory = agentHasInlineMemoryTools(agent);
+        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
+        if (
+          agentMemoryContext &&
+          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
+        ) {
+          agentRunContextParts.push(agentMemoryContext);
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -623,7 +647,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * @returns {Promise<string | undefined>}
+   * @returns {Promise<{ withKeys?: string; withoutKeys?: string } | undefined>}
    */
   async useMemory() {
     const user = this.options.req.user;
@@ -654,8 +678,12 @@ class AgentClient extends BaseClient {
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
-        return withoutKeys;
+        const { withKeys, withoutKeys } = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        return { withKeys, withoutKeys };
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -772,7 +800,20 @@ class AgentClient extends BaseClient {
     });
 
     this.processMemory = processMemory;
-    return withoutKeys;
+    let withKeys = withoutKeys;
+    try {
+      ({ withKeys } = await getRequestMemories({
+        req: this.options.req,
+        userId,
+        getFormattedMemories: db.getFormattedMemories,
+      }));
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
+        error,
+      );
+    }
+    return { withKeys, withoutKeys };
   }
 
   /**
@@ -1138,6 +1179,165 @@ class AgentClient extends BaseClient {
    * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
    * @param {AbortController} [params.abortController]
    */
+  /**
+   * @deprecated Agent Chain — strip hidden intermediate sequential-agent content
+   * before persistence, keeping only the last part + tool_call parts. Mirrors the
+   * chat path so a HITL resume doesn't persist/emit intermediate outputs the
+   * agent's `hide_sequential_outputs` setting is meant to hide.
+   */
+  applyHideSequentialOutputsFilter() {
+    if (!this.options.agent?.hide_sequential_outputs || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    this.contentParts = this.contentParts.filter(
+      (part, index) =>
+        index >= this.contentParts.length - 1 ||
+        part.type === ContentTypes.TOOL_CALL ||
+        part.tool_call_ids,
+    );
+  }
+
+  /**
+   * Surface any human-in-the-loop interrupt the SDK captured during the most
+   * recent `processStream` / `resume`. When the run paused for tool approval (or
+   * an ask-user question), mark the job `requires_action`, persist the pending
+   * review record, and emit it to live clients — then set `this.pendingApproval`
+   * so the controller leaves the turn unfinalized for the resume route to continue.
+   *
+   * No-op when the run completed without an interrupt, or when the job was aborted
+   * between the interrupt firing and this mark (a late interrupt must not pause a
+   * dead job — the atomic `pause` transition returns false and we drop it).
+   *
+   * @param {AgentRun} run
+   * @param {string} [streamId]
+   */
+  async handleRunInterrupt(run, streamId) {
+    if (!streamId || typeof run?.getInterrupt !== 'function') {
+      return;
+    }
+    const interrupt = run.getInterrupt();
+    if (!interrupt?.payload) {
+      return;
+    }
+
+    const appConfig = this.options.req?.config;
+    const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    // Persist the resolved model parameters (temperature, max tokens, custom endpoint
+    // params, …) so an ephemeral-agent resume continues with the SAME settings the run
+    // paused on. The resume payload omits them and they aren't part of the fingerprint, so
+    // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
+    // these from the DB record server-side, so this is belt-and-suspenders for them.)
+    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
+    const resumeContext = pickResumeContext(this.options.req?.body);
+    const resolvedModelParameters = sanitizeResumeModelParameters(
+      this.options.agent?.model_parameters,
+    );
+    if (resolvedModelParameters) {
+      resumeContext.model_parameters = resolvedModelParameters;
+    }
+    // Persist the question onto the paused ask tool_call's args NOW: an
+    // abandoned/expired/stopped pause never reaches the answer-resume stamp,
+    // and the streamed args were dropped (name-less chunks) — without this the
+    // unfinished turn saves an empty ask part the record card can't render.
+    if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
+      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      if (stamped !== this.contentParts) {
+        this.contentParts.length = 0;
+        this.contentParts.push(...stamped);
+      }
+    }
+    const pendingAction = buildPendingAction(interrupt.payload, {
+      streamId,
+      conversationId: this.conversationId,
+      // runId mirrors the LangGraph checkpoint namespace when the SDK provides it
+      // (its documented meaning), falling back to the response message id.
+      runId: interrupt.checkpointNs ?? this.responseMessageId,
+      responseMessageId: this.responseMessageId,
+      interruptId: interrupt.interruptId,
+      // thread_id was bound to conversationId at run config (config.configurable);
+      // fall back to it when the SDK doesn't echo threadId on the interrupt.
+      threadId: interrupt.threadId ?? this.conversationId,
+      ttlMs: getApprovalTtlMs(checkpointerCfg),
+      // Pin the graph-determining request fields so resume can't rebuild this paused
+      // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
+      // undefined so the id guard can't tell two configs apart).
+      requestFingerprint: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
+      // Persist those same fields verbatim so the resume route can REPLAY them — a
+      // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
+      // so the server restores it and rebuilds the same graph (and the fingerprint matches).
+      resumeContext,
+    });
+
+    // Job-replacement guard: streamId == conversationId is reused per conversation, so a
+    // newer request can replace this run's job. If this (older) run hits an interrupt
+    // after a replacement, pausing would flip the NEWER job to requires_action with this
+    // stale run's pending action, blocking fresh work behind the wrong approval. Only
+    // pause when the live job is still the one THIS run created (mirrors request.js).
+    if (this.jobCreatedAt != null) {
+      const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+      if (!liveJob || liveJob.createdAt !== this.jobCreatedAt) {
+        logger.debug(`[AgentClient] Interrupt fired but job ${streamId} was replaced; not pausing`);
+        return;
+      }
+    }
+
+    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);
+    if (!paused) {
+      logger.debug(
+        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
+      );
+      return;
+    }
+
+    // Capture deferred tools discovered (via tool_search) earlier in THIS turn so resume
+    // can replay them into createRun. The resumed graph is rebuilt with `messages: []`
+    // (state comes from the checkpoint), so the in-turn tool_search results that mark a
+    // deferred tool discovered aren't present there — without this the paused deferred
+    // tool would be missing from the rebuilt schema-only toolMap and resume would fail
+    // with "unknown tool". Inert for non-deferred turns (the set comes back empty).
+    try {
+      const runMessages =
+        typeof run.getRunMessages === 'function' ? run.getRunMessages() : undefined;
+      if (Array.isArray(runMessages) && runMessages.length > 0) {
+        const discovered = extractDiscoveredToolsFromHistory(runMessages);
+        if (discovered.size > 0) {
+          await GenerationJobManager.updateMetadata(streamId, {
+            discoveredTools: Array.from(discovered),
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        `[AgentClient] Failed to capture discovered tools for resume on ${streamId}`,
+        err?.message ?? err,
+      );
+    }
+
+    this.pendingApproval = pendingAction;
+    // Release the concurrency slot this request held the MOMENT the turn is durably
+    // paused — before the approval card is emitted — so the user's `/resume` can
+    // re-acquire one immediately. Otherwise a fast Approve races the HTTP-driver
+    // teardown (request.js pause branch / resume.js finally) that would otherwise
+    // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
+    // the flag; if it fails here, the teardown still releases (it checks the flag).
+    if (!this.pendingRequestReleased) {
+      try {
+        await decrementPendingRequest(this.options.req?.user?.id);
+        this.pendingRequestReleased = true;
+      } catch (err) {
+        logger.error(`[AgentClient] Failed to release request slot on pause ${streamId}`, err);
+      }
+    }
+    await GenerationJobManager.emitChunk(streamId, {
+      event: ApprovalEvents.ON_PENDING_ACTION,
+      data: toClientPendingAction(pendingAction),
+    });
+    logger.debug(
+      `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
+    );
+  }
+
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -1378,6 +1578,11 @@ class AgentClient extends BaseClient {
         run = await createRun({
           agents,
           messages,
+          // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
+          // persists the pending action; the /resume route rebuilds + continues the run), so it
+          // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
+          // leave this off so an approval-gated tool can't pause where there's no resume path.
+          hitlCapable: true,
           indexTokenCountMap,
           initialSummary,
           initialSessions,
@@ -1425,16 +1630,40 @@ class AgentClient extends BaseClient {
 
         /** @deprecated Agent Chain */
         config.configurable.last_agent_id = agents[agents.length - 1].id;
+
+        // HITL: clear any checkpoint orphaned by a prior paused turn in this
+        // conversation (one that expired or was aborted while paused) so this fresh
+        // turn starts clean instead of rehydrating a stale interrupt — thread_id is
+        // the stable conversationId. No-op when HITL is off or nothing is orphaned.
+        // Deliberately UNCONDITIONAL per HITL turn: any cheaper gate (job metadata,
+        // a Redis flag) can go stale across replicas/restarts and skip the prune
+        // exactly when an orphan exists, while these are two indexed, usually-empty
+        // deleteMany ops — correctness over a micro-optimization.
+        // The gate mirrors createRun's checkpointer condition: the approval policy
+        // OR an ask_user_question-capable agent (which attaches a checkpointer
+        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
+        // or Stop would otherwise rehydrate here and silently duplicate context.
+        if (
+          streamId &&
+          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion))
+        ) {
+          await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
+        }
+
         await run.processStream({ messages }, config, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
           },
         });
 
+        // HITL: if the run paused for tool approval, mark the job
+        // `requires_action` + emit the prompt and leave the turn unfinalized
+        // (the resume route continues it). No-op when the run completed.
+        await this.handleRunInterrupt(run, streamId);
+
         config.signal = null;
       };
 
-      const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
 
       /**
@@ -1474,20 +1703,7 @@ class AgentClient extends BaseClient {
         this.contentParts.unshift(...manualParts);
       }
 
-      /** @deprecated Agent Chain */
-      if (hideSequentialOutputs) {
-        this.contentParts = this.contentParts.filter((part, index) => {
-          // Include parts that are either:
-          // 1. At or after the finalContentStart index
-          // 2. Of type tool_call
-          // 3. Have tool_call_ids property
-          return (
-            index >= this.contentParts.length - 1 ||
-            part.type === ContentTypes.TOOL_CALL ||
-            part.tool_call_ids
-          );
-        });
-      }
+      this.applyHideSequentialOutputsFilter();
     } catch (err) {
       if (abortController.signal.aborted) {
         logger.debug(
@@ -1557,9 +1773,274 @@ class AgentClient extends BaseClient {
         this._resolveRun(this.run ?? null);
         this._resolveRun = null;
       }
+
+      // HITL: a non-paused turn deliberately prunes nothing here. The lazy checkpointer
+      // (LazyMongoSaver) never persists a clean-exit checkpoint, so there is
+      // nothing this turn left to delete. A checkpoint orphaned by a PRIOR abandoned pause
+      // is cleared by the pre-run prune (before processStream) on the next turn, with the
+      // Mongo TTL as the backstop. Dropping this post-completion prune also removes its
+      // job-replacement race: an older run's late finally can no longer delete a newer
+      // paused run's checkpoint, because there is no longer a clean-path prune to race.
+
       run = null;
       config = null;
       memoryPromise = null;
+    }
+  }
+
+  /**
+   * Resume a run that paused for human-in-the-loop review.
+   *
+   * The original run lives in a detached background task that exits when the run
+   * pauses, so resume REBUILDS the run on a fresh graph bound to the same
+   * `thread_id` (= conversationId) and the durable checkpointer. LangGraph rehydrates
+   * the paused graph state from the checkpoint; `run.resume(value)` re-enters the
+   * interrupted node with the user's decision. State comes from the checkpoint, so
+   * no message history is rebuilt here — `createRun` only needs the agent(s) to
+   * reconstruct the graph structure.
+   *
+   * `seedContent` is the content streamed before the pause (the assistant message +
+   * its tool call). In Redis mode the job store's append log already spans the pause,
+   * so the finalized message is complete regardless; seeding keeps the in-memory store
+   * complete too. The run drives events through the same `streamId`, so the client's
+   * open SSE receives the continuation live.
+   *
+   * Unlike `chatCompletion`, this does NOT prune the checkpoint in its `finally` — the
+   * resume controller owns checkpoint lifecycle (it must also clean up on failures that
+   * happen before this method runs, and keep the checkpoint on a re-pause).
+   *
+   * @param {object} params
+   * @param {Agents.ToolApprovalDecisionMap | { answer: string }} params.resumeValue
+   * @param {Array} [params.seedContent] - content aggregated before the pause
+   * @param {AbortController} [params.abortController]
+   * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
+   */
+  async resumeCompletion({
+    resumeValue,
+    seedContent = [],
+    abortController = null,
+    commandOptions,
+    userMCPAuthMap,
+    discoveredToolNames,
+  }) {
+    /** @type {Partial<GraphRunnableConfig>} */
+    let config;
+    /** @type {ReturnType<createRun>} */
+    let run;
+    const appConfig = this.options.req.config;
+    const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
+    try {
+      if (!abortController) {
+        abortController = new AbortController();
+      }
+
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+
+      config = {
+        runName: 'AgentRun',
+        configurable: {
+          thread_id: this.conversationId,
+          last_agent_index: this.agentConfigs?.size ?? 0,
+          user_id: this.user ?? this.options.req.user?.id,
+          hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
+          requestBody: {
+            messageId: this.responseMessageId,
+            conversationId: this.conversationId,
+            parentMessageId: this.parentMessageId,
+          },
+          user: createSafeUser(this.options.req.user),
+        },
+        recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
+        signal: abortController.signal,
+        streamMode: 'values',
+        version: 'v2',
+      };
+
+      // Seed pre-pause content so the in-memory job store reports the complete turn
+      // (Redis aggregates across the pause via its append log; this covers in-memory).
+      if (Array.isArray(seedContent) && seedContent.length > 0) {
+        this.contentParts.push(...seedContent);
+      }
+
+      const tokenCounter = createTokenCounter(this.getEncoding());
+      const agents = [this.options.agent];
+      if (this.agentConfigs && this.agentConfigs.size > 0) {
+        agents.push(...this.agentConfigs.values());
+      }
+
+      // Re-prime skill files invoked in the pre-pause segment (mirrors the normal path's
+      // `primeInvokedSkills(payload)`), so an approved code/file-backed tool keeps the
+      // injected skill-file session refs instead of running without them. The pre-pause
+      // content carries the `skill` tool_calls, so it stands in for the message payload.
+      let skillSessions;
+      if (
+        typeof this.options.primeInvokedSkills === 'function' &&
+        Array.isArray(seedContent) &&
+        seedContent.length > 0
+      ) {
+        try {
+          const primed = await this.options.primeInvokedSkills([
+            { role: 'assistant', content: seedContent },
+          ]);
+          skillSessions = primed?.initialSessions;
+        } catch (err) {
+          logger.warn(
+            '[api/server/controllers/agents/client.js #resumeCompletion] Failed to re-prime skill sessions',
+            err?.message ?? err,
+          );
+        }
+      }
+
+      // Seed code-env / skill tool sessions so an approved code/file/skill-backed tool
+      // runs with the same uploaded-file context the pre-pause run had — the rebuilt
+      // graph otherwise has no `Graph.sessions` entries (especially cross-replica).
+      const initialSessions = buildInitialToolSessions({ skillSessions, agents });
+
+      run = await createRun({
+        agents,
+        // State (messages, tool calls) is rehydrated from the checkpoint by
+        // run.resume; createRun only needs the agents to rebuild the graph.
+        messages: [],
+        // The resumed run can pause AGAIN (another tool, a follow-up question), and this
+        // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
+        hitlCapable: true,
+        // Replay deferred tools discovered before the pause. With `messages: []` the
+        // discovery scan finds nothing, so a deferred tool the paused call targets
+        // would be absent from the rebuilt toolMap; these names (captured at pause)
+        // force it back in. Undefined/empty for non-deferred turns — a harmless no-op.
+        discoveredToolNames,
+        initialSessions,
+        runId: this.responseMessageId,
+        signal: abortController.signal,
+        // The rebuilt graph numbers content indices from 0, but the aggregator was
+        // just seeded with the pre-pause parts at those same indices — shift every
+        // resumed step index past the seed, or the new output merges into (or, on a
+        // type mismatch, is silently dropped against) the pre-pause content.
+        customHandlers: createContentIndexOffsetHandlers(
+          this.options.eventHandlers,
+          Array.isArray(seedContent) ? seedContent : [],
+        ),
+        requestBody: config.configurable.requestBody,
+        user: createSafeUser(this.options.req?.user),
+        tenantId: this.options.req?.user?.tenantId,
+        summarizationConfig: appConfig?.summarization,
+        appConfig,
+        tokenCounter,
+        subagentUsageSink: createSubagentUsageSink(
+          this.collectedUsage,
+          this.buildSubagentUsageEmitter(appConfig),
+        ),
+      });
+
+      if (!run) {
+        throw new Error('Failed to create run for resume');
+      }
+
+      this.run = run;
+      if (this._resolveRun) {
+        this._resolveRun(run);
+        this._resolveRun = null;
+      }
+
+      const streamId = this.options.req?._resumableStreamId;
+      // Do NOT cache the rebuilt graph on resume: it was created with `messages: []`, so
+      // RedisJobStore.getContentParts() (which prefers a cached graph over reconstructing
+      // from the chunk log) would return only the resumed segment and drop the pre-pause
+      // assistant/tool-call content on a same-replica reload/status poll. Skipping it makes
+      // introspection fall back to the durable chunk reconstruction, which is complete.
+      // `setContentParts` still points the in-memory store at the seeded client content.
+      if (streamId && this.contentParts) {
+        GenerationJobManager.setContentParts(streamId, this.contentParts);
+      }
+
+      // Carry the user's MCP auth into the rebuilt run so an approved MCP tool executes
+      // with the same OAuth/user credentials it had before the pause.
+      if (userMCPAuthMap != null) {
+        config.configurable.userMCPAuthMap = userMCPAuthMap;
+      }
+
+      /** @deprecated Agent Chain */
+      config.configurable.last_agent_id = agents[agents.length - 1].id;
+
+      await run.resume(
+        resumeValue,
+        config,
+        { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
+        commandOptions,
+      );
+
+      config.signal = null;
+
+      // The model may pause AGAIN (another tool needs approval, or a follow-up
+      // question). Re-arm the same interrupt gate so the cycle can repeat.
+      await this.handleRunInterrupt(run, streamId);
+
+      // Mirror chatCompletion: strip hidden intermediate sequential-agent content
+      // before resume finalize/re-pause persistence reads `this.contentParts`, so a
+      // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
+      // is meant to hide.
+      this.applyHideSequentialOutputsFilter();
+    } catch (err) {
+      if (abortController.signal.aborted) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
+          {
+            conversationId: this.conversationId,
+            name: err?.name,
+            code: err?.code,
+          },
+        );
+      } else {
+        logger.error(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+          err,
+        );
+        this.contentParts.push({
+          type: ContentTypes.ERROR,
+          [ContentTypes.ERROR]: `An error occurred while resuming the request${err?.message ? `: ${err.message}` : ''}`,
+        });
+      }
+    } finally {
+      const ratio = this.run?.getCalibrationRatio() ?? 0;
+      if (ratio > 0 && ratio !== 1) {
+        this.contextMeta = {
+          calibrationRatio: Math.round(ratio * 1000) / 1000,
+          encoding: this.getEncoding(),
+        };
+      } else {
+        this.contextMeta = undefined;
+      }
+
+      this.finalizeSubagentContent();
+
+      if (this.pendingSubagentEmits.length > 0) {
+        await Promise.allSettled(this.pendingSubagentEmits);
+        this.pendingSubagentEmits = [];
+      }
+
+      try {
+        const wasAborted = abortController?.signal?.aborted;
+        if (!wasAborted) {
+          await this.recordCollectedUsage({
+            context: 'message',
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+          });
+        }
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
+          err,
+        );
+      }
+      if (this._resolveRun) {
+        this._resolveRun(this.run ?? null);
+        this._resolveRun = null;
+      }
+      run = null;
+      config = null;
     }
   }
 

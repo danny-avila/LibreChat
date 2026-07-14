@@ -66,6 +66,19 @@ describe('inferMimeType', () => {
   it('should reject raw text/x-markdown without normalization', () => {
     expect(baseFileConfig.checkType('text/x-markdown')).toBe(false);
   });
+
+  it('should infer message/rfc822 from extension when browser type is empty', () => {
+    expect(inferMimeType('email.eml', '')).toBe('message/rfc822');
+  });
+
+  it('should pass through message/rfc822 when browser reports it', () => {
+    expect(inferMimeType('email.eml', 'message/rfc822')).toBe('message/rfc822');
+  });
+
+  it('should produce a type accepted by checkType for .eml files', () => {
+    const normalized = inferMimeType('test.eml', '');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
 });
 
 describe('applicationMimeTypes', () => {
@@ -147,6 +160,10 @@ describe('supportedMimeTypes', () => {
     'application/vnd.oasis.opendocument.graphics',
   ])('ODF type flows through supportedMimeTypes: %s', (mimeType) => {
     expect(checkSupported(mimeType)).toBe(true);
+  });
+
+  it('message/rfc822 (.eml) flows through supportedMimeTypes', () => {
+    expect(checkSupported('message/rfc822')).toBe(true);
   });
 });
 

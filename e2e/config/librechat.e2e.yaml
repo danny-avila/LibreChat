@@ -9,6 +9,13 @@ interface:
   # Mock models price at the default rate, so synthetic usage yields a value.
   contextCost: true
 
+# Enables the memory feature so the MEMORIES.USE permission is granted and the
+# ephemeral memory badge (inline set_memory/delete_memory tools) is available.
+# memory.spec.ts toggles it via the tools dropdown.
+memory:
+  personalize: true
+  tokenLimit: 10000
+
 mcpSettings:
   # Deliberately excludes 127.0.0.1, so the URL-based `e2e-http` server below is blocked
   # at boot (stored as inspectionFailed). mcp-allowlist-override.spec.ts adds that origin

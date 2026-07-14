@@ -1,11 +1,11 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { render, waitFor, fireEvent, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
 import { BrowserRouter } from 'react-router-dom';
-import { dataService } from 'librechat-data-provider';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { dataService, EModelEndpoint } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Agent } from 'librechat-data-provider';
 
@@ -60,9 +60,10 @@ jest.mock('~/hooks', () => ({
   useGetConversation: () => () => null,
 }));
 
+const mockUseAgentsMapContext = jest.fn((): Record<string, Agent> | undefined => ({}));
 jest.mock('~/Providers', () => ({
   useAssistantsMapContext: () => ({}),
-  useAgentsMapContext: () => ({}),
+  useAgentsMapContext: () => mockUseAgentsMapContext(),
 }));
 
 const mockOnSelectSpec = jest.fn();
@@ -75,8 +76,14 @@ const mockUseGetStartupConfig = jest.fn((): { data?: { modelSpecs: { list: unkno
   data: { modelSpecs: { list: [] as unknown[] } },
 }));
 
+const mockUseGetEndpointsQuery = jest.fn(
+  (): { data?: Record<string, unknown>; isLoading?: boolean } => ({
+    data: { [EModelEndpoint.agents]: { order: 0 } },
+  }),
+);
+
 jest.mock('~/data-provider', () => ({
-  useGetEndpointsQuery: () => ({ data: {} }),
+  useGetEndpointsQuery: () => mockUseGetEndpointsQuery(),
   useGetStartupConfig: () => mockUseGetStartupConfig(),
 }));
 
@@ -123,6 +130,10 @@ describe('FavoritesList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFavorites.length = 0;
+    mockUseAgentsMapContext.mockImplementation(() => ({}));
+    mockUseGetEndpointsQuery.mockImplementation(() => ({
+      data: { [EModelEndpoint.agents]: { order: 0 } },
+    }));
     mockUseFavorites.mockImplementation(() => ({
       favorites: mockFavorites,
       reorderFavorites: jest.fn(),
@@ -151,6 +162,32 @@ describe('FavoritesList', () => {
       expect(container.firstChild).not.toBeNull();
       // When loading, the component renders skeleton placeholders (check for content, not specific CSS)
       expect(container.innerHTML).toContain('div');
+    });
+  });
+
+  describe('memoization', () => {
+    it('does not re-run when the parent re-renders with stable props (insulated from streaming)', () => {
+      const stableToggleNav = jest.fn();
+      const Parent = () => {
+        const [count, setCount] = React.useState(0);
+        return (
+          <>
+            <button data-testid="force-rerender" onClick={() => setCount((c) => c + 1)}>
+              {count}
+            </button>
+            <FavoritesList isSmallScreen={false} toggleNav={stableToggleNav} />
+          </>
+        );
+      };
+
+      renderWithProviders(<Parent />);
+
+      const callsAfterMount = mockUseFavorites.mock.calls.length;
+      expect(callsAfterMount).toBeGreaterThan(0);
+
+      fireEvent.click(screen.getByTestId('force-rerender'));
+
+      expect(mockUseFavorites).toHaveBeenCalledTimes(callsAfterMount);
     });
   });
 
@@ -211,6 +248,102 @@ describe('FavoritesList', () => {
 
       // No favorite items should be rendered (deleted agent is filtered out)
       expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('renders pinned agents via direct fetch while the global agents map is still loading', async () => {
+      const validAgent: Agent = {
+        id: 'pinned-agent',
+        name: 'Pinned Agent',
+        author: 'test-author',
+      } as Agent;
+
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockFavorites.push({ agentId: 'pinned-agent' });
+
+      (dataService.getAgentById as jest.Mock).mockResolvedValue(validAgent);
+
+      const { findAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      const favoriteItems = await findAllByTestId('favorite-item');
+      expect(favoriteItems).toHaveLength(1);
+      expect(favoriteItems[0]).toHaveTextContent('Pinned Agent');
+      expect(dataService.getAgentById as jest.Mock).toHaveBeenCalledWith({
+        agent_id: 'pinned-agent',
+      });
+    });
+
+    it('does not fetch or render agents when the agents endpoint is disabled', async () => {
+      mockUseGetEndpointsQuery.mockImplementation(() => ({ data: {} }));
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockFavorites.push({ agentId: 'pinned-agent' });
+
+      const { queryAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      await new Promise((r) => setTimeout(r, 50));
+      expect(dataService.getAgentById as jest.Mock).not.toHaveBeenCalled();
+      expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('keeps skeletons (not an empty row) while the endpoints config is still loading', async () => {
+      mockUseGetEndpointsQuery.mockImplementation(() => ({ data: undefined, isLoading: true }));
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockFavorites.push({ agentId: 'pinned-agent' });
+
+      const { queryAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      await new Promise((r) => setTimeout(r, 50));
+      // Endpoint gate is undecided, so no direct fetch yet, but the row stays as a skeleton.
+      expect(dataService.getAgentById as jest.Mock).not.toHaveBeenCalled();
+      expect(queryAllByTestId('favorite-item-skeleton').length).toBeGreaterThan(0);
+      expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('does not delete favorites on a global 403 while the agents map is unavailable', async () => {
+      const mockReorderFavorites = jest.fn();
+      // A revoked AGENTS.USE role makes the list query (and thus the map) fail, so the
+      // map stays undefined and every getAgentById returns a global 403.
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockUseFavorites.mockImplementation(() => ({
+        favorites: [{ agentId: 'agent-a' }, { agentId: 'agent-b' }],
+        reorderFavorites: mockReorderFavorites,
+        isLoading: false,
+      }));
+
+      (dataService.getAgentById as jest.Mock).mockRejectedValue({ response: { status: 403 } });
+
+      const { queryAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      await waitFor(() => {
+        expect(dataService.getAgentById as jest.Mock).toHaveBeenCalledWith({ agent_id: 'agent-a' });
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockReorderFavorites).not.toHaveBeenCalled();
+      expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+    });
+
+    it('keeps a pinned agent as a skeleton on a transient error while the map is still loading', async () => {
+      const mockReorderFavorites = jest.fn();
+      mockUseAgentsMapContext.mockImplementation(() => undefined);
+      mockUseFavorites.mockImplementation(() => ({
+        favorites: [{ agentId: 'flaky-agent' }],
+        reorderFavorites: mockReorderFavorites,
+        isLoading: false,
+      }));
+
+      (dataService.getAgentById as jest.Mock).mockRejectedValue({ response: { status: 500 } });
+
+      const { queryAllByTestId } = renderWithProviders(<FavoritesList />);
+
+      await waitFor(() => {
+        expect(dataService.getAgentById as jest.Mock).toHaveBeenCalledWith({
+          agent_id: 'flaky-agent',
+        });
+      });
+
+      // Item is neither rendered nor cleaned up — it stays in the loading skeleton state.
+      expect(queryAllByTestId('favorite-item')).toHaveLength(0);
+      expect(mockReorderFavorites).not.toHaveBeenCalled();
     });
 
     it('should treat 403 the same as 404 — agent not rendered', async () => {
