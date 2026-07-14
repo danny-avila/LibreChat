@@ -1,5 +1,26 @@
 # LibreChat Artifact Apps – Implementierungsplan
 
+> ## ⚠️ STATUS FÜR FORTSETZENDEN AGENTEN (Stand: 2026-07-14, Branch `feat/artifact-apps-wp0-wp6`)
+>
+> Ein vorheriger Coding-Agent wurde wegen Credit-Erschöpfung mitten in der Ausführung gestoppt. Der Fortschritt ist committet und gepusht auf `feat/artifact-apps-wp0-wp6`. Bitte **auf diesem Branch weiterarbeiten** (nicht neu von main starten). Es wurde noch **kein PR** geöffnet.
+>
+> ### ✅ Bereits erledigt (committet)
+> - **WP0 – Exploration/ADRs**: `docs/artifact-apps/WP0-exploration.md`, `docs/artifact-apps/adr-0001-snapshot-storage.md`, `docs/artifact-apps/adr-0002-mcp-bridge.md`
+> - **WP1 – Persistenz**: `packages/data-schemas/src/schema/artifactApp.ts`, `artifactVersion.ts`, Models, `methods/artifactApp.ts` (+ `.spec.ts`), Index-Migration `migrations/artifactAppIndexes.ts`
+> - **WP2 – ACL/Capabilities**: `ARTIFACT_APP`-ResourceType, Owner/Editor/Viewer-Rollen, Capabilities, Audit-Actions in `data-schemas` (admin/capabilities.ts, methods/accessRole.ts + spec)
+> - **WP3 – Publishing API**: `packages/api/src/artifactApps/handlers.ts` (+ `.spec.ts`, 274 Zeilen Tests), Express-Routen `api/server/routes/artifactApps.js`, Access-Middleware `canAccessArtifactAppResource.js`
+> - **WP4 – Versioning**: Draft/Release/Activate/Withdraw/Rollback-Handler bereits in `handlers.ts` und `data-provider/artifactApps.ts` enthalten
+> - **WP5/WP6 – Frontend (NUR TEILWEISE, WIP)**: `client/src/components/ArtifactApps/StandaloneAppView.tsx`, `AppRenderer.tsx`, react-query Queries/Mutationen in `client/src/data-provider/ArtifactApps/`, i18n-Keys in `translation.json`
+>
+> ### ❌ Noch offen — HIER WEITERMACHEN
+> 1. **Build/Lint/Typecheck/Tests einmal komplett grün durchlaufen lassen** und alle Fehler fixen (wurde vor Abbruch nicht final verifiziert). Zwei `rollup.fallback.mjs`-Dateien wurden vom vorherigen Agenten als Workaround angelegt — prüfen, ob diese wirklich nötig sind oder ein echtes Build-Problem verdecken; ggf. richtige Lösung statt Fallback einbauen.
+> 2. **WP5 fertigstellen**: Standalone-Viewer-Routen `/apps/:artifactAppId` und `/apps/:artifactAppId/version/:versionId` in den Client-Router einhängen (Routing fehlt noch), 403/404/suspended/archived-States im UI final prüfen, Viewer-Tests ergänzen.
+> 3. **WP6 fertigstellen**: "Publish as App"-Aktion im Artifact-Menü ergänzen (fehlt komplett), mehrstufiger Publish-Dialog (§9.1) inkl. Wiederverwendung des bestehenden People Pickers, ACL-Rollenauswahl, Sichtbarkeit, Tool-Policy-Auswahl, Review-Summary. UI-Tests ergänzen.
+> 4. **Nach Fertigstellung**: Einen **einzigen kombinierten PR** von `feat/artifact-apps-wp0-wp6` gegen `main` öffnen (per `gh pr create`), mit Beschreibung aller WP0–WP6-Änderungen, Testresultaten und bekannten Einschränkungen.
+> 5. Scope bleibt **WP0–WP6** — WP7–WP13 (Embed-Sandbox, Marketplace, MCP-Bridge, HITL, Fork, Export, Hardening) sind explizit NICHT Teil dieses Durchgangs.
+>
+> ---
+
 ## 1. Ziel
 
 Dieser Plan führt die Anforderungen aus folgenden LibreChat-Themen zusammen:
