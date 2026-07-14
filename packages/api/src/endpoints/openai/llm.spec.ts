@@ -956,6 +956,55 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).not.toHaveProperty('reasoning_mode');
       expect(result.llmConfig).not.toHaveProperty('reasoning_context');
     });
+
+    it('should NOT default to Responses API for a custom gateway base URL', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        baseURL: 'https://gateway.example.com/v1',
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+      expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+    });
+
+    it('should default to Responses API for the canonical OpenAI base URL', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        baseURL: 'https://api.openai.com/v1',
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+      expect(result.llmConfig.reasoning).toEqual({ effort: ReasoningEffort.high });
+    });
+
+    it('should NOT default to Responses API when reasoningFormat is disabled', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        reasoningFormat: ReasoningParameterFormat.disabled,
+        modelOptions: {
+          model: 'gpt-5.6-terra',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
   });
 
   describe('Default and Add Parameters', () => {

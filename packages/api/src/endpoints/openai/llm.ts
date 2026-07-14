@@ -146,6 +146,22 @@ function requiresResponsesApiForReasoning({
   );
 }
 
+/**
+ * The GPT-5.6 Responses API default is first-party OpenAI only. A
+ * `reverseProxyUrl`/`directEndpoint` gateway sets a custom base URL and may
+ * expose only `/v1/chat/completions`, so it keeps its configured path.
+ */
+function isCanonicalOpenAIBaseURL(baseURL?: string | null): boolean {
+  if (!baseURL) {
+    return true;
+  }
+  try {
+    return /(^|\.)api\.openai\.com$/i.test(new URL(baseURL).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function removeReasoningField(target: Record<string, unknown>, field: string) {
   const { reasoning } = target;
   if (reasoning == null || typeof reasoning !== 'object' || Array.isArray(reasoning)) {
@@ -754,7 +770,9 @@ export function getOpenAILLMConfig({
    * Reads `llmConfig.model` (reflects `addParams` overrides) and skips when
    * `dropParams` removes `reasoning_effort` later anyway (`'reasoning'` only
    * drops the nested object, not the flat param) or opts out of the Responses
-   * API entirely. OpenRouter-backed configs keep their own reasoning path.
+   * API entirely. Limited to first-party OpenAI: OpenRouter, custom gateways
+   * (non-canonical base URL), and `reasoningFormat: 'disabled'` (no reasoning
+   * payload is sent) keep their existing Chat Completions path.
    */
   const responsesApiOptedOut =
     dropParams != null &&
@@ -762,6 +780,8 @@ export function getOpenAILLMConfig({
   if (
     !useOpenRouter &&
     endpoint === EModelEndpoint.openAI &&
+    isCanonicalOpenAIBaseURL(baseURL) &&
+    reasoningFormat !== ReasoningParameterFormat.disabled &&
     llmConfig.useResponsesApi == null &&
     !responsesApiOptedOut &&
     requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
