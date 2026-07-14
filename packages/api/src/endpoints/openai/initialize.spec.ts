@@ -427,6 +427,20 @@ describe('initializeOpenAI – GPT-5.6 managed fields', () => {
         read: 1,
         write: 12.5,
       },
+      'priority-deployment': {
+        prompt: 5,
+        completion: 30,
+        context: 1050000,
+        read: 0.5,
+        write: 6.25,
+      },
+      'priority-deployment:priority': {
+        prompt: 10,
+        completion: 60,
+        context: 1050000,
+        read: 1,
+        write: 12.5,
+      },
     });
   });
 });

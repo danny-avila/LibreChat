@@ -29,8 +29,10 @@ export function azureConfigSetup(config: Partial<TCustomConfig>): TAzureConfig {
 
   const assistantModels: string[] = [];
   const assistantGroups = new Set<string>();
+  const envBalanceEnabled =
+    config.balance == null && process.env.CHECK_BALANCE?.toLowerCase().trim() === 'true';
   const requiresPriorityRates =
-    config.balance?.enabled === true || config.interface?.contextCost === true;
+    config.balance?.enabled === true || envBalanceEnabled || config.interface?.contextCost === true;
   for (const modelName of modelNames) {
     mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
     const groupName = modelGroupMap?.[modelName]?.group;

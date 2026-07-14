@@ -1,5 +1,9 @@
 import type { SettingDefinition } from './generate';
-import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
+import {
+  getInvalidModelAwareKeys,
+  applyModelAwareDefaults,
+  paramSettings,
+} from './parameterSettings';
 import { EModelEndpoint } from './types';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
@@ -124,5 +128,33 @@ describe('applyModelAwareDefaults', () => {
       useResponsesApi: true,
     });
     expect(getParam(result, 'reasoning_effort')?.options).not.toContain('max');
+  });
+
+  it('identifies model-aware values that are no longer supported', () => {
+    const result = applyModelAwareDefaults(openAIParams, EModelEndpoint.openAI, 'gpt-5.4', {
+      provider: EModelEndpoint.openAI,
+      useResponsesApi: true,
+    });
+
+    expect(
+      getInvalidModelAwareKeys(result, {
+        imageDetail: 'original',
+        reasoning_effort: 'max',
+      }),
+    ).toEqual(['imageDetail', 'reasoning_effort']);
+  });
+
+  it('keeps supported GPT-5.6 model-aware values', () => {
+    const result = applyModelAwareDefaults(openAIParams, EModelEndpoint.openAI, 'gpt-5.6', {
+      provider: EModelEndpoint.openAI,
+      useResponsesApi: true,
+    });
+
+    expect(
+      getInvalidModelAwareKeys(result, {
+        imageDetail: 'original',
+        reasoning_effort: 'max',
+      }),
+    ).toEqual([]);
   });
 });

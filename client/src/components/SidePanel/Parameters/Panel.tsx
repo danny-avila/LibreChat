@@ -6,6 +6,7 @@ import {
   paramSettings,
   getSettingsKeys,
   getEndpointField,
+  getInvalidModelAwareKeys,
   SettingDefinition,
   tConvoUpdateSchema,
   applyModelAwareDefaults,
@@ -26,7 +27,7 @@ export default function Parameters() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [preset, setPreset] = useState<TPreset | null>(null);
 
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {}, isSuccess: endpointsConfigReady } = useGetEndpointsQuery();
   const provider = conversation?.endpoint ?? '';
   const model = conversation?.model ?? '';
 
@@ -62,7 +63,7 @@ export default function Parameters() {
   }, [conversation?.useResponsesApi, endpointType, endpointsConfig, model, provider]);
 
   useEffect(() => {
-    if (!parameters) {
+    if (!parameters || !endpointsConfigReady) {
       return;
     }
 
@@ -84,6 +85,9 @@ export default function Parameters() {
       }
 
       const updatedConversation = { ...prev };
+      const invalidModelAwareKeys = new Set(
+        getInvalidModelAwareKeys(parameters, updatedConversation),
+      );
 
       const conversationKeys = Object.keys(updatedConversation);
       const updatedKeys: string[] = [];
@@ -95,7 +99,7 @@ export default function Parameters() {
         //   return;
         // }
 
-        if (paramKeys.has(key)) {
+        if (paramKeys.has(key) && !invalidModelAwareKeys.has(key)) {
           return;
         }
 
@@ -117,7 +121,7 @@ export default function Parameters() {
 
       return updatedConversation;
     });
-  }, [parameters, setConversation]);
+  }, [endpointsConfigReady, parameters, setConversation]);
 
   const resetParameters = useCallback(() => {
     setConversation((prev) => {

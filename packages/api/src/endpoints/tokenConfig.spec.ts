@@ -43,6 +43,43 @@ describe('resolveTokenConfigMap', () => {
     expect(mockCacheGet).not.toHaveBeenCalled();
   });
 
+  it('includes Azure tokenConfig overrides for context and cost display', async () => {
+    const appConfig = {
+      interfaceConfig: { contextCost: true },
+      endpoints: {
+        [EModelEndpoint.azureOpenAI]: {
+          tokenConfig: {
+            'gpt-5.6': {
+              prompt: 5,
+              completion: 30,
+              context: 1050000,
+              cacheRead: 0.5,
+              cacheWrite: 6.25,
+            },
+          },
+        },
+      },
+    } as unknown as AppConfig;
+
+    const map = await resolveTokenConfigMap(
+      {
+        appConfig,
+        modelsConfig: { [EModelEndpoint.azureOpenAI]: ['gpt-5.6'] },
+        userId: 'user-1',
+      },
+      deps,
+    );
+
+    expect(map[EModelEndpoint.azureOpenAI]['gpt-5.6']).toEqual({
+      context: 1050000,
+      prompt: 5,
+      completion: 30,
+      cacheRead: 0.5,
+      cacheWrite: 6.25,
+    });
+    expect(mockCacheGet).not.toHaveBeenCalled();
+  });
+
   it('falls back to the cached fetched config when no static override exists', async () => {
     mockCacheGet.mockResolvedValue({ 'custom-model': { prompt: 2, completion: 6, context: 8000 } });
     const appConfig = appConfigWith([{ name: 'MyProxy', models: { fetch: true } }]);

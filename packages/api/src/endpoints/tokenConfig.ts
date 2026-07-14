@@ -29,6 +29,10 @@ export async function resolveTokenConfigMap(
   const customEndpoints = (appConfig?.endpoints?.[EModelEndpoint.custom] ?? []) as TEndpoint[];
   const cache = tokenConfigCache();
   const endpointTokenConfigs: Record<string, EndpointTokenConfig | undefined> = {};
+  const azureTokenConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.tokenConfig;
+  if (azureTokenConfig != null) {
+    endpointTokenConfigs[EModelEndpoint.azureOpenAI] = azureTokenConfig as EndpointTokenConfig;
+  }
 
   for (const endpointConfig of customEndpoints) {
     /** Models config and the token-config cache key by the normalized name */

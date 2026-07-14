@@ -474,6 +474,29 @@ describe('createResponse controller', () => {
         }),
       );
     });
+
+    it('should pass endpoint token config from primaryConfig', async () => {
+      const api = require('@librechat/api');
+      const endpointTokenConfig = {
+        'gpt-5.6-sol-fast:priority': { prompt: 10, completion: 60, context: 1050000 },
+      };
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-5.6-sol',
+        model_parameters: { model: 'gpt-5.6-sol-fast', service_tier: 'priority' },
+        endpointTokenConfig,
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ endpointTokenConfig }),
+      );
+    });
   });
 
   describe('agent context parity with UI path', () => {

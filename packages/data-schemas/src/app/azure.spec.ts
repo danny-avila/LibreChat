@@ -2,6 +2,7 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import { azureConfigSetup } from './azure';
 
 describe('azureConfigSetup priority pricing validation', () => {
+  const originalCheckBalance = process.env.CHECK_BALANCE;
   const baseGroup = {
     group: 'primary',
     apiKey: 'key',
@@ -9,6 +10,18 @@ describe('azureConfigSetup priority pricing validation', () => {
     deploymentName: 'deployment',
     version: 'v1',
   };
+
+  beforeEach(() => {
+    delete process.env.CHECK_BALANCE;
+  });
+
+  afterAll(() => {
+    if (originalCheckBalance == null) {
+      delete process.env.CHECK_BALANCE;
+      return;
+    }
+    process.env.CHECK_BALANCE = originalCheckBalance;
+  });
 
   it('allows priority routing without local rates when local accounting is disabled', () => {
     const result = azureConfigSetup({
@@ -51,6 +64,53 @@ describe('azureConfigSetup priority pricing validation', () => {
         },
       } as Partial<TCustomConfig>),
     ).toThrow('priority.tokenConfig');
+  });
+
+  it('requires priority token rates when balance accounting is enabled by environment', () => {
+    process.env.CHECK_BALANCE = 'true';
+
+    expect(() =>
+      azureConfigSetup({
+        endpoints: {
+          azureOpenAI: {
+            groups: [
+              {
+                ...baseGroup,
+                models: {
+                  'gpt-5.6': {
+                    priority: true,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      } as Partial<TCustomConfig>),
+    ).toThrow('priority.tokenConfig');
+  });
+
+  it('honors an explicit disabled balance block over the environment', () => {
+    process.env.CHECK_BALANCE = 'true';
+
+    expect(() =>
+      azureConfigSetup({
+        balance: { enabled: false },
+        endpoints: {
+          azureOpenAI: {
+            groups: [
+              {
+                ...baseGroup,
+                models: {
+                  'gpt-5.6': {
+                    priority: true,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      } as Partial<TCustomConfig>),
+    ).not.toThrow();
   });
 
   it('accepts priority token rates when local accounting is enabled', () => {

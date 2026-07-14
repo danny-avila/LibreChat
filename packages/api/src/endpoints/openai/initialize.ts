@@ -129,6 +129,7 @@ export async function initializeOpenAI({
   let isServerless = false;
   let standardTokenConfig: EndpointTokenConfig | undefined;
   let priorityTokenConfig: EndpointTokenConfig[string] | undefined;
+  let selectedAzureDeployment: string | undefined;
 
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
@@ -154,6 +155,7 @@ export async function initializeOpenAI({
         )
       : undefined;
     priorityTokenConfig = tokenConfig ? toBillingTokenRates(tokenConfig) : undefined;
+    selectedAzureDeployment = azureOptions.azureOpenAIApiDeploymentName;
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
     if (configBaseURL) {
@@ -295,10 +297,17 @@ export async function initializeOpenAI({
   }
 
   if (standardTokenConfig || (modelName && priorityTokenConfig)) {
+    const standardModelRates = modelName ? standardTokenConfig?.[modelName] : undefined;
     options.endpointTokenConfig = {
       ...(standardTokenConfig ?? {}),
       ...(modelName && priorityTokenConfig
         ? { [`${modelName}:priority`]: priorityTokenConfig }
+        : {}),
+      ...(selectedAzureDeployment && standardModelRates
+        ? { [selectedAzureDeployment]: standardModelRates }
+        : {}),
+      ...(selectedAzureDeployment && priorityTokenConfig
+        ? { [`${selectedAzureDeployment}:priority`]: priorityTokenConfig }
         : {}),
     };
   }

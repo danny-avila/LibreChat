@@ -751,17 +751,17 @@ const createResponse = async (req, res) => {
             const usage = data?.output?.usage_metadata;
             if (usage) {
               const reportedTier = data?.output?.response_metadata?.service_tier;
+              const requestedTier = primaryConfig.model_parameters?.service_tier;
               if (reportedTier === 'default' || reportedTier === 'priority') {
                 usage.serviceTier = reportedTier;
-              } else if (agent.model_parameters?.priorityProcessing != null) {
-                usage.serviceTier =
-                  agent.model_parameters.priorityProcessing === true ? 'priority' : 'default';
+              } else if (requestedTier === 'default' || requestedTier === 'priority') {
+                usage.serviceTier = requestedTier;
                 usage.serviceTierInferred = true;
                 logger.warn(
                   '[createResponse] Provider omitted service_tier; using requested tier',
                   {
-                    model: agent.model_parameters?.model,
-                    requestedServiceTier: usage.serviceTier,
+                    model: primaryConfig.model_parameters?.model,
+                    requestedServiceTier: requestedTier,
                   },
                 );
               }
@@ -857,6 +857,7 @@ const createResponse = async (req, res) => {
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
+          endpointTokenConfig: primaryConfig.endpointTokenConfig,
         },
       ).catch((err) => {
         logger.error('[Responses API] Error recording usage:', err);
@@ -946,17 +947,17 @@ const createResponse = async (req, res) => {
             const usage = data?.output?.usage_metadata;
             if (usage) {
               const reportedTier = data?.output?.response_metadata?.service_tier;
+              const requestedTier = primaryConfig.model_parameters?.service_tier;
               if (reportedTier === 'default' || reportedTier === 'priority') {
                 usage.serviceTier = reportedTier;
-              } else if (agent.model_parameters?.priorityProcessing != null) {
-                usage.serviceTier =
-                  agent.model_parameters.priorityProcessing === true ? 'priority' : 'default';
+              } else if (requestedTier === 'default' || requestedTier === 'priority') {
+                usage.serviceTier = requestedTier;
                 usage.serviceTierInferred = true;
                 logger.warn(
                   '[createResponse] Provider omitted service_tier; using requested tier',
                   {
-                    model: agent.model_parameters?.model,
-                    requestedServiceTier: usage.serviceTier,
+                    model: primaryConfig.model_parameters?.model,
+                    requestedServiceTier: requestedTier,
                   },
                 );
               }
@@ -1050,6 +1051,7 @@ const createResponse = async (req, res) => {
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
+          endpointTokenConfig: primaryConfig.endpointTokenConfig,
         },
       ).catch((err) => {
         logger.error('[Responses API] Error recording usage:', err);

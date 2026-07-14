@@ -1300,6 +1300,24 @@ const GPT_5_6_ONLY_KEYS = new Set([
   'promptCache',
 ]);
 const RESPONSES_ONLY_KEYS = new Set(['reasoning_mode', 'reasoning_context']);
+const MODEL_AWARE_OPTION_KEYS = new Set(['imageDetail', 'reasoning_effort']);
+
+export function getInvalidModelAwareKeys(
+  settings: SettingsConfiguration,
+  values: Record<string, unknown>,
+): string[] {
+  const invalidKeys: string[] = [];
+  for (const setting of settings) {
+    if (!MODEL_AWARE_OPTION_KEYS.has(setting.key) || !setting.options) {
+      continue;
+    }
+    const value = values[setting.key];
+    if (typeof value === 'string' && !setting.options.includes(value)) {
+      invalidKeys.push(setting.key);
+    }
+  }
+  return invalidKeys;
+}
 
 export function applyModelAwareDefaults(
   settings: SettingsConfiguration,
