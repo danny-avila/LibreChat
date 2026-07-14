@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { nanoid } from 'nanoid';
-import type { ClientSession, Model } from 'mongoose';
+import type { ClientSession, FilterQuery, Model } from 'mongoose';
 import type {
   IArtifactApp,
   IArtifactVersion,
@@ -55,7 +55,7 @@ export interface ArtifactAppMethods {
   createArtifactAppWithVersion: (input: CreateArtifactAppInput) => Promise<ArtifactAppWithVersion>;
   getArtifactAppByAppId: (query: ArtifactAppQuery) => Promise<IArtifactApp | null>;
   resolveArtifactAppId: (query: ArtifactAppQuery) => Promise<ArtifactAppIdResolution | null>;
-  listArtifactApps: (filter: Partial<IArtifactApp>) => Promise<IArtifactApp[]>;
+  listArtifactApps: (filter: FilterQuery<IArtifactApp>) => Promise<IArtifactApp[]>;
   updateArtifactApp: (
     query: ArtifactAppQuery,
     update: Partial<IArtifactApp>,
@@ -207,7 +207,7 @@ export function createArtifactAppMethods(
     return doc;
   }
 
-  async function listArtifactApps(filter: Partial<IArtifactApp>): Promise<IArtifactApp[]> {
+  async function listArtifactApps(filter: FilterQuery<IArtifactApp>): Promise<IArtifactApp[]> {
     return getApp().find(filter).sort({ updatedAt: -1 }).lean<IArtifactApp[]>().exec();
   }
 

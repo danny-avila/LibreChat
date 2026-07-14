@@ -124,7 +124,7 @@ export {
 };
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
-export { computeSourceHash, ARTIFACT_SCHEMA_VERSION };
+export { createArtifactAppMethods, computeSourceHash, ARTIFACT_SCHEMA_VERSION };
 
 export type AllMethods = UserMethods &
   SessionMethods &
