@@ -123,7 +123,9 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
 /**
  * GPT-5.6 models reject function tools combined with `reasoning_effort` in
  * `/v1/chat/completions` (400: "To use function tools, use /v1/responses or
- * set reasoning_effort to 'none'"), so reasoning requires the Responses API.
+ * set reasoning_effort to 'none'"). Reasoning without tools still works on
+ * Chat Completions, but tools are bound after config time, so GPT-5.6
+ * reasoning requests default to the Responses API to avoid tool failures.
  */
 const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
 
@@ -750,15 +752,18 @@ export function getOpenAILLMConfig({
   /**
    * Default GPT-5.6 reasoning requests to the Responses API unless explicitly set.
    * Reads `llmConfig.model` (reflects `addParams` overrides) and skips when
-   * `dropParams` removes the reasoning payload later anyway.
+   * `dropParams` removes `reasoning_effort` later anyway (`'reasoning'` only
+   * drops the nested object, not the flat param) or opts out of the Responses
+   * API entirely. OpenRouter-backed configs keep their own reasoning path.
    */
-  const reasoningDropped =
+  const responsesApiOptedOut =
     dropParams != null &&
-    (dropParams.includes('reasoning_effort') || dropParams.includes('reasoning'));
+    (dropParams.includes('reasoning_effort') || dropParams.includes('useResponsesApi'));
   if (
+    !useOpenRouter &&
     endpoint === EModelEndpoint.openAI &&
     llmConfig.useResponsesApi == null &&
-    !reasoningDropped &&
+    !responsesApiOptedOut &&
     requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
   ) {
     llmConfig.useResponsesApi = true;
