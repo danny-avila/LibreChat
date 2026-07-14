@@ -559,11 +559,57 @@ describe('BackgroundTaskRegistryClass', () => {
     if ('atCapacity' in created) {
       throw new Error('unexpected capacity');
     }
-    // backdate creation past the 30-min running TTL, then trigger a sweep
+    // backdate all activity past the 30-min running-silence TTL, then sweep
     created.task.createdAt = Date.now() - 31 * 60 * 1000;
+    created.task.updatedAt = created.task.createdAt;
     registry.list('u1', 'c1');
     expect(created.task.status).toBe('error');
     expect(created.task.error).toBe('Background task timed out');
+  });
+
+  it('keeps a silent-but-reporting long task alive, up to the absolute age cap', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_long',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    // 31 minutes old but progress arrived recently: stays running
+    created.task.createdAt = Date.now() - 31 * 60 * 1000;
+    registry.setProgress('u1', 'c1', created.task.id, { progress: 5, total: 10 });
+    registry.list('u1', 'c1');
+    expect(created.task.status).toBe('running');
+
+    // past the absolute 6h cap: reaped even with fresh progress
+    created.task.createdAt = Date.now() - 6 * 60 * 60 * 1000 - 1000;
+    registry.setProgress('u1', 'c1', created.task.id, { progress: 6, total: 10 });
+    registry.list('u1', 'c1');
+    expect(created.task.status).toBe('error');
+  });
+
+  it('rejects non-finite and clamps out-of-range background progress', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_badprog',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.setProgress('u1', 'c1', created.task.id, { progress: Infinity, total: 10 });
+    expect(created.task.progress).toBeUndefined();
+    registry.setProgress('u1', 'c1', created.task.id, { progress: -1, total: 10 });
+    expect(created.task.progress).toBe(0);
+    registry.setProgress('u1', 'c1', created.task.id, { progress: 5, total: Infinity });
+    expect(created.task.progress).toBe(0);
+    registry.setProgress('u1', 'c1', created.task.id, { progress: 5, total: 10 });
+    expect(created.task.progress).toBe(0.5);
   });
 
   it('sweeps an expired completed task on direct get() (no indefinite retention)', () => {

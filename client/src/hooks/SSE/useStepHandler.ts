@@ -294,6 +294,27 @@ export default function useStepHandler({
   );
 
   /**
+   * Clears live progress for the tool calls of a freshly-started run step:
+   * providers reissue ids (e.g. `call_0`) across tool turns within one run,
+   * so a new call must never inherit a prior call's progress state.
+   */
+  const clearToolProgressForStep = useRecoilCallback(
+    ({ set }) =>
+      (runId: string, toolCallIds: Array<string | undefined>): void => {
+        for (const toolCallId of toolCallIds) {
+          if (!toolCallId) {
+            continue;
+          }
+          const atomKey = toolProgressKey(runId, toolCallId);
+          if (knownToolProgressAtomKeys.current.has(atomKey)) {
+            set(toolProgressByToolCallId(atomKey), null);
+          }
+        }
+      },
+    [],
+  );
+
+  /**
    * Live tool progress is meaningful only for the run that produced it, and
    * providers reuse tool-call ids (e.g. `call_0`) across turns — so these
    * atoms clear at the start of every new submission (`clearStepMaps`),
@@ -657,6 +678,13 @@ export default function useStepHandler({
         }
 
         stepMap.current.set(runStep.id, runStep);
+
+        if (runStep.stepDetails?.type === StepTypes.TOOL_CALLS) {
+          clearToolProgressForStep(
+            responseMessageId,
+            (runStep.stepDetails.tool_calls ?? []).map((toolCall) => toolCall.id),
+          );
+        }
 
         // Calculate content index - use server index, offset by initialContent for edit scenarios
         const contentIndex = runStep.index + initialContent.length;
@@ -1124,6 +1152,7 @@ export default function useStepHandler({
       getCurrentMessages,
       applySubagentUpdate,
       applyToolProgress,
+      clearToolProgressForStep,
       onSkillAuthoringComplete,
     ],
   );

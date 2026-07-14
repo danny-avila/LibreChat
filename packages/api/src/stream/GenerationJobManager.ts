@@ -1206,6 +1206,9 @@ class GenerationJobManagerClass {
     if (!runtime || runtime.abortController.signal.aborted) {
       return;
     }
+    /** A long tool call may emit ONLY progress for minutes: refresh liveness so
+     *  the stale-job reaper doesn't abort an actively-reporting run. */
+    this.jobStore.recordActivity?.(streamId);
     if (!runtime.hasSubscriber && !this._isRedis) {
       return;
     }

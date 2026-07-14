@@ -456,10 +456,13 @@ interface TaskBucket {
 
 const COMPLETED_TASK_TTL_MS = 60 * 60 * 1000;
 const IDLE_BUCKET_TTL_MS = 6 * 60 * 60 * 1000;
-/** Max wall-clock a task may stay `running` before being reaped as timed-out,
- *  so a detached call that never settles (hung network / lost MCP connection)
- *  can't hold a running slot and exhaust the per-conversation cap forever. */
+/** Max SILENCE (no completion, no progress) before a running task is reaped as
+ *  timed-out, so a detached call that never settles (hung network / lost MCP
+ *  connection) can't hold a running slot forever — while a long task that keeps
+ *  reporting progress stays alive up to the absolute cap below. */
 const RUNNING_TASK_TTL_MS = 30 * 60 * 1000;
+/** Absolute running-age ceiling regardless of progress chatter. */
+const MAX_RUNNING_AGE_MS = 6 * 60 * 60 * 1000;
 const MAX_RUNNING_PER_BUCKET = 10;
 const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
@@ -514,7 +517,10 @@ export class BackgroundTaskRegistryClass {
 
   private sweepBucketTasks(bucket: TaskBucket, now: number): void {
     for (const [taskId, task] of bucket.tasks) {
-      if (task.status === 'running' && now - task.createdAt > RUNNING_TASK_TTL_MS) {
+      if (
+        task.status === 'running' &&
+        (now - task.updatedAt > RUNNING_TASK_TTL_MS || now - task.createdAt > MAX_RUNNING_AGE_MS)
+      ) {
         /** Reap a stuck task: freeing the running slot (it no longer counts
          *  toward the cap) and letting the completed-task TTL evict it. */
         task.status = 'error';
@@ -685,21 +691,23 @@ export class BackgroundTaskRegistryClass {
   ): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.status !== 'running') {
+    if (!task || task.status !== 'running' || !Number.isFinite(update.progress)) {
       return;
     }
     let fraction: number | undefined;
-    if (update.total != null && update.total > 0) {
-      fraction = Math.min(update.progress / update.total, 1);
+    if (Number.isFinite(update.total) && (update.total as number) > 0) {
+      fraction = update.progress / (update.total as number);
     } else if (update.progress >= 0 && update.progress <= 1) {
       fraction = update.progress;
     }
     if (fraction != null) {
-      task.progress = fraction;
+      task.progress = Math.min(Math.max(fraction, 0), 1);
     }
     if (typeof update.message === 'string' && update.message !== '') {
       task.progressMessage = update.message.slice(0, MAX_PROGRESS_MESSAGE_CHARS);
     }
+    /** Also treated as liveness: the running reap is silence-based, so an
+     *  actively-reporting long task isn't timed out mid-flight. */
     task.updatedAt = Date.now();
   }
 
