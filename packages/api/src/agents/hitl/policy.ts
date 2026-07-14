@@ -346,21 +346,49 @@ function sanitizeParamValue(value: unknown, depth: number): unknown {
  * fails that field, and the schema's `.catch(() => ({}))` drops the WHOLE parse
  * (`model`/`spec` included), surfacing as `missing_model` on resume of a
  * custom-endpoint ephemeral agent (#14253). Convert it back to
- * `{ thinking: boolean, thinkingBudget? }` so the replayed params round-trip cleanly.
+ * `{ thinking: boolean, thinkingBudget?, thinkingDisplay? }` so the replayed params
+ * round-trip cleanly (an explicit `display: 'omitted'` choice survives too).
  */
 function normalizeThinkingParam(params: Record<string, unknown>): void {
   const thinking = params.thinking;
   if (thinking == null || typeof thinking !== 'object' || Array.isArray(thinking)) {
     return;
   }
-  const { type, budget_tokens: budget } = thinking as {
+  const {
+    type,
+    display,
+    budget_tokens: budget,
+  } = thinking as {
     type?: unknown;
+    display?: unknown;
     budget_tokens?: unknown;
   };
   params.thinking = type !== 'disabled';
   if (params.thinkingBudget == null && typeof budget === 'number') {
     params.thinkingBudget = budget;
   }
+  if (params.thinkingDisplay == null && typeof display === 'string') {
+    params.thinkingDisplay = display;
+  }
+}
+
+/**
+ * A non-default adaptive-thinking effort resolves into
+ * `invocationKwargs.output_config.effort` (see `configureReasoning`), while the
+ * request-body schema only accepts a top-level `effort`. Lift it back so the resumed
+ * turn keeps the paused run's effort, and drop `invocationKwargs` entirely — it's
+ * resolved transport config the compact-convo schema would discard anyway.
+ */
+function normalizeEffortParam(params: Record<string, unknown>): void {
+  const kwargs = params.invocationKwargs as { output_config?: { effort?: unknown } } | undefined;
+  if (kwargs == null || typeof kwargs !== 'object') {
+    return;
+  }
+  const effort = kwargs.output_config?.effort;
+  if (params.effort == null && typeof effort === 'string') {
+    params.effort = effort;
+  }
+  delete params.invocationKwargs;
 }
 
 /**
@@ -382,6 +410,7 @@ export function sanitizeResumeModelParameters(
   }
   const sanitized = sanitizeParamValue(params, 0) as Record<string, unknown>;
   normalizeThinkingParam(sanitized);
+  normalizeEffortParam(sanitized);
   return sanitized;
 }
 

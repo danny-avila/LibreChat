@@ -384,6 +384,43 @@ describe('sanitizeResumeModelParameters', () => {
       }),
     ).toEqual({ thinking: true, thinkingBudget: 4096 });
   });
+
+  test('preserves an explicit adaptive `display` as thinkingDisplay (#14253)', () => {
+    // Opus 4.7+ adaptive configs carry `display`; dropping it would demote an
+    // explicit 'omitted' choice back to the default ('summarized') on resume.
+    expect(
+      sanitizeResumeModelParameters({ thinking: { type: 'adaptive', display: 'omitted' } }),
+    ).toEqual({ thinking: true, thinkingDisplay: 'omitted' });
+    // An explicit top-level thinkingDisplay wins over the object's display.
+    expect(
+      sanitizeResumeModelParameters({
+        thinking: { type: 'adaptive', display: 'summarized' },
+        thinkingDisplay: 'omitted',
+      }),
+    ).toEqual({ thinking: true, thinkingDisplay: 'omitted' });
+  });
+
+  test('lifts adaptive effort out of invocationKwargs.output_config (#14253)', () => {
+    // configureReasoning stores a non-default effort at
+    // invocationKwargs.output_config.effort; the request-body schema only accepts
+    // the top-level field, so replaying without the lift loses the effort choice.
+    expect(
+      sanitizeResumeModelParameters({
+        thinking: { type: 'adaptive' },
+        invocationKwargs: { metadata: { user_id: 'u1' }, output_config: { effort: 'max' } },
+      }),
+    ).toEqual({ thinking: true, effort: 'max' });
+    // An existing top-level effort wins; invocationKwargs is always dropped.
+    expect(
+      sanitizeResumeModelParameters({
+        effort: 'low',
+        invocationKwargs: { output_config: { effort: 'max' } },
+      }),
+    ).toEqual({ effort: 'low' });
+    expect(
+      sanitizeResumeModelParameters({ invocationKwargs: { metadata: { user_id: 'u1' } } }),
+    ).toEqual({});
+  });
 });
 
 describe('computeAgentRequestFingerprint', () => {
