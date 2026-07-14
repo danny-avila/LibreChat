@@ -72,4 +72,11 @@ describe('SteerPart author label', () => {
     expect(screen.queryByText('Danny')).toBeNull();
     expect(screen.getByText('com_user_message')).toBeInTheDocument();
   });
+
+  it('shows the steered badge explaining the mid-run message', () => {
+    renderPart();
+    // The badge (with its explanatory tooltip) clarifies why a user message
+    // appears inside the assistant response.
+    expect(screen.getByText('com_ui_steered_label')).toBeInTheDocument();
+  });
 });

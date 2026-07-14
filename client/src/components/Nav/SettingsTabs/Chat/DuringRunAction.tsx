@@ -1,6 +1,6 @@
 import React from 'react';
 import { useRecoilState } from 'recoil';
-import { Button } from '@librechat/client';
+import { Button, InfoHoverCard, ESide } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -27,6 +27,7 @@ const DuringRunAction = () => {
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
         <span id="during-run-action-label">{localize('com_nav_during_run_action')}</span>
+        <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_info_during_run_action')} />
       </div>
       <Button
         variant="outline"
