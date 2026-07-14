@@ -2205,11 +2205,20 @@ export class MCPConnection extends EventEmitter {
    * `terminateSession()` no-ops when there is no session id and already tolerates
    * a 405 (server opts out of termination). Any other failure is non-fatal to
    * teardown, so it is bounded by a timeout and swallowed.
+   *
+   * The transport's `onerror` is detached first: on any non-405 failure (the
+   * session already expired, a network error, or `client.close()` aborting the
+   * request after the timeout) `terminateSession()` invokes `onerror` before
+   * rejecting. Left attached, our handler would emit `connectionChange('error')`
+   * and trigger `handleReconnection()`, reopening the connection we are tearing
+   * down and re-leaking the session. The transport is discarded right after, so
+   * clearing the handler is safe.
    */
   private async terminateStreamableSession(): Promise<void> {
     if (!(this.transport instanceof StreamableHTTPClientTransport)) {
       return;
     }
+    this.transport.onerror = undefined;
     try {
       await withTimeout(
         this.transport.terminateSession(),

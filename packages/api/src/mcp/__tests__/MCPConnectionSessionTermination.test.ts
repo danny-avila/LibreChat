@@ -53,15 +53,20 @@ interface StreamableTestServer {
   url: string;
   deletes: DeleteRecord[];
   liveSessionCount: () => number;
+  sessionsCreated: () => number;
   close: () => Promise<void>;
 }
 
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address() as net.AddressInfo;
-      srv.close((err) => (err ? reject(err) : resolve(addr.port)));
+/**
+ * Bind directly to an ephemeral port and read the assigned port after the server
+ * is listening. Probing for a free port first and reusing it leaves a
+ * bind/listen race where a parallel CI process can claim the port in between.
+ */
+function listenOnEphemeralPort(httpServer: http.Server): Promise<number> {
+  return new Promise((resolve) => {
+    httpServer.listen(0, '127.0.0.1', () => {
+      const addr = httpServer.address() as net.AddressInfo;
+      resolve(addr.port);
     });
   });
 }
@@ -83,23 +88,24 @@ function trackSockets(httpServer: http.Server): () => Promise<void> {
 }
 
 /**
- * Streamable HTTP server that records every DELETE it receives. `rejectDelete`
- * simulates a server that opts out of termination by replying 405 before the SDK
- * transport handles the request.
+ * Streamable HTTP server that records every DELETE it receives. `deleteStatus`
+ * intercepts DELETE with that status before the SDK transport handles it, to
+ * simulate a server that opts out of termination (405) or fails it (500).
  */
 async function createStreamableServer(
-  options: { rejectDelete?: boolean } = {},
+  options: { deleteStatus?: number } = {},
 ): Promise<StreamableTestServer> {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const deletes: DeleteRecord[] = [];
+  let sessionsCreated = 0;
 
   const httpServer = http.createServer(async (req, res) => {
     const sid = req.headers['mcp-session-id'] as string | undefined;
 
     if (req.method === 'DELETE') {
       deletes.push({ sessionId: sid });
-      if (options.rejectDelete) {
-        res.writeHead(405).end();
+      if (options.deleteStatus != null) {
+        res.writeHead(options.deleteStatus).end();
         return;
       }
     }
@@ -122,6 +128,7 @@ async function createStreamableServer(
      * via `onclose` when it handled the client's DELETE.
      */
     if (isNewTransport && transport.sessionId) {
+      sessionsCreated += 1;
       const registeredId = transport.sessionId;
       sessions.set(registeredId, transport);
       transport.onclose = () => sessions.delete(registeredId);
@@ -129,13 +136,13 @@ async function createStreamableServer(
   });
 
   const destroySockets = trackSockets(httpServer);
-  const port = await getFreePort();
-  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', resolve));
+  const port = await listenOnEphemeralPort(httpServer);
 
   return {
     url: `http://127.0.0.1:${port}/`,
     deletes,
     liveSessionCount: () => sessions.size,
+    sessionsCreated: () => sessionsCreated,
     close: async () => {
       const closing = [...sessions.values()].map((t) => t.close().catch(() => undefined));
       sessions.clear();
@@ -186,8 +193,7 @@ async function createSSEServer(): Promise<SSETestServer> {
   });
 
   const destroySockets = trackSockets(httpServer);
-  const port = await getFreePort();
-  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', resolve));
+  const port = await listenOnEphemeralPort(httpServer);
 
   return {
     url: `http://127.0.0.1:${port}/sse`,
@@ -236,10 +242,11 @@ function getClientSessionId(conn: MCPConnection): string | undefined {
 }
 
 describe('MCPConnection Streamable HTTP session termination', () => {
-  let server: StreamableTestServer;
+  let server: StreamableTestServer | null;
   let conn: MCPConnection | null;
 
   beforeEach(() => {
+    server = null;
     conn = null;
   });
 
@@ -247,34 +254,37 @@ describe('MCPConnection Streamable HTTP session termination', () => {
     MCPConnection.clearCooldown('test');
     await safeDisconnect(conn);
     conn = null;
-    await server.close();
+    jest.restoreAllMocks();
+    await server?.close();
   });
 
   it('sends an HTTP DELETE with the session id and frees the server-side session on disconnect', async () => {
-    server = await createStreamableServer();
+    const srv = await createStreamableServer();
+    server = srv;
     conn = new MCPConnection({
       serverName: 'test',
-      serverConfig: { type: 'streamable-http', url: server.url },
+      serverConfig: { type: 'streamable-http', url: srv.url },
       useSSRFProtection: false,
     });
 
     await conn.connect();
     const sessionId = getClientSessionId(conn);
     expect(sessionId).toBeTruthy();
-    expect(server.liveSessionCount()).toBe(1);
+    expect(srv.liveSessionCount()).toBe(1);
 
     await safeDisconnect(conn);
     conn = null;
 
-    expect(server.deletes).toEqual([{ sessionId }]);
-    await waitForCondition(() => server.liveSessionCount() === 0);
+    expect(srv.deletes).toEqual([{ sessionId }]);
+    await waitForCondition(() => srv.liveSessionCount() === 0);
   });
 
   it('terminates the prior session before swapping in a fresh transport on reconnect', async () => {
-    server = await createStreamableServer();
+    const srv = await createStreamableServer();
+    server = srv;
     conn = new MCPConnection({
       serverName: 'test',
-      serverConfig: { type: 'streamable-http', url: server.url },
+      serverConfig: { type: 'streamable-http', url: srv.url },
       useSSRFProtection: false,
     });
 
@@ -287,15 +297,16 @@ describe('MCPConnection Streamable HTTP session termination', () => {
 
     expect(secondSessionId).toBeTruthy();
     expect(secondSessionId).not.toBe(firstSessionId);
-    expect(server.deletes).toContainEqual({ sessionId: firstSessionId });
-    await waitForCondition(() => server.liveSessionCount() === 1);
+    expect(srv.deletes).toContainEqual({ sessionId: firstSessionId });
+    await waitForCondition(() => srv.liveSessionCount() === 1);
   });
 
   it('does not throw when the server rejects termination with 405', async () => {
-    server = await createStreamableServer({ rejectDelete: true });
+    const srv = await createStreamableServer({ deleteStatus: 405 });
+    server = srv;
     conn = new MCPConnection({
       serverName: 'test',
-      serverConfig: { type: 'streamable-http', url: server.url },
+      serverConfig: { type: 'streamable-http', url: srv.url },
       useSSRFProtection: false,
     });
 
@@ -305,27 +316,65 @@ describe('MCPConnection Streamable HTTP session termination', () => {
     await expect(safeDisconnect(conn)).resolves.toBeUndefined();
     conn = null;
 
-    expect(server.deletes).toEqual([{ sessionId }]);
+    expect(srv.deletes).toEqual([{ sessionId }]);
+  });
+
+  it('does not trigger reconnection when the termination DELETE fails', async () => {
+    const srv = await createStreamableServer({ deleteStatus: 500 });
+    server = srv;
+    conn = new MCPConnection({
+      serverName: 'test',
+      serverConfig: { type: 'streamable-http', url: srv.url },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+    const sessionId = getClientSessionId(conn);
+    expect(srv.sessionsCreated()).toBe(1);
+
+    /**
+     * A failed DELETE makes the SDK invoke `transport.onerror`. If that were
+     * still wired to our handler it would emit `connectionChange('error')` and
+     * reconnect mid-teardown, so spy on the reconnection entrypoint. Disconnect
+     * directly (not `safeDisconnect`, which sets `shouldStopReconnecting` and
+     * would mask the bug).
+     */
+    const reconnectSpy = jest
+      .spyOn(conn as unknown as { handleReconnection: () => Promise<void> }, 'handleReconnection')
+      .mockResolvedValue(undefined);
+
+    await conn.disconnect();
+
+    expect(srv.deletes).toEqual([{ sessionId }]);
+    expect(reconnectSpy).not.toHaveBeenCalled();
+    expect(srv.sessionsCreated()).toBe(1);
+    conn = null;
   });
 });
 
 describe('MCPConnection SSE session termination', () => {
-  let server: SSETestServer;
+  let server: SSETestServer | null;
   let conn: MCPConnection | null;
+
+  beforeEach(() => {
+    server = null;
+    conn = null;
+  });
 
   afterEach(async () => {
     MCPConnection.clearCooldown('test-sse');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();
-    await server.close();
+    await server?.close();
   });
 
   it('does not send a DELETE for a non-streamable transport', async () => {
-    server = await createSSEServer();
+    const srv = await createSSEServer();
+    server = srv;
     conn = new MCPConnection({
       serverName: 'test-sse',
-      serverConfig: { type: 'sse', url: server.url },
+      serverConfig: { type: 'sse', url: srv.url },
       useSSRFProtection: false,
     });
 
@@ -333,6 +382,6 @@ describe('MCPConnection SSE session termination', () => {
     await safeDisconnect(conn);
     conn = null;
 
-    expect(server.deletes).toEqual([]);
+    expect(srv.deletes).toEqual([]);
   });
 });
