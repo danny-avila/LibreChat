@@ -1414,5 +1414,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "アドバイスが季節に適していません",
   "com_ui_feedback_tag_not_satisfied": "満足していません",
   "com_ui_feedback_tag_will_not_recommend": "他の人には勧めません",
-  "com_ui_feedback_tag_inappropriate_response": "不適切な応答"
+  "com_ui_feedback_tag_inappropriate_response": "不適切な応答",
+  "com_ui_feedback_tag_other_positive": "その他"
 }

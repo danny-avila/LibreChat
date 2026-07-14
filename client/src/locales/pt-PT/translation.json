@@ -1328,5 +1328,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "O conselho não é adequado à estação",
   "com_ui_feedback_tag_not_satisfied": "Não satisfeito",
   "com_ui_feedback_tag_will_not_recommend": "Não recomendarei",
-  "com_ui_feedback_tag_inappropriate_response": "Resposta inadequada"
+  "com_ui_feedback_tag_inappropriate_response": "Resposta inadequada",
+  "com_ui_feedback_tag_other_positive": "Outros"
 }

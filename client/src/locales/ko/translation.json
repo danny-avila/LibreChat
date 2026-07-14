@@ -1176,5 +1176,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "조언이 계절에 맞지 않습니다",
   "com_ui_feedback_tag_not_satisfied": "만족하지 않습니다",
   "com_ui_feedback_tag_will_not_recommend": "추천하지 않겠습니다",
-  "com_ui_feedback_tag_inappropriate_response": "부적절한 응답"
+  "com_ui_feedback_tag_inappropriate_response": "부적절한 응답",
+  "com_ui_feedback_tag_other_positive": "기타"
 }

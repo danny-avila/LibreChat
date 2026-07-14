@@ -799,5 +799,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "Het advies past niet bij het seizoen",
   "com_ui_feedback_tag_not_satisfied": "Niet tevreden",
   "com_ui_feedback_tag_will_not_recommend": "Ik zal het niet aanbevelen",
-  "com_ui_feedback_tag_inappropriate_response": "Ongepaste reactie"
+  "com_ui_feedback_tag_inappropriate_response": "Ongepaste reactie",
+  "com_ui_feedback_tag_other_positive": "Overige"
 }

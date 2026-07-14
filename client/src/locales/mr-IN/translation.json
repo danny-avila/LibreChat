@@ -2048,5 +2048,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "सल्ला हंगामाशी जुळत नाही",
   "com_ui_feedback_tag_not_satisfied": "समाधानी नाही",
   "com_ui_feedback_tag_will_not_recommend": "शिफारस करणार नाही",
-  "com_ui_feedback_tag_inappropriate_response": "अयोग्य प्रतिसाद"
+  "com_ui_feedback_tag_inappropriate_response": "अयोग्य प्रतिसाद",
+  "com_ui_feedback_tag_other_positive": "इतर"
 }

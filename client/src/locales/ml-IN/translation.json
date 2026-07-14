@@ -2048,5 +2048,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "ഉപദേശം സീസണിന് അനുയോജ്യമല്ല",
   "com_ui_feedback_tag_not_satisfied": "സംതൃപ്തനല്ല",
   "com_ui_feedback_tag_will_not_recommend": "ശുപാർശ ചെയ്യില്ല",
-  "com_ui_feedback_tag_inappropriate_response": "അനുചിതമായ പ്രതികരണം"
+  "com_ui_feedback_tag_inappropriate_response": "അനുചിതമായ പ്രതികരണം",
+  "com_ui_feedback_tag_other_positive": "മറ്റുള്ളവ"
 }

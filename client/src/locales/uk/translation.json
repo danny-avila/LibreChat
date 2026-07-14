@@ -1349,5 +1349,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "Порада не відповідає сезону",
   "com_ui_feedback_tag_not_satisfied": "Не задоволений",
   "com_ui_feedback_tag_will_not_recommend": "Не рекомендуватиму",
-  "com_ui_feedback_tag_inappropriate_response": "Недоречна відповідь"
+  "com_ui_feedback_tag_inappropriate_response": "Недоречна відповідь",
+  "com_ui_feedback_tag_other_positive": "Інші"
 }

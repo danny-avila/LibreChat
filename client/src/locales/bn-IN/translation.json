@@ -2048,5 +2048,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "পরামর্শটি মৌসুমের সঙ্গে মানানসই নয়",
   "com_ui_feedback_tag_not_satisfied": "সন্তুষ্ট নই",
   "com_ui_feedback_tag_will_not_recommend": "অন্যদের সুপারিশ করব না",
-  "com_ui_feedback_tag_inappropriate_response": "অনুপযুক্ত প্রতিক্রিয়া"
+  "com_ui_feedback_tag_inappropriate_response": "অনুপযুক্ত প্রতিক্রিয়া",
+  "com_ui_feedback_tag_other_positive": "অন্যান্য"
 }

@@ -2047,5 +2047,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "পৰামৰ্শটো ঋতুৰ সৈতে মিল নাখায়",
   "com_ui_feedback_tag_not_satisfied": "সন্তুষ্ট নহয়",
   "com_ui_feedback_tag_will_not_recommend": "আনক পৰামৰ্শ নিদিওঁ",
-  "com_ui_feedback_tag_inappropriate_response": "অনুপযুক্ত সঁহাৰি"
+  "com_ui_feedback_tag_inappropriate_response": "অনুপযুক্ত সঁহাৰি",
+  "com_ui_feedback_tag_other_positive": "অন্যান্য"
 }
