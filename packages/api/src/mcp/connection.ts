@@ -119,6 +119,8 @@ const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
 const DEFAULT_INIT_TIMEOUT = 30000;
+/** Upper bound on the spec-mandated Streamable HTTP session DELETE so teardown never blocks on a hung server */
+const SESSION_TERMINATION_TIMEOUT = 5000;
 /** Max 307/308 redirects to follow per request (prevents redirect loops) */
 const MAX_REDIRECTS = 5;
 const DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -1877,6 +1879,7 @@ export class MCPConnection extends EventEmitter {
       try {
         if (this.transport) {
           try {
+            await this.terminateStreamableSession();
             await this.client.close();
           } catch (error) {
             logger.warn(`${this.getLogPrefix()} Error closing connection:`, error);
@@ -2191,9 +2194,37 @@ export class MCPConnection extends EventEmitter {
     await Promise.all(closing);
   }
 
+  /**
+   * Ends a Streamable HTTP session with the spec-mandated `HTTP DELETE` before
+   * the transport is discarded. Stateful MCP servers (the SDK default) keep each
+   * session's transport, tasks, and buffers in memory with no TTL, so without an
+   * explicit DELETE every idle eviction, reconnect, or restart leaks one
+   * server-side session. Must run before `client.close()`, which aborts the
+   * transport's controller and would cancel the in-flight DELETE.
+   *
+   * `terminateSession()` no-ops when there is no session id and already tolerates
+   * a 405 (server opts out of termination). Any other failure is non-fatal to
+   * teardown, so it is bounded by a timeout and swallowed.
+   */
+  private async terminateStreamableSession(): Promise<void> {
+    if (!(this.transport instanceof StreamableHTTPClientTransport)) {
+      return;
+    }
+    try {
+      await withTimeout(
+        this.transport.terminateSession(),
+        SESSION_TERMINATION_TIMEOUT,
+        `Streamable HTTP session termination timed out after ${SESSION_TERMINATION_TIMEOUT}ms`,
+      );
+    } catch (error) {
+      logger.debug(`${this.getLogPrefix()} Error terminating streamable HTTP session:`, error);
+    }
+  }
+
   public async disconnect(resetCycleTracking = true): Promise<void> {
     try {
       if (this.transport) {
+        await this.terminateStreamableSession();
         await this.client.close();
         this.transport = null;
       }
