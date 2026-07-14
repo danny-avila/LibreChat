@@ -897,7 +897,19 @@ export class RedisJobStore implements IJobStore {
     if (graphRef) {
       const graph = graphRef.deref();
       if (graph) {
-        const localParts = graph.getContentParts();
+        // A graph paused on a HITL interrupt lingers behind the WeakRef after its
+        // client is disposed, with its internal arrays (`messages`, `contentData`)
+        // left null/uninitialized. `getContentParts()` derefs them with no null guard
+        // and throws (e.g. "Cannot read properties of null (reading 'slice')"), which
+        // would abort the resumed turn. Treat any failure as a cache miss and fall
+        // through to the durable Redis reconstruction below.
+        let localParts: Agents.MessageContentComplex[] | undefined;
+        try {
+          localParts = graph.getContentParts();
+        } catch {
+          this.localGraphCache.delete(streamId);
+          localParts = undefined;
+        }
         if (localParts && localParts.length > 0) {
           return {
             content: localParts,
@@ -967,7 +979,16 @@ export class RedisJobStore implements IJobStore {
     if (graphRef) {
       const graph = graphRef.deref();
       if (graph) {
-        const localSteps = graph.getRunSteps();
+        // See getContentParts: a disposed graph behind the WeakRef can have a null
+        // `contentData`, so `getRunSteps()` throws (e.g. "this.contentData is not
+        // iterable"). Treat any failure as a cache miss and fall through to Redis.
+        let localSteps: Agents.RunStep[] | undefined;
+        try {
+          localSteps = graph.getRunSteps();
+        } catch {
+          this.localGraphCache.delete(streamId);
+          localSteps = undefined;
+        }
         if (localSteps && localSteps.length > 0) {
           return localSteps;
         }

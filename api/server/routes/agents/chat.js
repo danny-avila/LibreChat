@@ -63,6 +63,33 @@ const restoreResumeContext = async (req, res, next) => {
       if (resumedModelParameters && typeof resumedModelParameters === 'object') {
         const { model: _replayedModel, ...replayParams } = resumedModelParameters;
         Object.assign(req.body, replayParams);
+        // The resolved llmConfig sets `thinking` to an OBJECT ({ type: 'enabled' |
+        // 'adaptive', budget_tokens }) for Anthropic Opus/Sonnet 4+. `parseCompactConvo`
+        // (buildEndpointOption) only accepts a BOOLEAN `thinking`; replaying the object
+        // fails the compact-convo schema, which is swallowed and returns {}, wiping
+        // `model`/`spec` -> the ephemeral agent rebuilds with no model and resume dies
+        // with `missing_model`. Drop the non-boolean value; `thinking` is re-derived
+        // server-side during llmConfig resolution, so extended thinking is preserved.
+        if (typeof req.body.thinking !== 'boolean') {
+          delete req.body.thinking;
+        }
+      }
+      // The ephemeral agent id (used as the LangGraph node name and therefore the HITL
+      // checkpoint namespace) embeds `sender = model_parameters.modelLabel ?? modelSpec.label
+      // ?? modelDisplayLabel` (see loadEphemeralAgent). `modelLabel` is stripped from the
+      // resolved llmConfig captured for resume, so the replay above can't restore it; resume
+      // then falls back to modelSpec.label -> a DIFFERENT agent id -> the interrupt checkpoint
+      // (namespaced by the PAUSED id) can't be re-entered, so the run resumes with an empty
+      // graph and silently never continues. Restore modelLabel from the pinned spec preset so
+      // the rebuilt id matches the paused one. No-op when the spec has no preset.modelLabel
+      // (both turns then already agree on modelSpec.label).
+      const spec = req.body?.spec;
+      if (spec && req.body.modelLabel == null) {
+        const modelSpec = req.config?.modelSpecs?.list?.find((s) => s.name === spec);
+        const specModelLabel = modelSpec?.preset?.modelLabel;
+        if (specModelLabel != null) {
+          req.body.modelLabel = specModelLabel;
+        }
       }
     }
   } catch (err) {
