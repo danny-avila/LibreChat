@@ -3,11 +3,13 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
 import { requiresEphemeralUserConnection } from './utils';
+import { isToolHiddenFromModel } from './apps';
 
 export interface MCPToolInput {
   name: string;
   description?: string;
   inputSchema?: JsonSchemaType;
+  _meta?: Record<string, unknown>;
 }
 
 export interface MCPToolCacheDeps {
@@ -89,6 +91,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       }
 
       for (const tool of tools) {
+        if (isToolHiddenFromModel(tool)) {
+          continue;
+        }
         const name = `${tool.name}${mcpDelimiter}${serverName}`;
         const entry: LCFunctionTool = {
           type: 'function',

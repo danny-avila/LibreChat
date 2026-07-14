@@ -1,33 +1,42 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import Markdown from '../Markdown';
-import MarkdownLite from '../MarkdownLite';
 import { RecoilRoot } from 'recoil';
-import { UI_RESOURCE_MARKER } from '~/components/MCPUIResource/plugin';
+import { render, screen } from '@testing-library/react';
 import {
   useMessageContext,
   useOptionalMessagesConversation,
   useOptionalMessagesOperations,
 } from '~/Providers';
+import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import { UI_RESOURCE_MARKER } from '~/components/MCPUIResource/plugin';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import MarkdownLite from '../MarkdownLite';
 import { useLocalize } from '~/hooks';
+import Markdown from '../Markdown';
 
-// Mocks for hooks used by MCPUIResource when rendered inside Markdown.
-// Keep Provider components intact while mocking only the hooks we use.
 jest.mock('~/Providers', () => ({
   ...jest.requireActual('~/Providers'),
   useMessageContext: jest.fn(),
   useOptionalMessagesConversation: jest.fn(),
   useOptionalMessagesOperations: jest.fn(),
+  useIsMessagesViewReadOnly: jest.fn(() => false),
 }));
 jest.mock('~/data-provider');
 jest.mock('~/hooks');
+jest.mock('~/hooks/Messages/useConversationUIResources');
 
-// Mock @mcp-ui/client to render identifiable elements for assertions
-jest.mock('@mcp-ui/client', () => ({
-  UIResourceRenderer: ({ resource }: any) => (
-    <div data-testid="ui-resource-renderer" data-resource-uri={resource?.uri} />
-  ),
+jest.mock('~/utils/mcpApps', () => ({
+  isMcpAppResource: (r) =>
+    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
+  buildAppToolResult: jest.fn(),
+  getMCPSandboxUrl: () => 'http://localhost/sandbox',
+  callMCPAppTool: jest.fn(),
+  readMCPResource: jest.fn(),
+  fetchMCPResourceHtml: jest.fn(),
+}));
+
+jest.mock('~/hooks/MCP', () => ({
+  useAppBridge: jest.fn(),
+  useMCPIconMap: () => new Map(),
 }));
 
 const mockUseMessageContext = useMessageContext as jest.MockedFunction<typeof useMessageContext>;
@@ -37,43 +46,50 @@ const mockUseMessagesConversation = useOptionalMessagesConversation as jest.Mock
 const mockUseMessagesOperations = useOptionalMessagesOperations as jest.MockedFunction<
   typeof useOptionalMessagesOperations
 >;
+const mockUseConversationUIResources = useConversationUIResources as jest.MockedFunction<
+  typeof useConversationUIResources
+>;
 const mockUseGetMessagesByConvoId = useGetMessagesByConvoId as jest.MockedFunction<
   typeof useGetMessagesByConvoId
 >;
 const mockUseLocalize = useLocalize as jest.MockedFunction<typeof useLocalize>;
 
 describe('Markdown with MCP UI markers (resource IDs)', () => {
-  let currentTestMessages: any[] = [];
+  let currentTestMessages: Record<string, unknown>[] = [];
 
   beforeEach(() => {
     jest.clearAllMocks();
     currentTestMessages = [];
+    mockUseConversationUIResources.mockReturnValue(new Map());
 
-    mockUseMessageContext.mockReturnValue({ messageId: 'msg-weather' } as any);
+    mockUseMessageContext.mockReturnValue({ messageId: 'msg-weather' } as ReturnType<
+      typeof useMessageContext
+    >);
     mockUseMessagesConversation.mockReturnValue({
       conversation: { conversationId: 'conv1' },
       conversationId: 'conv1',
-    } as any);
+    } as ReturnType<typeof useOptionalMessagesConversation>);
     mockUseMessagesOperations.mockReturnValue({
       ask: jest.fn(),
       getMessages: () => currentTestMessages,
-    } as any);
-    mockUseLocalize.mockReturnValue(((key: string) => key) as any);
+    } as unknown as ReturnType<typeof useOptionalMessagesOperations>);
+    mockUseLocalize.mockReturnValue(((key: string) => key) as ReturnType<typeof useLocalize>);
   });
 
   it('renders two UIResourceRenderer components for markers with resource IDs across separate attachments', () => {
-    // Two tool responses, each produced one ui_resources attachment
     const paris = {
       resourceId: 'abc123',
       uri: 'ui://weather/paris',
-      mimeType: 'text/html',
-      text: '<div>Paris Weather</div>',
+      mimeType: 'text/html;profile=mcp-app',
+      toolName: 'get_weather',
+      serverName: 'weather-server',
     };
     const nyc = {
       resourceId: 'def456',
       uri: 'ui://weather/nyc',
-      mimeType: 'text/html',
-      text: '<div>NYC Weather</div>',
+      mimeType: 'text/html;profile=mcp-app',
+      toolName: 'get_weather',
+      serverName: 'weather-server',
     };
 
     currentTestMessages = [
@@ -86,7 +102,15 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
       },
     ];
 
-    mockUseGetMessagesByConvoId.mockReturnValue({ data: currentTestMessages } as any);
+    mockUseGetMessagesByConvoId.mockReturnValue({ data: currentTestMessages } as ReturnType<
+      typeof useGetMessagesByConvoId
+    >);
+    mockUseConversationUIResources.mockReturnValue(
+      new Map([
+        ['abc123', paris],
+        ['def456', nyc],
+      ]),
+    );
 
     const content = [
       'Here are the current weather conditions for both Paris and New York:',
@@ -103,10 +127,8 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
       </RecoilRoot>,
     );
 
-    const renderers = screen.getAllByTestId('ui-resource-renderer');
-    expect(renderers).toHaveLength(2);
-    expect(renderers[0]).toHaveAttribute('data-resource-uri', 'ui://weather/paris');
-    expect(renderers[1]).toHaveAttribute('data-resource-uri', 'ui://weather/nyc');
+    const iframes = document.querySelectorAll('iframe[data-sandbox-url]');
+    expect(iframes).toHaveLength(2);
   });
 });
 

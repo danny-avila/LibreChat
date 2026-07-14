@@ -240,6 +240,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['yaml.com'],
         allowedAddresses: ['10.0.0.0/8'],
         useSSRFProtection: false,
+        appsEnabled: true,
       });
     });
 
@@ -249,6 +250,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: undefined,
         allowedAddresses: undefined,
         useSSRFProtection: true,
+        appsEnabled: true,
       });
     });
 
@@ -266,6 +268,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['admin-added.com'],
         allowedAddresses: ['172.16.0.0/12'],
         useSSRFProtection: false,
+        appsEnabled: true,
       });
     });
 
@@ -277,6 +280,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['yaml.com'],
         allowedAddresses: null,
         useSSRFProtection: false,
+        appsEnabled: true,
       });
     });
 

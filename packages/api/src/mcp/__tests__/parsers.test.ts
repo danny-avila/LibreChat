@@ -1,5 +1,5 @@
-import { formatToolContent } from '../parsers';
 import type * as t from '../types';
+import { formatToolContent } from '../parsers';
 
 describe('formatToolContent', () => {
   describe('unrecognized providers', () => {
@@ -256,8 +256,8 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'ui://carousel',
-              mimeType: 'application/json',
-              text: '{"items": []}',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<div>carousel</div>',
             },
           },
         ],
@@ -268,16 +268,178 @@ describe('formatToolContent', () => {
       expect(content).toContain('UI Resource ID:');
       expect(content).toContain('UI Resource Marker: \\ui{');
       expect(content).toContain('Resource URI: ui://carousel');
-      expect(content).toContain('Resource MIME Type: application/json');
+      expect(content).toContain('Resource MIME Type: text/html;profile=mcp-app');
 
       const uiResourceArtifact = artifacts?.ui_resources?.data?.[0];
       expect(uiResourceArtifact).toBeTruthy();
       expect(uiResourceArtifact).toMatchObject({
         uri: 'ui://carousel',
-        mimeType: 'application/json',
-        text: '{"items": []}',
+        mimeType: 'text/html;profile=mcp-app',
+        text: '<div>carousel</div>',
       });
       expect(uiResourceArtifact?.resourceId).toEqual(expect.any(String));
+    });
+
+    it('treats non-HTML ui:// resources as plain text rather than renderable markers', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'ui://legacy',
+              mimeType: 'application/json',
+              text: '{"items": []}',
+            },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+      expect(content).toContain('Resource Text: {"items": []}');
+      expect(content).toContain('Resource URI: ui://legacy');
+      expect(content).not.toContain('UI Resource Marker:');
+      expect(artifacts).toBeUndefined();
+    });
+
+    it('attaches the tool result to embedded mcp-app resources for the app bridge', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'ui://app',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>hi</p>',
+            },
+          },
+        ],
+        structuredContent: { count: 3 },
+        isError: false,
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+      });
+
+      const uiResourceArtifact = artifacts?.ui_resources?.data?.[0];
+      expect(uiResourceArtifact).toMatchObject({
+        uri: 'ui://app',
+        serverName: 'srv',
+        toolName: 'do_thing',
+        structuredContent: { count: 3 },
+      });
+      expect(uiResourceArtifact?.content).toEqual(result.content);
+    });
+
+    it('renders a plain text/html ui:// resource statically without app-bridge metadata', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://static', mimeType: 'text/html', text: '<p>hi</p>' },
+          },
+        ],
+        structuredContent: { count: 3 },
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+      });
+
+      const uiResourceArtifact = artifacts?.ui_resources?.data?.[0];
+      expect(content).toContain('UI Resource Marker:');
+      expect(uiResourceArtifact).toMatchObject({ uri: 'ui://static' });
+      expect(uiResourceArtifact?.serverName).toBeUndefined();
+      expect(uiResourceArtifact?.toolName).toBeUndefined();
+      expect(uiResourceArtifact?.structuredContent).toBeUndefined();
+      expect(uiResourceArtifact?.resultMeta).toBeUndefined();
+    });
+
+    it('still synthesizes the tool-declared app when the result returns a different ui:// resource', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'ui://chart',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<p>c</p>',
+            },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+      });
+
+      const uris = (artifacts?.ui_resources?.data ?? []).map((r) => r.uri);
+      expect(uris).toContain('ui://chart');
+      expect(uris).toContain('ui://app');
+    });
+
+    it('does not double-synthesize when the returned resource is the declared app', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: 'text/html;profile=mcp-app', text: '<p>a</p>' },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+      });
+
+      const uris = (artifacts?.ui_resources?.data ?? []).map((r) => r.uri);
+      expect(uris).toEqual(['ui://app']);
+    });
+
+    it('suppresses embedded ui:// resources when apps are disabled for the scope', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: 'text/html', text: '<p>hi</p>' },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        enableApps: false,
+      });
+
+      expect(artifacts?.ui_resources).toBeUndefined();
+      expect(content).toContain('Resource URI: ui://app');
+      expect(content).not.toContain('UI Resource Marker:');
+    });
+
+    it('gives embedded ui:// resources distinct ids per tool result payload', () => {
+      const resourceIdFor = (sc: Record<string, unknown>) =>
+        formatToolContent(
+          {
+            content: [
+              {
+                type: 'resource',
+                resource: { uri: 'ui://app', mimeType: 'text/html', text: '<p>same</p>' },
+              },
+            ],
+            structuredContent: sc,
+          } as t.MCPToolCallResponse,
+          'openai',
+          { serverName: 'srv', toolName: 'do_thing' },
+        )[1]?.ui_resources?.data?.[0]?.resourceId;
+
+      expect(resourceIdFor({ a: 1 })).not.toEqual(resourceIdFor({ a: 2 }));
     });
 
     it('should handle regular resources', () => {
@@ -329,8 +491,8 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'ui://button',
-              mimeType: 'application/json',
-              text: '{"label": "Click me"}',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<button>Click me</button>',
             },
           },
           {
@@ -348,14 +510,14 @@ describe('formatToolContent', () => {
       expect(content).toContain('Some text');
       expect(content).toContain('UI Resource Marker: \\ui{');
       expect(content).toContain('Resource URI: ui://button');
-      expect(content).toContain('Resource MIME Type: application/json');
+      expect(content).toContain('Resource MIME Type: text/html;profile=mcp-app');
       expect(content).toContain('Resource URI: file://data.csv');
 
       const uiResource = artifacts?.ui_resources?.data?.[0];
       expect(uiResource).toMatchObject({
         uri: 'ui://button',
-        mimeType: 'application/json',
-        text: '{"label": "Click me"}',
+        mimeType: 'text/html;profile=mcp-app',
+        text: '<button>Click me</button>',
       });
       expect(uiResource?.resourceId).toEqual(expect.any(String));
     });
@@ -369,8 +531,8 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'ui://graph',
-              mimeType: 'application/json',
-              text: '{"type": "line"}',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<svg>graph</svg>',
             },
           },
         ],
@@ -381,7 +543,7 @@ describe('formatToolContent', () => {
       expect(content).toContain('Content with multimedia');
       expect(content).toContain('UI Resource Marker: \\ui{');
       expect(content).toContain('Resource URI: ui://graph');
-      expect(content).toContain('Resource MIME Type: application/json');
+      expect(content).toContain('Resource MIME Type: text/html;profile=mcp-app');
       expect(artifacts).toEqual({
         content: [
           {
@@ -393,9 +555,10 @@ describe('formatToolContent', () => {
           data: [
             {
               uri: 'ui://graph',
-              mimeType: 'application/json',
-              text: '{"type": "line"}',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<svg>graph</svg>',
               resourceId: expect.any(String),
+              content: expect.any(Array),
             },
           ],
         },
@@ -431,8 +594,8 @@ describe('formatToolContent', () => {
             type: 'resource',
             resource: {
               uri: 'ui://chart',
-              mimeType: 'application/json',
-              text: '{"type": "bar"}',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<svg>chart</svg>',
             },
           },
           {
@@ -454,7 +617,7 @@ describe('formatToolContent', () => {
       expect(content).toContain('UI Resource ID:');
       expect(content).toContain('UI Resource Marker: \\ui{');
       expect(content).toContain('Resource URI: ui://chart');
-      expect(content).toContain('Resource MIME Type: application/json');
+      expect(content).toContain('Resource MIME Type: text/html;profile=mcp-app');
       expect(content).toContain('Resource URI: https://api.example.com/data');
       expect(content).toContain('Conclusion');
       expect(content).toContain('UI Resource Markers Available:');
@@ -473,8 +636,8 @@ describe('formatToolContent', () => {
           data: [
             {
               uri: 'ui://chart',
-              mimeType: 'application/json',
-              text: '{"type": "bar"}',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<svg>chart</svg>',
               resourceId: expect.any(String),
             },
           ],

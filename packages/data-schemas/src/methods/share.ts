@@ -68,6 +68,19 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
 ]);
 
 /**
+ * The MCP tool result `_meta` is carried on a UI resource as `resultMeta` for the App Bridge to
+ * hydrate from, but it is intentionally kept out of the model-visible result and must not become
+ * part of a public shared transcript. MCP apps never render in a shared view anyway, so drop it.
+ */
+function sanitizeSharedUIResource(resource: unknown): unknown {
+  if (!resource || typeof resource !== 'object' || Array.isArray(resource)) {
+    return resource;
+  }
+  const { resultMeta: _resultMeta, ...rest } = resource as Record<string, unknown>;
+  return rest;
+}
+
+/**
  * Strip storage/identity-internal fields from a file or attachment while keeping
  * render-relevant data (including tool-call payloads keyed by tool name).
  */
@@ -78,9 +91,13 @@ function sanitizeSharedFile(value: unknown): t.SharedFile | null {
 
   const result: t.SharedFile = {};
   for (const [key, fieldValue] of Object.entries(value as Record<string, unknown>)) {
-    if (!SENSITIVE_SHARED_FILE_FIELDS.has(key)) {
-      result[key] = fieldValue;
+    if (SENSITIVE_SHARED_FILE_FIELDS.has(key)) {
+      continue;
     }
+    result[key] =
+      key === 'ui_resources' && Array.isArray(fieldValue)
+        ? fieldValue.map(sanitizeSharedUIResource)
+        : fieldValue;
   }
 
   return Object.keys(result).length > 0 ? result : null;
