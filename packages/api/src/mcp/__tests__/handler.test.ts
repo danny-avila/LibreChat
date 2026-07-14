@@ -158,7 +158,9 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     });
 
     it('should discover capabilities from the configured authorization server origin', async () => {
-      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce(undefined);
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
       mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
         issuer: 'https://auth.example.com',
         authorization_endpoint: baseConfig.authorization_url,
