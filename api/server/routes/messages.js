@@ -51,7 +51,11 @@ router.get('/', async (req, res) => {
         { sortField, sortOrder, limit: pageSize, cursor },
       );
     } else if (search) {
-      const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
+      const searchResults = await db.searchMessages(
+        search,
+        { filter: `user = "${user}"`, limit: 1000 },
+        true,
+      );
 
       const messages = searchResults.hits || [];
 
