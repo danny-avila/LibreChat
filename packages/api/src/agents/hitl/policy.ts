@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'crypto';
+import { openAIBaseSchema, googleBaseSchema, anthropicBaseSchema } from 'librechat-data-provider';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import type { ToolPolicyConfig } from '@librechat/agents';
 
@@ -412,6 +413,67 @@ export function sanitizeResumeModelParameters(
   normalizeThinkingParam(sanitized);
   normalizeEffortParam(sanitized);
   return sanitized;
+}
+
+/** Bedrock body params its compact schema accepts; hand-listed because
+ *  `bedrockInputSchema` wraps the pick in a transform, hiding `.shape`. */
+const BEDROCK_PARAM_KEYS = [
+  'region',
+  'system',
+  'maxTokens',
+  'reasoning_effort',
+  'additionalModelRequestFields',
+];
+
+/** Schema-accepted keys owned elsewhere: replayed via {@link RESUME_CONTEXT_KEYS}
+ *  (`model`, `spec`, `promptPrefix`, `modelLabel`) or derived server-side / identity
+ *  fields the resume request must keep as its own. */
+const RESUME_PARAM_EXCLUDED = new Set([
+  'model',
+  'spec',
+  'iconURL',
+  'greeting',
+  'modelLabel',
+  'promptPrefix',
+  'chatProjectId',
+]);
+
+/**
+ * Request-body generation params worth replaying on resume: the union of the
+ * compact-convo schemas' fields. Only these keys can influence the rebuilt run —
+ * `buildOptions` derives `model_parameters` from the PARSED body, and
+ * `parseCompactConvo` strips everything else.
+ */
+const RESUME_PARAM_KEYS: string[] = Array.from(
+  new Set(
+    [openAIBaseSchema, anthropicBaseSchema, googleBaseSchema]
+      .flatMap((schema) => Object.keys(schema.shape))
+      .concat(BEDROCK_PARAM_KEYS),
+  ),
+).filter((key) => !RESUME_PARAM_EXCLUDED.has(key));
+
+/**
+ * Capture the model parameters to replay on resume. The paused request body is the
+ * primary source — its fields are UI-form by construction (they already round-tripped
+ * `parseCompactConvo` on the original turn), so replaying them can't trip the schema.
+ * The resolved llmConfig only fills gaps: it's provider-format, where params are
+ * renamed (`maxOutputTokens` → `maxTokens`, `top_p` → `topP`), relocated
+ * (`effort` → `invocationKwargs`), or retyped (`thinking` → object) — the schema
+ * silently drops or, worse, fails on them (see the `normalize*` helpers, #14253).
+ */
+export function captureResumeModelParameters(
+  body: Record<string, unknown> | undefined | null,
+  resolvedParams: unknown,
+): Record<string, unknown> | undefined {
+  const captured = sanitizeResumeModelParameters(resolvedParams) ?? {};
+  if (body != null && typeof body === 'object') {
+    for (const key of RESUME_PARAM_KEYS) {
+      if (body[key] !== undefined) {
+        captured[key] = sanitizeParamValue(body[key], 1);
+      }
+    }
+  }
+  return Object.keys(captured).length > 0 ? captured : undefined;
 }
 
 /** Extract the graph-determining fields from a request body for durable replay. */

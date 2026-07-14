@@ -8,6 +8,7 @@ import {
   buildPendingAction,
   toClientPendingAction,
   computeAgentRequestFingerprint,
+  captureResumeModelParameters,
   sanitizeResumeModelParameters,
   pickResumeContext,
   applyResumeContext,
@@ -420,6 +421,86 @@ describe('sanitizeResumeModelParameters', () => {
     expect(
       sanitizeResumeModelParameters({ invocationKwargs: { metadata: { user_id: 'u1' } } }),
     ).toEqual({});
+  });
+});
+
+describe('captureResumeModelParameters', () => {
+  test('captures UI-form body params the resolved llmConfig renames or drops (#14253)', () => {
+    // Anthropic resolution renames maxOutputTokens → maxTokens and stop → stopSequences;
+    // replaying only the resolved form would silently reset those on resume.
+    expect(
+      captureResumeModelParameters(
+        {
+          text: 'hi',
+          maxOutputTokens: 8192,
+          stop: ['END'],
+          temperature: 0.3,
+          maxContextTokens: 50000,
+        },
+        { model: 'claude-opus-4', temperature: 0.3, maxTokens: 8192, stopSequences: ['END'] },
+      ),
+    ).toEqual({
+      model: 'claude-opus-4',
+      temperature: 0.3,
+      maxTokens: 8192,
+      stopSequences: ['END'],
+      maxOutputTokens: 8192,
+      stop: ['END'],
+      maxContextTokens: 50000,
+    });
+  });
+
+  test('body values win over the normalized resolved values', () => {
+    expect(
+      captureResumeModelParameters(
+        { thinking: false, effort: 'low' },
+        { thinking: { type: 'adaptive' }, invocationKwargs: { output_config: { effort: 'max' } } },
+      ),
+    ).toEqual({ thinking: false, effort: 'low' });
+  });
+
+  test('resolved params still fill gaps the body lacks (normalized to UI form)', () => {
+    expect(
+      captureResumeModelParameters(
+        {},
+        {
+          thinking: { type: 'adaptive', display: 'omitted' },
+          invocationKwargs: { output_config: { effort: 'max' } },
+        },
+      ),
+    ).toEqual({ thinking: true, thinkingDisplay: 'omitted', effort: 'max' });
+    expect(captureResumeModelParameters({ temperature: 0.5 }, undefined)).toEqual({
+      temperature: 0.5,
+    });
+  });
+
+  test('only replays schema-known generation params; identity fields stay owned elsewhere', () => {
+    // model/spec/modelLabel/promptPrefix ride RESUME_CONTEXT_KEYS; text/files/etc.
+    // never reach model_parameters (parseCompactConvo strips them).
+    expect(
+      captureResumeModelParameters(
+        {
+          model: 'gpt-5',
+          spec: 'my-spec',
+          modelLabel: 'My Opus',
+          promptPrefix: 'be nice',
+          text: 'hello',
+          conversationId: 'c1',
+          top_p: 0.9,
+        },
+        undefined,
+      ),
+    ).toEqual({ top_p: 0.9 });
+    expect(captureResumeModelParameters({ text: 'hello' }, undefined)).toBeUndefined();
+  });
+
+  test('sanitizes sensitive keys inside captured body values', () => {
+    expect(
+      captureResumeModelParameters(
+        { additionalModelRequestFields: { apiKey: 'sk-live', anthropic_beta: ['x'] } },
+        undefined,
+      ),
+    ).toEqual({ additionalModelRequestFields: { anthropic_beta: ['x'] } });
   });
 });
 
