@@ -1,8 +1,8 @@
 import { memo, useMemo, useState, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { useAtomValue } from 'jotai';
-import { X, Zap } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { TooltipAnchor } from '@librechat/client';
+import { InfoHoverCard, ESide } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
@@ -104,19 +104,8 @@ const SteerPart = memo(function SteerPart({
       <div className="user-turn relative flex w-11/12 flex-col">
         <h2 className={cn('flex select-none items-center gap-1.5 font-semibold', fontSize)}>
           {label}
-          {/* Explains why a user message appears inside the assistant response. */}
-          <TooltipAnchor
-            description={localize('com_ui_steered_info')}
-            render={
-              <span
-                tabIndex={0}
-                className="inline-flex cursor-help items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy dark:text-amber-400"
-              >
-                <Zap className="h-3 w-3" aria-hidden="true" />
-                {localize('com_ui_steered_label')}
-              </span>
-            }
-          />
+          {/* Subtle "?" explaining why a user message appears inside the response. */}
+          <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
           <MessageTimestamp value={timestamp} />
           {onCancel != null && (
             <button

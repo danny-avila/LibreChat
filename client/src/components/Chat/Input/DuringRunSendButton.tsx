@@ -10,7 +10,7 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const ROW_CLASS =
-  'flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
+  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
@@ -23,7 +23,6 @@ function Kbd({ children }: { children: React.ReactNode }) {
 type ActionRow = {
   key: string;
   label: string;
-  description: string;
   kbd: string;
   icon: React.ReactNode;
   disabled?: boolean;
@@ -70,7 +69,6 @@ const DuringRunSendButton = React.memo(
     const steerRow: ActionRow = {
       key: 'steer',
       label: localize('com_ui_steer'),
-      description: localize('com_ui_steer_info'),
       kbd: primary === 'steer' ? '⏎' : modEnter,
       icon: <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />,
       // Gate on availability, not the default action — the row exists to
@@ -81,7 +79,6 @@ const DuringRunSendButton = React.memo(
     const queueRow: ActionRow = {
       key: 'queue',
       label: localize('com_ui_queue'),
-      description: localize('com_ui_queue_info'),
       kbd: primary === 'queue' ? '⏎' : modEnter,
       icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
       onClick: () => runAction((text) => steering.queueFromComposer(text)),
@@ -89,7 +86,6 @@ const DuringRunSendButton = React.memo(
     const interruptRow: ActionRow = {
       key: 'interrupt',
       label: localize('com_ui_interrupt_send'),
-      description: localize('com_ui_interrupt_info'),
       kbd: altEnter,
       icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
       onClick: () => runAction((text) => steering.interruptAndSend(text)),
@@ -127,11 +123,8 @@ const DuringRunSendButton = React.memo(
           gutter={8}
           unmountOnHide
           aria-label={localize('com_ui_during_run_actions')}
-          className="z-50 w-72 rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
+          className="z-50 min-w-[12rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
         >
-          <p className="px-2.5 pb-1 pt-1.5 text-xs text-text-tertiary">
-            {localize('com_ui_during_run_info')}
-          </p>
           {rows.map((row) => (
             <button
               key={row.key}
@@ -140,12 +133,9 @@ const DuringRunSendButton = React.memo(
               aria-disabled={row.disabled === true}
               onClick={row.disabled === true ? undefined : row.onClick}
             >
-              <span className="flex items-center gap-2">
-                {row.icon}
-                {row.label}
-                <Kbd>{row.kbd}</Kbd>
-              </span>
-              <span className="pl-6 text-xs text-text-secondary">{row.description}</span>
+              {row.icon}
+              {row.label}
+              <Kbd>{row.kbd}</Kbd>
             </button>
           ))}
         </Ariakit.Hovercard>

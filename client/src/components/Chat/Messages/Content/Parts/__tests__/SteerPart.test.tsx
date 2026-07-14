@@ -73,10 +73,10 @@ describe('SteerPart author label', () => {
     expect(screen.getByText('com_user_message')).toBeInTheDocument();
   });
 
-  it('shows the steered badge explaining the mid-run message', () => {
+  it('shows a subtle info affordance explaining the mid-run message', () => {
     renderPart();
-    // The badge (with its explanatory tooltip) clarifies why a user message
-    // appears inside the assistant response.
-    expect(screen.getByText('com_ui_steered_label')).toBeInTheDocument();
+    // The "?" InfoHoverCard clarifies why a user message appears inside the
+    // assistant response (its text is the trigger's accessible label).
+    expect(screen.getByLabelText('com_ui_steered_info')).toBeInTheDocument();
   });
 });

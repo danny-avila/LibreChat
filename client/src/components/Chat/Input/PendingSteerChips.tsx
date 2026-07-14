@@ -35,8 +35,6 @@ type MenuEntry = {
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
-  /** Optional secondary line explaining what the entry does. */
-  description?: string;
 };
 
 /** Per-row "…" overflow menu (edit / mode toggle / conversions). */
@@ -51,19 +49,14 @@ function RowMenu({ label, entries }: { label: string; entries: MenuEntry[] }) {
         {entries.map((entry) => (
           <Ariakit.MenuItem
             key={entry.key}
-            className={cn(MENU_ITEM_CLASS, entry.description != null && 'flex-col items-start')}
+            className={MENU_ITEM_CLASS}
             onClick={() => {
               entry.onClick();
               menu.hide();
             }}
           >
-            <span className="flex items-center gap-2">
-              {entry.icon}
-              {entry.label}
-            </span>
-            {entry.description != null && (
-              <span className="pl-6 text-xs text-text-secondary">{entry.description}</span>
-            )}
+            {entry.icon}
+            {entry.label}
           </Ariakit.MenuItem>
         ))}
       </Ariakit.Menu>
@@ -99,9 +92,6 @@ function useDefaultToggleEntry(steering: SteeringControls): MenuEntry {
         next === 'queue'
           ? localize('com_ui_turn_on_queueing')
           : localize('com_ui_turn_on_steering'),
-      // Explain the mode the user would switch TO, since the label alone
-      // ("Turn on queueing") doesn't say what queueing means.
-      description: next === 'queue' ? localize('com_ui_queue_info') : localize('com_ui_steer_info'),
       icon:
         next === 'queue' ? (
           <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />
