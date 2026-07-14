@@ -12,6 +12,7 @@ import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
+import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
 export interface ConversationMethods {
@@ -571,7 +572,6 @@ export function createConversationMethods(
     if (search) {
       try {
         const { searchMessages } = getMessageMethods();
-        const searchLimit = 1000;
         const [convoResults, messageResults] = await Promise.all([
           (
             Conversation as unknown as {
@@ -582,10 +582,10 @@ export function createConversationMethods(
                 hits: Array<{ conversationId: string }>;
               }>;
             }
-          ).meiliSearch(search, { filter: `user = "${user}"`, limit: searchLimit }),
+          ).meiliSearch(search, { filter: `user = "${user}"`, limit: MEILI_SEARCH_LIMIT }),
           searchMessages(search, {
             filter: `user = "${user}"`,
-            limit: searchLimit,
+            limit: MEILI_SEARCH_LIMIT,
           }) as Promise<{
             hits?: Array<{ conversationId: string }>;
           }>,

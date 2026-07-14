@@ -4,6 +4,7 @@ import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import { activeExpirationFilter } from '~/utils/retention';
+import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
@@ -614,7 +615,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         try {
           const searchResults = await Conversation.meiliSearch(search, {
             filter: `user = "${user}"`,
-            limit: 1000,
+            limit: MEILI_SEARCH_LIMIT,
           });
 
           if (!searchResults?.hits?.length) {
