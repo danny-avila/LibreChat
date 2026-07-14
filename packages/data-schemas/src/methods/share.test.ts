@@ -10,6 +10,7 @@ import {
   type ShareMethods,
   type SharedLinkContentSnapshot,
 } from './share';
+import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
 describe('Share Methods', () => {
@@ -1253,7 +1254,7 @@ describe('Share Methods', () => {
       // Verify that meiliSearch was called with the correct user filter
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId}"`,
-        limit: 1000,
+        limit: MEILI_SEARCH_LIMIT,
       });
     });
 
@@ -1331,7 +1332,7 @@ describe('Share Methods', () => {
       // Verify correct filter was used
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId1}"`,
-        limit: 1000,
+        limit: MEILI_SEARCH_LIMIT,
       });
 
       // Search as userId2
@@ -1351,7 +1352,7 @@ describe('Share Methods', () => {
       // Verify correct filter was used for second user
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId2}"`,
-        limit: 1000,
+        limit: MEILI_SEARCH_LIMIT,
       });
     });
 

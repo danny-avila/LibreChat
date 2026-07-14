@@ -39,6 +39,7 @@ import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
+import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
@@ -2625,7 +2626,6 @@ export function createConversationMethods(
     if (search) {
       try {
         const { searchMessages } = getMessageMethods();
-        const searchLimit = 1000;
         const [convoResults, messageResults] = await Promise.all([
           (
             Conversation as unknown as {
@@ -2636,10 +2636,10 @@ export function createConversationMethods(
                 hits: Array<{ conversationId: string }>;
               }>;
             }
-          ).meiliSearch(search, { filter: `user = "${user}"`, limit: searchLimit }),
+          ).meiliSearch(search, { filter: `user = "${user}"`, limit: MEILI_SEARCH_LIMIT }),
           searchMessages(search, {
             filter: `user = "${user}"`,
-            limit: searchLimit,
+            limit: MEILI_SEARCH_LIMIT,
           }) as Promise<{
             hits?: Array<{ conversationId: string }>;
           }>,
