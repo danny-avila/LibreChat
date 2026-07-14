@@ -1251,7 +1251,10 @@ describe('Share Methods', () => {
       expect(result.links[0].title).toBe('Matching Share');
 
       // Verify that meiliSearch was called with the correct user filter
-      expect(meiliSearchMock).toHaveBeenCalledWith('search term', { filter: `user = "${userId}"` });
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: `user = "${userId}"`,
+        limit: 1000,
+      });
     });
 
     test('should handle empty results', async () => {
@@ -1328,6 +1331,7 @@ describe('Share Methods', () => {
       // Verify correct filter was used
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId1}"`,
+        limit: 1000,
       });
 
       // Search as userId2
@@ -1347,6 +1351,7 @@ describe('Share Methods', () => {
       // Verify correct filter was used for second user
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId2}"`,
+        limit: 1000,
       });
     });
 
