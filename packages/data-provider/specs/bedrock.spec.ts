@@ -1402,6 +1402,20 @@ describe('bedrockInputParser', () => {
       expect(amrf?.system).toBeUndefined();
       expect(amrf?.thinking).toBeDefined();
     });
+
+    // DocumentType permits scalars, so a saved preset can carry a non-object
+    // additionalModelRequestFields; the `system` cleanup must not throw on it.
+    test.each([['a-scalar-string'], [42], [true]])(
+      'tolerates a scalar additionalModelRequestFields (%p) without throwing',
+      (scalar) => {
+        expect(() =>
+          bedrockOutputParser({
+            model: 'some-other-model',
+            additionalModelRequestFields: scalar,
+          }),
+        ).not.toThrow();
+      },
+    );
   });
 
   describe('Model switching cleanup', () => {

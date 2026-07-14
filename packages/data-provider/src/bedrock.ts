@@ -779,7 +779,8 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
   let amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
   // `system` is a reserved top-level Converse field; a duplicate inside
   // additionalModelRequestFields makes Bedrock reject the request.
-  if (amrf && 'system' in amrf) {
+  // Guard against non-object values, which the schema's DocumentType permits.
+  if (amrf && typeof amrf === 'object' && 'system' in amrf) {
     amrf = { ...amrf };
     delete amrf.system;
     result.additionalModelRequestFields = amrf;
