@@ -8,12 +8,14 @@ import {
 } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
+  AgentToolOptions,
   TEphemeralAgent,
   TModelSpec,
   Agent,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 
@@ -148,6 +150,14 @@ export async function loadEphemeralAgent(
     model,
     tools,
   };
+
+  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions(
+    tools,
+    { ephemeralAgent, modelSpec },
+  );
+  if (backgroundToolOptions) {
+    result.tool_options = backgroundToolOptions;
+  }
 
   if (ephemeralAgent?.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;

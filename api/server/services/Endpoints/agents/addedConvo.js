@@ -81,6 +81,7 @@ const processAddedConvo = async ({
   skillStates,
   defaultActiveOnShare,
   codeEnvAvailable,
+  backgroundToolsAvailable,
   statefulSessionsAvailable,
   memoryAvailable,
 }) => {
@@ -186,6 +187,7 @@ const processAddedConvo = async ({
           ephemeralSkillsToggle,
         }),
         codeEnvAvailable,
+        backgroundToolsAvailable,
         statefulSessionsAvailable,
         memoryAvailable,
         skillStates,

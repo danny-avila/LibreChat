@@ -39,6 +39,7 @@ export * from './groupToolCalls';
 export * from './toolLabels';
 export * from './favoritesError';
 export * from './approval';
+export * from './steer';
 export * from './numbers';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
