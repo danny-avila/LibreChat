@@ -1528,5 +1528,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "Der Rat passt nicht zur Saison",
   "com_ui_feedback_tag_not_satisfied": "Nicht zufrieden",
   "com_ui_feedback_tag_will_not_recommend": "Werde es nicht weiterempfehlen",
-  "com_ui_feedback_tag_inappropriate_response": "Unangemessene Antwort"
+  "com_ui_feedback_tag_inappropriate_response": "Unangemessene Antwort",
+  "com_ui_feedback_tag_other_positive": "Andere"
 }

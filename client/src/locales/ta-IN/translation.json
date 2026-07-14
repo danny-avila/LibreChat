@@ -2048,5 +2048,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "ஆலோசனை பருவத்திற்கு பொருந்தவில்லை",
   "com_ui_feedback_tag_not_satisfied": "திருப்தி இல்லை",
   "com_ui_feedback_tag_will_not_recommend": "பரிந்துரைக்க மாட்டேன்",
-  "com_ui_feedback_tag_inappropriate_response": "பொருத்தமற்ற பதில்"
+  "com_ui_feedback_tag_inappropriate_response": "பொருத்தமற்ற பதில்",
+  "com_ui_feedback_tag_other_positive": "மற்றவை"
 }

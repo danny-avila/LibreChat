@@ -2048,5 +2048,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "ਸਲਾਹ ਮੌਸਮ ਦੇ ਅਨੁਕੂਲ ਨਹੀਂ ਹੈ",
   "com_ui_feedback_tag_not_satisfied": "ਸੰਤੁਸ਼ਟ ਨਹੀਂ",
   "com_ui_feedback_tag_will_not_recommend": "ਸਿਫਾਰਸ਼ ਨਹੀਂ ਕਰਾਂਗਾ",
-  "com_ui_feedback_tag_inappropriate_response": "ਅਣਉਚਿਤ ਪ੍ਰਤੀਕਿਰਿਆ"
+  "com_ui_feedback_tag_inappropriate_response": "ਅਣਉਚਿਤ ਪ੍ਰਤੀਕਿਰਿਆ",
+  "com_ui_feedback_tag_other_positive": "ਹੋਰ"
 }

@@ -2048,5 +2048,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "सलाह मौसम के अनुकूल नहीं है",
   "com_ui_feedback_tag_not_satisfied": "संतुष्ट नहीं",
   "com_ui_feedback_tag_will_not_recommend": "दूसरों को सुझाव नहीं दूंगा",
-  "com_ui_feedback_tag_inappropriate_response": "अनुचित प्रतिक्रिया"
+  "com_ui_feedback_tag_inappropriate_response": "अनुचित प्रतिक्रिया",
+  "com_ui_feedback_tag_other_positive": "अन्य"
 }

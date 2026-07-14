@@ -152,7 +152,7 @@ export const FEEDBACK_TAGS: TFeedbackTag[] = [
   },
   {
     key: 'other_thumbsup',
-    label: 'com_ui_feedback_tag_other',
+    label: 'com_ui_feedback_tag_other_positive',
     direction: 'thumbsUp',
     icon: 'HelpCircle',
   },

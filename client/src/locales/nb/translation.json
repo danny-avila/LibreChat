@@ -1348,5 +1348,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "Rådet passer ikke til sesongen",
   "com_ui_feedback_tag_not_satisfied": "Ikke fornøyd",
   "com_ui_feedback_tag_will_not_recommend": "Vil ikke anbefale",
-  "com_ui_feedback_tag_inappropriate_response": "Upassende respons"
+  "com_ui_feedback_tag_inappropriate_response": "Upassende respons",
+  "com_ui_feedback_tag_other_positive": "Andre"
 }

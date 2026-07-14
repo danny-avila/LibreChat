@@ -1389,5 +1389,6 @@
   "com_ui_feedback_tag_doesnt_match_season": "Совет не соответствует сезону",
   "com_ui_feedback_tag_not_satisfied": "Не доволен",
   "com_ui_feedback_tag_will_not_recommend": "Не буду рекомендовать",
-  "com_ui_feedback_tag_inappropriate_response": "Неуместный ответ"
+  "com_ui_feedback_tag_inappropriate_response": "Неуместный ответ",
+  "com_ui_feedback_tag_other_positive": "Другие"
 }
