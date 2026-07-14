@@ -46,6 +46,16 @@ type OAuthDiscoveryResult = {
   authServerUrl: URL;
 };
 
+type OAuthResourceDiscoveryResult = {
+  resourceMetadata?: OAuthProtectedResourceMetadata;
+  authServerUrl?: URL;
+};
+
+type PreconfiguredOAuthDiscoveryResult = {
+  metadata?: OAuthMetadata;
+  resourceMetadata?: OAuthProtectedResourceMetadata;
+};
+
 const PRECONFIGURED_DISCOVERY_TIMEOUT_MS = 5_000;
 
 export class MCPOAuthHandler {
@@ -155,9 +165,6 @@ export class MCPOAuthHandler {
       `[MCPOAuth] discoverMetadata called with serverUrl: ${sanitizeUrlForLogging(serverUrl)}`,
     );
 
-    let authServerUrl = new URL(serverUrl);
-    let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
-
     const fetchFn = this.createOAuthFetch(
       oauthHeaders,
       undefined,
@@ -165,6 +172,62 @@ export class MCPOAuthHandler {
       allowedAddresses,
       signal,
     );
+
+    const resourceDiscovery = await this.discoverResourceMetadata(
+      serverUrl,
+      fetchFn,
+      allowedDomains,
+      allowedAddresses,
+    );
+    const resourceMetadata = resourceDiscovery.resourceMetadata;
+    const authServerUrl = resourceDiscovery.authServerUrl ?? new URL(serverUrl);
+    const metadata = await this.discoverAuthorizationMetadata(
+      authServerUrl,
+      fetchFn,
+      allowedDomains,
+      allowedAddresses,
+    );
+
+    if (metadata) {
+      return { metadata, resourceMetadata, authServerUrl };
+    }
+
+    /**
+     * No metadata discovered - create fallback metadata using default OAuth endpoint paths.
+     * This mirrors the MCP SDK's behavior where it falls back to /authorize, /token, /register
+     * when metadata discovery fails (e.g., servers without .well-known endpoints).
+     * See: https://github.com/modelcontextprotocol/sdk/blob/main/src/client/auth.ts
+     */
+    logger.warn(
+      `[MCPOAuth] No OAuth metadata discovered from ${sanitizeUrlForLogging(authServerUrl)}, using legacy fallback endpoints`,
+    );
+
+    const fallbackMetadata: OAuthMetadata = {
+      issuer: authServerUrl.toString(),
+      authorization_endpoint: new URL('/authorize', authServerUrl).toString(),
+      token_endpoint: new URL('/token', authServerUrl).toString(),
+      registration_endpoint: new URL('/register', authServerUrl).toString(),
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256', 'plain'],
+      token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
+    };
+
+    logger.debug(`[MCPOAuth] Using fallback metadata:`, fallbackMetadata);
+    return {
+      metadata: fallbackMetadata,
+      resourceMetadata,
+      authServerUrl,
+    };
+  }
+
+  private static async discoverResourceMetadata(
+    serverUrl: string,
+    fetchFn: FetchLike,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+  ): Promise<OAuthResourceDiscoveryResult> {
+    let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
     /**
      * RFC 9728 §5.1: when the server's 401 `WWW-Authenticate` header advertises a
@@ -241,53 +304,32 @@ export class MCPOAuthHandler {
           allowedDomains,
           allowedAddresses,
         );
-        authServerUrl = new URL(discoveredAuthServer);
+        const authServerUrl = new URL(discoveredAuthServer);
         logger.debug(
           `[MCPOAuth] Found authorization server from resource metadata: ${authServerUrl}`,
         );
+        return { resourceMetadata, authServerUrl };
       } else {
         logger.debug(`[MCPOAuth] No authorization servers found in resource metadata`);
       }
     }
 
-    // Discover OAuth metadata
+    return { resourceMetadata };
+  }
+
+  private static async discoverAuthorizationMetadata(
+    authServerUrl: URL,
+    fetchFn: FetchLike,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+  ): Promise<OAuthMetadata | undefined> {
     logger.debug(
       `[MCPOAuth] Discovering OAuth metadata from ${sanitizeUrlForLogging(authServerUrl)}`,
     );
     const rawMetadata = await this.discoverWithOriginFallback(authServerUrl, fetchFn);
 
     if (!rawMetadata) {
-      /**
-       * No metadata discovered - create fallback metadata using default OAuth endpoint paths.
-       * This mirrors the MCP SDK's behavior where it falls back to /authorize, /token, /register
-       * when metadata discovery fails (e.g., servers without .well-known endpoints).
-       * See: https://github.com/modelcontextprotocol/sdk/blob/main/src/client/auth.ts
-       */
-      logger.warn(
-        `[MCPOAuth] No OAuth metadata discovered from ${sanitizeUrlForLogging(authServerUrl)}, using legacy fallback endpoints`,
-      );
-
-      const fallbackMetadata: OAuthMetadata = {
-        issuer: authServerUrl.toString(),
-        authorization_endpoint: new URL('/authorize', authServerUrl).toString(),
-        token_endpoint: new URL('/token', authServerUrl).toString(),
-        registration_endpoint: new URL('/register', authServerUrl).toString(),
-        response_types_supported: ['code'],
-        grant_types_supported: ['authorization_code', 'refresh_token'],
-        code_challenge_methods_supported: ['S256', 'plain'],
-        token_endpoint_auth_methods_supported: [
-          'client_secret_basic',
-          'client_secret_post',
-          'none',
-        ],
-      };
-
-      logger.debug(`[MCPOAuth] Using fallback metadata:`, fallbackMetadata);
-      return {
-        metadata: fallbackMetadata,
-        resourceMetadata,
-        authServerUrl,
-      };
+      return undefined;
     }
 
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
@@ -319,47 +361,72 @@ export class MCPOAuthHandler {
     }
 
     logger.debug(`[MCPOAuth] OAuth metadata parsed successfully`);
-    return {
-      metadata: metadata as unknown as OAuthMetadata,
-      resourceMetadata,
-      authServerUrl,
-    };
+    return metadata as unknown as OAuthMetadata;
   }
 
-  private static discoverMetadataWithTimeout(
+  private static discoverPreconfiguredMetadataWithTimeout(
     serverUrl: string,
+    authorizationUrl: string,
+    discoverCapabilities: boolean,
     oauthHeaders: Record<string, string>,
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
-  ): Promise<OAuthDiscoveryResult> {
+  ): Promise<PreconfiguredOAuthDiscoveryResult> {
     const controller = new AbortController();
+    let partialResult: PreconfiguredOAuthDiscoveryResult = {};
 
-    return new Promise<OAuthDiscoveryResult>((resolve, reject) => {
+    return new Promise<PreconfiguredOAuthDiscoveryResult>((resolve, reject) => {
       const timeout = setTimeout(() => {
         controller.abort();
-        reject(
-          new Error(
-            `[MCPOAuth] Pre-configured OAuth metadata discovery timed out after ${PRECONFIGURED_DISCOVERY_TIMEOUT_MS}ms.`,
-          ),
+        logger.warn(
+          `[MCPOAuth] Pre-configured OAuth metadata discovery timed out after ${PRECONFIGURED_DISCOVERY_TIMEOUT_MS}ms; using available metadata and configured defaults.`,
         );
+        resolve(partialResult);
       }, PRECONFIGURED_DISCOVERY_TIMEOUT_MS);
 
-      void this.discoverMetadata(
-        serverUrl,
+      const fetchFn = this.createOAuthFetch(
         oauthHeaders,
+        undefined,
         allowedDomains,
         allowedAddresses,
         controller.signal,
-      ).then(
-        (result) => {
-          clearTimeout(timeout);
-          resolve(result);
-        },
-        (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        },
       );
+
+      void this.discoverResourceMetadata(serverUrl, fetchFn, allowedDomains, allowedAddresses)
+        .then(async (resourceDiscovery) => {
+          partialResult = { resourceMetadata: resourceDiscovery.resourceMetadata };
+          if (!discoverCapabilities) {
+            return partialResult;
+          }
+
+          const authServerUrl =
+            resourceDiscovery.authServerUrl ?? new URL(new URL(authorizationUrl).origin);
+          try {
+            const metadata = await this.discoverAuthorizationMetadata(
+              authServerUrl,
+              fetchFn,
+              allowedDomains,
+              allowedAddresses,
+            );
+            return { ...partialResult, metadata };
+          } catch (error) {
+            logger.warn(
+              `[MCPOAuth] Authorization server metadata discovery failed for pre-configured client; using configured endpoints and defaults`,
+              { error },
+            );
+            return partialResult;
+          }
+        })
+        .then(
+          (result) => {
+            clearTimeout(timeout);
+            resolve(result);
+          },
+          (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          },
+        );
     });
   }
 
@@ -580,14 +647,18 @@ export class MCPOAuthHandler {
           config.token_exchange_method === undefined &&
           config.token_endpoint_auth_methods_supported === undefined;
 
-        if (shouldDiscoverCapabilities) {
-          try {
-            const discovery = await this.discoverMetadataWithTimeout(
-              serverUrl,
-              oauthHeaders,
-              allowedDomains,
-              allowedAddresses,
-            );
+        try {
+          const discovery = await this.discoverPreconfiguredMetadataWithTimeout(
+            serverUrl,
+            config.authorization_url,
+            shouldDiscoverCapabilities,
+            oauthHeaders,
+            allowedDomains,
+            allowedAddresses,
+          );
+          resourceMetadata = discovery.resourceMetadata;
+
+          if (shouldDiscoverCapabilities && discovery.metadata) {
             const discoveredTokenEndpoint = discovery.metadata.token_endpoint;
             const configuredTokenEndpoint = new URL(config.token_url).href;
 
@@ -601,7 +672,6 @@ export class MCPOAuthHandler {
               new URL(discoveredTokenEndpoint).href === configuredTokenEndpoint
             ) {
               discoveredMetadata = discovery.metadata;
-              resourceMetadata = discovery.resourceMetadata;
               logger.debug(
                 `[MCPOAuth] Using discovered OAuth capabilities with pre-configured endpoints for ${serverName}`,
               );
@@ -616,13 +686,13 @@ export class MCPOAuthHandler {
                 },
               );
             }
-          } catch (error) {
-            /** Preserve compatibility with OAuth providers that do not publish metadata. */
-            logger.warn(
-              `[MCPOAuth] OAuth metadata discovery failed for pre-configured client ${serverName}; using configured endpoints and defaults`,
-              { error },
-            );
           }
+        } catch (error) {
+          /** Preserve compatibility with OAuth providers that do not publish metadata. */
+          logger.warn(
+            `[MCPOAuth] OAuth metadata discovery failed for pre-configured client ${serverName}; using configured endpoints and defaults`,
+            { error },
+          );
         }
 
         const skipCodeChallengeCheck =

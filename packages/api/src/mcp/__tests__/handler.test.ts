@@ -157,8 +157,45 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
 
-    it('should prefer an explicit exchange method over discovered metadata', async () => {
+    it('should discover capabilities from the configured authorization server origin', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce(undefined);
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: baseConfig.authorization_url,
+        token_endpoint: baseConfig.token_url,
+        token_endpoint_auth_methods_supported: ['client_secret_post'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
       await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        baseConfig,
+      );
+
+      expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledWith(
+        new URL('https://auth.example.com'),
+        expect.objectContaining({ fetchFn: expect.any(Function) }),
+      );
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_post',
+          }),
+        }),
+      );
+    });
+
+    it('should preserve resource discovery while preferring an explicit exchange method', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: mockServerUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
         mockServerName,
         mockServerUrl,
         mockUserId,
@@ -177,8 +214,12 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         }),
       );
-      expect(mockDiscoverOAuthProtectedResourceMetadata).not.toHaveBeenCalled();
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalled();
       expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(result.authorizationUrl).toContain('resource=https%3A%2F%2Fexample.com%2Fmcp');
+      expect(result.flowMetadata.resourceMetadata).toEqual(
+        expect.objectContaining({ resource: mockServerUrl }),
+      );
     });
 
     it('should fall back when pre-configured metadata discovery times out', async () => {
@@ -242,8 +283,10 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           }),
         }),
       );
-      expect(result.authorizationUrl).not.toContain('resource=');
-      expect(result.flowMetadata.resourceMetadata).toBeUndefined();
+      expect(result.authorizationUrl).toContain('resource=https%3A%2F%2Fexample.com%2Fmcp');
+      expect(result.flowMetadata.resourceMetadata).toEqual(
+        expect.objectContaining({ resource: mockServerUrl }),
+      );
     });
 
     it('should use default values when OAuth metadata fields are not configured', async () => {
