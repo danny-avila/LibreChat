@@ -31,9 +31,10 @@ const initialize = async () => {
 
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
 
-  /** Apply rate limiters to all POST routes (excluding /speech which is handled above) */
+  /** Apply rate limiters to all POST routes (excluding /speech which is handled
+   *  above, and /usage — a metadata touch that must not consume upload quota) */
   router.use((req, res, next) => {
-    if (req.method === 'POST' && !req.path.startsWith('/speech')) {
+    if (req.method === 'POST' && !req.path.startsWith('/speech') && req.path !== '/usage') {
       return fileUploadIpLimiter(req, res, (err) => {
         if (err) {
           return next(err);

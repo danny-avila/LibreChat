@@ -452,7 +452,8 @@ const createMeiliMongooseModel = ({
       }
 
       if (object.content && Array.isArray(object.content)) {
-        object.text = parseTextParts(object.content);
+        /** Search indexes the full conversational record, steered words included. */
+        object.text = parseTextParts(object.content, false, { includeSteer: true });
         delete object.content;
       }
 

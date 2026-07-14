@@ -1,7 +1,7 @@
 import { atom } from 'recoil';
 import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
-import { atomWithLocalStorage } from '~/store/utils';
 import type { TOptionSettings } from '~/common';
+import { atomWithLocalStorage } from '~/store/utils';
 
 // Static atoms without localStorage
 const staticAtoms = {
@@ -30,6 +30,11 @@ const localStorageAtoms = {
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
+  /** What Enter does while a run is generating: steer (inject mid-run) or queue (send after). */
+  duringRunDefaultAction: atomWithLocalStorage<'steer' | 'queue'>(
+    'duringRunDefaultAction',
+    'steer',
+  ),
   maximizeChatSpace: atomWithLocalStorage('maximizeChatSpace', false),
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),

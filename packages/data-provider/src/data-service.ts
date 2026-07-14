@@ -481,6 +481,15 @@ export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise
   return request.postMultiPart(endpoints.files(), data, requestConfig);
 };
 
+/**
+ * Marks uploaded files as used (owner-scoped TTL touch) so the upload-window
+ * TTL cannot reap attachments held in a client-side queue during a long run.
+ * Best-effort: callers fire-and-forget — send-time marking is the backstop.
+ */
+export const markFilesUsage = (body: f.TFilesUsageBody): Promise<f.TFilesUsageResponse> => {
+  return request.post(endpoints.fileUsage(), body);
+};
+
 /* actions */
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
