@@ -870,9 +870,10 @@ class GenerationJobManagerClass {
     /** Collected usage for all models */
     const collectedUsage = this.jobStore.getCollectedUsage(streamId);
 
-    /** Text from content parts for fallback token counting */
+    /** Text from content parts for fallback token counting; the persisted
+     *  abort record keeps steered words (they reached the model context). */
     const text = shouldPersistAbortContent
-      ? parseTextParts(abortContent as TMessageContentParts[])
+      ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
       : '';
 
     /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)

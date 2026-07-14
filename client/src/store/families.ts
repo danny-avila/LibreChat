@@ -342,6 +342,12 @@ export type QueuedMessage = {
   text: string;
   createdAt: number;
   files?: TMessage['files'];
+  /** Quote chips consumed from the composer at enqueue time; passed to `ask`
+   *  as `overrideQuotes` on drain so they pair with THIS message. */
+  quotes?: string[];
+  /** Manual skill picks consumed from the composer at enqueue time; passed
+   *  to `ask` as `overrideManualSkills` on drain. */
+  manualSkills?: string[];
   /** Front-inserted by "Interrupt & send": stays ahead of chronologically
    *  older items when leftover steers are merged back into the queue. */
   priority?: boolean;

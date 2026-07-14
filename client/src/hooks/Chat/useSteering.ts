@@ -6,13 +6,26 @@ import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-pr
 import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { ExtendedFile, FileSetter } from '~/common';
-import { useGetMessagesByConvoId, useSteerMessageMutation } from '~/data-provider';
+import {
+  useGetMessagesByConvoId,
+  useSteerMessageMutation,
+  useMarkFilesUsageMutation,
+} from '~/data-provider';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
 /** During-run submit routes: inject into the live run, or queue for after it. */
 export type DuringRunAction = 'steer' | 'queue';
+
+/** Composer state consumed into a queued item alongside the text. */
+export interface QueuedMessageContext {
+  quotes?: string[];
+  manualSkills?: string[];
+}
+
+/** Server-side cap on a usage touch (mirrors `FILES_USAGE_MAX_IDS`). */
+const QUEUE_USAGE_MAX_FILES = 10;
 
 type SteerErrorCode =
   | 'NO_ACTIVE_RUN'
@@ -65,10 +78,17 @@ export interface UseSteeringParams {
   setFiles?: FileSetter;
   /** Uploads still in flight: during-run submits are held like the send button. */
   filesLoading?: boolean;
-  /** Submits text (and optional attachments) as a normal new turn.
-   *  Returns `false` when `ask` refused without sending (in-flight guard,
-   *  history not cached yet) so callers can restore instead of dropping. */
-  sendNow: (text: string, files?: TMessage['files']) => false | void;
+  /** Submits text (and optional attachments/quotes/skills) as a normal new
+   *  turn. Overrides are always explicit — a queued item is the FULL
+   *  submission context, so absent fields must send as empty, never vacuum
+   *  the composer. Returns `false` when `ask` refused without sending
+   *  (in-flight guard, history not cached yet) so callers can restore
+   *  instead of dropping. */
+  sendNow: (
+    text: string,
+    files?: TMessage['files'],
+    context?: QueuedMessageContext,
+  ) => false | void;
   /** Stops the current generation (used by interrupt & send). */
   stopGenerating: () => void;
 }
@@ -96,6 +116,7 @@ export default function useSteering({
   const { showToast } = useToastContext();
   const setFilesToDelete = useSetFilesToDelete();
   const steerMutation = useSteerMessageMutation();
+  const markFilesUsage = useMarkFilesUsageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
 
@@ -196,9 +217,45 @@ export default function useSteering({
     [],
   );
 
+  /** Fire-and-forget TTL touch for uploads entering the client queue: a
+   *  queued message can outlive the upload window (long run, approval pause)
+   *  and send-time marking only happens at drain. Failure is tolerated —
+   *  the send-time marking remains the backstop. */
+  const markQueuedFilesUsage = useCallback(
+    (files?: TMessage['files']) => {
+      if (files == null || files.length === 0) {
+        return;
+      }
+      const file_ids: string[] = [];
+      for (const file of files) {
+        if (typeof file.file_id === 'string' && file.file_id.length > 0) {
+          file_ids.push(file.file_id);
+        }
+        if (file_ids.length === QUEUE_USAGE_MAX_FILES) {
+          break;
+        }
+      }
+      if (file_ids.length > 0) {
+        markFilesUsage.mutate({ file_ids });
+      }
+    },
+    [markFilesUsage],
+  );
+
   const enqueue = useRecoilCallback(
     ({ set }) =>
-      (text: string, options?: { front?: boolean; files?: TMessage['files'] }) => {
+      (
+        text: string,
+        options?: {
+          front?: boolean;
+          files?: TMessage['files'];
+          quotes?: string[];
+          manualSkills?: string[];
+          /** Set when the files were ALREADY queued/steered — their usage was
+           *  marked when they first entered the queue (or at the steer 202). */
+          skipUsageMark?: boolean;
+        },
+      ) => {
         const trimmed = text.trim();
         if (trimmed.length === 0) {
           return;
@@ -208,13 +265,19 @@ export default function useSteering({
           text: trimmed,
           createdAt: Date.now(),
           ...(options?.files && options.files.length > 0 && { files: options.files }),
+          ...(options?.quotes && options.quotes.length > 0 && { quotes: options.quotes }),
+          ...(options?.manualSkills &&
+            options.manualSkills.length > 0 && { manualSkills: options.manualSkills }),
           ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
           options?.front ? [item, ...prev] : [...prev, item],
         );
+        if (options?.skipUsageMark !== true) {
+          markQueuedFilesUsage(options?.files);
+        }
       },
-    [queueKey],
+    [queueKey, markQueuedFilesUsage],
   );
 
   /** Consumes completed composer attachments into message file refs (clearing
@@ -239,6 +302,32 @@ export default function useSteering({
     setFilesToDelete({});
     return taken;
   }, [files, setFiles, setFilesToDelete]);
+
+  /** Consumes staged quote chips + manual skill picks (mirroring `ask()`'s
+   *  fresh-submit drain of the same atoms) so they pair with THIS queued
+   *  message instead of gluing onto whatever the user sends next. */
+  const takeComposerContext = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (): QueuedMessageContext => {
+        const quotes = snapshot
+          .getLoadable(store.pendingQuotesByConvoId(conversationId))
+          .getValue();
+        const manualSkills = snapshot
+          .getLoadable(store.pendingManualSkillsByConvoId(conversationId))
+          .getValue();
+        if (quotes.length > 0) {
+          reset(store.pendingQuotesByConvoId(conversationId));
+        }
+        if (manualSkills.length > 0) {
+          reset(store.pendingManualSkillsByConvoId(conversationId));
+        }
+        return {
+          ...(quotes.length > 0 && { quotes }),
+          ...(manualSkills.length > 0 && { manualSkills }),
+        };
+      },
+    [conversationId],
+  );
 
   const removeQueued = useRecoilCallback(
     ({ set }) =>
@@ -387,17 +476,18 @@ export default function useSteering({
     [filesLoading, hasRealConvoId, takeComposerFiles, submitSteer],
   );
 
-  /** Composer-originated queue: carries the composer's attachments. */
+  /** Composer-originated queue: carries the composer's attachments, quote
+   *  chips, and manual skill picks as one unit. */
   const queueFromComposer = useCallback(
     (text: string): boolean => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || filesLoading) {
         return false;
       }
-      enqueue(trimmed, { files: takeComposerFiles() });
+      enqueue(trimmed, { files: takeComposerFiles(), ...takeComposerContext() });
       return true;
     },
-    [filesLoading, enqueue, takeComposerFiles],
+    [filesLoading, enqueue, takeComposerFiles, takeComposerContext],
   );
 
   /** Retry a failed chip through the normal steer path. */
@@ -428,33 +518,37 @@ export default function useSteering({
   /** Chip action: send a queued message into the live run instead. Keys on
    *  steer availability, not the default action — a queue-preferring user
    *  clicking send-now explicitly asked to inject into the live run. The
-   *  item's attachments ride the steer. */
+   *  item's attachments ride the steer (quotes/skills only survive the
+   *  normal-send and re-queue paths — steers don't carry them). */
   const sendQueuedNow = useCallback(
-    (id: string, text: string, queuedFiles?: TMessage['files']) => {
-      const taken = takeQueued(id);
+    (item: QueuedMessage) => {
+      const taken = takeQueued(item.id) ?? item;
       if (duringRunActive && canSteer) {
-        submitSteer(text, queuedFiles);
+        submitSteer(taken.text, taken.files);
         return;
       }
       if (!isSubmitting) {
-        // Explicit (possibly empty) override: the queued item is the full
-        // submission context, never the composer's staged files.
-        const accepted = sendNow(text, queuedFiles ?? []);
+        // Explicit (possibly empty) overrides: the queued item is the full
+        // submission context, never the composer's staged files/quotes/picks.
+        const accepted = sendNow(taken.text, taken.files ?? [], {
+          quotes: taken.quotes,
+          manualSkills: taken.manualSkills,
+        });
         if (accepted === false) {
           // `ask` refused without sending — restore the chip so the user's
           // text is never silently dropped (mirrors useQueueDrain).
-          restoreQueued(
-            taken ?? {
-              id,
-              text,
-              createdAt: Date.now(),
-              ...(queuedFiles && queuedFiles.length > 0 && { files: queuedFiles }),
-            },
-          );
+          restoreQueued(taken);
         }
         return;
       }
-      enqueue(text, { front: true, files: queuedFiles });
+      // Files were already marked used when the item first entered the queue.
+      enqueue(taken.text, {
+        front: true,
+        files: taken.files,
+        quotes: taken.quotes,
+        manualSkills: taken.manualSkills,
+        skipUsageMark: true,
+      });
     },
     [
       takeQueued,
@@ -475,12 +569,19 @@ export default function useSteering({
       if (trimmed.length === 0 || filesLoading) {
         return false;
       }
-      enqueue(trimmed, { front: true, files: takeComposerFiles() });
+      enqueue(trimmed, { front: true, files: takeComposerFiles(), ...takeComposerContext() });
       armDrainAfterAbort();
       stopGenerating();
       return true;
     },
-    [filesLoading, enqueue, takeComposerFiles, armDrainAfterAbort, stopGenerating],
+    [
+      filesLoading,
+      enqueue,
+      takeComposerFiles,
+      takeComposerContext,
+      armDrainAfterAbort,
+      stopGenerating,
+    ],
   );
 
   /** Routes a during-run submit to the effective action. Returns true when consumed. */

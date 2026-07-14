@@ -35,6 +35,7 @@ import {
   clearAllDrafts,
   applySteerPart,
   applyPendingAction,
+  resolveRunEndTarget,
   findSteerMessageIndex,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
@@ -815,8 +816,15 @@ export default function useResumableSSE(
             // One-shot run-end signal for the queue drain. Written AFTER
             // finalHandler so `isSubmitting` has flipped false by the time the
             // drain effect observes it (both land in the same Recoil batch).
-            setRunEnd({
+            // An early-aborted FIRST turn keys under NEW_CONVO: finalHandler
+            // restored /c/new, so the optimistic id would strand the queue.
+            const runEndTarget = resolveRunEndTarget({
               conversationId: finalConvoId,
+              earlyAbort: data.earlyAbort === true,
+              startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+            });
+            setRunEnd({
+              conversationId: runEndTarget.conversationId,
               // A Stop that lands before completion can arrive as a final with
               // `unfinished: true` and no `aborted` flag (request.js's
               // wasAbortedBeforeComplete branch) — it must not auto-drain.
@@ -824,7 +832,7 @@ export default function useResumableSSE(
                 data.aborted === true || data.responseMessage?.unfinished === true
                   ? 'aborted'
                   : 'completed',
-              startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+              startedAsNewConvo: runEndTarget.startedAsNewConvo,
               endedAt: Date.now(),
             });
             // Clear handler maps on stream completion to prevent memory leaks

@@ -1,10 +1,11 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
+import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
   useTextarea,
   useAutoSave,
@@ -186,15 +187,43 @@ const ChatForm = memo(function ChatForm({
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
+  /** Queued/steered sends carry their FULL submission context: explicit
+   *  (possibly empty) overrides stop `ask` from vacuuming quotes or skill
+   *  picks the user has staged in the composer for their NEXT message. */
   const sendNow = useCallback(
-    (text: string, overrideFiles?: TMessage['files']) => submitMessage({ text, overrideFiles }),
+    (text: string, overrideFiles?: TMessage['files'], context?: QueuedMessageContext) =>
+      submitMessage({
+        text,
+        overrideFiles,
+        overrideQuotes: context?.quotes ?? [],
+        overrideManualSkills: context?.manualSkills ?? [],
+      }),
     [submitMessage],
+  );
+  /** Chip "Edit message" restore: quote chips + skill picks merge back into
+   *  their compose-time atoms (the chips above the textarea re-render them). */
+  const restoreComposerContext = useRecoilCallback(
+    ({ set }) =>
+      (context?: QueuedMessageContext) => {
+        const { quotes, manualSkills } = context ?? {};
+        if (quotes != null && quotes.length > 0) {
+          set(store.pendingQuotesByConvoId(conversationId), (prev) => [
+            ...new Set([...prev, ...quotes]),
+          ]);
+        }
+        if (manualSkills != null && manualSkills.length > 0) {
+          set(store.pendingManualSkillsByConvoId(conversationId), (prev) => [
+            ...new Set([...prev, ...manualSkills]),
+          ]);
+        }
+      },
+    [conversationId],
   );
   /** Chip "Edit message": the text replaces the composer draft and the chip's
    *  attachments merge back into the composer file map (already uploaded, so
    *  they restore as completed entries — same shape as draft recovery). */
   const editToComposer = useCallback(
-    (text: string, chipFiles?: TMessage['files']) => {
+    (text: string, chipFiles?: TMessage['files'], context?: QueuedMessageContext) => {
       methods.setValue('text', text, { shouldDirty: true });
       if (chipFiles != null && chipFiles.length > 0) {
         setFiles((prev) => {
@@ -218,9 +247,10 @@ const ChatForm = memo(function ChatForm({
           return next;
         });
       }
+      restoreComposerContext(context);
       textAreaRef.current?.focus();
     },
-    [methods, setFiles],
+    [methods, setFiles, restoreComposerContext],
   );
   const steering = useSteering({
     index,

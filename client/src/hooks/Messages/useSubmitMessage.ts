@@ -19,7 +19,12 @@ export default function useSubmitMessage() {
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
-    (data?: { text: string; overrideFiles?: TMessage['files'] }) => {
+    (data?: {
+      text: string;
+      overrideFiles?: TMessage['files'];
+      overrideQuotes?: string[];
+      overrideManualSkills?: string[];
+    }) => {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
@@ -37,8 +42,11 @@ export default function useSubmitMessage() {
         },
         {
           addedConvo: addedConvo ?? undefined,
-          // Queued during-run messages carry their own consumed attachments.
+          // Queued during-run messages carry their own consumed attachments,
+          // quote chips, and manual skill picks (undefined = drain composer).
           overrideFiles: data.overrideFiles,
+          overrideQuotes: data.overrideQuotes,
+          overrideManualSkills: data.overrideManualSkills,
         },
       );
       if (submitted === false) {

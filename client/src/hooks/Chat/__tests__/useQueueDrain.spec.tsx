@@ -1,8 +1,8 @@
 import React from 'react';
 import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
-import type { RunEnd } from '~/store/families';
+import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import type { RunEnd, QueuedMessage } from '~/store/families';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -117,6 +117,28 @@ describe('useQueueDrain', () => {
     );
   });
 
+  it('passes carried quotes + manual skills through as overrides', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          ...queuedMessage('q1', 'with context'),
+          quotes: ['quoted excerpt'],
+          manualSkills: ['skill-1'],
+        },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith(
+      { text: 'with context' },
+      { overrideFiles: [], overrideQuotes: ['quoted excerpt'], overrideManualSkills: ['skill-1'] },
+    );
+  });
+
   it('does not drain on user abort or error outcomes', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'kept')]);
@@ -188,6 +210,86 @@ describe('useQueueDrain', () => {
     await waitFor(() =>
       expect(ask).toHaveBeenCalledWith({ text: 'queued before convo existed' }, emptyOverrides),
     );
+  });
+
+  describe('early-aborted first turn (NEW_CONVO-keyed signal)', () => {
+    const OPTIMISTIC_ID = 'optimistic-stream-id';
+
+    function setupNewConvo(initialize?: (snapshot: MutableSnapshot) => void) {
+      const ask = jest.fn();
+      const setters: {
+        setRunEnd?: (value: RunEnd | null) => void;
+        setInterruptFlag?: (value: boolean) => void;
+      } = {};
+      const state: {
+        newConvoQueue?: QueuedMessage[];
+        parkedUnderOptimistic?: RunEnd | null;
+      } = {};
+
+      function Harness() {
+        setters.setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
+        setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
+        state.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
+        state.parkedUnderOptimistic = useRecoilValue(store.pendingRunEndByConvoId(OPTIMISTIC_ID));
+        useQueueDrain(INDEX, Constants.NEW_CONVO as string, ask);
+        return null;
+      }
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot initializeState={initialize}>
+          <Harness />
+          {children}
+        </RecoilRoot>
+      );
+      renderHook(() => null, { wrapper });
+      return { ask, setters, state };
+    }
+
+    it('leaves the NEW_CONVO queue in place and parks nothing under the optimistic id', async () => {
+      const { ask, setters, state } = setupNewConvo(({ set }) => {
+        set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+          queuedMessage('q1', 'queued during first turn'),
+        ]);
+      });
+
+      act(() => {
+        setters.setRunEnd!(
+          runEnd({
+            conversationId: Constants.NEW_CONVO as string,
+            outcome: 'aborted',
+            startedAsNewConvo: false,
+          }),
+        );
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(ask).not.toHaveBeenCalled();
+      // The queue stays visible on the restored new-chat composer.
+      expect(state.newConvoQueue).toEqual([
+        expect.objectContaining({ id: 'q1', text: 'queued during first turn' }),
+      ]);
+      expect(state.parkedUnderOptimistic).toBeNull();
+    });
+
+    it('drains under NEW_CONVO when interrupt & send was armed', async () => {
+      const { ask } = setupNewConvo(({ set }) => {
+        set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+          queuedMessage('q1', 'interrupted first turn'),
+        ]);
+        set(store.drainAfterAbortByIndex(INDEX), true);
+        set(store.runEndByIndex(INDEX), {
+          conversationId: Constants.NEW_CONVO as string,
+          outcome: 'aborted',
+          startedAsNewConvo: false,
+          endedAt: Date.now(),
+        });
+      });
+
+      await waitFor(() =>
+        expect(ask).toHaveBeenCalledWith({ text: 'interrupted first turn' }, emptyOverrides),
+      );
+      expect(ask).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('consumes the run-end signal (no double fire on re-render)', async () => {

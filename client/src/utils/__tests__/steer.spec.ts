@@ -1,6 +1,6 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TSteerAppliedEvent } from 'librechat-data-provider';
-import { applySteerPart, findSteerMessageIndex, getSteerPart } from '../steer';
+import { applySteerPart, findSteerMessageIndex, getSteerPart, resolveRunEndTarget } from '../steer';
 
 const buildEvent = (overrides: Partial<TSteerAppliedEvent> = {}): TSteerAppliedEvent => ({
   steerId: 'steer-1',
@@ -96,5 +96,37 @@ describe('findSteerMessageIndex', () => {
   it('falls back to the last assistant message without an id', () => {
     const messages = [assistantMessage({ messageId: 'old' }), userMessage, assistantMessage()];
     expect(findSteerMessageIndex(messages, buildEvent())).toBe(2);
+  });
+});
+
+describe('resolveRunEndTarget', () => {
+  it('keys an early-aborted first turn under NEW_CONVO and drops the migration flag', () => {
+    expect(
+      resolveRunEndTarget({
+        conversationId: 'optimistic-stream-id',
+        earlyAbort: true,
+        startedAsNewConvo: true,
+      }),
+    ).toEqual({ conversationId: String(Constants.NEW_CONVO), startedAsNewConvo: false });
+  });
+
+  it('keeps the real conversation id for an early abort of an existing conversation', () => {
+    expect(
+      resolveRunEndTarget({
+        conversationId: 'convo-real',
+        earlyAbort: true,
+        startedAsNewConvo: false,
+      }),
+    ).toEqual({ conversationId: 'convo-real', startedAsNewConvo: false });
+  });
+
+  it('passes normal completions through untouched', () => {
+    expect(
+      resolveRunEndTarget({
+        conversationId: 'convo-real',
+        earlyAbort: false,
+        startedAsNewConvo: true,
+      }),
+    ).toEqual({ conversationId: 'convo-real', startedAsNewConvo: true });
   });
 });

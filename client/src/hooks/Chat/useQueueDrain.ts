@@ -146,8 +146,8 @@ export default function useQueueDrain(
       { text: next.text },
       {
         overrideFiles: next.files ?? [],
-        overrideQuotes: [],
-        overrideManualSkills: [],
+        overrideQuotes: next.quotes ?? [],
+        overrideManualSkills: next.manualSkills ?? [],
       },
     );
     if (accepted === false) {

@@ -10,11 +10,13 @@ const CONVO_ID = 'convo-steer-ui';
 
 const mockMutate = jest.fn();
 const mockShowToast = jest.fn();
+const mockMarkUsage = jest.fn();
 let mockMessages: TMessage[] | undefined;
 
 jest.mock('~/data-provider', () => ({
   useSteerMessageMutation: () => ({ mutate: mockMutate }),
   useGetMessagesByConvoId: () => ({ data: mockMessages }),
+  useMarkFilesUsageMutation: () => ({ mutate: mockMarkUsage }),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -268,9 +270,9 @@ describe('useSteering', () => {
       });
       const [first, second] = result.current.queue;
       act(() => {
-        result.current.steering.sendQueuedNow(first.id, first.text);
+        result.current.steering.sendQueuedNow(first);
       });
-      expect(refusingSendNow).toHaveBeenCalledWith('refused send', []);
+      expect(refusingSendNow).toHaveBeenCalledWith('refused send', [], {});
       // `ask` refused without sending — the ORIGINAL item returns to the front.
       expect(result.current.queue.map((item) => item.id)).toEqual([first.id, second.id]);
       expect(result.current.queue[0]).toEqual(first);
@@ -321,11 +323,11 @@ describe('useSteering', () => {
       act(() => {
         result.current.steering.enqueue('accepted send');
       });
-      const queuedId = result.current.queue[0].id;
+      const queued = result.current.queue[0];
       act(() => {
-        result.current.steering.sendQueuedNow(queuedId, 'accepted send');
+        result.current.steering.sendQueuedNow(queued);
       });
-      expect(acceptingSendNow).toHaveBeenCalledWith('accepted send', []);
+      expect(acceptingSendNow).toHaveBeenCalledWith('accepted send', [], {});
       expect(result.current.queue).toEqual([]);
     });
 
@@ -367,9 +369,9 @@ describe('useSteering', () => {
       act(() => {
         result.current.steering.enqueue('send me now');
       });
-      const queuedId = result.current.queue[0].id;
+      const queued = result.current.queue[0];
       act(() => {
-        result.current.steering.sendQueuedNow(queuedId, 'send me now');
+        result.current.steering.sendQueuedNow(queued);
       });
       expect(result.current.queue).toEqual([]);
       expect(mockMutate).toHaveBeenCalledWith(
@@ -453,7 +455,12 @@ describe('useSteering', () => {
     it('steers a queued media item with its own files during a live run', () => {
       const { result, sendNow } = setupWithFiles();
       act(() => {
-        result.current.steering.sendQueuedNow('q-media', 'media message', queuedFiles);
+        result.current.steering.sendQueuedNow({
+          id: 'q-media',
+          text: 'media message',
+          createdAt: Date.now(),
+          files: queuedFiles,
+        });
       });
       expect(sendNow).not.toHaveBeenCalled();
       expect(mockMutate).toHaveBeenCalledWith(
@@ -466,9 +473,189 @@ describe('useSteering', () => {
     it('sends a media item as a normal turn with its own files when idle', () => {
       const { result, sendNow } = setupWithFiles({ isSubmitting: false });
       act(() => {
-        result.current.steering.sendQueuedNow('q-media', 'media message', queuedFiles);
+        result.current.steering.sendQueuedNow({
+          id: 'q-media',
+          text: 'media message',
+          createdAt: Date.now(),
+          files: queuedFiles,
+        });
       });
-      expect(sendNow).toHaveBeenCalledWith('media message', queuedFiles);
+      expect(sendNow).toHaveBeenCalledWith('media message', queuedFiles, {});
+    });
+
+    it('marks queued files used exactly once when queueing from the composer', () => {
+      const { result } = setupWithFiles();
+      act(() => {
+        result.current.steering.queueFromComposer('queued with media');
+      });
+      expect(mockMarkUsage).toHaveBeenCalledTimes(1);
+      expect(mockMarkUsage).toHaveBeenCalledWith({ file_ids: ['file-1'] });
+    });
+
+    it('marks queued files used on interrupt & send', () => {
+      const { result } = setupWithFiles();
+      act(() => {
+        result.current.steering.interruptAndSend('urgent with media');
+      });
+      expect(mockMarkUsage).toHaveBeenCalledTimes(1);
+      expect(mockMarkUsage).toHaveBeenCalledWith({ file_ids: ['file-1'] });
+    });
+
+    it('does not mark usage for text-only queueing', () => {
+      const { result } = setupWithFiles({ files: new Map() });
+      act(() => {
+        result.current.steering.queueFromComposer('just text');
+      });
+      expect(mockMarkUsage).not.toHaveBeenCalled();
+    });
+
+    it('does not mark usage on the steer path (the 202 already marked)', () => {
+      const { result } = setupWithFiles();
+      act(() => {
+        result.current.steering.submitDuringRun('steer with media');
+      });
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      expect(mockMarkUsage).not.toHaveBeenCalled();
+    });
+
+    it('does not re-mark already-queued files on a send-now re-queue', () => {
+      // Paused on approval → steering unavailable while the run is live, so
+      // sendQueuedNow front-requeues the item — its files were already marked.
+      mockMessages = [
+        {
+          messageId: 'resp-1',
+          isCreatedByUser: false,
+          content: [
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 'call-1', name: 'shell', approval: { actionId: 'a1' }, output: '' },
+            },
+          ],
+        } as unknown as TMessage,
+      ];
+      const { result } = setupWithFiles();
+      act(() => {
+        result.current.steering.sendQueuedNow({
+          id: 'q-requeue',
+          text: 'requeued media',
+          createdAt: Date.now(),
+          files: queuedFiles,
+        });
+      });
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ text: 'requeued media', files: queuedFiles, priority: true }),
+      ]);
+      expect(mockMarkUsage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('composer quotes + manual skill capture', () => {
+    function setupWithContext(
+      params: HookParams = {},
+      initialize?: (snapshot: MutableSnapshot) => void,
+    ) {
+      const sendNow = jest.fn();
+      const stopGenerating = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
+      );
+      const rendered = renderHook(
+        () => ({
+          steering: useSteering({
+            index: 0,
+            conversationId: CONVO_ID,
+            conversation: agentsConversation,
+            isSubmitting: true,
+            answerModeActive: false,
+            sendNow,
+            stopGenerating,
+            ...params,
+          }),
+          queue: useQueue(CONVO_ID),
+          pendingQuotes: useRecoilValue(store.pendingQuotesByConvoId(CONVO_ID)),
+          pendingSkills: useRecoilValue(store.pendingManualSkillsByConvoId(CONVO_ID)),
+        }),
+        { wrapper },
+      );
+      return { ...rendered, sendNow };
+    }
+
+    const stageContext = ({ set }: MutableSnapshot) => {
+      set(store.pendingQuotesByConvoId(CONVO_ID), ['quoted excerpt']);
+      set(store.pendingManualSkillsByConvoId(CONVO_ID), ['skill-1']);
+    };
+
+    it('queueFromComposer consumes staged quotes + skills into the queued item', () => {
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.queueFromComposer('with context');
+      });
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({
+          text: 'with context',
+          quotes: ['quoted excerpt'],
+          manualSkills: ['skill-1'],
+        }),
+      ]);
+      // Consumed, not copied: the composer chips must not ride the NEXT send.
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.pendingSkills).toEqual([]);
+    });
+
+    it('interruptAndSend captures the staged context on the front item', () => {
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.enqueue('already queued');
+      });
+      act(() => {
+        result.current.steering.interruptAndSend('urgent redirect');
+      });
+      expect(result.current.queue[0]).toEqual(
+        expect.objectContaining({
+          text: 'urgent redirect',
+          quotes: ['quoted excerpt'],
+          manualSkills: ['skill-1'],
+        }),
+      );
+      expect(result.current.queue[1].quotes).toBeUndefined();
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.pendingSkills).toEqual([]);
+    });
+
+    it('leaves staged context untouched on the steer path (steers do not carry it)', () => {
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('steer text');
+      });
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.pendingSkills).toEqual(['skill-1']);
+    });
+
+    it('queues without quotes/skills fields when nothing is staged', () => {
+      const { result } = setupWithContext();
+      act(() => {
+        result.current.steering.queueFromComposer('plain text');
+      });
+      expect(result.current.queue[0].quotes).toBeUndefined();
+      expect(result.current.queue[0].manualSkills).toBeUndefined();
+    });
+
+    it('sendQueuedNow passes the carried context to sendNow when idle', () => {
+      const { result, sendNow } = setupWithContext({ isSubmitting: false });
+      act(() => {
+        result.current.steering.sendQueuedNow({
+          id: 'q-ctx',
+          text: 'context send',
+          createdAt: Date.now(),
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        });
+      });
+      expect(sendNow).toHaveBeenCalledWith('context send', [], {
+        quotes: ['carried quote'],
+        manualSkills: ['carried-skill'],
+      });
     });
   });
 });

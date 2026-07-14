@@ -13,8 +13,8 @@ import {
   MoreHorizontal,
 } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
+import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
-import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -110,7 +110,11 @@ function QueuedRow({
 }: {
   message: QueuedMessage;
   steering: SteeringControls;
-  onEditToComposer: (text: string, files?: TMessage['files']) => void;
+  onEditToComposer: (
+    text: string,
+    files?: TMessage['files'],
+    context?: QueuedMessageContext,
+  ) => void;
 }) {
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
@@ -125,7 +129,10 @@ function QueuedRow({
       icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
       onClick: () => {
         steering.removeQueued(message.id);
-        onEditToComposer(message.text, message.files);
+        onEditToComposer(message.text, message.files, {
+          quotes: message.quotes,
+          manualSkills: message.manualSkills,
+        });
       },
     },
     toggleEntry,
@@ -145,7 +152,7 @@ function QueuedRow({
         <button
           type="button"
           className={PRIMARY_BTN_CLASS}
-          onClick={() => steering.sendQueuedNow(message.id, message.text, message.files)}
+          onClick={() => steering.sendQueuedNow(message)}
         >
           {canSteerNow ? (
             <>
@@ -252,7 +259,11 @@ function PendingSteerChips({
 }: {
   conversationId: string;
   steering: SteeringControls;
-  onEditToComposer: (text: string, files?: TMessage['files']) => void;
+  onEditToComposer: (
+    text: string,
+    files?: TMessage['files'],
+    context?: QueuedMessageContext,
+  ) => void;
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));

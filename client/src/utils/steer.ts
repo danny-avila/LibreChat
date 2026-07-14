@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts, TSteerAppliedEvent } from 'librechat-data-provider';
 
 type SteerPart = Extract<TMessageContentParts, { type: ContentTypes.STEER }>;
@@ -32,6 +32,25 @@ export function applySteerPart(message: TMessage, event: TSteerAppliedEvent): TM
   const nextContent = [...content] as TMessageContentParts[];
   nextContent[index] = part as TMessageContentParts;
   return { ...message, content: nextContent };
+}
+
+/**
+ * Conversation key for the run-end queue signal. An early-aborted FIRST turn
+ * has no server-side conversation (the client restores /c/new), so keying the
+ * signal by the optimistic stream id would park queued follow-ups under an id
+ * the user never sees again — key under NEW_CONVO (and drop the migration
+ * flag) so `useQueueDrain` leaves the queue on the new-chat composer.
+ */
+export function resolveRunEndTarget(params: {
+  conversationId: string;
+  earlyAbort: boolean;
+  startedAsNewConvo: boolean;
+}): { conversationId: string; startedAsNewConvo: boolean } {
+  const { conversationId, earlyAbort, startedAsNewConvo } = params;
+  if (earlyAbort && startedAsNewConvo) {
+    return { conversationId: String(Constants.NEW_CONVO), startedAsNewConvo: false };
+  }
+  return { conversationId, startedAsNewConvo };
 }
 
 /**
