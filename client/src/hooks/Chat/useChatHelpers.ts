@@ -191,9 +191,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         // Steers the run never injected ride the abort response. Consume them
         // here as well as on the SSE final event — clearing submissions below
         // can close the stream before that event lands, and conversion
-        // dedupes by steer id so double delivery is a no-op.
+        // dedupes by steer id so double delivery is a no-op. `claimParked`
+        // clears the parked server copy so a reload can't re-mint the chips.
         if (Array.isArray(response?.pendingSteers)) {
-          convertSteersToQueued(conversationId, response.pendingSteers);
+          convertSteersToQueued(conversationId, response.pendingSteers, { claimParked: true });
         }
         signalInterruptDrain(conversationId);
         // The SSE will receive a `done` event with `aborted: true` and clean up

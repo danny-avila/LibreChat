@@ -586,7 +586,7 @@ export default function useResumableSSE(
    *  queue/send) and `failed` chips keep their manual controls. */
   const convertLocalSteersToQueued = useRecoilCallback(
     ({ snapshot }) =>
-      (conversationId: string) => {
+      (conversationId: string, options?: { claimParked?: boolean }) => {
         const chips = snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue();
         const settled = chips
           .filter((steer) => steer.status === 'pending')
@@ -597,7 +597,7 @@ export default function useResumableSSE(
             ...(steer.files && steer.files.length > 0 && { files: steer.files }),
           }));
         if (settled.length > 0) {
-          convertSteersToQueued(conversationId, settled);
+          convertSteersToQueued(conversationId, settled, options);
         }
       },
     [convertSteersToQueued],
@@ -797,9 +797,12 @@ export default function useResumableSSE(
             // Steers the run never injected ride the final event; convert them
             // to queued follow-ups before the run-end signal fires the drain
             // (also resets the applied-id set for the finished run).
+            // `claimParked` clears the parked server copy of the same steers so
+            // a later reload can't resurrect chips dismissed after this batch.
             convertSteersToQueued(
               finalConvoId,
               Array.isArray(data.pendingSteers) ? (data.pendingSteers as TPendingSteer[]) : [],
+              { claimParked: true },
             );
             try {
               finalHandler(data, currentSubmission as EventSubmission);
@@ -1309,8 +1312,11 @@ export default function useResumableSSE(
 
           setIsSubmitting(false);
           setShowStopButton(false);
+          // The error terminal's backstop parks acked leftovers server-side;
+          // claim it now so a reload can't resurrect the chips converted here.
           convertLocalSteersToQueued(
             currentSubmission.conversation?.conversationId ?? currentStreamId,
+            { claimParked: true },
           );
           setRunEnd({
             conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
@@ -1372,6 +1378,7 @@ export default function useResumableSSE(
           setShowStopButton(false);
           convertLocalSteersToQueued(
             currentSubmission.conversation?.conversationId ?? currentStreamId,
+            { claimParked: true },
           );
           setRunEnd({
             conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,

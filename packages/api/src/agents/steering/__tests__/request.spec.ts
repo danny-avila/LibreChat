@@ -1,3 +1,4 @@
+import type { IMongoFile } from '@librechat/data-schemas';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -190,6 +191,191 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
         bytes: 999,
       },
     ]);
+  });
+
+  describe('injected getFiles (owner-scoped resolve at enqueue)', () => {
+    const dbDoc = {
+      file_id: 'f1',
+      type: 'image/png',
+      filepath: '/uploads/u1/f1.png',
+      filename: 'real.png',
+      height: 4,
+      width: 6,
+      bytes: 111,
+      user: 'user-1',
+    } as unknown as IMongoFile;
+
+    it('400s INVALID_FILES when any ref does not resolve to an owned doc, enqueuing nothing', async () => {
+      const streamId = 'steer-req-file-foreign';
+      await GenerationJobManager.createJob(streamId, user.id);
+      const getFiles = jest.fn(async () => [dbDoc]);
+
+      const result = await handleSteerRequest(
+        user,
+        {
+          conversationId: streamId,
+          text: 'x',
+          files: [{ file_id: 'f1' }, { file_id: 'f-foreign' }],
+        },
+        { getFiles },
+      );
+
+      expect(result.status).toBe(400);
+      expect(result.body.code).toBe('INVALID_FILES');
+      expect(getFiles).toHaveBeenCalledWith(
+        { file_id: { $in: ['f1', 'f-foreign'] }, user: user.id },
+        {},
+        {},
+      );
+      expect(await GenerationJobManager.steering.peek(streamId)).toEqual([]);
+    });
+
+    it('replaces client-supplied ref metadata with DB-derived shapes', async () => {
+      const streamId = 'steer-req-file-trusted';
+      await GenerationJobManager.createJob(streamId, user.id);
+      const getFiles = jest.fn(async () => [dbDoc]);
+
+      const result = await handleSteerRequest(
+        user,
+        {
+          conversationId: streamId,
+          text: 'trusted refs only',
+          files: [
+            {
+              file_id: 'f1',
+              type: 'text/html',
+              filepath: 'https://evil.example/spoof',
+              filename: 'spoof.html',
+              bytes: 1,
+            },
+          ],
+        },
+        { getFiles },
+      );
+
+      expect(result.status).toBe(202);
+      const queued = await GenerationJobManager.steering.peek(streamId);
+      expect(queued[0].files).toEqual([
+        {
+          file_id: 'f1',
+          type: 'image/png',
+          filepath: '/uploads/u1/f1.png',
+          filename: 'real.png',
+          height: 4,
+          width: 6,
+          bytes: 111,
+        },
+      ]);
+    });
+
+    it('skips the resolve for text-only steers', async () => {
+      const streamId = 'steer-req-file-none';
+      await GenerationJobManager.createJob(streamId, user.id);
+      const getFiles = jest.fn(async () => [dbDoc]);
+
+      const result = await handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'no attachments' },
+        { getFiles },
+      );
+
+      expect(result.status).toBe(202);
+      expect(getFiles).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('injected updateFilesUsage (upload-window TTL parity)', () => {
+    const dbDoc = { file_id: 'f1', type: 'image/png' } as unknown as IMongoFile;
+
+    it('marks resolved uploads used after a successful enqueue', async () => {
+      const streamId = 'steer-req-usage-ok';
+      await GenerationJobManager.createJob(streamId, user.id);
+      const getFiles = jest.fn(async () => [dbDoc]);
+      const updateFilesUsage = jest.fn(async () => []);
+
+      const result = await handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'x', files: [{ file_id: 'f1' }] },
+        { getFiles, updateFilesUsage },
+      );
+
+      expect(result.status).toBe(202);
+      expect(updateFilesUsage).toHaveBeenCalledWith([{ file_id: 'f1' }], undefined, {
+        user: user.id,
+        tenantId: undefined,
+      });
+    });
+
+    it('does not mark usage on a rejected steer and never fails the 202', async () => {
+      const streamId = 'steer-req-usage-deny';
+      await GenerationJobManager.createJob(streamId, user.id);
+      const getFiles = jest.fn(async () => [dbDoc]);
+      const updateFilesUsage = jest.fn(async () => []);
+
+      const denied = await handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'x', files: [{ file_id: 'f-unknown' }] },
+        { getFiles, updateFilesUsage },
+      );
+      expect(denied.status).toBe(400);
+      expect(updateFilesUsage).not.toHaveBeenCalled();
+
+      const failing = jest.fn(async () => {
+        throw new Error('usage write failed');
+      });
+      const accepted = await handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'x', files: [{ file_id: 'f1' }] },
+        { getFiles, updateFilesUsage: failing },
+      );
+      expect(accepted.status).toBe(202);
+      await new Promise(setImmediate);
+      expect(failing).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('injected checkAgentAccess (originating-run authorization)', () => {
+    it('403s FORBIDDEN and enqueues nothing when the check denies', async () => {
+      const streamId = 'steer-req-agent-denied';
+      await GenerationJobManager.createJob(streamId, user.id);
+      await GenerationJobManager.updateMetadata(streamId, {
+        agent_id: 'agent_abc',
+        endpoint: 'agents',
+      });
+      const checkAgentAccess = jest.fn(async () => false);
+      const getFiles = jest.fn(async () => []);
+      const updateFilesUsage = jest.fn(async () => []);
+
+      const result = await handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'inject this', files: [{ file_id: 'f1' }] },
+        { checkAgentAccess, getFiles, updateFilesUsage },
+      );
+
+      expect(result.status).toBe(403);
+      expect(result.body.code).toBe('FORBIDDEN');
+      expect(checkAgentAccess).toHaveBeenCalledWith({ agentId: 'agent_abc', endpoint: 'agents' });
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(updateFilesUsage).not.toHaveBeenCalled();
+      expect(await GenerationJobManager.steering.peek(streamId)).toEqual([]);
+    });
+
+    it('202s when the check allows, passing the job metadata identity', async () => {
+      const streamId = 'steer-req-agent-allowed';
+      await GenerationJobManager.createJob(streamId, user.id);
+      const checkAgentAccess = jest.fn(async () => true);
+
+      const result = await handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'go ahead' },
+        { checkAgentAccess },
+      );
+
+      expect(result.status).toBe(202);
+      // No metadata written yet — the callback still receives the (empty) identity.
+      expect(checkAgentAccess).toHaveBeenCalledWith({ agentId: undefined, endpoint: undefined });
+      expect(await GenerationJobManager.steering.peek(streamId)).toHaveLength(1);
+    });
   });
 });
 

@@ -4,6 +4,11 @@ import { RecoilRoot, useRecoilValue, type MutableSnapshot } from 'recoil';
 import useSteerConvert from '../useSteerConvert';
 import store from '~/store';
 
+const mockFetchStreamStatus = jest.fn();
+jest.mock('~/data-provider', () => ({
+  fetchStreamStatus: (...args: unknown[]) => mockFetchStreamStatus(...args),
+}));
+
 const CONVO_ID = 'convo-steer-convert';
 
 function setup(initialize?: (snapshot: MutableSnapshot) => void) {
@@ -70,5 +75,58 @@ describe('useSteerConvert', () => {
     });
     expect(result.current.queue).toHaveLength(1);
     expect(result.current.applied).toEqual(['srv-2']);
+  });
+
+  describe('claimParked (clears the parked server copy of live-delivered steers)', () => {
+    beforeEach(() => {
+      mockFetchStreamStatus.mockReset();
+    });
+
+    it('fires exactly one status fetch per batch and dedupes the claimed steers', async () => {
+      mockFetchStreamStatus.mockResolvedValue({
+        active: false,
+        unrecoveredSteers: [
+          { steerId: 'live-1', text: 'delivered live', createdAt: 1 },
+          { steerId: 'parked-1', text: 'parked only', createdAt: 2 },
+        ],
+      });
+      const { result } = setup();
+      await act(async () => {
+        result.current.convert(
+          CONVO_ID,
+          [
+            { steerId: 'live-1', text: 'delivered live', createdAt: 1 },
+            { steerId: 'live-2', text: 'also live', createdAt: 3 },
+          ],
+          { claimParked: true },
+        );
+      });
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
+      expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVO_ID);
+      // The claimed copy of live-1 re-ran the id-deduped conversion: no double-add.
+      expect(result.current.queue.map((item) => item.id)).toEqual(['live-1', 'parked-1', 'live-2']);
+    });
+
+    it('tolerates a failed status fetch without breaking conversion', async () => {
+      mockFetchStreamStatus.mockRejectedValue(new Error('offline'));
+      const { result } = setup();
+      await act(async () => {
+        result.current.convert(CONVO_ID, [{ steerId: 'srv-3', text: 'kept', createdAt: 1 }], {
+          claimParked: true,
+        });
+      });
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
+      expect(result.current.queue).toEqual([expect.objectContaining({ id: 'srv-3' })]);
+    });
+
+    it('skips the claim without the option or with an empty batch', async () => {
+      const { result } = setup();
+      await act(async () => {
+        result.current.convert(CONVO_ID, [{ steerId: 'srv-4', text: 'plain', createdAt: 1 }]);
+        result.current.convert(CONVO_ID, [], { claimParked: true });
+      });
+      expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([expect.objectContaining({ id: 'srv-4' })]);
+    });
   });
 });

@@ -1,7 +1,16 @@
+import { useCallback } from 'react';
 import { useRecoilCallback } from 'recoil';
 import type { TPendingSteer } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import { fetchStreamStatus } from '~/data-provider';
 import store from '~/store';
+
+interface SteerConvertOptions {
+  /** Live-delivered terminal steers also have a parked server copy (the
+   *  terminal drain parks before knowing the final reached a subscriber);
+   *  set on final/abort/error surfaces to claim-and-clear it. */
+  claimParked?: boolean;
+}
 
 /**
  * Converts server-reported leftover steers into queued follow-up chips.
@@ -11,9 +20,16 @@ import store from '~/store';
  * cleared. Safe to call from multiple delivery paths for the same steers
  * (final SSE event AND abort HTTP response): chip removal and queue
  * insertion both dedupe by steer id.
+ *
+ * `claimParked` fires ONE fire-and-forget /chat/status fetch per conversion
+ * batch: its claim-on-read consumes the parked copy of steers just delivered
+ * live, so a later reload cannot resurrect chips the user already dismissed.
+ * Claimed steers re-run the same id-deduped conversion (no double-add).
+ * Residual race: the claim no-ops if the job hasn't gone terminal by fetch
+ * time — acceptable; the parked-copy TTL still bounds it.
  */
 export default function useSteerConvert() {
-  return useRecoilCallback(
+  const convert = useRecoilCallback(
     ({ set }) =>
       (conversationId: string, steers: TPendingSteer[]) => {
         if (steers.length === 0) {
@@ -53,5 +69,23 @@ export default function useSteerConvert() {
         });
       },
     [],
+  );
+
+  return useCallback(
+    (conversationId: string, steers: TPendingSteer[], options?: SteerConvertOptions) => {
+      convert(conversationId, steers);
+      if (options?.claimParked !== true || steers.length === 0) {
+        return;
+      }
+      fetchStreamStatus(conversationId)
+        .then((status) => {
+          const unrecovered = status.unrecoveredSteers ?? [];
+          if (unrecovered.length > 0) {
+            convert(conversationId, unrecovered);
+          }
+        })
+        .catch(() => undefined);
+    },
+    [convert],
   );
 }

@@ -1,4 +1,5 @@
 import type { TFile } from 'librechat-data-provider';
+import type { SteerRequestUser } from './request';
 
 /**
  * Copies the display-metadata fields a steer attachment ref may carry,
@@ -28,4 +29,31 @@ export function toSteerFileRef(raw: unknown): Partial<TFile> | null {
     ...(typeof candidate.width === 'number' && { width: candidate.width }),
     ...(typeof candidate.bytes === 'number' && { bytes: candidate.bytes }),
   };
+}
+
+/** Unique, order-preserving `file_id`s from a steer ref list. */
+export function collectFileIds(files: Partial<TFile>[] | undefined): string[] {
+  return [
+    ...new Set(
+      (files ?? [])
+        .map((file) => file?.file_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+}
+
+/** Owner-scoped `db.getFiles` filter shared by the enqueue-time resolve and
+ *  the injection/replay fetches; `null` when there is nothing to scope with. */
+export function buildOwnerFilter(
+  fileIds: string[],
+  user: SteerRequestUser | undefined,
+): Record<string, unknown> | null {
+  if (!user?.id || fileIds.length === 0) {
+    return null;
+  }
+  const filter: Record<string, unknown> = { file_id: { $in: fileIds }, user: user.id };
+  if (user.tenantId) {
+    filter.tenantId = user.tenantId;
+  }
+  return filter;
 }

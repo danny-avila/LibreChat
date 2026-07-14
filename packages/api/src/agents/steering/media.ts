@@ -6,8 +6,8 @@ import type { TFile } from 'librechat-data-provider';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 import type { SteerMediaResult } from './runtime';
 import type { SteerRequestUser } from './request';
+import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
 import { prependFileContext } from '../client';
-import { toSteerFileRef } from './refs';
 
 /** The BaseClient encode surface the steer media pipeline reuses. */
 export interface SteerMediaClient {
@@ -51,30 +51,6 @@ export interface StampedSteerMedia {
   /** The bare steer body, so token accounting can subtract what the
    *  assistant message already counted (file context must still count). */
   steerText: string;
-}
-
-function collectFileIds(files: Partial<TFile>[] | undefined): string[] {
-  return [
-    ...new Set(
-      (files ?? [])
-        .map((file) => file?.file_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0),
-    ),
-  ];
-}
-
-function buildOwnerFilter(
-  fileIds: string[],
-  user: SteerRequestUser | undefined,
-): Record<string, unknown> | null {
-  if (!user?.id || fileIds.length === 0) {
-    return null;
-  }
-  const filter: Record<string, unknown> = { file_id: { $in: fileIds }, user: user.id };
-  if (user.tenantId) {
-    filter.tenantId = user.tenantId;
-  }
-  return filter;
 }
 
 /**

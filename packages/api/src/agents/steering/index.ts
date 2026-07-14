@@ -9,6 +9,8 @@ export {
 export type {
   SteerRequestUser,
   SteerRequestBody,
+  SteerRequestDeps,
+  SteerRunContext,
   SteerCancelBody,
   SteerRequestResult,
 } from './request';
