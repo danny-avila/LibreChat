@@ -80,13 +80,13 @@ describe('SteerPart author label', () => {
     expect(screen.getByLabelText('com_ui_steered_info')).toBeInTheDocument();
   });
 
-  it('hides the info affordance at rest, revealing it on message hover/focus', () => {
+  it('reveals on hover/focus on hover-capable pointers but stays visible on touch', () => {
     renderPart();
-    // Wrapped like the hover buttons: transparent until the message is
-    // hovered (group-hover) or the trigger is focused (focus-within).
-    const wrapper = screen.getByLabelText('com_ui_steered_info').closest('span.opacity-0');
-    expect(wrapper).not.toBeNull();
-    expect(wrapper?.className).toContain('group-hover:opacity-100');
-    expect(wrapper?.className).toContain('focus-within:opacity-100');
+    // Like the hover buttons: hidden-at-rest ONLY on hover-capable pointers
+    // ([@media(hover:hover)]:opacity-0), so touch devices keep it visible.
+    const wrapper = screen.getByTestId('steer-info-affordance');
+    expect(wrapper.className).toContain('[@media(hover:hover)]:opacity-0');
+    expect(wrapper.className).toContain('group-hover:opacity-100');
+    expect(wrapper.className).toContain('focus-within:opacity-100');
   });
 });
