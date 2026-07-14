@@ -22,6 +22,7 @@ import { isLangfuseFanoutEnabled } from '~/langfuse/config';
 
 const DEFAULT_PRIORITY = 10;
 const ENCRYPTED_PREFIX = 'v3:';
+const LANGFUSE_VERIFICATION_TIMEOUT_MS = 10_000;
 
 export interface AdminLangfuseDeps {
   findConfigByPrincipal: (
@@ -94,8 +95,10 @@ async function verifyLangfuseCredentials(
 ): Promise<LangfuseVerificationResult> {
   try {
     const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
+    const signal = AbortSignal.timeout(LANGFUSE_VERIFICATION_TIMEOUT_MS);
     const secretResponse = await fetch(`${destination.baseUrl}/api/public/projects`, {
       headers: { Authorization: `Basic ${auth}` },
+      signal,
     });
     if (!secretResponse.ok) {
       return {
@@ -112,6 +115,7 @@ async function verifyLangfuseCredentials(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ batch: [] }),
+      signal,
     });
     if (!publicResponse.ok) {
       return {
@@ -124,6 +128,13 @@ async function verifyLangfuseCredentials(
     return { success: true };
   } catch (error) {
     logger.error('[adminLangfuse] connection verification error:', error);
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      return {
+        success: false,
+        message: 'Langfuse verification timed out',
+        responseStatus: 502,
+      };
+    }
     return {
       success: false,
       message: 'Could not reach the Langfuse host',

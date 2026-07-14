@@ -398,12 +398,38 @@ describe('createAdminLangfuseHandlers', () => {
       const [url, init] = (global.fetch as unknown as jest.Mock).mock.calls[0];
       expect(url).toBe('https://cloud.langfuse.com/api/public/projects');
       expect(init.headers.Authorization).toMatch(/^Basic /);
+      expect(init.signal).toBeInstanceOf(AbortSignal);
       const [publicUrl, publicInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
       expect(publicUrl).toBe('https://cloud.langfuse.com/api/public/ingestion');
       expect(publicInit.method).toBe('POST');
       expect(publicInit.headers.Authorization).toBe('Bearer pk');
       expect(publicInit.headers['Content-Type']).toBe('application/json');
       expect(JSON.parse(publicInit.body)).toEqual({ batch: [] });
+      expect(publicInit.signal).toBe(init.signal);
+    });
+
+    it('returns a timeout failure when Langfuse verification exceeds its deadline', async () => {
+      const timeoutError = new Error('The operation was aborted due to timeout');
+      timeoutError.name = 'TimeoutError';
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockRejectedValueOnce(timeoutError) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+        }),
+        res,
+      );
+
+      expect(res.body).toEqual({
+        success: false,
+        message: 'Langfuse verification timed out',
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
     });
 
     it('rejects an invalid public key even when the secret key is valid', async () => {
