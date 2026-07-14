@@ -304,7 +304,8 @@ export default function Feedback({
 
   const handleButtonFeedback = useCallback(
     (fb: TFeedback | undefined) => {
-      if (fb?.tag?.key === 'other') setOpenDialog(true);
+      if (fb?.tag?.key === 'other_thumbsup' || fb?.tag?.key === 'other_thumbsdown')
+        setOpenDialog(true);
       else setOpenDialog(false);
       propagateMinimal(fb);
     },
@@ -313,7 +314,10 @@ export default function Feedback({
 
   const handleOtherOpen = useCallback(() => setOpenDialog(true), []);
   const handleDialogSave = useCallback(() => {
-    if (feedback?.tag?.key === 'other' && !feedback?.text?.trim()) {
+    if (
+      (feedback?.tag?.key === 'other_thumbsup' || feedback?.tag?.key === 'other_thumbsdown') &&
+      !feedback?.text?.trim()
+    ) {
       return;
     }
     const text = methods.getValues('text');

@@ -13,7 +13,7 @@ export const FEEDBACK_REASON_KEYS = [
   'not_satisfied',
   'will_not_recommend',
   'inappropriate_response',
-  'other',
+  'other_thumbsup',
 
   // Up
   'useful_crop_recommendations',
@@ -25,6 +25,7 @@ export const FEEDBACK_REASON_KEYS = [
   'very_satisfied',
   'recommend_to_others',
   'user_friendly_language',
+  'other_thumbsdown',
 ] as const;
 
 export type TFeedbackTagKey = (typeof FEEDBACK_REASON_KEYS)[number];
@@ -88,7 +89,7 @@ export const FEEDBACK_TAGS: TFeedbackTag[] = [
     icon: 'Ban',
   },
   {
-    key: 'other',
+    key: 'other_thumbsdown',
     label: 'com_ui_feedback_tag_other',
     direction: 'thumbsDown',
     icon: 'HelpCircle',
@@ -148,6 +149,12 @@ export const FEEDBACK_TAGS: TFeedbackTag[] = [
     label: 'com_ui_feedback_tag_user_friendly_language',
     direction: 'thumbsUp',
     icon: 'MessageCircle',
+  },
+  {
+    key: 'other_thumbsup',
+    label: 'com_ui_feedback_tag_other',
+    direction: 'thumbsUp',
+    icon: 'HelpCircle',
   },
 ];
 
