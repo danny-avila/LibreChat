@@ -2,6 +2,7 @@ import { memo, useMemo, useState, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { InfoHoverCard, ESide } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
@@ -101,8 +102,10 @@ const SteerPart = memo(function SteerPart({
         </div>
       </div>
       <div className="user-turn relative flex w-11/12 flex-col">
-        <h2 className={cn('select-none font-semibold', fontSize)}>
+        <h2 className={cn('flex select-none items-center gap-1.5 font-semibold', fontSize)}>
           {label}
+          {/* Subtle "?" explaining why a user message appears inside the response. */}
+          <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
           <MessageTimestamp value={timestamp} />
           {onCancel != null && (
             <button

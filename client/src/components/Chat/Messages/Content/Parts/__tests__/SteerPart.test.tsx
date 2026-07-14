@@ -72,4 +72,11 @@ describe('SteerPart author label', () => {
     expect(screen.queryByText('Danny')).toBeNull();
     expect(screen.getByText('com_user_message')).toBeInTheDocument();
   });
+
+  it('shows a subtle info affordance explaining the mid-run message', () => {
+    renderPart();
+    // The "?" InfoHoverCard clarifies why a user message appears inside the
+    // assistant response (its text is the trigger's accessible label).
+    expect(screen.getByLabelText('com_ui_steered_info')).toBeInTheDocument();
+  });
 });
