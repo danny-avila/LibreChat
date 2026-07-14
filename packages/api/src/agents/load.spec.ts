@@ -1,5 +1,5 @@
-import { loadEphemeralAgent } from './load';
 import type { LoadAgentDeps } from './load';
+import { loadEphemeralAgent } from './load';
 
 const deps: LoadAgentDeps = {
   getAgent: async () => null,
