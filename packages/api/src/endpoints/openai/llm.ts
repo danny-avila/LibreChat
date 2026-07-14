@@ -1,5 +1,6 @@
 import {
   EModelEndpoint,
+  ReasoningEffort,
   ReasoningParameterFormat,
   removeNullishValues,
   supportsAdaptiveThinking,
@@ -117,6 +118,48 @@ function getReasoningObject({
 
 function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
   return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
+}
+
+/**
+ * GPT-5.6 models reject function tools combined with `reasoning_effort` in
+ * `/v1/chat/completions` (400: "To use function tools, use /v1/responses or
+ * set reasoning_effort to 'none'"). Reasoning without tools still works on
+ * Chat Completions, but tools are bound after config time, so GPT-5.6
+ * reasoning requests default to the Responses API to avoid tool failures.
+ */
+const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
+
+function requiresResponsesApiForReasoning({
+  model,
+  reasoningEffort,
+}: {
+  model?: string;
+  reasoningEffort?: string | null;
+}): boolean {
+  if (typeof model !== 'string' || !responsesApiRequiredPattern.test(model)) {
+    return false;
+  }
+  return (
+    reasoningEffort != null &&
+    reasoningEffort !== ReasoningEffort.unset &&
+    reasoningEffort !== ReasoningEffort.none
+  );
+}
+
+/**
+ * The GPT-5.6 Responses API default is first-party OpenAI only. A
+ * `reverseProxyUrl`/`directEndpoint` gateway sets a custom base URL and may
+ * expose only `/v1/chat/completions`, so it keeps its configured path.
+ */
+function isCanonicalOpenAIBaseURL(baseURL?: string | null): boolean {
+  if (!baseURL) {
+    return true;
+  }
+  try {
+    return /(^|\.)api\.openai\.com$/i.test(new URL(baseURL).hostname);
+  } catch {
+    return false;
+  }
 }
 
 function removeReasoningField(target: Record<string, unknown>, field: string) {
@@ -720,6 +763,30 @@ export function getOpenAILLMConfig({
     if (promptCacheTtlValue != null) {
       llmConfig.promptCacheTtl = promptCacheTtlValue;
     }
+  }
+
+  /**
+   * Default GPT-5.6 reasoning requests to the Responses API unless explicitly set.
+   * Reads `llmConfig.model` (reflects `addParams` overrides) and skips when
+   * `dropParams` removes `reasoning_effort` later anyway (`'reasoning'` only
+   * drops the nested object, not the flat param) or opts out of the Responses
+   * API entirely. Limited to first-party OpenAI: OpenRouter, custom gateways
+   * (non-canonical base URL), and `reasoningFormat: 'disabled'` (no reasoning
+   * payload is sent) keep their existing Chat Completions path.
+   */
+  const responsesApiOptedOut =
+    dropParams != null &&
+    (dropParams.includes('reasoning_effort') || dropParams.includes('useResponsesApi'));
+  if (
+    !useOpenRouter &&
+    endpoint === EModelEndpoint.openAI &&
+    isCanonicalOpenAIBaseURL(baseURL) &&
+    reasoningFormat !== ReasoningParameterFormat.disabled &&
+    llmConfig.useResponsesApi == null &&
+    !responsesApiOptedOut &&
+    requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
+  ) {
+    llmConfig.useResponsesApi = true;
   }
 
   if (!useOpenRouter) {
