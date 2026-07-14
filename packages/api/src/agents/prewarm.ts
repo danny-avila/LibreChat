@@ -1,27 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import { getCodeBaseURL } from '@librechat/agents';
+import { CacheKeys } from 'librechat-data-provider';
+import type { Keyv } from 'keyv';
 import type { ServerRequest } from '~/types';
 import { getCodeApiAuthHeaders } from '~/auth/codeapi';
+import { standardCache } from '~/cache/cacheFactory';
 import { anyAgentHasStatefulSessions } from './run';
 
 type PrewarmAgents = Parameters<typeof anyAgentHasStatefulSessions>[0];
 
-interface SandboxState {
-  /** When the last prewarm request was fired; 0 when only real execs touched the entry. */
-  firedAt: number;
-  /** When the sandbox last confirmed a completed request (prewarm or real exec). */
-  readyAt: number | null;
-}
-
-/**
- * Per-conversation sandbox lifecycle observations, keyed by conversationId
- * (= runtime_session_hint). Only conversations whose run resolved
- * `statefulCodeSessions` ever get an entry, so presence doubles as the
- * "stateful deployment" gate for {@link shouldSignalSandboxStart}.
- */
-const sandboxStateByConversation = new Map<string, SandboxState>();
-
-const MAX_TRACKED_CONVERSATIONS = 5000;
 const PREWARM_INFLIGHT_COOLDOWN_MS = 120_000;
 const PREWARM_REQUEST_TIMEOUT_MS = 120_000;
 
@@ -41,60 +28,66 @@ function prewarmDisabled(): boolean {
   return process.env.CODE_SANDBOX_PREWARM === 'false';
 }
 
-function pruneOldestEntries(): void {
-  if (sandboxStateByConversation.size <= MAX_TRACKED_CONVERSATIONS) {
-    return;
+/**
+ * Per-conversation sandbox state, shared across replicas when Redis is
+ * configured and falling back to a process-local store otherwise. Two keys
+ * per conversation (= runtime_session_hint):
+ * - `inflight:<id>` — a prewarm was fired and no completion has landed yet;
+ *   the TTL doubles as the retry backoff when a prewarm fails or hangs.
+ * - `ready:<id>` — the sandbox completed a request (prewarm or real exec)
+ *   within the warm window.
+ */
+let cacheInstance: Keyv | undefined;
+
+function sandboxCache(): Keyv {
+  if (!cacheInstance) {
+    cacheInstance = standardCache(CacheKeys.SANDBOX_PREWARM);
   }
-  let oldestKey: string | null = null;
-  let oldestTouchedAt = Infinity;
-  for (const [key, state] of sandboxStateByConversation) {
-    const touchedAt = Math.max(state.firedAt, state.readyAt ?? 0);
-    if (touchedAt < oldestTouchedAt) {
-      oldestTouchedAt = touchedAt;
-      oldestKey = key;
-    }
-  }
-  if (oldestKey != null) {
-    sandboxStateByConversation.delete(oldestKey);
-  }
+  return cacheInstance;
+}
+
+function readyKey(conversationId: string): string {
+  return `ready:${conversationId}`;
+}
+
+function inflightKey(conversationId: string): string {
+  return `inflight:${conversationId}`;
 }
 
 /**
  * Record that the conversation's sandbox answered a request (prewarm or a
- * real execute_code/bash call). Refreshes the warm window used by both
- * {@link maybePrewarmCodeSandbox} and {@link shouldSignalSandboxStart}.
+ * real execute_code/bash call), refreshing the warm window and releasing
+ * any in-flight prewarm marker. Callers on hot paths should not await this;
+ * `void markSandboxReady(...)` is the expected usage.
  */
-export function markSandboxReady(conversationId: string): void {
+export async function markSandboxReady(conversationId: string): Promise<void> {
   if (!conversationId) {
     return;
   }
-  const now = Date.now();
-  const state = sandboxStateByConversation.get(conversationId);
-  if (state) {
-    state.readyAt = now;
-    return;
-  }
-  sandboxStateByConversation.set(conversationId, { firedAt: 0, readyAt: now });
-  pruneOldestEntries();
+  const cache = sandboxCache();
+  await Promise.all([
+    cache.set(readyKey(conversationId), true, coldAfterMs()),
+    cache.delete(inflightKey(conversationId)),
+  ]);
 }
 
 /**
  * Whether the UI should be told the sandbox is cold-booting for this
- * conversation's code tool call. True only for conversations tracked as
- * stateful (an entry exists) whose sandbox has not confirmed ready within
- * the warm window — stateless deployments never get an entry and never
- * signal, preserving existing behavior. The `CODE_SANDBOX_PREWARM=false`
- * kill switch silences this too, reverting the full feature to baseline.
+ * conversation's code tool call: a prewarm is in flight and no completion
+ * (prewarm or real exec) has landed. Deployments that never prewarm —
+ * stateless setups or the `CODE_SANDBOX_PREWARM=false` kill switch — never
+ * have an in-flight marker and never signal, preserving existing behavior.
  */
-export function shouldSignalSandboxStart(conversationId?: string | null): boolean {
+export async function shouldSignalSandboxStart(conversationId?: string | null): Promise<boolean> {
   if (!conversationId || prewarmDisabled()) {
     return false;
   }
-  const state = sandboxStateByConversation.get(conversationId);
-  if (!state) {
-    return false;
-  }
-  return state.readyAt == null || Date.now() - state.readyAt > coldAfterMs();
+  const cache = sandboxCache();
+  const [ready, inflight] = await Promise.all([
+    cache.get(readyKey(conversationId)),
+    cache.get(inflightKey(conversationId)),
+  ]);
+  return inflight != null && ready == null;
 }
 
 async function sendPrewarmRequest(req: ServerRequest, conversationId: string): Promise<void> {
@@ -119,7 +112,7 @@ async function sendPrewarmRequest(req: ServerRequest, conversationId: string): P
    * Draining also releases the socket instead of leaving the body for
    * undici to reap. */
   await response.arrayBuffer();
-  markSandboxReady(conversationId);
+  await markSandboxReady(conversationId);
   logger.debug(`[prewarmCodeSandbox] Sandbox warm for conversation ${conversationId}`);
 }
 
@@ -127,10 +120,13 @@ async function sendPrewarmRequest(req: ServerRequest, conversationId: string): P
  * Fire-and-forget boot of the per-conversation stateful code sandbox so it
  * comes up in parallel with model generation instead of on the first
  * execute_code/bash call (~4s cold, worse on heavy first imports). No-op
- * unless a reachable agent resolved `statefulCodeSessions`, the sandbox is
- * outside its warm window, and no prewarm is already in flight. Failures
- * are logged at debug level and never affect the chat request; the first
- * real tool call simply pays the cold boot as before.
+ * unless a reachable agent resolved `statefulCodeSessions` and neither a
+ * warm marker nor an in-flight prewarm exists. The existence check and
+ * marker write are not atomic, so concurrent turns (or replicas) can rarely
+ * double-fire — harmless, since the prewarm exec is a trivial idempotent
+ * `true` and the Code API serializes per-session work behind its own lock.
+ * Failures are logged at debug level and never affect the chat request; the
+ * in-flight marker's TTL then acts as the retry backoff.
  */
 export function maybePrewarmCodeSandbox(params: {
   req: ServerRequest;
@@ -141,27 +137,18 @@ export function maybePrewarmCodeSandbox(params: {
   if (prewarmDisabled() || !conversationId || !anyAgentHasStatefulSessions(agents)) {
     return;
   }
-  const now = Date.now();
-  const state = sandboxStateByConversation.get(conversationId);
-  const withinWarmWindow = state?.readyAt != null && now - state.readyAt <= coldAfterMs();
-  /* In-flight means a fired prewarm that no completion (readyAt) has caught
-   * up with — real execs refreshing readyAt must not extend this, or a
-   * cold-after window shorter than the cooldown could suppress needed
-   * prewarms between the two thresholds. */
-  const prewarmInFlight =
-    state != null &&
-    now - state.firedAt <= PREWARM_INFLIGHT_COOLDOWN_MS &&
-    (state.readyAt == null || state.readyAt < state.firedAt);
-  if (withinWarmWindow || prewarmInFlight) {
-    return;
-  }
-  if (state) {
-    state.firedAt = now;
-  } else {
-    sandboxStateByConversation.set(conversationId, { firedAt: now, readyAt: null });
-    pruneOldestEntries();
-  }
-  void sendPrewarmRequest(req, conversationId).catch((error) => {
+  void (async () => {
+    const cache = sandboxCache();
+    const [ready, inflight] = await Promise.all([
+      cache.get(readyKey(conversationId)),
+      cache.get(inflightKey(conversationId)),
+    ]);
+    if (ready != null || inflight != null) {
+      return;
+    }
+    await cache.set(inflightKey(conversationId), true, PREWARM_INFLIGHT_COOLDOWN_MS);
+    await sendPrewarmRequest(req, conversationId);
+  })().catch((error) => {
     logger.debug(
       `[prewarmCodeSandbox] Prewarm failed for conversation ${conversationId}: ${
         error instanceof Error ? error.message : String(error)
@@ -171,6 +158,6 @@ export function maybePrewarmCodeSandbox(params: {
 }
 
 /** Test-only: clear tracked sandbox state between specs. */
-export function resetSandboxStateForTests(): void {
-  sandboxStateByConversation.clear();
+export async function resetSandboxStateForTests(): Promise<void> {
+  await sandboxCache().clear();
 }

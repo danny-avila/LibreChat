@@ -244,7 +244,7 @@ async function emitEvent(res, streamId, eventData) {
  */
 async function maybeEmitSandboxStarting(res, streamId, data, metadata) {
   const conversationId = metadata?.thread_id;
-  if (!conversationId || !shouldSignalSandboxStart(conversationId)) {
+  if (!conversationId || !(await shouldSignalSandboxStart(conversationId))) {
     return;
   }
   const toolCalls = data?.stepDetails?.tool_calls ?? [];

@@ -3567,7 +3567,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       tc.runtimeSessionHint != null &&
                       tc.runtimeSessionHint !== ''
                     ) {
-                      markSandboxReady(tc.runtimeSessionHint);
+                      void markSandboxReady(tc.runtimeSessionHint);
                     }
 
                     return handlerResult;
@@ -3738,7 +3738,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                      * this refreshes the prewarm module's warm window without
                      * inspecting tool names. */
                     if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
-                      markSandboxReady(tc.runtimeSessionHint);
+                      void markSandboxReady(tc.runtimeSessionHint);
                     }
 
                     // Code-execution tools emit per-call boilerplate

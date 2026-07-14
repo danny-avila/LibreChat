@@ -26,8 +26,8 @@ function mockResponse(init: { ok: boolean; status: number }): Response {
 describe('maybePrewarmCodeSandbox', () => {
   let fetchMock: jest.SpyInstance;
 
-  beforeEach(() => {
-    resetSandboxStateForTests();
+  beforeEach(async () => {
+    await resetSandboxStateForTests();
     process.env.LIBRECHAT_CODE_BASEURL = 'http://code.test/v1';
     delete process.env.CODE_SANDBOX_PREWARM;
     delete process.env.CODE_SANDBOX_COLD_AFTER_MS;
@@ -45,7 +45,7 @@ describe('maybePrewarmCodeSandbox', () => {
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(plainAgent) });
     await flushAsync();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(shouldSignalSandboxStart('convo-1')).toBe(false);
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
   });
 
   it('does nothing without a conversationId', async () => {
@@ -73,7 +73,7 @@ describe('maybePrewarmCodeSandbox', () => {
       code: 'true',
       runtime_session_hint: 'convo-1',
     });
-    expect(shouldSignalSandboxStart('convo-1')).toBe(false);
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
   });
 
   it('walks subagent configs for the stateful gate', async () => {
@@ -83,7 +83,7 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not refire within the warm window', async () => {
+  it('does not refire while the warm marker is fresh', async () => {
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
     await flushAsync();
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
@@ -91,33 +91,26 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('refires once the warm window has expired', async () => {
+  it('does not refire while a prewarm is in flight', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => undefined));
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refires once the warm marker has expired', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate'] });
     jest.setSystemTime(new Date('2026-07-13T00:00:00Z'));
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
     await flushAsync();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(shouldSignalSandboxStart('convo-1')).toBe(false);
 
     jest.setSystemTime(new Date('2026-07-13T01:00:00Z'));
-    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
     await flushAsync();
     expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps signaling when the prewarm request fails, without throwing', async () => {
-    fetchMock.mockRejectedValue(new Error('boom'));
-    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
-    await flushAsync();
-    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
-  });
-
-  it('treats a non-2xx prewarm response as a failure', async () => {
-    fetchMock.mockResolvedValue(mockResponse({ ok: false, status: 503 }));
-    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
-    await flushAsync();
-    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
   });
 
   it('prewarms again after a short cold-after window even within the fire cooldown', async () => {
@@ -129,10 +122,40 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     jest.setSystemTime(new Date('2026-07-13T00:00:45Z'));
-    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
     await flushAsync();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('signals while a prewarm is in flight and stops after it completes', async () => {
+    let resolveFetch: ((value: Response) => void) | undefined;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
+
+    resolveFetch?.(mockResponse({ ok: true, status: 200 }));
+    await flushAsync();
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
+  });
+
+  it('keeps signaling when the prewarm request fails, without throwing', async () => {
+    fetchMock.mockRejectedValue(new Error('boom'));
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
+  });
+
+  it('treats a non-2xx prewarm response as a failure', async () => {
+    fetchMock.mockResolvedValue(mockResponse({ ok: false, status: 503 }));
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
   });
 
   it('does not mark the sandbox ready when the 2xx body fails to drain', async () => {
@@ -145,13 +168,14 @@ describe('maybePrewarmCodeSandbox', () => {
     } as unknown as Response);
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
     await flushAsync();
-    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
   });
 });
 
 describe('shouldSignalSandboxStart / markSandboxReady', () => {
-  beforeEach(() => {
-    resetSandboxStateForTests();
+  beforeEach(async () => {
+    await resetSandboxStateForTests();
+    delete process.env.CODE_SANDBOX_PREWARM;
     delete process.env.CODE_SANDBOX_COLD_AFTER_MS;
   });
 
@@ -159,44 +183,33 @@ describe('shouldSignalSandboxStart / markSandboxReady', () => {
     jest.useRealTimers();
   });
 
-  it('never signals for untracked conversations (stateless deployments)', () => {
-    expect(shouldSignalSandboxStart('never-seen')).toBe(false);
-    expect(shouldSignalSandboxStart(null)).toBe(false);
-    expect(shouldSignalSandboxStart(undefined)).toBe(false);
+  it('never signals for untracked conversations (stateless deployments)', async () => {
+    await expect(shouldSignalSandboxStart('never-seen')).resolves.toBe(false);
+    await expect(shouldSignalSandboxStart(null)).resolves.toBe(false);
+    await expect(shouldSignalSandboxStart(undefined)).resolves.toBe(false);
   });
 
-  it('stops signaling after a real tool call marks the sandbox ready', () => {
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-07-13T00:00:00Z'));
+  it('stops signaling after a real tool call marks the sandbox ready', async () => {
     const fetchMock = jest
       .spyOn(globalThis, 'fetch')
       .mockImplementation(() => new Promise(() => undefined));
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
-    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
+    await flushAsync();
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
 
-    markSandboxReady('convo-1');
-    expect(shouldSignalSandboxStart('convo-1')).toBe(false);
+    await markSandboxReady('convo-1');
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
     fetchMock.mockRestore();
   });
 
-  it('honors CODE_SANDBOX_COLD_AFTER_MS overrides', () => {
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-07-13T00:00:00Z'));
-    process.env.CODE_SANDBOX_COLD_AFTER_MS = '1000';
-    markSandboxReady('convo-1');
-    expect(shouldSignalSandboxStart('convo-1')).toBe(false);
-    jest.setSystemTime(new Date('2026-07-13T00:00:02Z'));
-    expect(shouldSignalSandboxStart('convo-1')).toBe(true);
-  });
-
-  it('never signals when the kill switch is on, even for tracked conversations', () => {
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-07-13T00:00:00Z'));
+  it('never signals when the kill switch is on, even with an in-flight prewarm', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => new Promise(() => undefined));
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
     process.env.CODE_SANDBOX_PREWARM = 'false';
-    process.env.CODE_SANDBOX_COLD_AFTER_MS = '1000';
-    markSandboxReady('convo-1');
-    jest.setSystemTime(new Date('2026-07-13T00:00:05Z'));
-    expect(shouldSignalSandboxStart('convo-1')).toBe(false);
-    delete process.env.CODE_SANDBOX_PREWARM;
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
+    fetchMock.mockRestore();
   });
 });
