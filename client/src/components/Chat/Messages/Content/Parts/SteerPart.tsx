@@ -104,8 +104,16 @@ const SteerPart = memo(function SteerPart({
       <div className="user-turn relative flex w-11/12 flex-col">
         <h2 className={cn('flex select-none items-center gap-1.5 font-semibold', fontSize)}>
           {label}
-          {/* Subtle "?" explaining why a user message appears inside the response. */}
-          <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
+          {/* Subtle "?" explaining why a user message appears inside the
+           *  response. Like the message hover buttons, it's revealed on
+           *  hover/focus on hover-capable pointers, but stays visible on
+           *  touch (no hover to reveal it) via [@media(hover:hover)]:opacity-0. */}
+          <span
+            data-testid="steer-info-affordance"
+            className="transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
+          >
+            <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
+          </span>
           <MessageTimestamp value={timestamp} />
           {onCancel != null && (
             <button
