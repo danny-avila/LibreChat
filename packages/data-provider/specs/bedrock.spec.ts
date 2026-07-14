@@ -1372,6 +1372,38 @@ describe('bedrockInputParser', () => {
     });
   });
 
+  // Regression for #14029: `system` is a reserved top-level Converse field, so a
+  // copy left inside additionalModelRequestFields makes Bedrock reject the request
+  // ("The additional field system conflicts with an existing field").
+  describe('system field (issue #14029)', () => {
+    test('promotes system to root without duplicating it in additionalModelRequestFields', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'some-other-model',
+        system: 'You are a helpful assistant.',
+      }) as Record<string, unknown>;
+      expect((parsed.additionalModelRequestFields as Record<string, unknown>).system).toBe(
+        'You are a helpful assistant.',
+      );
+
+      const output = bedrockOutputParser(parsed);
+      expect(output.system).toBe('You are a helpful assistant.');
+      expect(output.additionalModelRequestFields).toBeUndefined();
+    });
+
+    test('strips system from additionalModelRequestFields while preserving other fields', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-7-sonnet',
+        system: 'You are a helpful assistant.',
+      }) as Record<string, unknown>;
+
+      const output = bedrockOutputParser(parsed);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(output.system).toBe('You are a helpful assistant.');
+      expect(amrf?.system).toBeUndefined();
+      expect(amrf?.thinking).toBeDefined();
+    });
+  });
+
   describe('Model switching cleanup', () => {
     test('should strip anthropic_beta when switching from Anthropic to non-Anthropic model', () => {
       const staleConversationData = {

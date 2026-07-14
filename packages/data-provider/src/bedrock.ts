@@ -776,7 +776,14 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
   }
 
   result = configureThinking(result as AnthropicInput);
-  const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  let amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  // `system` is a reserved top-level Converse field; a duplicate inside
+  // additionalModelRequestFields makes Bedrock reject the request.
+  if (amrf && 'system' in amrf) {
+    amrf = { ...amrf };
+    delete amrf.system;
+    result.additionalModelRequestFields = amrf;
+  }
   if (!amrf || Object.keys(amrf).length === 0) {
     delete result.additionalModelRequestFields;
   }
