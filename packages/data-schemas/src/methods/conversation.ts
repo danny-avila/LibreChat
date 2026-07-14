@@ -571,18 +571,22 @@ export function createConversationMethods(
     if (search) {
       try {
         const { searchMessages } = getMessageMethods();
+        const searchLimit = 1000;
         const [convoResults, messageResults] = await Promise.all([
           (
             Conversation as unknown as {
               meiliSearch: (
                 query: string,
-                options: Record<string, string>,
+                options: Record<string, string | number>,
               ) => Promise<{
                 hits: Array<{ conversationId: string }>;
               }>;
             }
-          ).meiliSearch(search, { filter: `user = "${user}"` }),
-          searchMessages(search, { filter: `user = "${user}"` }) as Promise<{
+          ).meiliSearch(search, { filter: `user = "${user}"`, limit: searchLimit }),
+          searchMessages(search, {
+            filter: `user = "${user}"`,
+            limit: searchLimit,
+          }) as Promise<{
             hits?: Array<{ conversationId: string }>;
           }>,
         ]);
