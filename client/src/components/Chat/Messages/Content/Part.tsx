@@ -21,6 +21,7 @@ import {
   FileAuthoringCall,
   BashCall,
   SubagentCall,
+  SteerPart,
 } from './Parts';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
@@ -68,6 +69,17 @@ const Part = memo(function Part({
       <AskUserQuestion
         actionId={askUserQuestion.ask_user_question.actionId}
         question={askUserQuestion.ask_user_question.question}
+      />
+    );
+  }
+
+  if (part.type === ContentTypes.STEER) {
+    return (
+      <SteerPart
+        steer={part[ContentTypes.STEER]}
+        files={part.files}
+        steerId={part.steerId}
+        createdAt={part.createdAt}
       />
     );
   }

@@ -1,5 +1,5 @@
-import { EToolResources } from './assistants';
 import type { CodeEnvRef } from '../codeEnvRef';
+import { EToolResources } from './assistants';
 
 export enum FileSources {
   local = 'local',
@@ -235,6 +235,14 @@ export type VoiceOptions = {
   onSuccess?: (data: VoiceResponse, variables: unknown, context?: unknown) => void;
   onMutate?: () => void | Promise<unknown>;
   onError?: (error: unknown, variables: unknown, context?: unknown) => void;
+};
+
+export type TFilesUsageBody = {
+  file_ids: string[];
+};
+
+export type TFilesUsageResponse = {
+  marked: number;
 };
 
 export type DeleteFilesResponse = {

@@ -26,6 +26,7 @@ const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
+const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
@@ -37,6 +38,8 @@ const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion pa
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
 const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
+const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
+const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const SLOW_REPLY_CHUNKS = 160;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
@@ -599,6 +602,38 @@ function fileAuthoringResponses(operation, toolNames) {
   };
 }
 
+/**
+ * Slow two-turn run with a real MCP tool boundary for the steering e2e: turn 1
+ * streams a slow preamble then calls the advertised `remember_fact` MCP tool
+ * (steers drain at the PostToolBatch boundary), turn 2 streams the final text.
+ */
+function steerToolReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E steer tool reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  const chunks = Array.from(
+    { length: SLOW_REPLY_CHUNKS },
+    (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+  ).join(' ');
+  return {
+    responses: [`E2E steer tool preamble ${label} ${chunks}`, `${STEER_TOOL_FINAL_TEXT} ${label}`],
+    sleep: SLOW_CHUNK_DELAY_MS,
+    toolCalls: [
+      {
+        id: `call_e2e_steer_${label}`,
+        name: toolName,
+        args: { fact: `steer boundary ${label}` },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
 function findLastToolMessageText(messages, requiredToken) {
   for (let index = (messages ?? []).length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -709,6 +744,11 @@ function resolveResponses({ agents, messages, text, toolNames }) {
   const reply = replyResponses(text);
   if (reply) {
     return reply;
+  }
+
+  const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
+  if (steerToolLabel) {
+    return steerToolReplyResponses(steerToolLabel, toolNames);
   }
 
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
