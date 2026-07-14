@@ -40,6 +40,7 @@ import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
   output: {
@@ -3554,6 +3555,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     }
 
+                    /* Sandbox-routed create_file/edit_file return before the
+                     * generic invoke path's marker below, so refresh the warm
+                     * window here. Gated on `isSandboxFileAuthoringCall`:
+                     * skill-path writes and skill/read_file calls on this
+                     * branch may resolve without touching the Code API, and
+                     * under-marking only costs a redundant cold-boot label. */
+                    if (
+                      isSandboxFileAuthoringCall &&
+                      handlerResult.status === 'success' &&
+                      tc.runtimeSessionHint != null &&
+                      tc.runtimeSessionHint !== ''
+                    ) {
+                      void markSandboxReady(tc.runtimeSessionHint);
+                    }
+
                     return handlerResult;
                   }
 
@@ -3717,6 +3733,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         metadata,
                       } as Record<string, unknown>,
                     );
+
+                    /* Only sandbox-bound calls carry a runtime session hint, so
+                     * this refreshes the prewarm module's warm window without
+                     * inspecting tool names. */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      void markSandboxReady(tc.runtimeSessionHint);
+                    }
 
                     // Code-execution tools emit per-call boilerplate
                     // ("Note: ..." paragraphs and `| <annotation>` per-file

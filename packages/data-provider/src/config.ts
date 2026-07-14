@@ -2304,6 +2304,10 @@ export enum CacheKeys {
    */
   USER_PRINCIPALS = 'USER_PRINCIPALS',
   /**
+   * Key for per-conversation stateful code sandbox prewarm/warm state.
+   */
+  SANDBOX_PREWARM = 'SANDBOX_PREWARM',
+  /**
    * Key for the title generation cache.
    */
   GEN_TITLE = 'GEN_TITLE',

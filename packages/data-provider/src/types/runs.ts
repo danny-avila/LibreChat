@@ -42,7 +42,15 @@ export enum StepEvents {
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
   ON_SUBAGENT_UPDATE = 'on_subagent_update',
+  ON_SANDBOX_STARTING = 'on_sandbox_starting',
 }
+
+/** Payload for {@link StepEvents.ON_SANDBOX_STARTING} — the stateful code
+ * sandbox is cold-booting for the given code tool call. */
+export type SandboxStartingEvent = {
+  tool_call_id: string;
+  runId?: string;
+};
 
 /** Token-tracking event names streamed to the client (separate from StepEvents dispatch). */
 export enum UsageEvents {
