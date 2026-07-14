@@ -21,6 +21,7 @@ export * from './usage';
 export * from './resources';
 export * from './responses';
 export * from './skills';
+export * from './subagents';
 export * from './skillConfigurable';
 export * from './skillFiles';
 export * from './codeFilesSession';
