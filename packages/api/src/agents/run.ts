@@ -1495,13 +1495,17 @@ export async function createRun({
         ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
       ],
     },
-    // Let host file-authoring tools share the code-execution sandbox session so
-    // a file created with create_file/edit_file is visible to later
+    // Let host file tools share the code-execution sandbox session so a file
+    // created with create_file/edit_file is visible to later
     // execute_code/bash_tool calls (and vice versa). The SDK folds these tools'
     // returned exec session/files into the shared code session and injects the
-    // existing session into their requests. Requires @librechat/agents with
-    // codeSessionToolNames support (agents#283); older versions ignore it.
-    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
+    // existing session into their requests. Membership here also stamps the
+    // stateful `runtimeSessionHint` and excludes the tool from eager execution
+    // — read_file needs both, or its sandbox `cat` runs hintless on the Code
+    // API's per-user default runtime session and cannot see files bash_tool
+    // just wrote in the conversation's session. Requires @librechat/agents
+    // with codeSessionToolNames support (agents#283); older versions ignore it.
+    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, Constants.READ_FILE],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
