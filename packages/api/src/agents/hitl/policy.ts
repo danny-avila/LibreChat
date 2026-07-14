@@ -236,6 +236,16 @@ export const RESUME_CONTEXT_KEYS = [
   // different skill's tools (manualSkills isn't covered by the fingerprint). Replay-only.
   // (alwaysAppliedSkills is NOT here — it's resolved server-side from the DB, not req.body.)
   'manualSkills',
+  // Graph-determining for ephemeral agents: `loadEphemeralAgent` encodes the agent id
+  // (and thus the LangGraph node name / HITL checkpoint namespace) from
+  // `sender = modelLabel ?? modelSpec.label ?? …`. `modelLabel` is stripped from the
+  // RESOLVED llmConfig captured at pause (sanitizeResumeModelParameters reads the
+  // initialized agent's model_parameters), so without replaying the original request
+  // value the resumed id falls back to modelSpec.label → a DIFFERENT id → the interrupt
+  // checkpoint (namespaced by the paused id) can't be re-entered → empty-graph resume
+  // (#14253). It rides top-level on req.body and flows into model_parameters via the
+  // build spread, so replaying it here restores the stable id. Replay-only.
+  'modelLabel',
 ] as const;
 
 export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>> & {
@@ -329,13 +339,40 @@ function sanitizeParamValue(value: unknown, depth: number): unknown {
 }
 
 /**
+ * The resolved Anthropic `thinking` parameter is a provider-format object
+ * (`{ type: 'enabled' | 'disabled' | 'adaptive', budget_tokens? }`) for Opus/Sonnet
+ * 4+, but the request body — and the compact-convo schema (`thinking: z.boolean()`)
+ * that the resume replay is validated against — expects the UI form. A stray object
+ * fails that field, and the schema's `.catch(() => ({}))` drops the WHOLE parse
+ * (`model`/`spec` included), surfacing as `missing_model` on resume of a
+ * custom-endpoint ephemeral agent (#14253). Convert it back to
+ * `{ thinking: boolean, thinkingBudget? }` so the replayed params round-trip cleanly.
+ */
+function normalizeThinkingParam(params: Record<string, unknown>): void {
+  const thinking = params.thinking;
+  if (thinking == null || typeof thinking !== 'object' || Array.isArray(thinking)) {
+    return;
+  }
+  const { type, budget_tokens: budget } = thinking as {
+    type?: unknown;
+    budget_tokens?: unknown;
+  };
+  params.thinking = type !== 'disabled';
+  if (params.thinkingBudget == null && typeof budget === 'number') {
+    params.thinkingBudget = budget;
+  }
+}
+
+/**
  * Strip credentials and server transport config from resolved model parameters before
  * they are persisted for resume replay. The initialized agent's `model_parameters` are
  * the resolved `llmConfig` — they carry provider secrets (`apiKey`, Azure key names,
  * Google `authOptions`, Bedrock `credentials`) and gateway config (`configuration`,
  * headers, base URLs). Resume re-resolves all of those server-side from env/config, so
  * only the user-level generation params (temperature, max tokens, custom endpoint
- * params, …) need to survive the round trip.
+ * params, …) need to survive the round trip. Provider-format params that conflict with
+ * the request-body schema on replay are normalized back to the UI form (see
+ * {@link normalizeThinkingParam}).
  */
 export function sanitizeResumeModelParameters(
   params: unknown,
@@ -343,7 +380,9 @@ export function sanitizeResumeModelParameters(
   if (params == null || typeof params !== 'object' || Array.isArray(params)) {
     return undefined;
   }
-  return sanitizeParamValue(params, 0) as Record<string, unknown>;
+  const sanitized = sanitizeParamValue(params, 0) as Record<string, unknown>;
+  normalizeThinkingParam(sanitized);
+  return sanitized;
 }
 
 /** Extract the graph-determining fields from a request body for durable replay. */

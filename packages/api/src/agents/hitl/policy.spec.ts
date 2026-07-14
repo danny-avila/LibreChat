@@ -356,6 +356,34 @@ describe('sanitizeResumeModelParameters', () => {
     expect(sanitizeResumeModelParameters('sk-secret')).toBeUndefined();
     expect(sanitizeResumeModelParameters(['sk-secret'])).toBeUndefined();
   });
+
+  test('normalizes the resolved Anthropic object `thinking` back to the request-body form (#14253)', () => {
+    // Opus/Sonnet 4+ resolve `thinking` to a provider-format object; replaying it
+    // verbatim fails the compact-convo `thinking: z.boolean()` field and its
+    // `.catch(()=>({}))` drops model/spec → missing_model.
+    expect(
+      sanitizeResumeModelParameters({
+        model: 'claude-opus-4-20250514',
+        thinking: { type: 'enabled', budget_tokens: 2048 },
+      }),
+    ).toEqual({ model: 'claude-opus-4-20250514', thinking: true, thinkingBudget: 2048 });
+
+    expect(sanitizeResumeModelParameters({ thinking: { type: 'disabled' } })).toEqual({
+      thinking: false,
+    });
+
+    // Boolean thinking (and an explicit thinkingBudget) are left untouched.
+    expect(sanitizeResumeModelParameters({ thinking: true, thinkingBudget: 4096 })).toEqual({
+      thinking: true,
+      thinkingBudget: 4096,
+    });
+    expect(
+      sanitizeResumeModelParameters({
+        thinking: { type: 'enabled', budget_tokens: 2048 },
+        thinkingBudget: 4096,
+      }),
+    ).toEqual({ thinking: true, thinkingBudget: 4096 });
+  });
 });
 
 describe('computeAgentRequestFingerprint', () => {
@@ -434,6 +462,8 @@ describe('pickResumeContext / applyResumeContext', () => {
       timezone: 'America/New_York',
       // Graph-determining: skill allowed-tools union into the tool set.
       manualSkills: ['code-reviewer'],
+      // Graph-determining: feeds the ephemeral agent id / checkpoint namespace (#14253).
+      modelLabel: 'My Opus',
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -447,7 +477,20 @@ describe('pickResumeContext / applyResumeContext', () => {
       addedConvo: { agent_id: 'secondary' },
       timezone: 'America/New_York',
       manualSkills: ['code-reviewer'],
+      modelLabel: 'My Opus',
     });
+  });
+
+  it('replays a dropped modelLabel so the ephemeral agent id stays stable (#14253)', () => {
+    // Resume/reload case: the resolved llmConfig stripped modelLabel; the server restores
+    // the original top-level value so parseCompactConvo re-derives the same sender/id.
+    const restored: Record<string, unknown> = { conversationId: 'c', actionId: 'x' };
+    applyResumeContext(restored, { endpoint: 'my-custom-endpoint', modelLabel: 'My Opus' });
+    expect(restored.modelLabel).toBe('My Opus');
+    // A paused turn with no modelLabel can't be made to inject one.
+    const injected: Record<string, unknown> = { conversationId: 'c', modelLabel: 'Spoofed' };
+    applyResumeContext(injected, { endpoint: 'my-custom-endpoint' });
+    expect('modelLabel' in injected).toBe(false);
   });
 
   it('replays a dropped manualSkills and drops a client-injected one', () => {
