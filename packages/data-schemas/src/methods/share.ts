@@ -614,6 +614,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         try {
           const searchResults = await Conversation.meiliSearch(search, {
             filter: `user = "${user}"`,
+            limit: 1000,
           });
 
           if (!searchResults?.hits?.length) {
