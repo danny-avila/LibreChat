@@ -60,6 +60,7 @@ let getListAgentsByAccess: AgentMethods['getListAgentsByAccess'];
 let generateActionMetadataHash: AgentMethods['generateActionMetadataHash'];
 
 const getActions = jest.fn().mockResolvedValue([]);
+const externalSkillIds = new Set<string>();
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -89,6 +90,7 @@ beforeAll(async () => {
     removeAllPermissions,
     getActions,
     getSoleOwnedResourceIds,
+    isExternalSkillId: (id) => externalSkillIds.has(id),
   });
   createAgent = methods.createAgent;
   getAgent = methods.getAgent;
@@ -130,6 +132,10 @@ afterAll(async () => {
 });
 
 describe('Agent Methods', () => {
+  beforeEach(() => {
+    externalSkillIds.clear();
+  });
+
   describe('Agent Resource File Operations', () => {
     beforeEach(async () => {
       await Agent.deleteMany({});
@@ -585,6 +591,32 @@ describe('Agent Methods', () => {
       expect(newAgent.skills).toEqual([realSkill._id.toString()]);
     });
 
+    test('should preserve external skill ids on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'create-external-skill',
+        description: 'Skill backing the external create-time allowlist test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const externalSkillId = new mongoose.Types.ObjectId().toString();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+      externalSkillIds.add(externalSkillId);
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'External Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [externalSkillId, realSkill._id.toString(), danglingId, externalSkillId],
+        skills_enabled: true,
+      });
+
+      expect(newAgent.skills).toEqual([externalSkillId, realSkill._id.toString()]);
+      expect(newAgent.skills_enabled).toBe(true);
+    });
+
     test('should prune nonexistent skill ids from the allowlist on update', async () => {
       const { agentId, authorId } = createTestIds();
       const realSkill = await mongoose.models.Skill.create({
@@ -609,6 +641,29 @@ describe('Agent Methods', () => {
       );
 
       expect(updatedAgent!.skills).toEqual([realSkill._id.toString()]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
+    test('should preserve external skill ids on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const externalSkillId = new mongoose.Types.ObjectId().toString();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+      externalSkillIds.add(externalSkillId);
+
+      await createAgent({
+        id: agentId,
+        name: 'External Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId, externalSkillId], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([externalSkillId]);
       expect(updatedAgent!.skills_enabled).toBe(true);
     });
 
@@ -1912,6 +1967,30 @@ describe('Agent Methods', () => {
       expect(revertedAgent.name).toBe('Revert Skill Agent');
       expect(revertedAgent.skills).toEqual([]);
       expect(revertedAgent.skills_enabled).toBe(false);
+    });
+
+    test('should preserve external skill ids when reverting to an older version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const externalSkillId = new mongoose.Types.ObjectId().toString();
+      externalSkillIds.add(externalSkillId);
+
+      await createAgent({
+        id: agentId,
+        name: 'Revert External Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [externalSkillId],
+        skills_enabled: true,
+      });
+
+      await updateAgent({ id: agentId }, { skills: [], name: 'No Skills Anymore' });
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.name).toBe('Revert External Skill Agent');
+      expect(revertedAgent.skills).toEqual([externalSkillId]);
+      expect(revertedAgent.skills_enabled).toBe(true);
     });
 
     test('should detect action metadata changes and force version update', async () => {
