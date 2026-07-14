@@ -410,8 +410,9 @@ const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
  * Server steer ids whose `on_steer_applied` event already landed. The 202 ACK
  * and the SSE ride different connections, so the applied event can arrive
  * FIRST — the ACK handler checks this set and drops its local chip instead of
- * minting a `pending` chip whose only removal event has already passed.
- * Cleared when the run's final event arrives.
+ * minting a `pending` chip whose only removal event has already passed. A late
+ * ACK can land after the run's final event, so the set is capped
+ * (`appendAppliedSteerIds`), never cleared.
  */
 const appliedSteerIdsByConvoId = atomFamily<string[], string>({
   key: 'appliedSteerIdsByConvoId',

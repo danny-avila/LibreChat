@@ -40,9 +40,17 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
 
 jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
   __esModule: true,
-  default: ({ file }: { file: { filename?: string } }) => (
-    <div data-testid="steer-file">{file.filename}</div>
+  default: ({ file, onClick }: { file: { filename?: string }; onClick?: () => void }) => (
+    <button type="button" data-testid="steer-file" onClick={onClick}>
+      {file.filename}
+    </button>
   ),
+}));
+
+jest.mock('~/components/Chat/Messages/Content/FilePreviewDialog', () => ({
+  __esModule: true,
+  default: ({ open, fileName }: { open: boolean; fileName: string }) =>
+    open ? <div data-testid="steer-file-preview">{fileName}</div> : null,
 }));
 
 jest.mock('~/components/Chat/Messages/Content/Image', () => ({
@@ -154,5 +162,21 @@ describe('PendingSteers (in-thread optimistic steers)', () => {
     ]);
     expect(screen.getByTestId('steer-file')).toHaveTextContent('notes.pdf');
     expect(screen.getByTestId('steer-image')).toBeInTheDocument();
+  });
+
+  it('opens the file preview dialog when a non-image steer attachment is clicked', () => {
+    renderSlot([
+      {
+        steerId: 's1',
+        text: 'see attached',
+        status: 'pending',
+        createdAt: 1,
+        files: [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }],
+      },
+    ]);
+    expect(screen.queryByTestId('steer-file-preview')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('steer-file'));
+    expect(screen.getByTestId('steer-file-preview')).toHaveTextContent('notes.pdf');
   });
 });

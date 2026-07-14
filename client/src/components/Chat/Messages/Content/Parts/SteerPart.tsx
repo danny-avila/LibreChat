@@ -1,9 +1,10 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
+import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
@@ -67,6 +68,12 @@ const SteerPart = memo(function SteerPart({
     () => files?.filter((file) => !file.type?.startsWith('image/')) ?? [],
     [files],
   );
+  const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
+  const handlePreviewClose = useCallback((open: boolean) => {
+    if (!open) {
+      setSelectedFile(null);
+    }
+  }, []);
 
   if (typeof steer !== 'string' || steer.length === 0) {
     return null;
@@ -109,7 +116,11 @@ const SteerPart = memo(function SteerPart({
           {(imageFiles.length > 0 || otherFiles.length > 0) && (
             <div className="flex flex-wrap gap-2">
               {otherFiles.map((file) => (
-                <FileContainer key={file.file_id} file={file as TFile} />
+                <FileContainer
+                  key={file.file_id}
+                  file={file as TFile}
+                  onClick={() => setSelectedFile(file)}
+                />
               ))}
               {imageFiles.map((file) => (
                 <Image
@@ -133,6 +144,17 @@ const SteerPart = memo(function SteerPart({
           </div>
         </div>
       </div>
+      {otherFiles.length > 0 && (
+        <FilePreviewDialog
+          open={selectedFile !== null}
+          onOpenChange={handlePreviewClose}
+          fileName={selectedFile?.filename ?? ''}
+          fileId={selectedFile?.file_id}
+          filePath={selectedFile?.filepath}
+          fileType={selectedFile?.type ?? undefined}
+          fileSize={(selectedFile as TFile | null)?.bytes}
+        />
+      )}
     </div>
   );
 });

@@ -233,11 +233,13 @@ export default function useResumeOnLoad(
   const restoreSteerChips = useRecoilCallback(
     ({ set }) =>
       (activeConversationId: string, pendingSteers: Agents.ResumeState['pendingSteers']) => {
-        if (!pendingSteers || pendingSteers.length === 0) {
-          return;
-        }
+        // Always reconcile against the server's still-queued list (mirrors the
+        // sync-path re-seed in useResumableSSE): a steer applied while this
+        // client was away is absent here (its inline part rides
+        // aggregatedContent instead), so an EMPTY list must clear stale local
+        // pending chips, not leave them stranded beside the applied part.
         set(store.pendingSteersByConvoId(activeConversationId), (prev) => [
-          ...pendingSteers.map((steer) => ({
+          ...(pendingSteers ?? []).map((steer) => ({
             steerId: steer.steerId,
             text: steer.text,
             status: 'pending' as const,
@@ -357,6 +359,10 @@ export default function useResumeOnLoad(
       if (conversationId && (streamStatus.unrecoveredSteers?.length ?? 0) > 0) {
         convertSteersToQueued(conversationId, streamStatus.unrecoveredSteers ?? []);
       }
+      // The run is terminal, so any remaining local pending chip is stale:
+      // its steer either applied (inline part in the saved message) or rode
+      // `unrecoveredSteers` above — same empty-list reconcile as the resume path.
+      restoreSteerChips(conversationId, undefined);
       processedConvoRef.current = conversationId;
       return;
     }

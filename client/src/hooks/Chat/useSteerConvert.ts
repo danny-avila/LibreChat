@@ -3,6 +3,7 @@ import { useRecoilCallback } from 'recoil';
 import type { TPendingSteer } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import { fetchStreamStatus } from '~/data-provider';
+import { appendAppliedSteerIds } from '~/utils';
 import store from '~/store';
 
 interface SteerConvertOptions {
@@ -10,6 +11,9 @@ interface SteerConvertOptions {
    *  terminal drain parks before knowing the final reached a subscriber);
    *  set on final/abort/error surfaces to claim-and-clear it. */
   claimParked?: boolean;
+  /** Server-side id the parked copy is keyed under when it differs from the
+   *  chip landing key (a `new`-held abort claims under the resolved job id). */
+  claimConversationId?: string;
 }
 
 /**
@@ -37,10 +41,10 @@ export default function useSteerConvert() {
         }
         const steerIds = new Set(steers.map((steer) => steer.steerId));
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
-          [
-            ...prev,
-            ...steers.map((steer) => steer.steerId).filter((id) => !prev.includes(id)),
-          ].slice(-100),
+          appendAppliedSteerIds(
+            prev,
+            steers.map((steer) => steer.steerId),
+          ),
         );
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
           prev.filter((steer) => !steerIds.has(steer.steerId)),
@@ -77,7 +81,7 @@ export default function useSteerConvert() {
       if (options?.claimParked !== true || steers.length === 0) {
         return;
       }
-      fetchStreamStatus(conversationId)
+      fetchStreamStatus(options.claimConversationId ?? conversationId)
         .then((status) => {
           const unrecovered = status.unrecoveredSteers ?? [];
           if (unrecovered.length > 0) {

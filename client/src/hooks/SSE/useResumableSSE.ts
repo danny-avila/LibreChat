@@ -37,6 +37,7 @@ import {
   applyPendingAction,
   resolveRunEndTarget,
   findSteerMessageIndex,
+  appendAppliedSteerIds,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
   countTaggedApprovalParts,
@@ -545,7 +546,7 @@ export default function useResumableSSE(
     ({ set }) =>
       (conversationId: string, steerId: string) => {
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
-          prev.includes(steerId) ? prev : [...prev, steerId],
+          appendAppliedSteerIds(prev, [steerId]),
         );
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
           prev.some((steer) => steer.steerId === steerId)

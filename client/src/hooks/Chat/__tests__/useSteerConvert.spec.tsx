@@ -119,6 +119,26 @@ describe('useSteerConvert', () => {
       expect(result.current.queue).toEqual([expect.objectContaining({ id: 'srv-3' })]);
     });
 
+    it('claims under claimConversationId while chips land under the chip key', async () => {
+      mockFetchStreamStatus.mockResolvedValue({
+        active: false,
+        unrecoveredSteers: [
+          { steerId: 'parked-2', text: 'parked under resolved id', createdAt: 2 },
+        ],
+      });
+      const { result } = setup();
+      await act(async () => {
+        result.current.convert(CONVO_ID, [{ steerId: 'live-3', text: 'live', createdAt: 1 }], {
+          claimParked: true,
+          claimConversationId: 'convo-resolved',
+        });
+      });
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
+      expect(mockFetchStreamStatus).toHaveBeenCalledWith('convo-resolved');
+      // Claimed steers still convert under the conversation the chips live on.
+      expect(result.current.queue.map((item) => item.id)).toEqual(['live-3', 'parked-2']);
+    });
+
     it('skips the claim without the option or with an empty batch', async () => {
       const { result } = setup();
       await act(async () => {

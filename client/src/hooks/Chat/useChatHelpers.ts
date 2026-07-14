@@ -8,6 +8,7 @@ import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatest
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAbortStreamMutation } from '~/data-provider';
+import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
 import { useAbortCleanup } from './abort';
@@ -188,15 +189,26 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
         const response = await abortMutation.mutateAsync({ conversationId });
         console.log('[useChatHelpers] Abort mutation succeeded');
+        // The response's `aborted` field is the RESOLVED job id — authoritative
+        // when this turn still holds the `new` placeholder. Chips and the drain
+        // signal land where the mounted composer's queue machinery looks, while
+        // the parked-copy claim uses the resolved id the server keyed it under.
+        const { chipConvoId, claimConvoId } = resolveAbortSteerTarget({
+          conversationId,
+          resolvedId: response?.aborted,
+        });
         // Steers the run never injected ride the abort response. Consume them
         // here as well as on the SSE final event — clearing submissions below
         // can close the stream before that event lands, and conversion
         // dedupes by steer id so double delivery is a no-op. `claimParked`
         // clears the parked server copy so a reload can't re-mint the chips.
         if (Array.isArray(response?.pendingSteers)) {
-          convertSteersToQueued(conversationId, response.pendingSteers, { claimParked: true });
+          convertSteersToQueued(chipConvoId, response.pendingSteers, {
+            claimParked: true,
+            claimConversationId: claimConvoId,
+          });
         }
-        signalInterruptDrain(conversationId);
+        signalInterruptDrain(chipConvoId);
         // The SSE will receive a `done` event with `aborted: true` and clean up
         // We still clear submissions as a fallback
         clearSubmissionsUnlessReplaced(submissionAtAbort);

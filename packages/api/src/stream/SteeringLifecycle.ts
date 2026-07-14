@@ -31,43 +31,45 @@ export function toOwnerFragment(userId: string): string {
   return `"userId":${JSON.stringify(userId)}`;
 }
 
+/** Loosely-shaped content part for steer-id inspection across content views. */
+export type SteerContentView = Array<{ type?: string; steerId?: string } | undefined>;
+
 /**
  * Synthesize the `on_steer_applied` events a reconnecting subscriber missed in
- * the snapshot→subscribe window: any snapshot steer no longer in the live
- * queue was drained in the gap, and its applied part is already durable in the
- * store's content view — re-emitting it is idempotent client-side (applied-id
- * dedupe; the part is index-stable). A gap steer with NO matching part was
- * terminally drained instead; the final event's `pendingSteers` covers it.
+ * the snapshot→subscribe window. Sourced from the FRESH content view, not the
+ * snapshot queue: a steer accepted AND applied inside the gap never had a
+ * snapshot id, so any steer part neither in the snapshot's applied set nor
+ * still queued live was applied in the gap. Over-emitting a part the client
+ * already holds is benign: re-delivery is idempotent client-side (applied-id
+ * dedupe; the part is index-stable).
  */
 export function synthesizeAppliedSteerEvents(
-  snapshotSteers: TPendingSteer[],
+  snapshotContent: SteerContentView,
   liveQueue: SteerQueueItem[],
-  content: Array<{ type?: string; steerId?: string } | undefined>,
+  freshContent: SteerContentView,
   meta: { conversationId: string; responseMessageId?: string },
 ): ServerSentEvent[] {
-  const liveIds = new Set(liveQueue.map((item) => item.steerId));
-  const appliedBysteerId = new Map<string, { index: number; part: unknown }>();
-  for (let i = 0; i < content.length; i++) {
-    const part = content[i];
+  const knownIds = new Set<string>();
+  for (const part of snapshotContent) {
     if (part?.type === ContentTypes.STEER && part.steerId != null) {
-      appliedBysteerId.set(part.steerId, { index: i, part });
+      knownIds.add(part.steerId);
     }
   }
+  for (const item of liveQueue) {
+    knownIds.add(item.steerId);
+  }
   const events: ServerSentEvent[] = [];
-  for (const steer of snapshotSteers) {
-    if (liveIds.has(steer.steerId)) {
-      continue;
-    }
-    const applied = appliedBysteerId.get(steer.steerId);
-    if (!applied) {
+  for (let i = 0; i < freshContent.length; i++) {
+    const part = freshContent[i];
+    if (part?.type !== ContentTypes.STEER || part.steerId == null || knownIds.has(part.steerId)) {
       continue;
     }
     events.push({
       event: SteerEvents.ON_STEER_APPLIED,
       data: {
-        steerId: steer.steerId,
-        index: applied.index,
-        part: applied.part,
+        steerId: part.steerId,
+        index: i,
+        part,
         conversationId: meta.conversationId,
         ...(meta.responseMessageId && { responseMessageId: meta.responseMessageId }),
       },

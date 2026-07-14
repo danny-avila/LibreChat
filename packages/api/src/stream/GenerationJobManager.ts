@@ -22,8 +22,8 @@ import type {
   AbortResult,
   IJobStore,
 } from './interfaces/IJobStore';
+import type { SteerOwner, SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
-import type { SteerOwner } from './SteeringLifecycle';
 import type * as t from '~/types';
 import {
   recordGenerationStreamResumePendingEvents,
@@ -1169,8 +1169,8 @@ class GenerationJobManagerClass {
     // the snapshot didn't already carry the action, surface it as a pending event so the
     // approval prompt renders. Idempotent: a pause landing AFTER attach is delivered live
     // too, and the client's handler just sets the current action, so a duplicate is benign.
+    const liveJob = await this.jobStore.getJob(streamId);
     if (!resumeState?.pendingAction) {
-      const liveJob = await this.jobStore.getJob(streamId);
       if (
         liveJob?.status === 'requires_action' &&
         liveJob.pendingAction != null &&
@@ -1189,17 +1189,18 @@ class GenerationJobManagerClass {
       }
     }
 
-    // Same snapshot→subscribe race for steers: a queued steer that DRAINED in
-    // the window had its `on_steer_applied` published before we attached
-    // (Redis pub/sub is fire-and-forget; in-memory covers it via the early
-    // buffer, where this re-check is a cheap no-op). Without it the client
-    // keeps a pending entry and misses the inline part until the final event.
-    // The applied part is durable in the store's content view — re-surface it.
-    // Reconciled by steerId SETS, not length: a steer ADDED in the gap (or one
-    // drained + one added, leaving the length equal) must also refresh the
-    // snapshot to the live projection or the client renders a stale queue.
-    const snapshotSteers = resumeState?.pendingSteers;
-    if (resumeState && snapshotSteers != null && snapshotSteers.length > 0) {
+    // Same snapshot→subscribe race for steers: a steer accepted (and possibly
+    // applied) in the window is invisible to the snapshot, since the Redis
+    // `on_steer_applied` publish is fire-and-forget and the sync payload has no
+    // pendingSteers (in-memory covers it via the early buffer, where this
+    // re-check is a cheap no-op). Always re-peek for still-active jobs,
+    // treating a missing snapshot queue as empty; terminal jobs skip because
+    // the final event owns steer delivery. The content re-read runs only when
+    // the queue shows gap activity, and synthesis sources from the FRESH
+    // content view so an applied steer with no snapshot id still surfaces.
+    const jobActive = liveJob?.status === 'running' || liveJob?.status === 'requires_action';
+    if (resumeState != null && jobActive) {
+      const snapshotSteers = resumeState.pendingSteers ?? [];
       const liveQueue = await this.jobStore.peekSteers(streamId);
       const liveIds = new Set(liveQueue.map((item) => item.steerId));
       const queueChanged =
@@ -1208,11 +1209,13 @@ class GenerationJobManagerClass {
       if (queueChanged) {
         const livePending = liveQueue.map(toPendingSteer);
         resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
+      }
+      if (queueChanged || liveQueue.length > 0) {
         const contentResult = await this.jobStore.getContentParts(streamId);
         const gapEvents = synthesizeAppliedSteerEvents(
-          snapshotSteers,
+          (resumeState.aggregatedContent ?? []) as SteerContentView,
           liveQueue,
-          (contentResult?.content ?? []) as Array<{ type?: string; steerId?: string } | undefined>,
+          (contentResult?.content ?? []) as SteerContentView,
           { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
         );
         if (gapEvents.length > 0) {

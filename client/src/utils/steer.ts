@@ -54,6 +54,44 @@ export function resolveRunEndTarget(params: {
 }
 
 /**
+ * Targets for consuming an abort HTTP response's leftover steers. The server
+ * echoes the RESOLVED job id (`aborted`), which is authoritative when the
+ * client still holds the `new` placeholder on a just-started first turn.
+ * Chips and the interrupt-drain signal land where the mounted composer's
+ * queue/drain machinery looks: a `new`-held turn hasn't navigated, so they
+ * stay keyed under NEW_CONVO (same rule as `resolveRunEndTarget`'s early-abort
+ * case), while the parked-copy claim uses the resolved id the server keyed
+ * the parked steers under.
+ */
+export function resolveAbortSteerTarget(params: { conversationId: string; resolvedId?: string }): {
+  chipConvoId: string;
+  claimConvoId: string;
+} {
+  const { conversationId, resolvedId } = params;
+  const claimConvoId = resolvedId ?? conversationId;
+  const chipConvoId =
+    conversationId === String(Constants.NEW_CONVO) ? conversationId : claimConvoId;
+  return { chipConvoId, claimConvoId };
+}
+
+/** Bounds the per-conversation applied-steer id set. A late 202 ACK can land
+ *  after the run's final event, so the set is capped rather than cleared. */
+const APPLIED_STEER_IDS_CAP = 100;
+
+/**
+ * Appends steer ids to an applied-id set, deduped and capped. Returns the
+ * same array when nothing new lands so Recoil writers keep referential
+ * stability.
+ */
+export function appendAppliedSteerIds(prev: string[], steerIds: string[]): string[] {
+  const fresh = steerIds.filter((id) => !prev.includes(id));
+  if (fresh.length === 0) {
+    return prev;
+  }
+  return [...prev, ...fresh].slice(-APPLIED_STEER_IDS_CAP);
+}
+
+/**
  * Resolves the assistant response message a steer event targets. Exact-id
  * assistant match when `responseMessageId` is present (a miss returns -1 so
  * the caller retries next frame — same rationale as

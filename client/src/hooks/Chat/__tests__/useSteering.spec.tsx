@@ -171,7 +171,7 @@ describe('useSteering', () => {
       act(() => {
         result.current.submitSteer('too late');
       });
-      expect(sendNow).toHaveBeenCalledWith('too late', []);
+      expect(sendNow).toHaveBeenCalledWith('too late', [], undefined);
     });
 
     it('queues + toasts when the run is paused (RUN_PAUSED)', () => {
@@ -290,7 +290,7 @@ describe('useSteering', () => {
       act(() => {
         result.current.steering.submitSteer('refused words', steerFiles);
       });
-      expect(refusingSendNow).toHaveBeenCalledWith('refused words', steerFiles);
+      expect(refusingSendNow).toHaveBeenCalledWith('refused words', steerFiles, undefined);
       // The chip is already gone — a refused send must land in the queue, not drop.
       expect(result.current.chips).toEqual([]);
       expect(result.current.queue).toEqual([
@@ -310,7 +310,7 @@ describe('useSteering', () => {
       act(() => {
         result.current.steering.submitSteer('unsupported words', steerFiles);
       });
-      expect(refusingSendNow).toHaveBeenCalledWith('unsupported words', steerFiles);
+      expect(refusingSendNow).toHaveBeenCalledWith('unsupported words', steerFiles, undefined);
       expect(result.current.chips).toEqual([]);
       expect(result.current.queue).toEqual([
         expect.objectContaining({ text: 'unsupported words', files: steerFiles }),
@@ -656,6 +656,65 @@ describe('useSteering', () => {
         quotes: ['carried quote'],
         manualSkills: ['carried-skill'],
       });
+    });
+
+    it('requeues a degraded queued-origin steer with its carried quotes + skills', () => {
+      // The item left the queue before the POST settled; the 409 fallback
+      // must restore its FULL context, not just text + files.
+      mockMutate.mockImplementationOnce((_params, { onError }) => {
+        onError({ response: { data: { code: 'RUN_PAUSED' } } });
+      });
+      const { result } = setupWithContext();
+      act(() => {
+        result.current.steering.sendQueuedNow({
+          id: 'q-degraded',
+          text: 'carried context',
+          createdAt: Date.now(),
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        });
+      });
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({
+          text: 'carried context',
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        }),
+      ]);
+    });
+
+    it('sends a settled NO_ACTIVE_RUN fallback with the carried context as overrides', () => {
+      mockMutate.mockImplementationOnce((_params, { onError }) => {
+        onError({ response: { data: { code: 'NO_ACTIVE_RUN' } } });
+      });
+      const { result, sendNow } = setupWithContext({ isSubmitting: false });
+      act(() => {
+        result.current.steering.submitSteer('late context', undefined, {
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        });
+      });
+      expect(sendNow).toHaveBeenCalledWith('late context', [], {
+        quotes: ['carried quote'],
+        manualSkills: ['carried-skill'],
+      });
+    });
+
+    it('leaves composer atoms staged when a composer-origin steer degrades', () => {
+      mockMutate.mockImplementationOnce((_params, { onError }) => {
+        onError({ response: { data: { code: 'RUN_PAUSED' } } });
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('degraded steer');
+      });
+      // Degrades to a text-only queued item; the staged chips stay put for
+      // the user's next composer send.
+      expect(result.current.queue).toEqual([expect.objectContaining({ text: 'degraded steer' })]);
+      expect(result.current.queue[0].quotes).toBeUndefined();
+      expect(result.current.queue[0].manualSkills).toBeUndefined();
+      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.pendingSkills).toEqual(['skill-1']);
     });
   });
 });

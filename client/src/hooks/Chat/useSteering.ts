@@ -372,8 +372,13 @@ export default function useSteering({
     [index],
   );
 
+  /** POSTs a steer (text + files only; the server never carries quotes or
+   *  skill picks). `context` is the RESTORE payload for a queued-origin steer:
+   *  every degradation path threads it back into the requeue/send fallback so
+   *  the item's quotes and manual skills survive. Composer-origin steers pass
+   *  nothing, leaving their context staged in the composer atoms. */
   const submitSteer = useCallback(
-    (text: string, steerFiles?: TMessage['files']): boolean => {
+    (text: string, steerFiles?: TMessage['files'], context?: QueuedMessageContext): boolean => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || !hasRealConvoId) {
         return false;
@@ -410,8 +415,8 @@ export default function useSteering({
               // falls back to the queue too — the chip is already gone, so
               // dropping the text here would lose it silently.
               replaceSteerChip(conversationId, localId, null);
-              if (isSubmittingRef.current || sendNow(trimmed, files ?? []) === false) {
-                enqueue(trimmed, { files });
+              if (isSubmittingRef.current || sendNow(trimmed, files ?? [], context) === false) {
+                enqueue(trimmed, { files, ...context });
               }
               return;
             }
@@ -427,12 +432,12 @@ export default function useSteering({
               // NO_ACTIVE_RUN fallback and send once submission settled —
               // queueing the refusal instead of dropping the text.
               if (!isSubmittingRef.current) {
-                if (sendNow(trimmed, files ?? []) === false) {
-                  enqueue(trimmed, { files });
+                if (sendNow(trimmed, files ?? [], context) === false) {
+                  enqueue(trimmed, { files, ...context });
                 }
                 return;
               }
-              enqueue(trimmed, { files });
+              enqueue(trimmed, { files, ...context });
               showToast({ message: localize('com_ui_steer_paused_queued'), status: 'info' });
               return;
             }
@@ -518,13 +523,16 @@ export default function useSteering({
   /** Chip action: send a queued message into the live run instead. Keys on
    *  steer availability, not the default action — a queue-preferring user
    *  clicking send-now explicitly asked to inject into the live run. The
-   *  item's attachments ride the steer (quotes/skills only survive the
-   *  normal-send and re-queue paths — steers don't carry them). */
+   *  item's attachments ride the steer; its quotes/skills travel as the
+   *  restore context so a degraded steer requeues/sends with them intact. */
   const sendQueuedNow = useCallback(
     (item: QueuedMessage) => {
       const taken = takeQueued(item.id) ?? item;
       if (duringRunActive && canSteer) {
-        submitSteer(taken.text, taken.files);
+        submitSteer(taken.text, taken.files, {
+          quotes: taken.quotes,
+          manualSkills: taken.manualSkills,
+        });
         return;
       }
       if (!isSubmitting) {

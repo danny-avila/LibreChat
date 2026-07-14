@@ -1,6 +1,13 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TSteerAppliedEvent } from 'librechat-data-provider';
-import { applySteerPart, findSteerMessageIndex, getSteerPart, resolveRunEndTarget } from '../steer';
+import {
+  getSteerPart,
+  applySteerPart,
+  resolveRunEndTarget,
+  findSteerMessageIndex,
+  appendAppliedSteerIds,
+  resolveAbortSteerTarget,
+} from '../steer';
 
 const buildEvent = (overrides: Partial<TSteerAppliedEvent> = {}): TSteerAppliedEvent => ({
   steerId: 'steer-1',
@@ -128,5 +135,56 @@ describe('resolveRunEndTarget', () => {
         startedAsNewConvo: true,
       }),
     ).toEqual({ conversationId: 'convo-real', startedAsNewConvo: true });
+  });
+});
+
+describe('resolveAbortSteerTarget', () => {
+  it('keeps chips under NEW_CONVO on a new-held first turn while claiming under the resolved id', () => {
+    expect(
+      resolveAbortSteerTarget({
+        conversationId: String(Constants.NEW_CONVO),
+        resolvedId: 'convo-resolved',
+      }),
+    ).toEqual({
+      chipConvoId: String(Constants.NEW_CONVO),
+      claimConvoId: 'convo-resolved',
+    });
+  });
+
+  it('prefers the resolved id for both targets on an existing conversation', () => {
+    expect(
+      resolveAbortSteerTarget({ conversationId: 'convo-held', resolvedId: 'convo-resolved' }),
+    ).toEqual({ chipConvoId: 'convo-resolved', claimConvoId: 'convo-resolved' });
+  });
+
+  it('falls back to the client-held id without a resolved id', () => {
+    expect(resolveAbortSteerTarget({ conversationId: 'convo-held' })).toEqual({
+      chipConvoId: 'convo-held',
+      claimConvoId: 'convo-held',
+    });
+    expect(resolveAbortSteerTarget({ conversationId: String(Constants.NEW_CONVO) })).toEqual({
+      chipConvoId: String(Constants.NEW_CONVO),
+      claimConvoId: String(Constants.NEW_CONVO),
+    });
+  });
+});
+
+describe('appendAppliedSteerIds', () => {
+  it('appends new ids and dedupes against the existing set', () => {
+    expect(appendAppliedSteerIds(['a'], ['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
+  });
+
+  it('returns the same array reference when nothing new lands', () => {
+    const prev = ['a', 'b'];
+    expect(appendAppliedSteerIds(prev, ['a'])).toBe(prev);
+    expect(appendAppliedSteerIds(prev, [])).toBe(prev);
+  });
+
+  it('caps the set at 100 ids, dropping the oldest', () => {
+    const prev = Array.from({ length: 100 }, (_, i) => `id-${i}`);
+    const next = appendAppliedSteerIds(prev, ['id-new']);
+    expect(next).toHaveLength(100);
+    expect(next[0]).toBe('id-1');
+    expect(next[next.length - 1]).toBe('id-new');
   });
 });

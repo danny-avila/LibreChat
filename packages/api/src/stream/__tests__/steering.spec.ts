@@ -17,11 +17,13 @@ jest.spyOn(console, 'log').mockImplementation();
 
 describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () => {
   let manager: GenerationJobManagerClass;
+  let jobStore: InMemoryJobStore;
 
   beforeEach(() => {
     manager = new GenerationJobManagerClass();
+    jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
     manager.configure({
-      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      jobStore,
       eventTransport: new InMemoryEventTransport(),
       isRedis: false,
       cleanupOnComplete: false,
@@ -421,14 +423,10 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
 
     test('re-surfaces the applied part for a steer that left the queue in the gap', () => {
-      const snapshot: TPendingSteer[] = [
-        { steerId: 'g1', text: 'applied in gap', createdAt: 1 },
-        { steerId: 'g2', text: 'still queued', createdAt: 2 },
-      ];
       const appliedPart = { type: 'steer', steerId: 'g1', steer: 'applied in gap' };
-      const content = [{ type: 'text' }, appliedPart, { type: 'text' }];
+      const fresh = [{ type: 'text' }, appliedPart, { type: 'text' }];
 
-      const events = synthesizeAppliedSteerEvents(snapshot, [queued('g2')], content, meta);
+      const events = synthesizeAppliedSteerEvents([], [queued('g2')], fresh, meta);
 
       expect(events).toHaveLength(1);
       const event = events[0] as { event: string; data: Record<string, unknown> };
@@ -440,28 +438,42 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect(event.data.responseMessageId).toBe('msg-gap');
     });
 
-    test('skips a gap steer with no applied part (terminally drained instead)', () => {
-      const snapshot: TPendingSteer[] = [{ steerId: 'g3', text: 'never applied', createdAt: 1 }];
+    test('synthesizes a steer accepted AND applied in the gap (no snapshot id at all)', () => {
+      const appliedPart = { type: 'steer', steerId: 'g5', steer: 'gap only' };
 
-      expect(synthesizeAppliedSteerEvents(snapshot, [], [{ type: 'text' }], meta)).toEqual([]);
+      const events = synthesizeAppliedSteerEvents([], [], [appliedPart], meta);
+
+      expect(events).toHaveLength(1);
+      const event = events[0] as { event: string; data: Record<string, unknown> };
+      expect(event.data.steerId).toBe('g5');
+      expect(event.data.index).toBe(0);
     });
 
-    test('emits nothing when the queue is unchanged', () => {
-      const snapshot: TPendingSteer[] = [{ steerId: 'g4', text: 'untouched', createdAt: 1 }];
-      const content = [{ type: 'steer', steerId: 'g4' }];
+    test('emits nothing when no steer part landed in the gap (terminally drained instead)', () => {
+      expect(synthesizeAppliedSteerEvents([], [], [{ type: 'text' }], meta)).toEqual([]);
+    });
 
-      expect(synthesizeAppliedSteerEvents(snapshot, [queued('g4')], content, meta)).toEqual([]);
+    test('skips a part already in the snapshot applied set (it rode the sync payload)', () => {
+      const part = { type: 'steer', steerId: 'g6' };
+
+      expect(synthesizeAppliedSteerEvents([part], [], [{ type: 'text' }, part], meta)).toEqual([]);
+    });
+
+    test('skips a steer still in the live queue', () => {
+      const fresh = [{ type: 'steer', steerId: 'g4' }];
+
+      expect(synthesizeAppliedSteerEvents([], [queued('g4')], fresh, meta)).toEqual([]);
     });
   });
 
   describe('subscribeWithResume steer-gap reconciliation', () => {
-    function staleSnapshot(streamId: string, pendingSteers: TPendingSteer[]): ResumeState {
+    function staleSnapshot(streamId: string, pendingSteers?: TPendingSteer[]): ResumeState {
       return {
         runSteps: [],
         aggregatedContent: [],
         conversationId: streamId,
         responseMessageId: 'msg-gap',
-        pendingSteers,
+        ...(pendingSteers && { pendingSteers }),
       };
     }
 
@@ -512,6 +524,72 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect(event.event).toBe(SteerEvents.ON_STEER_APPLIED);
       expect(event.data.steerId).toBe(drained.steerId);
       expect(event.data.index).toBe(0);
+    });
+
+    test('refreshes an EMPTY snapshot when a steer was accepted in the gap', async () => {
+      const streamId = 'steer-gap-empty-accept';
+      await manager.createJob(streamId, 'user-1');
+      const accepted = buildSteer('accepted in gap');
+      await manager.steering.enqueue(streamId, accepted);
+
+      jest.spyOn(manager, 'getResumeState').mockResolvedValue(staleSnapshot(streamId));
+
+      const result = await manager.subscribeWithResume(streamId, jest.fn());
+      expect(result.resumeState?.pendingSteers?.map((s) => s.steerId)).toEqual([accepted.steerId]);
+      expect(result.pendingEvents).toEqual([]);
+    });
+
+    test('synthesizes the applied part for a gap steer the snapshot never saw', async () => {
+      const streamId = 'steer-gap-empty-applied';
+      await manager.createJob(streamId, 'user-1');
+      // Gap activity on an empty snapshot: the take-all drain applied one
+      // steer, then another was accepted. The queue delta triggers the
+      // content re-read that surfaces the never-snapshotted applied part.
+      const applied = buildSteer('accepted and applied in gap');
+      const queuedAfter = buildSteer('accepted after the drain');
+      await manager.steering.enqueue(streamId, queuedAfter);
+      manager.setContentParts(streamId, [
+        { type: 'steer', steer: applied.text, steerId: applied.steerId },
+      ] as unknown as Agents.MessageContentComplex[]);
+
+      jest.spyOn(manager, 'getResumeState').mockResolvedValue(staleSnapshot(streamId));
+
+      const result = await manager.subscribeWithResume(streamId, jest.fn());
+      expect(result.resumeState?.pendingSteers?.map((s) => s.steerId)).toEqual([
+        queuedAfter.steerId,
+      ]);
+      expect(result.pendingEvents).toHaveLength(1);
+      const event = result.pendingEvents[0] as { event: string; data: Record<string, unknown> };
+      expect(event.event).toBe(SteerEvents.ON_STEER_APPLIED);
+      expect(event.data.steerId).toBe(applied.steerId);
+      expect(event.data.index).toBe(0);
+    });
+
+    test('an unchanged empty queue skips the content re-read', async () => {
+      const streamId = 'steer-gap-quiet';
+      await manager.createJob(streamId, 'user-1');
+
+      jest.spyOn(manager, 'getResumeState').mockResolvedValue(staleSnapshot(streamId));
+      const readSpy = jest.spyOn(jobStore, 'getContentParts');
+
+      const result = await manager.subscribeWithResume(streamId, jest.fn());
+      expect(readSpy).not.toHaveBeenCalled();
+      expect(result.resumeState?.pendingSteers).toBeUndefined();
+      expect(result.pendingEvents).toEqual([]);
+    });
+
+    test('a terminal job skips steer reconciliation (the final event owns delivery)', async () => {
+      const streamId = 'steer-gap-terminal';
+      await manager.createJob(streamId, 'user-1');
+      await manager.completeJob(streamId, 'done');
+
+      jest.spyOn(manager, 'getResumeState').mockResolvedValue(staleSnapshot(streamId));
+      const peekSpy = jest.spyOn(jobStore, 'peekSteers');
+
+      const result = await manager.subscribeWithResume(streamId, jest.fn());
+      expect(peekSpy).not.toHaveBeenCalled();
+      expect(result.resumeState?.pendingSteers).toBeUndefined();
+      expect(result.pendingEvents).toEqual([]);
     });
   });
 
