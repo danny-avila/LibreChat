@@ -158,18 +158,6 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     });
 
     it('should prefer an explicit exchange method over discovered metadata', async () => {
-      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
-        resource: mockServerUrl,
-        authorization_servers: ['https://auth.example.com'],
-      });
-      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
-        issuer: 'https://auth.example.com',
-        authorization_endpoint: baseConfig.authorization_url,
-        token_endpoint: baseConfig.token_url,
-        token_endpoint_auth_methods_supported: ['client_secret_post'],
-        response_types_supported: ['code'],
-      } as AuthorizationServerMetadata);
-
       await MCPOAuthHandler.initiateOAuthFlow(
         mockServerName,
         mockServerUrl,
@@ -181,6 +169,36 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         },
       );
 
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_basic',
+          }),
+        }),
+      );
+      expect(mockDiscoverOAuthProtectedResourceMetadata).not.toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should fall back when pre-configured metadata discovery times out', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockImplementationOnce(
+        () => new Promise(() => undefined),
+      );
+
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {},
+          baseConfig,
+        ),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          authorizationUrl: expect.stringContaining('state='),
+        }),
+      );
       expect(mockStartAuthorization).toHaveBeenCalledWith(
         mockServerUrl,
         expect.objectContaining({

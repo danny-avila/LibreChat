@@ -40,6 +40,14 @@ import { getOAuthUrlPort } from './url';
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
 
+type OAuthDiscoveryResult = {
+  metadata: OAuthMetadata;
+  resourceMetadata?: OAuthProtectedResourceMetadata;
+  authServerUrl: URL;
+};
+
+const PRECONFIGURED_DISCOVERY_TIMEOUT_MS = 5_000;
+
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
 
@@ -141,11 +149,8 @@ export class MCPOAuthHandler {
     oauthHeaders: Record<string, string>,
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
-  ): Promise<{
-    metadata: OAuthMetadata;
-    resourceMetadata?: OAuthProtectedResourceMetadata;
-    authServerUrl: URL;
-  }> {
+    signal?: AbortSignal,
+  ): Promise<OAuthDiscoveryResult> {
     logger.debug(
       `[MCPOAuth] discoverMetadata called with serverUrl: ${sanitizeUrlForLogging(serverUrl)}`,
     );
@@ -158,6 +163,7 @@ export class MCPOAuthHandler {
       undefined,
       allowedDomains,
       allowedAddresses,
+      signal,
     );
 
     /**
@@ -318,6 +324,43 @@ export class MCPOAuthHandler {
       resourceMetadata,
       authServerUrl,
     };
+  }
+
+  private static discoverMetadataWithTimeout(
+    serverUrl: string,
+    oauthHeaders: Record<string, string>,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+  ): Promise<OAuthDiscoveryResult> {
+    const controller = new AbortController();
+
+    return new Promise<OAuthDiscoveryResult>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        controller.abort();
+        reject(
+          new Error(
+            `[MCPOAuth] Pre-configured OAuth metadata discovery timed out after ${PRECONFIGURED_DISCOVERY_TIMEOUT_MS}ms.`,
+          ),
+        );
+      }, PRECONFIGURED_DISCOVERY_TIMEOUT_MS);
+
+      void this.discoverMetadata(
+        serverUrl,
+        oauthHeaders,
+        allowedDomains,
+        allowedAddresses,
+        controller.signal,
+      ).then(
+        (result) => {
+          clearTimeout(timeout);
+          resolve(result);
+        },
+        (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      );
+    });
   }
 
   /**
@@ -532,47 +575,54 @@ export class MCPOAuthHandler {
 
         let discoveredMetadata: OAuthMetadata | undefined;
         let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
-        try {
-          const discovery = await this.discoverMetadata(
-            serverUrl,
-            oauthHeaders,
-            allowedDomains,
-            allowedAddresses,
-          );
-          const discoveredTokenEndpoint = discovery.metadata.token_endpoint;
-          const configuredTokenEndpoint = new URL(config.token_url).href;
+        const shouldDiscoverCapabilities =
+          !!config.client_secret &&
+          config.token_exchange_method === undefined &&
+          config.token_endpoint_auth_methods_supported === undefined;
 
-          /**
-           * Pre-registered credentials are bound to the configured token endpoint. Metadata
-           * discovery may supply capabilities for that endpoint, but must never redirect the
-           * client secret to a different endpoint.
-           */
-          if (
-            discoveredTokenEndpoint &&
-            new URL(discoveredTokenEndpoint).href === configuredTokenEndpoint
-          ) {
-            discoveredMetadata = discovery.metadata;
-            resourceMetadata = discovery.resourceMetadata;
-            logger.debug(
-              `[MCPOAuth] Using discovered OAuth capabilities with pre-configured endpoints for ${serverName}`,
+        if (shouldDiscoverCapabilities) {
+          try {
+            const discovery = await this.discoverMetadataWithTimeout(
+              serverUrl,
+              oauthHeaders,
+              allowedDomains,
+              allowedAddresses,
             );
-          } else {
+            const discoveredTokenEndpoint = discovery.metadata.token_endpoint;
+            const configuredTokenEndpoint = new URL(config.token_url).href;
+
+            /**
+             * Pre-registered credentials are bound to the configured token endpoint. Metadata
+             * discovery may supply capabilities for that endpoint, but must never redirect the
+             * client secret to a different endpoint.
+             */
+            if (
+              discoveredTokenEndpoint &&
+              new URL(discoveredTokenEndpoint).href === configuredTokenEndpoint
+            ) {
+              discoveredMetadata = discovery.metadata;
+              resourceMetadata = discovery.resourceMetadata;
+              logger.debug(
+                `[MCPOAuth] Using discovered OAuth capabilities with pre-configured endpoints for ${serverName}`,
+              );
+            } else {
+              logger.warn(
+                `[MCPOAuth] Ignoring discovered OAuth capabilities for ${serverName} because the token endpoint does not match the configured endpoint`,
+                {
+                  configuredTokenEndpoint: sanitizeUrlForLogging(configuredTokenEndpoint),
+                  discoveredTokenEndpoint: discoveredTokenEndpoint
+                    ? sanitizeUrlForLogging(discoveredTokenEndpoint)
+                    : undefined,
+                },
+              );
+            }
+          } catch (error) {
+            /** Preserve compatibility with OAuth providers that do not publish metadata. */
             logger.warn(
-              `[MCPOAuth] Ignoring discovered OAuth capabilities for ${serverName} because the token endpoint does not match the configured endpoint`,
-              {
-                configuredTokenEndpoint: sanitizeUrlForLogging(configuredTokenEndpoint),
-                discoveredTokenEndpoint: discoveredTokenEndpoint
-                  ? sanitizeUrlForLogging(discoveredTokenEndpoint)
-                  : undefined,
-              },
+              `[MCPOAuth] OAuth metadata discovery failed for pre-configured client ${serverName}; using configured endpoints and defaults`,
+              { error },
             );
           }
-        } catch (error) {
-          /** Preserve compatibility with OAuth providers that do not publish metadata. */
-          logger.warn(
-            `[MCPOAuth] OAuth metadata discovery failed for pre-configured client ${serverName}; using configured endpoints and defaults`,
-            { error },
-          );
         }
 
         const skipCodeChallengeCheck =
