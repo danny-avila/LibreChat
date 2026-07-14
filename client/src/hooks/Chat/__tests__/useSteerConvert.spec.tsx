@@ -41,6 +41,41 @@ describe('useSteerConvert', () => {
     expect(result.current.chips).toEqual([expect.objectContaining({ steerId: 'local-x' })]);
   });
 
+  it('restores quotes + manual skills from the local chip (server steers never carry them)', () => {
+    const { result } = setup(({ set }) => {
+      set(store.pendingSteersByConvoId(CONVO_ID), [
+        {
+          steerId: 'srv-ctx',
+          text: 'carried',
+          status: 'pending' as const,
+          createdAt: 1,
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        },
+      ]);
+    });
+    act(() => {
+      result.current.convert(CONVO_ID, [{ steerId: 'srv-ctx', text: 'carried', createdAt: 1 }]);
+    });
+    expect(result.current.chips).toEqual([]);
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({
+        id: 'srv-ctx',
+        quotes: ['carried quote'],
+        manualSkills: ['carried-skill'],
+      }),
+    ]);
+  });
+
+  it('adds no context fields when no local chip matches (fresh reload)', () => {
+    const { result } = setup();
+    act(() => {
+      result.current.convert(CONVO_ID, [{ steerId: 'srv-plain', text: 'plain', createdAt: 1 }]);
+    });
+    expect(result.current.queue[0].quotes).toBeUndefined();
+    expect(result.current.queue[0].manualSkills).toBeUndefined();
+  });
+
   it('retains previously applied ids so a late 202 ACK still drops its chip', () => {
     const { result } = setup(({ set }) => {
       set(store.appliedSteerIdsByConvoId(CONVO_ID), ['srv-applied']);

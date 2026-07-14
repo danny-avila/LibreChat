@@ -4,7 +4,7 @@ import { renderHook, act } from '@testing-library/react';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
-import type { PendingSteer } from '~/store/families';
+import type { PendingSteer, QueuedMessage } from '~/store/families';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
 
@@ -70,6 +70,7 @@ function renderUseResumeOnLoad({
   onSiblingIndex,
   pendingSteers,
   onPendingSteers,
+  onQueuedMessages,
 }: {
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
@@ -81,6 +82,7 @@ function renderUseResumeOnLoad({
   onSiblingIndex?: (siblingIndex: number) => void;
   pendingSteers?: PendingSteer[];
   onPendingSteers?: (steers: PendingSteer[]) => void;
+  onQueuedMessages?: (queued: QueuedMessage[]) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const initializeState = (snapshot: MutableSnapshot) => {
@@ -101,6 +103,11 @@ function renderUseResumeOnLoad({
     onPendingSteers?.(steers);
     return null;
   };
+  const QueuedMessagesProbe = () => {
+    const queued = useRecoilValue(store.queuedMessagesByConvoId(conversationId));
+    onQueuedMessages?.(queued);
+    return null;
+  };
   const SiblingIndexProbe = () => {
     const siblingIndex = useRecoilValue(store.messagesSiblingIdxFamily(siblingIndexParentId));
     if (siblingIndexParentId) {
@@ -114,6 +121,7 @@ function renderUseResumeOnLoad({
       <SubmissionProbe />
       <SiblingIndexProbe />
       <PendingSteersProbe />
+      <QueuedMessagesProbe />
       {children}
     </RecoilRoot>
   );
@@ -544,6 +552,84 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(observedSteers[observedSteers.length - 1]).toEqual([failedChip]);
+    });
+
+    it('converts resumeState.pendingSteers to queued when inactive (expired action, unparked queue)', async () => {
+      const observedSteers: PendingSteer[][] = [];
+      const observedQueues: QueuedMessage[][] = [];
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: {
+          active: false,
+          resumeState: {
+            pendingSteers: [{ steerId: 'steer-unparked', text: 'still queued', createdAt: 5 }],
+          },
+        },
+      });
+
+      renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        // Local chip carries the client-only context the server list lacks.
+        pendingSteers: [
+          {
+            steerId: 'steer-unparked',
+            text: 'still queued',
+            status: 'pending',
+            createdAt: 5,
+            quotes: ['carried quote'],
+            manualSkills: ['carried-skill'],
+          },
+        ],
+        onPendingSteers: (steers) => observedSteers.push(steers),
+        onQueuedMessages: (queued) => observedQueues.push(queued),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedQueues[observedQueues.length - 1]).toEqual([
+        expect.objectContaining({
+          id: 'steer-unparked',
+          text: 'still queued',
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        }),
+      ]);
+      expect(observedSteers[observedSteers.length - 1]).toEqual([]);
+    });
+
+    it('dedupes unrecoveredSteers against resumeState.pendingSteers by steer id', async () => {
+      const observedQueues: QueuedMessage[][] = [];
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: {
+          active: false,
+          unrecoveredSteers: [{ steerId: 'steer-dup', text: 'delivered once', createdAt: 3 }],
+          resumeState: {
+            pendingSteers: [
+              { steerId: 'steer-dup', text: 'delivered once', createdAt: 3 },
+              { steerId: 'steer-extra', text: 'second words', createdAt: 4 },
+            ],
+          },
+        },
+      });
+
+      renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onQueuedMessages: (queued) => observedQueues.push(queued),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedQueues[observedQueues.length - 1]).toEqual([
+        expect.objectContaining({ id: 'steer-dup', text: 'delivered once' }),
+        expect.objectContaining({ id: 'steer-extra', text: 'second words' }),
+      ]);
     });
   });
 });

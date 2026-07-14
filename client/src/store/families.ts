@@ -320,6 +320,11 @@ export type PendingSteer = {
   createdAt: number;
   /** Attachments steered with the message (refs; already uploaded). */
   files?: TMessage['files'];
+  /** Quote chips carried by a queued-origin steer (client-only; never sent to
+   *  the server), restored onto the queued item if the run ends first. */
+  quotes?: string[];
+  /** Manual skill picks carried the same way as `quotes`. */
+  manualSkills?: string[];
 };
 
 /**

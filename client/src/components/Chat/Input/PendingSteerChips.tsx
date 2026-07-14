@@ -206,7 +206,11 @@ function FailedSteerRow({
       key: 'queue',
       label: localize('com_ui_convert_to_queue'),
       icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
-      onClick: () => steering.convertSteerToQueue(steer.steerId, steer.text, steer.files),
+      onClick: () =>
+        steering.convertSteerToQueue(steer.steerId, steer.text, steer.files, {
+          quotes: steer.quotes,
+          manualSkills: steer.manualSkills,
+        }),
     },
     toggleEntry,
   ];
@@ -225,7 +229,12 @@ function FailedSteerRow({
       <button
         type="button"
         className={PRIMARY_BTN_CLASS}
-        onClick={() => steering.retrySteer(steer.steerId, steer.text, steer.files)}
+        onClick={() =>
+          steering.retrySteer(steer.steerId, steer.text, steer.files, {
+            quotes: steer.quotes,
+            manualSkills: steer.manualSkills,
+          })
+        }
       >
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
         {localize('com_ui_steer_retry')}

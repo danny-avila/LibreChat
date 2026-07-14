@@ -12,6 +12,7 @@ import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fontSizeAtom } from '~/store/fontSize';
+import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -47,15 +48,18 @@ const SteerPart = memo(function SteerPart({
   const localize = useLocalize();
   const { user } = useAuthContext();
   const fontSize = useAtomValue(fontSizeAtom);
+  const { isSharedConvo } = useShareContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
 
+  /** The share surface must never label the SHARER's steers with the
+   *  viewer's identity; always the generic user label there. */
   const label = useMemo(() => {
-    if (!usernameDisplay) {
+    if (isSharedConvo === true || !usernameDisplay) {
       return localize('com_user_message');
     }
     return (user?.name ?? '') || user?.username || localize('com_user_message');
-  }, [usernameDisplay, user?.name, user?.username, localize]);
+  }, [isSharedConvo, usernameDisplay, user?.name, user?.username, localize]);
   const timestamp = useMemo(
     () => (createdAt != null ? new Date(createdAt).toISOString() : null),
     [createdAt],

@@ -35,6 +35,7 @@ import {
   clearAllDrafts,
   applySteerPart,
   applyPendingAction,
+  carriedSteerContext,
   resolveRunEndTarget,
   findSteerMessageIndex,
   appendAppliedSteerIds,
@@ -558,20 +559,25 @@ export default function useResumableSSE(
   );
 
   /** Replaces the chip list with the server's still-queued steers (reconnect).
-   *  Local `failed` entries are kept so their text stays recoverable. */
+   *  Local `failed` entries are kept so their text stays recoverable, and a
+   *  reseeded chip keeps its client-only quotes/skill picks. */
   const seedSteerChips = useRecoilCallback(
     ({ set }) =>
       (conversationId: string, steers: TPendingSteer[]) => {
-        set(store.pendingSteersByConvoId(conversationId), (prev) => [
-          ...steers.map((steer) => ({
-            steerId: steer.steerId,
-            text: steer.text,
-            status: 'pending' as const,
-            createdAt: steer.createdAt ?? Date.now(),
-            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
-          })),
-          ...prev.filter((steer) => steer.status === 'failed'),
-        ]);
+        set(store.pendingSteersByConvoId(conversationId), (prev) => {
+          const chipById = new Map(prev.map((chip) => [chip.steerId, chip]));
+          return [
+            ...steers.map((steer) => ({
+              steerId: steer.steerId,
+              text: steer.text,
+              status: 'pending' as const,
+              createdAt: steer.createdAt ?? Date.now(),
+              ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+              ...carriedSteerContext(chipById.get(steer.steerId)),
+            })),
+            ...prev.filter((steer) => steer.status === 'failed'),
+          ];
+        });
       },
     [],
   );

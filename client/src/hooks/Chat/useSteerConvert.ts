@@ -2,8 +2,8 @@ import { useCallback } from 'react';
 import { useRecoilCallback } from 'recoil';
 import type { TPendingSteer } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import { appendAppliedSteerIds, carriedSteerContext } from '~/utils';
 import { fetchStreamStatus } from '~/data-provider';
-import { appendAppliedSteerIds } from '~/utils';
 import store from '~/store';
 
 interface SteerConvertOptions {
@@ -34,11 +34,17 @@ interface SteerConvertOptions {
  */
 export default function useSteerConvert() {
   const convert = useRecoilCallback(
-    ({ set }) =>
+    ({ snapshot, set }) =>
       (conversationId: string, steers: TPendingSteer[]) => {
         if (steers.length === 0) {
           return;
         }
+        // Quotes/skill picks never ride the server steer; restore them from
+        // the local chip (matched by id) before the chips are dropped below.
+        const localChips = snapshot
+          .getLoadable(store.pendingSteersByConvoId(conversationId))
+          .getValue();
+        const chipById = new Map(localChips.map((chip) => [chip.steerId, chip]));
         const steerIds = new Set(steers.map((steer) => steer.steerId));
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(
@@ -57,6 +63,7 @@ export default function useSteerConvert() {
               text: steer.text,
               createdAt: steer.createdAt ?? Date.now(),
               ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+              ...carriedSteerContext(chipById.get(steer.steerId)),
             }));
           if (fresh.length === 0) {
             return prev;

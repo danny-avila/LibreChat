@@ -358,10 +358,12 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     if (leftoverSteers.length > 0) {
       pendingSteers = leftoverSteers.map(toPendingSteer);
       // Same no-subscriber recovery as the normal final path (claim-on-read
-      // via /chat/status within the recovery TTL).
+      // via /chat/status within the recovery TTL). NOTE: `job` is the manager
+      // facade — owner fields live under `metadata` (a bare `job.userId` is
+      // undefined and would make the parked payload unclaimable).
       await GenerationJobManager.steering.park(streamId, pendingSteers, {
-        userId: job.userId,
-        tenantId: job.tenantId,
+        userId: job.metadata?.userId,
+        tenantId: job.metadata?.tenantId,
       });
     }
   } catch (drainErr) {
@@ -717,9 +719,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           job.createdAt,
         );
         if (leftoverSteers.length > 0) {
+          // Facade shape: owner fields are under `metadata` (see finalize).
           await GenerationJobManager.steering.park(streamId, leftoverSteers.map(toPendingSteer), {
-            userId: job.userId,
-            tenantId: job.tenantId,
+            userId: job.metadata?.userId,
+            tenantId: job.metadata?.tenantId,
           });
         }
       } catch (drainErr) {

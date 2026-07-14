@@ -12,6 +12,7 @@ import {
   useMarkFilesUsageMutation,
 } from '~/data-provider';
 import { useSetFilesToDelete } from '~/hooks/Files';
+import { carriedSteerContext } from '~/utils';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
@@ -210,6 +211,7 @@ export default function useSteering({
                   text: steer.text,
                   createdAt: steer.createdAt,
                   ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+                  ...carriedSteerContext(steer),
                 },
               ],
         );
@@ -384,6 +386,9 @@ export default function useSteering({
         return false;
       }
       const files = steerFiles && steerFiles.length > 0 ? steerFiles : undefined;
+      /** Rides every chip state so a terminal conversion (late ACK, run-end
+       *  leftover report) can restore the queued item's full context. */
+      const carried = carriedSteerContext(context);
       const localId = `local-${v4()}`;
       upsertSteerChip(conversationId, {
         steerId: localId,
@@ -391,6 +396,7 @@ export default function useSteering({
         status: 'sending',
         createdAt: Date.now(),
         ...(files && { files }),
+        ...carried,
       });
       steerMutation.mutate(
         { conversationId, text: trimmed, ...(files && { files }) },
@@ -402,6 +408,7 @@ export default function useSteering({
               status: 'pending',
               createdAt: Date.now(),
               ...(files && { files }),
+              ...carried,
             });
           },
           onError: (error) => {
@@ -447,6 +454,7 @@ export default function useSteering({
               status: 'failed',
               createdAt: Date.now(),
               ...(files && { files }),
+              ...carried,
             });
           },
         },
@@ -497,9 +505,14 @@ export default function useSteering({
 
   /** Retry a failed chip through the normal steer path. */
   const retrySteer = useCallback(
-    (steerId: string, text: string, steerFiles?: TMessage['files']) => {
+    (
+      steerId: string,
+      text: string,
+      steerFiles?: TMessage['files'],
+      context?: QueuedMessageContext,
+    ) => {
       replaceSteerChip(conversationId, steerId, null);
-      submitSteer(text, steerFiles);
+      submitSteer(text, steerFiles, context);
     },
     [conversationId, replaceSteerChip, submitSteer],
   );
@@ -513,9 +526,14 @@ export default function useSteering({
 
   /** Convert a failed/unsent steer chip into a queued follow-up. */
   const convertSteerToQueue = useCallback(
-    (steerId: string, text: string, steerFiles?: TMessage['files']) => {
+    (
+      steerId: string,
+      text: string,
+      steerFiles?: TMessage['files'],
+      context?: QueuedMessageContext,
+    ) => {
       replaceSteerChip(conversationId, steerId, null);
-      enqueue(text, { files: steerFiles });
+      enqueue(text, { files: steerFiles, ...context });
     },
     [conversationId, replaceSteerChip, enqueue],
   );

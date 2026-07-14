@@ -1,5 +1,10 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
-import type { TMessage, TMessageContentParts, TSteerAppliedEvent } from 'librechat-data-provider';
+import type {
+  TMessage,
+  TPendingSteer,
+  TSteerAppliedEvent,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 
 type SteerPart = Extract<TMessageContentParts, { type: ContentTypes.STEER }>;
 
@@ -89,6 +94,36 @@ export function appendAppliedSteerIds(prev: string[], steerIds: string[]): strin
     return prev;
   }
   return [...prev, ...fresh].slice(-APPLIED_STEER_IDS_CAP);
+}
+
+type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] };
+
+/** Quotes/skill picks are client-only (a steer never sends them to the
+ *  server); chip mints, reseeds, and queued conversions carry them from the
+ *  local source so the context survives a steer that never injects. */
+export function carriedSteerContext(source?: SteerCarriedContext): SteerCarriedContext {
+  const quotes = source?.quotes;
+  const manualSkills = source?.manualSkills;
+  return {
+    ...(quotes && quotes.length > 0 && { quotes }),
+    ...(manualSkills && manualSkills.length > 0 && { manualSkills }),
+  };
+}
+
+/** Merges steer lists into one id-deduped conversion batch (first wins). */
+export function dedupeSteersById(...lists: Array<TPendingSteer[] | undefined>): TPendingSteer[] {
+  const seen = new Set<string>();
+  const merged: TPendingSteer[] = [];
+  for (const list of lists) {
+    for (const steer of list ?? []) {
+      if (seen.has(steer.steerId)) {
+        continue;
+      }
+      seen.add(steer.steerId);
+      merged.push(steer);
+    }
+  }
+  return merged;
 }
 
 /**

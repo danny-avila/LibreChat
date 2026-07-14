@@ -572,6 +572,7 @@ describe('useSteering', () => {
             ...params,
           }),
           queue: useQueue(CONVO_ID),
+          chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
           pendingQuotes: useRecoilValue(store.pendingQuotesByConvoId(CONVO_ID)),
           pendingSkills: useRecoilValue(store.pendingManualSkillsByConvoId(CONVO_ID)),
         }),
@@ -698,6 +699,93 @@ describe('useSteering', () => {
         quotes: ['carried quote'],
         manualSkills: ['carried-skill'],
       });
+    });
+
+    it('carries a queued-origin context onto the sending chip and the 202 ACK chip', () => {
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({ steerId: 'srv-ctx', status: 'queued', position: 1, conversationId: CONVO_ID });
+      });
+      const { result } = setupWithContext();
+      act(() => {
+        result.current.steering.submitSteer('carried steer', undefined, {
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        });
+      });
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({
+          steerId: 'srv-ctx',
+          status: 'pending',
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        }),
+      ]);
+    });
+
+    it('restores the carried context when a late ACK converts straight to queued', () => {
+      // The run ended before the 202 landed: the ACK's queued conversion is
+      // the only surviving copy of the steer, so it must keep quotes + skills.
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({ steerId: 'srv-late', status: 'queued', position: 1, conversationId: CONVO_ID });
+      });
+      const { result } = setupWithContext({ isSubmitting: false });
+      act(() => {
+        result.current.steering.submitSteer('late carried', undefined, {
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        });
+      });
+      expect(result.current.chips).toEqual([]);
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({
+          id: 'srv-late',
+          text: 'late carried',
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        }),
+      ]);
+    });
+
+    it('keeps the carried context on a failed chip through retry', () => {
+      mockMutate.mockImplementationOnce((_params, { onError }) => {
+        onError({ response: { data: { code: 'SOME_ERROR' } } });
+      });
+      const { result } = setupWithContext();
+      act(() => {
+        result.current.steering.submitSteer('failed carried', undefined, {
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        });
+      });
+      const failed = result.current.chips[0];
+      expect(failed).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        }),
+      );
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        onSuccess({
+          steerId: 'srv-retry',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+        });
+      });
+      act(() => {
+        result.current.steering.retrySteer(failed.steerId, failed.text, failed.files, {
+          quotes: failed.quotes,
+          manualSkills: failed.manualSkills,
+        });
+      });
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({
+          steerId: 'srv-retry',
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        }),
+      ]);
     });
 
     it('leaves composer atoms staged when a composer-origin steer degrades', () => {
