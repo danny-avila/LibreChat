@@ -52,6 +52,22 @@ const STEER_RENDER_CLASS = 'steer-render';
  *  position INSIDE the response that absorbed them. */
 const ENTRY_NODE_SELECTOR = `.message-render, .${STEER_RENDER_CLASS}`;
 
+/** Rail-relevant node: a message row or an in-thread steer part. The mutation
+ *  filter must match BOTH — a steer node swap (optimistic → persisted) or
+ *  removal (cancel) produces no `.message-render` mutation at all. */
+function isEntryNode(node: HTMLElement): boolean {
+  return (
+    node.classList?.contains('message-render') === true ||
+    node.classList?.contains(STEER_RENDER_CLASS) === true
+  );
+}
+
+function containsEntryNode(node: HTMLElement): boolean {
+  return (
+    node.nodeType === 1 && (isEntryNode(node) || node.querySelector?.(ENTRY_NODE_SELECTOR) != null)
+  );
+}
+
 export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
   const isUser = node.querySelector(USER_TURN_SELECTOR) != null;
   const trimmed = (node.textContent ?? '').trim();
@@ -290,6 +306,57 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     messagesByIdRef.current = messagesById;
   }, [messagesById]);
 
+  const resolveEntryEl = useCallback(
+    (id: string): HTMLElement | null => {
+      if (id === MESSAGES_END_ID) {
+        return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
+      }
+      return document.getElementById(id);
+    },
+    [scrollableRef],
+  );
+
+  /**
+   * Re-point the observer at replaced DOM nodes. A steer part swaps its node
+   * under the SAME id (optimistic entry → persisted part), which produces no
+   * IntersectionObserver exit and — because the entry list dedupes on
+   * (id, preview) — no entries change either, so the observer would keep
+   * watching a detached node and the rib would stay lit forever. Runs from
+   * the mutation-driven refresh regardless of entries identity; visibility is
+   * dropped until the fresh node reports (the observer fires its initial
+   * intersection immediately on observe, so a truly visible part re-lights
+   * within a frame).
+   */
+  const reconcileObservedElements = useCallback(() => {
+    const observer = observerRef.current;
+    if (!observer) {
+      return;
+    }
+    const observed = observedRef.current;
+    const visibleSet = visibleSetRef.current;
+    let visibilityChanged = false;
+    for (const [id, el] of [...observed]) {
+      const current = resolveEntryEl(id);
+      if (current === el) {
+        continue;
+      }
+      observer.unobserve(el);
+      if (current) {
+        observer.observe(current);
+        observed.set(id, current);
+      } else {
+        observed.delete(id);
+      }
+      if (visibleSet.delete(id)) {
+        visibilityChanged = true;
+      }
+    }
+    if (visibilityChanged) {
+      setCurrentId(getCurrentVisibleId());
+      setVisibleIds(new Set(visibleSet));
+    }
+  }, [resolveEntryEl, getCurrentVisibleId]);
+
   const refreshEntries = useCallback(() => {
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
@@ -306,22 +373,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         }
         return next;
       });
+      reconcileObservedElements();
     }, 200);
-  }, [scrollableRef]);
+  }, [scrollableRef, reconcileObservedElements]);
 
   useEffect(() => {
     refreshEntries();
   }, [messagesById, refreshEntries]);
-
-  const resolveEntryEl = useCallback(
-    (id: string): HTMLElement | null => {
-      if (id === MESSAGES_END_ID) {
-        return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
-      }
-      return document.getElementById(id);
-    },
-    [scrollableRef],
-  );
 
   const scrollToStart = useCallback(
     (id: string) => {
@@ -753,7 +811,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         const m = mutations[i];
         if (m.type === 'attributes') {
           const target = m.target as HTMLElement;
-          if (target.nodeType === 1 && target.classList?.contains('message-render')) {
+          if (target.nodeType === 1 && isEntryNode(target)) {
             refreshEntries();
             return;
           }
@@ -761,21 +819,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         }
         if (m.addedNodes.length || m.removedNodes.length) {
           for (let j = 0; j < m.addedNodes.length; j++) {
-            const n = m.addedNodes[j] as HTMLElement;
-            if (
-              n.nodeType === 1 &&
-              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
-            ) {
+            if (containsEntryNode(m.addedNodes[j] as HTMLElement)) {
               refreshEntries();
               return;
             }
           }
           for (let j = 0; j < m.removedNodes.length; j++) {
-            const n = m.removedNodes[j] as HTMLElement;
-            if (
-              n.nodeType === 1 &&
-              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
-            ) {
+            if (containsEntryNode(m.removedNodes[j] as HTMLElement)) {
               refreshEntries();
               return;
             }

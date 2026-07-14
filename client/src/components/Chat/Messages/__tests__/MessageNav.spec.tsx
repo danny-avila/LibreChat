@@ -475,6 +475,50 @@ describe('MessageNav', () => {
       expect(steerRib?.getAttribute('aria-label')).toContain('steer mid-run words');
       expect(steerRib?.getAttribute('aria-label')).not.toContain('Danny');
     });
+
+    it('un-lights a steer rib when its DOM node is replaced (pending → applied swap)', async () => {
+      const messages = [
+        buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a1', text: 'long tool run' }),
+        buildMessage({ messageId: 'u2', text: 'follow-up', isCreatedByUser: true }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable } = buildDom(messages);
+      const response = scrollable.querySelector('#a1') as HTMLElement;
+      const pendingNode = appendSteerNode(response, 's1', 'swap me', 350);
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: pendingNode, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+      const rib = container.querySelector('[data-msg-id="steer-s1"]') as HTMLElement;
+      expect(rib.className).toContain('opacity-100');
+
+      // The applied part replaces the optimistic node under the SAME id —
+      // same entry list (id + preview unchanged), no observer exit event.
+      act(() => {
+        pendingNode.remove();
+        appendSteerNode(response, 's1', 'swap me', 350);
+      });
+      // Let the MutationObserver microtask deliver (it schedules the
+      // debounced refresh), then advance the debounce.
+      await act(async () => {});
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      // Without node-level reconciliation the dead node keeps the rib lit
+      // forever; after it, visibility drops until the fresh node reports.
+      const ribAfter = container.querySelector('[data-msg-id="steer-s1"]') as HTMLElement;
+      expect(ribAfter.className).toContain('opacity-40');
+    });
   });
 
   describe('accessibility', () => {
