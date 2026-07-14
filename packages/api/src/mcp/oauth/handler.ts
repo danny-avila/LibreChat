@@ -530,6 +530,51 @@ export class MCPOAuthHandler {
           this.validateOAuthUrl(config.token_url, 'token_url', allowedDomains, allowedAddresses),
         ]);
 
+        let discoveredMetadata: OAuthMetadata | undefined;
+        let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
+        try {
+          const discovery = await this.discoverMetadata(
+            serverUrl,
+            oauthHeaders,
+            allowedDomains,
+            allowedAddresses,
+          );
+          const discoveredTokenEndpoint = discovery.metadata.token_endpoint;
+          const configuredTokenEndpoint = new URL(config.token_url).href;
+
+          /**
+           * Pre-registered credentials are bound to the configured token endpoint. Metadata
+           * discovery may supply capabilities for that endpoint, but must never redirect the
+           * client secret to a different endpoint.
+           */
+          if (
+            discoveredTokenEndpoint &&
+            new URL(discoveredTokenEndpoint).href === configuredTokenEndpoint
+          ) {
+            discoveredMetadata = discovery.metadata;
+            resourceMetadata = discovery.resourceMetadata;
+            logger.debug(
+              `[MCPOAuth] Using discovered OAuth capabilities with pre-configured endpoints for ${serverName}`,
+            );
+          } else {
+            logger.warn(
+              `[MCPOAuth] Ignoring discovered OAuth capabilities for ${serverName} because the token endpoint does not match the configured endpoint`,
+              {
+                configuredTokenEndpoint: sanitizeUrlForLogging(configuredTokenEndpoint),
+                discoveredTokenEndpoint: discoveredTokenEndpoint
+                  ? sanitizeUrlForLogging(discoveredTokenEndpoint)
+                  : undefined,
+              },
+            );
+          }
+        } catch (error) {
+          /** Preserve compatibility with OAuth providers that do not publish metadata. */
+          logger.warn(
+            `[MCPOAuth] OAuth metadata discovery failed for pre-configured client ${serverName}; using configured endpoints and defaults`,
+            { error },
+          );
+        }
+
         const skipCodeChallengeCheck =
           config?.skip_code_challenge_check === true ||
           process.env.MCP_SKIP_CODE_CHALLENGE_CHECK === 'true';
@@ -543,7 +588,10 @@ export class MCPOAuthHandler {
             `[MCPOAuth] Code challenge check skip enabled, forcing S256 support for ${serverName}`,
           );
         } else {
-          codeChallengeMethodsSupported = ['S256', 'plain'];
+          codeChallengeMethodsSupported = discoveredMetadata?.code_challenge_methods_supported ?? [
+            'S256',
+            'plain',
+          ];
         }
 
         /** Metadata based on pre-configured settings */
@@ -551,10 +599,14 @@ export class MCPOAuthHandler {
         if (!config.client_secret) {
           tokenEndpointAuthMethod = 'none';
         } else {
-          // When token_exchange_method is undefined or not DefaultPost, default to using
-          // client_secret_basic (Basic Auth header) for token endpoint authentication.
           tokenEndpointAuthMethod =
-            getForcedTokenEndpointAuthMethod(config.token_exchange_method) ?? 'client_secret_basic';
+            resolveTokenEndpointAuthMethod({
+              tokenExchangeMethod: config.token_exchange_method,
+              tokenAuthMethods:
+                config.token_endpoint_auth_methods_supported ??
+                discoveredMetadata?.token_endpoint_auth_methods_supported ??
+                [],
+            }) ?? 'client_secret_basic';
         }
 
         let defaultTokenAuthMethods: string[];
@@ -569,15 +621,16 @@ export class MCPOAuthHandler {
         const metadata: OAuthMetadata = {
           authorization_endpoint: config.authorization_url,
           token_endpoint: config.token_url,
-          issuer: serverUrl,
-          scopes_supported: config.scope?.split(' ') ?? [],
-          grant_types_supported: config?.grant_types_supported ?? [
-            'authorization_code',
-            'refresh_token',
-          ],
+          issuer: discoveredMetadata?.issuer ?? serverUrl,
+          scopes_supported: config.scope?.split(' ') ?? discoveredMetadata?.scopes_supported ?? [],
+          grant_types_supported: config?.grant_types_supported ??
+            discoveredMetadata?.grant_types_supported ?? ['authorization_code', 'refresh_token'],
           token_endpoint_auth_methods_supported:
-            config?.token_endpoint_auth_methods_supported ?? defaultTokenAuthMethods,
-          response_types_supported: config?.response_types_supported ?? ['code'],
+            config?.token_endpoint_auth_methods_supported ??
+            discoveredMetadata?.token_endpoint_auth_methods_supported ??
+            defaultTokenAuthMethods,
+          response_types_supported: config?.response_types_supported ??
+            discoveredMetadata?.response_types_supported ?? ['code'],
           code_challenge_methods_supported: codeChallengeMethodsSupported,
         };
         logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
@@ -602,6 +655,14 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
+        if (resourceMetadata?.resource) {
+          const canonicalResource = new URL(resourceMetadata.resource).href;
+          authorizationUrl.searchParams.set('resource', canonicalResource);
+          logger.debug(
+            `[MCPOAuth] Added resource parameter to pre-configured authorization URL: ${canonicalResource}`,
+          );
+        }
+
         /**
          * Auth0/Cognito-style `audience` parameter. Forwarded as-is; the provider
          * decides whether it accepts RFC 8707 `resource`, the legacy `audience`,
@@ -620,6 +681,7 @@ export class MCPOAuthHandler {
           codeVerifier,
           clientInfo,
           metadata,
+          resourceMetadata,
           ...(allowedDomains !== undefined && { allowedDomains }),
           ...(allowedAddresses !== undefined && { allowedAddresses }),
           ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
