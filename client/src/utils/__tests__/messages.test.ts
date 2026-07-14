@@ -52,7 +52,7 @@ describe('clearMessagesCache', () => {
 });
 
 describe('clearDeletedConversationMessagesCache', () => {
-  it('clears both message caches when the new-conversation cache aliases the deleted chat', () => {
+  it('clears both caches when the new-conversation cache contains deleted chat messages', () => {
     const queryClient = new QueryClient();
     const conversationId = 'conversation-1';
     const messages = [makeMessage({ conversationId })];
