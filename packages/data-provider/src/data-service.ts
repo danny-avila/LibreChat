@@ -14,6 +14,7 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+import * as aa from './artifactApps';
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -1389,3 +1390,73 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* Artifact Apps */
+
+export function publishArtifactApp(
+  payload: aa.TPublishArtifactAppRequest,
+): Promise<aa.TArtifactAppWithVersion> {
+  return request.post(endpoints.artifactApps(), payload);
+}
+
+export function listArtifactApps(): Promise<aa.TArtifactAppList> {
+  return request.get(endpoints.artifactApps());
+}
+
+export function getArtifactApp(
+  artifactAppId: string,
+): Promise<aa.TArtifactAppWithVersion> {
+  return request.get(endpoints.artifactAppById(artifactAppId));
+}
+
+export function updateArtifactApp(
+  artifactAppId: string,
+  payload: aa.TUpdateArtifactAppRequest,
+): Promise<aa.TArtifactApp> {
+  return request.patch(endpoints.artifactAppById(artifactAppId), payload);
+}
+
+export function deleteArtifactApp(artifactAppId: string): Promise<{ success: boolean }> {
+  return request.delete(endpoints.artifactAppById(artifactAppId));
+}
+
+export function listArtifactAppVersions(
+  artifactAppId: string,
+): Promise<aa.TArtifactVersionList> {
+  return request.get(endpoints.artifactAppVersions(artifactAppId));
+}
+
+export function getArtifactAppVersion(
+  artifactAppId: string,
+  versionId: string,
+): Promise<aa.TArtifactVersion> {
+  return request.get(endpoints.artifactAppVersionById(artifactAppId, versionId));
+}
+
+export function createArtifactAppVersion(
+  artifactAppId: string,
+  payload: aa.TCreateArtifactVersionRequest,
+): Promise<aa.TArtifactVersion> {
+  return request.post(endpoints.artifactAppVersions(artifactAppId), payload);
+}
+
+export function releaseArtifactAppVersion(
+  artifactAppId: string,
+  versionId: string,
+): Promise<aa.TArtifactVersion> {
+  return request.post(endpoints.artifactAppVersionRelease(artifactAppId, versionId), {});
+}
+
+export function activateArtifactAppVersion(
+  artifactAppId: string,
+  versionId: string,
+): Promise<aa.TArtifactApp> {
+  return request.post(endpoints.artifactAppVersionActivate(artifactAppId, versionId), {});
+}
+
+export function withdrawArtifactAppVersion(
+  artifactAppId: string,
+  versionId: string,
+): Promise<aa.TArtifactVersion> {
+  return request.post(endpoints.artifactAppVersionWithdraw(artifactAppId, versionId), {});
+}
