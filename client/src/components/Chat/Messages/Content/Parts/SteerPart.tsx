@@ -1,8 +1,8 @@
 import { memo, useMemo, useState, useCallback } from 'react';
-import { X, Zap } from 'lucide-react';
 import { useAtomValue } from 'jotai';
-import { TooltipAnchor } from '@librechat/client';
+import { X, Zap } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { TooltipAnchor } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
