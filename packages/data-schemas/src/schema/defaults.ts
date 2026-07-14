@@ -183,6 +183,13 @@ export const conversationPreset: {
   reasoning_summary: {
     type: StringConstructor;
   };
+  /** Responses API reasoning mode (standard/pro) + context */
+  reasoning_mode: {
+    type: StringConstructor;
+  };
+  reasoning_context: {
+    type: StringConstructor;
+  };
   /** Verbosity control */
   verbosity: {
     type: StringConstructor;
@@ -347,6 +354,13 @@ export const conversationPreset: {
     type: String,
   },
   reasoning_summary: {
+    type: String,
+  },
+  /** Responses API reasoning mode (standard/pro) + context */
+  reasoning_mode: {
+    type: String,
+  },
+  reasoning_context: {
     type: String,
   },
   /** Verbosity control */

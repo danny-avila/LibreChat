@@ -732,7 +732,7 @@ router.post(
         return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
       }
 
-      const { success, message, oauthRequired, oauthUrl } = result;
+      const { success, message, oauthRequired, oauthUrl, connectionDeferred } = result;
 
       if (oauthRequired) {
         const flowId = getOAuthFlowId(user.id, serverName);
@@ -745,6 +745,7 @@ router.post(
         oauthUrl,
         serverName,
         oauthRequired,
+        connectionDeferred,
       });
     } catch (error) {
       logger.error('[MCP Reinitialize] Unexpected error', error);

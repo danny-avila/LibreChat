@@ -7,9 +7,10 @@ import {
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
-import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
+import type { Agent, AgentToolOptions, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 
@@ -119,6 +120,7 @@ export async function loadAddedAgent(
         artifacts?: unknown;
         memory?: boolean;
         ask_user_question?: boolean;
+        run_in_background?: boolean;
       }
     | undefined;
 
@@ -156,6 +158,11 @@ export async function loadAddedAgent(
     };
     applyModelSpecSkills(result, modelSpec);
     applyModelSpecSubagents(result, modelSpec);
+    const primaryBackgroundToolOptions: AgentToolOptions | undefined =
+      synthesizeBackgroundToolOptions(result.tools as string[], { ephemeralAgent, modelSpec });
+    if (primaryBackgroundToolOptions) {
+      result.tool_options = primaryBackgroundToolOptions;
+    }
     return result as unknown as Agent;
   }
 
@@ -266,6 +273,14 @@ export async function loadAddedAgent(
   }
   applyModelSpecSubagents(result, modelSpec);
   applyModelSpecSkills(result, modelSpec);
+
+  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions(
+    tools,
+    { ephemeralAgent, modelSpec },
+  );
+  if (backgroundToolOptions) {
+    result.tool_options = backgroundToolOptions;
+  }
 
   return result as unknown as Agent;
 }

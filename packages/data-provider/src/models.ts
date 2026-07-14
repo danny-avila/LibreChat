@@ -55,6 +55,12 @@ export type TModelSpec = {
   memory?: boolean;
   /** Equip the spec's ephemeral agent with the `ask_user_question` HITL tool. */
   askUserQuestion?: boolean;
+  /**
+   * Let the model dispatch this spec's eligible tool calls in the background
+   * (poll results via `check_background_task`). Requires the `run_in_background`
+   * agent capability to be enabled by the admin.
+   */
+  runInBackground?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
@@ -90,6 +96,7 @@ export const tModelSpecSchema = z.object({
   executeCode: z.boolean().optional(),
   memory: z.boolean().optional(),
   askUserQuestion: z.boolean().optional(),
+  runInBackground: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),
