@@ -37,7 +37,7 @@ const {
   toClientPendingAction,
   computeAgentRequestFingerprint,
   extractDiscoveredToolsFromHistory,
-  sanitizeResumeModelParameters,
+  captureResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
@@ -1378,19 +1378,21 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
-    // Persist the resolved model parameters (temperature, max tokens, custom endpoint
-    // params, …) so an ephemeral-agent resume continues with the SAME settings the run
-    // paused on. The resume payload omits them and they aren't part of the fingerprint, so
-    // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
-    // these from the DB record server-side, so this is belt-and-suspenders for them.)
-    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // Persist the generation params (temperature, max tokens, custom endpoint params, …)
+    // so an ephemeral-agent resume continues with the SAME settings the run paused on.
+    // The resume payload omits them and they aren't part of the fingerprint, so without
+    // this the rebuilt ephemeral run falls back to defaults. The paused request body is
+    // the primary source (UI-form, round-trips the compact-convo schema by construction);
+    // the resolved llmConfig fills gaps and is sanitized — it carries provider secrets
     // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
+    // (Saved agents source params from the DB record, so this is belt-and-suspenders.)
     const resumeContext = pickResumeContext(this.options.req?.body);
-    const resolvedModelParameters = sanitizeResumeModelParameters(
+    const resumeModelParameters = captureResumeModelParameters(
+      this.options.req?.body,
       this.options.agent?.model_parameters,
     );
-    if (resolvedModelParameters) {
-      resumeContext.model_parameters = resolvedModelParameters;
+    if (resumeModelParameters) {
+      resumeContext.model_parameters = resumeModelParameters;
     }
     // Persist the question onto the paused ask tool_call's args NOW: an
     // abandoned/expired/stopped pause never reaches the answer-resume stamp,
