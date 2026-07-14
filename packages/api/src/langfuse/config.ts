@@ -1,14 +1,12 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
+import { isTrueEnv, normalizeBoolean, resolveTenantCredentials } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
-import { isTrueEnv, normalizeBoolean } from './utils';
 import { normalizeString } from '~/utils/text';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
-export type LangfuseFanoutConfig = LangfuseAppConfig['fanout'] & {
-  collectorUrl?: string;
-};
+export type LangfuseFanoutConfig = LangfuseAppConfig['fanout'];
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
 };
@@ -166,23 +164,20 @@ export function buildLangfuseConfig({
     disableCentralExport(langfuse);
   }
 
-  const publicKey = normalizeString(config?.publicKey);
-  const secretKey = normalizeString(config?.secretKey);
-  const hasTenantCredentials = Boolean(publicKey && secretKey);
+  const tenantCredentials = resolveTenantCredentials(config);
+  const hasTenantCredentials = Boolean(tenantCredentials);
   const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
   const fanoutEnabled = isLangfuseFanoutEnabled(fanout);
-  const fanoutCollectorUrl =
-    normalizeString(fanout?.collectorUrl) ??
-    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+  const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+  const tenantDestination = resolveLangfuseTenantDestination(config?.destination);
   const tenantExportEmergencyEnabled = isLangfuseTenantExportEnabled();
-  const tenantDestination = resolveLangfuseTenantDestination(config?.baseUrl);
   const exportPlan = resolveLangfuseExportPlan({
     centralTraceExportEnabled,
     fanoutEnabled,
     fanoutCollectorUrl,
     tenantExportEnabled: hasTenantCredentials && tenantExportEmergencyEnabled,
-    publicKey,
-    secretKey,
+    publicKey: tenantCredentials?.publicKey,
+    secretKey: tenantCredentials?.secretKey,
     tenantDestination,
   });
 
