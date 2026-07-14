@@ -187,7 +187,11 @@ function FailedSteerRow({
 }: {
   steer: PendingSteer;
   steering: SteeringControls;
-  onEditToComposer: (text: string, files?: TMessage['files']) => void;
+  onEditToComposer: (
+    text: string,
+    files?: TMessage['files'],
+    context?: QueuedMessageContext,
+  ) => void;
 }) {
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
@@ -199,7 +203,10 @@ function FailedSteerRow({
       icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
       onClick: () => {
         steering.removeSteer(steer.steerId);
-        onEditToComposer(steer.text, steer.files);
+        onEditToComposer(steer.text, steer.files, {
+          quotes: steer.quotes,
+          manualSkills: steer.manualSkills,
+        });
       },
     },
     {
