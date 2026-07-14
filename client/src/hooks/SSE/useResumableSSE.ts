@@ -45,6 +45,7 @@ import {
 } from '~/utils';
 import {
   useGetUserBalance,
+  fetchStreamStatus,
   useGetStartupConfig,
   queueTitleGeneration,
   streamStatusQueryKey,
@@ -1202,6 +1203,30 @@ export default function useResumableSSE(
           }
           setIsSubmitting(false);
           setShowStopButton(false);
+          const recoveryConvoId = convoId ?? currentStreamId;
+          // Terminal for this run: the job is gone, so no event will ever
+          // resolve an acknowledged chip — convert them to queued chips.
+          convertLocalSteersToQueued(recoveryConvoId);
+          // A terminal drain may have parked steers no subscriber received —
+          // the status route claims them exactly once (same recovery as
+          // useResumeOnLoad). Best-effort: chips are already converted above.
+          fetchStreamStatus(recoveryConvoId)
+            .then((status) => {
+              const unrecovered = status.unrecoveredSteers ?? [];
+              if (unrecovered.length > 0) {
+                convertSteersToQueued(recoveryConvoId, unrecovered);
+              }
+            })
+            .catch(() => undefined);
+          // The true outcome is unknown here (job record already cleaned up):
+          // a non-'completed' outcome releases parked interrupt flags without
+          // auto-sending queued messages the user may not want fired.
+          setRunEnd({
+            conversationId: recoveryConvoId,
+            outcome: 'aborted',
+            startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+            endedAt: Date.now(),
+          });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);

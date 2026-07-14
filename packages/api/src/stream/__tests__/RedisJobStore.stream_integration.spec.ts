@@ -2150,6 +2150,68 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('stale-running reap parks queued steers before deleting the job', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 1 });
+      await store.initialize();
+
+      const streamId = `steer-stale-park-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId, 'tenant-1');
+      await store.enqueueSteer(streamId, buildSteer('s1', 'crash survivor'));
+
+      // Backdate creation past the running TTL so the next cleanup pass reaps
+      // it via the stale-running branch (no finalization ever ran).
+      await ioredisClient.hset(
+        `stream:{${streamId}}:job`,
+        'createdAt',
+        String(Date.now() - 10_000),
+      );
+
+      const cleaned = await store.cleanup();
+      expect(cleaned).toBeGreaterThanOrEqual(1);
+      expect(await store.getJob(streamId)).toBeNull();
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      const claimed = await store.claimParkedSteers(streamId, '"userId":"steer-user"');
+      expect(claimed).toBeDefined();
+      const parsed = JSON.parse(claimed as string) as {
+        userId: string;
+        tenantId?: string;
+        steers: Array<{ steerId: string; text: string }>;
+      };
+      expect(parsed.userId).toBe('steer-user');
+      expect(parsed.tenantId).toBe('tenant-1');
+      expect(parsed.steers.map((s) => s.text)).toEqual(['crash survivor']);
+
+      await store.destroy();
+    });
+
+    test('parkSteers falls back to a positive recovery TTL when completedTtl is 0', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { completedTtl: 0 });
+      await store.initialize();
+
+      const streamId = `steer-park-zero-ttl-${Date.now()}`;
+      // `EX 0` would be rejected by Redis and silently kill recovery.
+      await store.parkSteers(
+        streamId,
+        JSON.stringify({ userId: 'steer-user', steers: [{ steerId: 'p1', text: 'kept' }] }),
+      );
+
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
+      expect(await ioredisClient.ttl(`stream:{${streamId}}:parked`)).toBeGreaterThan(0);
+
+      await store.destroy();
+    });
+
     test('getContentParts splices on_steer_applied chunks at their recorded index', async () => {
       if (!ioredisClient) {
         return;

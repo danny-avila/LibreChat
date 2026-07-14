@@ -274,6 +274,9 @@ export class InMemoryJobStore implements IJobStore {
           job.createdAt,
         );
         if (now - lastActive > this.staleJobTimeout) {
+          // A crashed/hung run never reached a finalization drain — park the
+          // 202-accepted queue before the delete drops it.
+          this.parkQueuedSteers(streamId, job, now);
           toDelete.push(streamId);
           staleRunning++;
         }
@@ -582,7 +585,8 @@ export class InMemoryJobStore implements IJobStore {
     return parked.expiresAt > Date.now() ? parked.payload : undefined;
   }
 
-  /** Approval-expiry finalization must not drop 202-accepted steers with the job. */
+  /** Terminal cleanup (approval expiry, stale-running reap) must not drop
+   *  202-accepted steers with the job. */
   private parkQueuedSteers(streamId: string, job: SerializableJobData, now: number): void {
     const queue = this.steerQueues.get(streamId);
     if (!queue || queue.length === 0) {

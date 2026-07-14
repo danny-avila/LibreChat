@@ -276,6 +276,45 @@ describe('useSteering', () => {
       expect(result.current.queue[0]).toEqual(first);
     });
 
+    it('queues the steer text+files when a settled NO_ACTIVE_RUN send is refused', () => {
+      const steerFiles = [
+        { file_id: 'file-refused', filepath: '/uploads/file-refused.png', type: 'image/png' },
+      ];
+      mockMutate.mockImplementationOnce((_params, { onError }) => {
+        onError({ response: { data: { code: 'NO_ACTIVE_RUN' } } });
+      });
+      const refusingSendNow = jest.fn().mockReturnValue(false);
+      const { result } = setupWithState({ isSubmitting: false, sendNow: refusingSendNow });
+      act(() => {
+        result.current.steering.submitSteer('refused words', steerFiles);
+      });
+      expect(refusingSendNow).toHaveBeenCalledWith('refused words', steerFiles);
+      // The chip is already gone — a refused send must land in the queue, not drop.
+      expect(result.current.chips).toEqual([]);
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ text: 'refused words', files: steerFiles }),
+      ]);
+    });
+
+    it('queues the steer text+files when a settled-run rejection send is refused', () => {
+      const steerFiles = [
+        { file_id: 'file-paused', filepath: '/uploads/file-paused.png', type: 'image/png' },
+      ];
+      mockMutate.mockImplementationOnce((_params, { onError }) => {
+        onError({ response: { data: { code: 'STEER_UNSUPPORTED' } } });
+      });
+      const refusingSendNow = jest.fn().mockReturnValue(false);
+      const { result } = setupWithState({ isSubmitting: false, sendNow: refusingSendNow });
+      act(() => {
+        result.current.steering.submitSteer('unsupported words', steerFiles);
+      });
+      expect(refusingSendNow).toHaveBeenCalledWith('unsupported words', steerFiles);
+      expect(result.current.chips).toEqual([]);
+      expect(result.current.queue).toEqual([
+        expect.objectContaining({ text: 'unsupported words', files: steerFiles }),
+      ]);
+    });
+
     it('does not restore the queued item when sendNow accepts', () => {
       const acceptingSendNow = jest.fn().mockReturnValue(undefined);
       const { result } = setupWithState({ isSubmitting: false, sendNow: acceptingSendNow });

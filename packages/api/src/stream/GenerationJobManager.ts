@@ -1232,8 +1232,19 @@ class GenerationJobManagerClass {
    *
    * In Redis mode, awaits the publish to guarantee event ordering.
    * This is critical for streaming deltas (tool args, message content) to arrive in order.
+   *
+   * `options.durable` additionally awaits the Redis chunk append BEFORE the
+   * transport publish (still best-effort on failure): events whose durable
+   * record is the recovery source (e.g. `on_steer_applied`) must be in the
+   * chunk log before any subscriber can observe the publish, or a
+   * cross-replica reconnect can reconstruct content without them. The default
+   * stays fire-and-forget — no added latency on the per-delta hot path.
    */
-  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  async emitChunk(
+    streamId: string,
+    event: t.ServerSentEvent,
+    options?: { durable?: boolean },
+  ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (!runtime || runtime.abortController.signal.aborted) {
       return;
@@ -1260,13 +1271,19 @@ class GenerationJobManagerClass {
 
       if (eventType && eventData !== undefined) {
         // Store in format expected by aggregateContent: { event, data }
-        this.jobStore.appendChunk(streamId, { event: eventType, data: eventData }).catch((err) => {
-          logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
-        });
+        const appendPromise = this.jobStore
+          .appendChunk(streamId, { event: eventType, data: eventData })
+          .catch((err) => {
+            logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
+          });
 
         // For run step events, also save to run steps key for quick retrieval
         if (eventType === 'on_run_step' || eventType === 'on_run_step_completed') {
           this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>);
+        }
+
+        if (options?.durable === true) {
+          await appendPromise;
         }
       }
     }

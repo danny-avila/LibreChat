@@ -245,6 +245,11 @@ const STEER_CLOSE_DRAIN_LUA =
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
 const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
 
+/** Recovery window (seconds) for parked steers when `completedTtl` is
+ *  configured to 0 — Redis rejects `EX 0`, which would silently kill
+ *  park-based recovery. */
+const PARKED_RECOVERY_TTL_S: number = 300;
+
 /**
  * Key prefixes for Redis storage.
  * All keys include the streamId for easy cleanup.
@@ -818,6 +823,14 @@ export class RedisJobStore implements IJobStore {
           const liveSince = job.lastActiveAt ?? job.createdAt;
           if (now - liveSince > this.ttl.running * 1000) {
             logger.warn(`[RedisJobStore] Cleaning up stale job: ${streamId}`);
+            // A crashed/hung run never reached a finalization drain — park the
+            // 202-accepted queue before the delete drops it, so the owner can
+            // still recover the words via /chat/status.
+            await this.parkSteerSnapshot(
+              streamId,
+              job,
+              await this.snapshotParkableSteers(streamId),
+            );
             const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
             await this.deleteJobInternal(streamId, userJobsKey);
             return 1;
@@ -881,12 +894,7 @@ export class RedisJobStore implements IJobStore {
             // queue key; enqueue is frozen while paused, so this is exact.
             // Parked only if the CAS wins — a lost CAS means the run resumed
             // and the live queue must stay untouched.
-            let parkableSteers: TPendingSteer[] = [];
-            try {
-              parkableSteers = (await this.peekSteers(streamId)).map(toPendingSteer);
-            } catch (err) {
-              logger.warn(`[RedisJobStore] Failed to snapshot steers pre-expiry ${streamId}:`, err);
-            }
+            const parkableSteers = await this.snapshotParkableSteers(streamId);
             const expired = await this.transitionStatus(streamId, {
               from: 'requires_action',
               to: 'aborted',
@@ -902,19 +910,8 @@ export class RedisJobStore implements IJobStore {
               // to protect — so it falls back to the status-only check.)
               expectActionId: job.pendingAction?.actionId,
             });
-            if (expired && parkableSteers.length > 0) {
-              try {
-                await this.parkSteers(
-                  streamId,
-                  JSON.stringify({
-                    userId: job.userId,
-                    ...(job.tenantId != null && { tenantId: job.tenantId }),
-                    steers: parkableSteers,
-                  }),
-                );
-              } catch (err) {
-                logger.warn(`[RedisJobStore] Failed to park steers on expiry ${streamId}:`, err);
-              }
+            if (expired) {
+              await this.parkSteerSnapshot(streamId, job, parkableSteers);
             }
             return 1;
           }
@@ -1345,7 +1342,45 @@ export class RedisJobStore implements IJobStore {
   }
 
   async parkSteers(streamId: string, payload: string): Promise<void> {
-    await this.redis.set(KEYS.parkedSteers(streamId), payload, 'EX', this.ttl.completed);
+    const ttl = this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S;
+    await this.redis.set(KEYS.parkedSteers(streamId), payload, 'EX', ttl);
+  }
+
+  /** Best-effort FIFO snapshot of the queued steers as client projections. */
+  private async snapshotParkableSteers(streamId: string): Promise<TPendingSteer[]> {
+    try {
+      return (await this.peekSteers(streamId)).map(toPendingSteer);
+    } catch (err) {
+      logger.warn(`[RedisJobStore] Failed to snapshot steers for parking ${streamId}:`, err);
+      return [];
+    }
+  }
+
+  /**
+   * Parks an owner-carrying snapshot so /chat/status can recover 202-accepted
+   * steers after the job record is gone (approval expiry, stale-running reap).
+   * Best-effort: a park failure must not block the cleanup path that called it.
+   */
+  private async parkSteerSnapshot(
+    streamId: string,
+    job: SerializableJobData,
+    steers: TPendingSteer[],
+  ): Promise<void> {
+    if (steers.length === 0) {
+      return;
+    }
+    try {
+      await this.parkSteers(
+        streamId,
+        JSON.stringify({
+          userId: job.userId,
+          ...(job.tenantId != null && { tenantId: job.tenantId }),
+          steers,
+        }),
+      );
+    } catch (err) {
+      logger.warn(`[RedisJobStore] Failed to park steers ${streamId}:`, err);
+    }
   }
 
   async claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined> {

@@ -1,7 +1,7 @@
 import { SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer, Agents } from 'librechat-data-provider';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
-import type { ResumeState } from '~/types';
+import type { ResumeState, ServerSentEvent } from '~/types';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -533,5 +533,82 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       const state = await manager.getResumeState(streamId);
       expect(state?.pendingSteers).toBeUndefined();
     });
+  });
+});
+
+describe('emitChunk durability (Redis-mode chunk log)', () => {
+  const steerEvent: ServerSentEvent = {
+    event: SteerEvents.ON_STEER_APPLIED,
+    data: { steerId: 'durable-1', index: 0, part: { type: 'steer', steer: 'now' } },
+  };
+
+  function buildRedisModeManager(store: InMemoryJobStore, transport: InMemoryEventTransport) {
+    const redisModeManager = new GenerationJobManagerClass();
+    redisModeManager.configure({
+      jobStore: store,
+      eventTransport: transport,
+      isRedis: true,
+      cleanupOnComplete: false,
+    });
+    redisModeManager.initialize();
+    return redisModeManager;
+  }
+
+  async function flushMicrotasks(times = 20): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve();
+    }
+  }
+
+  test('durable: true resolves only after the chunk append committed, before the publish', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const transport = new InMemoryEventTransport();
+    const redisModeManager = buildRedisModeManager(store, transport);
+    try {
+      const streamId = 'steer-durable';
+      await redisModeManager.createJob(streamId, 'user-1');
+
+      let resolveAppend!: () => void;
+      const appendGate = new Promise<void>((resolve) => {
+        resolveAppend = resolve;
+      });
+      jest.spyOn(store, 'appendChunk').mockReturnValue(appendGate);
+      const publishSpy = jest.spyOn(transport, 'emitChunk');
+
+      let settled = false;
+      const emit = redisModeManager.emitChunk(streamId, steerEvent, { durable: true }).then(() => {
+        settled = true;
+      });
+
+      await flushMicrotasks();
+      expect(settled).toBe(false);
+      expect(publishSpy).not.toHaveBeenCalled();
+
+      resolveAppend();
+      await emit;
+      expect(settled).toBe(true);
+      expect(publishSpy).toHaveBeenCalledWith(streamId, steerEvent);
+    } finally {
+      await redisModeManager.destroy();
+    }
+  });
+
+  test('default emitChunk stays fire-and-forget (publishes without awaiting the append)', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const transport = new InMemoryEventTransport();
+    const redisModeManager = buildRedisModeManager(store, transport);
+    try {
+      const streamId = 'steer-fire-and-forget';
+      await redisModeManager.createJob(streamId, 'user-1');
+
+      // Never resolves: the per-delta hot path must not gate on durability.
+      jest.spyOn(store, 'appendChunk').mockReturnValue(new Promise<void>(() => undefined));
+      const publishSpy = jest.spyOn(transport, 'emitChunk');
+
+      await redisModeManager.emitChunk(streamId, steerEvent);
+      expect(publishSpy).toHaveBeenCalledWith(streamId, steerEvent);
+    } finally {
+      await redisModeManager.destroy();
+    }
   });
 });

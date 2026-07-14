@@ -317,12 +317,12 @@ export default function useSteering({
               // is still settling, `ask()`'s in-flight guard would drop a
               // direct send — queue it so the run-end drain fires it instead.
               // The explicit empty array stops `ask` from vacuuming composer
-              // files staged for a DIFFERENT draft.
+              // files staged for a DIFFERENT draft. A refused send (`false`)
+              // falls back to the queue too — the chip is already gone, so
+              // dropping the text here would lose it silently.
               replaceSteerChip(conversationId, localId, null);
-              if (isSubmittingRef.current) {
+              if (isSubmittingRef.current || sendNow(trimmed, files ?? []) === false) {
                 enqueue(trimmed, { files });
-              } else {
-                sendNow(trimmed, files ?? []);
               }
               return;
             }
@@ -335,9 +335,12 @@ export default function useSteering({
               // The rejection can land AFTER the final SSE consumed the
               // run-end signal (common on an unsupported SDK near run end):
               // queueing then has nothing left to drain it, so mirror the
-              // NO_ACTIVE_RUN fallback and send once submission settled.
+              // NO_ACTIVE_RUN fallback and send once submission settled —
+              // queueing the refusal instead of dropping the text.
               if (!isSubmittingRef.current) {
-                sendNow(trimmed, files ?? []);
+                if (sendNow(trimmed, files ?? []) === false) {
+                  enqueue(trimmed, { files });
+                }
                 return;
               }
               enqueue(trimmed, { files });

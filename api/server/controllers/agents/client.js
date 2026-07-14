@@ -276,16 +276,23 @@ class AgentClient extends BaseClient {
     };
     this.contentParts.push(part);
     this.steerOffsetState.offset += 1;
-    await GenerationJobManager.emitChunk(streamId, {
-      event: SteerEvents.ON_STEER_APPLIED,
-      data: {
-        steerId: item.steerId,
-        index,
-        part,
-        responseMessageId: this.responseMessageId,
-        conversationId: this.conversationId,
+    // durable: the chunk-log XADD is this event's recovery record — it must
+    // commit before the publish or a cross-replica reconnect that missed the
+    // pub/sub delivery reconstructs content without the steer part.
+    await GenerationJobManager.emitChunk(
+      streamId,
+      {
+        event: SteerEvents.ON_STEER_APPLIED,
+        data: {
+          steerId: item.steerId,
+          index,
+          part,
+          responseMessageId: this.responseMessageId,
+          conversationId: this.conversationId,
+        },
       },
-    });
+      { durable: true },
+    );
   }
 
   /**
