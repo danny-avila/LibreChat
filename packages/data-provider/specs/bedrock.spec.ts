@@ -1416,6 +1416,43 @@ describe('bedrockInputParser', () => {
         ).not.toThrow();
       },
     );
+
+    // `system` is not the only reserved name: the input parser's catch-all routes
+    // ANY unknown preset key into additionalModelRequestFields, and each reserved
+    // Converse field collides the same way when the request sends it top-level.
+    test.each([['messages'], ['modelId'], ['toolConfig'], ['inferenceConfig']])(
+      'strips reserved Converse field %p from additionalModelRequestFields',
+      (reserved) => {
+        const parsed = bedrockInputParser.parse({
+          model: 'some-other-model',
+          [reserved]: { some: 'value' },
+        }) as Record<string, unknown>;
+        expect(
+          (parsed.additionalModelRequestFields as Record<string, unknown>)[reserved],
+        ).toBeDefined();
+
+        const output = bedrockOutputParser(parsed);
+        const amrf = output.additionalModelRequestFields as Record<string, unknown> | undefined;
+        expect(amrf?.[reserved]).toBeUndefined();
+      },
+    );
+
+    test('keeps non-reserved passthrough fields intact while stripping reserved ones', () => {
+      const output = bedrockOutputParser({
+        model: 'some-other-model',
+        additionalModelRequestFields: {
+          system: 'dup',
+          messages: [],
+          anthropic_beta: ['context-1m-2025-08-07'],
+          top_k: 40,
+        },
+      });
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.system).toBeUndefined();
+      expect(amrf.messages).toBeUndefined();
+      expect(amrf.anthropic_beta).toEqual(['context-1m-2025-08-07']);
+      expect(amrf.top_k).toBe(40);
+    });
   });
 
   describe('Model switching cleanup', () => {
