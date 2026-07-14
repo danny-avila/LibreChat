@@ -798,7 +798,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
     const shouldUseDocumentParser =
-      !shouldUseConfiguredOCR && documentParserMimeTypes.some((regex) => regex.test(file.mimetype));
+      !shouldUseConfiguredOCR &&
+      !fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []) &&
+      documentParserMimeTypes.some((regex) => regex.test(file.mimetype));
 
     const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
 
