@@ -1209,7 +1209,11 @@ class GenerationJobManagerClass {
     if (!runtime.hasSubscriber && !this._isRedis) {
       return;
     }
-    await this.eventTransport.emitChunk(streamId, event);
+    if (this.eventTransport.emitTransient) {
+      await this.eventTransport.emitTransient(streamId, event);
+    } else {
+      await this.eventTransport.emitChunk(streamId, event);
+    }
   }
 
   /**

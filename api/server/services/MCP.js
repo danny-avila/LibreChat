@@ -829,6 +829,7 @@ function createToolInstance({
       if (onToolProgress == null && toolCall.id != null) {
         onToolProgress = createToolProgressEmitter({
           toolCallId: toolCall.id,
+          runId: config.metadata?.run_id,
           /** Transient emit: progress must never land in the Redis chunk log
            *  or resume reconstruction — live subscribers only. */
           emit: (eventData) =>

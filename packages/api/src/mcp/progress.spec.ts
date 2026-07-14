@@ -14,6 +14,10 @@ describe('buildToolProgressEvent', () => {
       event: StepEvents.ON_TOOL_PROGRESS,
       data: { toolCallId: 'call_1', progress: 0.4 },
     });
+    expect(buildToolProgressEvent('call_1', { progress: 0.4 }, 'msg_run')).toEqual({
+      event: StepEvents.ON_TOOL_PROGRESS,
+      data: { toolCallId: 'call_1', runId: 'msg_run', progress: 0.4 },
+    });
   });
 
   it('caps oversized messages', () => {

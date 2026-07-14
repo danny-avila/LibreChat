@@ -27,7 +27,7 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
-import { subagentProgressByToolCallId, toolProgressByToolCallId } from '~/store';
+import { subagentProgressByToolCallId, toolProgressByToolCallId, toolProgressKey } from '~/store';
 import { isAskUserQuestionPart } from '~/utils/approval';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
@@ -282,8 +282,9 @@ export default function useStepHandler({
         if (!payload?.toolCallId) {
           return;
         }
-        knownToolProgressAtomKeys.current.add(payload.toolCallId);
-        set(toolProgressByToolCallId(payload.toolCallId), {
+        const atomKey = toolProgressKey(payload.runId, payload.toolCallId);
+        knownToolProgressAtomKeys.current.add(atomKey);
+        set(toolProgressByToolCallId(atomKey), {
           progress: payload.progress,
           total: payload.total,
           message: payload.message,

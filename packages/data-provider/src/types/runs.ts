@@ -50,6 +50,9 @@ export enum StepEvents {
  */
 export type ToolProgressEvent = {
   toolCallId: string;
+  /** Response message id of the run — scopes progress when providers reuse
+   *  tool-call ids (e.g. `call_0`) across parallel agents in one submission. */
+  runId?: string;
   /** Raw progress value; a completion fraction when `total` is absent. */
   progress: number;
   total?: number;

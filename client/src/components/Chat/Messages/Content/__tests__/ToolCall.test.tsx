@@ -2,7 +2,8 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools, Constants } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { toolProgressByToolCallId } from '~/store';
+import { toolProgressByToolCallId, toolProgressKey } from '~/store';
+import { MessageContext } from '~/Providers';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
@@ -110,17 +111,19 @@ describe('ToolCall', () => {
         <RecoilRoot
           initializeState={({ set }) => {
             if (liveState) {
-              set(toolProgressByToolCallId('call_live'), liveState);
+              set(toolProgressByToolCallId(toolProgressKey('msg_live', 'call_live')), liveState);
             }
           }}
         >
-          <ToolCall
-            name={`search${Constants.mcp_delimiter}docs`}
-            args=""
-            initialProgress={0.1}
-            isSubmitting={true}
-            toolCallId="call_live"
-          />
+          <MessageContext.Provider value={{ messageId: 'msg_live' } as never}>
+            <ToolCall
+              name={`search${Constants.mcp_delimiter}docs`}
+              args=""
+              initialProgress={0.1}
+              isSubmitting={true}
+              toolCallId="call_live"
+            />
+          </MessageContext.Provider>
         </RecoilRoot>,
       );
 
@@ -132,6 +135,11 @@ describe('ToolCall', () => {
     it('renders a localized count when only progress/total are reported', () => {
       renderRunningToolCall({ progress: 3, total: 10 });
       expect(screen.getByTestId('in-progress-text')).toHaveTextContent('3 of 10');
+    });
+
+    it('renders a percentage for fraction-only progress (no total, no message)', () => {
+      renderRunningToolCall({ progress: 0.4 });
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('40%');
     });
 
     it('falls back to the running label without live progress', () => {
