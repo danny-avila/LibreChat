@@ -7,12 +7,18 @@ import {
 
 type PrewarmParams = Parameters<typeof maybePrewarmCodeSandbox>[0];
 
-const req = {} as PrewarmParams['req'];
-const statefulAgent = { id: 'agent_stateful', statefulCodeSessions: true };
-const plainAgent = { id: 'agent_plain', statefulCodeSessions: false };
+interface TestAgent {
+  id: string;
+  statefulCodeSessions?: boolean;
+  subagentAgentConfigs?: TestAgent[];
+}
 
-function agents(...list: Array<Record<string, unknown>>): PrewarmParams['agents'] {
-  return list as unknown as PrewarmParams['agents'];
+const req = {} as PrewarmParams['req'];
+const statefulAgent: TestAgent = { id: 'agent_stateful', statefulCodeSessions: true };
+const plainAgent: TestAgent = { id: 'agent_plain', statefulCodeSessions: false };
+
+function agents(...list: TestAgent[]): PrewarmParams['agents'] {
+  return list as PrewarmParams['agents'];
 }
 
 function flushAsync(): Promise<void> {
@@ -31,6 +37,8 @@ describe('maybePrewarmCodeSandbox', () => {
     process.env.LIBRECHAT_CODE_BASEURL = 'http://code.test/v1';
     delete process.env.CODE_SANDBOX_PREWARM;
     delete process.env.CODE_SANDBOX_COLD_AFTER_MS;
+    delete process.env.CODEAPI_JWT_ENABLED;
+    delete process.env.CODEAPI_AUTH_PROVIDER;
     fetchMock = jest
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(mockResponse({ ok: true, status: 200 }));
@@ -39,6 +47,7 @@ describe('maybePrewarmCodeSandbox', () => {
   afterEach(() => {
     fetchMock.mockRestore();
     jest.useRealTimers();
+    delete process.env.LIBRECHAT_CODE_BASEURL;
   });
 
   it('does nothing when no reachable agent has stateful sessions', async () => {

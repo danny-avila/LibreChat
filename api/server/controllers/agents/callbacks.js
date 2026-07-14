@@ -234,8 +234,9 @@ async function emitEvent(res, streamId, eventData) {
  * Emits `on_sandbox_starting` for each code-execution tool call in the run
  * step when the conversation's stateful sandbox is still cold-booting, so the
  * UI can explain the first call's boot latency instead of showing a generic
- * running state. No-op on stateless deployments ({@link shouldSignalSandboxStart}
- * only tracks conversations that fired a prewarm).
+ * running state. Only signals while a fired prewarm remains unresolved
+ * ({@link shouldSignalSandboxStart}); stateless deployments never fire one
+ * and completed boots clear the marker, so both stay on the generic label.
  * @param {ServerResponse} res - The server response object
  * @param {string | null} streamId - The stream ID for resumable mode, or null for standard mode
  * @param {StreamEventData} data - The `on_run_step` event data
