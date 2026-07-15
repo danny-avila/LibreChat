@@ -8,11 +8,7 @@ import { generateMarkdown } from './generators/markdown.js';
 import { generatePDF } from './generators/pdf.js';
 import path from 'path';
 
-// Output directory for generated documents
 const OUTPUT_PATH = process.env.DOCUMENTS_PATH || '/app/generated_files';
-
-// Base URL for document downloads (adjust based on your deployment)
-const BASE_URL = process.env.DOCUMENTS_BASE_URL || 'http://localhost:3080';
 
 const server = new Server(
   {
@@ -92,13 +88,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const result = await generateMarkdown(content, filename, OUTPUT_PATH);
-      const downloadUrl = `${BASE_URL}/api/generated-files/${result.filename}/download`;
+      const meta = {
+        filename: result.filename,
+        filepath: result.filename,
+        mimeType: 'text/markdown',
+        size: result.size,
+        type: 'markdown',
+        source: 'document_generator',
+      };
 
       return {
         content: [
           {
             type: 'text',
-            text: `Markdown document generated successfully!\n\nFile: ${result.filename}\nDownload URL: ${downloadUrl}\n\nYou can download the file from the Generated Files section.`,
+            text: `FILE_METADATA:${JSON.stringify(meta)}\nMarkdown document generated successfully: ${result.filename}`,
           },
         ],
       };
@@ -119,13 +122,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (fontSize) options.fontSize = fontSize;
 
       const result = await generatePDF(content, filename, OUTPUT_PATH, options);
-      const downloadUrl = `${BASE_URL}/api/generated-files/${result.filename}/download`;
+      const meta = {
+        filename: result.filename,
+        filepath: result.filename,
+        mimeType: 'application/pdf',
+        size: result.size,
+        type: 'pdf',
+        source: 'document_generator',
+      };
 
       return {
         content: [
           {
             type: 'text',
-            text: `PDF document generated successfully!\n\nFile: ${result.filename}\nDownload URL: ${downloadUrl}\n\nYou can download the file from the Generated Files section.`,
+            text: `FILE_METADATA:${JSON.stringify(meta)}\nPDF document generated successfully: ${result.filename}`,
           },
         ],
       };

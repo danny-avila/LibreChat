@@ -126,7 +126,7 @@ function parseHTML(html) {
  * @param {Object} options - Optional settings
  * @param {string} options.title - Document title
  * @param {number} options.fontSize - Base font size (default: 12)
- * @returns {Promise<{filepath: string, filename: string}>}
+ * @returns {Promise<{filepath: string, filename: string, size: number}>}
  */
 export async function generatePDF(content, filename, outputPath, options = {}) {
   // Generate filename if not provided
@@ -219,8 +219,11 @@ export async function generatePDF(content, filename, outputPath, options = {}) {
     stream.on('error', reject);
   });
   
+  const stat = fsSync.statSync(filepath);
+  
   return {
     filepath,
-    filename
+    filename,
+    size: stat.size,
   };
 }
