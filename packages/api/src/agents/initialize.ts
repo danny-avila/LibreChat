@@ -332,6 +332,8 @@ export type InitializedAgent = Agent & {
    * context limits with the same numbers the UI shows — not default rates.
    */
   endpointTokenConfig?: EndpointTokenConfig;
+  /** Initialized configs for explicit subagent spawn targets. */
+  subagentAgentConfigs?: InitializedAgent[];
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;

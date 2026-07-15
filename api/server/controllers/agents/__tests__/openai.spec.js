@@ -140,6 +140,7 @@ jest.mock('@librechat/api', () => ({
     skippedAgentIds: new Set(),
     userMCPAuthMap: undefined,
   }),
+  resolveSubagents: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
