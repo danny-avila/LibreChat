@@ -47,6 +47,7 @@ import {
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { resolveConfigHeaders, resolveConfigModelKwargs } from '~/utils/headers';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { isSteeringSupported } from '~/agents/steering/runtime';
@@ -57,7 +58,6 @@ import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
 import { resolveSubagentMaxTurns } from '~/agents/config';
 import { buildLangfuseConfig } from '~/langfuse/config';
-import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
 
@@ -1181,12 +1181,19 @@ export async function createRun({
 
     /**
      * Resolve request-based headers across provider-specific header locations
-     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
-     * Google `customHeaders`). Done at this step because the request body may
-     * contain dynamic values (e.g. conversationId) that are only known after
-     * agent initialization.
+     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`),
+     * and request-based placeholders inside the outbound JSON body (`modelKwargs`,
+     * where custom endpoint `addParams`/unrecognized params land). Native Google
+     * `customHeaders` are intentionally NOT touched here — see `resolveConfigHeaders`.
+     * Done at this step because the request body may contain dynamic values (e.g.
+     * conversationId) that are only known after agent initialization.
      */
     resolveConfigHeaders({
+      llmConfig,
+      user: createSafeUser(user),
+      body: requestBody,
+    });
+    resolveConfigModelKwargs({
       llmConfig,
       user: createSafeUser(user),
       body: requestBody,

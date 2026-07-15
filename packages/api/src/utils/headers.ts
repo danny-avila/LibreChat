@@ -1,7 +1,7 @@
 import type { AnthropicClientOptions } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
-import { resolveHeaders } from './env';
+import { resolveHeaders, resolveNestedObject } from './env';
 
 /** Comma-unions two header values (deduped, trimmed), e.g. `anthropic-beta`. */
 function unionCsv(a: string, b: string): string {
@@ -125,4 +125,62 @@ export function resolveConfigHeaders({
   if (clientOptions?.defaultHeaders != null) {
     clientOptions.defaultHeaders = resolveOnce(clientOptions.defaultHeaders);
   }
+}
+
+type ModelKwargsContainer = { modelKwargs?: Record<string, unknown> };
+
+/**
+ * `modelKwargs` maps already resolved by `resolveConfigModelKwargs`. Same reuse
+ * concern as `resolvedHeaderMaps`: the same initialized agent (hence the same
+ * nested `modelKwargs` object) can flow through `buildAgentInput` more than once
+ * (root + subagent, multiple parents), so resolution is tracked by object
+ * identity to stay idempotent across reuse.
+ */
+const resolvedModelKwargs = new WeakSet<object>();
+
+/**
+ * Resolves placeholder templates inside the outbound request body of a built LLM
+ * config's `modelKwargs`, replacing it with a resolved copy on the config object.
+ * This is where unrecognized/custom `addParams` values land for
+ * OpenAI-compatible custom endpoints (see `transformToOpenAIConfig`), so this
+ * generalizes the same `{{LIBRECHAT_BODY_*}}` / `{{LIBRECHAT_USER_*}}`
+ * placeholder mechanism used for headers to arbitrary JSON body fields (e.g.
+ * `addParams.metadata.chat_id`).
+ *
+ * Resolution runs at request time so request-body placeholders (e.g.
+ * `{{LIBRECHAT_BODY_CONVERSATIONID}}`) resolve against the live request. It is a
+ * no-op when `modelKwargs` is absent, and idempotent under config reuse.
+ */
+export function resolveConfigModelKwargs({
+  llmConfig,
+  user,
+  body,
+  customUserVars,
+}: {
+  llmConfig?: RunLLMConfig | null;
+  user?: Partial<IUser> | { id: string };
+  body?: RequestBody;
+  customUserVars?: Record<string, string>;
+}): void {
+  if (llmConfig == null) {
+    return;
+  }
+
+  const container = llmConfig as ModelKwargsContainer;
+  if (container.modelKwargs == null) {
+    return;
+  }
+
+  if (resolvedModelKwargs.has(container.modelKwargs)) {
+    return;
+  }
+
+  const resolved = resolveNestedObject({
+    obj: container.modelKwargs,
+    user,
+    body,
+    customUserVars,
+  });
+  resolvedModelKwargs.add(resolved);
+  container.modelKwargs = resolved;
 }

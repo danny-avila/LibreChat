@@ -437,6 +437,12 @@ endpoints:
   # `endpoints.all` to apply globally across endpoints (endpoint values win on key
   # collisions). NOTE: send metadata headers like these only behind a gateway that
   # consumes them — native provider APIs ignore unknown headers.
+  #
+  # The same placeholders ({{LIBRECHAT_BODY_CONVERSATIONID}}, {{LIBRECHAT_BODY_MESSAGEID}},
+  # {{LIBRECHAT_BODY_PARENTMESSAGEID}}, {{LIBRECHAT_USER_*}}) also resolve inside
+  # `addParams` values for OpenAI-compatible endpoints (built-in and custom), not
+  # just headers — see the `addParams.metadata` example under the custom endpoints
+  # section below.
   # openAI:
   #   headers:
   #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
@@ -592,8 +598,15 @@ endpoints:
       modelDisplayLabel: 'Mistral' # Default is "AI" when not set.
 
       # Add additional parameters to the request. Default params will be overwritten.
+      # addParams values support the same placeholders as `headers` above
+      # ({{LIBRECHAT_BODY_*}}, {{LIBRECHAT_USER_*}}), resolved at request time —
+      # useful for forwarding chat/user/message correlation IDs to the provider:
       # addParams:
-      # safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+      #   safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+      #   metadata:
+      #     chat_id: '{{LIBRECHAT_BODY_CONVERSATIONID}}'
+      #     user_id: '{{LIBRECHAT_USER_ID}}'
+      #     message_id: '{{LIBRECHAT_BODY_MESSAGEID}}'
 
       # Drop Default params parameters from the request. See default params in guide linked below.
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
