@@ -54,6 +54,8 @@ const loadAddedAgent = (params) =>
  * @param {boolean} [params.codeEnvAvailable] - `execute_code` capability flag;
  *   forwarded verbatim to the added agent's `initializeAgent`. @see
  *   InitializeAgentParams.codeEnvAvailable for full semantics.
+ * @param {boolean} [params.statefulSessionsAvailable] - `stateful_code_sessions`
+ *   capability flag; forwarded verbatim alongside `codeEnvAvailable`.
  * @returns {Promise<{userMCPAuthMap: Object|undefined}>} The updated userMCPAuthMap
  */
 const processAddedConvo = async ({
@@ -79,6 +81,8 @@ const processAddedConvo = async ({
   skillStates,
   defaultActiveOnShare,
   codeEnvAvailable,
+  backgroundToolsAvailable,
+  statefulSessionsAvailable,
   memoryAvailable,
 }) => {
   const addedConvo = endpointOption.addedConvo;
@@ -174,6 +178,8 @@ const processAddedConvo = async ({
           ephemeralSkillsToggle,
         }),
         codeEnvAvailable,
+        backgroundToolsAvailable,
+        statefulSessionsAvailable,
         memoryAvailable,
         skillStates,
         defaultActiveOnShare,

@@ -43,6 +43,29 @@ server.registerTool(
   }),
 );
 
+server.registerTool(
+  'slow_echo',
+  {
+    description:
+      'Echoes text after a delay; used to verify background tool dispatch in mock e2e tests.',
+    inputSchema: {
+      text: z.string(),
+      delay_ms: z.number().optional(),
+    },
+  },
+  async ({ text, delay_ms = 1500 }) => {
+    await new Promise((resolve) => setTimeout(resolve, delay_ms));
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `E2E slow echo: ${text}`,
+        },
+      ],
+    };
+  },
+);
+
 async function main() {
   await server.connect(new StdioServerTransport());
 }

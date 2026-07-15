@@ -292,9 +292,8 @@ export const scrollToEnd = (callback?: () => void) => {
 };
 
 /**
- * Clears messages for both the specified conversation ID and the NEW_CONVO query key.
- * This ensures that messages are properly cleared in all contexts, preventing stale data
- * from persisting in the NEW_CONVO cache.
+ * Removes an existing conversation's message query so reopening it starts cold, and resets the
+ * NEW_CONVO query to an empty cache for immediate optimistic messages.
  *
  * @param queryClient - The React Query client instance
  * @param conversationId - The conversation ID to clear messages for
@@ -305,13 +304,39 @@ export const clearMessagesCache = (
 ): void => {
   const convoId = conversationId ?? Constants.NEW_CONVO;
 
-  // Clear messages for the current conversation
-  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], []);
-
-  // Also clear NEW_CONVO messages if we're not already on NEW_CONVO
+  // An absent existing-conversation cache means its history must load before sending.
   if (convoId !== Constants.NEW_CONVO) {
-    queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+    queryClient.removeQueries([QueryKeys.messages, convoId], { exact: true });
   }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+};
+
+/** Removes a deleted conversation's message cache and any matching new-chat cache alias. */
+export const clearDeletedConversationMessagesCache = (
+  queryClient: QueryClient,
+  conversationId: string,
+): void => {
+  const deletedMessages = queryClient.getQueryData<TMessage[]>([
+    QueryKeys.messages,
+    conversationId,
+  ]);
+  const newConversationMessages = queryClient.getQueryData<TMessage[]>([
+    QueryKeys.messages,
+    Constants.NEW_CONVO,
+  ]);
+  const newConversationAliasesDeleted =
+    newConversationMessages != null &&
+    (newConversationMessages === deletedMessages ||
+      newConversationMessages.some((message) => message.conversationId === conversationId));
+
+  queryClient.removeQueries([QueryKeys.messages, conversationId], { exact: true });
+
+  if (!newConversationAliasesDeleted) {
+    return;
+  }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
 };
 
 /** Returns a 1-based message number, or null if depth is absent or invalid. */

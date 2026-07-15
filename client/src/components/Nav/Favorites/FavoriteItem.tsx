@@ -152,7 +152,11 @@ export default function FavoriteItem(props: FavoriteItemProps) {
           'absolute right-2 flex items-center',
           isPopoverActive
             ? 'pointer-events-auto opacity-100'
-            : 'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100',
+            : // Interactive by default so it's tappable on touch; only
+              // hidden-until-hover on hover-capable pointers. Otherwise the
+              // whole row is hover-dependent and the first tap just reveals
+              // this instead of selecting (the iOS double-tap).
+              'group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0',
         )}
         onClick={(e) => e.stopPropagation()}
       >
@@ -168,7 +172,7 @@ export default function FavoriteItem(props: FavoriteItemProps) {
                 'inline-flex h-7 w-7 items-center justify-center rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50',
                 isPopoverActive
                   ? 'opacity-100'
-                  : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
+                  : 'focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100 [@media(hover:hover)]:opacity-0',
               )}
               aria-label={localize('com_nav_convo_menu_options')}
               data-testid="favorite-options-button"

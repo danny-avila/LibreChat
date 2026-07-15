@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
@@ -58,6 +60,7 @@ export default function ExecuteCode({
   attachments,
   hideAttachments = false,
   onExpand,
+  toolCallId,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -66,9 +69,11 @@ export default function ExecuteCode({
   attachments?: TAttachment[];
   hideAttachments?: boolean;
   onExpand?: () => void;
+  toolCallId?: string;
 }) {
   const localize = useLocalize();
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
+  const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!code, onExpand);
@@ -82,7 +87,9 @@ export default function ExecuteCode({
         <ProgressText
           progress={progress}
           onClick={toggleCode}
-          inProgressText={localize('com_ui_analyzing')}
+          inProgressText={
+            sandboxStarting ? localize('com_ui_sandbox_starting') : localize('com_ui_analyzing')
+          }
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
           }

@@ -11,6 +11,7 @@ import {
   useResumeOnLoad,
   useAdaptiveSSE,
   useChatHelpers,
+  useQueueDrain,
   useLocalize,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
@@ -59,7 +60,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
         },
         [fileMap],
       ),
-      enabled: !!fileMap,
+      enabled: !!conversationId && conversationId !== Constants.SEARCH,
     },
     { isStreaming: isSubmitting },
   );
@@ -72,6 +73,9 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   // Auto-resume if navigating back to conversation with active job
   // Wait for messages to load before resuming to avoid race condition
   useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading);
+
+  // Auto-send queued follow-up messages once a run finishes cleanly.
+  useQueueDrain(index, conversationId, chatHelpers.ask);
 
   let content: JSX.Element | null | undefined;
   const isLandingPage =

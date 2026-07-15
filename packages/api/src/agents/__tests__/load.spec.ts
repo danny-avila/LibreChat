@@ -389,6 +389,89 @@ describe('loadAgent', () => {
     expect(withoutFlag?.tools).not.toContain('ask_user_question');
   });
 
+  test('synthesizes background tool_options for eligible MCP tools from the ephemeralAgent flag', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+    mockGetMCPServerTools.mockResolvedValue({ crm_lookup: { name: 'crm_lookup' } });
+
+    const result = await loadAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          body: {
+            ephemeralAgent: {
+              mcp: ['crm'],
+              web_search: true,
+              execute_code: true,
+              run_in_background: true,
+            } as TEphemeralAgent,
+          },
+        },
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    // eligible MCP tool opts in; excluded built-ins (web_search, execute_code) do not
+    expect(result?.tool_options?.crm_lookup).toEqual({ run_in_background: true });
+    expect(result?.tool_options?.web_search).toBeUndefined();
+    expect(result?.tool_options?.execute_code).toBeUndefined();
+  });
+
+  test('synthesizes background tool_options from a model spec (runInBackground: true), and not without it', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+    mockGetMCPServerTools.mockResolvedValue({ crm_lookup: { name: 'crm_lookup' } });
+
+    const buildReq = (specName: string, runInBackground: boolean): LoadAgentParams['req'] =>
+      ({
+        user: { id: 'user123' },
+        body: {},
+        config: {
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          modelSpecs: {
+            list: [
+              {
+                name: specName,
+                label: specName,
+                preset: { endpoint: 'openai', model: 'gpt-4' },
+                webSearch: true,
+                mcpServers: ['crm'],
+                runInBackground,
+              },
+            ],
+          },
+        },
+      }) as unknown as LoadAgentParams['req'];
+
+    const withFlag = await loadAgent(
+      {
+        req: buildReq('bg-on', true),
+        spec: 'bg-on',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+    expect(withFlag?.tool_options?.crm_lookup).toEqual({ run_in_background: true });
+    expect(withFlag?.tool_options?.web_search).toBeUndefined();
+
+    const withoutFlag = await loadAgent(
+      {
+        req: buildReq('bg-off', false),
+        spec: 'bg-off',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+    expect(withoutFlag?.tool_options).toBeUndefined();
+  });
+
   test('should enable full skill scope for ephemeral model spec with skills true', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 
