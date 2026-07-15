@@ -19,7 +19,23 @@ permissions:
   packages: write
 
 jobs:
+  verify_permissions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify workflow can write packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          default_permissions=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/permissions" --jq '.default_workflow_permissions')
+          if [ "$default_permissions" != "write" ]; then
+            echo "::error::Set Settings -> Actions -> General -> Workflow permissions to 'Read and write permissions'."
+            exit 1
+          fi
+          echo "Workflow permissions are configured for package publish."
+
   matrix_prep:
+    needs: verify_permissions
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -101,8 +117,12 @@ jobs:
           PACKAGE_NAME: ${{ matrix.image_name }}
         run: |
           set -euo pipefail
-          gh api \
+          if ! gh api \
             --method PATCH \
             -H "Accept: application/vnd.github+json" \
             "/user/packages/container/${PACKAGE_NAME}" \
-            -f visibility='public'
+            -f visibility='public'; then
+            echo "::warning::Could not set ${PACKAGE_NAME} to public automatically."
+            echo "::warning::Open GitHub -> Packages -> ${PACKAGE_NAME} -> Package settings -> Change visibility -> Public."
+            exit 1
+          fi
