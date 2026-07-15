@@ -11,9 +11,11 @@ import {
   useResumeOnLoad,
   useAdaptiveSSE,
   useChatHelpers,
+  useQueueDrain,
   useLocalize,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
+import NewJerseyChatNotice from '~/nj/components/NewJerseyChatNotice';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import ProjectLandingChip from './ProjectLandingChip';
@@ -25,7 +27,6 @@ import Header from './Header';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
-import NewJerseyChatNotice from '~/nj/components/NewJerseyChatNotice';
 
 function LoadingSpinner() {
   return (
@@ -60,7 +61,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
         },
         [fileMap],
       ),
-      enabled: !!fileMap,
+      enabled: !!conversationId && conversationId !== Constants.SEARCH,
     },
     { isStreaming: isSubmitting },
   );
@@ -73,6 +74,9 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   // Auto-resume if navigating back to conversation with active job
   // Wait for messages to load before resuming to avoid race condition
   useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading);
+
+  // Auto-send queued follow-up messages once a run finishes cleanly.
+  useQueueDrain(index, conversationId, chatHelpers.ask);
 
   let content: JSX.Element | null | undefined;
   const isLandingPage =

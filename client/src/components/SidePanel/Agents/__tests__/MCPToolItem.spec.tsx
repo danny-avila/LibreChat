@@ -22,11 +22,14 @@ function setup(overrides: Partial<React.ComponentProps<typeof MCPToolItem>> = {}
     isSelected: false,
     isDeferred: false,
     isProgrammatic: false,
+    isBackground: false,
     deferredToolsEnabled: false,
     programmaticToolsEnabled: false,
+    backgroundToolsEnabled: false,
     onToggleSelect: jest.fn(),
     onToggleDefer: jest.fn(),
     onToggleProgrammatic: jest.fn(),
+    onToggleBackground: jest.fn(),
     ...overrides,
   };
   render(<MCPToolItem {...props} />);
@@ -90,5 +93,17 @@ describe('MCPToolItem', () => {
     const programmaticButton = screen.getByRole('button', { name: 'com_ui_mcp_programmatic' });
     fireEvent.click(programmaticButton);
     expect(props.onToggleProgrammatic).toHaveBeenCalledTimes(1);
+  });
+
+  test('background is an inline button rendered only when enabled', () => {
+    const props = setup({ backgroundToolsEnabled: true });
+    const backgroundButton = screen.getByRole('button', { name: 'com_ui_mcp_background' });
+    fireEvent.click(backgroundButton);
+    expect(props.onToggleBackground).toHaveBeenCalledTimes(1);
+  });
+
+  test('background button is absent when background tools are disabled', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: 'com_ui_mcp_background' })).not.toBeInTheDocument();
   });
 });

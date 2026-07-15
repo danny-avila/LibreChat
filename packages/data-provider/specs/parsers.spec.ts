@@ -670,4 +670,34 @@ describe('parseTextParts', () => {
     ];
     expect(parseTextParts(parts)).toBe('Hello World');
   });
+
+  test('should exclude steer parts by default (generic extraction must not speak user words)', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'assistant output' },
+      { type: ContentTypes.STEER, steer: 'user mid-run words' },
+      { type: ContentTypes.TEXT, text: 'more output' },
+    ];
+    expect(parseTextParts(parts)).toBe('assistant output more output');
+  });
+
+  test('should include steer parts when includeSteer is set', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'assistant output' },
+      { type: ContentTypes.STEER, steer: 'user mid-run words' },
+    ];
+    expect(parseTextParts(parts, false, { includeSteer: true })).toBe(
+      'assistant output user mid-run words',
+    );
+  });
+
+  test('should combine includeSteer with skipReasoning', () => {
+    const parts: TMessageContentParts[] = [
+      { type: ContentTypes.THINK, think: 'internal reasoning' },
+      { type: ContentTypes.TEXT, text: 'visible answer' },
+      { type: ContentTypes.STEER, steer: 'steered words' },
+    ];
+    expect(parseTextParts(parts, true, { includeSteer: true })).toBe(
+      'visible answer steered words',
+    );
+  });
 });

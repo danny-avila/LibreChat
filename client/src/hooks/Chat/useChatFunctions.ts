@@ -197,7 +197,7 @@ export default function useChatFunctions({
   paramId?: string | undefined;
   conversation: TConversation | null;
   latestMessage: TMessage | null;
-  getMessages: () => TMessage[] | undefined;
+  getMessages: (conversationId?: string | null) => TMessage[] | undefined;
   setMessages: (messages: TMessage[]) => void;
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
@@ -302,6 +302,13 @@ export default function useChatFunctions({
       return;
     }
 
+    const cachedMessages = getMessages(conversationId);
+    const isExistingConversation = conversationId != null && conversationId !== Constants.NEW_CONVO;
+    if (isExistingConversation && overrideMessages == null && cachedMessages == null) {
+      logger.warn('[useChatFunctions] Refusing to send before existing conversation history loads');
+      return false;
+    }
+
     if (isContinued && !latestMessage) {
       console.error('cannot continue AI message without latestMessage!');
       return;
@@ -357,7 +364,7 @@ export default function useChatFunctions({
     }
     const isEditOrContinue = isEdited || isContinued;
 
-    let currentMessages: TMessage[] = overrideMessages ?? getMessages() ?? [];
+    let currentMessages: TMessage[] = overrideMessages ?? cachedMessages ?? [];
 
     if (conversation?.promptPrefix) {
       conversation.promptPrefix = replaceSpecialVars({
@@ -489,9 +496,17 @@ export default function useChatFunctions({
 
     if (setFiles && reuseFiles === true) {
       currentMsg.files = [...submissionFiles];
-      setFiles(new Map());
-      setFilesToDelete({});
-    } else if (setFiles && files && files.size > 0) {
+      // Caller-supplied overrideFiles were consumed elsewhere (queued
+      // during-run messages take theirs out of the composer at queue time) —
+      // clearing here would eat attachments staged for the user's NEXT send.
+      if (isRegenerate) {
+        setFiles(new Map());
+        setFilesToDelete({});
+      }
+    } else if (setFiles && files && files.size > 0 && overrideFiles == null) {
+      // `overrideFiles` (even empty) is authoritative for the submission:
+      // auto-drained queued messages must never vacuum up attachments the
+      // user has staged in the composer for their NEXT message.
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
