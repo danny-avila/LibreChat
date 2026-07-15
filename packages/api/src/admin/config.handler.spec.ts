@@ -1,5 +1,19 @@
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+
+process.env.CREDS_KEY =
+  process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+jest.mock('@librechat/data-schemas', () => {
+  process.env.CREDS_KEY =
+    process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    encryptV3: jest.fn((value: string) => `v3:test:${value}`),
+  };
+});
+
 import { createAdminConfigHandlers } from './config';
 
 function mockReq(overrides = {}) {
@@ -66,6 +80,40 @@ function createHandlers(overrides = {}) {
 }
 
 describe('createAdminConfigHandlers', () => {
+  describe('listConfigs', () => {
+    it('redacts secret fields from config list responses', async () => {
+      const { handlers } = createHandlers({
+        listAllConfigs: jest.fn().mockResolvedValue([
+          {
+            _id: 'c1',
+            principalType: 'role',
+            principalId: 'admin',
+            overrides: {
+              langfuse: {
+                publicKey: 'pk-lf-1',
+                secretKey: 'v3:encrypted',
+                displaySecretKey: 'sk-lf-...cret',
+              },
+            },
+          },
+        ]),
+      });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.listConfigs(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const configs = res.body!.configs as Array<{
+        overrides: { langfuse: Record<string, string> };
+      }>;
+      expect(configs[0].overrides.langfuse).toEqual({
+        publicKey: 'pk-lf-1',
+        displaySecretKey: 'sk-lf-...cret',
+      });
+    });
+  });
+
   describe('getConfig', () => {
     it('returns 403 before DB lookup when user lacks READ_CONFIGS', async () => {
       const { handlers, deps } = createHandlers({
@@ -216,6 +264,195 @@ describe('createAdminConfigHandlers', () => {
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
       expect(savedOverrides.skillSync).toEqual({ github: { enabled: true } });
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
+    });
+
+    it('encrypts Langfuse secret keys on full override writes', async () => {
+      process.env.CREDS_KEY =
+        process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      const { handlers, deps } = createHandlers({
+        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
+          _id: 'c1',
+          configVersion: 1,
+          overrides,
+        })),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            langfuse: {
+              publicKey: 'pk-lf-1',
+              secretKey: 'sk-lf-secret',
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.langfuse.secretKey).toMatch(/^v3:/);
+      expect(savedOverrides.langfuse.secretKey).not.toBe('sk-lf-secret');
+      expect(savedOverrides.langfuse.displaySecretKey).toBe('sk-lf-...cret');
+      const responseConfig = res.body!.config as {
+        overrides: { langfuse: Record<string, string> };
+      };
+      expect(responseConfig.overrides.langfuse).toEqual({
+        publicKey: 'pk-lf-1',
+        displaySecretKey: savedOverrides.langfuse.displaySecretKey,
+      });
+    });
+
+    it('preserves existing encrypted Langfuse secrets on full override writes when omitted', async () => {
+      const existing = {
+        _id: 'c1',
+        priority: 7,
+        overrides: {
+          langfuse: {
+            publicKey: 'pk-old',
+            secretKey: 'v3:test:sk-old',
+            displaySecretKey: 'sk-old...-old',
+          },
+        },
+      };
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(existing),
+        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
+          _id: 'c1',
+          configVersion: 2,
+          overrides,
+        })),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            langfuse: {
+              publicKey: 'pk-new',
+              destination: 'eu',
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.langfuse).toEqual({
+        publicKey: 'pk-new',
+        destination: 'eu',
+        secretKey: 'v3:test:sk-old',
+        displaySecretKey: 'sk-old...-old',
+      });
+      const responseConfig = res.body!.config as {
+        overrides: { langfuse: Record<string, string> };
+      };
+      expect(responseConfig.overrides.langfuse).toEqual({
+        publicKey: 'pk-new',
+        destination: 'eu',
+        displaySecretKey: 'sk-old...-old',
+      });
+    });
+
+    it('clears existing Langfuse secrets on full override writes when explicitly empty', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: {
+            langfuse: {
+              secretKey: 'v3:test:sk-old',
+              displaySecretKey: 'sk-old...-old',
+            },
+          },
+        }),
+        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
+          _id: 'c1',
+          configVersion: 2,
+          overrides,
+        })),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            langfuse: {
+              publicKey: 'pk-new',
+              secretKey: '',
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.langfuse).toEqual({
+        publicKey: 'pk-new',
+        secretKey: '',
+        displaySecretKey: '',
+      });
+    });
+
+    it('rejects encrypted Langfuse secret values on full override writes', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            langfuse: {
+              publicKey: 'pk-lf-1',
+              secretKey: 'v3:attacker-controlled',
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('does not persist literal dotted Langfuse secret keys on full override writes', async () => {
+      const { handlers, deps } = createHandlers({
+        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
+          _id: 'c1',
+          configVersion: 1,
+          overrides,
+        })),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            'langfuse.secretKey': 'sk-lf-secret',
+            'langfuse.displaySecretKey': 'spoofed',
+            langfuse: { publicKey: 'pk-lf-1' },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides).not.toHaveProperty('langfuse.secretKey');
+      expect(savedOverrides).not.toHaveProperty('langfuse.displaySecretKey');
+      expect(savedOverrides.langfuse).toEqual({ publicKey: 'pk-lf-1' });
+      const responseConfig = res.body!.config as {
+        overrides: { langfuse: Record<string, string> };
+      };
+      expect(responseConfig.overrides).toEqual({
+        langfuse: { publicKey: 'pk-lf-1' },
+      });
     });
 
     it('preserves UI sub-keys in composite permission fields like mcpServers', async () => {
@@ -394,6 +631,39 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
     });
 
+    it('also deletes the display secret key companion when deleting a secret field', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        query: { fieldPath: 'langfuse.secretKey' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'langfuse.secretKey');
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'langfuse.displaySecretKey',
+      );
+    });
+
+    it('rejects deletes of the displayed secret key', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        query: { fieldPath: 'langfuse.displaySecretKey' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.unsetConfigField).not.toHaveBeenCalled();
+    });
+
     it('returns 400 when fieldPath query param is missing', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
@@ -462,6 +732,47 @@ describe('createAdminConfigHandlers', () => {
         'mcpServers.github',
         42,
       );
+    });
+
+    it('also tombstones the display secret key companion when tombstoning a secret field', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'langfuse.secretKey' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'langfuse.secretKey',
+        10,
+      );
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'langfuse.displaySecretKey',
+        10,
+      );
+    });
+
+    it('rejects tombstones of the displayed secret key', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'langfuse.displaySecretKey' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
     });
 
     it('blocks interface permission paths', async () => {
@@ -550,6 +861,238 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['skillSync.github.enabled']).toBe(true);
       expect(patchedFields['interface.modelSelect']).toBe(false);
+    });
+
+    it('clears stale Langfuse display secret keys when clearing a secret', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'langfuse.secretKey', value: '' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields['langfuse.secretKey']).toBe('');
+      expect(patchedFields['langfuse.displaySecretKey']).toBe('');
+    });
+
+    it('encrypts Langfuse secret keys inside object-valued patch entries', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            {
+              fieldPath: 'langfuse',
+              value: {
+                publicKey: 'pk-lf-1',
+                secretKey: 'sk-lf-secret',
+              },
+            },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields.langfuse.secretKey).toMatch(/^v3:/);
+      expect(patchedFields.langfuse.secretKey).not.toBe('sk-lf-secret');
+      expect(patchedFields.langfuse.displaySecretKey).toBe('sk-lf-...cret');
+    });
+
+    it('preserves existing encrypted Langfuse secrets on object-valued patch entries when omitted', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          priority: 7,
+          overrides: {
+            langfuse: {
+              publicKey: 'pk-old',
+              secretKey: 'v3:test:sk-old',
+              displaySecretKey: 'sk-old...-old',
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          priority: 12,
+          entries: [
+            {
+              fieldPath: 'langfuse',
+              value: {
+                publicKey: 'pk-new',
+                destination: 'eu',
+              },
+            },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields.langfuse).toEqual({
+        publicKey: 'pk-new',
+        destination: 'eu',
+        secretKey: 'v3:test:sk-old',
+        displaySecretKey: 'sk-old...-old',
+      });
+      expect(deps.findConfigByPrincipal).toHaveBeenCalled();
+    });
+
+    it('clears existing Langfuse secrets on object-valued patch entries when explicitly empty', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          priority: 7,
+          overrides: {
+            langfuse: {
+              secretKey: 'v3:test:sk-old',
+              displaySecretKey: 'sk-old...-old',
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            {
+              fieldPath: 'langfuse',
+              value: {
+                publicKey: 'pk-new',
+                secretKey: '',
+              },
+            },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields.langfuse).toEqual({
+        publicKey: 'pk-new',
+        secretKey: '',
+        displaySecretKey: '',
+      });
+    });
+
+    it('rejects array-valued Langfuse secret ancestors', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            {
+              fieldPath: 'langfuse',
+              value: [{ secretKey: 'sk-lf-secret' }],
+            },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('does not store non-string values at Langfuse secret paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'langfuse.secretKey', value: { hidden: 'sk-lf-secret' } }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields['langfuse.secretKey']).toBe('');
+      expect(patchedFields['langfuse.displaySecretKey']).toBe('');
+    });
+
+    it('rejects direct display secret key patch entries', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'langfuse.displaySecretKey', value: 'spoofed' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects encrypted Langfuse secret values on patch entries', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'langfuse.secretKey', value: 'v3:attacker-controlled' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects patch entries below protected Langfuse secret paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'langfuse.secretKey.hidden', value: 'sk-lf-secret' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects patch entries below protected Langfuse displaySecretKey paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'langfuse.displaySecretKey.hidden', value: 'spoofed' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
     it('blocks peoplePicker permission sub-key paths', async () => {
@@ -1550,6 +2093,43 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body!.config).toEqual({ interface: { modelSelect: true } });
+    });
+
+    it('redacts Langfuse secrets from top-level and raw nested base config', async () => {
+      const { handlers } = createHandlers({
+        getAppConfig: jest.fn().mockResolvedValue({
+          langfuse: {
+            publicKey: 'pk-lf-1',
+            secretKey: 'sk-lf-secret',
+            displaySecretKey: 'sk-lf-...cret',
+          },
+          config: {
+            langfuse: {
+              publicKey: 'pk-lf-1',
+              secretKey: 'sk-lf-raw-secret',
+              displaySecretKey: 'sk-lf-...cret',
+            },
+          },
+        }),
+      });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const responseConfig = res.body!.config as {
+        langfuse: Record<string, string>;
+        config: { langfuse: Record<string, string> };
+      };
+      expect(responseConfig.langfuse).toEqual({
+        publicKey: 'pk-lf-1',
+        displaySecretKey: 'sk-lf-...cret',
+      });
+      expect(responseConfig.config.langfuse).toEqual({
+        publicKey: 'pk-lf-1',
+        displaySecretKey: 'sk-lf-...cret',
+      });
     });
 
     it('forwards baseOnly=true to getAppConfig when query param is the literal string "true"', async () => {

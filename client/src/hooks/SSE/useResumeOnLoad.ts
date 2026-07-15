@@ -3,7 +3,13 @@ import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { StreamStatusResponse } from '~/data-provider';
-import { getBranchSiblingIndexesForTarget, applyPendingAction } from '~/utils';
+import {
+  dedupeSteersById,
+  applyPendingAction,
+  carriedSteerContext,
+  getBranchSiblingIndexesForTarget,
+} from '~/utils';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
 
@@ -225,6 +231,36 @@ export default function useResumeOnLoad(
     [],
   );
 
+  /** Restore pending-steer chips for steers the server still has queued
+   *  (injected ones already live inside the resumed aggregatedContent). */
+  const convertSteersToQueued = useSteerConvert();
+
+  const restoreSteerChips = useRecoilCallback(
+    ({ set }) =>
+      (activeConversationId: string, pendingSteers: Agents.ResumeState['pendingSteers']) => {
+        // Always reconcile against the server's still-queued list (mirrors the
+        // sync-path re-seed in useResumableSSE): a steer applied while this
+        // client was away is absent here (its inline part rides
+        // aggregatedContent instead), so an EMPTY list must clear stale local
+        // pending chips, not leave them stranded beside the applied part.
+        set(store.pendingSteersByConvoId(activeConversationId), (prev) => {
+          const chipById = new Map(prev.map((chip) => [chip.steerId, chip]));
+          return [
+            ...(pendingSteers ?? []).map((steer) => ({
+              steerId: steer.steerId,
+              text: steer.text,
+              status: 'pending' as const,
+              createdAt: steer.createdAt ?? Date.now(),
+              ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+              ...carriedSteerContext(chipById.get(steer.steerId)),
+            })),
+            ...prev.filter((steer) => steer.status === 'failed'),
+          ];
+        });
+      },
+    [],
+  );
+
   // Check for active stream when conversation changes
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
   const loadedMessages = messagesLoaded ? getMessages() : undefined;
@@ -326,6 +362,23 @@ export default function useResumeOnLoad(
 
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
+      // A terminal drain may have parked acknowledged steers no subscriber
+      // received (tab closed / reload racing the final event) — the status
+      // claim returns them exactly once; restore as queued follow-up chips.
+      // An expired pendingAction can report inactive BEFORE the sweeper parks
+      // the steer queue: those steers still ride resumeState.pendingSteers,
+      // so convert both lists (id-deduped) before the empty seed clears chips.
+      const leftoverSteers = dedupeSteersById(
+        streamStatus.unrecoveredSteers,
+        streamStatus.resumeState?.pendingSteers,
+      );
+      if (conversationId && leftoverSteers.length > 0) {
+        convertSteersToQueued(conversationId, leftoverSteers);
+      }
+      // The run is terminal, so any remaining local pending chip is stale:
+      // its steer either applied (inline part in the saved message) or rode
+      // `unrecoveredSteers` above — same empty-list reconcile as the resume path.
+      restoreSteerChips(conversationId, undefined);
       processedConvoRef.current = conversationId;
       return;
     }
@@ -343,6 +396,7 @@ export default function useResumeOnLoad(
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
       restoreResumeBranch(streamStatus.resumeState, messages, conversationId);
+      restoreSteerChips(conversationId, streamStatus.resumeState.pendingSteers);
       const submission = buildSubmissionFromResumeState(
         streamStatus.resumeState,
         streamStatus.streamId,
@@ -386,6 +440,8 @@ export default function useResumeOnLoad(
     getMessages,
     setSubmission,
     restoreResumeBranch,
+    restoreSteerChips,
+    convertSteersToQueued,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking

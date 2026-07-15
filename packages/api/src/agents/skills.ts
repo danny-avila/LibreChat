@@ -334,6 +334,8 @@ export interface InjectSkillCatalogParams {
   listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
   /** When true, registers bash_tool alongside skill + read_file. */
   codeEnvAvailable?: boolean;
+  /** When true, bash_tool registers with the hedged stateful-session description. */
+  statefulSessions?: boolean;
   /** Current user ID — used to determine skill ownership for active-state resolution. */
   userId?: string;
   /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
@@ -390,6 +392,7 @@ export async function injectSkillCatalog(
     contextWindowTokens,
     listSkillsByAccess,
     codeEnvAvailable,
+    statefulSessions,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -583,6 +586,7 @@ export async function injectSkillCatalog(
     toolDefinitions: workingDefs,
     includeBash: codeEnvAvailable === true,
     enableToolOutputReferences: codeEnvAvailable === true,
+    statefulSessions: statefulSessions === true,
   });
   workingDefs = codeExecResult.toolDefinitions;
 

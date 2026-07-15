@@ -565,6 +565,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
+  stateful_code_sessions = 'stateful_code_sessions',
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
@@ -577,6 +578,7 @@ export enum AgentCapabilities {
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
+  run_in_background = 'run_in_background',
 }
 
 export const defaultAssistantsVersion = {
@@ -1842,11 +1844,14 @@ export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
   secretKey: z.string().optional(),
-  baseUrl: z.string().optional(),
+  /** Non-secret display value of the secret key, stored at write time so
+   * admin reads can show which secret key is configured without returning the secret. */
+  displaySecretKey: z.string().optional(),
+  /** Routing key for one of the deployment-configured tenant Langfuse destinations. */
+  destination: z.string().optional(),
   fanout: z
     .object({
       enabled: z.boolean().optional(),
-      collectorUrl: z.string().optional(),
     })
     .optional(),
 });
@@ -2011,6 +2016,9 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.6',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5.5',
   'gpt-5.5-pro',
   'chat-latest',
@@ -2296,6 +2304,10 @@ export enum CacheKeys {
    */
   USER_PRINCIPALS = 'USER_PRINCIPALS',
   /**
+   * Key for per-conversation stateful code sandbox prewarm/warm state.
+   */
+  SANDBOX_PREWARM = 'SANDBOX_PREWARM',
+  /**
    * Key for the title generation cache.
    */
   GEN_TITLE = 'GEN_TITLE',
@@ -2365,6 +2377,10 @@ export enum CacheKeys {
    */
   OPENID_EXCHANGED_TOKENS = 'OPENID_EXCHANGED_TOKENS',
   /**
+   * Key for cached authenticated user documents.
+   */
+  AUTH_USER_DOC = 'AUTH_USER_DOC',
+  /**
    * Key for OpenID session.
    */
   OPENID_SESSION = 'OPENID_SESSION',
@@ -2377,6 +2393,8 @@ export enum CacheKeys {
    */
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
 }
+
+export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
 
 /**
  * Enum for violation types, used to identify, log, and cache violations.
@@ -2718,6 +2736,8 @@ export enum Constants {
   BASH_PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_bash',
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
+  /** Poll tool for retrieving the status/result of a backgrounded tool call. */
+  CHECK_BACKGROUND_TASK = 'check_background_task',
 }
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */

@@ -229,6 +229,43 @@ const formatAgentMessages = (payload) => {
       } else if (part.type === ContentTypes.THINK) {
         hasReasoning = true;
         continue;
+      } else if (part.type === ContentTypes.STEER) {
+        /*
+        A mid-run steer: user speech persisted inline in the assistant message.
+        Flush any accumulated assistant text first so ordering is preserved, then
+        replay the steer as a standalone user message. `lastAIMessage` is NOT
+        reset — the aggregator emits a fresh text-with-tool_call_ids part for any
+        post-steer tool step, and preceding tool_call parts already pushed their
+        ToolMessages, so the HumanMessage lands after them (valid provider order).
+         */
+        if (currentContent.length > 0) {
+          if (currentContent.some((curr) => curr.type !== ContentTypes.TEXT)) {
+            /** Non-text parts (images, files) must survive the flush intact —
+             *  folding to text here would drop them from replayed history. */
+            messages.push(new AIMessage({ content: currentContent }));
+          } else {
+            const content = currentContent
+              .reduce((acc, curr) => `${acc}${curr[ContentTypes.TEXT] ?? ''}\n`, '')
+              .trim();
+            if (content.length > 0) {
+              messages.push(new AIMessage({ content }));
+            }
+          }
+          currentContent = [];
+        }
+        messages.push(
+          new HumanMessage({
+            content:
+              Array.isArray(part.media) && part.media.length > 0
+                ? part.media
+                : (part[ContentTypes.STEER] ?? ''),
+            additional_kwargs: { source: 'steer' },
+          }),
+        );
+        /** A post-steer tool_call must mint a FRESH assistant anchor —
+         *  attaching to the pre-steer one would emit its ToolMessage after
+         *  the HumanMessage while the call sat before it (invalid order). */
+        lastAIMessage = null;
       } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
         continue;
       } else {

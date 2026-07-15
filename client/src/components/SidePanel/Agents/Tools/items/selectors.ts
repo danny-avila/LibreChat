@@ -66,6 +66,18 @@ export function mcpServerToken(serverName: string): string {
 }
 
 /**
+ * Server-wide wildcard token (`sys__all__sys_mcp_<serverName>`). Unlike the
+ * UI-only `mcp_server` placeholder (skipped at runtime), `mcp_all` is resolved
+ * by the backend into ALL of the server's tools at chat-turn time. Used for
+ * request-scoped servers (runtime `{{LIBRECHAT_BODY_*}}` placeholders) whose
+ * tools cannot be enumerated outside a chat turn, so per-tool selection is
+ * impossible and the server must be attached as a whole.
+ */
+export function mcpAllToken(serverName: string): string {
+  return `${Constants.mcp_all}${Constants.mcp_delimiter}${serverName}`;
+}
+
+/**
  * Whether a form `tools` token references the given MCP server, across every
  * format ever persisted: the server placeholder token, the raw server name,
  * the exact `mcp_<server>` pluginKey form, and delimiter-suffixed per-tool

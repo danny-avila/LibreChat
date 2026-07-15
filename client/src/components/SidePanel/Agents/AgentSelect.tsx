@@ -61,6 +61,7 @@ function AgentSelect({
         [AgentCapabilities.memory]: false,
         [AgentCapabilities.end_after_tools]: false,
         [AgentCapabilities.hide_sequential_outputs]: false,
+        [AgentCapabilities.stateful_code_sessions]: false,
       };
 
       const agentTools: string[] = [];

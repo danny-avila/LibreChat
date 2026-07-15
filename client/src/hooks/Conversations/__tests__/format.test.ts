@@ -11,6 +11,7 @@ const translations: Record<string, string> = {
   com_ui_export_file_search: 'File Search',
   com_ui_export_image: 'Image',
   com_ui_export_retrieval: 'Retrieval',
+  com_ui_export_steer: 'You (steered)',
   com_ui_export_summary: 'Summary',
   com_ui_export_tool: 'Tool',
   com_ui_export_video: 'Video',
@@ -82,6 +83,11 @@ const contentByType: Record<ContentTypes, ExportableContentPart> = {
     type: ContentTypes.SUMMARY,
     content: [{ type: ContentTypes.TEXT, text: 'Summary text' }],
   },
+  [ContentTypes.STEER]: {
+    type: ContentTypes.STEER,
+    steer: 'Focus on the tests',
+    steerId: 'steer-1',
+  },
   [ContentTypes.ERROR]: {
     type: ContentTypes.ERROR,
     error: 'Something failed',
@@ -102,6 +108,7 @@ const expectedMarkdownByType: Record<ContentTypes, MessageContentExport> = {
   [ContentTypes.INPUT_AUDIO]: ['Audio', '{"data":"base64-audio","format":"wav"}'],
   [ContentTypes.AGENT_UPDATE]: ['Agent Update', '{"index":0,"runId":"run-1","agentId":"agent-1"}'],
   [ContentTypes.SUMMARY]: ['Summary', 'Summary text'],
+  [ContentTypes.STEER]: ['You (steered)', 'Focus on the tests'],
   [ContentTypes.ERROR]: ['Assistant', 'Something failed'],
 };
 

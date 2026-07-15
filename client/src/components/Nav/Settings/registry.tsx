@@ -24,6 +24,7 @@ import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
 import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
 import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
+import DuringRunAction from '../SettingsTabs/Chat/DuringRunAction';
 import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
 import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
 import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
@@ -137,6 +138,14 @@ export const registry: SettingEntry[] = [
       switchId: 'enterToSend',
       hoverCardText: 'com_nav_info_enter_to_send',
     }),
+  },
+  {
+    id: 'duringRunDefaultAction',
+    tab: CHAT,
+    section: 'sending',
+    labelKey: 'com_nav_during_run_action',
+    keywords: ['steer', 'queue', 'interrupt', 'generating'],
+    Component: DuringRunAction,
   },
   {
     id: 'saveDrafts',

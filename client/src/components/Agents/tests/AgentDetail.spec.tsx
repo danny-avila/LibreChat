@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RecoilRoot } from 'recoil';
-
-import type t from 'librechat-data-provider';
+import { render, screen, waitFor } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import AgentDetail from '../AgentDetail';
 
 // Mock dependencies
@@ -148,6 +146,7 @@ describe('AgentDetail', () => {
     (useQueryClient as jest.Mock).mockReturnValue({
       getQueryData: jest.fn(),
       setQueryData: jest.fn(),
+      removeQueries: jest.fn(),
       invalidateQueries: jest.fn(),
     });
 
@@ -232,6 +231,7 @@ describe('AgentDetail', () => {
       const mockQueryClient = {
         getQueryData: jest.fn().mockReturnValue(null),
         setQueryData: jest.fn(),
+        removeQueries: jest.fn(),
         invalidateQueries: jest.fn(),
       };
 

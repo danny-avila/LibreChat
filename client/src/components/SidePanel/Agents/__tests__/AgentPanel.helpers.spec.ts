@@ -71,6 +71,26 @@ describe('composeAgentUpdatePayload', () => {
 
     expect(payload.avatar).toBeUndefined();
   });
+
+  it('forces stateful_code_sessions off when execute_code is disabled', () => {
+    const form = createForm();
+    form.execute_code = false;
+    form.stateful_code_sessions = true;
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.stateful_code_sessions).toBe(false);
+  });
+
+  it('preserves stateful_code_sessions when execute_code is enabled', () => {
+    const form = createForm();
+    form.execute_code = true;
+    form.stateful_code_sessions = true;
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.stateful_code_sessions).toBe(true);
+  });
 });
 
 describe('persistAvatarChanges', () => {

@@ -1450,6 +1450,7 @@ async function loadToolsForExecution({
   agent,
   toolNames,
   toolRegistry,
+  backgroundToolNames,
   mcpAvailableTools,
   requestScopedConnections,
   userMCPAuthMap,
@@ -1461,6 +1462,12 @@ async function loadToolsForExecution({
   const allLoadedTools = [];
   const mcpRequestScopedConnections = requestScopedConnections ?? getMCPRequestContext(req, res);
   const configurable = { userMCPAuthMap, requestScopedConnections: mcpRequestScopedConnections };
+  /** Per-agent set of tools that received the injected `run_in_background`
+   *  param; the event-driven executor gates background dispatch and the
+   *  `check_background_task` poll tool on this reliable per-agent channel. */
+  if (backgroundToolNames?.length) {
+    configurable.backgroundToolNames = backgroundToolNames;
+  }
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
   const ptcToolNames = [
@@ -1482,6 +1489,18 @@ async function loadToolsForExecution({
   const codeExecutionEnabled =
     enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
     agent?.tools?.includes(Tools.execute_code) === true;
+
+  /**
+   * Opt bash_tool into the hedged stateful-session description. Gated on code
+   * execution being enabled AND the admin `stateful_code_sessions` capability
+   * AND the agent's own builder opt-in; off by default. Sets prompt text only
+   * (the wire hint is set at run config). PTC keeps its stateless prompt in
+   * v1. Older @librechat/agents ignore the param.
+   */
+  const statefulCodeSessions =
+    codeExecutionEnabled &&
+    enabledCapabilities?.has(AgentCapabilities.stateful_code_sessions) === true &&
+    agent?.stateful_code_sessions === true;
 
   const isPTC =
     isPTCRequested &&
@@ -1534,6 +1553,7 @@ async function loadToolsForExecution({
     try {
       const bashTool = createBashExecutionTool({
         authHeaders: () => getCodeApiAuthHeaders(req),
+        statefulSessions: statefulCodeSessions,
       });
       allLoadedTools.push(bashTool);
     } catch (error) {

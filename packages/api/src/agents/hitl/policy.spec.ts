@@ -8,6 +8,7 @@ import {
   buildPendingAction,
   toClientPendingAction,
   computeAgentRequestFingerprint,
+  captureResumeModelParameters,
   sanitizeResumeModelParameters,
   pickResumeContext,
   applyResumeContext,
@@ -356,6 +357,151 @@ describe('sanitizeResumeModelParameters', () => {
     expect(sanitizeResumeModelParameters('sk-secret')).toBeUndefined();
     expect(sanitizeResumeModelParameters(['sk-secret'])).toBeUndefined();
   });
+
+  test('normalizes the resolved Anthropic object `thinking` back to the request-body form (#14253)', () => {
+    // Opus/Sonnet 4+ resolve `thinking` to a provider-format object; replaying it
+    // verbatim fails the compact-convo `thinking: z.boolean()` field and its
+    // `.catch(()=>({}))` drops model/spec → missing_model.
+    expect(
+      sanitizeResumeModelParameters({
+        model: 'claude-opus-4-20250514',
+        thinking: { type: 'enabled', budget_tokens: 2048 },
+      }),
+    ).toEqual({ model: 'claude-opus-4-20250514', thinking: true, thinkingBudget: 2048 });
+
+    expect(sanitizeResumeModelParameters({ thinking: { type: 'disabled' } })).toEqual({
+      thinking: false,
+    });
+
+    // Boolean thinking (and an explicit thinkingBudget) are left untouched.
+    expect(sanitizeResumeModelParameters({ thinking: true, thinkingBudget: 4096 })).toEqual({
+      thinking: true,
+      thinkingBudget: 4096,
+    });
+    expect(
+      sanitizeResumeModelParameters({
+        thinking: { type: 'enabled', budget_tokens: 2048 },
+        thinkingBudget: 4096,
+      }),
+    ).toEqual({ thinking: true, thinkingBudget: 4096 });
+  });
+
+  test('preserves an explicit adaptive `display` as thinkingDisplay (#14253)', () => {
+    // Opus 4.7+ adaptive configs carry `display`; dropping it would demote an
+    // explicit 'omitted' choice back to the default ('summarized') on resume.
+    expect(
+      sanitizeResumeModelParameters({ thinking: { type: 'adaptive', display: 'omitted' } }),
+    ).toEqual({ thinking: true, thinkingDisplay: 'omitted' });
+    // An explicit top-level thinkingDisplay wins over the object's display.
+    expect(
+      sanitizeResumeModelParameters({
+        thinking: { type: 'adaptive', display: 'summarized' },
+        thinkingDisplay: 'omitted',
+      }),
+    ).toEqual({ thinking: true, thinkingDisplay: 'omitted' });
+  });
+
+  test('lifts adaptive effort out of invocationKwargs.output_config (#14253)', () => {
+    // configureReasoning stores a non-default effort at
+    // invocationKwargs.output_config.effort; the request-body schema only accepts
+    // the top-level field, so replaying without the lift loses the effort choice.
+    expect(
+      sanitizeResumeModelParameters({
+        thinking: { type: 'adaptive' },
+        invocationKwargs: { metadata: { user_id: 'u1' }, output_config: { effort: 'max' } },
+      }),
+    ).toEqual({ thinking: true, effort: 'max' });
+    // An existing top-level effort wins; invocationKwargs is always dropped.
+    expect(
+      sanitizeResumeModelParameters({
+        effort: 'low',
+        invocationKwargs: { output_config: { effort: 'max' } },
+      }),
+    ).toEqual({ effort: 'low' });
+    expect(
+      sanitizeResumeModelParameters({ invocationKwargs: { metadata: { user_id: 'u1' } } }),
+    ).toEqual({});
+  });
+});
+
+describe('captureResumeModelParameters', () => {
+  test('captures UI-form body params the resolved llmConfig renames or drops (#14253)', () => {
+    // Anthropic resolution renames maxOutputTokens → maxTokens and stop → stopSequences;
+    // replaying only the resolved form would silently reset those on resume.
+    expect(
+      captureResumeModelParameters(
+        {
+          text: 'hi',
+          maxOutputTokens: 8192,
+          stop: ['END'],
+          temperature: 0.3,
+          maxContextTokens: 50000,
+        },
+        { model: 'claude-opus-4', temperature: 0.3, maxTokens: 8192, stopSequences: ['END'] },
+      ),
+    ).toEqual({
+      model: 'claude-opus-4',
+      temperature: 0.3,
+      maxTokens: 8192,
+      stopSequences: ['END'],
+      maxOutputTokens: 8192,
+      stop: ['END'],
+      maxContextTokens: 50000,
+    });
+  });
+
+  test('body values win over the normalized resolved values', () => {
+    expect(
+      captureResumeModelParameters(
+        { thinking: false, effort: 'low' },
+        { thinking: { type: 'adaptive' }, invocationKwargs: { output_config: { effort: 'max' } } },
+      ),
+    ).toEqual({ thinking: false, effort: 'low' });
+  });
+
+  test('resolved params still fill gaps the body lacks (normalized to UI form)', () => {
+    expect(
+      captureResumeModelParameters(
+        {},
+        {
+          thinking: { type: 'adaptive', display: 'omitted' },
+          invocationKwargs: { output_config: { effort: 'max' } },
+        },
+      ),
+    ).toEqual({ thinking: true, thinkingDisplay: 'omitted', effort: 'max' });
+    expect(captureResumeModelParameters({ temperature: 0.5 }, undefined)).toEqual({
+      temperature: 0.5,
+    });
+  });
+
+  test('only replays schema-known generation params; identity fields stay owned elsewhere', () => {
+    // model/spec/modelLabel/promptPrefix ride RESUME_CONTEXT_KEYS; text/files/etc.
+    // never reach model_parameters (parseCompactConvo strips them).
+    expect(
+      captureResumeModelParameters(
+        {
+          model: 'gpt-5',
+          spec: 'my-spec',
+          modelLabel: 'My Opus',
+          promptPrefix: 'be nice',
+          text: 'hello',
+          conversationId: 'c1',
+          top_p: 0.9,
+        },
+        undefined,
+      ),
+    ).toEqual({ top_p: 0.9 });
+    expect(captureResumeModelParameters({ text: 'hello' }, undefined)).toBeUndefined();
+  });
+
+  test('sanitizes sensitive keys inside captured body values', () => {
+    expect(
+      captureResumeModelParameters(
+        { additionalModelRequestFields: { apiKey: 'sk-live', anthropic_beta: ['x'] } },
+        undefined,
+      ),
+    ).toEqual({ additionalModelRequestFields: { anthropic_beta: ['x'] } });
+  });
 });
 
 describe('computeAgentRequestFingerprint', () => {
@@ -434,6 +580,8 @@ describe('pickResumeContext / applyResumeContext', () => {
       timezone: 'America/New_York',
       // Graph-determining: skill allowed-tools union into the tool set.
       manualSkills: ['code-reviewer'],
+      // Graph-determining: feeds the ephemeral agent id / checkpoint namespace (#14253).
+      modelLabel: 'My Opus',
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -447,7 +595,20 @@ describe('pickResumeContext / applyResumeContext', () => {
       addedConvo: { agent_id: 'secondary' },
       timezone: 'America/New_York',
       manualSkills: ['code-reviewer'],
+      modelLabel: 'My Opus',
     });
+  });
+
+  it('replays a dropped modelLabel so the ephemeral agent id stays stable (#14253)', () => {
+    // Resume/reload case: the resolved llmConfig stripped modelLabel; the server restores
+    // the original top-level value so parseCompactConvo re-derives the same sender/id.
+    const restored: Record<string, unknown> = { conversationId: 'c', actionId: 'x' };
+    applyResumeContext(restored, { endpoint: 'my-custom-endpoint', modelLabel: 'My Opus' });
+    expect(restored.modelLabel).toBe('My Opus');
+    // A paused turn with no modelLabel can't be made to inject one.
+    const injected: Record<string, unknown> = { conversationId: 'c', modelLabel: 'Spoofed' };
+    applyResumeContext(injected, { endpoint: 'my-custom-endpoint' });
+    expect('modelLabel' in injected).toBe(false);
   });
 
   it('replays a dropped manualSkills and drops a client-injected one', () => {

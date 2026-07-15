@@ -139,6 +139,10 @@ async function reinitMCPServer({
       return {
         availableTools: null,
         success: true,
+        /** Lets clients distinguish "connection deferred to a chat turn" from a
+         *  plain success with no tools, e.g. to attach the server at the server
+         *  level instead of waiting for a tool list that never arrives. */
+        connectionDeferred: true,
         message: `MCP server '${serverName}' uses request-scoped placeholders; connection will be established on first use in a chat turn`,
         oauthRequired: false,
         serverName,

@@ -1,5 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
@@ -238,6 +238,13 @@ export type ToolOptions = {
    * @default ['direct']
    */
   allowed_callers?: AllowedCaller[];
+  /**
+   * If true (and the `run_in_background` capability is enabled), the tool's
+   * schema gains a `run_in_background` boolean so the model can dispatch the
+   * call detached and poll its result via `check_background_task`.
+   * @default false
+   */
+  run_in_background?: boolean;
 };
 
 /**
@@ -285,6 +292,8 @@ export type Agent = {
   edges?: GraphEdge[];
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
+  /** Per-agent opt-in for stateful code sessions (requires the app-level capability). */
+  stateful_code_sessions?: boolean;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -301,6 +310,8 @@ export type Agent = {
   skills_enabled?: boolean;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -321,6 +332,7 @@ export type AgentCreateParams = {
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -329,6 +341,7 @@ export type AgentCreateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentUpdateParams = {
@@ -348,6 +361,7 @@ export type AgentUpdateParams = {
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -356,6 +370,7 @@ export type AgentUpdateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentListParams = {
@@ -571,6 +586,22 @@ export type SummaryContentPart = {
   };
 };
 
+/**
+ * A user steering message injected mid-run at a tool-batch boundary.
+ * Persisted inline in the response message's content array (keyed by the
+ * type name like `text`/`think` so token counting reads it for free);
+ * replayed as a user message on subsequent turns by `formatAgentMessages`.
+ */
+export type SteerContentPart = {
+  type: ContentTypes.STEER;
+  steer: string;
+  steerId?: string;
+  createdAt?: number;
+  /** Attachments steered with the message; re-encoded per turn on replay
+   *  like any other user-message media (refs only, never encoded data). */
+  files?: Partial<TFile>[];
+};
+
 export type TMessageContentParts =
   | ({
       type: ContentTypes.ERROR;
@@ -578,6 +609,7 @@ export type TMessageContentParts =
       error?: string;
     } & ContentMetadata)
   | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | (SteerContentPart & ContentMetadata)
   | ({
       type: ContentTypes.TEXT;
       text?: string | TextData;

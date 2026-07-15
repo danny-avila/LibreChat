@@ -39,15 +39,18 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
   );
 
   const confirmDelete = () => {
-    deleteMemory(memory.key, {
-      onSuccess: () => {
-        showToast({ message: localize('com_ui_deleted'), status: 'success' });
-        setDeleteOpen(false);
+    deleteMemory(
+      { key: memory.key, agentId: memory.agentId },
+      {
+        onSuccess: () => {
+          showToast({ message: localize('com_ui_deleted'), status: 'success' });
+          setDeleteOpen(false);
+        },
+        onError: () => {
+          showToast({ message: localize('com_ui_error'), status: 'error' });
+        },
       },
-      onError: () => {
-        showToast({ message: localize('com_ui_error'), status: 'error' });
-      },
-    });
+    );
   };
 
   return (

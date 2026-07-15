@@ -97,6 +97,7 @@ jest.mock('~/server/middleware', () => ({
   logHeaders: jest.fn((req, res, next) => next()),
   loginLimiter: jest.fn((req, res, next) => next()),
   checkBan: jest.fn((req, res, next) => next()),
+  validateEmailLogin: jest.fn((req, res, next) => next()),
   requireLocalAuth: jest.fn((req, res, next) => next()),
   requireJwtAuth: jest.fn((req, res, next) => next()),
   checkDomainAllowed: jest.fn((req, res, next) => next()),
@@ -106,6 +107,7 @@ const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, applyAdminRefresh, buildOpenIDRefreshParams } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies');
+const middleware = require('~/server/middleware');
 const adminAuthRouter = require('./auth');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
@@ -246,5 +248,46 @@ describe('admin auth OpenID refresh route', () => {
     expect(debugOutput).not.toContain('new-admin-id');
     expect(debugOutput).not.toContain('new-admin-refresh');
     expect(debugOutput).not.toContain('https://api.example.com');
+  });
+});
+
+describe('admin local login route', () => {
+  let app;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/admin', adminAuthRouter);
+  });
+
+  it('applies the email login gate before local auth', async () => {
+    const response = await request(app).post('/api/admin/login/local').send({
+      email: 'admin@example.com',
+      password: 'password',
+    });
+
+    expect(response.status).toBe(200);
+    expect(middleware.validateEmailLogin).toHaveBeenCalledTimes(1);
+    expect(middleware.requireLocalAuth).toHaveBeenCalledTimes(1);
+    expect(middleware.validateEmailLogin.mock.invocationCallOrder[0]).toBeLessThan(
+      middleware.requireLocalAuth.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('stops before local auth when the email login gate rejects the request', async () => {
+    middleware.validateEmailLogin.mockImplementationOnce((req, res) =>
+      res.status(403).json({ message: 'Email login is not allowed.' }),
+    );
+
+    const response = await request(app).post('/api/admin/login/local').send({
+      email: 'admin@example.com',
+      password: 'password',
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ message: 'Email login is not allowed.' });
+    expect(middleware.requireLocalAuth).not.toHaveBeenCalled();
   });
 });

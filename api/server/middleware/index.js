@@ -2,6 +2,7 @@ const validatePasswordReset = require('./validatePasswordReset');
 const setTwoFactorTempUser = require('./setTwoFactorTempUser');
 const validateRegistration = require('./validateRegistration');
 const buildEndpointOption = require('./buildEndpointOption');
+const validateEmailLogin = require('./validateEmailLogin');
 const validateMessageReq = require('./validateMessageReq');
 const { prepareMessageRequestValidation, sendValidationResponse } = require('./messageValidation');
 const checkDomainAllowed = require('./checkDomainAllowed');
@@ -53,4 +54,5 @@ module.exports = {
   buildEndpointOption,
   validateRegistration,
   validatePasswordReset,
+  validateEmailLogin,
 };

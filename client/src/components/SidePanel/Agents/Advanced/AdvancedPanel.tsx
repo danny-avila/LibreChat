@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useToastContext } from '@librechat/client';
 import { ChevronLeft, Check, Copy } from 'lucide-react';
+import { AgentCapabilities } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { sectionLabelClass, groupHeadingClass } from './ui';
 import { useAgentPanelContext } from '~/Providers';
+import StatefulSessions from './StatefulSessions';
 import OrchestrationHub from './OrchestrationHub';
 import MaxAgentSteps from './MaxAgentSteps';
 import { useLocalize } from '~/hooks';
@@ -17,7 +19,11 @@ export default function AdvancedPanel() {
   const currentAgentId = watch('id');
   const [copied, setCopied] = useState(false);
 
-  const { setActivePanel } = useAgentPanelContext();
+  const { agentsConfig, setActivePanel } = useAgentPanelContext();
+  const statefulSessionsEnabled = useMemo(
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.stateful_code_sessions) ?? false,
+    [agentsConfig],
+  );
 
   const handleCopyAgentId = async () => {
     if (!currentAgentId) return;
@@ -52,6 +58,7 @@ export default function AdvancedPanel() {
         <section className="flex flex-col gap-3">
           <span className={groupHeadingClass}>{localize('com_ui_essentials')}</span>
           <MaxAgentSteps />
+          {statefulSessionsEnabled && <StatefulSessions />}
         </section>
 
         <OrchestrationHub currentAgentId={currentAgentId} />

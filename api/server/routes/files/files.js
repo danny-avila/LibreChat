@@ -4,6 +4,7 @@ const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
   refreshS3FileUrls,
+  handleFilesUsageRequest,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
 } = require('@librechat/api');
@@ -135,6 +136,26 @@ router.get('/config', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+/**
+ * POST /files/usage
+ *
+ * Owner-scoped TTL touch for uploads held in a client-side queue (mid-run
+ * queued messages), so the upload-window TTL cannot reap them before drain.
+ * Thin wrapper: validation, cap, and best-effort semantics live in
+ * `@librechat/api` (`handleFilesUsageRequest`).
+ */
+router.post('/usage', async (req, res) => {
+  try {
+    const { status, body } = await handleFilesUsageRequest(req.user ?? {}, req.body ?? {}, {
+      updateFilesUsage: db.updateFilesUsage,
+    });
+    return res.status(status).json(body);
+  } catch (error) {
+    logger.error('[/files/usage] Failed to mark files used', error);
+    return res.status(500).json({ code: 'FILES_USAGE_FAILED' });
   }
 });
 

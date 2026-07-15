@@ -23,7 +23,7 @@ export default function MemoryList({
   return (
     <div className="space-y-2" role="list" aria-label={localize('com_ui_memories')}>
       {memories.map((memory) => (
-        <div key={memory.key} role="listitem">
+        <div key={`${memory.agentId ?? ''}:${memory.key}`} role="listitem">
           <MemoryCard memory={memory} hasUpdateAccess={hasUpdateAccess} />
         </div>
       ))}
