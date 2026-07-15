@@ -8,7 +8,7 @@ import {
   ScrollText,
   ArrowRightToLine,
   SlidersHorizontal,
-  FileOutput,
+  FolderOutput,
 } from 'lucide-react';
 import {
   Permissions,
@@ -183,7 +183,7 @@ export default function useSideNavLinks({
     links.push({
       title: 'com_sidepanel_generated_files',
       label: '',
-      icon: FileOutput,
+      icon: FolderOutput,
       id: 'generated-files',
       Component: GeneratedFilesView,
     });

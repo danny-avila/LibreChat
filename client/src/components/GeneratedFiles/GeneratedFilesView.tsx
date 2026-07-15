@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Spinner } from '~/components/ui';
+import { Spinner } from '~/components/ui';
 import { useAuthContext } from '~/hooks';
-import { endpoints, dataService } from '~/data-provider';
 
 export default function GeneratedFilesView() {
   const [files, setFiles] = useState([]);
