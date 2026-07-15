@@ -14,10 +14,11 @@ function Row({ label, value, max }: RowProps) {
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
       <span className="text-text-secondary">{label}</span>
-      <span className="font-medium text-text-primary">
+      {/* NJ: default custom styling - normal font weight*/}
+      <span className="text-text-primary">
         {formatTokens(value)}
         {percent != null && (
-          <span className="ml-1 text-xs text-text-secondary" aria-hidden="true">
+          <span className="ml-1 text-sm text-text-primary" aria-hidden="true">
             ({Math.round(percent)}%)
           </span>
         )}
@@ -73,10 +74,12 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
   return (
     <div className="w-64 space-y-3" role="region" aria-label={localize('com_ui_context_usage')}>
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-text-primary">
+        {/* NJ: custom styling - font weight*/}
+        <span className="text-sm font-semibold text-text-primary">
           {localize('com_ui_context_window')}
         </span>
-        <span className="text-xs font-medium text-text-secondary">
+        {/* NJ: custom styling*/}
+        <span className="text-sm text-text-primary">
           {maxTokens != null
             ? `${formatTokens(usedTokens)} / ${formatTokens(maxTokens)} (${Math.round(percent)}%)`
             : formatTokens(usedTokens)}
@@ -180,6 +183,10 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
         <>
           <div className="border-t border-border-light" role="separator" />
           <div className="space-y-1.5" data-testid="token-usage-totals">
+            <span className="text-sm font-semibold text-text-primary">
+              {localize('com_ui_last_prompt_and_reply')}
+            </span>
+
             <Row label={localize('com_ui_input')} value={branchUsage.input} />
             <Row label={localize('com_ui_output')} value={branchUsage.output} />
             {branchUsage.cacheRead > 0 && (

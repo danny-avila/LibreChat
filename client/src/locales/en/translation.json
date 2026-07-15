@@ -1018,6 +1018,7 @@
   "com_ui_context_usage_snapshot": "Context {{0}} / {{1}} ({{2}}%)",
   "com_ui_context_usage_snapshot_unknown": "Context {{0}}",
   "com_ui_context_window": "Context window",
+  "com_ui_last_prompt_and_reply": "Last prompt and reply",
   "com_ui_continue": "Continue",
   "com_ui_continue_chat": "Continue this chat",
   "com_ui_continue_chat_error": "There was an error copying this conversation",
