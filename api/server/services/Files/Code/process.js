@@ -1080,39 +1080,133 @@ async function readSandboxImage({
   }
 
   const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
-  const payload = Buffer.from(JSON.stringify({ file_path, limit }), 'utf8').toString('base64');
-  const code = [
-    "python3 - <<'PY'",
-    'import base64, json, os, stat',
-    `payload = ${JSON.stringify(payload)}`,
-    "data = json.loads(base64.b64decode(payload).decode('utf-8'))",
-    "p = data['file_path']",
-    "limit = data['limit']",
-    'try:',
-    '    st = os.stat(p)',
-    'except OSError as e:',
-    '    print(json.dumps({"error": str(e)}))',
-    '    raise SystemExit(0)',
-    // Reject FIFOs, sockets, and device files (e.g. a symlink to /dev/zero):
-    // os.stat can report a small/zero size while an unbounded read blocks or
-    // streams forever until the request times out.
-    'if not stat.S_ISREG(st.st_mode):',
-    '    print(json.dumps({"error": "not a regular file"}))',
-    '    raise SystemExit(0)',
-    'if st.st_size > limit:',
-    '    print(json.dumps({"too_large": True, "bytes": st.st_size}))',
-    '    raise SystemExit(0)',
-    // Bound the read at limit+1 as defense-in-depth: even if st_size lies
-    // (sparse/growing file), we never pull more than the cap into memory.
-    "with open(p, 'rb') as f:",
-    '    raw = f.read(limit + 1)',
-    'if len(raw) > limit:',
-    '    print(json.dumps({"too_large": True, "bytes": len(raw)}))',
-    '    raise SystemExit(0)',
-    'print(json.dumps({"bytes": len(raw), "b64": base64.b64encode(raw).decode("ascii")}))',
-    'PY',
-  ].join('\n');
+  const chunkBytes = getImageChunkBytes();
+  const maxChunks = Math.ceil(limit / chunkBytes) + 1;
 
+  /** @type {Buffer[]} */
+  const parts = [];
+  let offset = 0;
+  let total = null;
+
+  for (let i = 0; i < maxChunks; i++) {
+    const payload = Buffer.from(
+      JSON.stringify({ file_path, limit, offset, chunk: chunkBytes }),
+      'utf8',
+    ).toString('base64');
+    const code = [
+      "python3 - <<'PY'",
+      'import base64, json, os, stat',
+      `payload = ${JSON.stringify(payload)}`,
+      "data = json.loads(base64.b64decode(payload).decode('utf-8'))",
+      "p = data['file_path']",
+      "limit = data['limit']",
+      "offset = data['offset']",
+      "chunk = data['chunk']",
+      'try:',
+      '    st = os.stat(p)',
+      'except OSError as e:',
+      '    print(json.dumps({"error": str(e)}))',
+      '    raise SystemExit(0)',
+      // Reject FIFOs, sockets, and device files (e.g. a symlink to /dev/zero):
+      // os.stat can report a small/zero size while an unbounded read blocks or
+      // streams forever until the request times out.
+      'if not stat.S_ISREG(st.st_mode):',
+      '    print(json.dumps({"error": "not a regular file"}))',
+      '    raise SystemExit(0)',
+      'if st.st_size > limit:',
+      '    print(json.dumps({"too_large": True, "bytes": st.st_size}))',
+      '    raise SystemExit(0)',
+      // Read only this window. The whole base64 payload cannot be emitted in
+      // one shot: the runner caps stdout at SANDBOX_OUTPUT_MAX_SIZE (1024
+      // bytes by default) and SIGKILLs the job on overflow, which truncates
+      // the JSON mid-string. Windowing keeps every response under that cap.
+      "with open(p, 'rb') as f:",
+      '    f.seek(offset)',
+      '    raw = f.read(chunk)',
+      'print(json.dumps({"total": st.st_size, "n": len(raw), "b64": base64.b64encode(raw).decode("ascii")}))',
+      'PY',
+    ].join('\n');
+
+    const parsed = await execSandboxImageChunk({
+      baseURL,
+      code,
+      file_path,
+      session_id,
+      runtime_session_hint,
+      files,
+      req,
+      chunkBytes,
+    });
+
+    if (parsed.error) {
+      throw new Error(String(parsed.error));
+    }
+    if (parsed.too_large === true) {
+      return { tooLarge: true, bytes: Number(parsed.bytes) || 0 };
+    }
+    if (typeof parsed.b64 !== 'string' || typeof parsed.n !== 'number') {
+      return null;
+    }
+
+    if (total == null) {
+      total = Number(parsed.total) || 0;
+      if (total > limit) {
+        return { tooLarge: true, bytes: total };
+      }
+    } else if (Number(parsed.total) !== total) {
+      /* The file changed underneath us; a spliced-together buffer would be
+       * a mix of two versions rather than any real image. */
+      throw new Error(`"${file_path}" changed while being read from the sandbox`);
+    }
+
+    parts.push(Buffer.from(parsed.b64, 'base64'));
+    offset += parsed.n;
+
+    if (parsed.n === 0 || offset >= total) {
+      break;
+    }
+  }
+
+  const buffer = Buffer.concat(parts);
+  if (total == null) {
+    return null;
+  }
+  if (buffer.length !== total) {
+    /* Ran out of chunk budget (or short reads); returning a partial image
+     * would render as a corrupt file, so surface it as unreadable-inline. */
+    return { tooLarge: true, bytes: total };
+  }
+  return { base64: buffer.toString('base64'), bytes: buffer.length };
+}
+
+/**
+ * Raw bytes pulled per `/exec` round-trip when inlining a sandbox image.
+ * Each chunk is base64-encoded (~1.33x) into the response's stdout, which
+ * the runner truncates + SIGKILLs past `SANDBOX_OUTPUT_MAX_SIZE`. The
+ * default leaves headroom for a runner configured at 64KB; deployments
+ * with a smaller cap must lower this, and a larger cap can raise it to cut
+ * round-trips.
+ * @returns {number}
+ */
+function getImageChunkBytes() {
+  const parsed = Number(process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 32 * 1024;
+}
+
+/**
+ * Runs one image-chunk read over `/exec` and parses its JSON line.
+ * @returns {Promise<Record<string, unknown>>}
+ */
+async function execSandboxImageChunk({
+  baseURL,
+  code,
+  file_path,
+  session_id,
+  runtime_session_hint,
+  files,
+  req,
+  chunkBytes,
+}) {
   /** @type {Record<string, unknown>} */
   const postData = { lang: 'bash', code };
   if (session_id) {
@@ -1141,28 +1235,36 @@ async function readSandboxImage({
       timeout: 15000,
     });
     const result = response?.data ?? {};
+    /* The runner truncates stdout at SANDBOX_OUTPUT_MAX_SIZE and SIGKILLs the
+     * job (status `OL`). Detect that explicitly: the surviving stdout is a
+     * base64 string cut mid-flight, so parsing it yields a misleading
+     * "unexpected output" instead of naming the real, fixable cause. */
+    if (result.status === 'OL') {
+      throw new Error(
+        `Reading "${file_path}" exceeded the sandbox stdout limit (chunk ${chunkBytes} bytes). ` +
+          'Lower LIBRECHAT_CODE_IMAGE_CHUNK_BYTES or raise SANDBOX_OUTPUT_MAX_SIZE on the runner.',
+      );
+    }
     if (result.stderr && (result.stdout == null || result.stdout === '')) {
       throw new Error(String(result.stderr).trim());
     }
     if (result.stdout == null || String(result.stdout).trim() === '') {
-      return null;
+      return {};
     }
-    let parsed;
+    /* Parse the LAST non-empty line: the reader's JSON is the final thing it
+     * prints, so anything a shell profile or library emitted ahead of it
+     * (banners, warnings) must not break the read. */
+    const lines = String(result.stdout)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
     try {
-      parsed = JSON.parse(String(result.stdout).trim());
+      return JSON.parse(lines[lines.length - 1]);
     } catch {
-      throw new Error('Unexpected output while reading image bytes from the sandbox');
+      throw new Error(
+        `Unexpected output while reading image bytes from the sandbox: ${String(result.stdout).slice(0, 120)}`,
+      );
     }
-    if (parsed && parsed.error) {
-      throw new Error(String(parsed.error));
-    }
-    if (parsed && parsed.too_large === true) {
-      return { tooLarge: true, bytes: Number(parsed.bytes) || 0 };
-    }
-    if (parsed && typeof parsed.b64 === 'string') {
-      return { base64: parsed.b64, bytes: Number(parsed.bytes) || 0 };
-    }
-    return null;
   } catch (error) {
     logAxiosError({
       message: `Error reading sandbox image "${file_path}"`,
