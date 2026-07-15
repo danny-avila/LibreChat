@@ -143,6 +143,7 @@ class AgentClient extends BaseClient {
       subagentAggregatorsByToolCallId,
       contextUsageSink,
       usageEmitSink,
+      toolInputValidationErrors,
       ...clientOptions
     } = options;
 
@@ -157,6 +158,11 @@ class AgentClient extends BaseClient {
      *  persisted on `metadata.usage`.
      *  @type {Array<import('librechat-data-provider').TTokenUsageEvent> | undefined} */
     this.usageEmitSink = usageEmitSink;
+    /** Schema-validation exceptions keyed by tool-call ID. The completion
+     *  handler consumes these to distinguish execution failures from tool
+     *  output that merely contains similar text.
+     *  @type {Map<string, import('@librechat/api').ToolInputValidationError> | undefined} */
+    this.toolInputValidationErrors = toolInputValidationErrors;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
@@ -1759,6 +1765,7 @@ class AgentClient extends BaseClient {
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
+          toolInputValidationErrors: this.toolInputValidationErrors,
           // Mid-run steering: drain queued user messages at each tool-batch
           // boundary and inject them into graph state. The offset wrapper
           // shifts SDK content indices past any spliced steer parts.
@@ -2089,6 +2096,7 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        toolInputValidationErrors: this.toolInputValidationErrors,
         // Steering stays live across a pause/resume cycle: steers queued while
         // the resumed segment runs drain at its tool-batch boundaries.
         steering: this.buildSteerWiring(streamId),

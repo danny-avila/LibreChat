@@ -1422,6 +1422,7 @@ describe('useStepHandler', () => {
             name: 'test_tool',
             args: '{}',
             output: 'Tool result output',
+            inputValidationError: true as const,
             type: ToolCallTypes.TOOL_CALL,
           },
         },
@@ -1445,6 +1446,7 @@ describe('useStepHandler', () => {
       );
       expect(toolCallContent?.tool_call?.output).toBe('Tool result output');
       expect(toolCallContent?.tool_call?.progress).toBe(1);
+      expect(toolCallContent?.tool_call?.inputValidationError).toBe(true);
     });
 
     it('signals skill authoring when a completed create_file call targets a skill path', () => {
