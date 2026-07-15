@@ -474,6 +474,15 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   ) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
   getUserCodeFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
+  /** Prime conversation image attachments (MCP tool results, assistant
+   *  attachments) into the code environment by setting their `codeEnvRef`,
+   *  so code/skills can access them in the sandbox without a manual
+   *  re-upload. Returns the updated file documents. Only invoked when
+   *  execute_code is enabled. */
+  primeConversationImages?: (params: {
+    req: unknown;
+    threadFileIds: string[];
+  }) => Promise<IMongoFile[]>;
   /** Get messages for a conversation (supports select for field projection) */
   getMessages?: (
     filter: { conversationId: string },
@@ -726,6 +735,29 @@ export async function initializeAgent(
           threadFileIds,
           requestFileOwnerScope,
         )) as IMongoFile[];
+      }
+
+      /** Conversation images (MCP tool results, assistant attachments) don't
+       *  have a `codeEnvRef` yet, so the standard lookups above can't see
+       *  them. Prime them into the code environment here, once per file:
+       *  after upload the ref is persisted in metadata, and subsequent turns
+       *  pick them up via the regular `getUserCodeFiles` path. Errors never
+       *  block the run — this is best-effort. */
+      if (db.primeConversationImages && threadFileIds && threadFileIds.length > 0) {
+        try {
+          const primedImages = await db.primeConversationImages({
+            req,
+            threadFileIds,
+          });
+          if (primedImages.length > 0) {
+            userCodeFiles = userCodeFiles.concat(primedImages);
+          }
+        } catch (error) {
+          logger.warn(
+            '[initializeAgent] primeConversationImages failed (non-blocking):',
+            error instanceof Error ? error.message : error,
+          );
+        }
       }
     }
 
