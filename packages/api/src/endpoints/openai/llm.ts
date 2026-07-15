@@ -743,11 +743,6 @@ export function getOpenAILLMConfig({
   const firstPartyEndpoint = isOpenAIEndpoint(endpoint);
   const supportsGPT56 = firstPartyEndpoint && isGPT56;
   const supportsManagedGPT56 = supportsGPT56 && firstPartyOpenAI === true;
-  const supportsGPT56Responses = supportsGPT56 && llmConfig.useResponsesApi === true;
-  if (firstPartyEndpoint && !supportsGPT56Responses) {
-    reasoningMode = undefined;
-    reasoningContext = undefined;
-  }
   if (firstPartyEndpoint && !supportsGPT56 && reasoningEffort === 'max') {
     reasoningEffort = undefined;
   }
@@ -814,6 +809,12 @@ export function getOpenAILLMConfig({
     requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
   ) {
     llmConfig.useResponsesApi = true;
+  }
+
+  const supportsGPT56Responses = supportsGPT56 && llmConfig.useResponsesApi === true;
+  if (firstPartyEndpoint && !supportsGPT56Responses) {
+    reasoningMode = undefined;
+    reasoningContext = undefined;
   }
 
   if (!useOpenRouter) {
