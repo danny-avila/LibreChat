@@ -1,26 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuthContext } from '~/hooks';
 
 export default function GeneratedFilesView() {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const { isAuthenticated } = useAuthContext();
 
-  useEffect(() => {
+  const fetchFiles = useCallback(async () => {
     if (!isAuthenticated) return;
-    const fetchFiles = async () => {
-      try {
-        const response = await fetch('/api/generated-files');
-        const data = await response.json();
-        setFiles(data);
-      } catch (error) {
-        console.error('Failed to fetch generated files:', error);
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/generated-files');
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
-    };
-    fetchFiles();
+      const data = await response.json();
+      setFiles(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch generated files:', err);
+      setError(err.message || 'Failed to fetch files');
+      setFiles([]);
+    } finally {
+      setLoading(false);
+    }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
 
   const handleDownload = async (fileId, filename) => {
     try {
@@ -42,7 +51,7 @@ export default function GeneratedFilesView() {
     try {
       const response = await fetch(`/api/generated-files/${fileId}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Delete failed');
-      setFiles(files.filter((f) => f._id !== fileId));
+      setFiles((prev) => (Array.isArray(prev) ? prev.filter((f) => f._id !== fileId) : []));
     } catch (error) {
       console.error('Delete failed:', error);
     }
@@ -52,10 +61,27 @@ export default function GeneratedFilesView() {
     return <div className="p-4 text-gray-500">Loading...</div>;
   }
 
+  if (error) {
+    return (
+      <div className="p-4">
+        <h2 className="mb-4 text-xl font-semibold">Generated Files</h2>
+        <p className="text-red-500">Error: {error}</p>
+        <button
+          onClick={fetchFiles}
+          className="mt-2 rounded bg-blue-500 px-3 py-1 text-white hover:bg-blue-600"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const fileList = Array.isArray(files) ? files : [];
+
   return (
     <div className="p-4">
       <h2 className="mb-4 text-xl font-semibold">Generated Files</h2>
-      {files.length === 0 ? (
+      {fileList.length === 0 ? (
         <p className="text-gray-500">No generated files yet.</p>
       ) : (
         <table className="w-full">
@@ -68,7 +94,7 @@ export default function GeneratedFilesView() {
             </tr>
           </thead>
           <tbody>
-            {files.map((file) => (
+            {fileList.map((file) => (
               <tr key={file._id} className="border-b">
                 <td className="p-2">{file.filename}</td>
                 <td className="p-2">{file.type}</td>
