@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Spinner } from '~/components/ui';
 import { useAuthContext } from '~/hooks';
 
 export default function GeneratedFilesView() {
@@ -50,7 +49,7 @@ export default function GeneratedFilesView() {
   };
 
   if (loading) {
-    return <Spinner />;
+    return <div className="p-4 text-gray-500">Loading...</div>;
   }
 
   return (
