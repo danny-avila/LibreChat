@@ -33,6 +33,7 @@ import { createSkillModel } from './skill';
 import { createGroupModel } from './group';
 import { createUserModel } from './user';
 import { createRoleModel } from './role';
+import { createGeneratedFileModel } from './generatedFile';
 import { createFileModel } from './file';
 import { createKeyModel } from './key';
 
@@ -55,6 +56,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Action: ReturnType<typeof createActionModel>;
   Assistant: ReturnType<typeof createAssistantModel>;
   File: ReturnType<typeof createFileModel>;
+  GeneratedFile: ReturnType<typeof createGeneratedFileModel>;
   Banner: ReturnType<typeof createBannerModel>;
   Key: ReturnType<typeof createKeyModel>;
   PluginAuth: ReturnType<typeof createPluginAuthModel>;
@@ -94,6 +96,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Action: createActionModel(mongoose),
     Assistant: createAssistantModel(mongoose),
     File: createFileModel(mongoose),
+    GeneratedFile: createGeneratedFileModel(mongoose),
     Banner: createBannerModel(mongoose),
     Key: createKeyModel(mongoose),
     PluginAuth: createPluginAuthModel(mongoose),

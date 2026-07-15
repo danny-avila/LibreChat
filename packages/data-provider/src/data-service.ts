@@ -10,6 +10,7 @@ import * as ag from './types/agents';
 import * as q from './types/queries';
 import * as sk from './types/skills';
 import * as f from './types/files';
+import * as g from './types/generatedFiles';
 import * as config from './config';
 import request from './request';
 import * as s from './schemas';
@@ -758,6 +759,25 @@ export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse>
       Accept: 'application/octet-stream',
     },
   });
+};
+
+export const getGeneratedFiles = async (params?: {
+  conversationId?: string;
+}): Promise<g.TGeneratedFile[]> => {
+  const query = params?.conversationId
+    ? `?conversationId=${encodeURIComponent(params.conversationId)}`
+    : '';
+  return request.get(`${endpoints.generatedFiles()}${query}`);
+};
+
+export const downloadGeneratedFile = async (id: string): Promise<AxiosResponse> => {
+  return request.getResponse(endpoints.generatedFileDownload(id), {
+    responseType: 'blob',
+  });
+};
+
+export const deleteGeneratedFile = async (id: string): Promise<{ ok: boolean }> => {
+  return request.delete(endpoints.generatedFileById(id));
 };
 
 export const deleteFiles = async (payload: {
