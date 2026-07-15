@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import {
+  AUTH_USER_DOC_BY_ID_PREFIX,
+  SystemRoles,
+  Permissions,
+  roleDefaults,
+  PermissionTypes,
+  CacheKeys,
+} from 'librechat-data-provider';
 import type { IRole, IUser, RolePermissions } from '..';
 import { _resetStrictCache } from '../models/plugins/tenantIsolation';
 import { tenantStorage } from '~/config/tenantContext';
@@ -17,7 +24,7 @@ jest.mock('~/config/winston', () => ({
 const mockCache = {
   get: jest.fn(),
   set: jest.fn(),
-  del: jest.fn(),
+  delete: jest.fn(),
 };
 
 const mockGetCache = jest.fn().mockReturnValue(mockCache);
@@ -31,6 +38,7 @@ let initializeRoles: ReturnType<typeof createRoleMethods>['initializeRoles'];
 let createRoleByName: ReturnType<typeof createRoleMethods>['createRoleByName'];
 let deleteRoleByName: ReturnType<typeof createRoleMethods>['deleteRoleByName'];
 let updateUsersByRole: ReturnType<typeof createRoleMethods>['updateUsersByRole'];
+let updateUsersRoleByIds: ReturnType<typeof createRoleMethods>['updateUsersRoleByIds'];
 let listUsersByRole: ReturnType<typeof createRoleMethods>['listUsersByRole'];
 let countUsersByRole: ReturnType<typeof createRoleMethods>['countUsersByRole'];
 let updateRoleByName: ReturnType<typeof createRoleMethods>['updateRoleByName'];
@@ -54,6 +62,7 @@ beforeAll(async () => {
   deleteRoleByName = methods.deleteRoleByName;
   updateRoleByName = methods.updateRoleByName;
   updateUsersByRole = methods.updateUsersByRole;
+  updateUsersRoleByIds = methods.updateUsersRoleByIds;
   listUsersByRole = methods.listUsersByRole;
   countUsersByRole = methods.countUsersByRole;
   listRoles = methods.listRoles;
@@ -69,9 +78,11 @@ beforeEach(async () => {
   await Role.deleteMany({});
   await User.deleteMany({});
   mockGetCache.mockClear();
-  mockCache.get.mockClear();
-  mockCache.set.mockClear();
-  mockCache.del.mockClear();
+  mockGetCache.mockReturnValue(mockCache);
+  mockCache.get.mockReset();
+  mockCache.set.mockReset();
+  mockCache.delete.mockReset();
+  delete process.env.AUTH_USER_CACHE_MODE;
 });
 
 describe('findRolesByNames', () => {
@@ -901,6 +912,36 @@ describe('deleteRoleByName', () => {
     expect(result).toBeNull();
     expect(mockCache.set).toHaveBeenCalledWith('nonexistent', null);
   });
+
+  it('invalidates cached auth user documents for reassigned users', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    await createRoleByName({ name: 'editor' });
+    const [alice, bob] = await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'editor', username: 'bob' },
+    ]);
+    mockCache.get.mockImplementation((key: string) => {
+      if (key === `${AUTH_USER_DOC_BY_ID_PREFIX}:${alice._id.toString()}`) {
+        return Promise.resolve(['auth-cache-alice']);
+      }
+      if (key === `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`) {
+        return Promise.resolve(['auth-cache-bob']);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    await deleteRoleByName('editor');
+
+    expect(mockGetCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+    expect(mockCache.delete).toHaveBeenCalledWith('auth-cache-alice');
+    expect(mockCache.delete).toHaveBeenCalledWith(
+      `${AUTH_USER_DOC_BY_ID_PREFIX}:${alice._id.toString()}`,
+    );
+    expect(mockCache.delete).toHaveBeenCalledWith('auth-cache-bob');
+    expect(mockCache.delete).toHaveBeenCalledWith(
+      `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`,
+    );
+  });
 });
 
 describe('updateRoleByName - cache on rename', () => {
@@ -1023,6 +1064,68 @@ describe('updateUsersByRole', () => {
 
     const alice = await User.findOne({ email: 'alice@test.com' }).lean();
     expect(alice!.role).toBe(SystemRoles.USER);
+  });
+
+  it('invalidates cached auth user documents for migrated users', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    const [alice, bob] = await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'editor', username: 'bob' },
+    ]);
+    mockCache.get.mockImplementation((key: string) => {
+      if (key === `${AUTH_USER_DOC_BY_ID_PREFIX}:${alice._id.toString()}`) {
+        return Promise.resolve(['auth-cache-alice']);
+      }
+      if (key === `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`) {
+        return Promise.resolve(['auth-cache-bob']);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    await updateUsersByRole('editor', 'senior-editor');
+
+    expect(mockGetCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+    expect(mockCache.delete).toHaveBeenCalledWith('auth-cache-alice');
+    expect(mockCache.delete).toHaveBeenCalledWith(
+      `${AUTH_USER_DOC_BY_ID_PREFIX}:${alice._id.toString()}`,
+    );
+    expect(mockCache.delete).toHaveBeenCalledWith('auth-cache-bob');
+    expect(mockCache.delete).toHaveBeenCalledWith(
+      `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`,
+    );
+  });
+});
+
+describe('updateUsersRoleByIds', () => {
+  it('invalidates cached auth user documents for explicitly reassigned users', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    const [alice, bob] = await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'editor', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'viewer', username: 'bob' },
+    ]);
+    mockCache.get.mockImplementation((key: string) => {
+      if (key === `${AUTH_USER_DOC_BY_ID_PREFIX}:${alice._id.toString()}`) {
+        return Promise.resolve(['auth-cache-alice']);
+      }
+      if (key === `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`) {
+        return Promise.resolve(['auth-cache-bob']);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    await updateUsersRoleByIds([alice._id.toString(), bob._id.toString()], 'admin-lite');
+
+    const updatedUsers = await User.find({ _id: { $in: [alice._id, bob._id] } }).lean();
+    expect(updatedUsers.map((user) => user.role)).toEqual(['admin-lite', 'admin-lite']);
+    expect(mockGetCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+    expect(mockCache.delete).toHaveBeenCalledWith('auth-cache-alice');
+    expect(mockCache.delete).toHaveBeenCalledWith(
+      `${AUTH_USER_DOC_BY_ID_PREFIX}:${alice._id.toString()}`,
+    );
+    expect(mockCache.delete).toHaveBeenCalledWith('auth-cache-bob');
+    expect(mockCache.delete).toHaveBeenCalledWith(
+      `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`,
+    );
   });
 });
 

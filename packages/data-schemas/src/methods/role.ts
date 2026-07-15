@@ -1,4 +1,5 @@
 import {
+  AUTH_USER_DOC_BY_ID_PREFIX,
   CacheKeys,
   SystemRoles,
   roleDefaults,
@@ -16,6 +17,10 @@ const systemRoleValues = new Set<string>(Object.values(SystemRoles));
 /** Case-insensitive check — the legacy roles route uppercases params. */
 function isSystemRoleName(name: string): boolean {
   return systemRoleValues.has(name.toUpperCase());
+}
+
+function isAuthUserDocCacheEnabled(): boolean {
+  return process.env.AUTH_USER_CACHE_MODE === 'on';
 }
 
 export class RoleConflictError extends Error {
@@ -570,7 +575,9 @@ export function createRoleMethods(
     }
     const Role = mongoose.models.Role;
     const User = mongoose.models.User as Model<IUser>;
+    const affectedUserIds = await findUserIdsByRole(roleName);
     await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
+    await invalidateAuthUserDocCache(affectedUserIds);
     const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
     try {
       const cache = deps.getCache?.(CacheKeys.ROLES);
@@ -588,7 +595,9 @@ export function createRoleMethods(
 
   async function updateUsersByRole(oldRole: string, newRole: string): Promise<void> {
     const User = mongoose.models.User as Model<IUser>;
+    const affectedUserIds = await findUserIdsByRole(oldRole);
     await User.updateMany({ role: oldRole }, { $set: { role: newRole } });
+    await invalidateAuthUserDocCache(affectedUserIds);
   }
 
   async function findUserIdsByRole(roleName: string): Promise<string[]> {
@@ -603,6 +612,34 @@ export function createRoleMethods(
     }
     const User = mongoose.models.User as Model<IUser>;
     await User.updateMany({ _id: { $in: userIds } }, { $set: { role: newRole } });
+    await invalidateAuthUserDocCache(userIds);
+  }
+
+  async function invalidateAuthUserDocCache(userIds: string[]): Promise<void> {
+    if (!isAuthUserDocCacheEnabled() || userIds.length === 0) {
+      return;
+    }
+    const cache = deps.getCache?.(CacheKeys.AUTH_USER_DOC);
+    if (!cache?.get || !cache?.delete) {
+      return;
+    }
+    try {
+      const uniqueUserIds = [...new Set(userIds.map((userId) => userId.toString()))];
+      await Promise.all(
+        uniqueUserIds.map(async (userId) => {
+          const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+          const cachedKeys = await cache.get(indexKey);
+          if (Array.isArray(cachedKeys)) {
+            await Promise.all(
+              cachedKeys.map((key) => (typeof key === 'string' ? cache.delete?.(key) : undefined)),
+            );
+          }
+          await cache.delete?.(indexKey);
+        }),
+      );
+    } catch (cacheError) {
+      logger.error('[roleMethods] auth user doc cache invalidation failed:', cacheError);
+    }
   }
 
   async function listUsersByRole(

@@ -14,6 +14,7 @@ interface AgentCapabilitiesResult {
   memoryEnabled: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
+  backgroundToolsEnabled: boolean;
 }
 
 export default function useAgentCapabilities(
@@ -79,6 +80,11 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  const backgroundToolsEnabled = useMemo(
+    () => capabilities?.includes(AgentCapabilities.run_in_background) ?? false,
+    [capabilities],
+  );
+
   return {
     ocrEnabled,
     codeEnabled,
@@ -92,5 +98,6 @@ export default function useAgentCapabilities(
     fileSearchEnabled,
     deferredToolsEnabled,
     programmaticToolsEnabled,
+    backgroundToolsEnabled,
   };
 }

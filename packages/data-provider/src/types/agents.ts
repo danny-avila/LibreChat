@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-namespace */
+import type { TTokenUsageEvent, TContextUsageEvent, TPendingSteer } from './runs';
 import type { FunctionToolCall, SummaryContentPart } from './assistants';
-import type { TTokenUsageEvent, TContextUsageEvent } from './runs';
 import type { TAttachment, TPlugin } from 'src/schemas';
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 
@@ -257,6 +257,12 @@ export namespace Agents {
      * cross-replica client can rebuild and render the prompt from `resumeState`.
      */
     pendingAction?: PendingAction;
+    /**
+     * Steers queued server-side but not yet injected into the run. Injected
+     * steers already live inside `aggregatedContent`; these are the remainder,
+     * so a reconnecting client can rebuild its pending-steer chips.
+     */
+    pendingSteers?: TPendingSteer[];
   }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during
@@ -364,6 +370,9 @@ export namespace Agents {
     /** Optional descriptive context for the prompt; mirrors the SDK field. */
     description?: string;
     options?: AskUserQuestionOption[];
+    /** When true the user may pick several options; the answer is their
+     *  selected option values joined with ", ". */
+    multiSelect?: boolean;
   }
 
   /** Interrupt payload for an ask-user-question pause. */

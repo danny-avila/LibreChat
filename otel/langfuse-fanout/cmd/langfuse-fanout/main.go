@@ -35,6 +35,7 @@ const (
 	defaultTraceCollector = "http://127.0.0.1:4319"
 	centralName           = "central"
 	tenantPrefix          = "/tenant/"
+	centralMediaDisabled  = "central-media-disabled"
 	mediaUploadProxyPath  = "/__langfuse-fanout/media-upload/"
 	otelTracePath         = "/api/public/otel/v1/traces"
 	mediaPath             = "/api/public/media"
@@ -49,6 +50,7 @@ type config struct {
 	publicURL            string
 	metricsSecret        string
 	traceDestinationKeys map[string]bool
+	centralMediaExport   bool
 	central              destination
 	tenants              map[string]string
 	redis                redisConfig
@@ -70,8 +72,9 @@ type destination struct {
 }
 
 type route struct {
-	destination string
-	path        string
+	destination         string
+	path                string
+	disableCentralMedia bool
 }
 
 type uploadDestination struct {
@@ -212,6 +215,7 @@ func loadConfig() (config, error) {
 		publicURL:            publicURL,
 		metricsSecret:        firstNonEmptyEnv("LANGFUSE_FANOUT_METRICS_SECRET", "METRICS_SECRET"),
 		traceDestinationKeys: traceDestinationKeys,
+		centralMediaExport:   !isTrueEnv("LANGFUSE_FANOUT_CENTRAL_MEDIA_EXPORT_DISABLED"),
 		central: destination{
 			name:          centralName,
 			baseURL:       centralBaseURL,
@@ -578,7 +582,10 @@ func (g *gateway) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *gateway) mediaDestinations(route route, tenantAuth string) []destination {
-	destinations := []destination{g.cfg.central}
+	destinations := []destination{}
+	if g.cfg.centralMediaExport && !route.disableCentralMedia {
+		destinations = append(destinations, g.cfg.central)
+	}
 	if route.destination == "" {
 		return destinations
 	}
@@ -990,7 +997,16 @@ func parseRoute(path string) route {
 	if normalizedDestination == "" {
 		return route{path: path}
 	}
-	return route{destination: normalizedDestination, path: "/" + suffix}
+	disableCentralMedia := false
+	if marker, markerSuffix, ok := strings.Cut(suffix, "/"); ok && marker == centralMediaDisabled {
+		disableCentralMedia = true
+		suffix = markerSuffix
+	}
+	return route{
+		destination:         normalizedDestination,
+		path:                "/" + suffix,
+		disableCentralMedia: disableCentralMedia,
+	}
 }
 
 func readMaybeGzip(r *http.Request) ([]byte, error) {
@@ -1157,6 +1173,15 @@ func firstNonEmptyEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func isTrueEnv(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseDurationEnv(key string, fallback time.Duration) time.Duration {

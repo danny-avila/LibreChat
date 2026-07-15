@@ -74,6 +74,9 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     end_after_tools: {
       type: Boolean,
     },
+    stateful_code_sessions: {
+      type: Boolean,
+    },
     /** @deprecated Use edges instead */
     agent_ids: {
       type: [String],
@@ -123,6 +126,12 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     /** Subagent spawning configuration — isolated-context child agents. */
     subagents: {
       type: Schema.Types.Mixed,
+      default: undefined,
+    },
+    /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+    memory_scope: {
+      type: String,
+      enum: ['user', 'agent'],
       default: undefined,
     },
     tenantId: {

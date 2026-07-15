@@ -340,6 +340,9 @@ export const useReinitializeMCPServerMutation = (): UseMutationResult<
     serverName: string;
     oauthRequired?: boolean;
     oauthUrl?: string;
+    /** True when the server uses request-scoped placeholders and the connection
+     *  was deferred to the next chat turn (tools are not enumerable up front). */
+    connectionDeferred?: boolean;
   },
   unknown,
   string,

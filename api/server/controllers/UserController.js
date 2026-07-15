@@ -5,6 +5,7 @@ const {
   needsRefresh,
   MCPOAuthHandler,
   MCPTokenStorage,
+  getAppConfigOptionsFromUser,
   normalizeHttpError,
   extractWebSearchEnvVars,
   deleteAgentCheckpoints,
@@ -59,13 +60,7 @@ const sanitizeUserForResponse = (user) => {
 };
 
 const getUserController = async (req, res) => {
-  const appConfig =
-    req.config ??
-    (await getAppConfig({
-      role: req.user?.role,
-      userId: req.user?.id,
-      tenantId: req.user?.tenantId,
-    }));
+  const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   /** @type {IUser} */
   const userData = sanitizeUserForResponse(req.user);
   if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
@@ -203,13 +198,7 @@ const deleteUserMcpServers = async (userId) => {
 };
 
 const updateUserPluginsController = async (req, res) => {
-  const appConfig =
-    req.config ??
-    (await getAppConfig({
-      role: req.user?.role,
-      userId: req.user?.id,
-      tenantId: req.user?.tenantId,
-    }));
+  const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   const { user } = req;
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {

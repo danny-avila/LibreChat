@@ -1,5 +1,5 @@
+import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
 
 /**
  * Job status enum.
@@ -116,6 +116,14 @@ export interface SerializableJobData {
    * next tick right after resuming. Falls back to `createdAt` when unset.
    */
   lastActiveAt?: number;
+
+  /**
+   * Flat flag set by the terminal close-and-drain (Redis: raw hash field the
+   * enqueue Lua guards on; in-memory: a parallel set). Once set, new steers
+   * are rejected until `createJob` reuses the stream id. Never written through
+   * `updateJob` — listed here so cleanup paths can reference the key name.
+   */
+  steersClosed?: boolean;
 }
 
 /**
@@ -137,6 +145,31 @@ export function isPendingActionExpired(job: Pick<SerializableJobData, 'pendingAc
 export function isPendingActionStale(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
   return !job.pendingAction || isPendingActionExpired(job);
 }
+
+/**
+ * A user steering message queued for mid-run injection. Enqueued by the steer
+ * route on any instance; drained FIFO by the owning process's run-scoped
+ * PostToolBatch hook at the next tool-batch boundary.
+ */
+export interface SteerQueueItem {
+  steerId: string;
+  text: string;
+  userId: string;
+  createdAt: number;
+  /** Attachment refs steered with the message. Display metadata only — the
+   *  drain re-fetches each file by id scoped to the run's user and encodes
+   *  fresh, so nothing here is trusted beyond identifying the file. */
+  files?: Partial<TFile>[];
+}
+
+/** Maximum steers a single run can have queued at once. */
+export const STEER_QUEUE_MAX_DEPTH = 10;
+
+/** `enqueueSteer` rejection: the job is missing or not `running`. */
+export const STEER_ENQUEUE_NOT_RUNNING = -1;
+
+/** `enqueueSteer` rejection: the queue is at {@link STEER_QUEUE_MAX_DEPTH}. */
+export const STEER_ENQUEUE_QUEUE_FULL = -2;
 
 /**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
@@ -202,12 +235,20 @@ export interface UsageMetadata {
     cache_creation?: number;
     /** Tokens read from cache */
     cache_read?: number;
+    /** OpenAI GPT-5.6+ cache-write tokens (billed above the input rate) */
+    cache_write_tokens?: number;
   };
   /**
    * Anthropic-style cache creation tokens.
    * Present for Claude models. Mutually exclusive with input_token_details.
    */
   cache_creation_input_tokens?: number;
+  /**
+   * OpenAI GPT-5.6+ cache-write tokens, reported at the top level of
+   * `prompt_tokens_details`/`input_tokens_details`. Distinct from cached
+   * (read) tokens and billed at a premium over the input rate.
+   */
+  cache_write_tokens?: number;
   /**
    * Anthropic-style cache read tokens.
    * Present for Claude models. Mutually exclusive with input_token_details.
@@ -242,6 +283,8 @@ export interface AbortResult {
   text: string;
   /** Collected usage metadata from all models for token spending */
   collectedUsage: UsageMetadata[];
+  /** Steers drained at abort time (never injected); surfaced to the client for restore */
+  pendingSteers?: TPendingSteer[];
 }
 
 /**
@@ -460,6 +503,68 @@ export interface IJobStore {
    * @returns Array of usage metadata or empty array
    */
   getCollectedUsage(streamId: string): UsageMetadata[];
+
+  // ===== Steering Queue Methods =====
+  // FIFO queue of mid-run user messages, keyed by streamId. Writable from any
+  // instance (the steer route), drained only by the run's owning process.
+
+  /**
+   * Atomically append a steer, guarded on the job being `running` AND the
+   * queue not being closed by a terminal drain. Returns the new queue depth,
+   * {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing, not running,
+   * or closed, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
+   */
+  enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
+
+  /**
+   * Atomically take ALL queued steers, FIFO. Empty array when none. With
+   * `expectedCreatedAt`, the drain is refused (atomically, inside the store)
+   * when the live job's `createdAt` differs — a stale run's drain must never
+   * consume a replacement job's queue.
+   */
+  drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+
+  /**
+   * Atomically CLOSE the queue to new steers, then take all queued items
+   * FIFO. Used by the terminal paths (final event, abort) so a steer POST
+   * racing finalization can never be 202-ACKed after the last drain and then
+   * silently cleared — once closed, `enqueueSteer` rejects until the next
+   * `createJob` reopens the stream id. `expectedCreatedAt` guards exactly
+   * like {@link drainSteers}: a stale run's finalization can neither close
+   * nor steal a replacement job's queue.
+   */
+  closeAndDrainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+
+  /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
+  peekSteers(streamId: string): Promise<SteerQueueItem[]>;
+
+  /** Remove ONE queued steer by id (user-cancelled before injection).
+   *  False when it was no longer queued — already drained or run ended. */
+  removeSteer(streamId: string, steerId: string): Promise<boolean>;
+
+  /**
+   * Persist terminally-drained steers under their OWN bounded-TTL key so a
+   * client with no live subscriber can recover them via the status route.
+   * Deliberately independent of the job record — the default `completeJob`
+   * path deletes the job immediately, and recovery must survive that.
+   * Overwrites any prior payload; cleared by `createJob` (a replacement run
+   * invalidates recovery — a live client had to start it).
+   */
+  parkSteers(streamId: string, payload: string): Promise<void>;
+
+  /**
+   * Claim-on-read: atomically return AND remove the parked payload, so a
+   * second reload cannot re-mint chips the user already dismissed. The
+   * removal is gated on `ownerFragment` (an opaque substring of the
+   * serialized payload, e.g. `"userId":"u1"`) INSIDE the same atomic step —
+   * a non-owner probe returns nothing and leaves the payload untouched
+   * instead of deleting it ahead of the owner check. Stores stay
+   * schema-free: the caller parses and authorizes the returned payload.
+   */
+  claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined>;
+
+  /** Drop any queued steers (terminal cleanup backstop). */
+  clearSteers(streamId: string): Promise<void>;
 }
 
 /**

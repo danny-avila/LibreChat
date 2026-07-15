@@ -2,7 +2,7 @@
 
 LibreChat can send tenant-scoped agent traces to a tenant Langfuse project and
 also copy those traces to a central Langfuse project. When trace payloads
-contain Langfuse media references, the gateway also copies the media upload to
+contain Langfuse media references, the gateway can also copy the media upload to
 central and tenant Langfuse storage. This is optional and is disabled unless you
 explicitly deploy the fanout gateway.
 
@@ -40,6 +40,10 @@ The deployment is a hybrid:
   central and tenant Langfuse, returning a one-time gateway upload URL, then
   uploading the received bytes to each upstream presigned upload URL. The SDK's
   `PATCH /api/public/media/{mediaId}` status call is also fanned out.
+- Central media export can be disabled independently of central trace export
+  with `LANGFUSE_FANOUT_CENTRAL_MEDIA_EXPORT_DISABLED=true`. Per-run central
+  trace suppression uses a destination-scoped gateway path that also skips
+  central media export for that run.
 - Tenant export is conditional. LibreChat uses a destination-scoped gateway URL
   only when tenant keys are configured, the tenant base URL matches a configured
   startup destination, and `LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED` is not true.
@@ -68,6 +72,9 @@ defined in this gateway config.
   emergency switch to stop tenant trace and score export while keeping central
   gateway export active. When omitted, false, or blank, tenant export remains
   available if tenant keys and a known destination are configured.
+- `LANGFUSE_FANOUT_CENTRAL_MEDIA_EXPORT_DISABLED=true` can be set on the gateway
+  to stop central media create/upload/patch fanout while leaving central trace
+  export unchanged.
 - This supports Langfuse Cloud and self-hosted Langfuse as long as each allowed
   tenant base URL is configured at LibreChat/gateway startup. Runtime tenant
   config selects from those known destinations; it does not inject arbitrary
@@ -114,6 +121,7 @@ LANGFUSE_BASE_URL=https://cloud.langfuse.com
 # Used by the gateway for central trace and media export.
 LANGFUSE_FANOUT_CENTRAL_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER=Basic <base64-public-key-colon-secret-key>
+LANGFUSE_FANOUT_CENTRAL_MEDIA_EXPORT_DISABLED=false
 # Compose's included gateway config supports these three destination keys.
 LANGFUSE_FANOUT_TENANT_DESTINATIONS=eu=https://cloud.langfuse.com,us=https://us.cloud.langfuse.com,jp=https://jp.cloud.langfuse.com
 LANGFUSE_FANOUT_TRACE_DESTINATION_KEYS=eu,us,jp

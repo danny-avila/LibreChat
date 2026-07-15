@@ -32,6 +32,7 @@ import type {
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
+import { resolveSkillFilePathParam } from './path';
 import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
@@ -599,12 +600,12 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
 
   async function downloadFileHandler(req: ServerRequest, res: Response) {
     try {
-      const { id, relativePath } = req.params as { id: string; relativePath: string };
-      let decodedPath: string;
-      try {
-        decodedPath = decodeURIComponent(relativePath);
-      } catch {
-        return res.status(400).json({ error: 'Invalid file path encoding' });
+      const { id } = req.params as { id: string };
+      const decodedPath = resolveSkillFilePathParam(
+        (req.params as { relativePath?: string | string[] }).relativePath,
+      );
+      if (decodedPath == null) {
+        return res.status(404).json({ error: 'Skill file not found' });
       }
 
       // SKILL.md is the skill body itself, not a SkillFile document
@@ -732,19 +733,19 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       }
       return res.status(200).json({ ...base, isBinary: false, content: text });
     } catch (error) {
-      logger.error('[GET /skills/:id/files/:relativePath] Error', error);
+      logger.error('[GET /skills/:id/files/*relativePath] Error', error);
       return res.status(500).json({ error: 'Error downloading skill file' });
     }
   }
 
   async function deleteFileHandler(req: ServerRequest, res: Response) {
     try {
-      const { id, relativePath } = req.params as { id: string; relativePath: string };
-      let decodedPath: string;
-      try {
-        decodedPath = decodeURIComponent(relativePath);
-      } catch {
-        return res.status(400).json({ error: 'Invalid file path encoding' });
+      const { id } = req.params as { id: string };
+      const decodedPath = resolveSkillFilePathParam(
+        (req.params as { relativePath?: string | string[] }).relativePath,
+      );
+      if (decodedPath == null) {
+        return res.status(404).json({ error: 'Skill file not found' });
       }
 
       // Look up the file record so we can clean up the storage blob
@@ -777,7 +778,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       };
       return res.status(200).json(response);
     } catch (error) {
-      logger.error('[DELETE /skills/:id/files/:relativePath] Error', error);
+      logger.error('[DELETE /skills/:id/files/*relativePath] Error', error);
       return res.status(500).json({ error: 'Error deleting skill file' });
     }
   }

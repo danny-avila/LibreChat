@@ -11,6 +11,7 @@ import {
   SKILL_SYNC_MAX_INTERVAL_MINUTES,
   summarizationTriggerSchema,
   summarizationConfigSchema,
+  retainRecentConfigSchema,
   MAX_SUBAGENTS,
 } from '../src/config';
 import {
@@ -1110,6 +1111,35 @@ describe('summarizationTriggerSchema', () => {
       trigger: { type: 'token_ratio', value: 0.8 },
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('retainRecentConfigSchema', () => {
+  it('accepts turn and token retention limits', () => {
+    const result = retainRecentConfigSchema.safeParse({
+      turns: 5,
+      tokens: 40000,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid turn and token retention limits', () => {
+    expect(retainRecentConfigSchema.safeParse({ turns: -1 }).success).toBe(false);
+    expect(retainRecentConfigSchema.safeParse({ turns: 21 }).success).toBe(false);
+    expect(retainRecentConfigSchema.safeParse({ tokens: 0 }).success).toBe(false);
+  });
+
+  it('parses inside the full summarization config', () => {
+    const result = summarizationConfigSchema.safeParse({
+      enabled: true,
+      retainRecent: { turns: 5, tokens: 40000 },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.retainRecent).toEqual({ turns: 5, tokens: 40000 });
+    }
   });
 });
 

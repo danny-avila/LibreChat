@@ -117,6 +117,7 @@ export default function MemoryEditDialog({
     updateMemory({
       key: key.trim(),
       value: value.trim(),
+      agentId: memory.agentId,
       ...(originalKey !== key.trim() && { originalKey }),
     });
   };

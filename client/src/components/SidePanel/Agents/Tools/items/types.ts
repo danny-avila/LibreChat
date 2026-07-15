@@ -14,7 +14,14 @@ export type BuiltinId =
   | `${AgentCapabilities.file_search}`
   | `${AgentCapabilities.artifacts}`
   | `${AgentCapabilities.memory}`
-  | `${AgentCapabilities.context}`;
+  | `${AgentCapabilities.context}`
+  /**
+   * Native tool, not a capability: PRESENTED with the builtins (it ships with
+   * the app and pauses the run, like a first-class feature), but selection and
+   * toggling ride `agent.tools` exactly like a plugin — see the special cases
+   * in `selectors.ts` / `mutations.ts`.
+   */
+  | 'ask_user_question';
 
 export type AgentItemStatus = 'needs_setup';
 

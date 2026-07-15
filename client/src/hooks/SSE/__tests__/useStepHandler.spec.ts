@@ -1848,6 +1848,55 @@ describe('useStepHandler', () => {
   });
 
   describe('content type mismatch handling', () => {
+    it('displaces a synthetic ask-user-question card when the resumed segment streams into its slot', () => {
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      /** The pause-scoped card is appended at the END of the content — exactly
+       *  the ABSOLUTE index the resumed run's first new part arrives at. */
+      const askPart = {
+        type: 'ask_user_question',
+        ask_user_question: { actionId: 'a1', question: { question: 'Which?' } },
+      } as unknown as TMessageContentParts;
+      const responseMessage = createResponseMessage({
+        content: [{ type: ContentTypes.TEXT, text: 'Pre-pause text' }, askPart],
+      });
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      act(() => {
+        result.current.syncStepMessage(responseMessage);
+      });
+
+      const runStep = createRunStep({ index: 1 });
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const textDelta: Agents.MessageDeltaEvent = {
+        id: 'step-1',
+        delta: { content: [{ type: ContentTypes.TEXT, text: 'Resumed answer' }] },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: textDelta },
+          submission,
+        );
+      });
+
+      expect(consoleSpy).not.toHaveBeenCalledWith('Content type mismatch', expect.anything());
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = lastCall[0][lastCall[0].length - 1] as TMessage;
+      const content = updated.content as Array<{ type?: string; text?: string }>;
+      expect(content.some((part) => part?.type === 'ask_user_question')).toBe(false);
+      expect(content[1]).toMatchObject({ type: ContentTypes.TEXT, text: 'Resumed answer' });
+      consoleSpy.mockRestore();
+    });
+
     it('should warn on content type mismatch and not overwrite', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 

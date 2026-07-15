@@ -6,6 +6,7 @@ import {
   ArrowRightLeft,
   FileSearch,
   FileText,
+  MessageCircleQuestion,
   ScrollText,
   Zap,
   Wrench,
@@ -27,6 +28,7 @@ export type ToolIconType =
   | 'skill'
   | 'read_file'
   | 'bash_tool'
+  | 'ask_user_question'
   | 'action'
   | 'generic';
 
@@ -40,6 +42,7 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   skill: ScrollText,
   read_file: FileText,
   bash_tool: BashIcon,
+  ask_user_question: MessageCircleQuestion,
   action: Zap,
   generic: Wrench,
 };
@@ -74,6 +77,9 @@ export function getToolIconType(name: string): ToolIconType {
   }
   if (name === 'bash_tool' || name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING) {
     return 'bash_tool';
+  }
+  if (name === 'ask_user_question') {
+    return 'ask_user_question';
   }
   if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
     return 'agent_handoff';

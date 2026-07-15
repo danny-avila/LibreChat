@@ -16,16 +16,31 @@ import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
 import {
+  backgroundTaskRegistry,
+  runCheckBackgroundTask,
+  claimBackgroundArtifact,
+  restoreBackgroundArtifact,
+  isBackgroundRequested,
+  hasRunInBackgroundArg,
+  stripRunInBackgroundArg,
+  buildBackgroundHandleContent,
+  buildBackgroundCapacityContent,
+  stripBackgroundFromToolDefinitions,
+  CHECK_BACKGROUND_TASK_NAME,
+  RUN_IN_BACKGROUND_ARG,
+} from './background';
+import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
-import { logAxiosError, runOutsideTracing } from '~/utils';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
   output: {
@@ -232,6 +247,10 @@ export interface ToolExecuteOptions {
     file_path: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** Per-conversation stateful runtime-session hint (thread_id); forwarded so a
+     *  host file op that is the first sandbox call joins the same runtime session
+     *  as bash_tool instead of the Code API's default session. */
+    runtime_session_hint?: string;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
   /**
@@ -245,6 +264,8 @@ export interface ToolExecuteOptions {
     content: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** @see readSandboxFile.runtime_session_hint */
+    runtime_session_hint?: string;
     req?: ServerRequest;
   }) => Promise<{
     stdout?: string;
@@ -268,22 +289,6 @@ type ToolInputSchemaKind = {
   object: boolean;
   string: boolean;
 };
-
-function truncateMiddle(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-
-  const indicator = `\n\n... [truncated: ${value.length} chars exceeded ${maxChars} limit] ...\n\n`;
-  const available = maxChars - indicator.length;
-  if (available <= 0) {
-    return value.slice(0, maxChars);
-  }
-
-  const headSize = Math.ceil(available * 0.7);
-  const tailSize = available - headSize;
-  return value.slice(0, headSize) + indicator + value.slice(value.length - tailSize);
-}
 
 function stringifyThrownValue(error: unknown): string {
   try {
@@ -1263,6 +1268,7 @@ async function handleSandboxFileFallback(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1431,6 +1437,7 @@ async function loadSandboxTextForAuthoring({
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1505,6 +1512,7 @@ async function writeSandboxTextForAuthoring({
       content,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
   } catch (error) {
@@ -1710,6 +1718,64 @@ function mergeActiveSkillNames(
     }
   }
   return names.size > 0 ? names : undefined;
+}
+
+/**
+ * True for MCP tools on an ephemeral request-scoped connection (runtime body
+ * placeholders), tagged in `createToolInstance`. Their connection is torn down
+ * at request end, so they must run in the foreground rather than be backgrounded.
+ */
+function toolRequiresEphemeralConnection(tool: StructuredToolInterface | undefined): boolean {
+  return (
+    (tool as (StructuredToolInterface & { mcpRequiresEphemeralConnection?: boolean }) | undefined)
+      ?.mcpRequiresEphemeralConnection === true
+  );
+}
+
+const EMPTY_BACKGROUND_TOOL_SET: ReadonlySet<string> = new Set();
+
+/**
+ * Authenticated user id for background-task scoping. The in-repo routes merge
+ * `req` into the tool-execute configurable, but external hosts of the exported
+ * OpenAI-compatible service inject their own `loadTools` and may not — fall
+ * back to the run configurable's user identity so tasks are never registered
+ * under an empty user id (which would collapse isolation to conversationId).
+ */
+function resolveBackgroundUserId(configurable: Record<string, unknown> | undefined): string {
+  const req = configurable?.req as ServerRequest | undefined;
+  if (req?.user?.id) {
+    return req.user.id;
+  }
+  const userId = configurable?.user_id;
+  if (typeof userId === 'string' && userId !== '') {
+    return userId;
+  }
+  const user = configurable?.user;
+  if (typeof user === 'string') {
+    return user;
+  }
+  const idFromUser = (user as { id?: string } | undefined)?.id;
+  return typeof idFromUser === 'string' ? idFromUser : '';
+}
+
+/**
+ * True when the tool's own schema declares `run_in_background` (zod shape or
+ * raw JSON schema), i.e. the parameter belongs to the tool rather than being
+ * host-injected — such a tool must receive the argument untouched.
+ */
+function toolDeclaresRunInBackgroundParam(tool: StructuredToolInterface): boolean {
+  const schema = (
+    tool as StructuredToolInterface & {
+      schema?: { shape?: Record<string, unknown>; properties?: Record<string, unknown> };
+    }
+  ).schema;
+  if (schema == null) {
+    return false;
+  }
+  return (
+    schema.shape?.[RUN_IN_BACKGROUND_ARG] != null ||
+    schema.properties?.[RUN_IN_BACKGROUND_ARG] != null
+  );
 }
 
 function mergeToolConfigurables(
@@ -3217,8 +3283,181 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
+            /**
+             * Background tool calls. The set of tools that received the injected
+             * `run_in_background` param is threaded per-agent from `initializeAgent`
+             * via `configurable.backgroundToolNames` (a reliable channel, unlike
+             * `toolRegistry` which only reaches the executor for PTC/tool_search).
+             * A non-empty set is the exact condition under which the run registered
+             * the poll tool and the model could have been shown the param, so it
+             * also gates the `check_background_task` interception and enforces the
+             * per-tool opt-in (a tool not in the set never had the param).
+             */
+            const backgroundToolNames = mergedConfigurable?.backgroundToolNames as
+              | string[]
+              | undefined;
+            const backgroundEnabledForRun = (backgroundToolNames?.length ?? 0) > 0;
+            const backgroundToolSet: ReadonlySet<string> = backgroundEnabledForRun
+              ? new Set(backgroundToolNames)
+              : EMPTY_BACKGROUND_TOOL_SET;
+            const backgroundReq = backgroundEnabledForRun
+              ? (mergedConfigurable?.req as ServerRequest | undefined)
+              : undefined;
+            const backgroundUserId = backgroundEnabledForRun
+              ? resolveBackgroundUserId(mergedConfigurable)
+              : '';
+            const backgroundConversationId = backgroundEnabledForRun
+              ? (((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+                (mergedConfigurable?.thread_id as string | undefined) ??
+                (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
+                '')
+              : '';
+
+            /**
+             * Registers the task, returns a synthetic handle immediately, and
+             * runs the real tool as a floating promise whose result lands in the
+             * registry for `check_background_task` to collect. Idempotent by
+             * `toolCallId` so graph re-execution (resume/replay) never double-fires.
+             */
+            const backgroundRunId = (metadata as Record<string, unknown>)?.run_id as
+              | string
+              | undefined;
+            const dispatchBackgroundToolCall = (tc: ToolCallRequest): ToolExecuteResult => {
+              /** A tool that failed to load must error immediately (matching the
+               *  foreground path) — a synthetic "started" handle would tell the
+               *  model a side effect is in flight that never executed. */
+              const tool = toolMap.get(tc.name);
+              if (!tool) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'error' as const,
+                  content: '',
+                  errorMessage: `Tool ${tc.name} not found`,
+                };
+              }
+              const created = backgroundTaskRegistry.create({
+                userId: backgroundUserId,
+                conversationId: backgroundConversationId,
+                toolCallId: tc.id,
+                toolName: tc.name,
+                /** Scope idempotency to the agent + run + turn so a later turn's
+                 *  or a second agent's repeated provider id (e.g. `call_0`)
+                 *  starts a fresh task instead of colliding. */
+                agentId,
+                runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+              });
+              if ('atCapacity' in created) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'success' as const,
+                  content: buildBackgroundCapacityContent(tc.name),
+                };
+              }
+              const { task, isNew } = created;
+              if (isNew) {
+                const strippedArgs = stripRunInBackgroundArg(tc.args);
+                void (async () => {
+                  try {
+                    const result = (await tool.invoke(normalizeToolInvokeArgs(strippedArgs, tool), {
+                      toolCall: { id: tc.id, stepId: tc.stepId, turn: tc.turn },
+                      configurable: mergedConfigurable,
+                      metadata,
+                    } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
+                    /** Hold any artifact (images, files, UI resources,
+                     *  citations) on the task instead of routing it through
+                     *  this dispatch turn's callback: a slow background call
+                     *  resolves after the turn finalized, when its
+                     *  artifactPromises are already awaited and the stream is
+                     *  closed, so that push would be silently dropped. The poll
+                     *  turn delivers it live in `check_background_task`. */
+                    backgroundTaskRegistry.complete(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      { content: result.content, artifact: result.artifact },
+                    );
+                  } catch (toolError) {
+                    const { message } = getSafeToolError(toolError);
+                    backgroundTaskRegistry.fail(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      message,
+                    );
+                  }
+                })();
+              }
+              return {
+                toolCallId: tc.id,
+                status: 'success' as const,
+                content: buildBackgroundHandleContent(task),
+              };
+            };
+
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
+                if (backgroundEnabledForRun && tc.name === CHECK_BACKGROUND_TASK_NAME) {
+                  const pollContent = runCheckBackgroundTask({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  /** Deliver a completed task's artifact through THIS live poll
+                   *  turn's callback (once): the tool's own turn finalized before
+                   *  the artifact resolved, so this is where it can be persisted. */
+                  if (toolEndCallback) {
+                    const pending = claimBackgroundArtifact({
+                      userId: backgroundUserId,
+                      conversationId: backgroundConversationId,
+                      args: tc.args,
+                    });
+                    if (pending) {
+                      try {
+                        await toolEndCallback(
+                          {
+                            output: {
+                              name: pending.toolName,
+                              tool_call_id: tc.id,
+                              content: pending.content,
+                              artifact: pending.artifact,
+                            },
+                          },
+                          (metadata ?? {}) as ToolEndCallbackMetadata,
+                        );
+                      } catch (callbackError) {
+                        /** Only synchronous callback throws land here (e.g. a
+                         *  malformed artifact shape); the callback's downstream
+                         *  persistence is fire-and-forget, so a storage failure
+                         *  is at-most-once — the same semantics as a foreground
+                         *  artifact. */
+                        restoreBackgroundArtifact({
+                          userId: backgroundUserId,
+                          conversationId: backgroundConversationId,
+                          taskId: pending.taskId,
+                          artifact: pending.artifact,
+                        });
+                        logger.warn(
+                          '[background] toolEndCallback error delivering artifact on poll:',
+                          callbackError,
+                        );
+                      }
+                    }
+                  }
+                  return reportResult({
+                    toolCallId: tc.id,
+                    status: 'success' as const,
+                    content: pollContent,
+                  });
+                }
+
+                if (
+                  backgroundToolSet.has(tc.name) &&
+                  isBackgroundRequested(tc.args) &&
+                  !toolRequiresEphemeralConnection(toolMap.get(tc.name))
+                ) {
+                  return reportResult(dispatchBackgroundToolCall(tc));
+                }
+
                 const execute = async (
                   sandboxContext?: SandboxSessionContext,
                 ): Promise<ToolExecuteResult> => {
@@ -3316,6 +3555,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     }
 
+                    /* Sandbox-routed create_file/edit_file return before the
+                     * generic invoke path's marker below, so refresh the warm
+                     * window here. Gated on `isSandboxFileAuthoringCall`:
+                     * skill-path writes and skill/read_file calls on this
+                     * branch may resolve without touching the Code API, and
+                     * under-marking only costs a redundant cold-boot label. */
+                    if (
+                      isSandboxFileAuthoringCall &&
+                      handlerResult.status === 'success' &&
+                      tc.runtimeSessionHint != null &&
+                      tc.runtimeSessionHint !== ''
+                    ) {
+                      void markSandboxReady(tc.runtimeSessionHint);
+                    }
+
                     return handlerResult;
                   }
 
@@ -3339,6 +3593,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       stepId: tc.stepId,
                       turn: tc.turn,
                     };
+
+                    /* Stateful runtime-session hint: the SDK resolves it onto
+                     * the request for execute_code/bash (orthogonal to the
+                     * transient exec-session below — a first call has a hint but
+                     * no session yet). The remote executors read it off
+                     * `config.toolCall._runtime_session_hint`; without this the
+                     * event-driven ON_TOOL_EXECUTE path drops it and every
+                     * conversation collapses onto the Code API's `default`
+                     * session (no per-conversation isolation). */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
+                    }
 
                     if (
                       tc.codeSessionContext &&
@@ -3425,23 +3691,55 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       if (toolRegistry) {
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
-                        const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                        const filteredToolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
                           (t) =>
                             t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.TOOL_SEARCH &&
+                            /* Host-only poll tool: implemented by the ON_TOOL_EXECUTE
+                             * shortcut, not callable from PTC-generated code. */
+                            t.name !== CHECK_BACKGROUND_TASK_NAME &&
                             !fileAuthoringToolNames.has(t.name),
+                        );
+                        /* PTC-generated calls don't go through the host background
+                         * interceptor, so strip the injected `run_in_background`
+                         * param from target schemas (the registry entries were
+                         * mutated to include it) — mirrors the self-spawn path. */
+                        const toolDefs = stripBackgroundFromToolDefinitions(
+                          filteredToolDefs,
+                          mergedConfigurable?.backgroundToolNames as string[] | undefined,
                         );
                         toolCallConfig.toolDefs = toolDefs;
                         toolCallConfig.toolMap = ptcToolMap ?? toolMap;
                       }
                     }
 
-                    const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
-                      toolCall: toolCallConfig,
-                      configurable: mergedConfigurable,
-                      metadata,
-                    } as Record<string, unknown>);
+                    /** Strip the host-only `run_in_background` flag on foreground
+                     *  calls (the model may emit it as `false`, or imitate it from
+                     *  another agent's history on a tool this agent never opted
+                     *  in), so a strict MCP/action schema doesn't reject an
+                     *  undeclared argument. Only a tool whose own schema declares
+                     *  the parameter receives it. */
+                    const foregroundArgs =
+                      backgroundToolSet.has(tc.name) ||
+                      (hasRunInBackgroundArg(tc.args) && !toolDeclaresRunInBackgroundParam(tool))
+                        ? stripRunInBackgroundArg(tc.args)
+                        : tc.args;
+                    const result = await tool.invoke(
+                      normalizeToolInvokeArgs(foregroundArgs, tool),
+                      {
+                        toolCall: toolCallConfig,
+                        configurable: mergedConfigurable,
+                        metadata,
+                      } as Record<string, unknown>,
+                    );
+
+                    /* Only sandbox-bound calls carry a runtime session hint, so
+                     * this refreshes the prewarm module's warm window without
+                     * inspecting tool names. */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      void markSandboxReady(tc.runtimeSessionHint);
+                    }
 
                     // Code-execution tools emit per-call boilerplate
                     // ("Note: ..." paragraphs and `| <annotation>` per-file

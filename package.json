@@ -187,7 +187,8 @@
     },
     "svgo": "^2.8.2",
     "js-yaml": "^4.2.0",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "@opentelemetry/core": "^2.9.0"
   },
   "nodemonConfig": {
     "ignore": [

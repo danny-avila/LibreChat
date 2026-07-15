@@ -104,10 +104,10 @@ describe('createRun code-tool eager/session wiring', () => {
     );
   });
 
-  it('declares create_file/edit_file as code-session participants', async () => {
+  it('declares create_file/edit_file/read_file as code-session participants', async () => {
     const runConfig = await captureRunConfig();
     expect(runConfig.codeSessionToolNames).toEqual(
-      expect.arrayContaining(['create_file', 'edit_file']),
+      expect.arrayContaining(['create_file', 'edit_file', 'read_file']),
     );
   });
 });

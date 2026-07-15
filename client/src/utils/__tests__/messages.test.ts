@@ -1,6 +1,9 @@
+import { QueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import {
+  clearMessagesCache,
   isValidTimestamp,
   getMessageAriaLabel,
   getMessageTimestamp,
@@ -31,6 +34,21 @@ const makeMessage = (overrides: Partial<TMessage> = {}): TMessage =>
     isCreatedByUser: false,
     ...overrides,
   }) as TMessage;
+
+describe('clearMessagesCache', () => {
+  it('removes existing-conversation history while resetting the new-conversation cache', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const messages = [makeMessage({ conversationId })];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], messages);
+
+    clearMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+  });
+});
 
 describe('getMessageAriaLabel', () => {
   it('returns "Message N" when depth is present and valid', () => {
