@@ -165,6 +165,44 @@ export const models = () => `${BASE_URL}/api/models`;
 
 export const tokenizer = () => `${BASE_URL}/api/tokenizer`;
 
+export const oneCodeProjectPick = () => `${BASE_URL}/api/onecode/projects/pick`;
+
+export const oneCodeProjectCreate = () => `${BASE_URL}/api/onecode/projects/create`;
+
+export const oneCodeProjectMCPSync = () => `${BASE_URL}/api/onecode/projects/mcp/sync`;
+
+export const oneCodeProjectStatus = (workspace: string) =>
+  `${BASE_URL}/api/onecode/projects/status${buildQuery({ workspace })}`;
+
+export const oneCodeProjectInit = () => `${BASE_URL}/api/onecode/projects/init`;
+
+export const oneCodeRuns = (workspace: string, limit?: number) =>
+  `${BASE_URL}/api/onecode/runs${buildQuery({ workspace, limit })}`;
+
+export const oneCodeRunInspect = (runId: string, workspace: string) =>
+  `${BASE_URL}/api/onecode/runs/${encodeURIComponent(runId)}/inspect${buildQuery({ workspace })}`;
+
+export const oneCodeRunResume = (runId: string) =>
+  `${BASE_URL}/api/onecode/runs/${encodeURIComponent(runId)}/resume`;
+
+export const oneCodeRunEvidence = (runId: string, workspace: string) =>
+  `${BASE_URL}/api/onecode/runs/${encodeURIComponent(runId)}/evidence${buildQuery({ workspace })}`;
+
+export const oneCodeVerifierPresets = () => `${BASE_URL}/api/onecode/verifier/presets`;
+
+export const oneCodeVerifierPolicy = (workspace: string) =>
+  `${BASE_URL}/api/onecode/verifier/policy${buildQuery({ workspace })}`;
+
+export const oneCodeVerifierPolicyWrite = () => `${BASE_URL}/api/onecode/verifier/policy`;
+
+export const oneCodeModelConfig = () => `${BASE_URL}/api/onecode/model-config`;
+
+export const oneCodeModelsDiscover = () => `${BASE_URL}/api/onecode/models/discover`;
+
+export const oneCodeDoctor = () => `${BASE_URL}/api/onecode/doctor`;
+
+export const oneCodeSelfAudit = () => `${BASE_URL}/api/onecode/audit-self`;
+
 export const login = () => `${BASE_URL}/api/auth/login`;
 
 export const logout = () => `${BASE_URL}/api/auth/logout`;

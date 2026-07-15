@@ -15,6 +15,7 @@ export type RequestBody = {
   endpointType?: string;
   model?: string;
   key?: string;
+  metadata?: Record<string, unknown>;
   endpointOption?: Partial<TEndpointOption>;
   /** Browser IANA timezone used to resolve local-time prompt variables (e.g. `{{current_datetime}}`). */
   timezone?: string;

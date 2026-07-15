@@ -99,6 +99,127 @@ export type TEndpointOption = Pick<
   agent?: Promise<Agent>;
   // Client-specific options
   clientOptions?: Record<string, unknown>;
+  // OpenAI-compatible metadata forwarded to local custom endpoints such as OneCode
+  metadata?: Record<string, unknown>;
+};
+
+export type TOneCodeProjectPickerResponse = {
+  workspace?: string;
+  cancelled?: boolean;
+  error?: string;
+};
+
+export type TOneCodeFilesystemMCPSyncResponse = {
+  serverName: string;
+  status: 'created' | 'updated';
+};
+
+export type TOneCodeRunSummary = {
+  run_id: string;
+  status: string;
+  reason?: string | null;
+  delivery_status?: string;
+  next_action?: string;
+  ledger_path?: string;
+  manifest_path?: string;
+  checkpoint_count?: number;
+};
+
+export type TOneCodeProjectStatusResponse = {
+  workspace: string;
+  exists: boolean;
+  allowed: boolean;
+  allowed_roots?: string[];
+  git?: { present: boolean };
+  verifier_policy?: { present: boolean; path?: string };
+  latest_run?: TOneCodeRunSummary | null;
+};
+
+export type TOneCodeRunsResponse = {
+  workspace: string;
+  runs: TOneCodeRunSummary[];
+};
+
+export type TOneCodeInspectResponse = TOneCodeRunSummary & {
+  partial?: boolean;
+  resumed_from?: string | null;
+};
+
+export type TOneCodeResumeResponse = Record<string, unknown>;
+
+export type TOneCodeVerifierPreset = {
+  id: string;
+  command: string[];
+  cwd: string;
+  timeout_ms: number;
+};
+
+export type TOneCodeVerifierPresetsResponse = {
+  presets: TOneCodeVerifierPreset[];
+};
+
+export type TOneCodeVerifierPolicyResponse = {
+  workspace: string;
+  path: string;
+  exists: boolean;
+  valid: boolean;
+  policy?: { verifiers: TOneCodeVerifierPreset[] } | null;
+  error?: string;
+};
+
+export type TOneCodeDiagnosticCheck = {
+  name: string;
+  passed: boolean;
+  detail?: Record<string, unknown>;
+};
+
+export type TOneCodeDiagnosticResponse = {
+  status: string;
+  checks: TOneCodeDiagnosticCheck[];
+  [key: string]: unknown;
+};
+
+export type TOneCodeRunEvidenceResponse = {
+  summary: TOneCodeInspectResponse;
+  ledger: Record<string, unknown> | null;
+  ledger_error?: string | null;
+  manifest: Record<string, unknown> | null;
+  manifest_error?: string | null;
+  checkpoints: Array<{
+    path?: string;
+    record?: Record<string, unknown>;
+    document?: Record<string, unknown> | null;
+    error?: string | null;
+  }>;
+};
+
+export type TOneCodeModelConfigResponse = {
+  configured: boolean;
+  provider?: string;
+  endpoint?: string;
+  model?: string;
+  models?: string[];
+  api_key_preview?: string;
+  source?: string;
+  error?: string;
+};
+
+export type TOneCodeModelConfigWriteRequest = {
+  endpoint: string;
+  apiKey: string;
+  model?: string;
+  models?: string[];
+};
+
+export type TOneCodeModelsDiscoverRequest = {
+  endpoint: string;
+  apiKey: string;
+  model?: string;
+  save?: boolean;
+};
+
+export type TOneCodeModelsDiscoverResponse = TOneCodeModelConfigResponse & {
+  models: string[];
 };
 
 export type TEphemeralAgent = {

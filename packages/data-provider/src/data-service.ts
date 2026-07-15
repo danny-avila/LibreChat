@@ -158,6 +158,100 @@ export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
 
+export const pickOneCodeProjectFolder = (): Promise<t.TOneCodeProjectPickerResponse> => {
+  return request.post(endpoints.oneCodeProjectPick());
+};
+
+export const createOneCodeProjectFolder = (
+  name: string,
+): Promise<t.TOneCodeProjectPickerResponse> => {
+  return request.post(endpoints.oneCodeProjectCreate(), { name });
+};
+
+export const syncOneCodeFilesystemMCP = (
+  workspace: string,
+): Promise<t.TOneCodeFilesystemMCPSyncResponse> => {
+  return request.post(endpoints.oneCodeProjectMCPSync(), { workspace });
+};
+
+export const getOneCodeProjectStatus = (
+  workspace: string,
+): Promise<t.TOneCodeProjectStatusResponse> => {
+  return request.get(endpoints.oneCodeProjectStatus(workspace));
+};
+
+export const initOneCodeProject = (workspace: string): Promise<t.TOneCodeProjectStatusResponse> => {
+  return request.post(endpoints.oneCodeProjectInit(), { workspace });
+};
+
+export const listOneCodeRuns = (workspace: string, limit = 20): Promise<t.TOneCodeRunsResponse> => {
+  return request.get(endpoints.oneCodeRuns(workspace, limit));
+};
+
+export const inspectOneCodeRun = (
+  workspace: string,
+  runId: string,
+): Promise<t.TOneCodeInspectResponse> => {
+  return request.get(endpoints.oneCodeRunInspect(runId, workspace));
+};
+
+export const resumeOneCodeRun = (
+  workspace: string,
+  runId: string,
+  message?: string,
+): Promise<t.TOneCodeResumeResponse> => {
+  return request.post(endpoints.oneCodeRunResume(runId), { workspace, message });
+};
+
+export const getOneCodeRunEvidence = (
+  workspace: string,
+  runId: string,
+): Promise<t.TOneCodeRunEvidenceResponse> => {
+  return request.get(endpoints.oneCodeRunEvidence(runId, workspace));
+};
+
+export const getOneCodeVerifierPresets = (): Promise<t.TOneCodeVerifierPresetsResponse> => {
+  return request.get(endpoints.oneCodeVerifierPresets());
+};
+
+export const getOneCodeVerifierPolicy = (
+  workspace: string,
+): Promise<t.TOneCodeVerifierPolicyResponse> => {
+  return request.get(endpoints.oneCodeVerifierPolicy(workspace));
+};
+
+export const writeOneCodeVerifierPolicy = (
+  workspace: string,
+  presetIds?: string[],
+  force?: boolean,
+): Promise<t.TOneCodeVerifierPolicyResponse> => {
+  return request.post(endpoints.oneCodeVerifierPolicyWrite(), { workspace, presetIds, force });
+};
+
+export const getOneCodeModelConfig = (): Promise<t.TOneCodeModelConfigResponse> => {
+  return request.get(endpoints.oneCodeModelConfig());
+};
+
+export const writeOneCodeModelConfig = (
+  payload: t.TOneCodeModelConfigWriteRequest,
+): Promise<t.TOneCodeModelConfigResponse> => {
+  return request.post(endpoints.oneCodeModelConfig(), payload);
+};
+
+export const discoverOneCodeModels = (
+  payload: t.TOneCodeModelsDiscoverRequest,
+): Promise<t.TOneCodeModelsDiscoverResponse> => {
+  return request.post(endpoints.oneCodeModelsDiscover(), payload);
+};
+
+export const runOneCodeDoctor = (): Promise<t.TOneCodeDiagnosticResponse> => {
+  return request.post(endpoints.oneCodeDoctor());
+};
+
+export const runOneCodeSelfAudit = (): Promise<t.TOneCodeDiagnosticResponse> => {
+  return request.post(endpoints.oneCodeSelfAudit());
+};
+
 export const login = (payload: t.TLoginUser): Promise<t.TLoginResponse> => {
   return request.post(endpoints.login(), payload);
 };
