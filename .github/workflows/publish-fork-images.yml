@@ -88,7 +88,7 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ inputs.tag }}
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ github.sha }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           target: ${{ matrix.target }}
           build-args: |
             BUILD_COMMIT=${{ env.BUILD_COMMIT }}
