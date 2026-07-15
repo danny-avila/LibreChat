@@ -297,6 +297,19 @@ export interface ToolExecuteOptions {
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
+/**
+ * Inline ceiling for images pulled out of the code-execution sandbox —
+ * deliberately tighter than {@link MAX_BINARY_BYTES}, which governs the
+ * skill-file path. The two differ because their transports differ: skill
+ * files stream from storage, while sandbox bytes come back base64 over
+ * `/exec` stdout, which the runner caps (`SANDBOX_OUTPUT_MAX_SIZE`). The
+ * reader therefore windows the file, so cost scales in round-trips —
+ * ~32 at this limit vs ~160 at 5MB. Nothing is lost by stopping here:
+ * vision providers downsample to ~1.5-2k px regardless, so multi-MB
+ * originals buy no fidelity, and anything larger degrades to the
+ * `bash_tool` hint below.
+ */
+const MAX_SANDBOX_INLINE_IMAGE_BYTES = 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
@@ -1387,7 +1400,7 @@ async function handleSandboxImageRead(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
-      maxBytes: MAX_BINARY_BYTES,
+      maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
       ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
@@ -1404,7 +1417,7 @@ async function handleSandboxImageRead(
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: `Image "${filePath}" is ${read.bytes} bytes, over the ${MAX_BINARY_BYTES}-byte inline limit. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata).`,
+      content: `Image "${filePath}" is ${read.bytes} bytes, over the ${MAX_SANDBOX_INLINE_IMAGE_BYTES}-byte inline limit. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata).`,
     };
   }
 
