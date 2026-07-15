@@ -53,4 +53,14 @@ describe('AskUserQuestionCall', () => {
     expect(screen.queryByText('You answered:')).not.toBeInTheDocument();
     expect(screen.queryByText(/Received tool input did not match expected schema/)).toBeNull();
   });
+
+  test('preserves a user answer that happens to start with the generic tool error prefix', () => {
+    const output = 'Error processing tool output is the topic I want to investigate';
+
+    render(<AskUserQuestionCall args={args} output={output} />);
+
+    expect(screen.getByText('You answered:')).toBeInTheDocument();
+    expect(screen.getByText(output)).toBeInTheDocument();
+    expect(screen.queryByText("Question wasn't shown")).not.toBeInTheDocument();
+  });
 });
