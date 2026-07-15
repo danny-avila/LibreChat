@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { askUserQuestion } from '@librechat/agents';
 import { tool } from '@librechat/agents/langchain/tools';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
+import type { ToolInputValidationError } from '../toolValidation';
+import { recordToolInputValidationError } from '../toolValidation';
 
 /**
  * Tool name. Deliberately identical to the SDK's interrupt discriminator
@@ -199,10 +201,10 @@ export const AskUserQuestionToolDefinition: AskUserQuestionToolDefinitionShape =
  * from the top on the resume pass, and sibling tools in the same batch re-execute —
  * which is why the description forbids parallel calls.
  */
-export function createAskUserQuestionTool(): DynamicStructuredTool<
-  typeof askUserQuestionToolSchema
-> {
-  return tool(
+export function createAskUserQuestionTool(
+  validationErrorsByToolCallId?: Map<string, ToolInputValidationError>,
+): DynamicStructuredTool<typeof askUserQuestionToolSchema> {
+  const askTool = tool(
     async (input: AskUserQuestionToolInput) => {
       const { answer } = askUserQuestion(input);
       return answer;
@@ -213,4 +215,21 @@ export function createAskUserQuestionTool(): DynamicStructuredTool<
       schema: askUserQuestionToolSchema,
     },
   );
+
+  /** LangChain validates the schema before starting tool callbacks. Catch at
+   *  the tool boundary so the thrown validation error can be correlated with
+   *  the real call ID without inferring failure from persisted output text. */
+  const invoke = askTool.invoke.bind(askTool);
+  askTool.invoke = async (input, config) => {
+    try {
+      return await invoke(input, config);
+    } catch (error) {
+      const toolCallId =
+        typeof input === 'object' && input != null && 'id' in input ? input.id : undefined;
+      recordToolInputValidationError(validationErrorsByToolCallId, error, toolCallId);
+      throw error;
+    }
+  };
+
+  return askTool;
 }

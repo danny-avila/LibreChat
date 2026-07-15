@@ -12,10 +12,54 @@ interface CompletedToolCall {
 
 export type ToolInputValidationReason = 'invalid_tool_input' | 'option_label_too_long';
 
+export interface ToolInputValidationError {
+  fieldPath?: string;
+  isLengthLimit: boolean;
+}
+
 export interface ToolInputValidationDetails {
   toolName: string;
   reason: ToolInputValidationReason;
   fieldPath?: string;
+}
+
+function getErrorMessage(error: unknown): string | null {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return typeof error === 'string' ? error : null;
+}
+
+/**
+ * Parse a schema-validation exception at the tool error boundary. Calling this
+ * with the thrown error, rather than completed tool output, prevents successful
+ * user-authored text from being mistaken for an execution failure.
+ */
+export function parseToolInputValidationError(error: unknown): ToolInputValidationError | null {
+  const message = getErrorMessage(error);
+  if (message == null || !message.includes(TOOL_INPUT_SCHEMA_ERROR)) {
+    return null;
+  }
+
+  const fieldPath = message.match(SCHEMA_ERROR_PATH_PATTERN)?.[1];
+  return {
+    isLengthLimit: OPTION_LABEL_LIMIT_PATTERN.test(message),
+    ...(fieldPath != null ? { fieldPath } : {}),
+  };
+}
+
+export function recordToolInputValidationError(
+  errorsByToolCallId: Map<string, ToolInputValidationError> | null | undefined,
+  error: unknown,
+  toolCallId: unknown,
+): void {
+  if (typeof toolCallId !== 'string' || toolCallId.length === 0) {
+    return;
+  }
+  const validationError = parseToolInputValidationError(error);
+  if (validationError != null) {
+    errorsByToolCallId?.set(toolCallId, validationError);
+  }
 }
 
 /**
@@ -25,23 +69,19 @@ export interface ToolInputValidationDetails {
  */
 export function getToolInputValidationDetails(
   result: CompletedToolCall | null | undefined,
+  validationError: ToolInputValidationError | null | undefined,
 ): ToolInputValidationDetails | null {
   const toolName = result?.tool_call?.name;
-  const output = result?.tool_call?.output;
-  if (
-    typeof toolName !== 'string' ||
-    typeof output !== 'string' ||
-    !output.includes(TOOL_INPUT_SCHEMA_ERROR)
-  ) {
+  if (typeof toolName !== 'string' || validationError == null) {
     return null;
   }
 
-  const fieldPath = output.match(SCHEMA_ERROR_PATH_PATTERN)?.[1];
+  const { fieldPath } = validationError;
   const optionLabelTooLong =
     toolName === 'ask_user_question' &&
     fieldPath != null &&
     ASK_OPTION_LABEL_PATH_PATTERN.test(fieldPath) &&
-    OPTION_LABEL_LIMIT_PATTERN.test(output);
+    validationError.isLengthLimit;
 
   return {
     toolName,

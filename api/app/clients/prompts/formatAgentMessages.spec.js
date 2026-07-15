@@ -55,6 +55,7 @@ describe('formatAgentMessages', () => {
               name: 'search',
               args: '{"query":"weather"}',
               output: 'The weather is sunny.',
+              inputValidationError: true,
             },
           },
         ],
@@ -65,6 +66,7 @@ describe('formatAgentMessages', () => {
     expect(result[0]).toBeInstanceOf(AIMessage);
     expect(result[1]).toBeInstanceOf(ToolMessage);
     expect(result[0].tool_calls).toHaveLength(1);
+    expect(result[0].tool_calls[0]).not.toHaveProperty('inputValidationError');
     expect(result[1].tool_call_id).toBe('123');
   });
 

@@ -317,6 +317,8 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {ContentAggregator} options.aggregateContent - Content aggregator function.
  * @param {Array<Object>} [options.contentParts] - Aggregated message content parts.
  * @param {Map<string, Object>} [options.stepMap] - Run steps keyed by step ID.
+ * @param {Map<string, import('@librechat/api').ToolInputValidationError>} [options.toolInputValidationErrors]
+ *   Schema-validation errors keyed by tool-call ID at the execution error boundary.
  * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
@@ -335,6 +337,7 @@ function getDefaultHandlers({
   aggregateContent,
   contentParts = null,
   stepMap = null,
+  toolInputValidationErrors = null,
   toolEndCallback,
   collectedUsage,
   collectedThoughtSignatures = null,
@@ -446,7 +449,13 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
-        const validationDetails = getToolInputValidationDetails(data?.result);
+        const toolCallId = data?.result?.tool_call?.id;
+        const validationError =
+          typeof toolCallId === 'string' ? toolInputValidationErrors?.get(toolCallId) : null;
+        const validationDetails = getToolInputValidationDetails(data?.result, validationError);
+        if (typeof toolCallId === 'string') {
+          toolInputValidationErrors?.delete(toolCallId);
+        }
         if (validationDetails != null) {
           if (data?.result?.tool_call != null) {
             data.result.tool_call.inputValidationError = true;
