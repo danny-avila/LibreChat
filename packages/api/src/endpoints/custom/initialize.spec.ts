@@ -14,10 +14,10 @@ jest.mock('~/auth', () => ({
   ) => mockCreateSSRFSafeUndiciConnect(...args),
 }));
 
-const mockGetOpenAIConfig = jest.fn().mockReturnValue({
-  llmConfig: { model: 'test-model' },
+const mockGetOpenAIConfig = jest.fn().mockImplementation(() => ({
+  llmConfig: { model: 'test-model', maxRetries: 6 },
   configOptions: {},
-});
+}));
 jest.mock('~/endpoints/openai/config', () => ({
   getOpenAIConfig: (...args: unknown[]) => mockGetOpenAIConfig(...args),
 }));
@@ -43,6 +43,39 @@ jest.mock('~/app/config', () => ({
 
 import { getTokenConfigKey, initializeCustom } from './initialize';
 import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from '../keys';
+
+describe('initializeCustom - OneCode adapter', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('adds workspace metadata and disables outer retries for OneCode', async () => {
+    const params = createParams({});
+    params.endpoint = 'OneCode';
+    params.req.body = {
+      metadata: { workspace: ' /tmp/project-a ' },
+    } as BaseInitializeParams['req']['body'];
+
+    const result = await initializeCustom(params);
+
+    expect(result.llmConfig).toMatchObject({
+      model: 'test-model',
+      maxRetries: 0,
+      modelKwargs: {
+        metadata: { workspace: '/tmp/project-a' },
+      },
+    });
+  });
+
+  it('preserves retry configuration for other custom endpoints', async () => {
+    const result = await initializeCustom(createParams({}));
+
+    expect(result.llmConfig).toMatchObject({
+      model: 'test-model',
+      maxRetries: 6,
+    });
+  });
+});
 
 function createParams(overrides: {
   apiKey?: string;

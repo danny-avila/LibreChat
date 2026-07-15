@@ -29,6 +29,7 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     agent_id,
     endpointType,
     chatProjectId,
+    metadata: req.body?.metadata,
     model_parameters,
     agent: agentPromise,
     addedConvo,

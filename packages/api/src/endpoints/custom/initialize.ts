@@ -23,6 +23,8 @@ import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
+import { buildOneCodeLLMConfig } from './onecode';
+import type { OneCodeMetadata } from './onecode';
 
 const { PROXY } = process.env;
 
@@ -341,6 +343,12 @@ export async function initializeCustom({
     if (options != null) {
       options.useLegacyContent = true;
       options.endpointTokenConfig = endpointTokenConfig;
+      if (endpoint === 'OneCode') {
+        options.llmConfig = buildOneCodeLLMConfig(
+          options.llmConfig as Record<string, unknown>,
+          req.body?.metadata as OneCodeMetadata | undefined,
+        ) as InitializeResultBase['llmConfig'];
+      }
     }
   }
 
