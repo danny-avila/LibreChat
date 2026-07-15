@@ -700,6 +700,11 @@ endpoints:
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o"
+#       # Opt in to the composer reasoning selector. `true` uses the provider's
+#       # known categorical choices; an array restricts the choices or supplies
+#       # explicit numeric thinking budgets for models that use them.
+#       # reasoning: true
+#       # reasoning: ["low", "medium", "high"]
 #       # Skills can be enabled per model spec. Use true for the user's active
 #       # accessible skill catalog, false to force skills off, or a name list as
 #       # a strict allowlist for catalog, manual, and always-apply resolution.

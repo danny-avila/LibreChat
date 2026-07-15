@@ -1,8 +1,9 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, ReasoningEffort } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import {
   applyModelSpecPreset,
   findModelSpecByName,
+  getModelSpecReasoningOverride,
   isModelSpecEndpointMatch,
   resolveModelSpecPromptPrefixVariables,
   sanitizeModelSpecs,
@@ -86,6 +87,7 @@ describe('modelSpecs helpers', () => {
         additional_instructions: 'private additional instructions',
         temperature: 0.2,
         maxContextTokens: 10000,
+        reasoning_effort: ReasoningEffort.high,
       },
     };
 
@@ -96,6 +98,7 @@ describe('modelSpecs helpers', () => {
         spec: 'guarded-openai',
         model: 'gpt-4o',
         temperature: 0.8,
+        reasoning_effort: ReasoningEffort.low,
       },
       endpoint: EModelEndpoint.openAI,
     });
@@ -104,6 +107,7 @@ describe('modelSpecs helpers', () => {
     expect(parsedBody.instructions).toBeUndefined();
     expect(parsedBody.additional_instructions).toBeUndefined();
     expect(parsedBody.temperature).toBe(0.8);
+    expect(parsedBody.reasoning_effort).toBe(ReasoningEffort.low);
     expect(parsedBody.maxContextTokens).toBeUndefined();
     expect(parsedBody.iconURL).toBe(EModelEndpoint.openAI);
     expect(appliedPrivateFields.has('promptPrefix')).toBe(true);
@@ -118,6 +122,7 @@ describe('modelSpecs helpers', () => {
         model: 'gpt-4o',
         promptPrefix: 'private prompt prefix',
         temperature: 0.2,
+        reasoning_effort: ReasoningEffort.high,
       },
     };
 
@@ -129,6 +134,7 @@ describe('modelSpecs helpers', () => {
         model: 'client-model',
         temperature: 0.8,
         topP: 0.9,
+        reasoning_effort: ReasoningEffort.low,
         chatProjectId: 'project-1',
       },
       endpoint: EModelEndpoint.openAI,
@@ -139,8 +145,74 @@ describe('modelSpecs helpers', () => {
     expect(parsedBody.model).toBe('gpt-4o');
     expect(parsedBody.promptPrefix).toBe('private prompt prefix');
     expect(parsedBody.temperature).toBe(0.2);
+    expect(parsedBody.reasoning_effort).toBe(ReasoningEffort.high);
     expect(parsedBody.topP).toBeUndefined();
     expect(parsedBody.chatProjectId).toBe('project-1');
+  });
+
+  it('should only allow an advertised reasoning override through enforcement', () => {
+    const modelSpec: TModelSpec = {
+      name: 'enforced-reasoning',
+      label: 'Enforced Reasoning',
+      reasoning: [ReasoningEffort.low, ReasoningEffort.high],
+      preset: {
+        endpoint: EModelEndpoint.openAI,
+        model: 'o3',
+        reasoning_effort: ReasoningEffort.high,
+      },
+    };
+    const validOverride = getModelSpecReasoningOverride({
+      modelSpec,
+      requestBody: { reasoning_effort: ReasoningEffort.low },
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(validOverride).toEqual({ reasoning_effort: ReasoningEffort.low });
+    expect(
+      getModelSpecReasoningOverride({
+        modelSpec,
+        requestBody: { reasoning_effort: ReasoningEffort.medium },
+        endpoint: EModelEndpoint.openAI,
+      }),
+    ).toBeUndefined();
+
+    const { parsedBody } = applyModelSpecPreset({
+      modelSpec,
+      parsedBody: { endpoint: EModelEndpoint.openAI, spec: modelSpec.name },
+      reasoningOverride: validOverride,
+      endpoint: EModelEndpoint.openAI,
+      includePresetDefaults: true,
+    });
+
+    expect(parsedBody.reasoning_effort).toBe(ReasoningEffort.low);
+  });
+
+  it('should allow Auto to clear an enforced preset reasoning effort', () => {
+    const modelSpec: TModelSpec = {
+      name: 'enforced-auto-reasoning',
+      label: 'Enforced Auto Reasoning',
+      reasoning: true,
+      preset: {
+        endpoint: EModelEndpoint.openAI,
+        model: 'o3',
+        reasoning_effort: ReasoningEffort.high,
+      },
+    };
+    const reasoningOverride = getModelSpecReasoningOverride({
+      modelSpec,
+      requestBody: { reasoning_effort: ReasoningEffort.unset },
+      endpoint: EModelEndpoint.openAI,
+    });
+    const { parsedBody } = applyModelSpecPreset({
+      modelSpec,
+      parsedBody: { endpoint: EModelEndpoint.openAI, spec: modelSpec.name },
+      reasoningOverride,
+      endpoint: EModelEndpoint.openAI,
+      includePresetDefaults: true,
+    });
+
+    expect(reasoningOverride).toEqual({ reasoning_effort: ReasoningEffort.unset });
+    expect(parsedBody.reasoning_effort).toBe(ReasoningEffort.unset);
   });
 
   it('should restore private examples when parser supplies an empty default', () => {

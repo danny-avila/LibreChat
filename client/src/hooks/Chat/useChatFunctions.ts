@@ -14,6 +14,9 @@ import {
   replaceSpecialVars,
   isAssistantsEndpoint,
   getDefaultParamsEndpoint,
+  resolveModelSpecReasoning,
+  getModelSpecReasoningValue,
+  createModelSpecReasoningOverride,
 } from 'librechat-data-provider';
 import type {
   TMessage,
@@ -453,6 +456,23 @@ export default function useChatFunctions({
       convo,
       chatProjectId ? { chatProjectId } : {},
     ) as TEndpointOption;
+    const modelSpec = startupConfig?.modelSpecs?.list?.find(
+      (candidate) => candidate.name === conversation?.spec,
+    );
+    const reasoningSetting = resolveModelSpecReasoning({
+      modelSpec,
+      endpoint,
+      endpointType,
+      defaultParamsEndpoint,
+      paramDefinitions: endpointsConfig?.[endpoint ?? '']?.customParams?.paramDefinitions,
+    });
+    if (reasoningSetting) {
+      const reasoningValue = getModelSpecReasoningValue(reasoningSetting, conversationForPayload);
+      const reasoningOverride = createModelSpecReasoningOverride(reasoningSetting, reasoningValue);
+      if (reasoningOverride) {
+        Object.assign(endpointOption, reasoningOverride);
+      }
+    }
     if (endpoint !== EModelEndpoint.agents) {
       endpointOption.key = getExpiry();
       endpointOption.thread_id = thread_id;

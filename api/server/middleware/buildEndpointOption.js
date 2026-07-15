@@ -2,6 +2,7 @@ const {
   handleError,
   applyModelSpecPreset,
   findModelSpecByName,
+  getModelSpecReasoningOverride,
   isModelSpecEndpointMatch,
   resolveModelSpecPromptPrefixVariables,
 } = require('@librechat/api');
@@ -38,6 +39,15 @@ async function buildEndpointOption(req, res, next) {
   }
 
   const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
+  const getReasoningOverride = (modelSpec) =>
+    getModelSpecReasoningOverride({
+      modelSpec,
+      requestBody: req.body,
+      endpoint,
+      endpointType,
+      defaultParamsEndpoint,
+      paramDefinitions: endpointsConfig?.[endpoint]?.customParams?.paramDefinitions,
+    });
 
   let parsedBody;
   try {
@@ -86,6 +96,7 @@ async function buildEndpointOption(req, res, next) {
       const result = applyModelSpecPreset({
         modelSpec: currentModelSpec,
         parsedBody: parsedBodyForModelSpec,
+        reasoningOverride: getReasoningOverride(currentModelSpec),
         endpoint,
         endpointType,
         defaultParamsEndpoint,
@@ -108,6 +119,7 @@ async function buildEndpointOption(req, res, next) {
         const result = applyModelSpecPreset({
           modelSpec,
           parsedBody,
+          reasoningOverride: getReasoningOverride(modelSpec),
           endpoint,
           endpointType,
           defaultParamsEndpoint,
