@@ -11,7 +11,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-const { EModelEndpoint, parseCompactConvo } = require('librechat-data-provider');
+const { EModelEndpoint, ReasoningEffort, parseCompactConvo } = require('librechat-data-provider');
 
 const mockBuildOptions = jest.fn((_endpoint, parsedBody) => ({
   ...parsedBody,
@@ -173,6 +173,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
 
     const modelSpec = {
       name: 'claude-opus-4.5',
+      reasoning: [1024, 8192],
       preset: {
         endpoint: 'AnthropicClaude',
         endpointType: EModelEndpoint.custom,
@@ -180,6 +181,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         temperature: 0.7,
         maxOutputTokens: 8192,
         maxContextTokens: 50000,
+        thinkingBudget: 8192,
       },
     };
 
@@ -191,6 +193,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         model: 'anthropic/claude-opus-4.5',
         temperature: 0.1,
         topP: 0.2,
+        thinkingBudget: 1024,
         chatProjectId: 'project-1',
       },
       {
@@ -216,8 +219,10 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(enforcedResult.temperature).toBe(0.7);
     expect(enforcedResult.topP).toBeUndefined();
     expect(enforcedResult.maxContextTokens).toBe(50000);
+    expect(enforcedResult.thinkingBudget).toBe(1024);
     expect(enforcedResult.chatProjectId).toBe('project-1');
     expect(req.body.endpointOption.chatProjectId).toBe('project-1');
+    expect(req.body.endpointOption.thinkingBudget).toBe(1024);
   });
 
   it('should rebuild enforced custom specs from the backend preset when compact parsing drops raw fields', async () => {
@@ -266,6 +271,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const modelSpec = {
       name: 'guarded-openai',
       iconURL: 'openAI',
+      reasoning: true,
       preset: {
         endpoint: EModelEndpoint.openAI,
         model: 'gpt-4o',
@@ -274,6 +280,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         additional_instructions: 'private additional instructions',
         temperature: 0.2,
         maxContextTokens: 10000,
+        reasoning_effort: ReasoningEffort.high,
       },
     };
 
@@ -283,6 +290,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         spec: 'guarded-openai',
         model: 'gpt-4o',
         temperature: 0.8,
+        reasoning_effort: ReasoningEffort.unset,
       },
       {
         modelSpecs: {
@@ -300,6 +308,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(req.body.endpointOption.additional_instructions).toBeUndefined();
     expect(req.body.endpointOption.temperature).toBe(0.8);
     expect(req.body.endpointOption.maxContextTokens).toBeUndefined();
+    expect(req.body.endpointOption.reasoning_effort).toBe(ReasoningEffort.unset);
     expect(req.body.endpointOption.iconURL).toBe('openAI');
   });
 

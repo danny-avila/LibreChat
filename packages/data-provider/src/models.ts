@@ -49,6 +49,8 @@ export type TModelSpec = {
   authType?: AuthType;
   /** Hide the chat input tool badge row while this model spec is active. */
   hideBadgeRow?: boolean;
+  /** Show the composer reasoning selector. An array restricts values or sets budget choices. */
+  reasoning?: boolean | Array<string | number>;
   webSearch?: boolean;
   fileSearch?: boolean;
   executeCode?: boolean;
@@ -91,6 +93,7 @@ export const tModelSpecSchema = z.object({
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
   hideBadgeRow: z.boolean().optional(),
+  reasoning: z.union([z.boolean(), z.array(z.union([z.string(), z.number()])).min(1)]).optional(),
   webSearch: z.boolean().optional(),
   fileSearch: z.boolean().optional(),
   executeCode: z.boolean().optional(),

@@ -1,13 +1,19 @@
 import {
+  createModelSpecReasoningOverride,
   parseCompactConvo,
   replaceSpecialVars,
-  type EModelEndpoint,
-  type TConversation,
-  type TModelSpec,
-  type TModelSpecPreset,
-  type TPreset,
-  type TSpecsConfig,
-  type TUser,
+  resolveModelSpecReasoning,
+} from 'librechat-data-provider';
+import type {
+  EModelEndpoint,
+  ModelSpecReasoningValues,
+  SettingDefinition,
+  TConversation,
+  TModelSpec,
+  TModelSpecPreset,
+  TPreset,
+  TSpecsConfig,
+  TUser,
 } from 'librechat-data-provider';
 
 export const PRIVATE_MODEL_SPEC_PRESET_FIELDS: readonly [
@@ -37,10 +43,20 @@ export const ENFORCED_MODEL_SPEC_REQUEST_FIELDS: readonly ['chatProjectId'] = [
 export type ApplyModelSpecPresetParams = {
   modelSpec: TModelSpec;
   parsedBody: ModelSpecParsedBody;
+  reasoningOverride?: ModelSpecReasoningValues;
   endpoint?: string | null;
   endpointType?: string | null;
   defaultParamsEndpoint?: string | null;
   includePresetDefaults?: boolean;
+};
+
+export type GetModelSpecReasoningOverrideParams = {
+  modelSpec: TModelSpec;
+  requestBody: ModelSpecParsedBody;
+  endpoint?: string | null;
+  endpointType?: string | null;
+  defaultParamsEndpoint?: string | null;
+  paramDefinitions?: Partial<SettingDefinition>[];
 };
 
 export type ApplyModelSpecPresetResult = {
@@ -133,9 +149,33 @@ export function isModelSpecEndpointMatch(
   return Boolean(modelSpec && endpoint === modelSpec.preset?.endpoint);
 }
 
+/** Validates the raw selector value before reapplying it through model spec parsing. */
+export function getModelSpecReasoningOverride({
+  modelSpec,
+  requestBody,
+  endpoint,
+  endpointType,
+  defaultParamsEndpoint,
+  paramDefinitions,
+}: GetModelSpecReasoningOverrideParams): ModelSpecReasoningValues | undefined {
+  const setting = resolveModelSpecReasoning({
+    modelSpec,
+    endpoint,
+    endpointType,
+    defaultParamsEndpoint,
+    paramDefinitions,
+  });
+  if (!setting || !Object.prototype.hasOwnProperty.call(requestBody, setting.key)) {
+    return undefined;
+  }
+
+  return createModelSpecReasoningOverride(setting, requestBody[setting.key]);
+}
+
 export function applyModelSpecPreset({
   modelSpec,
   parsedBody,
+  reasoningOverride,
   endpoint,
   endpointType,
   defaultParamsEndpoint,
@@ -144,9 +184,7 @@ export function applyModelSpecPreset({
   const { parsedBody: conversation, appliedPrivateFields } = mergeModelSpecPreset(
     modelSpec,
     parsedBody,
-    {
-      includePresetDefaults,
-    },
+    { includePresetDefaults },
   );
   const reparsedBody = parseCompactConvo({
     endpoint: endpoint as EModelEndpoint | undefined,
@@ -160,6 +198,9 @@ export function applyModelSpecPreset({
   }
 
   const modelSpecParsedBody = reparsedBody as ModelSpecParsedBody;
+  if (reasoningOverride) {
+    Object.assign(modelSpecParsedBody, reasoningOverride);
+  }
   if (modelSpec.iconURL != null && modelSpec.iconURL !== '') {
     modelSpecParsedBody.iconURL = modelSpec.iconURL;
   }

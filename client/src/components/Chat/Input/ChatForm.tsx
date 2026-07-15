@@ -45,6 +45,7 @@ import TokenUsage from './TokenUsage';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import EditBadges from './EditBadges';
+import Reasoning from './Reasoning';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
@@ -559,6 +560,12 @@ const ChatForm = memo(function ChatForm({
                 }
               />
               <div className="mx-auto flex" />
+              <Reasoning
+                index={index}
+                modelSpec={modelSpec}
+                conversation={conversation}
+                disabled={disableInputs || isNotAppendable || isSubmitting || answerMode.active}
+              />
               <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
               {SpeechToText && (
                 <AudioRecorder
@@ -630,6 +637,10 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       conversation?.useResponsesApi,
       conversation?.model,
       conversation?.maxContextTokens,
+      conversation?.reasoning_effort,
+      conversation?.thinkingBudget,
+      conversation?.thinkingLevel,
+      conversation?.effort,
       hasMessages,
     ],
   );
