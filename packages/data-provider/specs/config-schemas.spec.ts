@@ -670,6 +670,51 @@ describe('fileStrategiesSchema', () => {
   });
 });
 
+describe('configSchema imageTools', () => {
+  it('accepts gemini_image_gen gateway routing options', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      imageTools: {
+        gemini_image_gen: {
+          baseURL: 'https://llm-gateway.example.com',
+          headers: {
+            Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.imageTools?.gemini_image_gen?.baseURL).toBe(
+      'https://llm-gateway.example.com',
+    );
+    expect(result.data?.imageTools?.gemini_image_gen?.headers?.Authorization).toBe(
+      'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+    );
+  });
+
+  it('accepts an empty imageTools section', () => {
+    const result = configSchema.safeParse({ version: '1.3.7', imageTools: {} });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts gemini_image_gen with only a baseURL', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      imageTools: { gemini_image_gen: { baseURL: '${GEMINI_IMAGE_BASEURL}' } },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.imageTools?.gemini_image_gen?.headers).toBeUndefined();
+  });
+
+  it('rejects non-string header values', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      imageTools: { gemini_image_gen: { headers: { 'X-Retries': 3 } } },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('configSchema fileStrategy', () => {
   it('rejects a processing strategy as fileStrategy', () => {
     const result = configSchema.safeParse({ version: '1.3.7', fileStrategy: FileSources.vectordb });

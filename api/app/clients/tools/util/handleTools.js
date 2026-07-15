@@ -5,6 +5,7 @@ const {
   toolkitParent,
   createSafeUser,
   mcpToolPattern,
+  resolveHeaders,
   loadWebSearchAuth,
   buildInlineMemoryTool,
   getCodeApiAuthHeaders,
@@ -23,6 +24,7 @@ const {
   EToolResources,
   PermissionTypes,
   AgentCapabilities,
+  extractEnvVariable,
 } = require('librechat-data-provider');
 const {
   availableTools,
@@ -227,6 +229,13 @@ const loadTools = async ({
       if (toolContext) {
         dynamicToolContextMap.gemini_image_gen = toolContext;
       }
+      const imageToolConfig = options.req?.config?.config?.imageTools?.gemini_image_gen;
+      const baseURL = imageToolConfig?.baseURL
+        ? extractEnvVariable(imageToolConfig.baseURL)
+        : undefined;
+      const headers = imageToolConfig?.headers
+        ? resolveHeaders({ headers: imageToolConfig.headers, user: options.req?.user })
+        : undefined;
       return createGeminiImageTool({
         ...authValues,
         isAgent: !!agent,
@@ -234,6 +243,8 @@ const loadTools = async ({
         imageFiles,
         userId: user,
         fileStrategy,
+        baseURL,
+        headers,
       });
     },
   };

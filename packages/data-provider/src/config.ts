@@ -1720,6 +1720,25 @@ export const ocrSchema = z.object({
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
+/**
+ * Gateway routing options for a built-in image tool. `baseURL` repoints the
+ * provider SDK at a custom host (e.g. an LLM gateway/proxy); `headers` are
+ * attached to every request and support the same placeholder templating as
+ * custom endpoint headers (e.g. `{{LIBRECHAT_OPENID_ID_TOKEN}}`).
+ */
+export const imageToolConfigSchema = z.object({
+  baseURL: z.string().optional(),
+  headers: z.record(z.string()).optional(),
+});
+
+export type TImageToolConfig = z.infer<typeof imageToolConfigSchema>;
+
+export const imageToolsSchema = z.object({
+  gemini_image_gen: imageToolConfigSchema.optional(),
+});
+
+export type TImageToolsConfig = z.infer<typeof imageToolsSchema>;
+
 export const balanceSchema = z.object({
   enabled: z.boolean().optional().default(false),
   startBalance: z.number().optional().default(20000),
@@ -1871,6 +1890,7 @@ export const configSchema = z.object({
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
+  imageTools: imageToolsSchema.optional(),
   mcpServers: MCPServersSchema.optional(),
   mcpSettings: z
     .object({
