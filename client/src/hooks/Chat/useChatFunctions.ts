@@ -39,6 +39,11 @@ import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
+import {
+  buildOneCodeMetadata,
+  getStoredOneCodeWorkspace,
+  isOneCodeEndpoint,
+} from '~/onecode/project';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -450,6 +455,9 @@ export default function useChatFunctions({
       endpointOption.key = getExpiry();
       endpointOption.thread_id = thread_id;
       endpointOption.modelDisplayLabel = modelDisplayLabel;
+      if (isOneCodeEndpoint(endpoint)) {
+        endpointOption.metadata = buildOneCodeMetadata(getStoredOneCodeWorkspace());
+      }
     } else {
       endpointOption.key = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     }

@@ -1111,6 +1111,7 @@
   "com_ui_minimal": "最小值",
   "com_ui_misc": "杂项",
   "com_ui_model": "模型",
+  "com_onecode_model_config": "OneCode 模型配置",
   "com_ui_model_parameters": "模型参数",
   "com_ui_model_selected": "已选择{{0}}",
   "com_ui_more_info": "更多信息",

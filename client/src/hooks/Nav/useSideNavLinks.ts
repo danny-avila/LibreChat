@@ -7,6 +7,7 @@ import {
   NotebookPen,
   ScrollText,
   ArrowRightToLine,
+  KeyRound,
   SlidersHorizontal,
 } from 'lucide-react';
 import {
@@ -34,6 +35,7 @@ import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
+import { openOneCodeConsole } from '~/onecode/console';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -205,6 +207,14 @@ export default function useSideNavLinks({
         Component: MCPBuilderPanel,
       });
     }
+
+    links.push({
+      title: 'com_onecode_model_config',
+      label: '',
+      icon: KeyRound,
+      id: 'onecode-model-config',
+      onClick: () => openOneCodeConsole('model'),
+    });
 
     if (includeHidePanel && hidePanel) {
       links.push({

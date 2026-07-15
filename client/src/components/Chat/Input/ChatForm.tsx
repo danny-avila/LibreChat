@@ -41,6 +41,7 @@ import SendButton from './SendButton';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
 import Mention from './Mention';
+import OneCodeProjectButton from './OneCodeProjectButton';
 import store from '~/store';
 
 interface ChatFormProps {
@@ -375,6 +376,7 @@ const ChatForm = memo(function ChatForm({
                   setFilesLoading={setFilesLoading}
                 />
               </div>
+              <OneCodeProjectButton disabled={disableInputs || isNotAppendable} />
               <BadgeRow
                 showEphemeralBadges={
                   !!endpoint &&
