@@ -224,3 +224,28 @@ describe('matchesMcpServer', () => {
     expect(matchesMcpServer('search_mcp_github_extra', 'github_extra')).toBe(true);
   });
 });
+
+describe('selection — ask_user_question builtin rides agent.tools', () => {
+  const catalogWithAsk: AgentItem[] = [
+    ...sampleCatalog,
+    {
+      kind: 'builtin',
+      id: 'ask_user_question',
+      name: 'com_ui_ask_user',
+      description: 'com_agents_ask_user_info',
+      iconKey: 'ask_user_question',
+    },
+  ];
+
+  test('selected iff agent.tools contains the tool (no capability field involved)', () => {
+    const selected = deriveSelectedItems(
+      { ...emptyFormState, tools: ['ask_user_question'] },
+      catalogWithAsk,
+      [],
+    );
+    expect(selected.map((i) => i.id)).toContain('ask_user_question');
+
+    const none = deriveSelectedItems(emptyFormState, catalogWithAsk, []);
+    expect(none.map((i) => i.id)).not.toContain('ask_user_question');
+  });
+});

@@ -21,6 +21,7 @@ export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   file_search: 'com_ui_tool_name_file_search',
   code_interpreter: 'com_ui_tool_name_code_analysis',
   retrieval: 'com_ui_tool_name_file_search',
+  ask_user_question: 'com_ui_tool_name_ask_user_question',
 };
 
 export interface ParsedToolName {

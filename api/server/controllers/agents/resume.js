@@ -5,6 +5,7 @@ const {
   isPendingActionStale,
   mapToolApprovalResolutions,
   mapAskUserAnswer,
+  attachAskUserQuestionAnswer,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -15,6 +16,7 @@ const {
   filterMalformedContentParts,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
+  toPendingSteer,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -22,6 +24,13 @@ const {
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
 const { saveMessage, getConvo, getMessages } = require('~/models');
+
+/**
+ * Upper bound on an `ask_user_question` answer (characters). Generous for any real
+ * reply typed into the question card while still bounding what a crafted POST can
+ * inject into the resumed run's ToolMessage.
+ */
+const MAX_ASK_ANSWER_LENGTH = 16_000;
 
 /** De-duplicate a merged attachment list by a stable artifact identity. */
 function mergeAttachments(existing, incoming) {
@@ -168,6 +177,11 @@ function resolveResumeValue(pendingAction, body) {
   if (payload?.type === 'ask_user_question') {
     if (typeof body.answer !== 'string' || body.answer.length === 0) {
       return { status: 400, error: 'An answer is required' };
+    }
+    // The answer becomes a ToolMessage the model must ingest — bound it like any
+    // other user-controlled wire field rather than trusting the client.
+    if (body.answer.length > MAX_ASK_ANSWER_LENGTH) {
+      return { status: 400, error: 'Answer exceeds the maximum length' };
     }
     return { resumeValue: mapAskUserAnswer({ answer: body.answer }) };
   }
@@ -330,6 +344,32 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     return;
   }
 
+  // Steers that never reached an injection boundary during the resumed
+  // segment — mirror the normal request path's terminal drain: the atomic
+  // close (createdAt-guarded) rejects a steer POST racing this finalization,
+  // and the leftovers ride the final event as queued follow-ups instead of
+  // being 202-ACKed and then silently cleared by completeJob.
+  let pendingSteers;
+  try {
+    const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+      streamId,
+      job.createdAt,
+    );
+    if (leftoverSteers.length > 0) {
+      pendingSteers = leftoverSteers.map(toPendingSteer);
+      // Same no-subscriber recovery as the normal final path (claim-on-read
+      // via /chat/status within the recovery TTL). NOTE: `job` is the manager
+      // facade — owner fields live under `metadata` (a bare `job.userId` is
+      // undefined and would make the parked payload unclaimable).
+      await GenerationJobManager.steering.park(streamId, pendingSteers, {
+        userId: job.metadata?.userId,
+        tenantId: job.metadata?.tenantId,
+      });
+    }
+  } catch (drainErr) {
+    logger.warn('[ResumeAgentController] Failed to drain leftover steers', drainErr);
+  }
+
   const finalEvent = {
     final: true,
     conversation,
@@ -348,6 +388,7 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
         })
       : null,
     responseMessage: { ...responseMessage },
+    ...(pendingSteers && { pendingSteers }),
   };
 
   await GenerationJobManager.emitDone(streamId, finalEvent);
@@ -600,7 +641,19 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // in-memory store's setContentParts REPLACES the stored array, so reading the
     // resume state afterward would see the new (empty) client array and lose the seed.
     const resumeState = await GenerationJobManager.getResumeState(streamId);
-    const seedContent = resumeState?.aggregatedContent ?? [];
+    let seedContent = resumeState?.aggregatedContent ?? [];
+    // Stamp the answered question onto the paused ask_user_question tool-call part
+    // (args = the pendingAction's authoritative question, output = the user's answer):
+    // the streamed arg chunks carry no tool name so the aggregator dropped them, and
+    // no completion event ever fires for this tool — without this the saved part is
+    // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswer.
+    if (pendingAction.payload?.type === 'ask_user_question') {
+      seedContent = attachAskUserQuestionAnswer(
+        seedContent,
+        pendingAction.payload.question,
+        req.body.answer,
+      );
+    }
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts);
     }
@@ -656,6 +709,25 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         `[ResumeAgentController] Skipping failed-resume finalization — job ${streamId} was replaced`,
       );
     } else {
+      // A steer 202-accepted during the failed resume segment would otherwise
+      // be silently cleared by completeJob's backstop — mirror the normal
+      // request error path: close the queue BEFORE the error event (racing
+      // steer POSTs get 404) and park the leftovers for /chat/status recovery.
+      try {
+        const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+          streamId,
+          job.createdAt,
+        );
+        if (leftoverSteers.length > 0) {
+          // Facade shape: owner fields are under `metadata` (see finalize).
+          await GenerationJobManager.steering.park(streamId, leftoverSteers.map(toPendingSteer), {
+            userId: job.metadata?.userId,
+            tenantId: job.metadata?.tenantId,
+          });
+        }
+      } catch (drainErr) {
+        logger.warn('[ResumeAgentController] Failed to drain steers on resume failure', drainErr);
+      }
       try {
         await GenerationJobManager.emitError(streamId, err?.message ?? 'Resume failed');
       } catch (emitErr) {

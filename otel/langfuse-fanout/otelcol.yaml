@@ -37,8 +37,15 @@ processors:
     traces:
       span:
         - attributes["librechat.langfuse.tenant_export.enabled"] != "true"
+  filter/central_export:
+    error_mode: ignore
+    traces:
+      span:
+        - attributes["librechat.langfuse.central_export.enabled"] == "false"
   attributes/drop_librechat_routing:
     actions:
+      - key: librechat.langfuse.central_export.enabled
+        action: delete
       - key: librechat.langfuse.tenant_export.enabled
         action: delete
       - key: librechat.langfuse.destination
@@ -94,7 +101,7 @@ service:
   pipelines:
     traces/central:
       receivers: [otlp]
-      processors: [memory_limiter, attributes/drop_librechat_routing, batch/central]
+      processors: [memory_limiter, filter/central_export, attributes/drop_librechat_routing, batch/central]
       exporters: [otlphttp/central]
     traces/tenant:
       receivers: [otlp]

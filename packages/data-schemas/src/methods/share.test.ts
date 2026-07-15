@@ -4,7 +4,7 @@ import { Constants } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import { createShareMethods, type ShareMethods } from './share';
+import { createShareMethods, anonymizeSharedContent, type ShareMethods } from './share';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -542,6 +542,145 @@ describe('Share Methods', () => {
       expect(attachment).not.toHaveProperty('filepath');
       expect(attachment).not.toHaveProperty('storageKey');
       expect(attachment).not.toHaveProperty('metadata');
+    });
+
+    test('strips steer-part files from content when the link excludes files', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: '',
+        isCreatedByUser: false,
+        content: [
+          { type: 'text', text: 'partial answer' },
+          {
+            type: 'steer',
+            steer: 'use the attached notes',
+            steerId: 'steer-1',
+            files: [
+              {
+                file_id: 'steer-file-1',
+                filename: 'notes.pdf',
+                type: 'application/pdf',
+                filepath: '/uploads/owner/notes.pdf',
+                bytes: 1234,
+              },
+            ],
+          },
+        ],
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        snapshotFiles: false,
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const content = result?.messages[0]?.content as Array<Record<string, unknown>>;
+
+      expect(content[0]).toMatchObject({ type: 'text', text: 'partial answer' });
+      expect(content[1]).toMatchObject({ type: 'steer', steer: 'use the attached notes' });
+      expect(content[1]).not.toHaveProperty('files');
+    });
+
+    test('rewrites steer-part file refs to the share route when files are included', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      await File.create({
+        user: userId,
+        file_id: 'steer-file-2',
+        filename: 'steer.png',
+        filepath: '/uploads/owner/steer.png',
+        storageKey: 'private/steer.png',
+        source: 'local',
+        type: 'image/png',
+        bytes: 2048,
+      });
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: '',
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'steer',
+            steer: 'look at this screenshot',
+            steerId: 'steer-2',
+            files: [
+              {
+                file_id: 'steer-file-2',
+                filename: 'steer.png',
+                type: 'image/png',
+                filepath: '/uploads/owner/steer.png',
+                storageKey: 'private/steer.png',
+                user: userId,
+                conversationId,
+                width: 640,
+                height: 480,
+              },
+            ],
+          },
+        ],
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const content = result?.messages[0]?.content as Array<Record<string, unknown>>;
+      const steerFile = (content[0].files as Array<Record<string, unknown>>)[0];
+
+      // Snapshotted through the same pipeline as top-level files: served via the
+      // share-scoped route, storage/identity internals stripped, ids anonymized.
+      expect(steerFile.filepath).toBe(`/api/share/${shareId}/files/steer-file-2`);
+      expect(steerFile).toMatchObject({ filename: 'steer.png', type: 'image/png' });
+      expect(steerFile).not.toHaveProperty('storageKey');
+      expect(steerFile).not.toHaveProperty('user');
+      expect(steerFile.conversationId).toBe(result?.conversationId);
+      expect(steerFile.conversationId).not.toBe(conversationId);
+
+      const share = await SharedLink.findOne({ shareId }).lean();
+      expect(share?.fileSnapshots?.map((snapshot) => snapshot.file_id)).toContain('steer-file-2');
+    });
+
+    test('leaves non-steer content untouched (same array reference when no steer part)', () => {
+      const plainContent = [
+        { type: 'text', text: 'no steers here' },
+        { type: 'tool_call', tool_call: { id: 'call_1' } },
+      ];
+      const params = {
+        newConvoId: 'convo_anon',
+        newMessageId: 'msg_anon',
+        shareId: 'share_ref',
+        snapshotIds: new Set<string>(),
+        includeFiles: true,
+      };
+
+      expect(anonymizeSharedContent(plainContent, params)).toBe(plainContent);
+      expect(anonymizeSharedContent(undefined, params)).toBeUndefined();
+
+      const withSteer = [...plainContent, { type: 'steer', steer: 'go', files: [] }];
+      const sanitized = anonymizeSharedContent(withSteer, params) as Array<Record<string, unknown>>;
+      expect(sanitized).not.toBe(withSteer);
+      // Non-steer parts are carried over by reference, not copied.
+      expect(sanitized[0]).toBe(plainContent[0]);
+      expect(sanitized[1]).toBe(plainContent[1]);
+      expect(sanitized[2]).not.toHaveProperty('files');
     });
   });
 

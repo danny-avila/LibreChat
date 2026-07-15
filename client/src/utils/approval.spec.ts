@@ -6,6 +6,12 @@ import {
   countTaggedApprovalParts,
   getAskUserQuestionPart,
   findPendingActionMessageIndex,
+  removeAskUserQuestionPart,
+  parseAskUserQuestionArgs,
+  resolveAskUserQuestionPart,
+  getSubmittedAskAnswer,
+  findLiveAskUserQuestion,
+  splitOtherOption,
 } from './approval';
 
 const toolCallPart = (id: string, extra: Record<string, unknown> = {}): TMessageContentParts =>
@@ -222,6 +228,168 @@ describe('applyPendingAction — ask_user_question', () => {
     const message = msg({ content: undefined as unknown as TMessageContentParts[] });
     const result = applyPendingAction(message, askAction());
     expect(result.content).toHaveLength(1);
+  });
+});
+
+describe('parseAskUserQuestionArgs', () => {
+  it('parses a JSON-string args payload (the persisted wire shape)', () => {
+    const parsed = parseAskUserQuestionArgs(
+      JSON.stringify({ question: 'Which?', options: [{ label: 'A', value: 'a' }] }),
+    );
+    expect(parsed?.question).toBe('Which?');
+    expect(parsed?.options).toHaveLength(1);
+  });
+
+  it('accepts an already-parsed object', () => {
+    expect(parseAskUserQuestionArgs({ question: 'Which?' })?.question).toBe('Which?');
+  });
+
+  it('degrades to null on empty, malformed, or question-less args', () => {
+    expect(parseAskUserQuestionArgs('')).toBeNull();
+    expect(parseAskUserQuestionArgs('not json')).toBeNull();
+    expect(parseAskUserQuestionArgs('{"no_question": true}')).toBeNull();
+    expect(parseAskUserQuestionArgs(undefined)).toBeNull();
+  });
+
+  it('passes multiSelect through only as a strict boolean true', () => {
+    expect(parseAskUserQuestionArgs({ question: 'Which?', multiSelect: true })?.multiSelect).toBe(
+      true,
+    );
+    expect(
+      parseAskUserQuestionArgs({ question: 'Which?', multiSelect: 'yes' })?.multiSelect,
+    ).toBeUndefined();
+    expect(parseAskUserQuestionArgs({ question: 'Which?' })?.multiSelect).toBeUndefined();
+  });
+});
+
+describe('removeAskUserQuestionPart', () => {
+  it('strips the synthetic part for the matching actionId and keeps everything else', () => {
+    const withCard = applyPendingAction(msg({ content: [textPart('hello')] }), askAction());
+    const stripped = removeAskUserQuestionPart(withCard, 'a1');
+    expect(stripped.content).toHaveLength(1);
+    expect(stripped.content?.[0]).toMatchObject({ type: 'text' });
+  });
+
+  it('returns the same reference when no matching part exists (different actionId / none)', () => {
+    const plain = msg({ content: [textPart('hi')] });
+    expect(removeAskUserQuestionPart(plain, 'a1')).toBe(plain);
+    const withCard = applyPendingAction(plain, askAction());
+    expect(removeAskUserQuestionPart(withCard, 'other-action')).toBe(withCard);
+  });
+
+  it('tolerates non-array content', () => {
+    const weird = msg({ content: undefined as unknown as TMessageContentParts[] });
+    expect(removeAskUserQuestionPart(weird, 'a1')).toBe(weird);
+  });
+});
+
+describe('resolveAskUserQuestionPart', () => {
+  const withCardAndToolCall = () => {
+    const base = msg({
+      content: [
+        textPart('pre-pause'),
+        {
+          type: 'tool_call',
+          tool_call: { id: 'tc1', name: 'ask_user_question', args: '', type: 'tool_call' },
+        } as unknown as TMessageContentParts,
+      ],
+    });
+    return applyPendingAction(base, askAction());
+  };
+
+  it('strips the card and stamps the answer (seeding args from the synthetic question)', () => {
+    const resolved = resolveAskUserQuestionPart(withCardAndToolCall(), 'a1', 'green');
+    const content = resolved.content as Array<{
+      type?: string;
+      tool_call?: Record<string, unknown>;
+    }>;
+    expect(content.some((part) => part?.type === 'ask_user_question')).toBe(false);
+    const toolCall = content[1]?.tool_call as Record<string, unknown>;
+    expect(toolCall.output).toBe('green');
+    expect(toolCall.progress).toBe(1);
+    expect(JSON.parse(toolCall.args as string)).toMatchObject({ question: 'What name?' });
+  });
+
+  it('keeps streamed args when the part already has them', () => {
+    const base = msg({
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: {
+            id: 'tc1',
+            name: 'ask_user_question',
+            args: '{"question":"streamed"}',
+            type: 'tool_call',
+          },
+        } as unknown as TMessageContentParts,
+      ],
+    });
+    const resolved = resolveAskUserQuestionPart(applyPendingAction(base, askAction()), 'a1', 'x');
+    const toolCall = (resolved.content as Array<{ tool_call?: Record<string, unknown> }>)[0]
+      ?.tool_call as Record<string, unknown>;
+    expect(toolCall.args).toBe('{"question":"streamed"}');
+    expect(toolCall.output).toBe('x');
+  });
+
+  it('returns the same reference when the message has no matching synthetic part', () => {
+    const plain = msg({ content: [textPart('hi')] });
+    expect(resolveAskUserQuestionPart(plain, 'a1', 'x')).toBe(plain);
+  });
+
+  it('records the submitted answer by tool_call id (render-layer fallback for mid-stream copies)', () => {
+    resolveAskUserQuestionPart(withCardAndToolCall(), 'a1', 'purple');
+    expect(getSubmittedAskAnswer('tc1')).toBe('purple');
+    expect(getSubmittedAskAnswer('unknown')).toBeUndefined();
+    expect(getSubmittedAskAnswer(undefined)).toBeUndefined();
+  });
+});
+
+describe('splitOtherOption', () => {
+  it("folds a model-supplied 'Other'-style option into the inline placeholder", () => {
+    const { choices, otherLabel } = splitOtherOption([
+      { label: 'Red', value: 'red' },
+      { label: 'Other (type your own)', value: 'other' },
+    ]);
+    expect(choices.map((o) => o.value)).toEqual(['red']);
+    expect(otherLabel).toBe('Other (type your own)');
+  });
+
+  it('matches by label when the value is not literally other', () => {
+    const { choices, otherLabel } = splitOtherOption([
+      { label: 'Blue', value: 'blue' },
+      { label: 'Something else entirely', value: 'custom_answer' },
+    ]);
+    expect(choices).toHaveLength(1);
+    expect(otherLabel).toBe('Something else entirely');
+  });
+
+  it('leaves real choices untouched (no false positives, undefined input)', () => {
+    const options = [
+      { label: 'Red', value: 'red' },
+      { label: 'Mother of pearl', value: 'pearl' },
+    ];
+    expect(splitOtherOption(options)).toEqual({ choices: options });
+    expect(splitOtherOption(undefined)).toEqual({ choices: [] });
+  });
+});
+
+describe('findLiveAskUserQuestion', () => {
+  it('returns the newest live question across messages', () => {
+    const older = applyPendingAction(msg({ content: [] }), askAction());
+    const newer = applyPendingAction(
+      { ...msg({ content: [] }), messageId: 'm2' },
+      askAction({ actionId: 'a2' }),
+    );
+    const found = findLiveAskUserQuestion([older, newer]);
+    expect(found?.actionId).toBe('a2');
+    expect(found?.messageId).toBe('m2');
+    expect(found?.question.question).toBe('What name?');
+  });
+
+  it('returns null with no live question or non-array input', () => {
+    expect(findLiveAskUserQuestion([msg({ content: [textPart('hi')] })])).toBeNull();
+    expect(findLiveAskUserQuestion(null)).toBeNull();
+    expect(findLiveAskUserQuestion(undefined)).toBeNull();
   });
 });
 

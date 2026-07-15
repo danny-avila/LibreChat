@@ -1,10 +1,10 @@
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { clearDraft, getDraft, setDraft } from '~/utils';
+import { clearDraft, getDraft, isAskAnswerDraftId, setDraft } from '~/utils';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
@@ -12,12 +12,20 @@ import store from '~/store';
 export const useAutoSave = ({
   isSubmitting,
   conversationId: _conversationId,
+  draftId,
   textAreaRef,
   setFiles,
   files,
 }: {
   isSubmitting?: boolean;
   conversationId?: string | null;
+  /** Explicit draft-key override — wins over the conversation id AND the
+   *  PENDING_CONVO redirect. Set while an `ask_user_question` pause turns the
+   *  composer into the answer box: the answer phase drafts under its own key,
+   *  and the key change itself drives the save/restore swap below, so the
+   *  conversation draft is stashed on entry and restored when the question
+   *  resolves. */
+  draftId?: string | null;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
   files: Map<string, ExtendedFile>;
   setFiles: SetterOrUpdater<Map<string, ExtendedFile>>;
@@ -25,7 +33,7 @@ export const useAutoSave = ({
   // setting for auto-save
   const { setValue } = useChatFormContext();
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
-  const conversationId = isSubmitting ? Constants.PENDING_CONVO : _conversationId;
+  const conversationId = draftId ?? (isSubmitting ? Constants.PENDING_CONVO : _conversationId);
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
@@ -163,10 +171,14 @@ export const useAutoSave = ({
     setFiles(new Map());
 
     try {
-      // Check for transition from PENDING_CONVO to a valid conversationId
+      // Check for transition from PENDING_CONVO to a valid conversationId.
+      // An ask-answer key is excluded: it is a temporary overlay, not the
+      // pending draft's destination — migrating would delete the very draft
+      // the answer-phase swap-back is supposed to restore.
       if (
         prevConversationIdRef.current === Constants.PENDING_CONVO &&
         conversationId !== Constants.PENDING_CONVO &&
+        !isAskAnswerDraftId(conversationId) &&
         conversationId.length > 3
       ) {
         const pendingDraft = localStorage.getItem(
