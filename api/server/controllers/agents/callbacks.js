@@ -315,6 +315,8 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {Object} options - The options object.
  * @param {ServerResponse} options.res - The server response object.
  * @param {ContentAggregator} options.aggregateContent - Content aggregator function.
+ * @param {Array<Object>} [options.contentParts] - Aggregated message content parts.
+ * @param {Map<string, Object>} [options.stepMap] - Run steps keyed by step ID.
  * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
@@ -331,6 +333,8 @@ function feedSubagentAggregator(aggregator, event) {
 function getDefaultHandlers({
   res,
   aggregateContent,
+  contentParts = null,
+  stepMap = null,
   toolEndCallback,
   collectedUsage,
   collectedThoughtSignatures = null,
@@ -444,6 +448,9 @@ function getDefaultHandlers({
       handle: async (event, data, metadata) => {
         const validationDetails = getToolInputValidationDetails(data?.result);
         if (validationDetails != null) {
+          if (data?.result?.tool_call != null) {
+            data.result.tool_call.inputValidationError = true;
+          }
           logger.debug('[AgentToolValidation] Tool input rejected', {
             ...validationDetails,
             runId: metadata?.run_id,
@@ -452,6 +459,13 @@ function getDefaultHandlers({
           });
         }
         aggregateContent({ event, data });
+        if (validationDetails != null) {
+          const runStep = stepMap?.get(data?.result?.id);
+          const toolCall = contentParts?.[runStep?.index]?.tool_call;
+          if (toolCall != null) {
+            toolCall.inputValidationError = true;
+          }
+        }
         if (data?.result != null) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {

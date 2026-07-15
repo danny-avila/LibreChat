@@ -135,7 +135,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const collectedThoughtSignatures = {};
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
-  const { contentParts, aggregateContent } = createContentAggregator();
+  const { contentParts, aggregateContent, stepMap } = createContentAggregator();
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
 
   /** Query accessible skill IDs once per run (shared across all agents).
@@ -290,6 +290,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   const eventHandlers = getDefaultHandlers({
     res,
+    contentParts,
+    stepMap,
     toolExecuteOptions,
     summarizationOptions,
     aggregateContent,

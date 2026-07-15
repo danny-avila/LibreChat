@@ -2,12 +2,6 @@ import { MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import { getSubmittedAskAnswer, parseAskUserQuestionArgs } from '~/utils/approval';
 import { useLocalize } from '~/hooks';
 
-const TOOL_INPUT_SCHEMA_ERROR = 'Received tool input did not match expected schema';
-
-function isQuestionValidationFailure(output: string): boolean {
-  return output.startsWith('Error processing tool') && output.includes(TOOL_INPUT_SCHEMA_ERROR);
-}
-
 /**
  * Static rendering of a COMPLETED (or abandoned) `ask_user_question` tool call —
  * the durable record of the Q&A after the pause resolves. The generic tool card
@@ -20,11 +14,13 @@ export default function AskUserQuestionCall({
   output,
   toolCallId,
   isSubmitting = false,
+  failed = false,
 }: {
   args: string | Record<string, unknown> | undefined;
   output: string;
   toolCallId?: string;
   isSubmitting?: boolean;
+  failed?: boolean;
 }) {
   const localize = useLocalize();
   const question = parseAskUserQuestionArgs(args);
@@ -35,7 +31,6 @@ export default function AskUserQuestionCall({
    * Q&A record never blinks out while the resumed segment streams.
    */
   const effectiveOutput = output.length > 0 ? output : (getSubmittedAskAnswer(toolCallId) ?? '');
-  const failed = isQuestionValidationFailure(effectiveOutput);
   const answered = effectiveOutput.length > 0 && !failed;
 
   /**

@@ -44,7 +44,7 @@ describe('AskUserQuestionCall', () => {
       'Error processing tool: Received tool input did not match expected schema ' +
       '✖ String must contain at most 120 character(s) → at options[0].label';
 
-    render(<AskUserQuestionCall args={args} output={output} />);
+    render(<AskUserQuestionCall args={args} output={output} failed />);
 
     expect(screen.getByText("Question wasn't shown")).toBeInTheDocument();
     expect(
@@ -54,8 +54,10 @@ describe('AskUserQuestionCall', () => {
     expect(screen.queryByText(/Received tool input did not match expected schema/)).toBeNull();
   });
 
-  test('preserves a user answer that happens to start with the generic tool error prefix', () => {
-    const output = 'Error processing tool output is the topic I want to investigate';
+  test('preserves a user answer that contains the complete schema error text', () => {
+    const output =
+      'Error processing tool: Received tool input did not match expected schema ' +
+      '✖ String must contain at most 120 character(s) → at options[0].label';
 
     render(<AskUserQuestionCall args={args} output={output} />);
 
