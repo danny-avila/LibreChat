@@ -22,6 +22,13 @@ const OPTION_LABEL_MAX = 120;
 const OPTION_VALUE_MAX = 500;
 const OPTIONS_MAX = 12;
 
+const OPTION_LABEL_DESCRIPTION =
+  `Short choice shown to the user. Maximum ${OPTION_LABEL_MAX} characters; ` +
+  'put supporting context in the question description.';
+const OPTION_LABEL_MAX_ERROR =
+  `Option labels must be ${OPTION_LABEL_MAX} characters or fewer. ` +
+  'Shorten the label and retry.';
+
 const ASK_USER_QUESTION_DESCRIPTION = [
   'Ask the user a clarifying question and pause the run until they answer; their answer is',
   "returned as this tool's result. Use it only when you are genuinely blocked on a decision",
@@ -29,7 +36,9 @@ const ASK_USER_QUESTION_DESCRIPTION = [
   'turn, and NEVER call this tool in parallel with any other tool call. When the realistic',
   'answers are enumerable, provide 2-6 concise options; set multiSelect to true only when',
   'several options may sensibly apply at once (the selected option values are returned joined',
-  'by ", "). The user can always type a free-form answer instead — so do NOT include a',
+  `by ", "). Keep every option label within ${OPTION_LABEL_MAX} characters and put supporting`,
+  'context in the question description. The user can always type a free-form answer instead — so',
+  'do NOT include a',
   "catch-all option like 'Other' or 'Something else': the answer UI always offers free-form",
   'input on its own.',
 ].join(' ');
@@ -66,8 +75,8 @@ export const askUserQuestionToolSchema: z.ZodObject<
         label: z
           .string()
           .min(1)
-          .max(OPTION_LABEL_MAX)
-          .describe('Human-readable choice shown to the user.'),
+          .max(OPTION_LABEL_MAX, OPTION_LABEL_MAX_ERROR)
+          .describe(OPTION_LABEL_DESCRIPTION),
         value: z
           .string()
           .min(1)
@@ -150,7 +159,7 @@ export const AskUserQuestionToolDefinition: AskUserQuestionToolDefinitionShape =
               type: 'string',
               minLength: 1,
               maxLength: OPTION_LABEL_MAX,
-              description: 'Human-readable choice shown to the user.',
+              description: OPTION_LABEL_DESCRIPTION,
             },
             value: {
               type: 'string',

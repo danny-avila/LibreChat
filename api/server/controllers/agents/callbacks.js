@@ -23,6 +23,7 @@ const {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
   shouldSignalSandboxStart,
+  getToolInputValidationDetails,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -441,6 +442,15 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        const validationDetails = getToolInputValidationDetails(data?.result);
+        if (validationDetails != null) {
+          logger.debug('[AgentToolValidation] Tool input rejected', {
+            ...validationDetails,
+            runId: metadata?.run_id,
+            conversationId: metadata?.thread_id,
+            agentId: metadata?.agent_id,
+          });
+        }
         aggregateContent({ event, data });
         if (data?.result != null) {
           await emitEvent(res, streamId, { event, data });

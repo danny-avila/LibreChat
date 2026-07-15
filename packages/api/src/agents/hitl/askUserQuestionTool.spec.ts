@@ -71,6 +71,21 @@ describe('ask_user_question tool contract', () => {
       ).toBe(false);
     });
 
+    test('rejects an overlong option label with guidance the model can act on', () => {
+      const result = askUserQuestionToolSchema.safeParse({
+        question: 'How should I get the data?',
+        options: [{ label: 'x'.repeat(161), value: 'public-data' }],
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]?.message).toBe(
+          'Option labels must be 120 characters or fewer. Shorten the label and retry.',
+        );
+        expect(result.error.issues[0]?.path).toEqual(['options', 0, 'label']);
+      }
+    });
+
     test('accepts multiSelect as an optional boolean and rejects other types', () => {
       const input = {
         question: 'Which apply?',
@@ -120,6 +135,19 @@ describe('ask_user_question tool contract', () => {
       expect(
         askUserQuestionToolSchema.safeParse({ question: 'pick', options: atCap }).success,
       ).toBe(true);
+      const labelMax = properties.options.items.properties.label.maxLength;
+      expect(
+        askUserQuestionToolSchema.safeParse({
+          question: 'pick',
+          options: [{ label: 'x'.repeat(labelMax), value: 'v' }],
+        }).success,
+      ).toBe(true);
+      expect(
+        askUserQuestionToolSchema.safeParse({
+          question: 'pick',
+          options: [{ label: 'x'.repeat(labelMax + 1), value: 'v' }],
+        }).success,
+      ).toBe(false);
     });
 
     test('descriptions match between the instance, the definition, and the constant name', () => {
@@ -127,6 +155,10 @@ describe('ask_user_question tool contract', () => {
       expect(instance.description).toBe(AskUserQuestionToolDefinition.description);
       expect(instance.description).toContain('exactly ONE question per turn');
       expect(instance.description).toContain('NEVER call this tool in parallel');
+      expect(instance.description).toContain('option label within 120 characters');
+      expect(
+        AskUserQuestionToolDefinition.schema.properties.options.items.properties.label.description,
+      ).toContain('Maximum 120 characters');
     });
   });
 });
