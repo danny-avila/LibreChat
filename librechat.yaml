@@ -1,0 +1,43 @@
+version: 1.3.11
+cache: true
+
+interface:
+  customWelcome: 'OneCode: guarded local agent workspace'
+  modelSelect: true
+  parameters: true
+  presets: true
+  prompts:
+    use: true
+    create: true
+    share: false
+    public: false
+  bookmarks: true
+  multiConvo: true
+  agents:
+    use: true
+    create: false
+    share: false
+    public: false
+  marketplace:
+    use: false
+  fileCitations: true
+
+endpoints:
+  allowedAddresses:
+    - 'host.docker.internal:19080'
+    - '127.0.0.1:19080'
+    - 'localhost:19080'
+  custom:
+    - name: 'OneCode'
+      apiKey: '${ONECODE_API_TOKEN}'
+      baseURL: '${ONECODE_API_BASE_URL}'
+      models:
+        default: ['onecode-agent']
+        fetch: false
+      titleConvo: true
+      titleModel: 'onecode-agent'
+      summarize: false
+      modelDisplayLabel: 'OneCode'
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+      addParams:
+        maxRetries: 0

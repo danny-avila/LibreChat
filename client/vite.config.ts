@@ -137,8 +137,8 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: 'OneCode',
+        short_name: 'OneCode',
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#009688',

@@ -6,6 +6,7 @@ import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
 import Footer from './Footer';
+import { ONECODE_BRAND } from '~/onecode/brand';
 
 function AuthLayout({
   children,
@@ -60,12 +61,13 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
-          <img
-            src="assets/logo.svg"
-            className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
-          />
+        <div
+          className="mt-6 flex h-10 w-full items-center justify-center text-2xl font-semibold text-black dark:text-white"
+          aria-label={localize('com_ui_logo', {
+            0: startupConfig?.appTitle ?? ONECODE_BRAND.productName,
+          })}
+        >
+          {startupConfig?.appTitle ?? ONECODE_BRAND.productName}
         </div>
       </BlinkAnimation>
       <DisplayError />
