@@ -92,7 +92,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const result = await generateMarkdown(content, filename, OUTPUT_PATH);
-      const downloadUrl = `${BASE_URL}/uploads/documents/${result.filename}`;
+      const downloadUrl = `${BASE_URL}/images/documents/${result.filename}`;
 
       return {
         content: [
@@ -119,7 +119,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (fontSize) options.fontSize = fontSize;
 
       const result = await generatePDF(content, filename, OUTPUT_PATH, options);
-      const downloadUrl = `${BASE_URL}/uploads/documents/${result.filename}`;
+      const downloadUrl = `${BASE_URL}/images/documents/${result.filename}`;
 
       return {
         content: [
