@@ -1083,21 +1083,32 @@ async function readSandboxImage({
   const payload = Buffer.from(JSON.stringify({ file_path, limit }), 'utf8').toString('base64');
   const code = [
     "python3 - <<'PY'",
-    'import base64, json, os',
+    'import base64, json, os, stat',
     `payload = ${JSON.stringify(payload)}`,
     "data = json.loads(base64.b64decode(payload).decode('utf-8'))",
     "p = data['file_path']",
     "limit = data['limit']",
     'try:',
-    '    size = os.path.getsize(p)',
+    '    st = os.stat(p)',
     'except OSError as e:',
     '    print(json.dumps({"error": str(e)}))',
     '    raise SystemExit(0)',
-    'if size > limit:',
-    '    print(json.dumps({"too_large": True, "bytes": size}))',
+    // Reject FIFOs, sockets, and device files (e.g. a symlink to /dev/zero):
+    // os.stat can report a small/zero size while an unbounded read blocks or
+    // streams forever until the request times out.
+    'if not stat.S_ISREG(st.st_mode):',
+    '    print(json.dumps({"error": "not a regular file"}))',
     '    raise SystemExit(0)',
+    'if st.st_size > limit:',
+    '    print(json.dumps({"too_large": True, "bytes": st.st_size}))',
+    '    raise SystemExit(0)',
+    // Bound the read at limit+1 as defense-in-depth: even if st_size lies
+    // (sparse/growing file), we never pull more than the cap into memory.
     "with open(p, 'rb') as f:",
-    '    raw = f.read()',
+    '    raw = f.read(limit + 1)',
+    'if len(raw) > limit:',
+    '    print(json.dumps({"too_large": True, "bytes": len(raw)}))',
+    '    raise SystemExit(0)',
     'print(json.dumps({"bytes": len(raw), "b64": base64.b64encode(raw).decode("ascii")}))',
     'PY',
   ].join('\n');

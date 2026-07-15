@@ -1280,6 +1280,38 @@ function sniffImageMime(buffer: Buffer): string | undefined {
 }
 
 /**
+ * Cheap structural check that the image bytes are complete, not just that the
+ * header sniffed valid — a truncated/interrupted write can keep a valid magic
+ * prefix while the body is missing, which would then fail `saveBase64Image`
+ * resizing or the next provider request instead of the intended bash-hint
+ * fallback. Only png (fixed 8-byte IEND trailer) and webp (self-describing
+ * RIFF size) have a false-positive-free end marker; jpeg/gif can legitimately
+ * carry trailing metadata, so those stay at header-level sniffing rather than
+ * risk rejecting a valid file.
+ */
+function isCompleteImage(buffer: Buffer, mime: string): boolean {
+  if (mime === 'image/png') {
+    if (buffer.length < 8) return false;
+    const iend = buffer.subarray(buffer.length - 8);
+    return (
+      iend[0] === 0x49 &&
+      iend[1] === 0x45 &&
+      iend[2] === 0x4e &&
+      iend[3] === 0x44 &&
+      iend[4] === 0xae &&
+      iend[5] === 0x42 &&
+      iend[6] === 0x60 &&
+      iend[7] === 0x82
+    );
+  }
+  if (mime === 'image/webp') {
+    if (buffer.length < 12) return false;
+    return buffer.readUInt32LE(4) === buffer.length - 8;
+  }
+  return true;
+}
+
+/**
  * Builds the `read_file` success result for an image: a short text line the
  * model reads plus the `image_url` block in `artifact.content`. The SDK
  * folds `artifact.content` into what the model sees (Anthropic tool_result
@@ -1386,10 +1418,10 @@ async function handleSandboxImageRead(
   // Resolve the MIME from the actual bytes, never the extension: a file
   // routed here by its `.png`/`.jpg`/... name whose header matches none of
   // the supported formats is a mislabeled non-image (a renamed .txt/.pdf).
-  // Refuse it with the bash hint instead of shipping bytes the provider
-  // would reject as a corrupt image.
+  // Refuse it (and any truncated/incomplete image) with the bash hint
+  // instead of shipping bytes the provider would reject as a corrupt image.
   const mimeType = sniffImageMime(buffer);
-  if (!mimeType) {
+  if (!mimeType || !isCompleteImage(buffer, mimeType)) {
     return binaryHint();
   }
   return buildImageArtifactResult(tc.id, filePath, mimeType, buffer.length, read.base64);

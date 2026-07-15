@@ -2980,7 +2980,13 @@ describe('createToolExecuteHandler', () => {
       const b64 = (bytes: number[]) => Buffer.from(bytes).toString('base64');
       const JPEG_B64 = b64([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
       const GIF_B64 = b64([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00]);
-      const WEBP_B64 = b64([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0, 0]);
+      /* RIFF container with a size field (bytes 4-7 LE = 12) that matches the
+       * 20-byte total, so the completeness check accepts it as intact. */
+      const WEBP_B64 = b64([
+        0x52, 0x49, 0x46, 0x46, 0x0c, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0, 0, 0, 0, 0, 0, 0, 0,
+      ]);
+      /* PNG magic header with NO IEND trailer — a truncated/interrupted write. */
+      const TRUNCATED_PNG_B64 = b64([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
       /* Plausible text bytes with no image magic — a file mislabeled `.png`. */
       const NOT_IMAGE_B64 = Buffer.from('plainly text, not an image at all', 'utf8').toString(
         'base64',
@@ -3106,6 +3112,32 @@ describe('createToolExecuteHandler', () => {
             id: 'call_fake_png',
             name: Constants.READ_FILE,
             args: { path: '/mnt/data/notes.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.artifact).toBeUndefined();
+        expect(result.errorMessage).toContain('image file');
+        expect(result.errorMessage).toContain('bash_tool');
+      });
+
+      it('refuses a truncated image (valid magic header, missing trailer)', async () => {
+        /* A PNG whose write was interrupted keeps the magic prefix but lacks
+         * the IEND trailer; shipping it would fail saveBase64Image / the next
+         * provider request, so it must degrade to the bash hint. */
+        const bytes = Buffer.from(TRUNCATED_PNG_B64, 'base64').length;
+        const readSandboxImage = jest.fn(async () => ({ base64: TRUNCATED_PNG_B64, bytes }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_truncated_png',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/half_written.png' },
           },
         ]);
 
