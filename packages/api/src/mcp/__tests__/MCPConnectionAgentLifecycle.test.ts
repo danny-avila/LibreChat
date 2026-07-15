@@ -160,6 +160,71 @@ async function createStreamableServer(): Promise<TestServer> {
   };
 }
 
+async function createSessionlessStreamableServer({
+  getStatus = 502,
+  hangGet = false,
+}: {
+  getStatus?: number;
+  hangGet?: boolean;
+} = {}): Promise<TestServer> {
+  const httpServer = http.createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      if (hangGet) {
+        return;
+      }
+      res.writeHead(getStatus, { 'Content-Type': 'text/plain' }).end('optional SSE unavailable');
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.writeHead(405).end();
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+      id?: string | number;
+      method?: string;
+      params?: { protocolVersion?: string };
+    };
+
+    if (message.method === 'notifications/initialized') {
+      res.writeHead(202).end();
+      return;
+    }
+
+    const result = (() => {
+      if (message.method === 'initialize') {
+        return {
+          protocolVersion: message.params?.protocolVersion ?? '2025-03-26',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'test-sessionless', version: '0.0.1' },
+        };
+      }
+      if (message.method === 'ping') {
+        return {};
+      }
+      return { tools: [] };
+    })();
+
+    res
+      .writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
+  });
+
+  const destroySockets = trackSockets(httpServer);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', resolve));
+
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    close: destroySockets,
+  };
+}
+
 async function createSSEServer(): Promise<TestServer> {
   const transports = new Map<string, SSEServerTransport>();
   const mcpServer = new McpServerCore({ name: 'test-sse', version: '0.0.1' }, { capabilities: {} });
@@ -615,6 +680,37 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
   });
+
+  it('does not suppress an OAuth challenge before a session is established', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 401);
+
+    expect(emitSpy).toHaveBeenCalledWith('oauthError', expect.any(Error));
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('still reconnects when a 502 SSE failure belongs to an active session', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub('existing-session-id');
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 502);
+
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('does not suppress a 502 failure for the legacy SSE transport', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 502);
+
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
 });
 
 describe('MCPConnection SSE stream disconnect handling', () => {
@@ -698,6 +794,59 @@ describe('MCPConnection SSE stream disconnect handling', () => {
     transport.onerror?.(new Error('Streamable HTTP error: Error POSTing to endpoint: 500'));
 
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+});
+
+describe('MCPConnection optional sessionless SSE GET failures', () => {
+  let server: TestServer;
+  let conn: MCPConnection | null;
+
+  afterEach(async () => {
+    MCPConnection.clearCooldown('test-sessionless-sse');
+    await safeDisconnect(conn);
+    conn = null;
+    jest.restoreAllMocks();
+    await server.close();
+  });
+
+  beforeEach(() => {
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+  });
+
+  it('keeps the POST channel usable when the optional GET returns 502 without a session', async () => {
+    server = await createSessionlessStreamableServer();
+    conn = new MCPConnection({
+      serverName: 'test-sessionless-sse',
+      serverConfig: { type: 'streamable-http', url: server.url },
+      useSSRFProtection: false,
+    });
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    await conn.connect();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no session'));
+    expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+    await expect(conn.fetchTools()).resolves.toBeDefined();
+  });
+
+  it('keeps the POST channel usable when the optional GET times out before response headers', async () => {
+    server = await createSessionlessStreamableServer({ hangGet: true });
+    conn = new MCPConnection({
+      serverName: 'test-sessionless-sse',
+      serverConfig: { type: 'streamable-http', url: server.url, timeout: 100 },
+      useSSRFProtection: false,
+    });
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    await conn.connect();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no session'));
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+    await expect(conn.fetchTools()).resolves.toBeDefined();
   });
 });
 

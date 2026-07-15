@@ -960,6 +960,14 @@ const SDK_SSE_STREAM_DISCONNECTED = 'SSE stream disconnected';
 const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
 
 /**
+ * The SDK does not include the HTTP method when a custom fetch fails before
+ * receiving response headers. Track those error objects so a timed-out optional
+ * Streamable HTTP GET can be distinguished from a failed POST tool request.
+ */
+const optionalStreamableHttpSseGetErrors = new WeakSet<object>();
+const handledOptionalStreamableHttpSseGetErrors = new WeakSet<object>();
+
+/**
  * Headers for SSE connections.
  *
  * Headers we intentionally DO NOT include:
@@ -1428,7 +1436,15 @@ export class MCPConnection extends EventEmitter {
           useSSRFProtection,
           currentAllowedAddresses,
         );
-        const response = await undiciFetch(currentUrlString, currentInit);
+        let response: UndiciResponse;
+        try {
+          response = await undiciFetch(currentUrlString, currentInit);
+        } catch (error) {
+          if (guardStreamableHTTPResponses && isGet && error && typeof error === 'object') {
+            optionalStreamableHttpSseGetErrors.add(error);
+          }
+          throw error;
+        }
         const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
         const responseContext = {
           logPrefix,
@@ -2081,8 +2097,8 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      const rawMessage =
-        error && typeof error === 'object' ? ((error as { message?: string }).message ?? '') : '';
+      const errorObject = error && typeof error === 'object' ? error : null;
+      const rawMessage = errorObject ? ((errorObject as { message?: string }).message ?? '') : '';
 
       /**
        * The MCP SDK's StreamableHTTPClientTransport fires onerror for SSE GET stream
@@ -2108,12 +2124,35 @@ export class MCPConnection extends EventEmitter {
         isTransient,
       } = extractSSEErrorMessage(error);
 
-      if (errorCode === 400 || errorCode === 404 || errorCode === 405 || errorCode === 406) {
-        const hasSession =
-          'sessionId' in transport &&
-          (transport as { sessionId?: string }).sessionId != null &&
-          (transport as { sessionId?: string }).sessionId !== '';
+      const hasSession =
+        'sessionId' in transport &&
+        (transport as { sessionId?: string }).sessionId != null &&
+        (transport as { sessionId?: string }).sessionId !== '';
+      const isOptionalSseGetFailure =
+        transport instanceof StreamableHTTPClientTransport &&
+        ((errorObject != null && optionalStreamableHttpSseGetErrors.has(errorObject)) ||
+          rawMessage.toLowerCase().includes('failed to open sse stream'));
 
+      /**
+       * A standalone Streamable HTTP GET is optional and a sessionless server can
+       * remain fully usable through POST responses. Do not rebuild that working
+       * POST transport when only the optional GET fails. Authentication failures
+       * are excluded so the existing OAuth recovery path still runs.
+       */
+      if (isOptionalSseGetFailure && !hasSession && !this.isOAuthError(error)) {
+        if (errorObject == null || !handledOptionalStreamableHttpSseGetErrors.has(errorObject)) {
+          const status = errorCode != null ? ` (${errorCode})` : '';
+          logger.warn(
+            `${this.getLogPrefix()} Optional SSE GET unavailable${status}, no session; keeping Streamable HTTP POST channel active.`,
+          );
+          if (errorObject != null) {
+            handledOptionalStreamableHttpSseGetErrors.add(errorObject);
+          }
+        }
+        return;
+      }
+
+      if (errorCode === 400 || errorCode === 404 || errorCode === 405 || errorCode === 406) {
         if (!hasSession && errorMessage.toLowerCase().includes('failed to open sse stream')) {
           logger.warn(
             `${this.getLogPrefix()} SSE stream not available (${errorCode}), no session. Ignoring.`,
