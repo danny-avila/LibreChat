@@ -1046,6 +1046,122 @@ async function readSandboxFile({ file_path, session_id, files, runtime_session_h
 }
 
 /**
+ * Reads a small image file out of the code-execution sandbox as base64 so
+ * `read_file` can surface it to vision-capable models. `readSandboxFile`'s
+ * `cat` round-trips stdout through codeapi's JSON transport, which lossily
+ * replaces non-UTF-8 bytes and corrupts image data. Here a tiny Python
+ * reader stats the file, refuses (without transferring) anything over
+ * `maxBytes`, and otherwise base64-encodes the bytes IN the sandbox so the
+ * payload stays ASCII-safe across the JSON `/exec` transport. Session
+ * forwarding mirrors `readSandboxFile` so the read lands in the same
+ * sandbox session that holds the agent's prior-turn artifacts.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path - Path inside the sandbox (e.g. `/mnt/data/chart.png`).
+ * @param {string} [params.session_id] - Sandbox session id from the seeded context.
+ * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
+ * @param {string} [params.runtime_session_hint] - Per-conversation stateful runtime-session hint.
+ * @param {number} [params.maxBytes] - In-sandbox size cap; larger files return `{ tooLarge, bytes }`.
+ * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
+ * @returns {Promise<{base64: string, bytes: number} | {tooLarge: true, bytes: number} | null>}
+ *   `null` when codeapi is unavailable; throws on transport / read errors.
+ */
+async function readSandboxImage({
+  file_path,
+  session_id,
+  files,
+  runtime_session_hint,
+  maxBytes,
+  req,
+}) {
+  const baseURL = getCodeBaseURL();
+  if (!baseURL) {
+    return null;
+  }
+
+  const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
+  const payload = Buffer.from(JSON.stringify({ file_path, limit }), 'utf8').toString('base64');
+  const code = [
+    "python3 - <<'PY'",
+    'import base64, json, os',
+    `payload = ${JSON.stringify(payload)}`,
+    "data = json.loads(base64.b64decode(payload).decode('utf-8'))",
+    "p = data['file_path']",
+    "limit = data['limit']",
+    'try:',
+    '    size = os.path.getsize(p)',
+    'except OSError as e:',
+    '    print(json.dumps({"error": str(e)}))',
+    '    raise SystemExit(0)',
+    'if size > limit:',
+    '    print(json.dumps({"too_large": True, "bytes": size}))',
+    '    raise SystemExit(0)',
+    "with open(p, 'rb') as f:",
+    '    raw = f.read()',
+    'print(json.dumps({"bytes": len(raw), "b64": base64.b64encode(raw).decode("ascii")}))',
+    'PY',
+  ].join('\n');
+
+  /** @type {Record<string, unknown>} */
+  const postData = { lang: 'bash', code };
+  if (session_id) {
+    postData.session_id = session_id;
+  }
+  if (runtime_session_hint) {
+    postData.runtime_session_hint = runtime_session_hint;
+  }
+  if (files && files.length > 0) {
+    postData.files = files;
+  }
+
+  try {
+    const authHeaders = await getCodeApiAuthHeaders(req);
+    const response = await axios({
+      method: 'post',
+      url: `${baseURL}/exec`,
+      data: postData,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+    const result = response?.data ?? {};
+    if (result.stderr && (result.stdout == null || result.stdout === '')) {
+      throw new Error(String(result.stderr).trim());
+    }
+    if (result.stdout == null || String(result.stdout).trim() === '') {
+      return null;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(String(result.stdout).trim());
+    } catch {
+      throw new Error('Unexpected output while reading image bytes from the sandbox');
+    }
+    if (parsed && parsed.error) {
+      throw new Error(String(parsed.error));
+    }
+    if (parsed && parsed.too_large === true) {
+      return { tooLarge: true, bytes: Number(parsed.bytes) || 0 };
+    }
+    if (parsed && typeof parsed.b64 === 'string') {
+      return { base64: parsed.b64, bytes: Number(parsed.bytes) || 0 };
+    }
+    return null;
+  } catch (error) {
+    logAxiosError({
+      message: `Error reading sandbox image "${file_path}"`,
+      error,
+    });
+    throw error;
+  }
+}
+
+/**
  * Writes a UTF-8 text file into the code-execution sandbox by running a
  * small Python writer through the sandbox `/exec` endpoint. The payload is
  * base64-encoded JSON so neither the file path nor the content is
@@ -1150,6 +1266,7 @@ module.exports = {
   getSessionInfo,
   processCodeOutput,
   readSandboxFile,
+  readSandboxImage,
   writeSandboxFile,
   runPreviewFinalize,
 };
