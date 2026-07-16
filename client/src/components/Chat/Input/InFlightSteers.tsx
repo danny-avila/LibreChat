@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useCallback } from 'react';
+import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import { X, Zap } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
@@ -156,12 +156,25 @@ const InFlightSteers = memo(function InFlightSteers({
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
 
+  /** Steers append newest-last, so an overflowing stack would sit scrolled to
+   *  the oldest — the steer just submitted (and its cancel) would be below the
+   *  fold and read as dropped. Keyed on the newest id, not every render. */
+  const listRef = useRef<HTMLDivElement>(null);
+  const newestId = inFlight[inFlight.length - 1]?.steerId;
+  useEffect(() => {
+    const list = listRef.current;
+    if (list != null) {
+      list.scrollTop = list.scrollHeight;
+    }
+  }, [newestId]);
+
   if (inFlight.length === 0) {
     return null;
   }
 
   return (
     <div
+      ref={listRef}
       role="list"
       aria-label={localize('com_ui_steer_in_flight')}
       data-testid="in-flight-steers"

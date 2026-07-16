@@ -204,6 +204,36 @@ describe('InFlightSteers', () => {
     expect(screen.getByTestId('steer-markdown')).toHaveAttribute('data-code-execution', 'false');
   });
 
+  it('keeps the newest steer in view when the capped stack overflows', () => {
+    // jsdom does no layout, so scrollHeight is 0 unless stubbed — without it
+    // the assertion would pass vacuously against a scrollTop of 0.
+    const scrollHeight = jest
+      .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+      .mockReturnValue(600);
+    try {
+      const { rerender } = renderSteers([
+        { steerId: 's1', text: 'first', status: 'pending', createdAt: 1 },
+      ]);
+      // A newly submitted steer appends BELOW the existing ones, so a stack
+      // left scrolled to the top would hide it and its cancel control.
+      rerender(
+        <RecoilRoot
+          initializeState={({ set }) => {
+            set(store.pendingSteersByConvoId(CONVO_ID), [
+              { steerId: 's1', text: 'first', status: 'pending', createdAt: 1 },
+              { steerId: 's2', text: 'just submitted', status: 'pending', createdAt: 2 },
+            ]);
+          }}
+        >
+          <InFlightSteers conversationId={CONVO_ID} />
+        </RecoilRoot>,
+      );
+      expect(screen.getByTestId('in-flight-steers').scrollTop).toBe(600);
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
   it('caps the stack so a long steer cannot push the composer off-screen', () => {
     renderSteers([{ steerId: 's1', text: 'x'.repeat(4000), status: 'pending', createdAt: 1 }]);
     // A steer runs to 16k chars, and a run takes up to 10 of them.
