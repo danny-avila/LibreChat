@@ -4,6 +4,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import {
   clearMessagesCache,
+  clearDeletedConversationMessagesCache,
   isValidTimestamp,
   getMessageAriaLabel,
   getMessageTimestamp,
@@ -47,6 +48,57 @@ describe('clearMessagesCache', () => {
 
     expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
     expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+  });
+});
+
+describe('clearDeletedConversationMessagesCache', () => {
+  it('clears both caches when the new-conversation cache contains deleted chat messages', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const messages = [makeMessage({ conversationId })];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    queryClient.setQueryData(
+      [QueryKeys.messages, Constants.NEW_CONVO],
+      messages.map((message) => ({ ...message })),
+    );
+
+    clearDeletedConversationMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+  });
+
+  it('clears a shared new-conversation cache before its message IDs are hydrated', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const messages = [makeMessage({ conversationId: Constants.NEW_CONVO as string })];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], messages);
+
+    clearDeletedConversationMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+  });
+
+  it('preserves an unrelated new-conversation message cache', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const newConversationMessages = [
+      makeMessage({ messageId: 'new-message', conversationId: Constants.NEW_CONVO as string }),
+    ];
+    queryClient.setQueryData(
+      [QueryKeys.messages, conversationId],
+      [makeMessage({ conversationId })],
+    );
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], newConversationMessages);
+
+    clearDeletedConversationMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual(
+      newConversationMessages,
+    );
   });
 });
 

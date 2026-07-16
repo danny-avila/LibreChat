@@ -34,6 +34,7 @@ import type {
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
@@ -1034,6 +1035,7 @@ export async function createRun({
   subagentUsageSink,
   steering,
   hitlCapable = false,
+  toolInputValidationErrors,
   streaming = true,
   streamUsage = true,
 }: {
@@ -1099,6 +1101,8 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /** Request-scoped tool input failures consumed by the completion handler. */
+  toolInputValidationErrors?: Map<string, ToolInputValidationError>;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -1282,7 +1286,9 @@ export async function createRun({
         toolRegistry.delete(ASK_USER_QUESTION_TOOL_NAME);
       }
       if (hitlCapable && !isSubagent && !askToolAdminDisabled) {
-        askGraphTools = [createAskUserQuestionTool() as unknown as GenericTool];
+        askGraphTools = [
+          createAskUserQuestionTool(toolInputValidationErrors) as unknown as GenericTool,
+        ];
       }
     }
 
@@ -1495,13 +1501,17 @@ export async function createRun({
         ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
       ],
     },
-    // Let host file-authoring tools share the code-execution sandbox session so
-    // a file created with create_file/edit_file is visible to later
+    // Let host file tools share the code-execution sandbox session so a file
+    // created with create_file/edit_file is visible to later
     // execute_code/bash_tool calls (and vice versa). The SDK folds these tools'
     // returned exec session/files into the shared code session and injects the
-    // existing session into their requests. Requires @librechat/agents with
-    // codeSessionToolNames support (agents#283); older versions ignore it.
-    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
+    // existing session into their requests. Membership here also stamps the
+    // stateful `runtimeSessionHint` and excludes the tool from eager execution
+    // — read_file needs both, or its sandbox `cat` runs hintless on the Code
+    // API's per-user default runtime session and cannot see files bash_tool
+    // just wrote in the conversation's session. Requires @librechat/agents
+    // with codeSessionToolNames support (agents#283); older versions ignore it.
+    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, Constants.READ_FILE],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse

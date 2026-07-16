@@ -37,7 +37,7 @@ const {
   toClientPendingAction,
   computeAgentRequestFingerprint,
   extractDiscoveredToolsFromHistory,
-  sanitizeResumeModelParameters,
+  captureResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
@@ -73,6 +73,7 @@ const {
   appendYouTubeVideoParts,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
+  maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
   Callback,
@@ -142,6 +143,7 @@ class AgentClient extends BaseClient {
       subagentAggregatorsByToolCallId,
       contextUsageSink,
       usageEmitSink,
+      toolInputValidationErrors,
       ...clientOptions
     } = options;
 
@@ -156,6 +158,11 @@ class AgentClient extends BaseClient {
      *  persisted on `metadata.usage`.
      *  @type {Array<import('librechat-data-provider').TTokenUsageEvent> | undefined} */
     this.usageEmitSink = usageEmitSink;
+    /** Schema-validation exceptions keyed by tool-call ID. The completion
+     *  handler consumes these to distinguish execution failures from tool
+     *  output that merely contains similar text.
+     *  @type {Map<string, import('@librechat/api').ToolInputValidationError> | undefined} */
+    this.toolInputValidationErrors = toolInputValidationErrors;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
@@ -1377,19 +1384,21 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
-    // Persist the resolved model parameters (temperature, max tokens, custom endpoint
-    // params, …) so an ephemeral-agent resume continues with the SAME settings the run
-    // paused on. The resume payload omits them and they aren't part of the fingerprint, so
-    // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
-    // these from the DB record server-side, so this is belt-and-suspenders for them.)
-    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // Persist the generation params (temperature, max tokens, custom endpoint params, …)
+    // so an ephemeral-agent resume continues with the SAME settings the run paused on.
+    // The resume payload omits them and they aren't part of the fingerprint, so without
+    // this the rebuilt ephemeral run falls back to defaults. The paused request body is
+    // the primary source (UI-form, round-trips the compact-convo schema by construction);
+    // the resolved llmConfig fills gaps and is sanitized — it carries provider secrets
     // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
+    // (Saved agents source params from the DB record, so this is belt-and-suspenders.)
     const resumeContext = pickResumeContext(this.options.req?.body);
-    const resolvedModelParameters = sanitizeResumeModelParameters(
+    const resumeModelParameters = captureResumeModelParameters(
+      this.options.req?.body,
       this.options.agent?.model_parameters,
     );
-    if (resolvedModelParameters) {
-      resumeContext.model_parameters = resolvedModelParameters;
+    if (resumeModelParameters) {
+      resumeContext.model_parameters = resumeModelParameters;
     }
     // Persist the question onto the paused ask tool_call's args NOW: an
     // abandoned/expired/stopped pause never reaches the answer-resume stamp,
@@ -1514,6 +1523,16 @@ class AgentClient extends BaseClient {
       if (!abortController) {
         abortController = new AbortController();
       }
+
+      /** Fire-and-forget: boot the per-conversation stateful sandbox in
+       *  parallel with generation so the first execute_code/bash call lands
+       *  on a warm VM. No-op unless a reachable agent resolved
+       *  `statefulCodeSessions`. */
+      maybePrewarmCodeSandbox({
+        req: this.options.req,
+        conversationId: this.conversationId,
+        agents: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+      });
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
@@ -1746,6 +1765,7 @@ class AgentClient extends BaseClient {
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
+          toolInputValidationErrors: this.toolInputValidationErrors,
           // Mid-run steering: drain queued user messages at each tool-batch
           // boundary and inject them into graph state. The offset wrapper
           // shifts SDK content indices past any spliced steer parts.
@@ -2076,6 +2096,7 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        toolInputValidationErrors: this.toolInputValidationErrors,
         // Steering stays live across a pause/resume cycle: steers queued while
         // the resumed segment runs drain at its tool-batch boundaries.
         steering: this.buildSteerWiring(streamId),

@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'crypto';
+import { openAIBaseSchema, googleBaseSchema, anthropicBaseSchema } from 'librechat-data-provider';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import type { ToolPolicyConfig } from '@librechat/agents';
 
@@ -236,6 +237,16 @@ export const RESUME_CONTEXT_KEYS = [
   // different skill's tools (manualSkills isn't covered by the fingerprint). Replay-only.
   // (alwaysAppliedSkills is NOT here — it's resolved server-side from the DB, not req.body.)
   'manualSkills',
+  // Graph-determining for ephemeral agents: `loadEphemeralAgent` encodes the agent id
+  // (and thus the LangGraph node name / HITL checkpoint namespace) from
+  // `sender = modelLabel ?? modelSpec.label ?? …`. `modelLabel` is stripped from the
+  // RESOLVED llmConfig captured at pause (sanitizeResumeModelParameters reads the
+  // initialized agent's model_parameters), so without replaying the original request
+  // value the resumed id falls back to modelSpec.label → a DIFFERENT id → the interrupt
+  // checkpoint (namespaced by the paused id) can't be re-entered → empty-graph resume
+  // (#14253). It rides top-level on req.body and flows into model_parameters via the
+  // build spread, so replaying it here restores the stable id. Replay-only.
+  'modelLabel',
 ] as const;
 
 export type ResumeContext = Partial<Record<(typeof RESUME_CONTEXT_KEYS)[number], unknown>> & {
@@ -329,13 +340,68 @@ function sanitizeParamValue(value: unknown, depth: number): unknown {
 }
 
 /**
+ * The resolved Anthropic `thinking` parameter is a provider-format object
+ * (`{ type: 'enabled' | 'disabled' | 'adaptive', budget_tokens? }`) for Opus/Sonnet
+ * 4+, but the request body — and the compact-convo schema (`thinking: z.boolean()`)
+ * that the resume replay is validated against — expects the UI form. A stray object
+ * fails that field, and the schema's `.catch(() => ({}))` drops the WHOLE parse
+ * (`model`/`spec` included), surfacing as `missing_model` on resume of a
+ * custom-endpoint ephemeral agent (#14253). Convert it back to
+ * `{ thinking: boolean, thinkingBudget?, thinkingDisplay? }` so the replayed params
+ * round-trip cleanly (an explicit `display: 'omitted'` choice survives too).
+ */
+function normalizeThinkingParam(params: Record<string, unknown>): void {
+  const thinking = params.thinking;
+  if (thinking == null || typeof thinking !== 'object' || Array.isArray(thinking)) {
+    return;
+  }
+  const {
+    type,
+    display,
+    budget_tokens: budget,
+  } = thinking as {
+    type?: unknown;
+    display?: unknown;
+    budget_tokens?: unknown;
+  };
+  params.thinking = type !== 'disabled';
+  if (params.thinkingBudget == null && typeof budget === 'number') {
+    params.thinkingBudget = budget;
+  }
+  if (params.thinkingDisplay == null && typeof display === 'string') {
+    params.thinkingDisplay = display;
+  }
+}
+
+/**
+ * A non-default adaptive-thinking effort resolves into
+ * `invocationKwargs.output_config.effort` (see `configureReasoning`), while the
+ * request-body schema only accepts a top-level `effort`. Lift it back so the resumed
+ * turn keeps the paused run's effort, and drop `invocationKwargs` entirely — it's
+ * resolved transport config the compact-convo schema would discard anyway.
+ */
+function normalizeEffortParam(params: Record<string, unknown>): void {
+  const kwargs = params.invocationKwargs as { output_config?: { effort?: unknown } } | undefined;
+  if (kwargs == null || typeof kwargs !== 'object') {
+    return;
+  }
+  const effort = kwargs.output_config?.effort;
+  if (params.effort == null && typeof effort === 'string') {
+    params.effort = effort;
+  }
+  delete params.invocationKwargs;
+}
+
+/**
  * Strip credentials and server transport config from resolved model parameters before
  * they are persisted for resume replay. The initialized agent's `model_parameters` are
  * the resolved `llmConfig` — they carry provider secrets (`apiKey`, Azure key names,
  * Google `authOptions`, Bedrock `credentials`) and gateway config (`configuration`,
  * headers, base URLs). Resume re-resolves all of those server-side from env/config, so
  * only the user-level generation params (temperature, max tokens, custom endpoint
- * params, …) need to survive the round trip.
+ * params, …) need to survive the round trip. Provider-format params that conflict with
+ * the request-body schema on replay are normalized back to the UI form (see
+ * {@link normalizeThinkingParam}).
  */
 export function sanitizeResumeModelParameters(
   params: unknown,
@@ -343,7 +409,71 @@ export function sanitizeResumeModelParameters(
   if (params == null || typeof params !== 'object' || Array.isArray(params)) {
     return undefined;
   }
-  return sanitizeParamValue(params, 0) as Record<string, unknown>;
+  const sanitized = sanitizeParamValue(params, 0) as Record<string, unknown>;
+  normalizeThinkingParam(sanitized);
+  normalizeEffortParam(sanitized);
+  return sanitized;
+}
+
+/** Bedrock body params its compact schema accepts; hand-listed because
+ *  `bedrockInputSchema` wraps the pick in a transform, hiding `.shape`. */
+const BEDROCK_PARAM_KEYS = [
+  'region',
+  'system',
+  'maxTokens',
+  'reasoning_effort',
+  'additionalModelRequestFields',
+];
+
+/** Schema-accepted keys owned elsewhere: replayed via {@link RESUME_CONTEXT_KEYS}
+ *  (`model`, `spec`, `promptPrefix`, `modelLabel`) or derived server-side / identity
+ *  fields the resume request must keep as its own. */
+const RESUME_PARAM_EXCLUDED = new Set([
+  'model',
+  'spec',
+  'iconURL',
+  'greeting',
+  'modelLabel',
+  'promptPrefix',
+  'chatProjectId',
+]);
+
+/**
+ * Request-body generation params worth replaying on resume: the union of the
+ * compact-convo schemas' fields. Only these keys can influence the rebuilt run —
+ * `buildOptions` derives `model_parameters` from the PARSED body, and
+ * `parseCompactConvo` strips everything else.
+ */
+const RESUME_PARAM_KEYS: string[] = Array.from(
+  new Set(
+    [openAIBaseSchema, anthropicBaseSchema, googleBaseSchema]
+      .flatMap((schema) => Object.keys(schema.shape))
+      .concat(BEDROCK_PARAM_KEYS),
+  ),
+).filter((key) => !RESUME_PARAM_EXCLUDED.has(key));
+
+/**
+ * Capture the model parameters to replay on resume. The paused request body is the
+ * primary source — its fields are UI-form by construction (they already round-tripped
+ * `parseCompactConvo` on the original turn), so replaying them can't trip the schema.
+ * The resolved llmConfig only fills gaps: it's provider-format, where params are
+ * renamed (`maxOutputTokens` → `maxTokens`, `top_p` → `topP`), relocated
+ * (`effort` → `invocationKwargs`), or retyped (`thinking` → object) — the schema
+ * silently drops or, worse, fails on them (see the `normalize*` helpers, #14253).
+ */
+export function captureResumeModelParameters(
+  body: Record<string, unknown> | undefined | null,
+  resolvedParams: unknown,
+): Record<string, unknown> | undefined {
+  const captured = sanitizeResumeModelParameters(resolvedParams) ?? {};
+  if (body != null && typeof body === 'object') {
+    for (const key of RESUME_PARAM_KEYS) {
+      if (body[key] !== undefined) {
+        captured[key] = sanitizeParamValue(body[key], 1);
+      }
+    }
+  }
+  return Object.keys(captured).length > 0 ? captured : undefined;
 }
 
 /** Extract the graph-determining fields from a request body for durable replay. */

@@ -1121,6 +1121,35 @@ export class RedisJobStore implements IJobStore {
    * @param streamId - The stream identifier
    * @returns Content parts array or null if not found
    */
+  /**
+   * Read from a cached {@link StandardGraph}, tolerating one disposed after a HITL
+   * pause. When a paused turn's client is disposed, `disposeClient`
+   * (api/server/cleanup.js `graphPropsToClean`) NULLS the graph's internal arrays
+   * (`messages`, `contentData`) for GC — but this store still holds a WeakRef to
+   * that object. Calling `getContentParts()` (`this.messages.slice()`) or
+   * `getRunSteps()` (`[...this.contentData]`) on it then throws
+   * ("Cannot read properties of null (reading 'slice')" / "not iterable"), which
+   * aborts the resume (#14247). Swallow it, drop the stale entry, and let the
+   * caller fall back to durable chunk reconstruction. (The SDK-side null guard in
+   * `StandardGraph` is a separate agents fix.)
+   */
+  private readCachedGraph<T>(
+    streamId: string,
+    graph: StandardGraph,
+    read: (graph: StandardGraph) => T,
+  ): T | null {
+    try {
+      return read(graph);
+    } catch (err) {
+      logger.debug(
+        `[RedisJobStore] Cached graph for ${streamId} is unusable (likely disposed); falling back to reconstruction:`,
+        err instanceof Error ? err.message : err,
+      );
+      this.localGraphCache.delete(streamId);
+      return null;
+    }
+  }
+
   async getContentParts(streamId: string): Promise<{
     content: Agents.MessageContentComplex[];
   } | null> {
@@ -1145,7 +1174,7 @@ export class RedisJobStore implements IJobStore {
     if (graphRef) {
       const graph = graphRef.deref();
       if (graph) {
-        const localParts = graph.getContentParts();
+        const localParts = this.readCachedGraph(streamId, graph, (g) => g.getContentParts());
         if (localParts && localParts.length > 0) {
           return {
             content: await this.overlayHostSteerParts(streamId, localParts),
@@ -1231,7 +1260,7 @@ export class RedisJobStore implements IJobStore {
     if (graphRef) {
       const graph = graphRef.deref();
       if (graph) {
-        const localSteps = graph.getRunSteps();
+        const localSteps = this.readCachedGraph(streamId, graph, (g) => g.getRunSteps());
         if (localSteps && localSteps.length > 0) {
           return localSteps;
         }

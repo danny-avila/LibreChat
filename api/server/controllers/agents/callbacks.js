@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   Tools,
   StepTypes,
+  StepEvents,
   FileContext,
   ErrorTypes,
   UsageEvents,
@@ -21,6 +22,8 @@ const {
   createToolExecuteHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
+  shouldSignalSandboxStart,
+  getToolInputValidationDetails,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -229,6 +232,37 @@ async function emitEvent(res, streamId, eventData) {
 }
 
 /**
+ * Emits `on_sandbox_starting` for each code-execution tool call in the run
+ * step when the conversation's stateful sandbox is still cold-booting, so the
+ * UI can explain the first call's boot latency instead of showing a generic
+ * running state. Only signals while a fired prewarm remains unresolved
+ * ({@link shouldSignalSandboxStart}); stateless deployments never fire one
+ * and completed boots clear the marker, so both stay on the generic label.
+ * @param {ServerResponse} res - The server response object
+ * @param {string | null} streamId - The stream ID for resumable mode, or null for standard mode
+ * @param {StreamEventData} data - The `on_run_step` event data
+ * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata
+ * @returns {Promise<void>}
+ */
+async function maybeEmitSandboxStarting(res, streamId, data, metadata) {
+  const conversationId = metadata?.thread_id;
+  if (!conversationId || !(await shouldSignalSandboxStart(conversationId))) {
+    return;
+  }
+  const toolCalls = data?.stepDetails?.tool_calls ?? [];
+  for (const toolCall of toolCalls) {
+    const name = toolCall?.name ?? toolCall?.function?.name;
+    if (!toolCall?.id || name == null || !isCodeSessionToolName(name)) {
+      continue;
+    }
+    await emitEvent(res, streamId, {
+      event: StepEvents.ON_SANDBOX_STARTING,
+      data: { tool_call_id: toolCall.id, runId: metadata?.run_id },
+    });
+  }
+}
+
+/**
  * Maps a {@link SubagentUpdateEvent} phase to the corresponding
  * {@link GraphEvents} name that the SDK's `createContentAggregator`
  * knows how to consume. Phases that don't carry content (`start`, `stop`,
@@ -281,6 +315,10 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {Object} options - The options object.
  * @param {ServerResponse} options.res - The server response object.
  * @param {ContentAggregator} options.aggregateContent - Content aggregator function.
+ * @param {Array<Object>} [options.contentParts] - Aggregated message content parts.
+ * @param {Map<string, Object>} [options.stepMap] - Run steps keyed by step ID.
+ * @param {Map<string, import('@librechat/api').ToolInputValidationError>} [options.toolInputValidationErrors]
+ *   Schema-validation errors keyed by tool-call ID at the execution error boundary.
  * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
@@ -297,6 +335,9 @@ function feedSubagentAggregator(aggregator, event) {
 function getDefaultHandlers({
   res,
   aggregateContent,
+  contentParts = null,
+  stepMap = null,
+  toolInputValidationErrors = null,
   toolEndCallback,
   collectedUsage,
   collectedThoughtSignatures = null,
@@ -363,6 +404,7 @@ function getDefaultHandlers({
         aggregateContent({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           await emitEvent(res, streamId, { event, data });
+          await maybeEmitSandboxStarting(res, streamId, data, metadata);
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {
@@ -407,7 +449,32 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        const toolCallId = data?.result?.tool_call?.id;
+        const validationError =
+          typeof toolCallId === 'string' ? toolInputValidationErrors?.get(toolCallId) : null;
+        const validationDetails = getToolInputValidationDetails(data?.result, validationError);
+        if (typeof toolCallId === 'string') {
+          toolInputValidationErrors?.delete(toolCallId);
+        }
+        if (validationDetails != null) {
+          if (data?.result?.tool_call != null) {
+            data.result.tool_call.inputValidationError = true;
+          }
+          logger.debug('[AgentToolValidation] Tool input rejected', {
+            ...validationDetails,
+            runId: metadata?.run_id,
+            conversationId: metadata?.thread_id,
+            agentId: metadata?.agent_id,
+          });
+        }
         aggregateContent({ event, data });
+        if (validationDetails != null) {
+          const runStep = stepMap?.get(data?.result?.id);
+          const toolCall = contentParts?.[runStep?.index]?.tool_call;
+          if (toolCall != null) {
+            toolCall.inputValidationError = true;
+          }
+        }
         if (data?.result != null) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {

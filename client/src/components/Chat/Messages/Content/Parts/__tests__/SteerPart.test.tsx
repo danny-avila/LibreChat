@@ -72,4 +72,21 @@ describe('SteerPart author label', () => {
     expect(screen.queryByText('Danny')).toBeNull();
     expect(screen.getByText('com_user_message')).toBeInTheDocument();
   });
+
+  it('shows a subtle info affordance explaining the mid-run message', () => {
+    renderPart();
+    // The "?" InfoHoverCard clarifies why a user message appears inside the
+    // assistant response (its text is the trigger's accessible label).
+    expect(screen.getByLabelText('com_ui_steered_info')).toBeInTheDocument();
+  });
+
+  it('reveals on hover/focus on hover-capable pointers but stays visible on touch', () => {
+    renderPart();
+    // Like the hover buttons: hidden-at-rest ONLY on hover-capable pointers
+    // ([@media(hover:hover)]:opacity-0), so touch devices keep it visible.
+    const wrapper = screen.getByTestId('steer-info-affordance');
+    expect(wrapper.className).toContain('[@media(hover:hover)]:opacity-0');
+    expect(wrapper.className).toContain('group-hover:opacity-100');
+    expect(wrapper.className).toContain('focus-within:opacity-100');
+  });
 });

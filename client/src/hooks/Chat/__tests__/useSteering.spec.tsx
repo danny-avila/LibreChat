@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, type MutableSnapshot } from 'recoil';
-import { Constants, ContentTypes, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import useSteering from '../useSteering';
 import store from '~/store';
@@ -803,6 +803,62 @@ describe('useSteering', () => {
       expect(result.current.queue[0].manualSkills).toBeUndefined();
       expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
       expect(result.current.pendingSkills).toEqual(['skill-1']);
+    });
+  });
+
+  describe('composer draft consumption', () => {
+    /** `useAutoSave` drafts under PENDING_CONVO for the whole run, and the
+     *  composer clears via the form's programmatic `reset()` — which fires no
+     *  `input` event, so nothing else drops the draft. Left behind, run end
+     *  migrates it onto the conversation and restores it into the textarea,
+     *  resurfacing text the user already sent. */
+    const pendingDraftKey = `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`;
+
+    const stageDraft = () => localStorage.setItem(pendingDraftKey, 'ZHJhZnRlZCB0ZXh0');
+
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it('drops the pending draft when queueing from the composer', () => {
+      stageDraft();
+      const { result } = setup();
+      act(() => {
+        result.current.queueFromComposer('queued follow up');
+      });
+      expect(result.current.queueKey).toBe(CONVO_ID);
+      expect(localStorage.getItem(pendingDraftKey)).toBeNull();
+    });
+
+    it('drops the pending draft when steering from the composer', () => {
+      stageDraft();
+      const { result } = setup();
+      act(() => {
+        result.current.steerFromComposer('steered text');
+      });
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem(pendingDraftKey)).toBeNull();
+    });
+
+    it('drops the pending draft on interrupt & send', () => {
+      stageDraft();
+      const { result } = setup();
+      act(() => {
+        result.current.interruptAndSend('interrupting text');
+      });
+      expect(localStorage.getItem(pendingDraftKey)).toBeNull();
+    });
+
+    it('keeps the pending draft when the submit is refused', () => {
+      // Nothing left the composer, so its draft must survive: an empty
+      // submission and an in-flight upload both refuse without consuming.
+      stageDraft();
+      const { result } = setup({ filesLoading: true });
+      act(() => {
+        expect(result.current.queueFromComposer('held by upload')).toBe(false);
+        expect(result.current.submitDuringRun('   ')).toBe(false);
+      });
+      expect(localStorage.getItem(pendingDraftKey)).toBe('ZHJhZnRlZCB0ZXh0');
     });
   });
 });
