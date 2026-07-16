@@ -1491,6 +1491,7 @@ export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
+  langfuseConnectionAccess?: boolean;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;

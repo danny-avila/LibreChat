@@ -389,19 +389,43 @@ describe('GET /api/config', () => {
 
     it('should advertise Langfuse fanout only when the toggle and collector URL are configured', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
       process.env.LANGFUSE_FANOUT_ENABLED = 'true';
       const app = createApp(mockUser);
 
       let response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
 
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
       response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
 
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
       response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+    });
+
+    it('advertises Langfuse connection access from capabilities rather than the user role', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      const app = createApp({ ...mockUser, role: 'DELEGATED_ADMIN' });
+
+      mockHasCapability.mockImplementation(async (_user, capability) =>
+        ['access:admin', 'manage:configs:langfuse'].includes(capability),
+      );
+      let response = await request(app).get('/api/config');
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+
+      mockHasCapability.mockImplementation(
+        async (_user, capability) => capability === 'access:admin',
+      );
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
     });
 
     it('should include post-login informational fields', async () => {

@@ -19,8 +19,8 @@ const settingsContext: SettingsContextValue = {
   allowAccountDeletion: true,
   aboutEnabled: false,
   engineTTS: 'browser',
-  isAdmin: false,
   langfuseFanoutEnabled: false,
+  langfuseConnectionAccess: false,
 };
 
 describe('settings registry', () => {
@@ -52,32 +52,32 @@ describe('settings registry', () => {
   describe('Langfuse connection visibility', () => {
     const langfuseEntry = registry.find((entry) => entry.id === 'langfuseConnection');
 
-    it('shows the connection to admins when fanout is enabled', () => {
+    it('shows the connection when fanout is enabled and the user can manage it', () => {
       expect(
         langfuseEntry?.show?.({
           ...settingsContext,
-          isAdmin: true,
           langfuseFanoutEnabled: true,
+          langfuseConnectionAccess: true,
         }),
       ).toBe(true);
     });
 
-    it('hides the connection from non-admins when fanout is enabled', () => {
+    it('hides the connection without Langfuse config access', () => {
       expect(
         langfuseEntry?.show?.({
           ...settingsContext,
-          isAdmin: false,
           langfuseFanoutEnabled: true,
+          langfuseConnectionAccess: false,
         }),
       ).toBe(false);
     });
 
-    it('hides the connection from admins when fanout is disabled', () => {
+    it('hides the connection when fanout is disabled', () => {
       expect(
         langfuseEntry?.show?.({
           ...settingsContext,
-          isAdmin: true,
           langfuseFanoutEnabled: false,
+          langfuseConnectionAccess: true,
         }),
       ).toBe(false);
     });

@@ -47,8 +47,8 @@ export interface SettingsContextValue {
   allowAccountDeletion: boolean;
   aboutEnabled: boolean;
   engineTTS: string;
-  isAdmin: boolean;
   langfuseFanoutEnabled: boolean;
+  langfuseConnectionAccess: boolean;
 }
 
 export interface SettingEntry {
