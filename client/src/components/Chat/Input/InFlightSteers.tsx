@@ -1,13 +1,24 @@
-import { memo } from 'react';
+import { memo, useMemo, useState, useCallback } from 'react';
 import { X, Zap } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import type { TFile } from 'librechat-data-provider';
+import type { TFile, TMessage } from 'librechat-data-provider';
 import type { PendingSteer } from '~/store/families';
+import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
+import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
-import Image from '~/components/Chat/Messages/Content/Image';
+import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import { useSteerCancel, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+
+const splitFiles = (files?: TMessage['files']) => {
+  const images: NonNullable<TMessage['files']> = [];
+  const others: NonNullable<TMessage['files']> = [];
+  for (const file of files ?? []) {
+    (file.type?.startsWith('image/') === true ? images : others).push(file);
+  }
+  return { images, others };
+};
 
 /**
  * One steer on its way into the run, anchored above the composer as a message
@@ -15,6 +26,10 @@ import store from '~/store';
  * conversation, they just have no in-thread index yet. It leaves on
  * `on_steer_applied`, when the persisted STEER part lands at its authoritative
  * position in the response.
+ *
+ * Text and attachments render through the same leaves as the applied
+ * `SteerPart` (markdown toggle, file preview) so the words don't reformat the
+ * moment the server injects them.
  *
  * `sending` is still awaiting its 202 ACK (no server id yet, so nothing to
  * cancel); `pending` is acknowledged and waiting on the next tool-batch
@@ -29,8 +44,16 @@ const InFlightSteer = memo(function InFlightSteer({
 }) {
   const localize = useLocalize();
   const cancelSteer = useSteerCancel(conversationId);
+  const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
+  const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
+  const handlePreviewClose = useCallback((open: boolean) => {
+    if (!open) {
+      setSelectedFile(null);
+    }
+  }, []);
+
+  const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
-  const files = steer.files ?? [];
 
   return (
     <div
@@ -39,33 +62,38 @@ const InFlightSteer = memo(function InFlightSteer({
       data-steer-status={steer.status}
       className="group flex flex-col items-start gap-1.5"
     >
-      {files.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {files.map((file) =>
-            file.type?.startsWith('image/') === true ? (
-              <div key={file.file_id} className="h-14 w-14 overflow-hidden rounded-lg">
-                <Image
-                  imagePath={file.preview ?? file.filepath ?? ''}
-                  height={file.height ?? 1920}
-                  width={file.width ?? 1080}
-                  altText={file.filename ?? localize('com_ui_attached_image')}
-                />
-              </div>
-            ) : (
-              <FileContainer key={file.file_id} file={file as TFile} />
-            ),
-          )}
+      {(images.length > 0 || others.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {others.map((file) => (
+            <FileContainer
+              key={file.file_id}
+              file={file as TFile}
+              onClick={() => setSelectedFile(file)}
+            />
+          ))}
+          {images.map((file) => (
+            <div
+              key={file.file_id}
+              className="overflow-hidden rounded-xl border border-border-light"
+            >
+              <ImagePreview
+                url={file.preview ?? file.filepath}
+                alt={file.filename ?? localize('com_ui_attached_image')}
+              />
+            </div>
+          ))}
         </div>
       )}
       <div className="flex max-w-full items-center gap-1.5">
         <div
           className={cn(
-            'min-w-0 rounded-3xl bg-surface-secondary px-4 py-2 text-sm text-text-primary',
-            'whitespace-pre-wrap break-words',
+            'markdown prose message-content dark:prose-invert light min-w-0 break-words',
+            'rounded-3xl bg-surface-secondary px-4 py-2 text-sm text-text-primary dark:text-gray-20',
+            !enableUserMsgMarkdown && 'whitespace-pre-wrap',
             sending && 'opacity-70',
           )}
         >
-          {steer.text}
+          {enableUserMsgMarkdown ? <MarkdownLite content={steer.text} /> : steer.text}
         </div>
         <Zap
           className={cn('h-3.5 w-3.5 shrink-0 text-amber-500', sending && 'opacity-50')}
@@ -84,6 +112,17 @@ const InFlightSteer = memo(function InFlightSteer({
           </button>
         )}
       </div>
+      {others.length > 0 && (
+        <FilePreviewDialog
+          open={selectedFile !== null}
+          onOpenChange={handlePreviewClose}
+          fileName={selectedFile?.filename ?? ''}
+          fileId={selectedFile?.file_id}
+          filePath={selectedFile?.filepath}
+          fileType={selectedFile?.type ?? undefined}
+          fileSize={(selectedFile as TFile | null)?.bytes}
+        />
+      )}
     </div>
   );
 });
@@ -101,7 +140,7 @@ const InFlightSteers = memo(function InFlightSteers({
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
-  const inFlight = steers.filter((steer) => steer.status !== 'failed');
+  const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
 
   if (inFlight.length === 0) {
     return null;

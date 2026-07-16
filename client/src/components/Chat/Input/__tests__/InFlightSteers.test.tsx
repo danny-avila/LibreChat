@@ -18,23 +18,45 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
   __esModule: true,
-  default: ({ file }: { file: { filename?: string } }) => (
-    <div data-testid="steer-file">{file.filename}</div>
+  default: ({ file, onClick }: { file: { filename?: string }; onClick?: () => void }) => (
+    <button type="button" data-testid="steer-file" onClick={onClick}>
+      {file.filename}
+    </button>
   ),
 }));
 
-jest.mock('~/components/Chat/Messages/Content/Image', () => ({
+/** The composer thumbnail path: a fixed-size button painted with a background
+ *  image, not an <img> — assert on the url it was handed. */
+jest.mock('~/components/Chat/Input/Files/ImagePreview', () => ({
   __esModule: true,
-  default: ({ altText }: { altText: string }) => <img alt={altText} data-testid="steer-image" />,
+  default: ({ url, alt }: { url?: string; alt?: string }) => (
+    <button type="button" data-testid="steer-image" data-url={url} aria-label={alt} />
+  ),
+}));
+
+jest.mock('~/components/Chat/Messages/Content/FilePreviewDialog', () => ({
+  __esModule: true,
+  default: ({ open, fileName }: { open: boolean; fileName: string }) =>
+    open ? <div data-testid="steer-file-preview">{fileName}</div> : null,
+}));
+
+jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
+  __esModule: true,
+  default: ({ content }: { content: string }) => (
+    <span data-testid="steer-markdown">{content}</span>
+  ),
 }));
 
 const CONVO_ID = 'convo-in-flight';
 
-function renderSteers(steers: PendingSteer[]) {
+function renderSteers(steers: PendingSteer[], options?: { enableUserMsgMarkdown?: boolean }) {
   return render(
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), steers);
+        if (options?.enableUserMsgMarkdown != null) {
+          set(store.enableUserMsgMarkdown, options.enableUserMsgMarkdown);
+        }
       }}
     >
       <InFlightSteers conversationId={CONVO_ID} />
@@ -97,7 +119,7 @@ describe('InFlightSteers', () => {
     expect(screen.getByText('network flake')).toBeInTheDocument();
   });
 
-  it('previews image attachments and lists other files', () => {
+  it('renders images through the composer thumbnail path, not the full-size message image', () => {
     renderSteers([
       {
         steerId: 's1',
@@ -105,12 +127,65 @@ describe('InFlightSteers', () => {
         status: 'pending',
         createdAt: 1,
         files: [
-          { file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' },
           { file_id: 'f2', filename: 'shot.png', type: 'image/png', filepath: '/images/shot.png' },
         ],
       },
     ]);
+    // The message `Image` reserves height from the file's dimensions, so it
+    // cannot be clipped down to a thumbnail; ImagePreview is fixed-size.
+    expect(screen.getByTestId('steer-image')).toHaveAttribute('data-url', '/images/shot.png');
+  });
+
+  it('prefers the local preview url for an image that is still uploading', () => {
+    renderSteers([
+      {
+        steerId: 's1',
+        text: 'see attached',
+        status: 'pending',
+        createdAt: 1,
+        files: [
+          {
+            file_id: 'f2',
+            filename: 'shot.png',
+            type: 'image/png',
+            preview: 'blob:local-preview',
+            filepath: '/images/shot.png',
+          },
+        ],
+      },
+    ]);
+    expect(screen.getByTestId('steer-image')).toHaveAttribute('data-url', 'blob:local-preview');
+  });
+
+  it('keeps non-image attachments previewable while the steer waits', () => {
+    renderSteers([
+      {
+        steerId: 's1',
+        text: 'see attached',
+        status: 'pending',
+        createdAt: 1,
+        files: [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }],
+      },
+    ]);
     expect(screen.getByTestId('steer-file')).toHaveTextContent('notes.pdf');
-    expect(screen.getByTestId('steer-image')).toBeInTheDocument();
+    expect(screen.queryByTestId('steer-file-preview')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('steer-file'));
+    expect(screen.getByTestId('steer-file-preview')).toHaveTextContent('notes.pdf');
+  });
+
+  it('renders markdown the same way the applied part will, so text does not reflow on apply', () => {
+    renderSteers([{ steerId: 's1', text: '**bold** steer', status: 'pending', createdAt: 1 }], {
+      enableUserMsgMarkdown: true,
+    });
+    expect(screen.getByTestId('steer-markdown')).toHaveTextContent('**bold** steer');
+  });
+
+  it('renders raw text when user-message markdown is off', () => {
+    renderSteers([{ steerId: 's1', text: '**bold** steer', status: 'pending', createdAt: 1 }], {
+      enableUserMsgMarkdown: false,
+    });
+    expect(screen.queryByTestId('steer-markdown')).toBeNull();
+    expect(screen.getByText('**bold** steer')).toBeInTheDocument();
   });
 });
