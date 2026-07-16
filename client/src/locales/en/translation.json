@@ -2046,5 +2046,10 @@
   "com_ui_zoom_in": "Zoom in",
   "com_ui_zoom_level": "Zoom level",
   "com_ui_zoom_out": "Zoom out",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_ui_artifact_apps": "Apps",
+  "com_ui_artifact_apps_description": "Artifact apps published from your conversations.",
+  "com_ui_artifact_apps_empty": "No apps yet",
+  "com_ui_artifact_apps_empty_hint": "Open an artifact in a conversation and click the Publish button to create your first app.",
+  "com_nav_artifact_apps": "Apps"
 }
