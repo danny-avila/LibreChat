@@ -51,11 +51,17 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
 
 const CONVO_ID = 'convo-in-flight';
 
-function renderSteers(steers: PendingSteer[], options?: { enableUserMsgMarkdown?: boolean }) {
+function renderSteers(
+  steers: PendingSteer[],
+  options?: { enableUserMsgMarkdown?: boolean; appliedSteerIds?: string[] },
+) {
   return render(
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), steers);
+        if (options?.appliedSteerIds != null) {
+          set(store.appliedSteerIdsByConvoId(CONVO_ID), options.appliedSteerIds);
+        }
         if (options?.enableUserMsgMarkdown != null) {
           set(store.enableUserMsgMarkdown, options.enableUserMsgMarkdown);
         }
@@ -131,6 +137,23 @@ describe('InFlightSteers', () => {
     const options = mockCancelMutate.mock.calls[0][1] as { onError: () => void };
     act(() => options.onError());
     expect(screen.getByText('network flake')).toBeInTheDocument();
+  });
+
+  it('does not restore a steer that settled while the cancel POST was in flight', () => {
+    // The run's final event converted this steer to a queued follow-up, which
+    // stamps its id into the applied set. Restoring it on a failed cancel would
+    // strand a stale entry that the NEXT run — a queue drain auto-sends one —
+    // renders as an in-flight bubble beside that queued copy.
+    renderSteers(
+      [{ steerId: 's-settled', text: 'already queued', status: 'pending', createdAt: 1 }],
+      { appliedSteerIds: ['s-settled'] },
+    );
+    fireEvent.click(screen.getByTestId('steer-cancel'));
+    expect(screen.queryByText('already queued')).toBeNull();
+
+    const options = mockCancelMutate.mock.calls[0][1] as { onError: () => void };
+    act(() => options.onError());
+    expect(screen.queryByText('already queued')).toBeNull();
   });
 
   it('renders images through the composer thumbnail path, not the full-size message image', () => {
