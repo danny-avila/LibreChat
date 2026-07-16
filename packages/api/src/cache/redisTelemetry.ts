@@ -300,6 +300,9 @@ export function instrumentIORedisClient<T extends object>(client: T, namespace: 
   const proxy = new Proxy(client, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
+      if (property === 'constructor') {
+        return value;
+      }
       if (typeof property !== 'string' || typeof value !== 'function') {
         return value;
       }

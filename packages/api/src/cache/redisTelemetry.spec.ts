@@ -148,6 +148,17 @@ describe('redisTelemetry', () => {
     );
   });
 
+  it('preserves the ioredis client constructor', () => {
+    class FakeRedisClient {}
+
+    const client = new FakeRedisClient();
+    const redis = instrumentIORedisClient(client, RedisUseCases.GENERATION_STREAM);
+
+    expect(redis.constructor).toBe(client.constructor);
+    expect(redis.constructor.name).toBe('FakeRedisClient');
+    expect(redis).toBeInstanceOf(FakeRedisClient);
+  });
+
   it('instruments Keyv methods and ioredis pipelines without changing their results', async () => {
     const span = createSpan();
     const telemetry = createRedisRequestTelemetry(span as unknown as Span);
