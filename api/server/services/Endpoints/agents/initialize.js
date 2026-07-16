@@ -135,7 +135,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const collectedThoughtSignatures = {};
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
-  const { contentParts, aggregateContent } = createContentAggregator();
+  /** @type {Map<string, import('@librechat/api').ToolInputValidationError>} */
+  const toolInputValidationErrors = new Map();
+  const { contentParts, aggregateContent, stepMap } = createContentAggregator();
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
 
   /** Query accessible skill IDs once per run (shared across all agents).
@@ -290,6 +292,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   const eventHandlers = getDefaultHandlers({
     res,
+    contentParts,
+    stepMap,
+    toolInputValidationErrors,
     toolExecuteOptions,
     summarizationOptions,
     aggregateContent,
@@ -1004,6 +1009,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
      *  them to persist the breakdown + usage rollup on the response message. */
     contextUsageSink,
     usageEmitSink,
+    toolInputValidationErrors,
   });
 
   if (streamId) {

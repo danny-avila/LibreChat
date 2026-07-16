@@ -27,8 +27,8 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
 import { subagentProgressByToolCallId, sandboxStartingByToolCallId } from '~/store';
-import { isAskUserQuestionPart } from '~/utils/approval';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
@@ -388,6 +388,17 @@ export default function useStepHandler({
      */
     if (isAskUserQuestionPart(updatedContent[index])) {
       updatedContent = updatedContent.filter((part) => !isAskUserQuestionPart(part));
+    } else if (updatedContent.some(isAnsweredAskUserQuestionPart)) {
+      /**
+       * An ALREADY-ANSWERED card the resumed segment streams around rather than
+       * into: the first event after the resume re-renders the ask tool_call at
+       * ITS OWN index, so the slot test above never fires and this handler's
+       * cached copy — which still holds the card the answer-submit stripped from
+       * the store — gets written back, reopening the popover with its options
+       * locked. Only cards the user actually answered are dropped, so an event
+       * racing a still-live pause can't take its card down.
+       */
+      updatedContent = updatedContent.filter((part) => !isAnsweredAskUserQuestionPart(part));
     }
 
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
@@ -490,6 +501,12 @@ export default function useStepHandler({
       if (finalUpdate) {
         newToolCall.progress = 1;
         newToolCall.output = contentPart.tool_call.output;
+        if (
+          'inputValidationError' in contentPart.tool_call &&
+          contentPart.tool_call.inputValidationError === true
+        ) {
+          Object.assign(newToolCall, { inputValidationError: true });
+        }
       }
 
       updatedContent[index] = {
