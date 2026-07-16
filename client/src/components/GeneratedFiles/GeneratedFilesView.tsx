@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuthContext } from '~/hooks';
-import { getGeneratedFiles, downloadGeneratedFile, deleteGeneratedFile } from '~/data-provider';
+import { dataService } from 'librechat-data-provider';
 
 export default function GeneratedFilesView() {
   const [files, setFiles] = useState([]);
@@ -13,7 +13,7 @@ export default function GeneratedFilesView() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getGeneratedFiles();
+      const data = await dataService.getGeneratedFiles();
       setFiles(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to fetch generated files:', err);
@@ -30,7 +30,7 @@ export default function GeneratedFilesView() {
 
   const handleDownload = async (fileId, filename) => {
     try {
-      const response = await downloadGeneratedFile(fileId);
+      const response = await dataService.downloadGeneratedFile(fileId);
       const blob = new Blob([response.data]);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -45,7 +45,7 @@ export default function GeneratedFilesView() {
 
   const handleDelete = async (fileId) => {
     try {
-      await deleteGeneratedFile(fileId);
+      await dataService.deleteGeneratedFile(fileId);
       setFiles((prev) => (Array.isArray(prev) ? prev.filter((f) => f._id !== fileId) : []));
     } catch (error) {
       console.error('Delete failed:', error);
