@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useCallback } from 'react';
+import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import { X, Zap } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
@@ -103,7 +103,13 @@ const InFlightSteer = memo(function InFlightSteer({
               !enableUserMsgMarkdown && 'whitespace-pre-wrap',
             )}
           >
-            {enableUserMsgMarkdown ? <MarkdownLite content={steer.text} /> : steer.text}
+            {/* No code execution: this bubble sits outside MessageContext, so
+             *  Run Code would fire with no message/part to target. */}
+            {enableUserMsgMarkdown ? (
+              <MarkdownLite content={steer.text} codeExecution={false} />
+            ) : (
+              steer.text
+            )}
           </div>
         </div>
         {!sending && (
@@ -150,16 +156,32 @@ const InFlightSteers = memo(function InFlightSteers({
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
 
+  /** Steers append newest-last, so an overflowing stack would sit scrolled to
+   *  the oldest — the steer just submitted (and its cancel) would be below the
+   *  fold and read as dropped. Keyed on the newest id, not every render. */
+  const listRef = useRef<HTMLDivElement>(null);
+  const newestId = inFlight[inFlight.length - 1]?.steerId;
+  useEffect(() => {
+    const list = listRef.current;
+    if (list != null) {
+      list.scrollTop = list.scrollHeight;
+    }
+  }, [newestId]);
+
   if (inFlight.length === 0) {
     return null;
   }
 
   return (
     <div
+      ref={listRef}
       role="list"
       aria-label={localize('com_ui_steer_in_flight')}
       data-testid="in-flight-steers"
-      className="flex flex-col items-start gap-2 px-2 pb-2"
+      /* Capped: a steer runs to 16k chars and a run takes up to 10 of them.
+       * Unbounded, the stack would push the composer off-screen — the old
+       * in-thread slot could grow freely because it scrolled with the thread. */
+      className="flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
     >
       {inFlight.map((steer) => (
         <InFlightSteer key={steer.steerId} steer={steer} conversationId={conversationId} />
