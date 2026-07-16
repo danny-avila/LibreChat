@@ -1,6 +1,7 @@
-import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
+import type { Redis, Cluster } from 'ioredis';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
+import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 
 /**
  * Redis key prefixes for pub/sub channels
@@ -112,8 +113,8 @@ export class RedisEventTransport implements IEventTransport {
    * @param subscriber - Redis client for subscribing (must be dedicated)
    */
   constructor(publisher: Redis | Cluster, subscriber: Redis | Cluster) {
-    this.publisher = publisher;
-    this.subscriber = subscriber;
+    this.publisher = instrumentIORedisClient(publisher, RedisUseCases.GENERATION_STREAM);
+    this.subscriber = instrumentIORedisClient(subscriber, RedisUseCases.GENERATION_STREAM);
 
     // Set up message handler for all subscriptions
     this.subscriber.on('message', (channel: string, message: string) => {
