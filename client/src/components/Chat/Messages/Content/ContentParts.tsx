@@ -14,7 +14,6 @@ import PendingSkillCall from './Parts/PendingSkillCall';
 import { EditTextPart, EmptyText } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
-import PendingSteers from './PendingSteers';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
@@ -150,9 +149,6 @@ const ContentParts = memo(function ContentParts({
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
-  /** In-thread slot for not-yet-applied steers, only on the live streaming
-   *  message — everywhere else the persisted STEER parts are the record. */
-  const showPendingSteers = !isCreatedByUser && isLatestMessage === true && effectiveIsSubmitting;
   const toolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const fallbackScopeRef = useRef({ messageId, scope: 0 });
   if (fallbackScopeRef.current.messageId !== messageId) {
@@ -390,7 +386,6 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={effectiveIsSubmitting}
           renderPart={renderPart}
         />
-        {showPendingSteers && <PendingSteers conversationId={conversationId} />}
       </ApprovalProvider>
     );
   }
@@ -426,7 +421,6 @@ const ContentParts = memo(function ContentParts({
             />
           );
         })}
-        {showPendingSteers && <PendingSteers conversationId={conversationId} />}
       </SearchContext.Provider>
     </ApprovalProvider>
   );
