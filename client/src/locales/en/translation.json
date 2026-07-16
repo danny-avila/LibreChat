@@ -1874,6 +1874,7 @@
   "com_ui_steer": "Steer",
   "com_ui_steer_cancel": "Cancel steering message",
   "com_ui_steer_failed": "Steering failed",
+  "com_ui_steer_in_flight": "Steering",
   "com_ui_steer_paused_queued": "The agent is waiting for your review — your message was queued instead",
   "com_ui_steer_retry": "Retry steering",
   "com_ui_steer_send": "Steer the current response",

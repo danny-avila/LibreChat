@@ -263,9 +263,10 @@ function FailedSteerRow({
  * Stacked rows above the composer for during-run messages, mirroring the
  * reference UI: each row shows the message, a primary action, delete, and an
  * overflow menu with Edit message + the default-mode toggle.
+ * (In-flight steers read as messages, not controls — `InFlightSteers` renders
+ * them as bubbles anchored above the composer box.)
  * - Failed steer rows (Zap, red): the POST failed, so the text never entered
  *   the thread — kept recoverable with retry / edit / queue actions.
- *   (Sending/pending steers render in-thread as user messages instead.)
  * - Queued rows (Clock): client-side follow-ups auto-sent after the run.
  */
 function PendingSteerChips({
