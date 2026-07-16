@@ -28,6 +28,18 @@ interface PublishAppDialogProps {
   messageId?: string;
 }
 
+type RuntimeType = 'react' | 'html' | 'mermaid';
+
+function getRuntimeTypeFromArtifact(artifact: Artifact): RuntimeType {
+  const t = artifact.type;
+
+  if (t === 'application/vnd.mermaid') return 'mermaid';
+  if (t === 'text/html' || t === 'application/vnd.code-html') return 'html';
+
+  // alles andere als React-App behandeln
+  return 'react';
+}
+
 const STEPS = ['general', 'security', 'publish'] as const;
 type Step = (typeof STEPS)[number];
 
@@ -60,6 +72,7 @@ export default function PublishAppDialog({
     },
   });
 
+  const runtimeType = getRuntimeTypeFromArtifact(artifact);
   const visibility = watch('visibility');
 
   const onSubmit = handleSubmit(async (data) => {
@@ -77,7 +90,7 @@ export default function PublishAppDialog({
         allowAnonymousView: data.allowAnonymousView,
         changelog: data.changelog,
         artifact: {
-          type: artifact.type as 'react' | 'html' | 'mermaid',
+          type: runtimeType,
           content: artifact.content ?? '',
           title: artifact.title,
         },
@@ -92,7 +105,7 @@ export default function PublishAppDialog({
       onOpenChange(false);
       navigate(`/apps/${result.app.artifactAppId}`);
     } catch {
-      // error handled via publishMutation.isError
+      // Fehler wird über publishMutation.isError angezeigt
     }
   });
 
