@@ -1691,9 +1691,15 @@ class GenerationJobManagerClass {
       return null;
     }
 
-    const result = await this.jobStore.getContentParts(streamId);
+    /** Independent reads (streamId-only): parallel to collapse 3 Redis round trips into 1.
+     *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
+     *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
+    const [result, runSteps, queuedSteers] = await Promise.all([
+      this.jobStore.getContentParts(streamId),
+      this.jobStore.getRunSteps(streamId),
+      this.jobStore.peekSteers(streamId),
+    ]);
     const aggregatedContent = result?.content ?? [];
-    const runSteps = await this.jobStore.getRunSteps(streamId);
     let titleEvent: t.ResumeState['titleEvent'];
     if (jobData.titleEvent) {
       try {
@@ -1733,7 +1739,7 @@ class GenerationJobManagerClass {
     }
 
     /** Steers still queued (not yet injected); injected ones are already in aggregatedContent. */
-    const pendingSteers = (await this.jobStore.peekSteers(streamId)).map(toPendingSteer);
+    const pendingSteers = queuedSteers.map(toPendingSteer);
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
