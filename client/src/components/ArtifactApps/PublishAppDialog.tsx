@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { X, Rocket } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -50,7 +49,6 @@ export default function PublishAppDialog({
     watch,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
     defaultValues: {
       title: artifact.title ?? '',
       description: '',
