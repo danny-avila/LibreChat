@@ -87,6 +87,18 @@ describe('InFlightSteers', () => {
     expect(screen.queryByTestId('in-flight-steers')).toBeNull();
   });
 
+  it('keeps cancel reachable on touch, hover-revealed on hover-capable pointers', () => {
+    renderSteers([
+      { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
+    ]);
+    // A plain `opacity-0` reveal would make the bubble hover-dependent, so on
+    // touch the X would need a first tap to appear (see the #14272 pattern).
+    const cancel = screen.getByTestId('steer-cancel');
+    expect(cancel.className).toContain('[@media(hover:hover)]:opacity-0');
+    expect(cancel.className).toContain('group-hover:opacity-100');
+    expect(cancel.className).toContain('focus-visible:opacity-100');
+  });
+
   it('only offers cancel once the steer is acknowledged', () => {
     renderSteers([
       { steerId: 'local-1', text: 'still posting', status: 'sending', createdAt: 1 },

@@ -87,26 +87,34 @@ const InFlightSteer = memo(function InFlightSteer({
       <div className="flex max-w-full items-center gap-1.5">
         <div
           className={cn(
-            'markdown prose message-content dark:prose-invert light min-w-0 break-words',
-            'rounded-3xl bg-surface-secondary px-4 py-2 text-sm text-text-primary dark:text-gray-20',
-            !enableUserMsgMarkdown && 'whitespace-pre-wrap',
+            /* Outlined, not just filled: an in-flight steer is provisional —
+             * the fill alone reads as a settled message. */
+            'flex min-w-0 items-start gap-2 rounded-3xl border border-border-medium',
+            'bg-surface-secondary py-2 pl-3 pr-4 text-sm text-text-primary',
             sending && 'opacity-70',
           )}
         >
-          {enableUserMsgMarkdown ? <MarkdownLite content={steer.text} /> : steer.text}
+          <Zap className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+          <span className="sr-only">{localize('com_ui_steer_in_flight')}</span>
+          <div
+            className={cn(
+              'markdown prose message-content dark:prose-invert light min-w-0 break-words',
+              'dark:text-gray-20',
+              !enableUserMsgMarkdown && 'whitespace-pre-wrap',
+            )}
+          >
+            {enableUserMsgMarkdown ? <MarkdownLite content={steer.text} /> : steer.text}
+          </div>
         </div>
-        <Zap
-          className={cn('h-3.5 w-3.5 shrink-0 text-amber-500', sending && 'opacity-50')}
-          aria-hidden="true"
-        />
-        <span className="sr-only">{localize('com_ui_steer_in_flight')}</span>
         {!sending && (
+          /* Hidden-at-rest only on hover-capable pointers: a hover-revealed
+           * control is unreachable on touch until a first tap. */
           <button
             type="button"
             aria-label={localize('com_ui_steer_cancel')}
             onClick={() => cancelSteer(steer)}
             data-testid="steer-cancel"
-            className="shrink-0 rounded-full p-1 text-text-secondary opacity-0 transition-opacity duration-200 hover:bg-surface-tertiary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy group-hover:opacity-100"
+            className="shrink-0 rounded-full p-1 text-text-secondary transition-opacity duration-200 hover:bg-surface-tertiary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
