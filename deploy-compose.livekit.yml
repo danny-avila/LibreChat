@@ -1,0 +1,62 @@
+# Optional realtime voice stack (LiveKit), production flavor. Opt-in overlay:
+#   docker compose -f deploy-compose.yml -f deploy-compose.livekit.yml up -d
+#
+# Self-hosts the SFU. For LiveKit Cloud, drop the `livekit` service and point LIVEKIT_URL at
+# your Cloud project — Cloud also removes the UDP/TURN and TLS burden below.
+services:
+  api:
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}
+      - LIVEKIT_WORKER_SECRET=${LIVEKIT_WORKER_SECRET:?Set LIVEKIT_WORKER_SECRET}
+    networks:
+      - default
+      - livekit
+
+  livekit:
+    image: livekit/livekit-server:v1.9.1
+    restart: always
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      - LIVEKIT_KEYS=${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}
+    ports:
+      # WebRTC needs UDP and the nginx ingress publishes only 80/443 TCP, so the SFU
+      # publishes directly. Browsers also require a trusted certificate on the signaling
+      # URL: terminate TLS in front of 7880 and set LIVEKIT_URL to the wss:// host.
+      - '${LIVEKIT_PORT:-7880}:7880'
+      - '${LIVEKIT_RTC_TCP_PORT:-7881}:7881'
+      - '${LIVEKIT_RTC_UDP_PORT:-7882}:7882/udp'
+    networks:
+      - livekit
+
+  livekit-agent:
+    # build:
+    #   context: .
+    #   dockerfile: livekit/agent/Dockerfile
+    image: ghcr.io/danny-avila/librechat-livekit-agent:latest
+    restart: always
+    depends_on:
+      - livekit
+      - api
+    env_file:
+      - .env
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}
+      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-librechat-voice}
+      - LIVEKIT_WORKER_SECRET=${LIVEKIT_WORKER_SECRET:?Set LIVEKIT_WORKER_SECRET}
+      - LIBRECHAT_API_URL=${LIBRECHAT_API_URL:-http://api:3080}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY:-}
+      - ELEVEN_API_KEY=${ELEVEN_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    networks:
+      - livekit
+      - default
+
+networks:
+  livekit:

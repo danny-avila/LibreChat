@@ -5,6 +5,9 @@ export * from './Skills';
 export * from './Files';
 /* Memories */
 export * from './Memories';
+
+/* Voice */
+export * from './Voice';
 export * from './Messages';
 export * from './Misc';
 export * from './Projects';

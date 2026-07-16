@@ -1,0 +1,61 @@
+{{- if .Values.livekit.enabled }}
+{{- if not .Values.livekit.url }}
+{{- fail "livekit.url is required when livekit.enabled=true" }}
+{{- end }}
+{{- if not .Values.livekit.existingSecret }}
+{{- fail "livekit.existingSecret is required when livekit.enabled=true (LiveKit API key/secret and the worker secret must not be plain values)" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "librechat.livekitAgent.fullname" . }}
+  labels:
+    {{- include "librechat.livekitAgent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.livekit.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "librechat.livekitAgent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "librechat.livekitAgent.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: livekit-agent
+          image: "{{ .Values.livekit.image.repository }}:{{ .Values.livekit.image.tag }}"
+          imagePullPolicy: {{ .Values.livekit.image.pullPolicy }}
+          # The worker holds an outbound websocket to LiveKit and forks a child process per
+          # job; it serves no traffic, so it has no service and no ingress.
+          env:
+            - name: LIVEKIT_URL
+              value: {{ .Values.livekit.url | quote }}
+            - name: LIVEKIT_AGENT_NAME
+              value: {{ .Values.livekit.agentName | quote }}
+            - name: LIBRECHAT_API_URL
+              value: {{ .Values.livekit.librechatApiUrl | default (printf "http://%s.%s.svc.cluster.local:%v" (include "librechat.fullname" .) (.Release.Namespace | lower) .Values.service.port) | quote }}
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.livekit.existingSecret }}
+                  key: {{ .Values.livekit.secretKeys.apiKey }}
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.livekit.existingSecret }}
+                  key: {{ .Values.livekit.secretKeys.apiSecret }}
+            - name: LIVEKIT_WORKER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.livekit.existingSecret }}
+                  key: {{ .Values.livekit.secretKeys.workerSecret }}
+            {{- range $name, $key := .Values.livekit.providerSecretKeys }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.livekit.existingSecret }}
+                  key: {{ $key }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.livekit.resources | nindent 12 }}
+{{- end }}

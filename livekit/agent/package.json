@@ -1,0 +1,35 @@
+{
+  "name": "librechat-livekit-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LiveKit voice agent worker for LibreChat. Owns the media plane only; LibreChat remains the brain.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts dev",
+    "start": "node dist/index.js start",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@livekit/agents": "1.5.2",
+    "@livekit/agents-plugin-cartesia": "1.5.2",
+    "@livekit/agents-plugin-deepgram": "1.5.2",
+    "@livekit/agents-plugin-elevenlabs": "1.5.2",
+    "@livekit/agents-plugin-livekit": "1.5.2",
+    "@livekit/agents-plugin-openai": "1.5.2",
+    "@livekit/agents-plugin-silero": "1.5.2",
+    "@livekit/rtc-node": "0.13.31",
+    "librechat-data-provider": "file:../../packages/data-provider"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

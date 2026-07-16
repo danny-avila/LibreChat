@@ -41,6 +41,9 @@ const rolePermissionsSchema = new Schema(
     [PermissionTypes.WEB_SEARCH]: {
       [Permissions.USE]: { type: Boolean },
     },
+    [PermissionTypes.VOICE]: {
+      [Permissions.USE]: { type: Boolean },
+    },
     [PermissionTypes.PEOPLE_PICKER]: {
       [Permissions.VIEW_USERS]: { type: Boolean },
       [Permissions.VIEW_GROUPS]: { type: Boolean },

@@ -257,3 +257,20 @@ export type GraphTokenResponse = {
   expires_in: number;
   scope: string;
 };
+
+/* Realtime voice (LiveKit) */
+export type VoiceSessionRequest = {
+  conversationId?: string;
+  endpoint?: string;
+  agentId?: string;
+  model?: string;
+  voice?: string;
+};
+
+export type VoiceSessionResponse = {
+  token: string;
+  url: string;
+  roomName: string;
+  /** Generated server-side when the conversation is new, so client and worker agree on it. */
+  conversationId: string;
+};

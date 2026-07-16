@@ -3,6 +3,7 @@ import {
   Permissions,
   PermissionTypes,
   permissionsSchema,
+  voicePermissionsSchema,
   agentPermissionsSchema,
   promptPermissionsSchema,
   skillPermissionsSchema,
@@ -117,6 +118,9 @@ const defaultRolesSchema = z.object({
         [Permissions.SHARE]: z.boolean().default(true),
         [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
+      [PermissionTypes.VOICE]: voicePermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+      }),
     }),
   }),
   [SystemRoles.USER]: roleSchema.extend({
@@ -211,6 +215,9 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.VOICE]: {
+        [Permissions.USE]: true,
+      },
     },
   },
   [SystemRoles.USER]: {
@@ -267,6 +274,9 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.VOICE]: {
+        [Permissions.USE]: false,
       },
     },
   },

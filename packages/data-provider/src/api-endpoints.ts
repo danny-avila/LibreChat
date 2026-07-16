@@ -529,3 +529,6 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+// Realtime voice (LiveKit)
+export const livekitToken = () => `${BASE_URL}/api/livekit/token`;

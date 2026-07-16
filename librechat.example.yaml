@@ -271,6 +271,35 @@ registration:
 #       url: ''
 #       apiKey: '${STT_API_KEY}'
 #       model: ''
+#
+#   # Realtime voice (LiveKit). A sibling of tts/stt, not a provider inside them:
+#   # this is full-duplex conversation (barge-in, semantic turn detection) rather
+#   # than another engine for the push-to-talk flow, and the tts/stt providers above
+#   # are batch/REST and cannot turn-take.
+#   #
+#   # The voice agent has no model and no prompt of its own — every turn is an
+#   # ordinary agent request, so tools, MCP, memory, and history behave exactly as
+#   # they do in text chat, and the call is saved as a normal conversation.
+#   #
+#   # Also requires: LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET in .env, the
+#   # agent worker running (docker-compose.livekit.yml), and the VOICE role
+#   # permission (off by default). Vendor keys live in the worker's environment.
+#   livekit:
+#     enabled: true
+#     agentName: librechat-voice
+#     tokenTtl: 5m
+#     maxSessionDuration: 1800
+#     stt:
+#       provider: deepgram
+#       model: nova-3
+#       language: en
+#     tts:
+#       provider: cartesia
+#       model: sonic-2
+#       voice: ''
+#     turnDetection:
+#       minEndpointingDelay: 0.5
+#       maxEndpointingDelay: 6
 
 # rateLimits:
 #   fileUploads:

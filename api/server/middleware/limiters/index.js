@@ -1,5 +1,6 @@
 const createTTSLimiters = require('./ttsLimiters');
 const createSTTLimiters = require('./sttLimiters');
+const createVoiceLimiters = require('./voiceLimiters');
 
 const loginLimiter = require('./loginLimiter');
 const importLimiters = require('./importLimiters');
@@ -26,6 +27,7 @@ module.exports = {
   toolCallLimiter,
   createTTSLimiters,
   createSTTLimiters,
+  createVoiceLimiters,
   verifyEmailLimiter,
   resetPasswordLimiter,
   verifyEmailSubmissionLimiter,

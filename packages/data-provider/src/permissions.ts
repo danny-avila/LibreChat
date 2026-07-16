@@ -68,6 +68,10 @@ export enum PermissionTypes {
    * Type for Shared Link Permissions
    */
   SHARED_LINKS = 'SHARED_LINKS',
+  /**
+   * Type for using realtime voice conversations
+   */
+  VOICE = 'VOICE',
 }
 
 /**
@@ -92,6 +96,7 @@ export const PERMISSION_TYPE_INTERFACE_FIELDS: Record<PermissionTypes, string> =
   [PermissionTypes.REMOTE_AGENTS]: 'remoteAgents',
   [PermissionTypes.SKILLS]: 'skills',
   [PermissionTypes.SHARED_LINKS]: 'sharedLinks',
+  [PermissionTypes.VOICE]: 'voice',
 };
 
 /** Set of interface config field names that correspond to role permissions. */
@@ -210,6 +215,12 @@ export const marketplacePermissionsSchema = z.object({
 });
 export type TMarketplacePermissions = z.infer<typeof marketplacePermissionsSchema>;
 
+/** Defaults off: minting a room token starts a billable third-party session. */
+export const voicePermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(false),
+});
+export type TVoicePermissions = z.infer<typeof voicePermissionsSchema>;
+
 export const fileSearchPermissionsSchema = z.object({
   [Permissions.USE]: z.boolean().default(true),
 });
@@ -270,4 +281,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
   [PermissionTypes.SKILLS]: skillPermissionsSchema,
   [PermissionTypes.SHARED_LINKS]: sharedLinksPermissionsSchema,
+  [PermissionTypes.VOICE]: voicePermissionsSchema,
 });

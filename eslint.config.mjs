@@ -41,6 +41,7 @@ export default [
       'packages/data-schemas/misc/**/*',
       'data-node/**/*',
       'meili_data/**/*',
+      'livekit/agent/dist/**/*',
       '**/node_modules/**/*',
       '.devcontainer/**/*',
     ],
@@ -222,7 +223,8 @@ export default [
     // e2e specs are not part of `client/tsconfig.json`'s program, so typed
     // linting them errors with "file not found in project"; they still get
     // the non-type-checked recommended rules from the block above.
-    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*'],
+    // The LiveKit worker is a separate program with its own tsconfig (see below).
+    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*', 'livekit/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),
@@ -295,6 +297,33 @@ export default [
   },
   {
     files: ['./packages/api/**/*.ts'],
+    rules: {
+      'lines-between-class-members': ['error', 'always', { exceptAfterSingleLine: true }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
+  {
+    // The voice agent worker is not an npm workspace and has its own program.
+    files: ['./livekit/agent/**/*.ts'],
+    plugins: {
+      '@typescript-eslint': typescriptEslintEslintPlugin,
+    },
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      parserOptions: {
+        project: './livekit/agent/tsconfig.json',
+      },
+    },
     rules: {
       'lines-between-class-members': ['error', 'always', { exceptAfterSingleLine: true }],
       '@typescript-eslint/no-unused-vars': [

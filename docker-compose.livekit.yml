@@ -1,0 +1,63 @@
+# Optional realtime voice stack (LiveKit). Opt-in overlay — the base compose is unchanged:
+#   docker compose -f docker-compose.yml -f docker-compose.livekit.yml up
+#
+# This file self-hosts the SFU. To use LiveKit Cloud instead, drop the `livekit` service and
+# point LIVEKIT_URL at your Cloud project.
+services:
+  api:
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}
+      - LIVEKIT_WORKER_SECRET=${LIVEKIT_WORKER_SECRET:?Set LIVEKIT_WORKER_SECRET}
+    networks:
+      - default
+      - livekit
+
+  livekit:
+    image: livekit/livekit-server:v1.9.1
+    restart: always
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      - LIVEKIT_KEYS=${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}
+    ports:
+      # WebRTC needs UDP. The base nginx ingress publishes only 80/443 TCP, so the SFU
+      # publishes its own ports rather than routing through it.
+      - '${LIVEKIT_PORT:-7880}:7880'
+      - '${LIVEKIT_RTC_TCP_PORT:-7881}:7881'
+      - '${LIVEKIT_RTC_UDP_PORT:-7882}:7882/udp'
+    networks:
+      - livekit
+
+  livekit-agent:
+    build:
+      context: .
+      dockerfile: livekit/agent/Dockerfile
+    image: librechat-livekit-agent:local
+    restart: always
+    depends_on:
+      - livekit
+      - api
+    env_file:
+      - .env
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:?Set LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:?Set LIVEKIT_API_SECRET}
+      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-librechat-voice}
+      - LIVEKIT_WORKER_SECRET=${LIVEKIT_WORKER_SECRET:?Set LIVEKIT_WORKER_SECRET}
+      - LIBRECHAT_API_URL=${LIBRECHAT_API_URL:-http://api:3080}
+      # Streaming STT/TTS credentials. The worker resolves providers by name against its
+      # plugin registry, so only the ones named in librechat.yaml need to be set.
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY:-}
+      - ELEVEN_API_KEY=${ELEVEN_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    networks:
+      - livekit
+      - default
+
+networks:
+  livekit:

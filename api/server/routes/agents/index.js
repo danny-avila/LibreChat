@@ -10,6 +10,7 @@ const {
   deleteAgentCheckpoint,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
+  truncateSpokenContent,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -273,7 +274,7 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
   logger.debug(`[AgentStream] Body:`, req.body);
 
-  const { streamId, conversationId, abortKey } = req.body;
+  const { streamId, conversationId, abortKey, truncateAt } = req.body;
   const userId = req.user?.id;
 
   // streamId === conversationId, so try any of the provided IDs
@@ -323,12 +324,23 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // chunk log, which never saw the pause-time stamp applied to the in-process
     // contentParts — stamping inside abortJob (not after) means the LIVE client
     // gets the question too, not just the saved message on reload.
+    // A voice barge-in additionally passes `truncateAt`: how much of the answer the caller
+    // actually heard before interrupting. Text chat has no such notion — generated means
+    // seen — but audio playback lags generation, so the persisted message must be cut back
+    // to the heard prefix or the next turn is rebuilt from words nobody spoke.
     const abortedAskPayload = job.metadata?.pendingAction?.payload;
+    const shouldTruncate = Number.isInteger(truncateAt) && truncateAt >= 0;
     const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
-      transformAbortContent: (content) =>
-        abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
-          ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
-          : content,
+      transformAbortContent: (content) => {
+        if (!Array.isArray(content)) {
+          return content;
+        }
+        const stamped =
+          abortedAskPayload?.type === 'ask_user_question'
+            ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
+            : content;
+        return shouldTruncate ? truncateSpokenContent(stamped, truncateAt) : stamped;
+      },
     });
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,

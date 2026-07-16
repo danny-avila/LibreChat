@@ -284,6 +284,35 @@ dnsConfig: {}
 updateStrategy:
   type: RollingUpdate
 
+# Optional realtime voice (LiveKit) agent worker. Off by default; LibreChat runs
+# normally without it. Also requires `speech.livekit` in librechat.yaml and the
+# VOICE role permission. Self-hosting the SFU additionally needs published UDP
+# ports and a trusted TLS cert on the signaling URL — LiveKit Cloud avoids both.
+livekit:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/danny-avila/librechat-livekit-agent
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  # wss:// URL of the LiveKit SFU or Cloud project.
+  url: ""
+  agentName: librechat-voice
+  # Defaults to the in-cluster LibreChat API service.
+  librechatApiUrl: ""
+  # Credentials are never plain values: point at an existing Secret.
+  existingSecret: ""
+  secretKeys:
+    apiKey: LIVEKIT_API_KEY
+    apiSecret: LIVEKIT_API_SECRET
+    workerSecret: LIVEKIT_WORKER_SECRET
+  # Streaming STT/TTS vendor keys, as { ENV_VAR: secretKey }. LiveKit Inference is
+  # Cloud-only, so self-hosted deployments must supply their own.
+  providerSecretKeys: {}
+  #  DEEPGRAM_API_KEY: DEEPGRAM_API_KEY
+  #  CARTESIA_API_KEY: CARTESIA_API_KEY
+  resources: {}
+
 langfuseFanout:
   enabled: false
   replicaCount: 1

@@ -174,3 +174,25 @@ Define apiVersion of HorizontalPodAutoscaler
 {{- print "autoscaling/v2beta1" -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+LiveKit voice agent worker name.
+*/}}
+{{- define "librechat.livekitAgent.fullname" -}}
+{{- printf "%s-livekit-agent" (include "librechat.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+LiveKit voice agent worker selector labels.
+*/}}
+{{- define "librechat.livekitAgent.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "librechat.livekitAgent.fullname" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+LiveKit voice agent worker labels.
+*/}}
+{{- define "librechat.livekitAgent.labels" -}}
+{{- include "librechat.standardLabels" (dict "root" . "selectorLabels" (include "librechat.livekitAgent.selectorLabels" .)) }}
+{{- end }}

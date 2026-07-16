@@ -13,6 +13,7 @@ const endpoints = require('./endpoints');
 const staticRoute = require('./static');
 const messages = require('./messages');
 const memories = require('./memories');
+const livekit = require('./livekit');
 const presets = require('./presets');
 const projects = require('./projects');
 const prompts = require('./prompts');
@@ -71,6 +72,7 @@ module.exports = {
   balance,
   messages,
   memories,
+  livekit,
   endpoints,
   assistants,
   categories,

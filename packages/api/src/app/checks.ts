@@ -153,6 +153,35 @@ export async function checkHealth(): Promise<void> {
 }
 
 /**
+ * Warns when realtime voice is enabled in librechat.yaml but its credentials are missing.
+ *
+ * Deliberately non-fatal: voice is optional and LibreChat must boot fine without it, so an
+ * incomplete setup degrades to "no voice button" rather than a failed start.
+ */
+export function checkLiveKitConfig(livekitEnabled: boolean | undefined): void {
+  if (livekitEnabled !== true) {
+    return;
+  }
+
+  const missing = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'].filter(
+    (name) => !process.env[name],
+  );
+
+  if (missing.length > 0) {
+    logger.warn(
+      `speech.livekit is enabled but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not set; realtime voice will stay disabled.`,
+    );
+    return;
+  }
+
+  if (!process.env.LIVEKIT_WORKER_SECRET) {
+    logger.warn(
+      'speech.livekit is enabled but LIVEKIT_WORKER_SECRET is not set; the voice agent worker will not be able to claim sessions.',
+    );
+  }
+}
+
+/**
  * Checks for the usage of deprecated and conflicting Azure variables.
  * Logs warnings for any deprecated or conflicting environment variables found, indicating potential issues with `azureOpenAI` endpoint configuration.
  */
@@ -242,6 +271,7 @@ export async function performStartupChecks(appConfig?: AppConfig): Promise<void>
   if (appConfig?.config?.rateLimits) {
     handleRateLimits(appConfig.config.rateLimits);
   }
+  checkLiveKitConfig(appConfig?.config?.speech?.livekit?.enabled);
   await checkHealth();
 }
 

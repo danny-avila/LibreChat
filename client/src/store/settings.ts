@@ -61,6 +61,12 @@ const localStorageAtoms = {
   conversationMode: atomWithLocalStorage('conversationMode', false),
   advancedMode: atomWithLocalStorage('advancedMode', false),
 
+  /**
+   * Realtime voice. A fresh key on purpose: `conversationMode` is the old decibel-gated
+   * switch, and a stored `true` from it would silently auto-start a LiveKit call.
+   */
+  voiceMode: atomWithLocalStorage('voiceMode', false),
+
   speechToText: atomWithLocalStorage('speechToText', true),
   engineSTT: atomWithLocalStorage('engineSTT', 'browser'),
   languageSTT: atomWithLocalStorage('languageSTT', ''),

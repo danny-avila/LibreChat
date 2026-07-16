@@ -1,0 +1,23 @@
+# Single-node self-hosted LiveKit SFU for LibreChat's optional voice stack.
+# Redis is only required for multi-node; add a `redis:` block if you run more than one SFU.
+port: 7880
+bind_addresses:
+  - ''
+
+rtc:
+  tcp_port: 7881
+  # UDP mux keeps the deployment to a single UDP port instead of the 50000-60000 range.
+  udp_port: 7882
+  use_external_ip: true
+
+# Overridden by the LIVEKIT_KEYS environment variable in compose.
+keys: {}
+
+logging:
+  level: info
+  json: false
+
+room:
+  # A voice room has exactly one caller and one agent; empty rooms should not linger.
+  empty_timeout: 60
+  max_participants: 2

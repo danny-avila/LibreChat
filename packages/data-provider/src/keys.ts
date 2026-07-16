@@ -93,6 +93,7 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  startVoiceSession = 'startVoiceSession',
   createAgentApiKey = 'createAgentApiKey',
   deleteAgentApiKey = 'deleteAgentApiKey',
   fileUpload = 'fileUpload',

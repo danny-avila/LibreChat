@@ -1161,6 +1161,50 @@ const sttSchema = z.object({
   azureOpenAI: sttAzureOpenAISchema.optional(),
 });
 
+/**
+ * Realtime voice (LiveKit) selects a streaming provider by name rather than a fixed enum:
+ * the agent worker resolves the name against its own plugin registry, so operators can add
+ * providers without a schema change. Vendor credentials live in the worker's env, never here.
+ */
+const livekitSttSchema = z.object({
+  provider: z.string(),
+  model: z.string().optional(),
+  language: z.string().optional(),
+});
+
+const livekitTtsSchema = z.object({
+  provider: z.string(),
+  model: z.string().optional(),
+  voice: z.string().optional(),
+  voices: z.array(z.string()).optional(),
+});
+
+/** Semantic end-of-turn detection. Endpointing delays bound how long the model may wait. */
+const livekitTurnDetectionSchema = z.object({
+  model: z.string().optional(),
+  minEndpointingDelay: z.number().optional(),
+  maxEndpointingDelay: z.number().optional(),
+});
+
+/**
+ * Sibling of `tts`/`stt`, never nested inside them: `TTSService.getProvider` and
+ * `STTService.getProviderSchema` throw unless exactly one provider key is present,
+ * so an added key there would break every existing deployment.
+ *
+ * `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are read from env.
+ */
+const livekitSchema = z.object({
+  enabled: z.boolean().optional(),
+  agentName: z.string().optional(),
+  tokenTtl: z.string().optional(),
+  maxSessionDuration: z.number().optional(),
+  stt: livekitSttSchema,
+  tts: livekitTtsSchema,
+  turnDetection: livekitTurnDetectionSchema.optional(),
+});
+
+export type TLiveKitConfig = z.infer<typeof livekitSchema>;
+
 const speechTab = z
   .object({
     conversationMode: z.boolean().optional(),
@@ -1526,6 +1570,8 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Realtime voice is configured (librechat.yaml `speech.livekit` + LiveKit env). */
+  livekitEnabled?: boolean;
   /** Whether shared links snapshot conversation files (gates the per-link "share files" checkbox). */
   sharedLinksSnapshotFilesEnabled?: boolean;
   /** Effective default timing for when conversation titles become fetchable.
@@ -1901,6 +1947,7 @@ export const configSchema = z.object({
     .object({
       tts: ttsSchema.optional(),
       stt: sttSchema.optional(),
+      livekit: livekitSchema.optional(),
       speechTab: speechTab.optional(),
     })
     .optional(),
@@ -2392,6 +2439,10 @@ export enum CacheKeys {
    * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
    */
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
+  /**
+   * Key for pending LiveKit voice sessions (one-time-use claim, short TTL).
+   */
+  LIVEKIT_SESSION = 'LIVEKIT_SESSION',
 }
 
 export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
@@ -2424,6 +2475,10 @@ export enum ViolationTypes {
    * STT Request Limit Violation.
    */
   STT_LIMIT = 'stt_limit',
+  /**
+   * Voice Session Request Limit Violation.
+   */
+  VOICE_LIMIT = 'voice_limit',
   /**
    * Reset Password Limit Violation.
    */

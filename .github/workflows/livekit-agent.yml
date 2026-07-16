@@ -1,0 +1,92 @@
+name: LiveKit Voice Agent
+
+# Path filters are explicit allowlists, so `livekit/**` is invisible to dev-images.yml and
+# needs its own lane. PRs typecheck and test; pushes to main additionally publish the image,
+# because an unpublished worker makes voice a feature only for operators who build images.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/livekit-agent.yml'
+      - 'livekit/**'
+      - 'packages/data-provider/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/livekit-agent.yml'
+      - 'livekit/**'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: livekit-agent-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The worker consumes data-provider via a `file:` dependency, so it must be built
+      # before the worker installs or the types resolve to nothing.
+      - name: Install and build data-provider
+        run: |
+          npm ci --ignore-scripts
+          npm run build:data-provider
+
+      - name: Install worker
+        working-directory: livekit/agent
+        run: npm install
+
+      - name: Typecheck
+        working-directory: livekit/agent
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: livekit/agent
+        run: npm test
+
+  publish:
+    name: Build and publish image
+    needs: checks
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Built from the repo root: the Dockerfile reaches into packages/data-provider.
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: livekit/agent/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/librechat-livekit-agent:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/librechat-livekit-agent:latest
+          platforms: linux/amd64,linux/arm64

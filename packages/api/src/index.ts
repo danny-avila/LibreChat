@@ -39,6 +39,8 @@ export * from './flow/manager';
 export * from './middleware';
 /* Memory */
 export * from './memory';
+/* LiveKit */
+export * from './livekit';
 /* Model Specs */
 export * from './modelSpecs';
 /* Agents */

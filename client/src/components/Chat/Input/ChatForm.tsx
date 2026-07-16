@@ -33,6 +33,7 @@ import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
 import useSteering from '~/hooks/Chat/useSteering';
+import { VoiceControl } from '~/components/Voice';
 import FileFormChat from './Files/FileFormChat';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
@@ -566,6 +567,15 @@ const ChatForm = memo(function ChatForm({
                   ask={submitMessage}
                   disabled={disableInputs || isNotAppendable}
                   isSubmitting={isSubmitting}
+                />
+              )}
+              {startupConfig?.livekitEnabled === true && (
+                <VoiceControl
+                  conversationId={conversation?.conversationId}
+                  endpoint={endpoint ?? undefined}
+                  agentId={conversation?.agent_id ?? undefined}
+                  model={conversation?.model ?? undefined}
+                  disabled={disableInputs || isNotAppendable}
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>

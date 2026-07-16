@@ -793,6 +793,12 @@ export const getVoices = (): Promise<f.VoiceResponse> => {
   return request.get(endpoints.textToSpeechVoices());
 };
 
+export const startVoiceSession = (
+  payload: q.VoiceSessionRequest,
+): Promise<q.VoiceSessionResponse> => {
+  return request.post(endpoints.livekitToken(), payload);
+};
+
 export const getCustomConfigSpeech = (): Promise<t.TCustomConfigSpeechResponse> => {
   return request.get(endpoints.getCustomConfigSpeech());
 };
