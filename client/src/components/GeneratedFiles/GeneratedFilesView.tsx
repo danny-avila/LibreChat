@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuthContext } from '~/hooks';
+import { getGeneratedFiles, downloadGeneratedFile, deleteGeneratedFile } from '~/data-provider';
 
 export default function GeneratedFilesView() {
   const [files, setFiles] = useState([]);
@@ -12,15 +13,11 @@ export default function GeneratedFilesView() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/generated-files');
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-      const data = await response.json();
+      const data = await getGeneratedFiles();
       setFiles(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to fetch generated files:', err);
-      setError(err.message || 'Failed to fetch files');
+      setError(err?.message || 'Failed to fetch files');
       setFiles([]);
     } finally {
       setLoading(false);
@@ -33,9 +30,8 @@ export default function GeneratedFilesView() {
 
   const handleDownload = async (fileId, filename) => {
     try {
-      const response = await fetch(`/api/generated-files/${fileId}/download`);
-      if (!response.ok) throw new Error('Download failed');
-      const blob = await response.blob();
+      const response = await downloadGeneratedFile(fileId);
+      const blob = new Blob([response.data]);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -49,8 +45,7 @@ export default function GeneratedFilesView() {
 
   const handleDelete = async (fileId) => {
     try {
-      const response = await fetch(`/api/generated-files/${fileId}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Delete failed');
+      await deleteGeneratedFile(fileId);
       setFiles((prev) => (Array.isArray(prev) ? prev.filter((f) => f._id !== fileId) : []));
     } catch (error) {
       console.error('Delete failed:', error);
