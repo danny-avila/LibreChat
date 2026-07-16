@@ -10,6 +10,9 @@ const GENERATED_FILES_PATH = path.resolve(__dirname, '..', '..', '..', '..', 'ge
 
 const getModel = () => mongoose.model('GeneratedFile');
 
+// Test route: verify the router is mounted
+router.get('/ping', (req, res) => res.json({ ok: true }));
+
 // List generated files for the current user
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
