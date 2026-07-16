@@ -42,8 +42,10 @@ jest.mock('~/components/Chat/Messages/Content/FilePreviewDialog', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
   __esModule: true,
-  default: ({ content }: { content: string }) => (
-    <span data-testid="steer-markdown">{content}</span>
+  default: ({ content, codeExecution }: { content: string; codeExecution?: boolean }) => (
+    <span data-testid="steer-markdown" data-code-execution={String(codeExecution)}>
+      {content}
+    </span>
   ),
 }));
 
@@ -191,6 +193,23 @@ describe('InFlightSteers', () => {
       enableUserMsgMarkdown: true,
     });
     expect(screen.getByTestId('steer-markdown')).toHaveTextContent('**bold** steer');
+  });
+
+  it('disables code execution: the bubble has no message/part for Run Code to target', () => {
+    renderSteers([{ steerId: 's1', text: '```js\nrun()\n```', status: 'pending', createdAt: 1 }], {
+      enableUserMsgMarkdown: true,
+    });
+    // This component renders outside MessageContext, so an executable code
+    // block would fire the tool mutation with no messageId/conversationId.
+    expect(screen.getByTestId('steer-markdown')).toHaveAttribute('data-code-execution', 'false');
+  });
+
+  it('caps the stack so a long steer cannot push the composer off-screen', () => {
+    renderSteers([{ steerId: 's1', text: 'x'.repeat(4000), status: 'pending', createdAt: 1 }]);
+    // A steer runs to 16k chars, and a run takes up to 10 of them.
+    const stack = screen.getByTestId('in-flight-steers');
+    expect(stack.className).toContain('max-h-[35vh]');
+    expect(stack.className).toContain('overflow-y-auto');
   });
 
   it('renders raw text when user-message markdown is off', () => {

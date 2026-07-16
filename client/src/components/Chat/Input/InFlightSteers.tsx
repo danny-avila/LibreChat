@@ -103,7 +103,13 @@ const InFlightSteer = memo(function InFlightSteer({
               !enableUserMsgMarkdown && 'whitespace-pre-wrap',
             )}
           >
-            {enableUserMsgMarkdown ? <MarkdownLite content={steer.text} /> : steer.text}
+            {/* No code execution: this bubble sits outside MessageContext, so
+             *  Run Code would fire with no message/part to target. */}
+            {enableUserMsgMarkdown ? (
+              <MarkdownLite content={steer.text} codeExecution={false} />
+            ) : (
+              steer.text
+            )}
           </div>
         </div>
         {!sending && (
@@ -159,7 +165,10 @@ const InFlightSteers = memo(function InFlightSteers({
       role="list"
       aria-label={localize('com_ui_steer_in_flight')}
       data-testid="in-flight-steers"
-      className="flex flex-col items-start gap-2 px-2 pb-2"
+      /* Capped: a steer runs to 16k chars and a run takes up to 10 of them.
+       * Unbounded, the stack would push the composer off-screen — the old
+       * in-thread slot could grow freely because it scrolled with the thread. */
+      className="flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
     >
       {inFlight.map((steer) => (
         <InFlightSteer key={steer.steerId} steer={steer} conversationId={conversationId} />
