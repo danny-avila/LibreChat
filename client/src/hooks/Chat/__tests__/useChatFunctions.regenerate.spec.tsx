@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage, TSubmission } from 'librechat-data-provider';
 import useChatFunctions from '../useChatFunctions';
 
@@ -11,6 +11,7 @@ const mockSetFilesToDelete = jest.fn();
 const mockGetSender = jest.fn(() => 'Assistant');
 const mockGetExpiry = jest.fn(() => 'expiry-key');
 const mockGetQueryData = jest.fn(() => ({}));
+const mockLoggerWarn = jest.fn();
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
@@ -49,6 +50,7 @@ jest.mock('~/store', () => ({
     isSubmittingFamily: () => 'isSubmitting',
     showStopButtonByIndex: () => 'showStopButton',
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
+    pendingQuotesByConvoId: () => 'pendingQuotes',
     messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
   },
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
@@ -57,6 +59,7 @@ jest.mock('~/utils', () => ({
   logger: {
     log: jest.fn(),
     dir: jest.fn(),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
   },
   createDualMessageContent: jest.fn(() => []),
   getRouteChatProjectId: jest.fn(() => null),
@@ -81,6 +84,93 @@ const assistantMessage = (messageId: string, parentMessageId: string) =>
     sender: 'Assistant',
     text: messageId,
   }) as TMessage;
+
+const conversation = (conversationId: string) =>
+  ({
+    conversationId,
+    endpoint: EModelEndpoint.agents,
+    model: 'gpt-4o',
+    agent_id: 'agent-1',
+  }) as TConversation;
+
+function renderAsk(messages: TMessage[] | undefined, conversationId = 'conversation-1') {
+  const setMessages = jest.fn();
+  const setSubmission = jest.fn();
+  const getMessages = jest.fn(() => messages);
+  const hook = renderHook(() =>
+    useChatFunctions({
+      isSubmitting: false,
+      latestMessage: messages?.at(-1) ?? null,
+      conversation: conversation(conversationId),
+      getMessages,
+      setMessages,
+      setSubmission,
+    }),
+  );
+
+  return { ...hook, getMessages, setMessages, setSubmission };
+}
+
+describe('useChatFunctions ask', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetQueryData.mockReturnValue({});
+  });
+
+  it('refuses to send to an existing conversation before its history loads', () => {
+    const { result, getMessages, setMessages, setSubmission } = renderAsk(undefined);
+
+    let askResult: ReturnType<typeof result.current.ask>;
+    act(() => {
+      askResult = result.current.ask({ text: 'Hello', conversationId: 'conversation-1' });
+    });
+
+    expect(askResult!).toBe(false);
+    expect(getMessages).toHaveBeenCalledWith('conversation-1');
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setSubmission).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      '[useChatFunctions] Refusing to send before existing conversation history loads',
+    );
+  });
+
+  it('allows an existing conversation whose loaded history is empty', () => {
+    const { result, setMessages, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Hello', conversationId: 'conversation-1' });
+    });
+
+    expect(setMessages).toHaveBeenCalled();
+    expect(setSubmission).toHaveBeenCalled();
+  });
+
+  it('allows a new conversation before its message cache exists', () => {
+    const newConversationId = Constants.NEW_CONVO as string;
+    const { result, setMessages, setSubmission } = renderAsk(undefined, newConversationId);
+
+    act(() => {
+      result.current.ask({ text: 'Hello', conversationId: newConversationId });
+    });
+
+    expect(setMessages).toHaveBeenCalled();
+    expect(setSubmission).toHaveBeenCalled();
+  });
+
+  it('allows explicit override messages before the cache exists', () => {
+    const { result, setMessages, setSubmission } = renderAsk(undefined);
+
+    act(() => {
+      result.current.ask(
+        { text: 'Hello', conversationId: 'conversation-1' },
+        { overrideMessages: [] },
+      );
+    });
+
+    expect(setMessages).toHaveBeenCalled();
+    expect(setSubmission).toHaveBeenCalled();
+  });
+});
 
 describe('useChatFunctions regenerate', () => {
   beforeEach(() => {

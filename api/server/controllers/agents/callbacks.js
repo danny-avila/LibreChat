@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   Tools,
   StepTypes,
+  StepEvents,
   FileContext,
   ErrorTypes,
   UsageEvents,
@@ -21,6 +22,7 @@ const {
   createToolExecuteHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
+  shouldSignalSandboxStart,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -131,10 +133,14 @@ class ModelEndHandler {
       this.collectedUsage.push(taggedUsage);
 
       if (this.emitUsage) {
-        /** Normalize Anthropic/Bedrock-style top-level cache fields into details */
+        /** Normalize Anthropic/Bedrock top-level and OpenAI GPT-5.6
+         *  `cache_write_tokens` cache fields into details so the emitted/persisted
+         *  usage cost matches what billing charges (getCacheCreationTokens). */
         const cache_creation =
           taggedUsage.input_token_details?.cache_creation ??
-          taggedUsage.cache_creation_input_tokens;
+          taggedUsage.input_token_details?.cache_write_tokens ??
+          taggedUsage.cache_creation_input_tokens ??
+          taggedUsage.cache_write_tokens;
         const cache_read =
           taggedUsage.input_token_details?.cache_read ?? taggedUsage.cache_read_input_tokens;
         try {
@@ -221,6 +227,37 @@ async function emitEvent(res, streamId, eventData) {
     await GenerationJobManager.emitChunk(streamId, eventData);
   } else {
     sendEvent(res, eventData);
+  }
+}
+
+/**
+ * Emits `on_sandbox_starting` for each code-execution tool call in the run
+ * step when the conversation's stateful sandbox is still cold-booting, so the
+ * UI can explain the first call's boot latency instead of showing a generic
+ * running state. Only signals while a fired prewarm remains unresolved
+ * ({@link shouldSignalSandboxStart}); stateless deployments never fire one
+ * and completed boots clear the marker, so both stay on the generic label.
+ * @param {ServerResponse} res - The server response object
+ * @param {string | null} streamId - The stream ID for resumable mode, or null for standard mode
+ * @param {StreamEventData} data - The `on_run_step` event data
+ * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata
+ * @returns {Promise<void>}
+ */
+async function maybeEmitSandboxStarting(res, streamId, data, metadata) {
+  const conversationId = metadata?.thread_id;
+  if (!conversationId || !(await shouldSignalSandboxStart(conversationId))) {
+    return;
+  }
+  const toolCalls = data?.stepDetails?.tool_calls ?? [];
+  for (const toolCall of toolCalls) {
+    const name = toolCall?.name ?? toolCall?.function?.name;
+    if (!toolCall?.id || name == null || !isCodeSessionToolName(name)) {
+      continue;
+    }
+    await emitEvent(res, streamId, {
+      event: StepEvents.ON_SANDBOX_STARTING,
+      data: { tool_call_id: toolCall.id, runId: metadata?.run_id },
+    });
   }
 }
 
@@ -359,6 +396,7 @@ function getDefaultHandlers({
         aggregateContent({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
           await emitEvent(res, streamId, { event, data });
+          await maybeEmitSandboxStarting(res, streamId, data, metadata);
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           await emitEvent(res, streamId, { event, data });
         } else if (!metadata?.hide_sequential_outputs) {

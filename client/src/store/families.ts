@@ -11,7 +11,13 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import type { EModelEndpoint, TConversation, TSubmission, TPreset } from 'librechat-data-provider';
+import type {
+  EModelEndpoint,
+  TConversation,
+  TSubmission,
+  TMessage,
+  TPreset,
+} from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
@@ -300,6 +306,124 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
   default: [],
 });
 
+/**
+ * A steer message submitted mid-run. Server truth: `sending` covers the POST
+ * in flight, `pending` means the server queued it (awaiting a tool-batch
+ * boundary), `failed` keeps the text recoverable after a rejected POST. The
+ * chip disappears when `on_steer_applied` lands (the inline content part
+ * becomes the durable record).
+ */
+export type PendingSteer = {
+  steerId: string;
+  text: string;
+  status: 'sending' | 'pending' | 'failed';
+  createdAt: number;
+  /** Attachments steered with the message (refs; already uploaded). */
+  files?: TMessage['files'];
+  /** Quote chips carried by a queued-origin steer (client-only; never sent to
+   *  the server), restored onto the queued item if the run ends first. */
+  quotes?: string[];
+  /** Manual skill picks carried the same way as `quotes`. */
+  manualSkills?: string[];
+};
+
+/**
+ * Per-conversation steers awaiting injection. Reconciled against the server:
+ * `on_steer_applied` removes its chip; `sync`/`resumeState.pendingSteers`
+ * replaces the list on reconnect; run-end reports convert leftovers into
+ * `queuedMessagesByConvoId` entries.
+ */
+const pendingSteersByConvoId = atomFamily<PendingSteer[], string>({
+  key: 'pendingSteersByConvoId',
+  default: [],
+});
+
+/** A message composed during a run, queued to send after it finishes.
+ *  Attachments ride the queued item (already uploaded at attach time) and are
+ *  passed to `ask` as `overrideFiles` on drain — steering itself is text-only,
+ *  so any during-run submit with media routes here as one unit. */
+export type QueuedMessage = {
+  id: string;
+  text: string;
+  createdAt: number;
+  files?: TMessage['files'];
+  /** Quote chips consumed from the composer at enqueue time; passed to `ask`
+   *  as `overrideQuotes` on drain so they pair with THIS message. */
+  quotes?: string[];
+  /** Manual skill picks consumed from the composer at enqueue time; passed
+   *  to `ask` as `overrideManualSkills` on drain. */
+  manualSkills?: string[];
+  /** Front-inserted by "Interrupt & send": stays ahead of chronologically
+   *  older items when leftover steers are merged back into the queue. */
+  priority?: boolean;
+};
+
+/**
+ * Per-conversation client-side queue of follow-up messages. Drained one per
+ * run completion by `useQueueDrain` (each dequeued message starts a normal
+ * turn whose own final event drains the next).
+ */
+const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
+  key: 'queuedMessagesByConvoId',
+  default: [],
+});
+
+/**
+ * Run-end signals whose conversation was NOT active when they arrived —
+ * parked here (keyed by conversation) so a later run finishing on the same
+ * chat index cannot overwrite them; `useQueueDrain` consumes the parked
+ * signal when the user returns to that conversation.
+ */
+const pendingRunEndByConvoId = atomFamily<RunEnd | null, string>({
+  key: 'pendingRunEndByConvoId',
+  default: null,
+});
+
+/**
+ * One-shot run-termination signal written by the SSE final/error handlers and
+ * consumed (reset to null) by `useQueueDrain`. Keyed by chat index like
+ * `isSubmittingFamily`. Carrying the outcome lets the drain skip auto-send on
+ * user aborts/errors while `startedAsNewConvo` migrates a queue keyed under
+ * `Constants.NEW_CONVO` to the real conversation id.
+ */
+export type RunEnd = {
+  conversationId: string | null;
+  outcome: 'completed' | 'aborted' | 'error';
+  startedAsNewConvo?: boolean;
+  endedAt: number;
+  /** Armed "Interrupt & send" flag traveling with a PARKED signal, so
+   *  another run on the same pane can neither consume nor clear it. */
+  interruptArmed?: boolean;
+};
+
+const runEndByIndex = atomFamily<RunEnd | null, string | number>({
+  key: 'runEndByIndex',
+  default: null,
+});
+
+/**
+ * One-shot override armed by "interrupt & send": the next `aborted` run-end
+ * drains the queue exactly once (a plain Stop press leaves queued chips for
+ * manual send).
+ */
+const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
+  key: 'drainAfterAbortByIndex',
+  default: false,
+});
+
+/**
+ * Server steer ids whose `on_steer_applied` event already landed. The 202 ACK
+ * and the SSE ride different connections, so the applied event can arrive
+ * FIRST — the ACK handler checks this set and drops its local chip instead of
+ * minting a `pending` chip whose only removal event has already passed. A late
+ * ACK can land after the run's final event, so the set is capped
+ * (`appendAppliedSteerIds`), never cleared.
+ */
+const appliedSteerIdsByConvoId = atomFamily<string[], string>({
+  key: 'appliedSteerIdsByConvoId',
+  default: [],
+});
+
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
   key: 'globalAudioURLByIndex',
   default: null,
@@ -466,5 +590,11 @@ export default {
   showSkillsPopoverFamily,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
+  pendingSteersByConvoId,
+  queuedMessagesByConvoId,
+  runEndByIndex,
+  pendingRunEndByConvoId,
+  drainAfterAbortByIndex,
+  appliedSteerIdsByConvoId,
   updateConversationSelector,
 };

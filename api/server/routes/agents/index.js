@@ -9,17 +9,20 @@ const {
   isHITLEnabled,
   deleteAgentCheckpoint,
   attachAskUserQuestionArgs,
+  createMessageFilterPii,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
 const {
   uaParser,
   checkBan,
+  moderateText,
   requireJwtAuth,
   messageIpLimiter,
   configMiddleware,
   messageUserLimiter,
 } = require('~/server/middleware');
+const SteerController = require('~/server/controllers/agents/steer');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -193,7 +196,18 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   const job = await GenerationJobManager.getJob(conversationId);
 
   if (!job) {
-    return res.json({ active: false });
+    // The default completeJob path deletes the job record immediately, so the
+    // jobless branch IS the common reload-after-terminal case — parked steers
+    // live under their own bounded-TTL key and the claim authorizes against
+    // the payload's stored owner (no job record is left to check).
+    const claimed = await GenerationJobManager.steering.claim(conversationId, {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+    });
+    return res.json({
+      active: false,
+      ...(claimed.length > 0 && { unrecoveredSteers: claimed }),
+    });
   }
 
   if (job.metadata.userId !== req.user.id) {
@@ -215,8 +229,23 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   const pendingLive = job.status === 'requires_action' && !isPendingActionStale({ pendingAction });
   const isActive = job.status === 'running' || pendingLive;
 
+  /** Acknowledged steers the terminal drains parked because no subscriber was
+   *  live to receive the final/abort event — claim-on-read (cleared once
+   *  returned) so the reloading client restores them as queued follow-ups. */
+  let unrecoveredSteers;
+  if (!isActive) {
+    const claimed = await GenerationJobManager.steering.claim(conversationId, {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+    });
+    if (claimed.length > 0) {
+      unrecoveredSteers = claimed;
+    }
+  }
+
   res.json({
     active: isActive,
+    ...(unrecoveredSteers && { unrecoveredSteers }),
     streamId: conversationId,
     status: job.status,
     aggregatedContent: resumeState?.aggregatedContent ?? [],
@@ -379,12 +408,57 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       }
     }
 
-    return res.json({ success: true, aborted: jobStreamId });
+    return res.json({
+      success: true,
+      aborted: jobStreamId,
+      // Steers that never reached an injection boundary — restored client-side
+      // as queued chips so the user's words aren't dropped with the abort.
+      ...(abortResult.pendingSteers?.length > 0 && { pendingSteers: abortResult.pendingSteers }),
+    });
   }
 
   logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
   return res.status(404).json({ error: 'Job not found', streamId: jobStreamId });
 });
+
+/**
+ * @route POST /chat/steer
+ * @desc Queue a mid-run user message for injection at the next tool boundary
+ * @access Private
+ * @description Mounted before chatRouter to bypass buildEndpointOption middleware,
+ * but a steer is model-bound user text, so it carries the same guards as a normal
+ * message IN THE SAME ORDER as chat.js: the configured IP/user rate limiters,
+ * the PII filter FIRST (blocked sensitive text must never reach the external
+ * moderation endpoint), then `moderateText`.
+ */
+const steerLimiters = [];
+if (isEnabled(LIMIT_MESSAGE_IP)) {
+  steerLimiters.push(messageIpLimiter);
+}
+if (isEnabled(LIMIT_MESSAGE_USER)) {
+  steerLimiters.push(messageUserLimiter);
+}
+router.post(
+  '/chat/steer',
+  configMiddleware,
+  ...steerLimiters,
+  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  moderateText,
+  SteerController,
+);
+
+/**
+ * @route POST /chat/steer/cancel
+ * @desc Remove a still-queued steer before injection (no model-bound content,
+ * so no PII/moderation pass — just the shared rate limiters)
+ * @access Private
+ */
+router.post(
+  '/chat/steer/cancel',
+  configMiddleware,
+  ...steerLimiters,
+  SteerController.SteerCancelController,
+);
 
 router.use('/', v1);
 

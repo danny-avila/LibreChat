@@ -1,10 +1,11 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
+import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
   useTextarea,
   useAutoSave,
@@ -25,10 +26,13 @@ import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
+import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
+import useSteering from '~/hooks/Chat/useSteering';
 import FileFormChat from './Files/FileFormChat';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
@@ -57,6 +61,7 @@ interface ChatFormProps {
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  stopGenerating: () => void;
 }
 
 const ChatForm = memo(function ChatForm({
@@ -70,6 +75,7 @@ const ChatForm = memo(function ChatForm({
   setFilesLoading,
   newConversation,
   handleStopGenerating,
+  stopGenerating,
 }: ChatFormProps) {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -181,6 +187,104 @@ const ChatForm = memo(function ChatForm({
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
+  /** Queued/steered sends carry their FULL submission context: explicit
+   *  (possibly empty) overrides stop `ask` from vacuuming quotes or skill
+   *  picks the user has staged in the composer for their NEXT message. */
+  const sendNow = useCallback(
+    (text: string, overrideFiles?: TMessage['files'], context?: QueuedMessageContext) =>
+      submitMessage({
+        text,
+        overrideFiles,
+        overrideQuotes: context?.quotes ?? [],
+        overrideManualSkills: context?.manualSkills ?? [],
+      }),
+    [submitMessage],
+  );
+  /** Chip "Edit message" restore: quote chips + skill picks merge back into
+   *  their compose-time atoms (the chips above the textarea re-render them). */
+  const restoreComposerContext = useRecoilCallback(
+    ({ set }) =>
+      (context?: QueuedMessageContext) => {
+        const { quotes, manualSkills } = context ?? {};
+        if (quotes != null && quotes.length > 0) {
+          set(store.pendingQuotesByConvoId(conversationId), (prev) => [
+            ...new Set([...prev, ...quotes]),
+          ]);
+        }
+        if (manualSkills != null && manualSkills.length > 0) {
+          set(store.pendingManualSkillsByConvoId(conversationId), (prev) => [
+            ...new Set([...prev, ...manualSkills]),
+          ]);
+        }
+      },
+    [conversationId],
+  );
+  /** Chip "Edit message": the text replaces the composer draft and the chip's
+   *  attachments merge back into the composer file map (already uploaded, so
+   *  they restore as completed entries — same shape as draft recovery). */
+  const editToComposer = useCallback(
+    (text: string, chipFiles?: TMessage['files'], context?: QueuedMessageContext) => {
+      methods.setValue('text', text, { shouldDirty: true });
+      if (chipFiles != null && chipFiles.length > 0) {
+        setFiles((prev) => {
+          const next = new Map(prev);
+          for (const file of chipFiles) {
+            if (!file.file_id) {
+              continue;
+            }
+            next.set(file.file_id, {
+              file_id: file.file_id,
+              filename: file.filename,
+              filepath: file.filepath,
+              type: file.type ?? '',
+              height: file.height,
+              width: file.width,
+              size: file.bytes ?? 0,
+              progress: 1,
+              attached: true,
+            });
+          }
+          return next;
+        });
+      }
+      restoreComposerContext(context);
+      textAreaRef.current?.focus();
+    },
+    [methods, setFiles, restoreComposerContext],
+  );
+  const steering = useSteering({
+    index,
+    conversationId,
+    conversation,
+    isSubmitting,
+    answerModeActive: answerMode.active,
+    files,
+    setFiles,
+    filesLoading,
+    sendNow,
+    stopGenerating,
+  });
+
+  /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
+   *  interrupt & send — the counterpart of Enter's `submitDuringRun`. */
+  const handleDuringRunModifier = useCallback(
+    (kind: 'other' | 'interrupt') => {
+      const text = methods.getValues('text');
+      let consumed = false;
+      if (kind === 'interrupt') {
+        consumed = steering.interruptAndSend(text);
+      } else if (steering.effectiveAction === 'steer') {
+        consumed = steering.queueFromComposer(text);
+      } else {
+        consumed = steering.steerFromComposer(text);
+      }
+      if (consumed) {
+        methods.reset();
+      }
+    },
+    [methods, steering],
+  );
+
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,
@@ -200,6 +304,9 @@ const ChatForm = memo(function ChatForm({
     placeholder: answerMode.active
       ? (answerMode.otherLabel ?? localize('com_ui_something_else'))
       : placeholder,
+    // Enter stays live during a run when it can steer/queue instead of send.
+    allowSubmitWhileGenerating: steering.duringRunActive,
+    onDuringRunModifier: steering.duringRunActive ? handleDuringRunModifier : undefined,
   });
 
   useQueryParams({ textAreaRef });
@@ -244,6 +351,23 @@ const ChatForm = memo(function ChatForm({
 
   const isMoreThanThreeRows = visualRowCount > 3;
 
+  /** One button slot while a run is generating: with composer text the send
+   *  button takes over (Enter steers/queues; hover reveals all actions);
+   *  clearing the text restores Stop. */
+  const duringRunSlot =
+    steering.duringRunActive && (textValue?.trim() ?? '') !== '' ? (
+      <DuringRunSendButton
+        ref={submitButtonRef}
+        control={methods.control}
+        steering={steering}
+        getText={() => methods.getValues('text')}
+        onConsumed={() => methods.reset()}
+        disabled={filesLoading}
+      />
+    ) : (
+      <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+    );
+
   const baseClasses = useMemo(
     () =>
       cn(
@@ -261,6 +385,14 @@ const ChatForm = memo(function ChatForm({
         // starting a new turn (submitText resets the composer itself).
         // Dismissing the popover restores normal sends.
         if (answerMode.active && answerMode.submitText(data.text)) {
+          return;
+        }
+        // During a run, a submit steers or queues per the effective action
+        // instead of starting a new turn (which would be dropped anyway).
+        if (steering.duringRunActive) {
+          if (steering.submitDuringRun(data.text)) {
+            methods.reset();
+          }
           return;
         }
         return submitMessage(data);
@@ -318,6 +450,13 @@ const ChatForm = memo(function ChatForm({
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <PendingManualSkillsChips conversationId={conversationId} />
             {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
+            {steering.enabled && (
+              <PendingSteerChips
+                conversationId={conversationId}
+                steering={steering}
+                onEditToComposer={editToComposer}
+              />
+            )}
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}
@@ -430,22 +569,20 @@ const ChatForm = memo(function ChatForm({
                 />
               )}
               <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                {isSubmitting && showStopButton && !answerMode.active ? (
-                  <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-                ) : (
-                  endpoint && (
-                    <SendButton
-                      ref={submitButtonRef}
-                      control={methods.control}
-                      disabled={
-                        filesLoading ||
-                        disableInputs ||
-                        isNotAppendable ||
-                        (isSubmitting && !answerMode.active)
-                      }
-                    />
-                  )
-                )}
+                {isSubmitting && showStopButton && !answerMode.active
+                  ? duringRunSlot
+                  : endpoint && (
+                      <SendButton
+                        ref={submitButtonRef}
+                        control={methods.control}
+                        disabled={
+                          filesLoading ||
+                          disableInputs ||
+                          isNotAppendable ||
+                          (isSubmitting && !answerMode.active)
+                        }
+                      />
+                    )}
               </div>
             </div>
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
@@ -472,6 +609,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     setFilesLoading,
     newConversation,
     handleStopGenerating,
+    stopGenerating,
   } = useChatContext();
 
   /**
@@ -512,6 +650,12 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     [],
   );
 
+  const stopRef = useRef(stopGenerating);
+  stopRef.current = stopGenerating;
+  const stableStop = useCallback(() => {
+    void stopRef.current();
+  }, []);
+
   return (
     <ChatForm
       index={index}
@@ -524,6 +668,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}
+      stopGenerating={stableStop}
     />
   );
 }

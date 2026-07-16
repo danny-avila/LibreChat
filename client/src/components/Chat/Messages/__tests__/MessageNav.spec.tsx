@@ -126,6 +126,7 @@ if (typeof (global as { PointerEvent?: unknown }).PointerEvent === 'undefined') 
 import type { TMessage } from 'librechat-data-provider';
 import MessageNav, {
   buildEntry,
+  buildSteerEntry,
   buildFallbackEntry,
   magnifyFalloff,
   ribDimsFor,
@@ -300,8 +301,8 @@ describe('MessageNav', () => {
       const [userInd, assistantInd] = container.querySelectorAll('[data-msg-id]');
       const userLine = userInd.querySelector('span');
       const assistantLine = assistantInd.querySelector('span');
-      expect(userLine?.className).toContain('w-4');
-      expect(assistantLine?.className).toContain('w-4');
+      expect(userLine?.className).toContain('w-3');
+      expect(assistantLine?.className).toContain('w-3');
     });
 
     it('lights up only the in-viewport ribs at rest (no hover)', () => {
@@ -401,6 +402,122 @@ describe('MessageNav', () => {
       expect(user.peakW).toBeGreaterThan(user.baseW);
       expect(end.baseW).toBe(end.baseH);
       expect(end.peakW).toBe(end.peakH);
+    });
+  });
+
+  describe('steer ribs', () => {
+    function appendSteerNode(
+      parent: Element,
+      steerId: string,
+      text: string,
+      offsetTop: number,
+    ): HTMLDivElement {
+      const steer = document.createElement('div');
+      steer.id = `steer-${steerId}`;
+      steer.className = 'steer-render group relative';
+      const header = document.createElement('h2');
+      header.textContent = 'Danny';
+      const body = document.createElement('div');
+      body.className = 'message-content';
+      body.textContent = text;
+      steer.appendChild(header);
+      steer.appendChild(body);
+      Object.defineProperty(steer, 'offsetTop', { value: offsetTop, configurable: true });
+      Object.defineProperty(steer, 'offsetHeight', { value: 40, configurable: true });
+      parent.appendChild(steer);
+      return steer;
+    }
+
+    it('buildSteerEntry reads the text body, skipping the author header', () => {
+      const node = document.createElement('div');
+      appendSteerNode(node, 's', 'actually use bun instead', 0);
+      const entry = buildSteerEntry(node.firstElementChild as HTMLElement, 'steer-s');
+      expect(entry).toEqual({
+        id: 'steer-s',
+        isUser: true,
+        preview: 'actually use bun instead',
+      });
+    });
+
+    it('buildSteerEntry truncates long steers and falls back to full node text', () => {
+      const node = document.createElement('div');
+      node.textContent = 'x'.repeat(100);
+      const entry = buildSteerEntry(node, 'steer-long');
+      expect(entry.preview.endsWith('...')).toBe(true);
+      expect(entry.preview).toHaveLength(83);
+    });
+
+    it('interleaves a steer rib inside its response, labeled as a user message', () => {
+      const messages = [
+        buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a1', text: 'long tool run' }),
+        buildMessage({ messageId: 'u2', text: 'follow-up', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a2', text: 'second reply' }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable } = buildDom(messages);
+      const response = scrollable.querySelector('#a1') as HTMLElement;
+      appendSteerNode(response, 's1', 'steer mid-run words', 350);
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const ids = Array.from(container.querySelectorAll('[data-msg-id]')).map((el) =>
+        el.getAttribute('data-msg-id'),
+      );
+      expect(ids).toEqual(['u1', 'a1', 'steer-s1', 'u2', 'a2']);
+
+      const steerRib = container.querySelector('[data-msg-id="steer-s1"]');
+      expect(steerRib?.getAttribute('aria-label')).toMatch(/^com_ui_message_nav_go_to_user\|/);
+      expect(steerRib?.getAttribute('aria-label')).toContain('steer mid-run words');
+      expect(steerRib?.getAttribute('aria-label')).not.toContain('Danny');
+    });
+
+    it('un-lights a steer rib when its DOM node is replaced (pending → applied swap)', async () => {
+      const messages = [
+        buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a1', text: 'long tool run' }),
+        buildMessage({ messageId: 'u2', text: 'follow-up', isCreatedByUser: true }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable } = buildDom(messages);
+      const response = scrollable.querySelector('#a1') as HTMLElement;
+      const pendingNode = appendSteerNode(response, 's1', 'swap me', 350);
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: pendingNode, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+      const rib = container.querySelector('[data-msg-id="steer-s1"]') as HTMLElement;
+      expect(rib.className).toContain('opacity-100');
+
+      // The applied part replaces the optimistic node under the SAME id —
+      // same entry list (id + preview unchanged), no observer exit event.
+      act(() => {
+        pendingNode.remove();
+        appendSteerNode(response, 's1', 'swap me', 350);
+      });
+      // Let the MutationObserver microtask deliver (it schedules the
+      // debounced refresh), then advance the debounce.
+      await act(async () => {});
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      // Without node-level reconciliation the dead node keeps the rib lit
+      // forever; after it, visibility drops until the fresh node reports.
+      const ribAfter = container.querySelector('[data-msg-id="steer-s1"]') as HTMLElement;
+      expect(ribAfter.className).toContain('opacity-40');
     });
   });
 

@@ -12,6 +12,16 @@ import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
 import type { ServerRequest } from '~/types/http';
+import {
+  encryptConfigSecretFields,
+  encryptConfigSecrets,
+  getConfigSecretMutationPaths,
+  getConfigSecretInputError,
+  isConfigSecretAncestorPath,
+  isConfigSecretDescendantPath,
+  preserveConfigSecrets,
+  redactConfigSecrets,
+} from './secrets';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
@@ -173,6 +183,45 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   };
 }
 
+function redactConfigForResponse(config: IConfig): IConfig {
+  const safeConfig = JSON.parse(JSON.stringify(config)) as IConfig;
+  if (safeConfig.overrides) {
+    redactConfigSecrets(safeConfig.overrides);
+  }
+  return safeConfig;
+}
+
+function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
+  const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
+  redactConfigSecrets(safeConfig);
+  if (safeConfig.config != null && typeof safeConfig.config === 'object') {
+    redactConfigSecrets(safeConfig.config);
+  }
+  return safeConfig;
+}
+
+function isObjectValuedLangfusePatch(fieldPath: string, value: unknown): boolean {
+  return (
+    isConfigSecretAncestorPath(fieldPath) &&
+    value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  );
+}
+
+function preservePatchedConfigSecretFields(
+  fields: Record<string, unknown>,
+  existingOverrides?: unknown,
+): Record<string, unknown> {
+  const result = { ...fields };
+  for (const [fieldPath, value] of Object.entries(result)) {
+    if (isObjectValuedLangfusePatch(fieldPath, value)) {
+      result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
+    }
+  }
+  return result;
+}
+
 // ── Handler factory ──────────────────────────────────────────────────
 
 export function createAdminConfigHandlers(deps: AdminConfigDeps): {
@@ -216,7 +265,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const configs = await listAllConfigs();
-      return res.status(200).json({ configs });
+      const safeConfigs = configs.map(redactConfigForResponse);
+      return res.status(200).json({ configs: safeConfigs });
     } catch (error) {
       logger.error('[adminConfig] listConfigs error:', error);
       return res.status(500).json({ error: 'Failed to list configs' });
@@ -247,7 +297,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         tenantId: user.tenantId,
         baseOnly,
       });
-      return res.status(200).json({ config: appConfig });
+      return res.status(200).json({ config: redactAppConfigForResponse(appConfig) });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', error);
       return res.status(500).json({ error: 'Failed to get base config' });
@@ -284,7 +334,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
       logger.error('[adminConfig] getConfig error:', error);
       return res.status(500).json({ error: 'Failed to get config' });
@@ -404,11 +454,30 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         ? { expectEmpty: false }
         : { expectEmpty: true, preservePriority: true };
 
+      const langfuseInputError = getConfigSecretInputError(
+        'langfuse',
+        (filteredOverrides as Record<string, unknown>).langfuse,
+      );
+      if (langfuseInputError) {
+        return res.status(400).json({ error: langfuseInputError });
+      }
+
+      const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
+      const existingForSecrets = isObjectValuedLangfusePatch(
+        'langfuse',
+        (filteredOverrides as Record<string, unknown>).langfuse,
+      )
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : null;
+      const preservedOverrides = preserveConfigSecrets(
+        encryptedOverrides,
+        existingForSecrets?.overrides,
+      );
       const config = await upsertConfig(
         principalType,
         principalId,
         principalModel(principalType),
-        filteredOverrides,
+        preservedOverrides,
         requestedPriority,
         undefined,
         upsertOptions,
@@ -420,7 +489,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after upsert:', err),
       );
-      return res.status(config?.configVersion === 1 ? 201 : 200).json({ config });
+      return res.status(config?.configVersion === 1 ? 201 : 200).json({
+        config: config ? redactConfigForResponse(config) : config,
+      });
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', error);
       return res.status(500).json({ error: 'Failed to upsert config' });
@@ -465,6 +536,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           return res
             .status(400)
             .json({ error: `Invalid or unsafe field path: ${entry.fieldPath}` });
+        }
+        if (isConfigSecretDescendantPath(entry.fieldPath)) {
+          return res
+            .status(400)
+            .json({ error: `Cannot patch inside protected secret path: ${entry.fieldPath}` });
+        }
+        const secretInputError = getConfigSecretInputError(entry.fieldPath, entry.value);
+        if (secretInputError) {
+          return res.status(400).json({ error: secretInputError });
+        }
+        if (Array.isArray(entry.value) && isConfigSecretAncestorPath(entry.fieldPath)) {
+          return res.status(400).json({
+            error: `Cannot patch protected secret ancestor as an array: ${entry.fieldPath}`,
+          });
         }
       }
 
@@ -528,23 +613,31 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
+      const hasObjectValuedLangfusePatch = Object.entries(fields).some(([fieldPath, value]) =>
+        isObjectValuedLangfusePatch(fieldPath, value),
+      );
       const existing =
-        requestedPriority == null
+        requestedPriority == null || hasObjectValuedLangfusePatch
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
+      const encryptedFields = encryptConfigSecretFields(fields);
+      const preservedFields = preservePatchedConfigSecretFields(
+        encryptedFields,
+        existing?.overrides,
+      );
 
       const config = await patchConfigFields(
         principalType,
         principalId,
         principalModel(principalType),
-        fields,
+        preservedFields,
         requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after patch:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
     } catch (error) {
       logger.error('[adminConfig] patchConfigField error:', error);
       return res.status(500).json({ error: 'Failed to patch config fields' });
@@ -580,6 +673,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!isValidFieldPath(fieldPath)) {
         return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
+      }
+      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
+      if (secretInputError) {
+        return res.status(400).json({ error: secretInputError });
       }
 
       const user = getCapabilityUser(req);
@@ -618,18 +715,24 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
 
-      const config = await writeConfigTombstone(
-        principalType,
-        principalId,
-        principalModel(principalType),
-        fieldPath,
-        requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
-      );
+      let config: IConfig | null = null;
+      for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const fieldConfig = await writeConfigTombstone(
+          principalType,
+          principalId,
+          principalModel(principalType),
+          path,
+          requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        );
+        if (fieldConfig) {
+          config = fieldConfig;
+        }
+      }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after field tombstone:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
     } catch (error) {
       logger.error('[adminConfig] tombstoneConfigField error:', error);
       return res.status(500).json({ error: 'Failed to tombstone config field' });
@@ -657,6 +760,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!isValidFieldPath(fieldPath)) {
         return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
+      }
+      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
+      if (secretInputError) {
+        return res.status(400).json({ error: secretInputError });
       }
 
       const user = getCapabilityUser(req);
@@ -686,7 +793,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
-      const config = await unsetConfigField(principalType, principalId, fieldPath);
+      let config: IConfig | null = null;
+      for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const fieldConfig = await unsetConfigField(principalType, principalId, path);
+        if (fieldConfig) {
+          config = fieldConfig;
+        }
+      }
       if (!config) {
         return res.status(404).json({ error: 'Config not found' });
       }
@@ -694,7 +807,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after field delete:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', error);
       return res.status(500).json({ error: 'Failed to delete config field' });
@@ -813,7 +926,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after toggle:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
       logger.error('[adminConfig] toggleConfig error:', error);
       return res.status(500).json({ error: 'Failed to toggle config' });
