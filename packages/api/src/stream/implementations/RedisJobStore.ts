@@ -16,6 +16,7 @@ import {
   STEER_QUEUE_MAX_DEPTH,
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
+import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /**
@@ -372,7 +373,7 @@ export class RedisJobStore implements IJobStore {
   private cleanupIntervalMs = 60000;
 
   constructor(redis: Redis | Cluster, options?: RedisJobStoreOptions) {
-    this.redis = redis;
+    this.redis = instrumentIORedisClient(redis, RedisUseCases.GENERATION_STREAM);
     this.ttl = {
       completed: options?.completedTtl ?? DEFAULT_TTL.completed,
       running: options?.runningTtl ?? DEFAULT_TTL.running,
