@@ -356,6 +356,14 @@ describe('parseFrontmatter', () => {
     expect(result.disableModelInvocation).toBeUndefined();
     expect(result.invalidBooleans).toEqual(['user-invocable', 'disable-model-invocation']);
   });
+
+  it('accepts quoted invocation keys (js-yaml parses them as booleans)', () => {
+    const raw = `---\nname: n\ndescription: d\n'user-invocable': false\n"disable-model-invocation": true\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+    expect(result.userInvocable).toBe(false);
+    expect(result.disableModelInvocation).toBe(true);
+    expect(result.invalidBooleans).toEqual([]);
+  });
 });
 
 describe('createImportHandler', () => {

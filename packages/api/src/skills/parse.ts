@@ -45,10 +45,13 @@ function hasCaseInsensitive(frontmatter: Record<string, unknown>, key: string): 
 
 function getRawFrontmatterValue(block: string, key: string): string | undefined {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`^\\s*${escapedKey}\\s*:\\s*(.*)$`, 'i');
+  // Hyphenated keys are often quoted in YAML (`'user-invocable': false`);
+  // js-yaml parses the boolean either way, so match the raw line with or
+  // without a matching pair of surrounding quotes.
+  const pattern = new RegExp(`^\\s*(['"]?)${escapedKey}\\1\\s*:\\s*(.*)$`, 'i');
   const line = block.split('\n').find((candidate) => pattern.test(candidate));
   const match = line?.match(pattern);
-  return match?.[1];
+  return match?.[2];
 }
 
 function stripInlineComment(value: string): string {
