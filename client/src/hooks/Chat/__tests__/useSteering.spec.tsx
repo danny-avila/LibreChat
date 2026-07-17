@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue, type MutableSnapshot } from 'recoil';
+import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import useSteering from '../useSteering';
@@ -152,6 +152,12 @@ describe('useSteering', () => {
             ...params,
           }),
           queue: useQueue(CONVO_ID),
+          /** What `useQueueDrain` watches: re-posting it is how this hook asks
+           *  the drain to reconsider a queue it already passed over. */
+          parkedRunEnd: useRecoilValue(store.pendingRunEndByConvoId(CONVO_ID)),
+          /** Stands in for the drain CONSUMING a signal it has acted on. */
+          consumeIndexSignal: useSetRecoilState(store.runEndByIndex(0)),
+          consumeParkedSignal: useSetRecoilState(store.pendingRunEndByConvoId(CONVO_ID)),
         }),
         { wrapper },
       );
@@ -183,37 +189,69 @@ describe('useSteering', () => {
         result.current.steering.queueReclaimedSteer(reclaimed);
       });
       expect(sendNow).not.toHaveBeenCalled();
+      // The run's own end is still ahead of this item and will drain it, so
+      // nothing needs re-arming.
+      expect(result.current.parkedRunEnd).toBeNull();
       expect(result.current.queue).toHaveLength(1);
     });
 
-    it('sends the item directly when the run already completed cleanly', () => {
-      // The reclaim is a round-trip, so the run can finish while it is in
-      // flight — the drain then consumed its one-shot signal against an empty
-      // queue, leaving nothing to auto-send this item.
+    it('re-arms the drain when the run completed cleanly while the reclaim was in flight', () => {
+      // The drain already consumed its one-shot signal against an empty queue,
+      // so re-post it: the DRAIN sends (FIFO, via `ask`, which does not reset
+      // the composer), never this hook.
       const { result, sendNow } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
         set(store.runEndByIndex(0), runEnd('completed'));
       });
       act(() => {
+        // The drain ran against an empty queue and consumed the signal — the
+        // outcome was already captured during render.
+        result.current.consumeIndexSignal(null);
+      });
+      act(() => {
         result.current.steering.queueReclaimedSteer(reclaimed);
       });
-      expect(sendNow).toHaveBeenCalledWith('reclaimed words', [], {});
-      // Taken out of the queue, so the drain cannot send it a second time.
-      expect(result.current.queue).toHaveLength(0);
+      expect(result.current.parkedRunEnd).toMatchObject({
+        conversationId: CONVO_ID,
+        outcome: 'completed',
+      });
+      // The item stays queued for the drain to pick up in its turn.
+      expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
+      expect(sendNow).not.toHaveBeenCalled();
+    });
+
+    it('re-arms from a run-end parked while the user was in another chat', () => {
+      // The run finished with this conversation off-screen, so its signal was
+      // parked rather than delivered on the index. Without watching the parked
+      // carrier too, the outcome would never be seen and the item would strand.
+      const { result } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
+        set(store.pendingRunEndByConvoId(CONVO_ID), runEnd('completed'));
+      });
+      act(() => {
+        result.current.consumeParkedSignal(null);
+      });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      expect(result.current.parkedRunEnd).toMatchObject({ outcome: 'completed' });
+      expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
     });
 
     it.each(['aborted', 'error'] as const)(
       'leaves the item for manual send when the run %s',
       (outcome) => {
         // The drain auto-sends only on a clean completion: a Stop or an error
-        // means the user is taking over, so the direct send must not smuggle
-        // the text out past that rule.
+        // means the user is taking over, so nothing may smuggle the text out.
         const { result, sendNow } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
           set(store.runEndByIndex(0), runEnd(outcome));
+        });
+        act(() => {
+          result.current.consumeIndexSignal(null);
         });
         act(() => {
           result.current.steering.queueReclaimedSteer(reclaimed);
         });
         expect(sendNow).not.toHaveBeenCalled();
+        expect(result.current.parkedRunEnd).toBeNull();
         expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
       },
     );
@@ -223,23 +261,46 @@ describe('useSteering', () => {
         set(store.runEndByIndex(0), runEnd('completed', 'convo-elsewhere'));
       });
       act(() => {
-        result.current.steering.queueReclaimedSteer(reclaimed);
+        result.current.consumeIndexSignal(null);
       });
-      expect(sendNow).not.toHaveBeenCalled();
-      expect(result.current.queue).toHaveLength(1);
-    });
-
-    it('restores the item when the direct send is refused', () => {
-      const { result } = setupWithQueue(
-        { isSubmitting: false, sendNow: () => false },
-        ({ set }) => {
-          set(store.runEndByIndex(0), runEnd('completed'));
-        },
-      );
       act(() => {
         result.current.steering.queueReclaimedSteer(reclaimed);
       });
-      // `ask` refused without sending, so the words must not vanish.
+      expect(sendNow).not.toHaveBeenCalled();
+      expect(result.current.parkedRunEnd).toBeNull();
+      expect(result.current.queue).toHaveLength(1);
+    });
+
+    it('keeps older queued follow-ups ahead of the reclaimed steer', () => {
+      // The drain sends ONE item per run end, FIFO. Re-arming (rather than
+      // sending here) is what keeps an older follow-up from being skipped.
+      const { result } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
+        set(store.runEndByIndex(0), runEnd('completed'));
+        set(store.queuedMessagesByConvoId(CONVO_ID), [
+          { id: 'older', text: 'queued first', createdAt: 500 },
+        ]);
+      });
+      act(() => {
+        result.current.consumeIndexSignal(null);
+      });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      expect(result.current.queue.map((item) => item.id)).toEqual(['older', 's-reclaimed']);
+    });
+
+    it('does not re-arm while a run-end signal is still unconsumed', () => {
+      // The drain has not run yet, so it will see this item on its own. Arming
+      // a second carrier would drain twice and send two messages.
+      const { result } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
+        set(store.pendingRunEndByConvoId(CONVO_ID), runEnd('completed'));
+        set(store.runEndByIndex(0), runEnd('completed'));
+      });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      // Untouched: the already-armed signal drains it.
+      expect(result.current.parkedRunEnd).toMatchObject({ outcome: 'completed' });
       expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
     });
   });

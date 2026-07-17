@@ -151,19 +151,23 @@ export default function useSteering({
    *  stale by the time the steer response arrives. */
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
-  /** Live conversation for the same reason: a reclaim can resolve after the
-   *  user has navigated, and the words belong to the chat they were typed in. */
-  const conversationIdRef = useRef(conversationId);
-  conversationIdRef.current = conversationId;
 
-  /** How the last run ended, kept because `useQueueDrain` CONSUMES the one-shot
-   *  signal — by the time a reclaim resolves it is already null. Subscribers
-   *  all render before the drain's effect nulls it, so the outcome is captured
-   *  before it is gone. */
+  /**
+   * How this conversation's last run ended, kept because `useQueueDrain`
+   * CONSUMES its one-shot signal — by the time a reclaim resolves it is already
+   * null. Every subscriber renders before the drain's effect nulls it, so the
+   * outcome is captured before it is gone. Both carriers are watched: the index
+   * signal, and the copy parked under the conversation when the run ended while
+   * the user was looking at a different chat.
+   */
   const runEnd = useRecoilValue(store.runEndByIndex(index));
+  const parkedRunEnd = useRecoilValue(store.pendingRunEndByConvoId(queueKey));
   const lastRunEndRef = useRef<RunEnd | null>(null);
-  if (runEnd != null) {
-    lastRunEndRef.current = runEnd;
+  const observedRunEnd = [runEnd, parkedRunEnd].find(
+    (end) => end != null && end.conversationId === conversationId,
+  );
+  if (observedRunEnd != null) {
+    lastRunEndRef.current = observedRunEnd;
   }
 
   const upsertSteerChip = useRecoilCallback(
@@ -394,6 +398,25 @@ export default function useSteering({
     [queueKey],
   );
 
+  /**
+   * Re-posts a spent run-end signal so the drain wakes and reconsiders the
+   * queue. No-op while any signal is still armed: that drain has not run yet,
+   * so it will see the item on its own — arming a second carrier would drain
+   * twice and send two messages.
+   */
+  const rearmDrain = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string, end: RunEnd) => {
+        const indexArmed = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
+        const parkedArmed = snapshot.getLoadable(store.pendingRunEndByConvoId(convoId)).getValue();
+        if (indexArmed != null || parkedArmed != null) {
+          return;
+        }
+        set(store.pendingRunEndByConvoId(convoId), end);
+      },
+    [index],
+  );
+
   const armDrainAfterAbort = useRecoilCallback(
     ({ set }) =>
       () => {
@@ -567,10 +590,15 @@ export default function useSteering({
    * ahead of it — a fresh `Date.now()` would sort it last.
    *
    * The reclaim is a round-trip, so the run can end while it is in flight and
-   * the drain can consume its one-shot signal against an empty queue, leaving
-   * nothing to auto-send this item. Submitting it directly covers that gap —
-   * but only under the drain's own rule (a CLEAN completion), so a Stop or an
-   * error still leaves the words as a chip for the user to send by hand.
+   * the drain can consume its one-shot run-end signal against an empty queue,
+   * leaving nothing to auto-send this item. Rather than send it here, re-post
+   * that spent signal so `useQueueDrain` runs again and decides: it owns the
+   * completed-only rule, FIFO order, `NEW_CONVO` migration, and submitting via
+   * `ask` (which, unlike the composer's `sendNow`, does not reset the form and
+   * so cannot wipe a draft typed while the reclaim was in flight).
+   *
+   * Parked under the conversation rather than the index, so a run that ended
+   * while the user was elsewhere still drains when they come back.
    */
   const queueReclaimedSteer = useCallback(
     (steer: PendingSteer) => {
@@ -582,30 +610,19 @@ export default function useSteering({
           ...(steer.files && steer.files.length > 0 && { files: steer.files }),
         },
       ]);
-      /** Refs, not the render's values: the reclaim resolves after the bubble
-       *  (and often its whole surface) has gone. A conversation switch makes
-       *  `sendNow` point at the NEW chat, so the item stays queued under its own
-       *  conversation instead of being submitted into someone else's thread. */
-      if (isSubmittingRef.current || conversationIdRef.current !== conversationId) {
+      /** A ref, not the render's value: the reclaim resolves after the bubble
+       *  (and often its whole surface) has gone. Still running means the run's
+       *  own end is ahead of this item and will drain it. */
+      if (isSubmittingRef.current) {
         return;
       }
       const lastRunEnd = lastRunEndRef.current;
-      const drainWouldHaveSent =
-        lastRunEnd != null &&
-        lastRunEnd.conversationId === conversationId &&
-        lastRunEnd.outcome === 'completed';
-      if (!drainWouldHaveSent) {
+      if (lastRunEnd == null || lastRunEnd.outcome !== 'completed') {
         return;
       }
-      const taken = takeQueued(steer.steerId);
-      if (taken == null) {
-        return;
-      }
-      if (sendNow(taken.text, taken.files ?? [], carriedSteerContext(taken)) === false) {
-        restoreQueued(taken);
-      }
+      rearmDrain(conversationId, lastRunEnd);
     },
-    [conversationId, convertSteersToQueued, takeQueued, sendNow, restoreQueued],
+    [conversationId, convertSteersToQueued, rearmDrain],
   );
 
   /** Convert a failed/unsent steer chip into a queued follow-up. */

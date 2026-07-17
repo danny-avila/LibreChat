@@ -272,12 +272,27 @@ const ChatForm = memo(function ChatForm({
    *  reused across conversations) writes into the chat now on screen. */
   const liveConversationIdRef = useRef(conversationId);
   liveConversationIdRef.current = conversationId;
+  /** Same reason: attachments staged after the click must be seen. */
+  const liveFilesRef = useRef(files);
+  liveFilesRef.current = files;
+
+  /** A draft is anything the user has staged, not just typed: `editToComposer`
+   *  MERGES the steer's attachments into the composer's file map and its quotes
+   *  and skill picks into their atoms, so restoring over staged context would
+   *  glue the two submissions together. */
+  const hasStagedComposerContext = useRecoilCallback(
+    ({ snapshot }) =>
+      (convoId: string) =>
+        snapshot.getLoadable(store.pendingQuotesByConvoId(convoId)).getValue().length > 0 ||
+        snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0,
+    [],
+  );
 
   /**
    * `editToComposer` for a steer whose reclaim was a round-trip: by the time it
    * resolves the composer may have moved on. Refuses (returning false, so the
    * caller re-homes the words instead of dropping them) rather than overwrite a
-   * draft the user has since typed, or drop a steer into whatever chat they
+   * draft the user has since staged, or drop a steer into whatever chat they
    * navigated to.
    */
   const restoreReclaimedSteer = useCallback(
@@ -287,16 +302,21 @@ const ChatForm = memo(function ChatForm({
       context: QueuedMessageContext,
       originConversationId: string,
     ): boolean => {
-      if (originConversationId !== liveConversationIdRef.current) {
+      const liveConversationId = liveConversationIdRef.current;
+      if (originConversationId !== liveConversationId) {
         return false;
       }
-      if ((methods.getValues('text') ?? '').trim().length > 0) {
+      if (
+        (methods.getValues('text') ?? '').trim().length > 0 ||
+        (liveFilesRef.current?.size ?? 0) > 0 ||
+        hasStagedComposerContext(liveConversationId)
+      ) {
         return false;
       }
       editToComposer(text, steerFiles, context);
       return true;
     },
-    [methods, editToComposer],
+    [methods, editToComposer, hasStagedComposerContext],
   );
 
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
