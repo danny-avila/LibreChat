@@ -400,16 +400,21 @@ export default function useSteering({
 
   /**
    * Re-posts a spent run-end signal so the drain wakes and reconsiders the
-   * queue. No-op while any signal is still armed: that drain has not run yet,
-   * so it will see the item on its own — arming a second carrier would drain
-   * twice and send two messages.
+   * queue. No-op while a signal for THIS conversation is still armed: that
+   * drain has not run yet and will see the item on its own, so arming a second
+   * carrier would drain twice and send two messages.
+   *
+   * A signal for a DIFFERENT conversation is not that proof. The index slot is
+   * shared, and the drain parks a foreign signal under its own conversation and
+   * then only inspects the active one's queue — this item would never be looked
+   * at. Park ours alongside it.
    */
   const rearmDrain = useRecoilCallback(
     ({ snapshot, set }) =>
       (convoId: string, end: RunEnd) => {
         const indexArmed = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         const parkedArmed = snapshot.getLoadable(store.pendingRunEndByConvoId(convoId)).getValue();
-        if (indexArmed != null || parkedArmed != null) {
+        if (indexArmed?.conversationId === convoId || parkedArmed != null) {
           return;
         }
         set(store.pendingRunEndByConvoId(convoId), end);

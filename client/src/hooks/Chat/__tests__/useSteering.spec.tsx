@@ -289,7 +289,7 @@ describe('useSteering', () => {
       expect(result.current.queue.map((item) => item.id)).toEqual(['older', 's-reclaimed']);
     });
 
-    it('does not re-arm while a run-end signal is still unconsumed', () => {
+    it('does not re-arm while this conversation’s run-end is still unconsumed', () => {
       // The drain has not run yet, so it will see this item on its own. Arming
       // a second carrier would drain twice and send two messages.
       const { result } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
@@ -301,6 +301,30 @@ describe('useSteering', () => {
       });
       // Untouched: the already-armed signal drains it.
       expect(result.current.parkedRunEnd).toMatchObject({ outcome: 'completed' });
+      expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
+    });
+
+    it('re-arms even when another conversation’s run-end occupies the index slot', () => {
+      // The index slot is shared. The drain parks a foreign signal under ITS
+      // conversation and then only inspects the active one's queue, so treating
+      // it as proof of an upcoming drain would strand this item.
+      const { result } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
+        set(store.runEndByIndex(0), runEnd('completed'));
+      });
+      act(() => {
+        result.current.consumeIndexSignal(null);
+      });
+      act(() => {
+        // A later run on the shared index slot, belonging to a different chat.
+        result.current.consumeIndexSignal(runEnd('completed', 'convo-elsewhere'));
+      });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      expect(result.current.parkedRunEnd).toMatchObject({
+        conversationId: CONVO_ID,
+        outcome: 'completed',
+      });
       expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
     });
   });
