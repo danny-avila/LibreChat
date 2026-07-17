@@ -278,6 +278,7 @@ function buildAgentToolContext({ agent, config }) {
      *  the producing agent's config in multi-endpoint graphs. */
     endpointTokenConfig: config.endpointTokenConfig,
     toolRegistry: config.toolRegistry,
+    backgroundToolNames: config.backgroundToolNames,
     mcpAvailableTools: config.mcpAvailableTools,
     requestScopedConnections: config.requestScopedConnections,
     userMCPAuthMap: config.userMCPAuthMap,

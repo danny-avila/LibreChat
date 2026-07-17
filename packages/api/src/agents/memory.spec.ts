@@ -1,12 +1,14 @@
 import { Types } from 'mongoose';
 import { Run, Providers } from '@librechat/agents';
+import { MemoryScope } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import {
   processMemory,
   createMemoryTool,
-  createDeleteMemoryTool,
+  getMemoryAgentId,
   getRequestMemories,
+  createDeleteMemoryTool,
   invalidateRequestMemories,
   agentHasInlineMemoryTools,
 } from './memory';
@@ -705,5 +707,45 @@ describe('getRequestMemories caching', () => {
     invalidateRequestMemories(req);
     await getRequestMemories({ req, userId: 'user-1', getFormattedMemories });
     expect(getFormattedMemories).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches and invalidates per partition', async () => {
+    const getFormattedMemories = jest
+      .fn()
+      .mockResolvedValue({ withKeys: '', withoutKeys: '', totalTokens: 10 });
+    const req = {};
+
+    await getRequestMemories({ req, userId: 'user-1', getFormattedMemories });
+    await getRequestMemories({ req, userId: 'user-1', agentId: 'agent_a', getFormattedMemories });
+    await getRequestMemories({ req, userId: 'user-1', agentId: 'agent_a', getFormattedMemories });
+    /** Personal pool and agent partition are distinct cache entries. */
+    expect(getFormattedMemories).toHaveBeenCalledTimes(2);
+    expect(getFormattedMemories).toHaveBeenLastCalledWith({
+      userId: 'user-1',
+      agentId: 'agent_a',
+    });
+
+    /** Invalidating one partition leaves the other cached. */
+    invalidateRequestMemories(req, 'agent_a');
+    await getRequestMemories({ req, userId: 'user-1', getFormattedMemories });
+    expect(getFormattedMemories).toHaveBeenCalledTimes(2);
+    await getRequestMemories({ req, userId: 'user-1', agentId: 'agent_a', getFormattedMemories });
+    expect(getFormattedMemories).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('getMemoryAgentId', () => {
+  it('resolves the agent partition only for memory_scope "agent"', () => {
+    expect(getMemoryAgentId({ id: 'agent_a', memory_scope: MemoryScope.agent })).toBe('agent_a');
+    expect(getMemoryAgentId({ id: 'agent_a', memory_scope: MemoryScope.user })).toBeUndefined();
+    expect(getMemoryAgentId({ id: 'agent_a' })).toBeUndefined();
+    expect(getMemoryAgentId({ memory_scope: MemoryScope.agent })).toBeUndefined();
+    expect(getMemoryAgentId(null)).toBeUndefined();
+  });
+
+  it('strips runtime id suffixes so added-conversation runs share the persisted partition', () => {
+    expect(getMemoryAgentId({ id: 'agent_a____1', memory_scope: MemoryScope.agent })).toBe(
+      'agent_a',
+    );
   });
 });

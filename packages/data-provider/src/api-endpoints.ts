@@ -314,6 +314,8 @@ export const fileDownload = (userId: string, fileId: string) =>
 export const filePreview = (fileId: string) =>
   `${BASE_URL}/api/files/${encodeURIComponent(fileId)}/preview`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
+/** Owner-scoped usage touch so queued attachments outlive the upload-window TTL. */
+export const fileUsage = () => `${BASE_URL}/api/files/usage`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 
 export const images = () => `${files()}/images`;
@@ -490,7 +492,8 @@ export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
 
 /* Memories */
 export const memories = () => `${BASE_URL}/api/memories`;
-export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
+export const memory = (key: string, agentId?: string) =>
+  `${memories()}/${encodeURIComponent(key)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {

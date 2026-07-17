@@ -3620,6 +3620,27 @@ describe('Support Contact Field', () => {
       expect(result.data[0].skills_enabled).toBe(true);
     });
 
+    test('should include conversation_starters in the default list projection', async () => {
+      const starters = ['Summarize this page', 'What can you do?'];
+      const scopedAgent = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Agent With Starters',
+        description: 'Agent exposing conversation starters',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+        conversation_starters: starters,
+      });
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [scopedAgent._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].conversation_starters).toEqual(starters);
+    });
+
     test('should return multiple accessible agents when provided', async () => {
       // Give User B access to two of User A's agents
       const accessibleIds = [agentA1._id, agentA3._id] as mongoose.Types.ObjectId[];

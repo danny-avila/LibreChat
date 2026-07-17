@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { Constants, ViolationTypes, isEphemeralAgentId } = require('librechat-data-provider');
 const {
   sendEvent,
+  toPendingSteer,
   getViolationInfo,
   buildMessageFiles,
   getReferencedQuotes,
@@ -756,6 +757,32 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await titleEventPromise;
         }
 
+        // Steers that never reached an injection boundary (queued after the last
+        // tool batch, or the run had none). The close-and-drain atomically stops
+        // new enqueues first — a steer POST racing this finalization gets 404
+        // (client sends it as a normal message) instead of a 202 whose payload
+        // completeJob would then silently clear. Reported on the final event so
+        // the client converts them to queued follow-up messages.
+        let pendingSteers;
+        try {
+          const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+            streamId,
+            jobCreatedAt,
+          );
+          if (leftoverSteers.length > 0) {
+            pendingSteers = leftoverSteers.map(toPendingSteer);
+            // Parked BEFORE the final event: a client with no live subscriber
+            // recovers these via /chat/status (claim-on-read) within the
+            // recovery TTL — the SSE copy alone is transient.
+            await GenerationJobManager.steering.park(streamId, pendingSteers, {
+              userId,
+              tenantId: req.user?.tenantId,
+            });
+          }
+        } catch (err) {
+          logger.warn(`[ResumableAgentController] Failed to drain leftover steers`, err);
+        }
+
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
@@ -763,6 +790,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
@@ -783,6 +811,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response, unfinished: true },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
@@ -849,6 +878,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // abortJob already handled emitDone and completeJob
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
+          // Close the steer queue BEFORE the error event reaches clients: a
+          // steer POST racing this failure gets 404 (client queues or sends it)
+          // instead of a 202 whose payload would vanish with the job. Text
+          // recovery is client-side — acknowledged chips convert to queued.
+          try {
+            const erroredLeftovers = await GenerationJobManager.steering.closeAndDrain(
+              streamId,
+              jobCreatedAt,
+            );
+            if (erroredLeftovers.length > 0) {
+              // The error event is a bare string — park the acknowledged
+              // steers so a reloaded/disconnected client can still recover
+              // them via /chat/status instead of losing them with the queue.
+              await GenerationJobManager.steering.park(
+                streamId,
+                erroredLeftovers.map(toPendingSteer),
+                { userId, tenantId: req.user?.tenantId },
+              );
+            }
+          } catch (drainErr) {
+            logger.warn(
+              `[ResumableAgentController] Failed to close steer queue on error`,
+              drainErr,
+            );
+          }
           await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
           GenerationJobManager.completeJob(streamId, error.message);
         }

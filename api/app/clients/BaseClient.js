@@ -41,6 +41,16 @@ const collectHistoricalFileRefs = (message) => {
   if (Array.isArray(message.attachments)) {
     refs.push(...message.attachments);
   }
+  /** Steer parts carry their own attachment refs inside assistant content;
+   *  collecting them here folds the steer replay stamp's lookup into this
+   *  single per-turn query (see `stampSteerPartMedia`). */
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part?.type === ContentTypes.STEER && Array.isArray(part.files)) {
+        refs.push(...part.files);
+      }
+    }
+  }
   return refs;
 };
 
@@ -1457,6 +1467,9 @@ class BaseClient {
         }
       }
     }
+    /** Owner-scoped docs for THIS turn, including steer-part refs — the steer
+     *  replay stamp consumes this instead of issuing a second query. */
+    this.authorizedHistoricalFiles = authorizedFilesById;
 
     /**
      *

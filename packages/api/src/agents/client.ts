@@ -358,6 +358,16 @@ export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getToke
 }
 
 export function logToolError(_graph: unknown, error: unknown, toolId: string): void {
+  /**
+   * A GraphInterrupt unwinding out of a tool body is the HITL pause working as
+   * designed (e.g. `ask_user_question` raising LangGraph `interrupt()`), not a
+   * tool failure — logging it as a Tool Error at error level is alarming noise.
+   * Name-based check: the class arrives from `@langchain/langgraph` inside
+   * `@librechat/agents`, so an instanceof against our own import can miss.
+   */
+  if ((error as Error | undefined)?.name === 'GraphInterrupt') {
+    return;
+  }
   logAxiosError({
     error,
     message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,

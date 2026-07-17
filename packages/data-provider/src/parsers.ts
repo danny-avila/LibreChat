@@ -380,36 +380,34 @@ export const parseCompactConvo = ({
 export function parseTextParts(
   contentParts: Array<a.TMessageContentParts | undefined>,
   skipReasoning: boolean = false,
+  options?: { includeSteer?: boolean },
 ): string {
   let result = '';
+  const append = (textValue: string) => {
+    if (
+      result.length > 0 &&
+      textValue.length > 0 &&
+      result[result.length - 1] !== ' ' &&
+      textValue[0] !== ' '
+    ) {
+      result += ' ';
+    }
+    result += textValue;
+  };
 
   for (const part of contentParts) {
     if (!part?.type) {
       continue;
     }
     if (part.type === ContentTypes.TEXT) {
-      const textValue = (typeof part.text === 'string' ? part.text : part.text?.value) || '';
-
-      if (
-        result.length > 0 &&
-        textValue.length > 0 &&
-        result[result.length - 1] !== ' ' &&
-        textValue[0] !== ' '
-      ) {
-        result += ' ';
-      }
-      result += textValue;
+      append((typeof part.text === 'string' ? part.text : part.text?.value) || '');
+    } else if (part.type === ContentTypes.STEER && options?.includeSteer === true) {
+      /** Mid-run user speech: excluded by default so generic extraction (TTS
+       *  reading assistant output) never speaks the user's own words — the
+       *  full-record surfaces (search indexing, persisted abort text) opt in. */
+      append(typeof part.steer === 'string' ? part.steer : '');
     } else if (part.type === ContentTypes.THINK && !skipReasoning) {
-      const textValue = typeof part.think === 'string' ? part.think : '';
-      if (
-        result.length > 0 &&
-        textValue.length > 0 &&
-        result[result.length - 1] !== ' ' &&
-        textValue[0] !== ' '
-      ) {
-        result += ' ';
-      }
-      result += textValue;
+      append(typeof part.think === 'string' ? part.think : '');
     }
   }
 

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { Constants, FileSources } from 'librechat-data-provider';
+import { Constants, ContentTypes, FileSources } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
@@ -129,6 +129,29 @@ function collectFileIds(items: unknown, target: Set<string>): void {
   }
 }
 
+type SteerLikePart = { type?: unknown; files?: unknown };
+
+function isSteerPartWithFiles(part: unknown): part is SteerLikePart {
+  return (
+    part != null &&
+    typeof part === 'object' &&
+    (part as SteerLikePart).type === ContentTypes.STEER &&
+    (part as SteerLikePart).files !== undefined
+  );
+}
+
+/** Collect `file_id`s carried by steer parts inside a message's content array. */
+function collectSteerFileIds(content: unknown, target: Set<string>): void {
+  if (!Array.isArray(content)) {
+    return;
+  }
+  for (const part of content) {
+    if (isSteerPartWithFiles(part)) {
+      collectFileIds(part.files, target);
+    }
+  }
+}
+
 /**
  * Build the per-share file snapshot from the messages being shared. Captures only
  * the metadata the share-scoped routes need to stream each file; references the
@@ -150,6 +173,7 @@ async function buildFileSnapshots(
   for (const message of messages) {
     collectFileIds(message.files, fileIds);
     collectFileIds(message.attachments, fileIds);
+    collectSteerFileIds(message.content, fileIds);
   }
 
   if (fileIds.size === 0) {
@@ -212,6 +236,55 @@ function applyShareFileRoute(
   delete next.filepath;
   delete next.preview;
   return next;
+}
+
+/**
+ * Steer parts persisted inline in `message.content` carry the same user file
+ * refs as a message's top-level `files`, so they follow the identical share
+ * policy: dropped entirely when files are excluded from the link, sanitized and
+ * rewritten to the share-scoped route (with anonymized ids) when included.
+ * Returns the original array untouched when no steer part carries files.
+ */
+export function anonymizeSharedContent(
+  content: unknown[] | undefined,
+  params: {
+    newConvoId: string;
+    newMessageId: string;
+    shareId: string;
+    snapshotIds: Set<string>;
+    includeFiles: boolean;
+  },
+): unknown[] | undefined {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+
+  let result: unknown[] | null = null;
+  for (let i = 0; i < content.length; i++) {
+    const part = content[i];
+    if (!isSteerPartWithFiles(part)) {
+      continue;
+    }
+    const { files: rawFiles, ...rest } = part as Record<string, unknown>;
+    const files = params.includeFiles
+      ? sanitizeSharedFiles(rawFiles)?.map((file) =>
+          applyShareFileRoute(
+            {
+              ...file,
+              ...(file.conversationId !== undefined && { conversationId: params.newConvoId }),
+              ...(file.messageId !== undefined && { messageId: params.newMessageId }),
+            },
+            params.shareId,
+            params.snapshotIds,
+          ),
+        )
+      : undefined;
+    if (result == null) {
+      result = [...content];
+    }
+    result[i] = files ? { ...rest, files } : rest;
+  }
+  return result ?? content;
 }
 
 /**
@@ -289,7 +362,13 @@ function anonymizeMessages(
       conversationId: newConvoId,
       sender: message.sender,
       text: message.text,
-      content: message.content,
+      content: anonymizeSharedContent(message.content, {
+        newConvoId,
+        newMessageId,
+        shareId,
+        snapshotIds,
+        includeFiles,
+      }),
       ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),
       isCreatedByUser: message.isCreatedByUser,

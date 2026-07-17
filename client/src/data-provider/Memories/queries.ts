@@ -1,6 +1,6 @@
 /* Memories */
-import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
 import type {
   UseQueryOptions,
   UseMutationOptions,
@@ -19,23 +19,32 @@ export const useMemoriesQuery = (
   });
 };
 
+export type DeleteMemoryParams = { key: string; agentId?: string };
 export const useDeleteMemoryMutation = () => {
   const queryClient = useQueryClient();
-  return useMutation((key: string) => dataService.deleteMemory(key), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.memories]);
+  return useMutation(
+    ({ key, agentId }: DeleteMemoryParams) => dataService.deleteMemory(key, agentId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.memories]);
+      },
     },
-  });
+  );
 };
 
-export type UpdateMemoryParams = { key: string; value: string; originalKey?: string };
+export type UpdateMemoryParams = {
+  key: string;
+  value: string;
+  originalKey?: string;
+  agentId?: string;
+};
 export const useUpdateMemoryMutation = (
   options?: UseMutationOptions<TUserMemory, Error, UpdateMemoryParams>,
 ) => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ key, value, originalKey }: UpdateMemoryParams) =>
-      dataService.updateMemory(key, value, originalKey),
+    ({ key, value, originalKey, agentId }: UpdateMemoryParams) =>
+      dataService.updateMemory(key, value, originalKey, agentId),
     {
       ...options,
       onSuccess: (...params) => {
@@ -74,7 +83,7 @@ export const useUpdateMemoryPreferencesMutation = (
   );
 };
 
-export type CreateMemoryParams = { key: string; value: string };
+export type CreateMemoryParams = { key: string; value: string; agentId?: string };
 export type CreateMemoryResponse = { created: boolean; memory: TUserMemory };
 
 export const useCreateMemoryMutation = (
@@ -82,7 +91,8 @@ export const useCreateMemoryMutation = (
 ) => {
   const queryClient = useQueryClient();
   return useMutation<CreateMemoryResponse, Error, CreateMemoryParams>(
-    ({ key, value }: CreateMemoryParams) => dataService.createMemory({ key, value }),
+    ({ key, value, agentId }: CreateMemoryParams) =>
+      dataService.createMemory({ key, value, agentId }),
     {
       ...options,
       onSuccess: (data, variables, context) => {
@@ -90,8 +100,9 @@ export const useCreateMemoryMutation = (
           if (!oldData) return oldData;
 
           const newMemories = [...oldData.memories, data.memory];
+          /** Usage totals track the shared personal pool only */
           const totalTokens = newMemories.reduce(
-            (sum, memory) => sum + (memory.tokenCount || 0),
+            (sum, memory) => sum + (memory.agentId ? 0 : memory.tokenCount || 0),
             0,
           );
           const tokenLimit = oldData.tokenLimit;

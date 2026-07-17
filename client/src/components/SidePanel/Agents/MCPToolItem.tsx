@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { TooltipAnchor } from '@librechat/client';
-import { Check, Clock, Code2, Info } from 'lucide-react';
+import { Check, Clock, Code2, Info, Zap } from 'lucide-react';
 import type { AgentToolType } from 'librechat-data-provider';
+import OptionToggle from './OptionToggle';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -10,11 +10,14 @@ interface MCPToolItemProps {
   isSelected: boolean;
   isDeferred: boolean;
   isProgrammatic: boolean;
+  isBackground: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
+  backgroundToolsEnabled: boolean;
   onToggleSelect: () => void;
   onToggleDefer: () => void;
   onToggleProgrammatic: () => void;
+  onToggleBackground: () => void;
 }
 
 const iconButton =
@@ -28,8 +31,11 @@ export default function MCPToolItem({
   onToggleSelect,
   isProgrammatic,
   onToggleProgrammatic,
+  isBackground,
+  onToggleBackground,
   deferredToolsEnabled,
   programmaticToolsEnabled,
+  backgroundToolsEnabled,
 }: MCPToolItemProps) {
   const localize = useLocalize();
   const [expanded, setExpanded] = useState(false);
@@ -65,45 +71,33 @@ export default function MCPToolItem({
         </button>
         <div className="flex shrink-0 items-center gap-0.5">
           {deferredToolsEnabled && (
-            <TooltipAnchor
-              description={localize('com_ui_mcp_click_to_defer')}
-              side="top"
-              render={
-                <button
-                  type="button"
-                  onClick={onToggleDefer}
-                  aria-pressed={isDeferred}
-                  aria-label={localize('com_ui_mcp_defer_loading')}
-                  className={cn(
-                    iconButton,
-                    isDeferred ? 'text-amber-500' : 'text-text-secondary hover:text-text-primary',
-                  )}
-                >
-                  <Clock className="size-4" aria-hidden="true" />
-                </button>
-              }
+            <OptionToggle
+              icon={Clock}
+              pressed={isDeferred}
+              label={localize('com_ui_mcp_defer_loading')}
+              tooltip={localize('com_ui_mcp_click_to_defer')}
+              activeClass="text-amber-500"
+              onToggle={onToggleDefer}
             />
           )}
           {programmaticToolsEnabled && (
-            <TooltipAnchor
-              description={localize('com_ui_mcp_click_to_programmatic')}
-              side="top"
-              render={
-                <button
-                  type="button"
-                  onClick={onToggleProgrammatic}
-                  aria-pressed={isProgrammatic}
-                  aria-label={localize('com_ui_mcp_programmatic')}
-                  className={cn(
-                    iconButton,
-                    isProgrammatic
-                      ? 'text-violet-500'
-                      : 'text-text-secondary hover:text-text-primary',
-                  )}
-                >
-                  <Code2 className="size-4" aria-hidden="true" />
-                </button>
-              }
+            <OptionToggle
+              icon={Code2}
+              pressed={isProgrammatic}
+              label={localize('com_ui_mcp_programmatic')}
+              tooltip={localize('com_ui_mcp_click_to_programmatic')}
+              activeClass="text-violet-500"
+              onToggle={onToggleProgrammatic}
+            />
+          )}
+          {backgroundToolsEnabled && (
+            <OptionToggle
+              icon={Zap}
+              pressed={isBackground}
+              label={localize('com_ui_mcp_background')}
+              tooltip={localize('com_ui_mcp_click_to_background')}
+              activeClass="text-sky-500"
+              onToggle={onToggleBackground}
             />
           )}
           <button

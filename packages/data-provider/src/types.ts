@@ -109,6 +109,14 @@ export type TEphemeralAgent = {
   artifacts?: string;
   skills?: boolean;
   memory?: boolean;
+  /** Equip the ephemeral agent with the `ask_user_question` HITL tool. */
+  ask_user_question?: boolean;
+  /**
+   * Let the model dispatch this ephemeral agent's eligible tool calls in the
+   * background (poll results via `check_background_task`). Requires the
+   * `run_in_background` agent capability to be enabled by the admin.
+   */
+  run_in_background?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &

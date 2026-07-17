@@ -17,6 +17,7 @@ type CacheMultiplierParams = {
   cacheType?: 'write' | 'read';
   model?: string;
   endpointTokenConfig?: Record<string, Record<string, number>>;
+  inputTokenCount?: number;
 };
 
 /** Fields read/written by the internal token value calculators */
@@ -142,10 +143,15 @@ export function createTransactionMethods(
           cacheType: 'write',
           model,
           endpointTokenConfig: etConfig,
+          inputTokenCount,
         }) ?? inputMultiplier;
       const readMultiplier =
-        txMethods.getCacheMultiplier({ cacheType: 'read', model, endpointTokenConfig: etConfig }) ??
-        inputMultiplier;
+        txMethods.getCacheMultiplier({
+          cacheType: 'read',
+          model,
+          endpointTokenConfig: etConfig,
+          inputTokenCount,
+        }) ?? inputMultiplier;
 
       txn.rateDetail = {
         input: inputMultiplier,

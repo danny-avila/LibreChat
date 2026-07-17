@@ -465,6 +465,15 @@ export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise
   return request.postMultiPart(endpoints.files(), data, requestConfig);
 };
 
+/**
+ * Marks uploaded files as used (owner-scoped TTL touch) so the upload-window
+ * TTL cannot reap attachments held in a client-side queue during a long run.
+ * Best-effort: callers fire-and-forget — send-time marking is the backstop.
+ */
+export const markFilesUsage = (body: f.TFilesUsageBody): Promise<f.TFilesUsageResponse> => {
+  return request.post(endpoints.fileUsage(), body);
+};
+
 /* actions */
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
@@ -1307,16 +1316,17 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string): Promise<void> => {
-  return request.delete(endpoints.memory(key));
+export const deleteMemory = (key: string, agentId?: string): Promise<void> => {
+  return request.delete(endpoints.memory(key, agentId));
 };
 
 export const updateMemory = (
   key: string,
   value: string,
   originalKey?: string,
+  agentId?: string,
 ): Promise<q.TUserMemory> => {
-  return request.patch(endpoints.memory(originalKey || key), { key, value });
+  return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
 };
 
 export const updateMemoryPreferences = (preferences: {
@@ -1328,6 +1338,7 @@ export const updateMemoryPreferences = (preferences: {
 export const createMemory = (data: {
   key: string;
   value: string;
+  agentId?: string;
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };
