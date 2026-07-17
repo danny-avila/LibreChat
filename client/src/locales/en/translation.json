@@ -1875,6 +1875,7 @@
   "com_ui_steer_already_applied": "That steering message already reached the agent, so it was left in the response",
   "com_ui_steer_cancel": "Cancel steering message",
   "com_ui_steer_cancel_failed": "Could not cancel the steering message — it may still reach the agent",
+  "com_ui_steer_edit_queued": "Your composer already has a draft, so that steering message was queued for after the response instead",
   "com_ui_steer_failed": "Steering failed",
   "com_ui_steer_in_flight": "Steering",
   "com_ui_steer_paused_queued": "The agent is waiting for your review — your message was queued instead",

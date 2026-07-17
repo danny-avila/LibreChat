@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
 import InFlightSteers from '../InFlightSteers';
@@ -8,13 +8,15 @@ import store from '~/store';
 
 const mockCancelMutateAsync = jest.fn();
 const mockShowToast = jest.fn();
-const mockEnqueue = jest.fn();
+const mockQueueReclaimedSteer = jest.fn();
+const mockRemoveSteer = jest.fn();
 const mockSetDefaultAction = jest.fn();
-const mockEditToComposer = jest.fn();
+const mockRestoreToComposer = jest.fn();
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useSteerCancel: jest.requireActual('~/hooks/Chat/useSteerCancel').default,
+  useSteerReclaim: jest.requireActual('~/hooks/Chat/useSteerCancel').useSteerReclaim,
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -63,8 +65,9 @@ const CONVO_ID = 'convo-in-flight';
 const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer') =>
   ({
     defaultAction,
-    enqueue: mockEnqueue,
+    removeSteer: mockRemoveSteer,
     setDefaultAction: mockSetDefaultAction,
+    queueReclaimedSteer: mockQueueReclaimedSteer,
   }) as unknown as SteeringControls;
 
 function renderSteers(
@@ -90,7 +93,7 @@ function renderSteers(
       <InFlightSteers
         conversationId={CONVO_ID}
         steering={steeringStub(options?.defaultAction)}
-        onEditToComposer={mockEditToComposer}
+        onRestoreToComposer={mockRestoreToComposer}
       />
     </RecoilRoot>,
   );
@@ -110,6 +113,7 @@ describe('InFlightSteers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCancelMutateAsync.mockResolvedValue({ removed: true });
+    mockRestoreToComposer.mockReturnValue(true);
   });
 
   it('renders nothing when no steer is in flight', () => {
@@ -209,42 +213,40 @@ describe('InFlightSteers', () => {
   });
 
   it('reclaims a pending steer before queueing it for after the response', async () => {
-    renderSteers([{ steerId: 's-ack', text: 'do this after', status: 'pending', createdAt: 1 }]);
+    const steer: PendingSteer = {
+      steerId: 's-ack',
+      text: 'do this after',
+      status: 'pending',
+      createdAt: 1,
+    };
+    renderSteers([steer]);
     await clickMenuItem('com_ui_convert_to_queue');
 
     // Reclaim first: the server would otherwise still inject the steer, and the
     // queued copy would say the same words a second time.
-    await waitFor(() =>
-      expect(mockCancelMutateAsync).toHaveBeenCalledWith({
-        conversationId: CONVO_ID,
-        steerId: 's-ack',
-      }),
-    );
-    await waitFor(() => expect(mockEnqueue).toHaveBeenCalledWith('do this after', {}));
+    expect(mockCancelMutateAsync).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      steerId: 's-ack',
+    });
+    // Routed through the shared conversion, which preserves the steer's id and
+    // createdAt so it drains ahead of a follow-up queued after it.
+    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(steer);
   });
 
-  it('carries a steer’s attachments and context onto the queued item', async () => {
-    const files = [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }];
-    renderSteers([
-      {
-        steerId: 's-ack',
-        text: 'see notes',
-        status: 'pending',
-        createdAt: 1,
-        files,
-        quotes: ['quoted line'],
-        manualSkills: ['skill-1'],
-      },
-    ]);
+  it('hands the whole steer to the conversion so attachments and context survive', async () => {
+    const steer: PendingSteer = {
+      steerId: 's-ack',
+      text: 'see notes',
+      status: 'pending',
+      createdAt: 1,
+      files: [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }],
+      quotes: ['quoted line'],
+      manualSkills: ['skill-1'],
+    };
+    renderSteers([steer]);
     await clickMenuItem('com_ui_convert_to_queue');
 
-    await waitFor(() =>
-      expect(mockEnqueue).toHaveBeenCalledWith('see notes', {
-        files,
-        quotes: ['quoted line'],
-        manualSkills: ['skill-1'],
-      }),
-    );
+    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(steer);
   });
 
   it('reclaims a pending steer before editing it back into the composer', async () => {
@@ -261,10 +263,35 @@ describe('InFlightSteers', () => {
     ]);
     await clickMenuItem('com_ui_edit_message');
 
-    await waitFor(() =>
-      expect(mockEditToComposer).toHaveBeenCalledWith('reword this', files, {
-        quotes: ['quoted line'],
-      }),
+    // The origin conversation rides along so a restore cannot land in whatever
+    // chat the user navigated to while the reclaim was in flight.
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'reword this',
+      files,
+      { quotes: ['quoted line'] },
+      CONVO_ID,
+    );
+    expect(mockRemoveSteer).toHaveBeenCalledWith('s-ack');
+  });
+
+  it('queues a reclaimed steer instead of overwriting a composer that moved on', async () => {
+    // The reclaim is a round-trip: the user can type a new draft (or navigate)
+    // before it resolves. The words are already off the server, so neither the
+    // steer nor the newer draft is the one to throw away.
+    mockRestoreToComposer.mockReturnValue(false);
+    const steer: PendingSteer = {
+      steerId: 's-ack',
+      text: 'reword this',
+      status: 'pending',
+      createdAt: 1,
+    };
+    renderSteers([steer]);
+    await clickMenuItem('com_ui_edit_message');
+
+    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(steer);
+    expect(mockRemoveSteer).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_edit_queued' }),
     );
   });
 
@@ -275,27 +302,25 @@ describe('InFlightSteers', () => {
     renderSteers([{ steerId: 's-ack', text: 'too late', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_convert_to_queue');
 
-    await waitFor(() =>
-      expect(mockShowToast).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'com_ui_steer_already_applied' }),
-      ),
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_already_applied' }),
     );
-    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(mockQueueReclaimedSteer).not.toHaveBeenCalled();
   });
 
   it('never re-homes a steer whose cancel failed', async () => {
-    // The POST failed, so the server may still inject it — the bubble comes
-    // back and the text must not also land in the composer.
+    // The POST failed, so the server may still inject it — its fate is unknown,
+    // so the bubble stays and the text must not also land in the composer.
     mockCancelMutateAsync.mockRejectedValue(new Error('network'));
     renderSteers([{ steerId: 's-ack', text: 'unknown fate', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_edit_message');
 
-    await waitFor(() =>
-      expect(mockShowToast).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'com_ui_steer_cancel_failed', status: 'error' }),
-      ),
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_cancel_failed', status: 'error' }),
     );
-    expect(mockEditToComposer).not.toHaveBeenCalled();
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockQueueReclaimedSteer).not.toHaveBeenCalled();
+    // The menu actions leave the chip alone until the outcome is known.
     expect(screen.getByText('unknown fate')).toBeInTheDocument();
   });
 
@@ -402,7 +427,7 @@ describe('InFlightSteers', () => {
           <InFlightSteers
             conversationId={CONVO_ID}
             steering={steeringStub()}
-            onEditToComposer={mockEditToComposer}
+            onRestoreToComposer={mockRestoreToComposer}
           />
         </RecoilRoot>,
       );

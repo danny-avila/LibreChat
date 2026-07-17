@@ -12,6 +12,7 @@ import {
   useMarkFilesUsageMutation,
 } from '~/data-provider';
 import { carriedSteerContext, clearAllDrafts } from '~/utils';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -116,6 +117,7 @@ export default function useSteering({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const setFilesToDelete = useSetFilesToDelete();
+  const convertSteersToQueued = useSteerConvert();
   const steerMutation = useSteerMessageMutation();
   const markFilesUsage = useMarkFilesUsageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
@@ -149,6 +151,10 @@ export default function useSteering({
    *  stale by the time the steer response arrives. */
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
+  /** Live conversation for the same reason: a reclaim can resolve after the
+   *  user has navigated, and the words belong to the chat they were typed in. */
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
 
   const upsertSteerChip = useRecoilCallback(
     ({ set }) =>
@@ -541,6 +547,48 @@ export default function useSteering({
     [conversationId, replaceSteerChip],
   );
 
+  /**
+   * Re-homes a steer the client just reclaimed from the server queue (see
+   * `useSteerReclaim`) as a queued follow-up.
+   *
+   * Routed through the shared conversion rather than `enqueue` so it obeys the
+   * same invariant as the leftover-steer path: the item keeps its ORIGINAL id
+   * and `createdAt`, so a steer accepted before a later follow-up still drains
+   * ahead of it — a fresh `Date.now()` would sort it last.
+   *
+   * The reclaim is a round-trip, so the run can end while it is in flight and
+   * the drain can consume its one-shot signal against an empty queue. When that
+   * happens nothing is left to auto-send this item, so submit it directly —
+   * "after the response" has simply already arrived.
+   */
+  const queueReclaimedSteer = useCallback(
+    (steer: PendingSteer) => {
+      convertSteersToQueued(conversationId, [
+        {
+          steerId: steer.steerId,
+          text: steer.text,
+          createdAt: steer.createdAt,
+          ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+        },
+      ]);
+      /** Refs, not the render's values: the reclaim resolves after the bubble
+       *  (and often its whole surface) has gone. A conversation switch makes
+       *  `sendNow` point at the NEW chat, so the item stays queued under its own
+       *  conversation instead of being submitted into someone else's thread. */
+      if (isSubmittingRef.current || conversationIdRef.current !== conversationId) {
+        return;
+      }
+      const taken = takeQueued(steer.steerId);
+      if (taken == null) {
+        return;
+      }
+      if (sendNow(taken.text, taken.files ?? [], carriedSteerContext(taken)) === false) {
+        restoreQueued(taken);
+      }
+    },
+    [conversationId, convertSteersToQueued, takeQueued, sendNow, restoreQueued],
+  );
+
   /** Convert a failed/unsent steer chip into a queued follow-up. */
   const convertSteerToQueue = useCallback(
     (
@@ -659,6 +707,7 @@ export default function useSteering({
     retrySteer,
     removeSteer,
     convertSteerToQueue,
+    queueReclaimedSteer,
     enqueue,
     removeQueued,
     sendQueuedNow,

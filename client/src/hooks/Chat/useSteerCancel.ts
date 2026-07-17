@@ -13,19 +13,43 @@ import store from '~/store';
 export type SteerCancelOutcome = 'reclaimed' | 'applied' | 'failed';
 
 /**
+ * Asks the server to drop a steer before its injection boundary, touching no
+ * chip state — the caller owns what happens to the words.
+ *
+ * A steer leaves the server queue only by injecting, so only `reclaimed` proves
+ * the words never entered the run and are still the client's to re-home. Giving
+ * an `applied` steer a second life (queueing it, editing it back into the
+ * composer) would say the same thing twice; on `failed` the server may still
+ * inject it, so its fate is unknown and it must be left alone.
+ */
+export function useSteerReclaim(conversationId: string) {
+  const cancelMutation = useCancelSteerMutation();
+
+  return useCallback(
+    async (steer: PendingSteer): Promise<SteerCancelOutcome> => {
+      try {
+        const { removed } = await cancelMutation.mutateAsync({
+          conversationId,
+          steerId: steer.steerId,
+        });
+        return removed === true ? 'reclaimed' : 'applied';
+      } catch {
+        return 'failed';
+      }
+    },
+    [conversationId, cancelMutation],
+  );
+}
+
+/**
  * Cancels a steer still waiting on its injection boundary. Optimistic: the
  * entry leaves the chip stack immediately; `removed: false` needs no handling
  * (the steer already injected or the run ended — the events own the outcome).
  * Only a failed POST restores the entry, since the server would still inject
  * the supposedly-cancelled words.
- *
- * Resolves the outcome so callers that give the text a second life (convert to
- * queue, edit back into the composer) can gate on it — only `reclaimed` proves
- * the cancel beat the injection boundary and the words are still the client's
- * to re-home. Re-homing an `applied` steer would send the same words twice.
  */
 export default function useSteerCancel(conversationId: string) {
-  const cancelMutation = useCancelSteerMutation();
+  const reclaim = useSteerReclaim(conversationId);
 
   const removeEntry = useRecoilCallback(
     ({ set }) =>
@@ -59,17 +83,12 @@ export default function useSteerCancel(conversationId: string) {
   return useCallback(
     async (steer: PendingSteer): Promise<SteerCancelOutcome> => {
       removeEntry(steer.steerId);
-      try {
-        const { removed } = await cancelMutation.mutateAsync({
-          conversationId,
-          steerId: steer.steerId,
-        });
-        return removed === true ? 'reclaimed' : 'applied';
-      } catch {
+      const outcome = await reclaim(steer);
+      if (outcome === 'failed') {
         restoreEntry(steer);
-        return 'failed';
       }
+      return outcome;
     },
-    [conversationId, removeEntry, restoreEntry, cancelMutation],
+    [reclaim, removeEntry, restoreEntry],
   );
 }

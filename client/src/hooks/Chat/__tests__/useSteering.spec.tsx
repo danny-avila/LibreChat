@@ -114,6 +114,90 @@ describe('useSteering', () => {
     });
   });
 
+  describe('queueReclaimedSteer', () => {
+    const reclaimed = {
+      steerId: 's-reclaimed',
+      text: 'reclaimed words',
+      status: 'pending' as const,
+      createdAt: 1_000,
+    };
+
+    function setupWithQueue(params: HookParams = {}) {
+      const sendNow = jest.fn();
+      const stopGenerating = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot>{children}</RecoilRoot>
+      );
+      const rendered = renderHook(
+        () => ({
+          steering: useSteering({
+            index: 0,
+            conversationId: CONVO_ID,
+            conversation: agentsConversation,
+            isSubmitting: true,
+            answerModeActive: false,
+            sendNow,
+            stopGenerating,
+            ...params,
+          }),
+          queue: useQueue(CONVO_ID),
+        }),
+        { wrapper },
+      );
+      return { ...rendered, sendNow };
+    }
+
+    it('keeps the steer ahead of a follow-up queued after it', () => {
+      // The steer was accepted BEFORE the follow-up, so it must drain first.
+      // Minting a fresh id/createdAt here would sort it last.
+      const { result } = setupWithQueue();
+      act(() => {
+        result.current.steering.enqueue('queued later', {});
+      });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      expect(result.current.queue.map((item) => item.text)).toEqual([
+        'reclaimed words',
+        'queued later',
+      ]);
+      // The original identity survives, which is what the ordering rests on.
+      expect(result.current.queue[0].id).toBe('s-reclaimed');
+      expect(result.current.queue[0].createdAt).toBe(1_000);
+    });
+
+    it('leaves the item to the drain while the run is still going', () => {
+      const { result, sendNow } = setupWithQueue({ isSubmitting: true });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      expect(sendNow).not.toHaveBeenCalled();
+      expect(result.current.queue).toHaveLength(1);
+    });
+
+    it('sends the item directly when the run already ended', () => {
+      // The reclaim is a round-trip, so the run can finish while it is in
+      // flight — the drain then consumed its one-shot signal against an empty
+      // queue, leaving nothing to auto-send this item.
+      const { result, sendNow } = setupWithQueue({ isSubmitting: false });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      expect(sendNow).toHaveBeenCalledWith('reclaimed words', [], {});
+      // Taken out of the queue, so the drain cannot send it a second time.
+      expect(result.current.queue).toHaveLength(0);
+    });
+
+    it('restores the item when the direct send is refused', () => {
+      const { result } = setupWithQueue({ isSubmitting: false, sendNow: () => false });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      // `ask` refused without sending, so the words must not vanish.
+      expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
+    });
+  });
+
   describe('submitDuringRun', () => {
     it('routes to the steer POST with an optimistic sending chip', () => {
       const { result } = setup();

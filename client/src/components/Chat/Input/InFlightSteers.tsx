@@ -10,16 +10,19 @@ import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDia
 import { RowMenu, useDefaultToggleEntry, ICON_BTN_CLASS } from './SteerMenu';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { useSteerCancel, useLocalize } from '~/hooks';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
-type EditToComposer = (
+/** Restores a reclaimed steer into the composer, or refuses (false) when the
+ *  composer has moved on — see `restoreReclaimedSteer` in `ChatForm`. */
+type RestoreToComposer = (
   text: string,
-  files?: TMessage['files'],
-  context?: QueuedMessageContext,
-) => void;
+  files: TMessage['files'],
+  context: QueuedMessageContext,
+  originConversationId: string,
+) => boolean;
 
 const splitFiles = (files?: TMessage['files']) => {
   const images: NonNullable<TMessage['files']> = [];
@@ -51,16 +54,17 @@ const InFlightSteer = memo(function InFlightSteer({
   steer,
   steering,
   conversationId,
-  onEditToComposer,
+  onRestoreToComposer,
 }: {
   steer: PendingSteer;
   steering: SteeringControls;
   conversationId: string;
-  onEditToComposer: EditToComposer;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const cancelSteer = useSteerCancel(conversationId);
+  const reclaimSteer = useSteerReclaim(conversationId);
   const toggleEntry = useDefaultToggleEntry(steering);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
@@ -75,12 +79,12 @@ const InFlightSteer = memo(function InFlightSteer({
 
   /**
    * Takes the steer back off the server queue so its words can be re-homed.
-   * A steer only leaves that queue by injecting, so anything but `reclaimed`
-   * means the text is already in the run — re-homing it then would say the same
-   * thing twice, which is worse than the edit not landing.
+   * The chip is left alone until the answer is known: only `reclaimed` proves
+   * the words never entered the run, and the re-homing callers below own the
+   * removal from there.
    */
   const reclaim = useCallback(async (): Promise<boolean> => {
-    const outcome = await cancelSteer(steer);
+    const outcome = await reclaimSteer(steer);
     if (outcome === 'reclaimed') {
       return true;
     }
@@ -91,7 +95,7 @@ const InFlightSteer = memo(function InFlightSteer({
       status: outcome === 'applied' ? 'info' : 'error',
     });
     return false;
-  }, [cancelSteer, steer, showToast, localize]);
+  }, [reclaimSteer, steer, showToast, localize]);
 
   const entries: MenuEntry[] = [
     {
@@ -100,9 +104,24 @@ const InFlightSteer = memo(function InFlightSteer({
       icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
       onClick: () => {
         void reclaim().then((reclaimed) => {
-          if (reclaimed) {
-            onEditToComposer(steer.text, steer.files, carriedSteerContext(steer));
+          if (!reclaimed) {
+            return;
           }
+          const restored = onRestoreToComposer(
+            steer.text,
+            steer.files,
+            carriedSteerContext(steer),
+            conversationId,
+          );
+          if (restored) {
+            steering.removeSteer(steer.steerId);
+            return;
+          }
+          /* The composer moved on while the reclaim was in flight. The words
+           * are already off the server, so queue them rather than overwrite a
+           * newer draft — neither text is the one to throw away. */
+          steering.queueReclaimedSteer(steer);
+          showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
         });
       },
     },
@@ -113,9 +132,7 @@ const InFlightSteer = memo(function InFlightSteer({
       onClick: () => {
         void reclaim().then((reclaimed) => {
           if (reclaimed) {
-            /* Reclaiming proves the run was still live, so the run-end drain is
-             * still ahead of this item and will send it. */
-            steering.enqueue(steer.text, { files: steer.files, ...carriedSteerContext(steer) });
+            steering.queueReclaimedSteer(steer);
           }
         });
       },
@@ -227,11 +244,11 @@ const InFlightSteer = memo(function InFlightSteer({
 const InFlightSteers = memo(function InFlightSteers({
   steering,
   conversationId,
-  onEditToComposer,
+  onRestoreToComposer,
 }: {
   steering: SteeringControls;
   conversationId: string;
-  onEditToComposer: EditToComposer;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
@@ -270,7 +287,7 @@ const InFlightSteers = memo(function InFlightSteers({
           steer={steer}
           steering={steering}
           conversationId={conversationId}
-          onEditToComposer={onEditToComposer}
+          onRestoreToComposer={onRestoreToComposer}
         />
       ))}
     </div>

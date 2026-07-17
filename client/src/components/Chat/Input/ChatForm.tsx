@@ -266,6 +266,32 @@ const ChatForm = memo(function ChatForm({
     stopGenerating,
   });
 
+  /**
+   * `editToComposer` for a steer whose reclaim was a round-trip: by the time it
+   * resolves the composer may have moved on, and this form is reused across
+   * conversations. Refuses (returning false, so the caller re-homes the words
+   * instead of dropping them) rather than overwrite a draft the user has since
+   * typed, or drop a steer into whatever chat they navigated to.
+   */
+  const restoreReclaimedSteer = useCallback(
+    (
+      text: string,
+      steerFiles: TMessage['files'],
+      context: QueuedMessageContext,
+      originConversationId: string,
+    ): boolean => {
+      if (originConversationId !== conversationId) {
+        return false;
+      }
+      if ((methods.getValues('text') ?? '').trim().length > 0) {
+        return false;
+      }
+      editToComposer(text, steerFiles, context);
+      return true;
+    },
+    [conversationId, methods, editToComposer],
+  );
+
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
    *  interrupt & send — the counterpart of Enter's `submitDuringRun`. */
   const handleDuringRunModifier = useCallback(
@@ -419,7 +445,7 @@ const ChatForm = memo(function ChatForm({
             <InFlightSteers
               steering={steering}
               conversationId={conversationId}
-              onEditToComposer={editToComposer}
+              onRestoreToComposer={restoreReclaimedSteer}
             />
           )}
           <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
