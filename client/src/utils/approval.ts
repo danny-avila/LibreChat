@@ -272,10 +272,27 @@ export function removeAskUserQuestionPart(message: TMessage, actionId: string): 
  */
 const submittedAskAnswers = new Map<string, string>();
 
+/**
+ * Ask actions the user has answered this session. Same rationale as
+ * {@link submittedAskAnswers}: the SSE step handler evolves its own cached copy
+ * of the streaming message, so the store-level strip below can't reach it —
+ * writing that copy back would resurrect an answered card. Keyed by `actionId`
+ * and only ever added to by {@link resolveAskUserQuestionPart}, so a step event
+ * racing a still-LIVE pause can never mistake its card for an answered one.
+ */
+const answeredAskActionIds = new Set<string>();
+
 /** The locally-submitted answer for an ask tool_call, if any. */
 export function getSubmittedAskAnswer(toolCallId: string | undefined): string | undefined {
   return toolCallId ? submittedAskAnswers.get(toolCallId) : undefined;
 }
+
+/** Whether `part` is an ask card whose question the user already answered. */
+export const isAnsweredAskUserQuestionPart = (
+  part: Partial<TMessageContentParts> | undefined,
+): boolean =>
+  isAskUserQuestionPart(part) &&
+  answeredAskActionIds.has((part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].actionId);
 
 /**
  * Resolve an answered ask-user-question pause on the client, mirroring the
@@ -303,6 +320,7 @@ export function resolveAskUserQuestionPart(
   if (!syntheticPart) {
     return message;
   }
+  answeredAskActionIds.add(actionId);
 
   let patched = false;
   const nextContent: TMessageContentParts[] = [];
@@ -381,6 +399,11 @@ export function splitOtherOption(options: Agents.AskUserQuestionOption[] | undef
  * messages — the newest synthetic part wins. Drives the composer popover: the
  * part exists exactly while a pause is live (applied on `on_pending_action`,
  * stripped when the answer submits), so its presence IS the popover signal.
+ *
+ * Answered cards are skipped rather than assumed absent: the strip is a store
+ * write, and any holder of an older message copy (the SSE step handler's
+ * in-flight cache, a replayed event) can put one back. Honouring it would
+ * reopen the popover on a question the user already answered.
  */
 export function findLiveAskUserQuestion(
   messages: TMessage[] | null | undefined,
@@ -396,7 +419,7 @@ export function findLiveAskUserQuestion(
     }
     for (let j = content.length - 1; j >= 0; j--) {
       const part = content[j];
-      if (isAskUserQuestionPart(part)) {
+      if (isAskUserQuestionPart(part) && !isAnsweredAskUserQuestionPart(part)) {
         const ask = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION];
         return { actionId: ask.actionId, question: ask.question, messageId: message.messageId };
       }

@@ -47,6 +47,26 @@ export function buildEntry(id: string, msg: TMessage): MessageEntry {
 }
 
 const USER_TURN_SELECTOR = '.user-turn';
+const STEER_RENDER_CLASS = 'steer-render';
+/** One query, document order: steer nodes interleave at their in-thread
+ *  position INSIDE the response that absorbed them. */
+const ENTRY_NODE_SELECTOR = `.message-render, .${STEER_RENDER_CLASS}`;
+
+/** Rail-relevant node: a message row or an in-thread steer part. The mutation
+ *  filter must match BOTH — a steer node swap (optimistic → persisted) or
+ *  removal (cancel) produces no `.message-render` mutation at all. */
+function isEntryNode(node: HTMLElement): boolean {
+  return (
+    node.classList?.contains('message-render') === true ||
+    node.classList?.contains(STEER_RENDER_CLASS) === true
+  );
+}
+
+function containsEntryNode(node: HTMLElement): boolean {
+  return (
+    node.nodeType === 1 && (isEntryNode(node) || node.querySelector?.(ENTRY_NODE_SELECTOR) != null)
+  );
+}
 
 export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
   const isUser = node.querySelector(USER_TURN_SELECTOR) != null;
@@ -58,8 +78,23 @@ export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry 
   };
 }
 
+/** A mid-run steer is a user message, so its rib reads as one; the preview
+ *  comes from the part's text body, skipping the author header. */
+export function buildSteerEntry(node: HTMLElement, id: string): MessageEntry {
+  const raw = (
+    node.querySelector('.message-content')?.textContent ??
+    node.textContent ??
+    ''
+  ).trim();
+  return {
+    id,
+    isUser: true,
+    preview: raw.slice(0, 80) + (raw.length > 80 ? '...' : ''),
+  };
+}
+
 function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
-  const nodes = root.querySelectorAll<HTMLElement>('.message-render');
+  const nodes = root.querySelectorAll<HTMLElement>(ENTRY_NODE_SELECTOR);
   const entries: MessageEntry[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < nodes.length; i++) {
@@ -69,6 +104,10 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
       continue;
     }
     seen.add(id);
+    if (node.classList.contains(STEER_RENDER_CLASS)) {
+      entries.push(buildSteerEntry(node, id));
+      continue;
+    }
     const msg = messagesById.get(id);
     entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
   }
@@ -109,8 +148,8 @@ function computeTargetScroll(
 
 type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
 
-const RIB_END: RibDims = { baseW: 4, baseH: 4, peakW: 6, peakH: 6 };
-const RIB_MESSAGE: RibDims = { baseW: 16, baseH: 3, peakW: 52, peakH: 6 };
+const RIB_END: RibDims = { baseW: 3, baseH: 3, peakW: 4.5, peakH: 4.5 };
+const RIB_MESSAGE: RibDims = { baseW: 12, baseH: 3, peakW: 39, peakH: 6 };
 
 /** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
 const MAG_INFLUENCE = 50;
@@ -150,7 +189,7 @@ const MessageIndicator = memo(function MessageIndicator({
   label: string;
   onSelect: (id: string) => void;
 }) {
-  const baseSize = entry.isEnd ? 'mr-1.5 h-1 w-1' : 'h-[3px] w-4';
+  const baseSize = entry.isEnd ? 'mr-[4.5px] h-[3px] w-[3px]' : 'h-[3px] w-3';
   return (
     <button
       type="button"
@@ -175,7 +214,7 @@ const MessageIndicator = memo(function MessageIndicator({
 });
 
 const chevronButtonClasses = cn(
-  '-mr-0.5 rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
+  '-mr-1 rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
   'group-hover/nav:text-text-secondary group-hover/nav:opacity-100',
   'group-focus-within/nav:text-text-secondary group-focus-within/nav:opacity-100',
   'group-hover/nav:hover:text-text-primary',
@@ -267,6 +306,57 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     messagesByIdRef.current = messagesById;
   }, [messagesById]);
 
+  const resolveEntryEl = useCallback(
+    (id: string): HTMLElement | null => {
+      if (id === MESSAGES_END_ID) {
+        return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
+      }
+      return document.getElementById(id);
+    },
+    [scrollableRef],
+  );
+
+  /**
+   * Re-point the observer at replaced DOM nodes. A steer part swaps its node
+   * under the SAME id (optimistic entry → persisted part), which produces no
+   * IntersectionObserver exit and — because the entry list dedupes on
+   * (id, preview) — no entries change either, so the observer would keep
+   * watching a detached node and the rib would stay lit forever. Runs from
+   * the mutation-driven refresh regardless of entries identity; visibility is
+   * dropped until the fresh node reports (the observer fires its initial
+   * intersection immediately on observe, so a truly visible part re-lights
+   * within a frame).
+   */
+  const reconcileObservedElements = useCallback(() => {
+    const observer = observerRef.current;
+    if (!observer) {
+      return;
+    }
+    const observed = observedRef.current;
+    const visibleSet = visibleSetRef.current;
+    let visibilityChanged = false;
+    for (const [id, el] of [...observed]) {
+      const current = resolveEntryEl(id);
+      if (current === el) {
+        continue;
+      }
+      observer.unobserve(el);
+      if (current) {
+        observer.observe(current);
+        observed.set(id, current);
+      } else {
+        observed.delete(id);
+      }
+      if (visibleSet.delete(id)) {
+        visibilityChanged = true;
+      }
+    }
+    if (visibilityChanged) {
+      setCurrentId(getCurrentVisibleId());
+      setVisibleIds(new Set(visibleSet));
+    }
+  }, [resolveEntryEl, getCurrentVisibleId]);
+
   const refreshEntries = useCallback(() => {
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
@@ -283,22 +373,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         }
         return next;
       });
+      reconcileObservedElements();
     }, 200);
-  }, [scrollableRef]);
+  }, [scrollableRef, reconcileObservedElements]);
 
   useEffect(() => {
     refreshEntries();
   }, [messagesById, refreshEntries]);
-
-  const resolveEntryEl = useCallback(
-    (id: string): HTMLElement | null => {
-      if (id === MESSAGES_END_ID) {
-        return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
-      }
-      return document.getElementById(id);
-    },
-    [scrollableRef],
-  );
 
   const scrollToStart = useCallback(
     (id: string) => {
@@ -730,7 +811,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         const m = mutations[i];
         if (m.type === 'attributes') {
           const target = m.target as HTMLElement;
-          if (target.nodeType === 1 && target.classList?.contains('message-render')) {
+          if (target.nodeType === 1 && isEntryNode(target)) {
             refreshEntries();
             return;
           }
@@ -738,21 +819,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         }
         if (m.addedNodes.length || m.removedNodes.length) {
           for (let j = 0; j < m.addedNodes.length; j++) {
-            const n = m.addedNodes[j] as HTMLElement;
-            if (
-              n.nodeType === 1 &&
-              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
-            ) {
+            if (containsEntryNode(m.addedNodes[j] as HTMLElement)) {
               refreshEntries();
               return;
             }
           }
           for (let j = 0; j < m.removedNodes.length; j++) {
-            const n = m.removedNodes[j] as HTMLElement;
-            if (
-              n.nodeType === 1 &&
-              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
-            ) {
+            if (containsEntryNode(m.removedNodes[j] as HTMLElement)) {
               refreshEntries();
               return;
             }

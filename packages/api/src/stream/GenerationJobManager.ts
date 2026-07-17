@@ -11,6 +11,7 @@ import type {
   TMessageContentParts,
   TContextUsageEvent,
   TTokenUsageEvent,
+  TPendingSteer,
   Agents,
 } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
@@ -21,6 +22,7 @@ import type {
   AbortResult,
   IJobStore,
 } from './interfaces/IJobStore';
+import type { SteerOwner, SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
@@ -29,6 +31,11 @@ import {
   setGenerationJobsInFlight,
   recordGenerationJob,
 } from '~/app/metrics';
+import {
+  SteeringLifecycle,
+  toPendingSteer,
+  synthesizeAppliedSteerEvents,
+} from './SteeringLifecycle';
 import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
@@ -187,6 +194,8 @@ class GenerationJobManagerClass {
   private jobStore: IJobStore;
   /** Guarded human-review lifecycle (pause / resolve / expire) over the store. */
   private _approvals: ApprovalLifecycle;
+  /** FIFO steering queue (enqueue / drain / peek / clear) over the store. */
+  private _steering: SteeringLifecycle;
   /** Event pub/sub transport - swappable for Redis Pub/Sub, etc. */
   private eventTransport: IEventTransport;
 
@@ -223,6 +232,7 @@ class GenerationJobManagerClass {
     this.jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
     this._approvals = new ApprovalLifecycle(this.jobStore);
+    this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = options?.eventTransport ?? new InMemoryEventTransport();
     this._cleanupOnComplete = options?.cleanupOnComplete ?? true;
   }
@@ -282,6 +292,7 @@ class GenerationJobManagerClass {
 
     this.jobStore = services.jobStore;
     this._approvals = new ApprovalLifecycle(this.jobStore);
+    this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
@@ -710,6 +721,28 @@ class GenerationJobManagerClass {
     this.runStepBuffers?.delete(streamId);
     this.replayEventWriteQueues.delete(streamId);
     this.tokenUsageWriteQueues.delete(streamId);
+    // Backstop for direct terminal callers (init failures, unhandled errors)
+    // that never ran the controllers' close-and-park: close the queue, then
+    // park any 202-accepted leftovers for /chat/status claim-on-read instead
+    // of silently clearing them. Paths that already drained find an empty
+    // queue and no-op; the createdAt guard (re-checked inside the store's
+    // atomic drain) keeps a stale completion off a replacement job's queue.
+    // Runs BEFORE the terminal status write — the Redis terminal cleanup DELs
+    // the queue key.
+    try {
+      const jobData = await this.jobStore.getJob(streamId);
+      if (jobData) {
+        const leftovers = (
+          await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
+        ).map(toPendingSteer);
+        await this._steering.park(streamId, leftovers, {
+          userId: jobData.userId,
+          tenantId: jobData.tenantId,
+        });
+      }
+    } catch (err) {
+      logger.warn(`[GenerationJobManager] Failed to park leftover steers for ${streamId}:`, err);
+    }
 
     // For error jobs, DON'T delete immediately - keep around so late-connecting
     // clients can receive the error. This handles the race condition where error
@@ -803,6 +836,26 @@ class GenerationJobManagerClass {
       runtime.abortController.abort();
     }
 
+    /** Steers that never reached an injection boundary — reported on the abort
+     *  final event (and the abort route's JSON) so the client can restore them
+     *  as queued chips instead of silently dropping the user's words. The
+     *  close-and-drain rejects any steer POST racing this finalization, and
+     *  the createdAt guard keeps it off a replacement job's queue. Runs
+     *  BEFORE the content snapshot below: a drain hook that already popped a
+     *  steer and applied its part gets captured by the snapshot, so the text
+     *  surfaces either here (pendingSteers) or there (inline part) — an
+     *  encode still in flight across the abort remains inherently racy
+     *  cross-instance, but the window no longer includes completed applies. */
+    const pendingSteers = (
+      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
+    ).map(toPendingSteer);
+    // No-subscriber recovery: the abort response/final are transient, so park
+    // the leftovers for /chat/status claim-on-read within the recovery TTL.
+    await this.steering.park(streamId, pendingSteers, {
+      userId: jobData.userId,
+      tenantId: jobData.tenantId,
+    });
+
     /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
@@ -817,9 +870,10 @@ class GenerationJobManagerClass {
     /** Collected usage for all models */
     const collectedUsage = this.jobStore.getCollectedUsage(streamId);
 
-    /** Text from content parts for fallback token counting */
+    /** Text from content parts for fallback token counting; the persisted
+     *  abort record keeps steered words (they reached the model context). */
     const text = shouldPersistAbortContent
-      ? parseTextParts(abortContent as TMessageContentParts[])
+      ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
       : '';
 
     /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
@@ -862,6 +916,7 @@ class GenerationJobManagerClass {
       aborted: true,
       // Flag for early abort - no messages saved, frontend should go to new chat
       earlyAbort: isEarlyAbort,
+      ...(pendingSteers.length > 0 && { pendingSteers }),
     } satisfies t.FinalEvent as t.ServerSentEvent;
 
     if (runtime) {
@@ -899,6 +954,7 @@ class GenerationJobManagerClass {
       finalEvent: abortFinalEvent,
       text,
       collectedUsage,
+      ...(pendingSteers.length > 0 && { pendingSteers }),
     };
   }
 
@@ -1113,8 +1169,8 @@ class GenerationJobManagerClass {
     // the snapshot didn't already carry the action, surface it as a pending event so the
     // approval prompt renders. Idempotent: a pause landing AFTER attach is delivered live
     // too, and the client's handler just sets the current action, so a duplicate is benign.
+    const liveJob = await this.jobStore.getJob(streamId);
     if (!resumeState?.pendingAction) {
-      const liveJob = await this.jobStore.getJob(streamId);
       if (
         liveJob?.status === 'requires_action' &&
         liveJob.pendingAction != null &&
@@ -1133,6 +1189,41 @@ class GenerationJobManagerClass {
       }
     }
 
+    // Same snapshot→subscribe race for steers: a steer accepted (and possibly
+    // applied) in the window is invisible to the snapshot, since the Redis
+    // `on_steer_applied` publish is fire-and-forget and the sync payload has no
+    // pendingSteers (in-memory covers it via the early buffer, where this
+    // re-check is a cheap no-op). Always re-peek for still-active jobs,
+    // treating a missing snapshot queue as empty; terminal jobs skip because
+    // the final event owns steer delivery. The content re-read runs only when
+    // the queue shows gap activity, and synthesis sources from the FRESH
+    // content view so an applied steer with no snapshot id still surfaces.
+    const jobActive = liveJob?.status === 'running' || liveJob?.status === 'requires_action';
+    if (resumeState != null && jobActive) {
+      const snapshotSteers = resumeState.pendingSteers ?? [];
+      const liveQueue = await this.jobStore.peekSteers(streamId);
+      const liveIds = new Set(liveQueue.map((item) => item.steerId));
+      const queueChanged =
+        liveQueue.length !== snapshotSteers.length ||
+        snapshotSteers.some((steer) => !liveIds.has(steer.steerId));
+      if (queueChanged) {
+        const livePending = liveQueue.map(toPendingSteer);
+        resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
+      }
+      if (queueChanged || liveQueue.length > 0) {
+        const contentResult = await this.jobStore.getContentParts(streamId);
+        const gapEvents = synthesizeAppliedSteerEvents(
+          (resumeState.aggregatedContent ?? []) as SteerContentView,
+          liveQueue,
+          (contentResult?.content ?? []) as SteerContentView,
+          { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+        );
+        if (gapEvents.length > 0) {
+          pendingEvents = [...pendingEvents, ...gapEvents];
+        }
+      }
+    }
+
     return { subscription, resumeState, pendingEvents };
   }
 
@@ -1145,8 +1236,19 @@ class GenerationJobManagerClass {
    *
    * In Redis mode, awaits the publish to guarantee event ordering.
    * This is critical for streaming deltas (tool args, message content) to arrive in order.
+   *
+   * `options.durable` additionally awaits the Redis chunk append BEFORE the
+   * transport publish (still best-effort on failure): events whose durable
+   * record is the recovery source (e.g. `on_steer_applied`) must be in the
+   * chunk log before any subscriber can observe the publish, or a
+   * cross-replica reconnect can reconstruct content without them. The default
+   * stays fire-and-forget — no added latency on the per-delta hot path.
    */
-  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  async emitChunk(
+    streamId: string,
+    event: t.ServerSentEvent,
+    options?: { durable?: boolean },
+  ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (!runtime || runtime.abortController.signal.aborted) {
       return;
@@ -1173,13 +1275,19 @@ class GenerationJobManagerClass {
 
       if (eventType && eventData !== undefined) {
         // Store in format expected by aggregateContent: { event, data }
-        this.jobStore.appendChunk(streamId, { event: eventType, data: eventData }).catch((err) => {
-          logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
-        });
+        const appendPromise = this.jobStore
+          .appendChunk(streamId, { event: eventType, data: eventData })
+          .catch((err) => {
+            logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
+          });
 
         // For run step events, also save to run steps key for quick retrieval
         if (eventType === 'on_run_step' || eventType === 'on_run_step_completed') {
           this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>);
+        }
+
+        if (options?.durable === true) {
+          await appendPromise;
         }
       }
     }
@@ -1562,6 +1670,19 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * The FIFO steering queue for mid-run user messages:
+   * `steering.enqueue()` / `drain()` / `peek()` / `clear()`.
+   *
+   * The steer route enqueues from any instance; the owning process's
+   * run-scoped PostToolBatch hook drains at the next tool-batch boundary.
+   * Finalization paths drain leftovers into the final/abort events so the
+   * client can convert them to queued follow-ups.
+   */
+  get steering(): SteeringLifecycle {
+    return this._steering;
+  }
+
+  /**
    * Get resume state for reconnecting clients.
    */
   async getResumeState(streamId: string): Promise<t.ResumeState | null> {
@@ -1570,9 +1691,15 @@ class GenerationJobManagerClass {
       return null;
     }
 
-    const result = await this.jobStore.getContentParts(streamId);
+    /** Independent reads (streamId-only): parallel to collapse 3 Redis round trips into 1.
+     *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
+     *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
+    const [result, runSteps, queuedSteers] = await Promise.all([
+      this.jobStore.getContentParts(streamId),
+      this.jobStore.getRunSteps(streamId),
+      this.jobStore.peekSteers(streamId),
+    ]);
     const aggregatedContent = result?.content ?? [];
-    const runSteps = await this.jobStore.getRunSteps(streamId);
     let titleEvent: t.ResumeState['titleEvent'];
     if (jobData.titleEvent) {
       try {
@@ -1611,6 +1738,9 @@ class GenerationJobManagerClass {
       }
     }
 
+    /** Steers still queued (not yet injected); injected ones are already in aggregatedContent. */
+    const pendingSteers = queuedSteers.map(toPendingSteer);
+
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
       runStepsLength: runSteps.length,
@@ -1638,6 +1768,7 @@ class GenerationJobManagerClass {
         jobData.status === 'requires_action' && !isPendingActionStale(jobData)
           ? toClientPendingAction(jobData.pendingAction)
           : undefined,
+      pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     };
   }
 
@@ -1726,9 +1857,29 @@ class GenerationJobManagerClass {
    * if this call expired the action.
    */
   async expireApproval(streamId: string, actionId?: string): Promise<boolean> {
+    /** Steers accepted before the pause are frozen for its whole window
+     *  (enqueue rejects while `requires_action`), so this pre-CAS snapshot is
+     *  exactly what the expiry's terminal cleanup is about to delete. Read it
+     *  BEFORE the transition — the store drops the queue key inside it — and
+     *  park only if the CAS wins (a lost CAS means the run resumed and the
+     *  live queue must stay untouched). */
+    let parkableSteers: TPendingSteer[] = [];
+    let steerOwner: SteerOwner | undefined;
+    try {
+      const job = await this.jobStore.getJob(streamId);
+      if (job) {
+        steerOwner = { userId: job.userId, tenantId: job.tenantId };
+        parkableSteers = (await this.jobStore.peekSteers(streamId)).map(toPendingSteer);
+      }
+    } catch (err) {
+      logger.warn(`[GenerationJobManager] Failed to snapshot steers pre-expiry ${streamId}`, err);
+    }
     const expired = await this._approvals.expire(streamId, actionId);
     if (!expired) {
       return false;
+    }
+    if (steerOwner && parkableSteers.length > 0) {
+      await this.steering.park(streamId, parkableSteers, steerOwner);
     }
     try {
       await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);

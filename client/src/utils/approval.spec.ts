@@ -11,6 +11,7 @@ import {
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
   findLiveAskUserQuestion,
+  isAnsweredAskUserQuestionPart,
   splitOtherOption,
 } from './approval';
 
@@ -390,6 +391,52 @@ describe('findLiveAskUserQuestion', () => {
     expect(findLiveAskUserQuestion([msg({ content: [textPart('hi')] })])).toBeNull();
     expect(findLiveAskUserQuestion(null)).toBeNull();
     expect(findLiveAskUserQuestion(undefined)).toBeNull();
+  });
+
+  /**
+   * The strip on answer-submit is a store write, so any holder of an older copy
+   * of the message (the SSE step handler's in-flight cache, a replayed event)
+   * can put the card back. Honouring a resurrected card reopened the popover
+   * over a question the user had already answered, options greyed out.
+   */
+  it('ignores a resurrected card for an answered question', () => {
+    const paused = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-answered' }));
+    expect(findLiveAskUserQuestion([paused])?.actionId).toBe('a-answered');
+
+    resolveAskUserQuestionPart(paused, 'a-answered', 'Ada');
+
+    // `paused` is the pre-answer copy — exactly what a stale cache writes back.
+    expect(findLiveAskUserQuestion([paused])).toBeNull();
+  });
+
+  it('falls back to an older live question when the newest is answered', () => {
+    const older = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-live' }));
+    const newer = applyPendingAction(
+      { ...msg({ content: [] }), messageId: 'm2' },
+      askAction({ actionId: 'a-done' }),
+    );
+    resolveAskUserQuestionPart(newer, 'a-done', 'Ada');
+
+    expect(findLiveAskUserQuestion([older, newer])?.actionId).toBe('a-live');
+  });
+});
+
+describe('isAnsweredAskUserQuestionPart', () => {
+  it('marks only cards whose question was actually answered', () => {
+    const live = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-open' }));
+    const answered = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-closed' }));
+    resolveAskUserQuestionPart(answered, 'a-closed', 'Ada');
+
+    expect(isAnsweredAskUserQuestionPart(answered.content?.[0])).toBe(true);
+    expect(isAnsweredAskUserQuestionPart(live.content?.[0])).toBe(false);
+    expect(isAnsweredAskUserQuestionPart(textPart('hi'))).toBe(false);
+    expect(isAnsweredAskUserQuestionPart(undefined)).toBe(false);
+  });
+
+  it('stays false for a question whose resolve found no matching card', () => {
+    const paused = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-other' }));
+    resolveAskUserQuestionPart(paused, 'a-missing', 'Ada');
+    expect(isAnsweredAskUserQuestionPart(paused.content?.[0])).toBe(false);
   });
 });
 

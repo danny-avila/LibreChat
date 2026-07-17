@@ -249,7 +249,7 @@ export function createMethods(
   const agentMethods = createAgentMethods(mongoose, agentDeps);
 
   return {
-    ...createUserMethods(mongoose),
+    ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
     ...roleMethods,

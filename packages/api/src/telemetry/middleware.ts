@@ -2,6 +2,11 @@ import { SpanStatusCode, trace } from '@opentelemetry/api';
 import type { Span, Attributes } from '@opentelemetry/api';
 import type { NextFunction, Response } from 'express';
 import type { ServerRequest } from '~/types';
+import {
+  createRedisRequestTelemetry,
+  finishRedisRequestTelemetry,
+  runWithRedisRequestTelemetry,
+} from '~/cache/redisTelemetry';
 import { getTelemetryRequestSpan } from './sdk';
 import { DEFAULT_HEALTH_PATH } from './config';
 
@@ -112,6 +117,7 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
   span.setAttributes({
     'http.request.method': req.method,
   });
+  const redisTelemetry = createRedisRequestTelemetry(span);
 
   let completed = false;
   const complete = () => {
@@ -119,6 +125,7 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
       return;
     }
     completed = true;
+    finishRedisRequestTelemetry(redisTelemetry);
     setCompletionAttributes(span, req, res);
   };
 
@@ -127,12 +134,13 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
       return;
     }
     completed = true;
+    finishRedisRequestTelemetry(redisTelemetry);
     setCompletionAttributes(span, req, res, !res.writableEnded);
   };
 
   res.once('finish', complete);
   res.once('close', close);
-  next();
+  runWithRedisRequestTelemetry(redisTelemetry, next);
 }
 
 export function telemetryErrorMiddleware(

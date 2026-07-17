@@ -17,6 +17,7 @@ export * from './agents';
 export * from './mcp';
 export * from './favorites';
 export * from './subagents';
+export * from './sandbox';
 export * from './usage';
 
 export default {

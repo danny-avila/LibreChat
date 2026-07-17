@@ -6,3 +6,7 @@ export { default as useChatFunctions } from './useChatFunctions';
 export { default as useGetAddedConvo } from './useGetAddedConvo';
 export { default as useIdChangeEffect } from './useIdChangeEffect';
 export { default as useFocusChatEffect } from './useFocusChatEffect';
+export { default as useQueueDrain } from './useQueueDrain';
+export { default as useSteering } from './useSteering';
+export { default as useSteerCancel } from './useSteerCancel';
+export { default as useSteerConvert } from './useSteerConvert';
