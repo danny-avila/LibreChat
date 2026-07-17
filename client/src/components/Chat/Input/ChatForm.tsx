@@ -266,12 +266,19 @@ const ChatForm = memo(function ChatForm({
     stopGenerating,
   });
 
+  /** Read at call time, not captured: a reclaim resolves into the callback from
+   *  the render it was clicked in, so the closure's `conversationId` is the OLD
+   *  chat — comparing it against itself would pass while `methods` (one form,
+   *  reused across conversations) writes into the chat now on screen. */
+  const liveConversationIdRef = useRef(conversationId);
+  liveConversationIdRef.current = conversationId;
+
   /**
    * `editToComposer` for a steer whose reclaim was a round-trip: by the time it
-   * resolves the composer may have moved on, and this form is reused across
-   * conversations. Refuses (returning false, so the caller re-homes the words
-   * instead of dropping them) rather than overwrite a draft the user has since
-   * typed, or drop a steer into whatever chat they navigated to.
+   * resolves the composer may have moved on. Refuses (returning false, so the
+   * caller re-homes the words instead of dropping them) rather than overwrite a
+   * draft the user has since typed, or drop a steer into whatever chat they
+   * navigated to.
    */
   const restoreReclaimedSteer = useCallback(
     (
@@ -280,7 +287,7 @@ const ChatForm = memo(function ChatForm({
       context: QueuedMessageContext,
       originConversationId: string,
     ): boolean => {
-      if (originConversationId !== conversationId) {
+      if (originConversationId !== liveConversationIdRef.current) {
         return false;
       }
       if ((methods.getValues('text') ?? '').trim().length > 0) {
@@ -289,7 +296,7 @@ const ChatForm = memo(function ChatForm({
       editToComposer(text, steerFiles, context);
       return true;
     },
-    [conversationId, methods, editToComposer],
+    [methods, editToComposer],
   );
 
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =

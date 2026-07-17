@@ -4,7 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
-import type { PendingSteer, QueuedMessage } from '~/store/families';
+import type { RunEnd, PendingSteer, QueuedMessage } from '~/store/families';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useGetMessagesByConvoId,
@@ -155,6 +155,16 @@ export default function useSteering({
    *  user has navigated, and the words belong to the chat they were typed in. */
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
+
+  /** How the last run ended, kept because `useQueueDrain` CONSUMES the one-shot
+   *  signal — by the time a reclaim resolves it is already null. Subscribers
+   *  all render before the drain's effect nulls it, so the outcome is captured
+   *  before it is gone. */
+  const runEnd = useRecoilValue(store.runEndByIndex(index));
+  const lastRunEndRef = useRef<RunEnd | null>(null);
+  if (runEnd != null) {
+    lastRunEndRef.current = runEnd;
+  }
 
   const upsertSteerChip = useRecoilCallback(
     ({ set }) =>
@@ -557,9 +567,10 @@ export default function useSteering({
    * ahead of it — a fresh `Date.now()` would sort it last.
    *
    * The reclaim is a round-trip, so the run can end while it is in flight and
-   * the drain can consume its one-shot signal against an empty queue. When that
-   * happens nothing is left to auto-send this item, so submit it directly —
-   * "after the response" has simply already arrived.
+   * the drain can consume its one-shot signal against an empty queue, leaving
+   * nothing to auto-send this item. Submitting it directly covers that gap —
+   * but only under the drain's own rule (a CLEAN completion), so a Stop or an
+   * error still leaves the words as a chip for the user to send by hand.
    */
   const queueReclaimedSteer = useCallback(
     (steer: PendingSteer) => {
@@ -576,6 +587,14 @@ export default function useSteering({
        *  `sendNow` point at the NEW chat, so the item stays queued under its own
        *  conversation instead of being submitted into someone else's thread. */
       if (isSubmittingRef.current || conversationIdRef.current !== conversationId) {
+        return;
+      }
+      const lastRunEnd = lastRunEndRef.current;
+      const drainWouldHaveSent =
+        lastRunEnd != null &&
+        lastRunEnd.conversationId === conversationId &&
+        lastRunEnd.outcome === 'completed';
+      if (!drainWouldHaveSent) {
         return;
       }
       const taken = takeQueued(steer.steerId);

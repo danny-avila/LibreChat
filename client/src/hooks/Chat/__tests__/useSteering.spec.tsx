@@ -122,11 +122,22 @@ describe('useSteering', () => {
       createdAt: 1_000,
     };
 
-    function setupWithQueue(params: HookParams = {}) {
+    /** The run-end signal `useQueueDrain` consumes; seeded here to stand for a
+     *  run that already finished by the time a reclaim resolved. */
+    const runEnd = (outcome: 'completed' | 'aborted' | 'error', conversationId = CONVO_ID) => ({
+      conversationId,
+      outcome,
+      endedAt: 2_000,
+    });
+
+    function setupWithQueue(
+      params: HookParams = {},
+      initialize?: (snapshot: MutableSnapshot) => void,
+    ) {
       const sendNow = jest.fn();
       const stopGenerating = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot>{children}</RecoilRoot>
+        <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
       );
       const rendered = renderHook(
         () => ({
@@ -175,11 +186,13 @@ describe('useSteering', () => {
       expect(result.current.queue).toHaveLength(1);
     });
 
-    it('sends the item directly when the run already ended', () => {
+    it('sends the item directly when the run already completed cleanly', () => {
       // The reclaim is a round-trip, so the run can finish while it is in
       // flight — the drain then consumed its one-shot signal against an empty
       // queue, leaving nothing to auto-send this item.
-      const { result, sendNow } = setupWithQueue({ isSubmitting: false });
+      const { result, sendNow } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
+        set(store.runEndByIndex(0), runEnd('completed'));
+      });
       act(() => {
         result.current.steering.queueReclaimedSteer(reclaimed);
       });
@@ -188,8 +201,41 @@ describe('useSteering', () => {
       expect(result.current.queue).toHaveLength(0);
     });
 
+    it.each(['aborted', 'error'] as const)(
+      'leaves the item for manual send when the run %s',
+      (outcome) => {
+        // The drain auto-sends only on a clean completion: a Stop or an error
+        // means the user is taking over, so the direct send must not smuggle
+        // the text out past that rule.
+        const { result, sendNow } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
+          set(store.runEndByIndex(0), runEnd(outcome));
+        });
+        act(() => {
+          result.current.steering.queueReclaimedSteer(reclaimed);
+        });
+        expect(sendNow).not.toHaveBeenCalled();
+        expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
+      },
+    );
+
+    it('leaves the item for manual send when the completed run was another chat', () => {
+      const { result, sendNow } = setupWithQueue({ isSubmitting: false }, ({ set }) => {
+        set(store.runEndByIndex(0), runEnd('completed', 'convo-elsewhere'));
+      });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+      expect(sendNow).not.toHaveBeenCalled();
+      expect(result.current.queue).toHaveLength(1);
+    });
+
     it('restores the item when the direct send is refused', () => {
-      const { result } = setupWithQueue({ isSubmitting: false, sendNow: () => false });
+      const { result } = setupWithQueue(
+        { isSubmitting: false, sendNow: () => false },
+        ({ set }) => {
+          set(store.runEndByIndex(0), runEnd('completed'));
+        },
+      );
       act(() => {
         result.current.steering.queueReclaimedSteer(reclaimed);
       });
