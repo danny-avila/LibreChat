@@ -88,12 +88,21 @@ export interface DiscoverConnectedAgentsParams {
    * code-execution tooling even though their parent had it.
    */
   codeEnvAvailable?: InitializeAgentParams['codeEnvAvailable'];
+  /** Sibling of `codeEnvAvailable` — the `stateful_code_sessions` capability flag, forwarded to every handoff `initializeAgent`. */
+  statefulSessionsAvailable?: InitializeAgentParams['statefulSessionsAvailable'];
   /**
    * Run-level inline memory availability gate. Forwarded verbatim to every
    * handoff agent so sub-agents that list the `memory` capability expand the
    * `set_memory` + `delete_memory` pair only when the parent run permits it.
    */
   memoryAvailable?: InitializeAgentParams['memoryAvailable'];
+  /**
+   * Run-level `run_in_background` capability gate. Forwarded verbatim so a
+   * handoff/connected agent's own event-driven tools with
+   * `tool_options[tool].run_in_background` get the injected param + poll tool,
+   * matching how the same agent behaves when run as the primary.
+   */
+  backgroundToolsAvailable?: InitializeAgentParams['backgroundToolsAvailable'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -163,6 +172,8 @@ export async function discoverConnectedAgents(
     skillStates,
     defaultActiveOnShare,
     codeEnvAvailable,
+    backgroundToolsAvailable,
+    statefulSessionsAvailable,
     memoryAvailable,
   } = params;
 
@@ -267,6 +278,8 @@ export async function discoverConnectedAgents(
         skillStates,
         defaultActiveOnShare,
         codeEnvAvailable,
+        backgroundToolsAvailable,
+        statefulSessionsAvailable,
         memoryAvailable,
       },
       db,

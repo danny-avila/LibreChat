@@ -8,6 +8,15 @@ jest.mock('nanoid', () => ({
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
   HOST_FILE_AUTHORING_ARTIFACT_KEY: '__librechat_file_authoring',
+  getToolInputValidationDetails: jest.fn((result, validationError) =>
+    validationError != null
+      ? {
+          toolName: result.tool_call.name,
+          reason: 'option_label_too_long',
+          fieldPath: validationError.fieldPath,
+        }
+      : null,
+  ),
   isCodeSessionToolName: jest.fn((name) =>
     ['execute_code', 'bash_tool', 'read_file'].includes(name),
   ),
@@ -15,6 +24,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
+    debug: jest.fn(),
     error: jest.fn(),
   },
 }));
@@ -645,6 +655,108 @@ describe('createToolEndCallback', () => {
       expect(processCodeOutput).not.toHaveBeenCalled();
       expect(res.write).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('tool input validation marker', () => {
+  it('marks the streamed result and persisted content part out of band', async () => {
+    const { GraphEvents, createContentAggregator } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const { contentParts, aggregateContent, stepMap } = createContentAggregator();
+    const toolInputValidationErrors = new Map([
+      ['tool-1', { fieldPath: 'options[0].label', isLengthLimit: true }],
+    ]);
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      contentParts,
+      stepMap,
+      aggregateContent,
+      toolInputValidationErrors,
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+    });
+
+    aggregateContent({
+      event: GraphEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-1',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'tool-1', name: 'ask_user_question', args: '{}' }],
+        },
+      },
+    });
+
+    const data = {
+      result: {
+        id: 'step-1',
+        tool_call: {
+          id: 'tool-1',
+          name: 'ask_user_question',
+          output:
+            'Error processing tool: Received tool input did not match expected schema ' +
+            '→ at options[0].label',
+        },
+      },
+    };
+
+    await handlers[GraphEvents.ON_RUN_STEP_COMPLETED].handle(
+      GraphEvents.ON_RUN_STEP_COMPLETED,
+      data,
+      { run_id: 'run-1', thread_id: 'conversation-1' },
+    );
+
+    expect(data.result.tool_call.inputValidationError).toBe(true);
+    expect(contentParts[0].tool_call.inputValidationError).toBe(true);
+    expect(toolInputValidationErrors.size).toBe(0);
+  });
+
+  it('does not mark successful output that resembles a schema error', async () => {
+    const { GraphEvents, createContentAggregator } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const { contentParts, aggregateContent, stepMap } = createContentAggregator();
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      contentParts,
+      stepMap,
+      aggregateContent,
+      toolInputValidationErrors: new Map(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+    });
+
+    aggregateContent({
+      event: GraphEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-1',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'tool-1', name: 'ask_user_question', args: '{}' }],
+        },
+      },
+    });
+
+    const data = {
+      result: {
+        id: 'step-1',
+        tool_call: {
+          id: 'tool-1',
+          name: 'ask_user_question',
+          output: 'Received tool input did not match expected schema → at options[0].label',
+        },
+      },
+    };
+
+    await handlers[GraphEvents.ON_RUN_STEP_COMPLETED].handle(
+      GraphEvents.ON_RUN_STEP_COMPLETED,
+      data,
+      { run_id: 'run-1', thread_id: 'conversation-1' },
+    );
+
+    expect(data.result.tool_call).not.toHaveProperty('inputValidationError');
+    expect(contentParts[0].tool_call).not.toHaveProperty('inputValidationError');
   });
 });
 

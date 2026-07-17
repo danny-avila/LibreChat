@@ -737,6 +737,25 @@ function configureThinking(data: AnthropicInput): AnthropicInput {
   return updatedData;
 }
 
+/** Top-level Converse request fields (issue #14029: `system` from a preset).
+ *  The input parser's catch-all routes unknown keys into
+ *  additionalModelRequestFields, and Bedrock rejects any that collide with a
+ *  field the request already sends (`messages`/`modelId` always,
+ *  `inferenceConfig` whenever maxTokens is set, `toolConfig` for agents). */
+const RESERVED_CONVERSE_FIELDS = [
+  'system',
+  'messages',
+  'modelId',
+  'toolConfig',
+  'inferenceConfig',
+  'guardrailConfig',
+  'promptVariables',
+  'requestMetadata',
+  'performanceConfig',
+  'additionalModelRequestFields',
+  'additionalModelResponseFieldPaths',
+];
+
 export const bedrockOutputParser = (data: Record<string, unknown>) => {
   const knownKeys = [...Object.keys(s.tConversationSchema.shape), 'topK', 'top_k'];
   let result: Record<string, unknown> = {};
@@ -776,7 +795,21 @@ export const bedrockOutputParser = (data: Record<string, unknown>) => {
   }
 
   result = configureThinking(result as AnthropicInput);
-  const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  let amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+  // Reserved top-level Converse request fields; a copy inside
+  // additionalModelRequestFields makes Bedrock reject the request
+  // ("The additional field <name> conflicts with an existing field").
+  // Guard against non-object values, which the schema's DocumentType permits.
+  if (amrf && typeof amrf === 'object') {
+    const reserved = RESERVED_CONVERSE_FIELDS.filter((key) => key in (amrf ?? {}));
+    if (reserved.length > 0) {
+      amrf = { ...amrf };
+      for (const key of reserved) {
+        delete amrf[key];
+      }
+      result.additionalModelRequestFields = amrf;
+    }
+  }
   if (!amrf || Object.keys(amrf).length === 0) {
     delete result.additionalModelRequestFields;
   }

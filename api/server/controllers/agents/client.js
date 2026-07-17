@@ -37,7 +37,7 @@ const {
   toClientPendingAction,
   computeAgentRequestFingerprint,
   extractDiscoveredToolsFromHistory,
-  sanitizeResumeModelParameters,
+  captureResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
@@ -45,7 +45,13 @@ const {
   agentRequestsAskUserQuestion,
   attachAskUserQuestionArgs,
   createContentIndexOffsetHandlers,
+  createSteerIndexOffsetHandlers,
+  createSteerDrainHook,
+  isSteeringSupported,
+  buildSteerMedia,
+  stampSteerPartMedia,
   getRequestMemories,
+  getMemoryAgentId,
   createMemoryProcessor,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
@@ -67,6 +73,7 @@ const {
   appendYouTubeVideoParts,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
+  maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
   Callback,
@@ -78,6 +85,7 @@ const {
 } = require('@librechat/agents');
 const {
   Constants,
+  SteerEvents,
   UsageEvents,
   Permissions,
   VisionModes,
@@ -135,6 +143,7 @@ class AgentClient extends BaseClient {
       subagentAggregatorsByToolCallId,
       contextUsageSink,
       usageEmitSink,
+      toolInputValidationErrors,
       ...clientOptions
     } = options;
 
@@ -149,6 +158,11 @@ class AgentClient extends BaseClient {
      *  persisted on `metadata.usage`.
      *  @type {Array<import('librechat-data-provider').TTokenUsageEvent> | undefined} */
     this.usageEmitSink = usageEmitSink;
+    /** Schema-validation exceptions keyed by tool-call ID. The completion
+     *  handler consumes these to distinguish execution failures from tool
+     *  output that merely contains similar text.
+     *  @type {Map<string, import('@librechat/api').ToolInputValidationError> | undefined} */
+    this.toolInputValidationErrors = toolInputValidationErrors;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
@@ -188,6 +202,11 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {Array<Record<string, unknown>> | null} */
     this.memoryPayload = null;
+    /** Mutable content-index shift shared with the steer offset handlers.
+     *  Incremented each time a steer part is spliced into `contentParts`, so
+     *  SDK-emitted indices that arrive after an injection land past it.
+     *  @type {import('@librechat/api').SteerOffsetState} */
+    this.steerOffsetState = { offset: 0 };
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -236,6 +255,78 @@ class AgentClient extends BaseClient {
       }
     }
     buffer.clear();
+  }
+
+  /**
+   * Apply one drained steer to host state: append the steer content part at
+   * the live content index, bump the shared index offset so subsequent SDK
+   * step indices land past it, and emit `on_steer_applied` so the live client
+   * replaces its pending chip with the inline part (the emitted chunk also
+   * reaches the Redis chunk log for reconnect reconstruction).
+   *
+   * Runs BEFORE the drain hook's media encode so an abort during the encode
+   * cannot lose the steer. File refs persist from the queue item (sanitized at
+   * enqueue); replay/token accounting re-fetch owner-scoped and re-encode per
+   * turn (stampSteerPartMedia), so unauthorized ids drop out there.
+   *
+   * @param {string} streamId
+   * @param {import('@librechat/api').SteerQueueItem} item
+   */
+  async applySteerPart(streamId, item) {
+    const index = this.contentParts.length;
+    const part = {
+      type: ContentTypes.STEER,
+      [ContentTypes.STEER]: item.text,
+      steerId: item.steerId,
+      createdAt: item.createdAt,
+      ...(item.files?.length && { files: item.files }),
+    };
+    this.contentParts.push(part);
+    this.steerOffsetState.offset += 1;
+    // durable: the chunk-log XADD is this event's recovery record — it must
+    // commit before the publish or a cross-replica reconnect that missed the
+    // pub/sub delivery reconstructs content without the steer part.
+    await GenerationJobManager.emitChunk(
+      streamId,
+      {
+        event: SteerEvents.ON_STEER_APPLIED,
+        data: {
+          steerId: item.steerId,
+          index,
+          part,
+          responseMessageId: this.responseMessageId,
+          conversationId: this.conversationId,
+        },
+      },
+      { durable: true },
+    );
+  }
+
+  /**
+   * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
+   * drain hook, or `undefined` when there is no resumable job surface or the
+   * installed SDK cannot inject hook messages (draining would drop them).
+   *
+   * @param {string | undefined} streamId
+   */
+  buildSteerWiring(streamId) {
+    if (!streamId || !isSteeringSupported()) {
+      return undefined;
+    }
+    return {
+      hook: createSteerDrainHook({
+        streamId,
+        jobCreatedAt: this.jobCreatedAt,
+        applySteer: (item) => this.applySteerPart(streamId, item),
+        buildMedia: (item) =>
+          buildSteerMedia({
+            client: this,
+            user: this.options.req?.user,
+            item,
+            getFiles: db.getFiles,
+          }),
+      }),
+    };
   }
 
   setOptions(_options) {}
@@ -512,6 +603,42 @@ class AgentClient extends BaseClient {
     }
 
     payload = formattedMessages;
+    if (this.options.resendFiles) {
+      /** Persisted steer parts of past turns replay with their attachments:
+       *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
+       *  transient `media` array (same resend semantics as message files).
+       *  The stamp lands after the loop above finalized its counts, so the
+       *  re-encoded media (minus the text part the steer part already counted)
+       *  is folded into the budget here — large steered attachments must
+       *  shrink the window like any other resent media. */
+      const stamped = await stampSteerPartMedia({
+        client: this,
+        user: this.options.req?.user,
+        payload,
+        // addPreviousAttachments already fetched steer-part refs in its single
+        // per-turn historical-files query — no second round trip.
+        docsById: this.authorizedHistoricalFiles,
+        getFiles: db.getFiles,
+      });
+      for (const { index, media, steerText } of stamped) {
+        /** Count the FULL stamped content and subtract only the steer body
+         *  (already counted inside the assistant message): extracted file
+         *  context prepended into the text part must hit the budget too, or
+         *  large steered documents bypass pruning. */
+        const fullTokens = countFormattedMessageTokens({ role: 'user', content: media }, encoding);
+        const bodyTokens = steerText
+          ? countFormattedMessageTokens(
+              { role: 'user', content: [{ type: ContentTypes.TEXT, text: steerText }] },
+              encoding,
+            )
+          : 0;
+        const mediaTokens = Math.max(0, (fullTokens ?? 0) - (bodyTokens ?? 0));
+        if (Number.isFinite(mediaTokens) && mediaTokens > 0) {
+          indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + mediaTokens;
+          promptTokenTotal += mediaTokens;
+        }
+      }
+    }
     this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
@@ -536,10 +663,34 @@ class AgentClient extends BaseClient {
      *  keys + token metadata) is reserved for agents that can call
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     const memories = await this.useMemory();
+    /** Partition the loaded memories belong to (the primary agent's). */
+    const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
     const buildMemoryContext = (text) =>
       text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
-    const memoryContext = buildMemoryContext(memories?.withoutKeys);
-    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
+    /** Resolves formatted memories for an agent's own partition. A defined
+     *  `memories` means the run-level gates (permission, opt-out, config)
+     *  passed; agents on other partitions fetch through the request-scoped
+     *  cache so repeated partitions share one query. */
+    const getAgentPartitionMemories = async (agent) => {
+      if (!memories) {
+        return undefined;
+      }
+      const agentPartition = getMemoryAgentId(agent);
+      if (agentPartition === loadedMemoryAgentId) {
+        return memories;
+      }
+      try {
+        return await getRequestMemories({
+          req: this.options.req,
+          userId: this.options.req.user.id + '',
+          agentId: agentPartition,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+      } catch (error) {
+        logger.error('[AgentClient] Error loading partition memories', error);
+        return undefined;
+      }
+    };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -588,15 +739,17 @@ class AgentClient extends BaseClient {
     const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
-      allAgents.map(({ agent, agentId }) => {
+      allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
         const agentHasMemory = agentHasInlineMemoryTools(agent);
-        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
-        if (
-          agentMemoryContext &&
-          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
-        ) {
-          agentRunContextParts.push(agentMemoryContext);
+        if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+          const partitionMemories = await getAgentPartitionMemories(agent);
+          const agentMemoryContext = buildMemoryContext(
+            agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          );
+          if (agentMemoryContext) {
+            agentRunContextParts.push(agentMemoryContext);
+          }
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -674,6 +827,8 @@ class AgentClient extends BaseClient {
     }
 
     const userId = this.options.req.user.id + '';
+    /** Memory partition of the primary agent; undefined = shared personal pool */
+    const memoryAgentId = getMemoryAgentId(this.options.agent);
     this.processMemory = undefined;
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
@@ -681,6 +836,7 @@ class AgentClient extends BaseClient {
         const { withKeys, withoutKeys } = await getRequestMemories({
           req: this.options.req,
           userId,
+          agentId: memoryAgentId,
           getFormattedMemories: db.getFormattedMemories,
         });
         return { withKeys, withoutKeys };
@@ -744,6 +900,7 @@ class AgentClient extends BaseClient {
             : memoryConfig.agent?.provider,
         },
         codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
+        statefulSessionsAvailable: memoryCapabilities.has(AgentCapabilities.stateful_code_sessions),
       },
       {
         getFiles: db.getFiles,
@@ -786,6 +943,7 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      agentId: memoryAgentId,
       config,
       messageId,
       streamId,
@@ -805,6 +963,7 @@ class AgentClient extends BaseClient {
       ({ withKeys } = await getRequestMemories({
         req: this.options.req,
         userId,
+        agentId: memoryAgentId,
         getFormattedMemories: db.getFormattedMemories,
       }));
     } catch (error) {
@@ -1193,6 +1352,9 @@ class AgentClient extends BaseClient {
       (part, index) =>
         index >= this.contentParts.length - 1 ||
         part.type === ContentTypes.TOOL_CALL ||
+        // Steer parts are user speech, not intermediate agent output — dropping
+        // one would erase the user's words from the persisted turn.
+        part.type === ContentTypes.STEER ||
         part.tool_call_ids,
     );
   }
@@ -1222,19 +1384,21 @@ class AgentClient extends BaseClient {
 
     const appConfig = this.options.req?.config;
     const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
-    // Persist the resolved model parameters (temperature, max tokens, custom endpoint
-    // params, …) so an ephemeral-agent resume continues with the SAME settings the run
-    // paused on. The resume payload omits them and they aren't part of the fingerprint, so
-    // without this the rebuilt ephemeral run falls back to defaults. (Saved agents source
-    // these from the DB record server-side, so this is belt-and-suspenders for them.)
-    // Sanitized: the resolved params are the llmConfig, which carries provider secrets
+    // Persist the generation params (temperature, max tokens, custom endpoint params, …)
+    // so an ephemeral-agent resume continues with the SAME settings the run paused on.
+    // The resume payload omits them and they aren't part of the fingerprint, so without
+    // this the rebuilt ephemeral run falls back to defaults. The paused request body is
+    // the primary source (UI-form, round-trips the compact-convo schema by construction);
+    // the resolved llmConfig fills gaps and is sanitized — it carries provider secrets
     // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
+    // (Saved agents source params from the DB record, so this is belt-and-suspenders.)
     const resumeContext = pickResumeContext(this.options.req?.body);
-    const resolvedModelParameters = sanitizeResumeModelParameters(
+    const resumeModelParameters = captureResumeModelParameters(
+      this.options.req?.body,
       this.options.agent?.model_parameters,
     );
-    if (resolvedModelParameters) {
-      resumeContext.model_parameters = resolvedModelParameters;
+    if (resumeModelParameters) {
+      resumeContext.model_parameters = resumeModelParameters;
     }
     // Persist the question onto the paused ask tool_call's args NOW: an
     // abandoned/expired/stopped pause never reaches the answer-resume stamp,
@@ -1333,6 +1497,13 @@ class AgentClient extends BaseClient {
       event: ApprovalEvents.ON_PENDING_ACTION,
       data: toClientPendingAction(pendingAction),
     });
+    // Steers queued before this pause stay IN the store for the whole approval
+    // window: `resumeState.pendingSteers` re-seeds the client's chips on
+    // reload, and the resumed run drains them at its first tool boundary.
+    // Draining here would leave the only copy in ephemeral client state — a
+    // reload during the pause would silently lose the user's message. New
+    // steers are rejected while paused (enqueue is status-guarded), and the
+    // requires_action TTL extension keeps the queue key alive.
     logger.debug(
       `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
     );
@@ -1352,6 +1523,16 @@ class AgentClient extends BaseClient {
       if (!abortController) {
         abortController = new AbortController();
       }
+
+      /** Fire-and-forget: boot the per-conversation stateful sandbox in
+       *  parallel with generation so the first execute_code/bash call lands
+       *  on a warm VM. No-op unless a reachable agent resolved
+       *  `statefulCodeSessions`. */
+      maybePrewarmCodeSandbox({
+        req: this.options.req,
+        conversationId: this.conversationId,
+        agents: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+      });
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
@@ -1575,6 +1756,7 @@ class AgentClient extends BaseClient {
           );
         }
 
+        const streamId = this.options.req?._resumableStreamId;
         run = await createRun({
           agents,
           messages,
@@ -1583,13 +1765,21 @@ class AgentClient extends BaseClient {
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
           // leave this off so an approval-gated tool can't pause where there's no resume path.
           hitlCapable: true,
+          toolInputValidationErrors: this.toolInputValidationErrors,
+          // Mid-run steering: drain queued user messages at each tool-batch
+          // boundary and inject them into graph state. The offset wrapper
+          // shifts SDK content indices past any spliced steer parts.
+          steering: this.buildSteerWiring(streamId),
           indexTokenCountMap,
           initialSummary,
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
-          customHandlers: this.options.eventHandlers,
+          customHandlers: createSteerIndexOffsetHandlers(
+            this.options.eventHandlers,
+            this.steerOffsetState,
+          ),
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tenantId: this.options.req?.user?.tenantId,
@@ -1619,7 +1809,6 @@ class AgentClient extends BaseClient {
           this._resolveRun = null;
         }
 
-        const streamId = this.options.req?._resumableStreamId;
         if (streamId && run.Graph) {
           GenerationJobManager.setGraph(streamId, run.Graph);
         }
@@ -1898,6 +2087,7 @@ class AgentClient extends BaseClient {
       // graph otherwise has no `Graph.sessions` entries (especially cross-replica).
       const initialSessions = buildInitialToolSessions({ skillSessions, agents });
 
+      const streamId = this.options.req?._resumableStreamId;
       run = await createRun({
         agents,
         // State (messages, tool calls) is rehydrated from the checkpoint by
@@ -1906,6 +2096,10 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        toolInputValidationErrors: this.toolInputValidationErrors,
+        // Steering stays live across a pause/resume cycle: steers queued while
+        // the resumed segment runs drain at its tool-batch boundaries.
+        steering: this.buildSteerWiring(streamId),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so a deferred tool the paused call targets
         // would be absent from the rebuilt toolMap; these names (captured at pause)
@@ -1917,10 +2111,15 @@ class AgentClient extends BaseClient {
         // The rebuilt graph numbers content indices from 0, but the aggregator was
         // just seeded with the pre-pause parts at those same indices — shift every
         // resumed step index past the seed, or the new output merges into (or, on a
-        // type mismatch, is silently dropped against) the pre-pause content.
-        customHandlers: createContentIndexOffsetHandlers(
-          this.options.eventHandlers,
-          Array.isArray(seedContent) ? seedContent : [],
+        // type mismatch, is silently dropped against) the pre-pause content. The
+        // steer wrapper composes on top: resumed indices shift by seed + any
+        // steer parts spliced in while the resumed segment streams.
+        customHandlers: createSteerIndexOffsetHandlers(
+          createContentIndexOffsetHandlers(
+            this.options.eventHandlers,
+            Array.isArray(seedContent) ? seedContent : [],
+          ),
+          this.steerOffsetState,
         ),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
@@ -1944,7 +2143,6 @@ class AgentClient extends BaseClient {
         this._resolveRun = null;
       }
 
-      const streamId = this.options.req?._resumableStreamId;
       // Do NOT cache the rebuilt graph on resume: it was created with `messages: []`, so
       // RedisJobStore.getContentParts() (which prefers a cached graph over reconstructing
       // from the chunk log) would return only the resumed segment and drop the pre-pause
