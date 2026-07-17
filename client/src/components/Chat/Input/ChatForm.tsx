@@ -275,6 +275,9 @@ const ChatForm = memo(function ChatForm({
   /** Same reason: attachments staged after the click must be seen. */
   const liveFilesRef = useRef(files);
   liveFilesRef.current = files;
+  /** Same reason: the run can pause on `ask_user_question` mid-reclaim. */
+  const liveAnswerModeRef = useRef(answerMode.active);
+  liveAnswerModeRef.current = answerMode.active;
 
   /** A draft is anything the user has staged, not just typed: `editToComposer`
    *  MERGES the steer's attachments into the composer's file map and its quotes
@@ -304,6 +307,12 @@ const ChatForm = memo(function ChatForm({
     ): boolean => {
       const liveConversationId = liveConversationIdRef.current;
       if (originConversationId !== liveConversationId) {
+        return false;
+      }
+      /** Answer mode owns the composer: `onSubmit` hands its text to
+       *  `answerMode.submitText` before any send/steer routing, so restoring
+       *  here would turn the steer into the tool's answer on the next Enter. */
+      if (liveAnswerModeRef.current) {
         return false;
       }
       if (

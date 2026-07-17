@@ -295,6 +295,23 @@ describe('InFlightSteers', () => {
     );
   });
 
+  it('does not restore a steer a terminal conversion already queued', async () => {
+    // The chip stays interactive during the reclaim round-trip, so a run that
+    // ends or errors meanwhile converts it to a queued follow-up (stamping the
+    // applied set). Restoring afterwards would leave one copy queued and
+    // another in the composer draft.
+    renderSteers([{ steerId: 's-ack', text: 'already queued', status: 'pending', createdAt: 1 }], {
+      appliedSteerIds: ['s-ack'],
+    });
+    await clickMenuItem('com_ui_edit_message');
+
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockQueueReclaimedSteer).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_run_ended_queued' }),
+    );
+  });
+
   it('never re-homes a steer the server already applied', async () => {
     // `removed: false` means the cancel lost its race to the injection
     // boundary: the words are in the run, so queueing them would send twice.

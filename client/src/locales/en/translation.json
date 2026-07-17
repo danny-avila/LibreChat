@@ -1880,6 +1880,7 @@
   "com_ui_steer_in_flight": "Steering",
   "com_ui_steer_paused_queued": "The agent is waiting for your review — your message was queued instead",
   "com_ui_steer_retry": "Retry steering",
+  "com_ui_steer_run_ended_queued": "The response ended, so that steering message is queued as a follow-up",
   "com_ui_steer_send": "Steer the current response",
   "com_ui_steered_info": "You added this message while the response was generating, so it was inserted into the response at this point.",
   "com_ui_stop": "Stop",

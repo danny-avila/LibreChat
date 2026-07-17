@@ -620,6 +620,9 @@ export default function useSteering({
           text: steer.text,
           createdAt: steer.createdAt,
           ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+          /** Carried on the steer itself: the conversion normally recovers this
+           *  from the chip, which a competing cancel can remove mid-reclaim. */
+          ...carriedSteerContext(steer),
         },
       ]);
       /**

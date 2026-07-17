@@ -1,7 +1,7 @@
 import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { X, Zap, Clock, Pencil } from 'lucide-react';
+import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
@@ -77,6 +77,20 @@ const InFlightSteer = memo(function InFlightSteer({
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
 
+  /** Whether the words have already been re-homed by a terminal conversion (a
+   *  run that ended/errored mid-reclaim queues the still-present chip). The
+   *  queue action is safe either way — the conversion dedupes by id — but a
+   *  composer restore would leave one copy queued and another in the draft. */
+  const hasSettled = useRecoilCallback(
+    ({ snapshot }) =>
+      (steerId: string) =>
+        snapshot
+          .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
+          .getValue()
+          .includes(steerId),
+    [conversationId],
+  );
+
   /**
    * Takes the steer back off the server queue so its words can be re-homed.
    * The chip is left alone until the answer is known: only `reclaimed` proves
@@ -105,6 +119,12 @@ const InFlightSteer = memo(function InFlightSteer({
       onClick: () => {
         void reclaim().then((reclaimed) => {
           if (!reclaimed) {
+            return;
+          }
+          if (hasSettled(steer.steerId)) {
+            /* The run ended while the reclaim was in flight and its terminal
+             * conversion already queued these words. */
+            showToast({ message: localize('com_ui_steer_run_ended_queued'), status: 'info' });
             return;
           }
           const restored = onRestoreToComposer(
