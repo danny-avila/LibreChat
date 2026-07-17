@@ -127,21 +127,6 @@ export function isElicitationSuccess(action: ElicitationFlowAction | undefined):
 }
 
 /**
- * Maps a flow result's action onto the MCP SDK's `ElicitResultSchema.action`
- * enum (`accept` | `decline` | `cancel`), which has no `complete` member — the
- * URL-exception-only "I've authorized, continue" signal is treated as `accept`
- * for protocol responses.
- */
-export function toElicitResultAction(
-  action: ElicitationFlowAction,
-): 'accept' | 'decline' | 'cancel' {
-  if (action === 'complete') {
-    return 'accept';
-  }
-  return action;
-}
-
-/**
  * Generates a flow ID for an MCP URL-mode elicitation flow (a `mode: 'url'`
  * `elicitation/create` request, or a -32042 URL-exception retry).
  *

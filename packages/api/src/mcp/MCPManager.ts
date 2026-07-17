@@ -24,8 +24,6 @@ import {
   extractUrlElicitation,
   generateElicitationFlowId,
   isElicitationSuccess,
-  isHttpUrl,
-  toElicitResultAction,
 } from './elicitation';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
@@ -52,22 +50,6 @@ const ELICITATION_TIMEOUT_BUFFER_MS = 60 * 1000;
  *  one spawns a flow-store entry and an SSE card, so the count is capped to stop
  *  a memory/resource DoS. Further requests past the cap are declined outright. */
 const MAX_PENDING_ELICITATIONS = 3;
-
-/** Combines the caller's request-abort signal with the SDK's per-elicitation
- *  signal so cancelling the tool call OR the server cancelling/closing the
- *  elicitation both tear down the pending flow wait. */
-function combineAbortSignals(
-  ...signals: Array<AbortSignal | null | undefined>
-): AbortSignal | undefined {
-  const active = signals.filter((signal): signal is AbortSignal => signal != null);
-  if (active.length === 0) {
-    return undefined;
-  }
-  if (active.length === 1) {
-    return active[0];
-  }
-  return AbortSignal.any(active);
-}
 
 function createOboToolCallErrorMessage(
   logPrefix: string,
@@ -445,12 +427,11 @@ Please follow these instructions when using tools from the respective MCP server
     /**
      * When provided: (1) declares support for MCP elicitation, extending the
      * `tools/call` timeout to outlive the flow-state wait (see
-     * {@link ELICITATION_TIMEOUT_BUFFER_MS}); (2) registers a handler for
-     * server-initiated `mode: 'url'` `elicitation/create` requests; and (3)
-     * catches the -32042 `UrlElicitationRequired` exception on the initial
-     * `tools/call` response and retries once after the user authorizes. Called
-     * once per elicitation with enough context to render an in-chat card;
-     * resolution arrives via `flowManager` (same pattern as `oauthStart`/OAuth).
+     * {@link ELICITATION_TIMEOUT_BUFFER_MS}); and (2) catches the -32042
+     * `UrlElicitationRequired` exception on the initial `tools/call` response
+     * and retries once after the user authorizes. Called once per elicitation
+     * with enough context to render an in-chat card; resolution arrives via
+     * `flowManager` (same pattern as `oauthStart`/OAuth).
      */
     elicitationStart?: (params: {
       flowId: string;
@@ -471,7 +452,6 @@ Please follow these instructions when using tools from the respective MCP server
     /** User-specific connection */
     let connection: MCPConnection | undefined;
     let cleanupRequestOAuthHandler: (() => void) | undefined;
-    let cleanupElicitationHandler: (() => void) | undefined;
     let disconnectAfterCall = false;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -607,56 +587,6 @@ Please follow these instructions when using tools from the respective MCP server
 
       const elicitationFlowManager = asElicitationFlowManager(flowManager);
 
-      if (elicitationStart && userId) {
-        cleanupElicitationHandler = connection.setElicitationHandler(
-          async (params, elicitationSignal) => {
-            // This build declares only the `url` elicitation capability, so any
-            // accepted `elicitation/create` must carry a safe http(s) URL; a
-            // stray form-mode or hostile-scheme request is declined outright.
-            if (!isHttpUrl(params.url ?? '')) {
-              logger.warn(
-                `${logPrefix}[${toolName}] Declining elicitation without a valid http(s) url-mode URL`,
-              );
-              return { action: 'decline' };
-            }
-            if (!this.reserveElicitation(userId, serverName)) {
-              logger.warn(
-                `${logPrefix}[${toolName}] Declining elicitation: ${MAX_PENDING_ELICITATIONS} already pending for this server`,
-              );
-              return { action: 'decline' };
-            }
-            try {
-              const flowId = generateElicitationFlowId(userId, serverName, toolName, getTenantId());
-              logger.debug(
-                `${logPrefix}[${toolName}] Elicitation requested (url), flowId: ${flowId}`,
-              );
-              await elicitationStart({
-                flowId,
-                mode: 'url',
-                message: params.message,
-                serverName,
-                toolName,
-                url: params.url,
-                elicitationId: params.elicitationId,
-              });
-              const flowResult = await elicitationFlowManager.createFlow(
-                flowId,
-                'mcp_elicit',
-                { elicitationId: params.elicitationId },
-                combineAbortSignals(options?.signal, elicitationSignal),
-              );
-              logger.debug(`${logPrefix}[${toolName}] Elicitation resolved: ${flowResult.action}`);
-              return {
-                action: toElicitResultAction(flowResult.action),
-                content: flowResult.content,
-              };
-            } finally {
-              this.releaseElicitation(userId, serverName);
-            }
-          },
-        );
-      }
-
       const requestParams = {
         method: 'tools/call' as const,
         params: {
@@ -780,9 +710,6 @@ Please follow these instructions when using tools from the respective MCP server
       throw error;
     } finally {
       cleanupRequestOAuthHandler?.();
-      // Unregister the per-call elicitation handler so a cached connection can't
-      // fire a stale closure (old toolName/signal/flow) on a later request.
-      cleanupElicitationHandler?.();
       // Ephemeral connections are never stored in userConnections, so disconnecting
       // is the only cleanup needed; removing the map entry here could orphan a
       // still-connected cached connection from before a config change.

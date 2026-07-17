@@ -5,17 +5,12 @@ import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
+import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
-import {
-  ElicitRequestSchema,
-  ErrorCode,
-  McpError,
-  ResourceListChangedNotificationSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
@@ -23,7 +18,6 @@ import type {
   Dispatcher,
 } from 'undici';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { ElicitResult } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
@@ -38,39 +32,6 @@ type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 type ManagedDispatcher = Agent | ProxyAgent;
 type ParsedIP = { version: 4 | 6; bits: 32 | 128; value: bigint };
 type MCPTool = MCPListToolsResult['tools'][number];
-
-/**
- * Params delivered to a {@link MCPConnection.setElicitationHandler} handler for a
- * server-initiated `mode: 'url'` `elicitation/create` request (spec 2025-11-25):
- * the out-of-band authorization link. This slice declares only the `url`
- * elicitation capability, so a compliant server issues only this variant; `mode`
- * is typed loosely so a stray non-url request can still be detected and declined.
- */
-type ElicitationCreateParams = {
-  mode?: string;
-  message: string;
-  elicitationId?: string;
-  url?: string;
-};
-
-/**
- * Services one server-initiated `elicitation/create`. `signal` is the SDK's
- * per-request abort signal (fired on `notifications/cancelled` or transport
- * close) so a pending wait can be torn down instead of dangling until its TTL.
- * Resolves with the SDK's {@link ElicitResult} (`ElicitResultSchema`).
- */
-type ElicitationHandler = (
-  params: ElicitationCreateParams,
-  signal: AbortSignal,
-) => Promise<ElicitResult>;
-
-/** A pending elicitation handler registered for the lifetime of one in-flight
- *  `tools/call`. Each entry carries its own identity so its disposer removes
- *  only itself, never a concurrent call's still-live handler. */
-interface ElicitationHandlerEntry {
-  id: symbol;
-  handler: ElicitationHandler;
-}
 
 const BIGINT_ZERO = BigInt(0);
 const BIGINT_ONE = BigInt(1);
@@ -1179,9 +1140,6 @@ export class MCPConnection extends EventEmitter {
   private lastPingTime: number;
   private lastConnectionCheckAt: number = 0;
   private oauthTokens?: MCPOAuthTokens | null;
-  /** Registry of elicitation handlers pending across concurrent `tools/call`s on
-   *  this shared connection; see {@link setElicitationHandler}. */
-  private readonly elicitationHandlers: ElicitationHandlerEntry[] = [];
   private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
   private oauthRecovery = false;
@@ -1320,15 +1278,14 @@ export class MCPConnection extends EventEmitter {
         version: '1.2.3',
       },
       {
-        /** Declares support for the `url` elicitation wire mode (spec 2025-11-25):
-         *  an out-of-band authorization link, delivered either via
-         *  `elicitation/create` with `mode: 'url'`, or the -32042
-         *  `UrlElicitationRequired` exception path on `tools/call` (which doesn't
-         *  consult this capability at all). Form-mode elicitation is intentionally
-         *  not declared by this build. Gated on the per-server `elicitation` flag:
-         *  when a server opts out (`elicitation: false`), the capability is not
-         *  advertised, so the server won't issue `elicitation/create` requests
-         *  the client isn't wired to service. */
+        /** Declares support for the `url` elicitation wire mode (spec 2025-11-25).
+         *  The target gateway (AWS Bedrock AgentCore) returns the -32042
+         *  `UrlElicitationRequired` error on `tools/call` ONLY to clients that
+         *  declare `elicitation.url`, so this must stay declared even though
+         *  proactive server-initiated `elicitation/create` handling is
+         *  intentionally deferred to a follow-up. Gated on the per-server
+         *  `elicitation` flag: when a server opts out (`elicitation: false`),
+         *  the capability is not advertised. */
         capabilities: params.serverConfig.elicitation === false ? {} : { elicitation: { url: {} } },
       },
     );
@@ -2486,66 +2443,6 @@ export class MCPConnection extends EventEmitter {
 
   public setOAuthTokens(tokens: MCPOAuthTokens): void {
     this.oauthTokens = tokens;
-  }
-
-  /**
-   * Registers a handler for server-initiated `mode: 'url'` `elicitation/create`
-   * requests. Does NOT handle the -32042 `UrlElicitationRequired` exception path
-   * — that arrives as an error on the `tools/call` response itself and is handled
-   * in `MCPManager.callTool`.
-   *
-   * This connection is shared per (user, server), so concurrent `tools/call`s
-   * each register a handler on it (e.g. an assistant message whose `tool_calls`
-   * run via `Promise.all`). A single stable dispatcher is installed on the SDK
-   * client for the span any handler is pending; each call adds its own registry
-   * entry and gets back a disposer that removes ONLY that entry. The dispatcher
-   * is torn down (`removeRequestHandler`) exactly when the registry drains to
-   * empty, so an earlier call still awaiting its elicitation is never orphaned by
-   * a later call disposing first.
-   *
-   * Routing limitation: `elicitation/create` carries no call-correlation id, so
-   * an incoming request is routed to the most-recently-registered still-pending
-   * entry — the best correlation the protocol allows.
-   *
-   * Callers MUST invoke the disposer once the originating `tools/call` settles so
-   * a cached connection can't leak a stale per-call closure into a later request.
-   */
-  public setElicitationHandler(handler: ElicitationHandler): () => void {
-    const entry: ElicitationHandlerEntry = { id: Symbol('elicitation-entry'), handler };
-    if (this.elicitationHandlers.length === 0) {
-      this.client.setRequestHandler(ElicitRequestSchema, (request, extra) =>
-        this.dispatchElicitation(request.params as ElicitationCreateParams, extra.signal),
-      );
-    }
-    this.elicitationHandlers.push(entry);
-    return () => {
-      const index = this.elicitationHandlers.findIndex((pending) => pending.id === entry.id);
-      if (index === -1) {
-        return;
-      }
-      this.elicitationHandlers.splice(index, 1);
-      if (this.elicitationHandlers.length === 0) {
-        this.client.removeRequestHandler(ElicitRequestSchema.shape.method.value);
-      }
-    };
-  }
-
-  /** Routes one incoming `elicitation/create` to the most-recent still-pending
-   *  handler (see the routing limitation in {@link setElicitationHandler}). The
-   *  registry is only empty when no dispatcher is installed, so the guard covers
-   *  a dispatch that races teardown rather than an expected path. */
-  private dispatchElicitation(
-    params: ElicitationCreateParams,
-    signal: AbortSignal,
-  ): Promise<ElicitResult> {
-    const entry = this.elicitationHandlers[this.elicitationHandlers.length - 1];
-    if (!entry) {
-      throw new McpError(
-        ErrorCode.MethodNotFound,
-        `${this.getLogPrefix()} No elicitation handler registered`,
-      );
-    }
-    return entry.handler(params, signal);
   }
 
   /**
