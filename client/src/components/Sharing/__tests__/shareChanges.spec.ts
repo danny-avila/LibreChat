@@ -2,14 +2,13 @@ import { AccessRoleIds, PrincipalType } from 'librechat-data-provider';
 import type { TPrincipal } from 'librechat-data-provider';
 import { computeShareChanges, principalKey } from '../shareChanges';
 
-const principal = (over: Partial<TPrincipal>): TPrincipal =>
-  ({
-    type: PrincipalType.USER,
-    id: 'id',
-    name: 'name',
-    accessRoleId: AccessRoleIds.AGENT_VIEWER,
-    ...over,
-  }) as TPrincipal;
+const principal = (over: Partial<TPrincipal>): TPrincipal => ({
+  type: PrincipalType.USER,
+  id: 'id',
+  name: 'name',
+  accessRoleId: AccessRoleIds.AGENT_VIEWER,
+  ...over,
+});
 
 describe('computeShareChanges', () => {
   it('does not revoke a principal when the same id appears with a different idOnTheSource', () => {
