@@ -415,7 +415,13 @@ const ChatForm = memo(function ChatForm({
         <div className="flex w-full flex-col">
           {/* Run-scoped: `enabled` alone is any primary composer on a steerable
               endpoint, so a chip that outlives the run would strand a bubble. */}
-          {steering.enabled && isSubmitting && <InFlightSteers conversationId={conversationId} />}
+          {steering.enabled && isSubmitting && (
+            <InFlightSteers
+              steering={steering}
+              conversationId={conversationId}
+              onEditToComposer={editToComposer}
+            />
+          )}
           <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
             <Mention
               index={index}

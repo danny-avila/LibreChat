@@ -1,15 +1,25 @@
 import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { X, Zap } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { useToastContext } from '@librechat/client';
+import { X, Zap, Clock, Pencil } from 'lucide-react';
 import type { TFile, TMessage } from 'librechat-data-provider';
+import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
+import type { MenuEntry } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
+import { RowMenu, useDefaultToggleEntry, ICON_BTN_CLASS } from './SteerMenu';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import { useSteerCancel, useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
+
+type EditToComposer = (
+  text: string,
+  files?: TMessage['files'],
+  context?: QueuedMessageContext,
+) => void;
 
 const splitFiles = (files?: TMessage['files']) => {
   const images: NonNullable<TMessage['files']> = [];
@@ -33,17 +43,25 @@ const splitFiles = (files?: TMessage['files']) => {
  *
  * `sending` is still awaiting its 202 ACK (no server id yet, so nothing to
  * cancel); `pending` is acknowledged and waiting on the next tool-batch
- * boundary.
+ * boundary. Every control here reclaims the steer from the server queue first,
+ * so they are offered only once `pending` — while `sending` there is no id to
+ * reclaim with, and the words cannot be held back.
  */
 const InFlightSteer = memo(function InFlightSteer({
   steer,
+  steering,
   conversationId,
+  onEditToComposer,
 }: {
   steer: PendingSteer;
+  steering: SteeringControls;
   conversationId: string;
+  onEditToComposer: EditToComposer;
 }) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const cancelSteer = useSteerCancel(conversationId);
+  const toggleEntry = useDefaultToggleEntry(steering);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
   const handlePreviewClose = useCallback((open: boolean) => {
@@ -54,6 +72,56 @@ const InFlightSteer = memo(function InFlightSteer({
 
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
+
+  /**
+   * Takes the steer back off the server queue so its words can be re-homed.
+   * A steer only leaves that queue by injecting, so anything but `reclaimed`
+   * means the text is already in the run — re-homing it then would say the same
+   * thing twice, which is worse than the edit not landing.
+   */
+  const reclaim = useCallback(async (): Promise<boolean> => {
+    const outcome = await cancelSteer(steer);
+    if (outcome === 'reclaimed') {
+      return true;
+    }
+    showToast({
+      message: localize(
+        outcome === 'applied' ? 'com_ui_steer_already_applied' : 'com_ui_steer_cancel_failed',
+      ),
+      status: outcome === 'applied' ? 'info' : 'error',
+    });
+    return false;
+  }, [cancelSteer, steer, showToast, localize]);
+
+  const entries: MenuEntry[] = [
+    {
+      key: 'edit',
+      label: localize('com_ui_edit_message'),
+      icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => {
+        void reclaim().then((reclaimed) => {
+          if (reclaimed) {
+            onEditToComposer(steer.text, steer.files, carriedSteerContext(steer));
+          }
+        });
+      },
+    },
+    {
+      key: 'queue',
+      label: localize('com_ui_convert_to_queue'),
+      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      onClick: () => {
+        void reclaim().then((reclaimed) => {
+          if (reclaimed) {
+            /* Reclaiming proves the run was still live, so the run-end drain is
+             * still ahead of this item and will send it. */
+            steering.enqueue(steer.text, { files: steer.files, ...carriedSteerContext(steer) });
+          }
+        });
+      },
+    },
+    toggleEntry,
+  ];
 
   return (
     <div
@@ -114,16 +182,25 @@ const InFlightSteer = memo(function InFlightSteer({
         </div>
         {!sending && (
           /* Hidden-at-rest only on hover-capable pointers: a hover-revealed
-           * control is unreachable on touch until a first tap. */
-          <button
-            type="button"
-            aria-label={localize('com_ui_steer_cancel')}
-            onClick={() => cancelSteer(steer)}
-            data-testid="steer-cancel"
-            className="shrink-0 rounded-full p-1 text-text-secondary transition-opacity duration-200 hover:bg-surface-tertiary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
+           * control is unreachable on touch until a first tap. The open menu
+           * pins the cluster visible — its portaled items hold focus outside
+           * this subtree, so `focus-within` alone would let it vanish
+           * mid-interaction. */
+          <div
+            data-testid="steer-controls"
+            className="flex shrink-0 items-center gap-0.5 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 [&:has([aria-expanded='true'])]:opacity-100 [@media(hover:hover)]:opacity-0"
           >
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+            <button
+              type="button"
+              aria-label={localize('com_ui_steer_cancel')}
+              onClick={() => void cancelSteer(steer)}
+              data-testid="steer-cancel"
+              className={ICON_BTN_CLASS}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+            <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+          </div>
         )}
       </div>
       {others.length > 0 && (
@@ -148,9 +225,13 @@ const InFlightSteer = memo(function InFlightSteer({
  * committed, while the user still sees their words land somewhere stable.
  */
 const InFlightSteers = memo(function InFlightSteers({
+  steering,
   conversationId,
+  onEditToComposer,
 }: {
+  steering: SteeringControls;
   conversationId: string;
+  onEditToComposer: EditToComposer;
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
@@ -184,7 +265,13 @@ const InFlightSteers = memo(function InFlightSteers({
       className="flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
     >
       {inFlight.map((steer) => (
-        <InFlightSteer key={steer.steerId} steer={steer} conversationId={conversationId} />
+        <InFlightSteer
+          key={steer.steerId}
+          steer={steer}
+          steering={steering}
+          conversationId={conversationId}
+          onEditToComposer={onEditToComposer}
+        />
       ))}
     </div>
   );

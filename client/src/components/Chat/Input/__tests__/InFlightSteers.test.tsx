@@ -1,19 +1,28 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
 import InFlightSteers from '../InFlightSteers';
 import store from '~/store';
 
-const mockCancelMutate = jest.fn();
+const mockCancelMutateAsync = jest.fn();
+const mockShowToast = jest.fn();
+const mockEnqueue = jest.fn();
+const mockSetDefaultAction = jest.fn();
+const mockEditToComposer = jest.fn();
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useSteerCancel: jest.requireActual('~/hooks/Chat/useSteerCancel').default,
 }));
 
+jest.mock('@librechat/client', () => ({
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
+
 jest.mock('~/data-provider', () => ({
-  useCancelSteerMutation: () => ({ mutate: mockCancelMutate }),
+  useCancelSteerMutation: () => ({ mutateAsync: mockCancelMutateAsync }),
 }));
 
 jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
@@ -51,9 +60,20 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
 
 const CONVO_ID = 'convo-in-flight';
 
+const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer') =>
+  ({
+    defaultAction,
+    enqueue: mockEnqueue,
+    setDefaultAction: mockSetDefaultAction,
+  }) as unknown as SteeringControls;
+
 function renderSteers(
   steers: PendingSteer[],
-  options?: { enableUserMsgMarkdown?: boolean; appliedSteerIds?: string[] },
+  options?: {
+    enableUserMsgMarkdown?: boolean;
+    appliedSteerIds?: string[];
+    defaultAction?: 'steer' | 'queue';
+  },
 ) {
   return render(
     <RecoilRoot
@@ -67,12 +87,31 @@ function renderSteers(
         }
       }}
     >
-      <InFlightSteers conversationId={CONVO_ID} />
+      <InFlightSteers
+        conversationId={CONVO_ID}
+        steering={steeringStub(options?.defaultAction)}
+        onEditToComposer={mockEditToComposer}
+      />
     </RecoilRoot>,
   );
 }
 
+/** Opens a bubble's "…" menu and clicks one of its items, flushing the reclaim
+ *  round-trip the action awaits before it re-homes the text. */
+async function clickMenuItem(label: string) {
+  fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+  const item = await screen.findByText(label);
+  await act(async () => {
+    fireEvent.click(item);
+  });
+}
+
 describe('InFlightSteers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+  });
+
   it('renders nothing when no steer is in flight', () => {
     renderSteers([]);
     expect(screen.queryByTestId('in-flight-steers')).toBeNull();
@@ -95,65 +134,177 @@ describe('InFlightSteers', () => {
     expect(screen.queryByTestId('in-flight-steers')).toBeNull();
   });
 
-  it('keeps cancel reachable on touch, hover-revealed on hover-capable pointers', () => {
+  it('keeps the controls reachable on touch, hover-revealed on hover-capable pointers', () => {
     renderSteers([
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
     ]);
     // A plain `opacity-0` reveal would make the bubble hover-dependent, so on
-    // touch the X would need a first tap to appear (see the #14272 pattern).
-    const cancel = screen.getByTestId('steer-cancel');
-    expect(cancel.className).toContain('[@media(hover:hover)]:opacity-0');
-    expect(cancel.className).toContain('group-hover:opacity-100');
-    expect(cancel.className).toContain('focus-visible:opacity-100');
+    // touch the controls would need a first tap to appear (the #14272 pattern).
+    const controls = screen.getByTestId('steer-controls');
+    expect(controls.className).toContain('[@media(hover:hover)]:opacity-0');
+    expect(controls.className).toContain('group-hover:opacity-100');
+    expect(controls.className).toContain('focus-within:opacity-100');
   });
 
-  it('only offers cancel once the steer is acknowledged', () => {
+  it('pins the controls visible while the menu is open', () => {
+    renderSteers([
+      { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
+    ]);
+    // The menu portals its items out of this subtree and takes focus with them,
+    // so `focus-within` alone would drop the cluster mid-interaction.
+    expect(screen.getByTestId('steer-controls').className).toContain(
+      "[&:has([aria-expanded='true'])]:opacity-100",
+    );
+  });
+
+  it('only offers controls once the steer is acknowledged', () => {
     renderSteers([
       { steerId: 'local-1', text: 'still posting', status: 'sending', createdAt: 1 },
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 2 },
     ]);
-    // A 'sending' entry has no server id yet, so there is nothing to cancel.
+    // A 'sending' entry has no server id yet, so there is nothing to reclaim
+    // with — neither cancel nor the re-homing actions can hold the words back.
     expect(screen.getAllByTestId('steer-cancel')).toHaveLength(1);
+    expect(screen.getAllByLabelText('com_ui_more_options')).toHaveLength(1);
   });
 
-  it('cancels a pending steer server-side and drops the bubble', () => {
+  it('cancels a pending steer server-side and drops the bubble', async () => {
     renderSteers([
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
     ]);
     fireEvent.click(screen.getByTestId('steer-cancel'));
 
-    expect(mockCancelMutate).toHaveBeenCalledWith(
-      { conversationId: CONVO_ID, steerId: 's-ack' },
-      expect.objectContaining({ onError: expect.any(Function) }),
-    );
+    expect(mockCancelMutateAsync).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      steerId: 's-ack',
+    });
+    await act(async () => {});
     expect(screen.queryByText('waiting on boundary')).toBeNull();
   });
 
-  it('restores the bubble when the cancel POST fails', () => {
+  it('restores the bubble when the cancel POST fails', async () => {
+    mockCancelMutateAsync.mockRejectedValue(new Error('network'));
     renderSteers([{ steerId: 's-err', text: 'network flake', status: 'pending', createdAt: 1 }]);
     fireEvent.click(screen.getByTestId('steer-cancel'));
+    // Optimistic: the bubble leaves before the POST resolves.
     expect(screen.queryByText('network flake')).toBeNull();
 
-    const options = mockCancelMutate.mock.calls[0][1] as { onError: () => void };
-    act(() => options.onError());
+    await act(async () => {});
     expect(screen.getByText('network flake')).toBeInTheDocument();
   });
 
-  it('does not restore a steer that settled while the cancel POST was in flight', () => {
+  it('does not restore a steer that settled while the cancel POST was in flight', async () => {
     // The run's final event converted this steer to a queued follow-up, which
     // stamps its id into the applied set. Restoring it on a failed cancel would
     // strand a stale entry that the NEXT run — a queue drain auto-sends one —
     // renders as an in-flight bubble beside that queued copy.
+    mockCancelMutateAsync.mockRejectedValue(new Error('network'));
     renderSteers(
       [{ steerId: 's-settled', text: 'already queued', status: 'pending', createdAt: 1 }],
       { appliedSteerIds: ['s-settled'] },
     );
     fireEvent.click(screen.getByTestId('steer-cancel'));
+    await act(async () => {});
     expect(screen.queryByText('already queued')).toBeNull();
+  });
 
-    const options = mockCancelMutate.mock.calls[0][1] as { onError: () => void };
-    act(() => options.onError());
-    expect(screen.queryByText('already queued')).toBeNull();
+  it('reclaims a pending steer before queueing it for after the response', async () => {
+    renderSteers([{ steerId: 's-ack', text: 'do this after', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_convert_to_queue');
+
+    // Reclaim first: the server would otherwise still inject the steer, and the
+    // queued copy would say the same words a second time.
+    await waitFor(() =>
+      expect(mockCancelMutateAsync).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        steerId: 's-ack',
+      }),
+    );
+    await waitFor(() => expect(mockEnqueue).toHaveBeenCalledWith('do this after', {}));
+  });
+
+  it('carries a steer’s attachments and context onto the queued item', async () => {
+    const files = [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }];
+    renderSteers([
+      {
+        steerId: 's-ack',
+        text: 'see notes',
+        status: 'pending',
+        createdAt: 1,
+        files,
+        quotes: ['quoted line'],
+        manualSkills: ['skill-1'],
+      },
+    ]);
+    await clickMenuItem('com_ui_convert_to_queue');
+
+    await waitFor(() =>
+      expect(mockEnqueue).toHaveBeenCalledWith('see notes', {
+        files,
+        quotes: ['quoted line'],
+        manualSkills: ['skill-1'],
+      }),
+    );
+  });
+
+  it('reclaims a pending steer before editing it back into the composer', async () => {
+    const files = [{ file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' }];
+    renderSteers([
+      {
+        steerId: 's-ack',
+        text: 'reword this',
+        status: 'pending',
+        createdAt: 1,
+        files,
+        quotes: ['quoted line'],
+      },
+    ]);
+    await clickMenuItem('com_ui_edit_message');
+
+    await waitFor(() =>
+      expect(mockEditToComposer).toHaveBeenCalledWith('reword this', files, {
+        quotes: ['quoted line'],
+      }),
+    );
+  });
+
+  it('never re-homes a steer the server already applied', async () => {
+    // `removed: false` means the cancel lost its race to the injection
+    // boundary: the words are in the run, so queueing them would send twice.
+    mockCancelMutateAsync.mockResolvedValue({ removed: false });
+    renderSteers([{ steerId: 's-ack', text: 'too late', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_convert_to_queue');
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'com_ui_steer_already_applied' }),
+      ),
+    );
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('never re-homes a steer whose cancel failed', async () => {
+    // The POST failed, so the server may still inject it — the bubble comes
+    // back and the text must not also land in the composer.
+    mockCancelMutateAsync.mockRejectedValue(new Error('network'));
+    renderSteers([{ steerId: 's-ack', text: 'unknown fate', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_edit_message');
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'com_ui_steer_cancel_failed', status: 'error' }),
+      ),
+    );
+    expect(mockEditToComposer).not.toHaveBeenCalled();
+    expect(screen.getByText('unknown fate')).toBeInTheDocument();
+  });
+
+  it('offers the mode toggle as the action the user would switch to', async () => {
+    renderSteers([{ steerId: 's-ack', text: 'waiting', status: 'pending', createdAt: 1 }], {
+      defaultAction: 'steer',
+    });
+    await clickMenuItem('com_ui_turn_on_queueing');
+    expect(mockSetDefaultAction).toHaveBeenCalledWith('queue');
   });
 
   it('renders images through the composer thumbnail path, not the full-size message image', () => {
@@ -248,7 +399,11 @@ describe('InFlightSteers', () => {
             ]);
           }}
         >
-          <InFlightSteers conversationId={CONVO_ID} />
+          <InFlightSteers
+            conversationId={CONVO_ID}
+            steering={steeringStub()}
+            onEditToComposer={mockEditToComposer}
+          />
         </RecoilRoot>,
       );
       expect(screen.getByTestId('in-flight-steers').scrollTop).toBe(600);
