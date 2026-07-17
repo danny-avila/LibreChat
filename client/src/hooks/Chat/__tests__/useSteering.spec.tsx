@@ -304,51 +304,108 @@ describe('useSteering', () => {
       expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
     });
 
-    it('does not re-arm once the hook has moved to another chat', () => {
-      // The hook is REUSED across conversations: after a navigation its refs
-      // describe the new chat, so neither its submitting state nor its captured
-      // run-end can speak for this steer's conversation. Parking the new chat's
-      // run-end under this one would make the drain send the wrong queue's
-      // message into the wrong chat (`drainNext` keys off `end.conversationId`).
+    /** Renders the hook so the chat it points at can change under it, the way
+     *  ChatForm reuses it when the user navigates. */
+    function setupNavigable(
+      initialProps: { convoId: string; isSubmitting: boolean },
+      initialize?: (snapshot: MutableSnapshot) => void,
+    ) {
       const sendNow = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.runEndByIndex(0), runEnd('completed', 'convo-elsewhere'));
-          }}
-        >
-          {children}
-        </RecoilRoot>
+        <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
       );
-      const { result, rerender } = renderHook(
-        ({ convoId }: { convoId: string }) => ({
+      const rendered = renderHook(
+        ({ convoId, isSubmitting }: { convoId: string; isSubmitting: boolean }) => ({
           steering: useSteering({
             index: 0,
             conversationId: convoId,
             conversation: agentsConversation,
-            isSubmitting: false,
+            isSubmitting,
             answerModeActive: false,
             sendNow,
             stopGenerating: jest.fn(),
           }),
           parkedHere: useRecoilValue(store.pendingRunEndByConvoId(CONVO_ID)),
           queueHere: useQueue(CONVO_ID),
+          /** Stands in for the drain CONSUMING a signal it has acted on. */
+          consumeIndexSignal: useSetRecoilState(store.runEndByIndex(0)),
         }),
-        { wrapper, initialProps: { convoId: CONVO_ID } },
+        { wrapper, initialProps },
+      );
+      return { ...rendered, sendNow };
+    }
+
+    it('still re-arms the origin chat after the user navigates away', () => {
+      // Navigating away does not make the words any less owed a send: the run
+      // they belong to completed, so its queue must still drain on return.
+      const { result, rerender, sendNow } = setupNavigable(
+        { convoId: CONVO_ID, isSubmitting: false },
+        ({ set }) => {
+          set(store.runEndByIndex(0), runEnd('completed'));
+        },
       );
       // Captured while still on this chat, resolving after the user left.
       const queueReclaimed = result.current.steering.queueReclaimedSteer;
       act(() => {
-        rerender({ convoId: 'convo-elsewhere' });
+        result.current.consumeIndexSignal(null);
+      });
+      act(() => {
+        rerender({ convoId: 'convo-elsewhere', isSubmitting: false });
+      });
+      act(() => {
+        queueReclaimed(reclaimed);
+      });
+
+      expect(result.current.parkedHere).toMatchObject({
+        conversationId: CONVO_ID,
+        outcome: 'completed',
+      });
+      expect(result.current.queueHere.map((item) => item.id)).toEqual(['s-reclaimed']);
+      expect(sendNow).not.toHaveBeenCalled();
+    });
+
+    it('never parks another chat’s run-end under this conversation', () => {
+      // The run-end is keyed by conversation, so the new chat's end can never
+      // be mistaken for this one's. Parking it here would give `drainNext` a
+      // foreign `end.conversationId` and drain the wrong queue into this chat.
+      const { result, rerender } = setupNavigable({ convoId: CONVO_ID, isSubmitting: true });
+      const queueReclaimed = result.current.steering.queueReclaimedSteer;
+      act(() => {
+        // The user leaves for a chat whose own run then completes.
+        rerender({ convoId: 'convo-elsewhere', isSubmitting: false });
+      });
+      act(() => {
+        result.current.consumeIndexSignal(runEnd('completed', 'convo-elsewhere'));
       });
       act(() => {
         queueReclaimed(reclaimed);
       });
 
       expect(result.current.parkedHere).toBeNull();
-      expect(sendNow).not.toHaveBeenCalled();
-      // The words still land in their OWN conversation's queue, which its run
-      // end drains when the user comes back.
+      expect(result.current.queueHere.map((item) => item.id)).toEqual(['s-reclaimed']);
+    });
+
+    it('does not re-arm from the end of an earlier run of the same chat', () => {
+      // A stale end must not authorize a drain: this chat's NEXT run is what
+      // owns the item, and its own end will drain it.
+      const { result, rerender } = setupNavigable(
+        { convoId: CONVO_ID, isSubmitting: false },
+        ({ set }) => {
+          set(store.runEndByIndex(0), runEnd('completed'));
+        },
+      );
+      act(() => {
+        result.current.consumeIndexSignal(null);
+      });
+      act(() => {
+        // A new run starts on this same chat, superseding that end.
+        rerender({ convoId: CONVO_ID, isSubmitting: true });
+      });
+      act(() => {
+        result.current.steering.queueReclaimedSteer(reclaimed);
+      });
+
+      expect(result.current.parkedHere).toBeNull();
       expect(result.current.queueHere.map((item) => item.id)).toEqual(['s-reclaimed']);
     });
 

@@ -151,28 +151,30 @@ export default function useSteering({
    *  stale by the time the steer response arrives. */
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
-  /** Which chat the refs below currently describe. The hook is REUSED across
-   *  conversations, so a callback resolving after a navigation reads state
-   *  belonging to the new chat — it must know not to trust it. */
-  const conversationIdRef = useRef(conversationId);
-  conversationIdRef.current = conversationId;
 
   /**
-   * How this conversation's last run ended, kept because `useQueueDrain`
-   * CONSUMES its one-shot signal — by the time a reclaim resolves it is already
-   * null. Every subscriber renders before the drain's effect nulls it, so the
-   * outcome is captured before it is gone. Both carriers are watched: the index
-   * signal, and the copy parked under the conversation when the run ended while
-   * the user was looking at a different chat.
+   * How each conversation's last run ended, kept because `useQueueDrain`
+   * CONSUMES the one-shot signal — by the time a reclaim resolves it is already
+   * gone. Every subscriber renders before the drain's effect nulls it, so the
+   * outcome is captured first. Both carriers are watched: the index signal, and
+   * the copy parked under the conversation when the run ended while the user
+   * was looking elsewhere.
+   *
+   * Keyed by conversation because this hook is REUSED across chats: a single
+   * slot would answer for whichever chat is on screen when the reclaim lands,
+   * not the one the words belong to. An entry is dropped once that conversation
+   * starts another run — an older end no longer describes what is happening.
    */
   const runEnd = useRecoilValue(store.runEndByIndex(index));
   const parkedRunEnd = useRecoilValue(store.pendingRunEndByConvoId(queueKey));
-  const lastRunEndRef = useRef<RunEnd | null>(null);
+  const runEndsRef = useRef<Map<string, RunEnd>>(new Map());
   const observedRunEnd = [runEnd, parkedRunEnd].find(
     (end) => end != null && end.conversationId === conversationId,
   );
   if (observedRunEnd != null) {
-    lastRunEndRef.current = observedRunEnd;
+    runEndsRef.current.set(conversationId, observedRunEnd);
+  } else if (isSubmitting) {
+    runEndsRef.current.delete(conversationId);
   }
 
   const upsertSteerChip = useRecoilCallback(
@@ -621,27 +623,14 @@ export default function useSteering({
         },
       ]);
       /**
-       * The refs below are live but NOT conversation-scoped, and this hook is
-       * reused across chats — after a navigation they describe the new one, so
-       * they cannot speak for this steer's conversation. Nothing is lost by
-       * stopping here: the item is already queued under its own conversation,
-       * and that run's own end parks under it and drains on the user's return.
+       * Read by conversation, so it describes THIS steer's run even once the
+       * hook has moved to another chat — the user navigating away does not make
+       * their words any less owed a send. No entry means that run is still going
+       * (or has started another): its own end is ahead of this item and drains
+       * it, so there is nothing to re-arm.
        */
-      if (conversationIdRef.current !== conversationId) {
-        return;
-      }
-      /** A ref, not the render's value: the reclaim resolves after the bubble
-       *  (and often its whole surface) has gone. Still running means the run's
-       *  own end is ahead of this item and will drain it. */
-      if (isSubmittingRef.current) {
-        return;
-      }
-      const lastRunEnd = lastRunEndRef.current;
-      if (
-        lastRunEnd == null ||
-        lastRunEnd.conversationId !== conversationId ||
-        lastRunEnd.outcome !== 'completed'
-      ) {
+      const lastRunEnd = runEndsRef.current.get(conversationId);
+      if (lastRunEnd == null || lastRunEnd.outcome !== 'completed') {
         return;
       }
       rearmDrain(conversationId, lastRunEnd);
