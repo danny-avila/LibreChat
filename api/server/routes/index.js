@@ -29,6 +29,7 @@ const agents = require('./agents');
 const roles = require('./roles');
 const oauth = require('./oauth');
 const files = require('./files');
+const generatedFiles = require('./generatedFiles');
 const share = require('./share');
 const tags = require('./tags');
 const auth = require('./auth');
@@ -56,6 +57,7 @@ module.exports = {
   roles,
   oauth,
   files,
+  generatedFiles,
   share,
   banner,
   agents,

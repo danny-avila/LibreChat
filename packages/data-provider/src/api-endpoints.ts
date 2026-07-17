@@ -308,6 +308,12 @@ export const fileUpload = () => `${BASE_URL}/api/files`;
 export const fileDelete = () => `${BASE_URL}/api/files`;
 export const fileDownload = (userId: string, fileId: string) =>
   `${BASE_URL}/api/files/download/${userId}/${fileId}`;
+
+export const generatedFiles = () => `${BASE_URL}/api/generated-files`;
+export const generatedFileById = (id: string) => `${BASE_URL}/api/generated-files/${encodeURIComponent(id)}`;
+export const generatedFileDownload = (id: string) => `${BASE_URL}/api/generated-files/${encodeURIComponent(id)}/download`;
+export const generatedFileByConversation = (conversationId: string) =>
+  `${BASE_URL}/api/generated-files?conversationId=${encodeURIComponent(conversationId)}`;
 /* Deferred-preview lifecycle endpoint. Returns
  * `{ status, text?, textFormat?, previewError? }` so the frontend can
  * poll while background HTML extraction is in flight. See PR #12957. */

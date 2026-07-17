@@ -6,7 +6,7 @@ import path from 'path';
  * @param {string} content - The markdown content
  * @param {string} filename - Optional filename (without extension)
  * @param {string} outputPath - Directory to save the file
- * @returns {Promise<{filepath: string, filename: string}>}
+ * @returns {Promise<{filepath: string, filename: string, size: number}>}
  */
 export async function generateMarkdown(content, filename, outputPath) {
   // Generate filename if not provided
@@ -28,8 +28,11 @@ export async function generateMarkdown(content, filename, outputPath) {
   // Write the markdown file
   await fs.writeFile(filepath, content, 'utf-8');
   
+  const stat = await fs.stat(filepath);
+  
   return {
     filepath,
-    filename
+    filename,
+    size: stat.size,
   };
 }
