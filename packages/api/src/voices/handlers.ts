@@ -23,7 +23,16 @@ function getVoiceDiskStatus(voiceName: string) {
 export function createVoicesHandlers(voiceProfileMethods: {
   getVoiceInstructForUser: (user: any, voiceName: string) => Promise<string | null>;
   canUserConfigureVoice: (user: any, voiceName: string) => Promise<boolean>;
-}) {
+}): {
+  listVoices: (req: ServerRequest, res: Response) => Promise<Response>;
+  listConfigurableVoices: (req: ServerRequest, res: Response) => Promise<Response>;
+  createVoice: (req: ServerRequest, res: Response) => Promise<Response>;
+  updateVoice: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteVoice: (req: ServerRequest, res: Response) => Promise<Response>;
+  getVoiceAudio: (req: ServerRequest, res: Response) => Promise<Response | void>;
+  uploadVoiceAudio: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteVoiceAudio: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
   const VoiceProfile = mongoose.models.VoiceProfile;
 
   // GET /api/voices

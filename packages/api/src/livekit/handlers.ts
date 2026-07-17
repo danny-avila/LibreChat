@@ -7,7 +7,10 @@ const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'devsecret';
 const LIVEKIT_WS_URL = process.env.LIVEKIT_WS_URL || 'ws://localhost:7880';
 
-export function createLiveKitHandlers() {
+export function createLiveKitHandlers(): {
+  getLiveKitConfig: (req: ServerRequest, res: Response) => Response;
+  generateLiveKitToken: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
   // GET /api/livekit/config
   function getLiveKitConfig(_req: ServerRequest, res: Response) {
     return res.json({ wsUrl: LIVEKIT_WS_URL });
