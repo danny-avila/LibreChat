@@ -117,7 +117,7 @@ jobs:
             BAN_VIOLATIONS=${{ secrets.BAN_VIOLATIONS }}
             CONCURRENT_MESSAGE_MAX=${{ secrets.CONCURRENT_MESSAGE_MAX }}
             CONCURRENT_VIOLATION_SCORE=${{ secrets.CONCURRENT_VIOLATION_SCORE }}
-            CONFIG_PATH=${{ secrets.CONFIG_PATH }}
+            CONFIG_PATH=https://raw.githubusercontent.com/vicharanashala/ajrasakha-client/6e2d988a6be43d809eb3570ef041297028c2581c/librechat.config.yaml
             CONSOLE_JSON=${{ secrets.CONSOLE_JSON }}
             CREDS_IV=${{ secrets.CREDS_IV }}
             CREDS_KEY=${{ secrets.CREDS_KEY }}
