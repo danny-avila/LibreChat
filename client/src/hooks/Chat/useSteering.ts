@@ -151,6 +151,11 @@ export default function useSteering({
    *  stale by the time the steer response arrives. */
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
+  /** Which chat the refs below currently describe. The hook is REUSED across
+   *  conversations, so a callback resolving after a navigation reads state
+   *  belonging to the new chat — it must know not to trust it. */
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
 
   /**
    * How this conversation's last run ended, kept because `useQueueDrain`
@@ -615,6 +620,16 @@ export default function useSteering({
           ...(steer.files && steer.files.length > 0 && { files: steer.files }),
         },
       ]);
+      /**
+       * The refs below are live but NOT conversation-scoped, and this hook is
+       * reused across chats — after a navigation they describe the new one, so
+       * they cannot speak for this steer's conversation. Nothing is lost by
+       * stopping here: the item is already queued under its own conversation,
+       * and that run's own end parks under it and drains on the user's return.
+       */
+      if (conversationIdRef.current !== conversationId) {
+        return;
+      }
       /** A ref, not the render's value: the reclaim resolves after the bubble
        *  (and often its whole surface) has gone. Still running means the run's
        *  own end is ahead of this item and will drain it. */
@@ -622,7 +637,11 @@ export default function useSteering({
         return;
       }
       const lastRunEnd = lastRunEndRef.current;
-      if (lastRunEnd == null || lastRunEnd.outcome !== 'completed') {
+      if (
+        lastRunEnd == null ||
+        lastRunEnd.conversationId !== conversationId ||
+        lastRunEnd.outcome !== 'completed'
+      ) {
         return;
       }
       rearmDrain(conversationId, lastRunEnd);

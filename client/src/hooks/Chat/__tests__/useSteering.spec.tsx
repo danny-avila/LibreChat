@@ -304,6 +304,54 @@ describe('useSteering', () => {
       expect(result.current.queue.map((item) => item.id)).toEqual(['s-reclaimed']);
     });
 
+    it('does not re-arm once the hook has moved to another chat', () => {
+      // The hook is REUSED across conversations: after a navigation its refs
+      // describe the new chat, so neither its submitting state nor its captured
+      // run-end can speak for this steer's conversation. Parking the new chat's
+      // run-end under this one would make the drain send the wrong queue's
+      // message into the wrong chat (`drainNext` keys off `end.conversationId`).
+      const sendNow = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot
+          initializeState={({ set }) => {
+            set(store.runEndByIndex(0), runEnd('completed', 'convo-elsewhere'));
+          }}
+        >
+          {children}
+        </RecoilRoot>
+      );
+      const { result, rerender } = renderHook(
+        ({ convoId }: { convoId: string }) => ({
+          steering: useSteering({
+            index: 0,
+            conversationId: convoId,
+            conversation: agentsConversation,
+            isSubmitting: false,
+            answerModeActive: false,
+            sendNow,
+            stopGenerating: jest.fn(),
+          }),
+          parkedHere: useRecoilValue(store.pendingRunEndByConvoId(CONVO_ID)),
+          queueHere: useQueue(CONVO_ID),
+        }),
+        { wrapper, initialProps: { convoId: CONVO_ID } },
+      );
+      // Captured while still on this chat, resolving after the user left.
+      const queueReclaimed = result.current.steering.queueReclaimedSteer;
+      act(() => {
+        rerender({ convoId: 'convo-elsewhere' });
+      });
+      act(() => {
+        queueReclaimed(reclaimed);
+      });
+
+      expect(result.current.parkedHere).toBeNull();
+      expect(sendNow).not.toHaveBeenCalled();
+      // The words still land in their OWN conversation's queue, which its run
+      // end drains when the user comes back.
+      expect(result.current.queueHere.map((item) => item.id)).toEqual(['s-reclaimed']);
+    });
+
     it('re-arms even when another conversation’s run-end occupies the index slot', () => {
       // The index slot is shared. The drain parks a foreign signal under ITS
       // conversation and then only inspects the active one's queue, so treating
