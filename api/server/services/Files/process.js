@@ -797,8 +797,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       appConfig?.ocr != null &&
       fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
+    const shouldUseConfiguredText =
+      !!process.env.RAG_API_URL &&
+      fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
+
     const shouldUseDocumentParser =
-      !shouldUseConfiguredOCR && documentParserMimeTypes.some((regex) => regex.test(file.mimetype));
+      !shouldUseConfiguredOCR &&
+      !shouldUseConfiguredText &&
+      documentParserMimeTypes.some((regex) => regex.test(file.mimetype));
 
     const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
 

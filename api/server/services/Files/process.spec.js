@@ -188,11 +188,11 @@ const mockRes = {
   json: jest.fn().mockReturnValue({}),
 };
 
-const makeFileConfig = ({ ocrSupportedMimeTypes = [] } = {}) => ({
+const makeFileConfig = ({ ocrSupportedMimeTypes = [], textSupportedMimeTypes = [] } = {}) => ({
   checkType: (mime, types) => (types ?? []).includes(mime),
   ocr: { supportedMimeTypes: ocrSupportedMimeTypes },
   stt: { supportedMimeTypes: [] },
-  text: { supportedMimeTypes: [] },
+  text: { supportedMimeTypes: textSupportedMimeTypes },
 });
 
 const setupStoredFileUpload = (result = {}) => {
@@ -211,6 +211,7 @@ describe('processAgentFileUpload', () => {
     jest.clearAllMocks();
     mockRes.status.mockReturnThis();
     mockRes.json.mockReturnValue({});
+    process.env.RAG_API_URL = 'https://rag.example.com';
     checkCapability.mockResolvedValue(true);
     getStrategyFunctions.mockReturnValue({
       handleFileUpload: jest
@@ -236,6 +237,33 @@ describe('processAgentFileUpload', () => {
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('routes configured DOCX text MIME type through parseText instead of document_parser', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: [DOCX_MIME] }));
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+      const { parseText } = require('@librechat/api');
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+      expect(parseText).toHaveBeenCalledWith({
+        req,
+        file: req.file,
+        file_id: 'file-uuid-123',
+      });
+    });
+
+    test('falls back to document_parser for configured DOCX text MIME type when RAG_API_URL is unset', async () => {
+      delete process.env.RAG_API_URL;
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: [DOCX_MIME] }));
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+      const { parseText } = require('@librechat/api');
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(parseText).not.toHaveBeenCalled();
     });
 
     test('does not check OCR capability when using automatic document_parser fallback', async () => {
