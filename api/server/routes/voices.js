@@ -1,11 +1,12 @@
 const express = require('express');
 const multer = require('multer');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 const { getVoiceInstructForUser, canUserConfigureVoice } = require('~/models');
 const { createVoicesHandlers } = require('@librechat/api');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+router.use(configMiddleware);
 
 // Multer — accept .wav / .mp3 / .m4a audio uploads in memory, max 50MB
 const upload = multer({

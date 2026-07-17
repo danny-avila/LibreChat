@@ -109,6 +109,4 @@ services:
       - api
 volumes:
   pgdata2:
-    name: hstai_pgdata2
-    external: true
 

@@ -6,11 +6,11 @@ const voiceProfileSchema: Schema<IVoiceProfile> = new Schema<IVoiceProfile>(
     name: {
       type: String,
       required: true,
-      unique: true,
     },
     instruct: {
       type: String,
-      required: true,
+      required: false,
+      default: '',
     },
     authorizedConfigRoles: {
       type: [String],
@@ -28,10 +28,16 @@ const voiceProfileSchema: Schema<IVoiceProfile> = new Schema<IVoiceProfile>(
       type: [String],
       default: [],
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
   },
 );
+
+voiceProfileSchema.index({ name: 1, tenantId: 1 }, { unique: true });
 
 export default voiceProfileSchema;

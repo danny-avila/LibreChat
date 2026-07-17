@@ -20,7 +20,10 @@ export function createVoiceProfileMethods(mongoose: typeof import('mongoose')): 
     let hasGroupAccess = false;
     if (profile.authorizedUseGroups && profile.authorizedUseGroups.length > 0) {
       const Group = mongoose.models.Group;
-      const userGroups = await Group.find({ memberIds: user.id });
+      const memberQuery = user.idOnTheSource
+        ? { memberIds: { $in: [user.id, user.idOnTheSource] } }
+        : { memberIds: user.id };
+      const userGroups = await Group.find(memberQuery);
       const userGroupNames = userGroups.map((g: any) => g.name);
       const userGroupIds = userGroups.map((g: any) => g._id.toString());
       
@@ -53,7 +56,10 @@ export function createVoiceProfileMethods(mongoose: typeof import('mongoose')): 
 
     if (profile.authorizedConfigGroups && profile.authorizedConfigGroups.length > 0) {
       const Group = mongoose.models.Group;
-      const userGroups = await Group.find({ memberIds: user.id });
+      const memberQuery = user.idOnTheSource
+        ? { memberIds: { $in: [user.id, user.idOnTheSource] } }
+        : { memberIds: user.id };
+      const userGroups = await Group.find(memberQuery);
       const userGroupNames = userGroups.map((g: any) => g.name);
       const userGroupIds = userGroups.map((g: any) => g._id.toString());
 

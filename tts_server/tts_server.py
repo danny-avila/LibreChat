@@ -77,35 +77,28 @@ class TTSRequest(BaseModel):
     response_format: Optional[str] = "wav"
     speed: Optional[float] = 1.0
     instruct: Optional[str] = None
+engine_lock = threading.Lock()
 
 @app.post("/v1/audio/speech")
-async def generate_speech(request: TTSRequest):
+def generate_speech(request: TTSRequest):
     cleaned_input = strip_think_blocks(request.input)
     if not cleaned_input:
         raise HTTPException(status_code=400, detail="Input text is empty.")
     
-
-    # Switch voice if requested and available
-    req_voice = request.voice if request.voice else "Abena"
-    if req_voice in loaded_voices and getattr(engine, 'set_voice', None):
-        try:
-            voice_obj = loaded_voices[req_voice]
-            engine.set_voice(voice_obj)
-            # Apply dynamic instruct prompt if passed, otherwise fall back to original
-            instruct_to_use = request.instruct if request.instruct is not None else getattr(voice_obj, 'original_instruct', voice_obj.instruct)
-            engine.set_voice_parameters(instruct=instruct_to_use)
-        except Exception as e:
-            print(f"Failed to switch voice to {req_voice}: {e}")
-            
-    ## print(f"\n--- Incoming TTS Request ---")
-    ## print(f"Text: {request.input[:50]}...", flush=True)
-    ## print(f"Voice selected: {req_voice}", flush=True)
-
-    output_stream = io.BytesIO()
-
-
-
+    engine_lock.acquire()
     try:
+        # Switch voice if requested and available
+        req_voice = request.voice if request.voice else "Abena"
+        if req_voice in loaded_voices and getattr(engine, 'set_voice', None):
+            try:
+                voice_obj = loaded_voices[req_voice]
+                engine.set_voice(voice_obj)
+                # Apply dynamic instruct prompt if passed, otherwise fall back to original
+                instruct_to_use = request.instruct if request.instruct is not None else getattr(voice_obj, 'original_instruct', voice_obj.instruct)
+                engine.set_voice_parameters(instruct=instruct_to_use)
+            except Exception as e:
+                print(f"Failed to switch voice to {req_voice}: {e}")
+                
         def synthesize_worker(text):
             # Clear queue
             while not engine.queue.empty():
@@ -115,53 +108,57 @@ async def generate_speech(request: TTSRequest):
             engine.queue.put(None)
 
         def audio_stream_generator(text):
-            # Start generation in a background thread so we can stream
-            gen_thread = threading.Thread(target=synthesize_worker, args=(text,))
-            gen_thread.start()
+            try:
+                # Start generation in a background thread so we can stream
+                gen_thread = threading.Thread(target=synthesize_worker, args=(text,))
+                gen_thread.start()
 
-            # Start FFmpeg to stream raw PCM to MP3 on the fly
-            process = subprocess.Popen(
-                ["ffmpeg", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "pipe:0", "-f", "mp3", "-b:a", "128k", "pipe:1"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=0
-            )
+                # Start FFmpeg to stream raw PCM to MP3 on the fly
+                process = subprocess.Popen(
+                    ["ffmpeg", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "pipe:0", "-f", "mp3", "-b:a", "128k", "pipe:1"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=0
+                )
 
-            def write_to_ffmpeg():
-                while True:
-                    chunk = engine.queue.get()
-                    if chunk is None:
+                def write_to_ffmpeg():
+                    while True:
+                        chunk = engine.queue.get()
+                        if chunk is None:
+                            try:
+                                process.stdin.close()
+                            except:
+                                pass
+                            break
                         try:
-                            process.stdin.close()
-                        except:
-                            pass
+                            process.stdin.write(chunk)
+                            process.stdin.flush()
+                        except Exception:
+                            break
+
+                writer_thread = threading.Thread(target=write_to_ffmpeg)
+                writer_thread.start()
+
+                # Yield chunks as soon as FFmpeg produces them
+                while True:
+                    data = process.stdout.read(4096)
+                    if not data:
                         break
-                    try:
-                        process.stdin.write(chunk)
-                        process.stdin.flush()
-                    except Exception:
-                        break
+                    yield data
 
-            writer_thread = threading.Thread(target=write_to_ffmpeg)
-            writer_thread.start()
-
-            # Yield chunks as soon as FFmpeg produces them
-            while True:
-                data = process.stdout.read(4096)
-                if not data:
-                    break
-                yield data
-
-            process.wait()
-            writer_thread.join()
-            gen_thread.join()
+                process.wait()
+                writer_thread.join()
+                gen_thread.join()
+            finally:
+                engine_lock.release()
 
         return StreamingResponse(
             audio_stream_generator(cleaned_input),
             media_type="audio/mpeg"
         )
     except Exception as e:
+        engine_lock.release()
         raise HTTPException(status_code=500, detail=str(e))
 
 

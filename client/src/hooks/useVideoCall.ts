@@ -10,12 +10,15 @@ export function useVideoCall() {
   const { token: jwtToken } = useAuthContext();
   const setGlobalIsVideoCallActive = useSetRecoilState(store.isVideoCallActive);
 
-  const startCall = useCallback(async () => {
+  const startCall = useCallback(async (conversationId?: string, endpoint?: string) => {
     try {
       // 1. Get config
       const configRes = await fetch('/api/livekit/config', {
         headers: { Authorization: `Bearer ${jwtToken}` }
       });
+      if (!configRes.ok) {
+        throw new Error('Failed to fetch LiveKit configuration');
+      }
       const configData = await configRes.json();
       let dynamicWsUrl = configData.wsUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
       
@@ -33,8 +36,15 @@ export function useVideoCall() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${jwtToken}`,
         },
+        body: JSON.stringify({ conversationId, endpoint }),
       });
+      if (!tokenRes.ok) {
+        throw new Error('Failed to fetch LiveKit token');
+      }
       const tokenData = await tokenRes.json();
+      if (!tokenData.token) {
+        throw new Error('No LiveKit token returned from server');
+      }
       setToken(tokenData.token);
 
       setIsCallActive(true);

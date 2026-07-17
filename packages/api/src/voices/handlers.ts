@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 
-const VOICES_DIR = path.resolve(__dirname, '../../../../tts_server/voices');
+const VOICES_DIR = process.env.VOICES_DIR || path.resolve(process.cwd(), 'tts_server/voices');
 
 function getVoiceDiskStatus(voiceName: string) {
   const wavPath = path.join(VOICES_DIR, `${voiceName}.wav`);
@@ -40,7 +40,18 @@ export function createVoicesHandlers(voiceProfileMethods: {
           .map((f) => path.basename(f, '.wav'));
       }
 
-      const allNames = Array.from(new Set([...dbNames, ...diskVoices]));
+      const tts = req.config?.speech?.tts;
+      const configuredVoices = new Set<string>();
+      if (tts) {
+        for (const provider of ['openai', 'azureOpenAI', 'elevenlabs', 'localai'] as const) {
+          const providerConfig = tts[provider];
+          if (providerConfig && Array.isArray(providerConfig.voices)) {
+            providerConfig.voices.forEach((v) => configuredVoices.add(v));
+          }
+        }
+      }
+
+      const allNames = Array.from(new Set([...dbNames, ...diskVoices, ...configuredVoices]));
       const accessibleProfiles = [];
 
       for (const voiceName of allNames) {
@@ -91,9 +102,20 @@ export function createVoicesHandlers(voiceProfileMethods: {
           .map((f) => path.basename(f, '.wav'));
       }
 
+      const tts = req.config?.speech?.tts;
+      const configuredVoices = new Set<string>();
+      if (tts) {
+        for (const provider of ['openai', 'azureOpenAI', 'elevenlabs', 'localai'] as const) {
+          const providerConfig = tts[provider];
+          if (providerConfig && Array.isArray(providerConfig.voices)) {
+            providerConfig.voices.forEach((v) => configuredVoices.add(v));
+          }
+        }
+      }
+
       const dbProfiles = await VoiceProfile.find({});
       const dbNames = dbProfiles.map((p) => p.name);
-      const allNames = Array.from(new Set([...dbNames, ...diskVoices]));
+      const allNames = Array.from(new Set([...dbNames, ...diskVoices, ...configuredVoices]));
 
       const result = [];
       const isAdmin = req.user?.role === 'ADMIN';
@@ -229,6 +251,16 @@ export function createVoicesHandlers(voiceProfileMethods: {
   async function getVoiceAudio(req: ServerRequest, res: Response) {
     try {
       const { name } = req.params;
+
+      const profile = await VoiceProfile.findOne({ name });
+      if (profile) {
+        try {
+          await voiceProfileMethods.getVoiceInstructForUser(req.user, name);
+        } catch (err) {
+          return res.status(403).json({ error: 'You do not have permission to access this voice' });
+        }
+      }
+
       const wavPath = path.join(VOICES_DIR, `${name}.wav`);
       if (!fs.existsSync(wavPath)) {
         return res.status(404).json({ error: 'No reference audio found for this voice' });

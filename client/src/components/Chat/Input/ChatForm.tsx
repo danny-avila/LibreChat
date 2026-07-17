@@ -1,7 +1,8 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
-import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
+import { useRecoilState, useRecoilValue, useRecoilCallback, useSetRecoilState } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
@@ -189,7 +190,22 @@ const ChatForm = memo(function ChatForm({
       .catch((err) => console.error('Failed to save agent message:', err));
   }, [conversation?.conversationId, conversation?.endpoint, jwtToken, getMessages, setMessages, latestMessageId]);
 
+  const navigate = useNavigate();
+  const setConversation = useSetRecoilState(store.conversationByIndex(index));
   const { isCallActive, startCall, endCall, token, wsUrl } = useVideoCall();
+
+  const handleStartCall = useCallback(() => {
+    let activeId = conversation?.conversationId;
+    if (activeId === 'new') {
+      activeId = v4();
+      setConversation((prev) => ({
+        ...prev,
+        conversationId: activeId,
+      }));
+      navigate(`/c/${activeId}`, { replace: true });
+    }
+    startCall(activeId, conversation?.endpoint);
+  }, [conversation, startCall, setConversation, navigate]);
 
   const handleContainerClick = useCallback(() => {
     /** Check if the device is a touchscreen */
@@ -613,7 +629,7 @@ const ChatForm = memo(function ChatForm({
                   <VideoCallButton
                     disabled={disableInputs || isNotAppendable || isCallActive}
                     isSubmitting={isSubmitting}
-                    onClick={startCall}
+                    onClick={handleStartCall}
                   />
                 )}
                 {SpeechToText && (

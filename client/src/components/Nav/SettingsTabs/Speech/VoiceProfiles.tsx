@@ -41,6 +41,7 @@ interface VoiceProfile {
 // Mini audio player component
 // ─────────────────────────────────────────────────
 function AudioPlayer({ voiceName, disabled }: { voiceName: string; disabled?: boolean }) {
+  const { token } = useAuthContext();
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -78,8 +79,13 @@ function AudioPlayer({ voiceName, disabled }: { voiceName: string; disabled?: bo
 
     try {
       setLoading(true);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`/api/voices/${encodeURIComponent(voiceName)}/audio`, {
         credentials: 'include',
+        headers,
       });
       if (!res.ok) {
         throw new Error('No reference audio found for this voice');
@@ -133,6 +139,7 @@ interface AudioUploaderProps {
 }
 
 function AudioUploader({ voiceName, currentRefText, onUploaded }: AudioUploaderProps) {
+  const { token } = useAuthContext();
   const { showToast } = useToastContext();
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -163,10 +170,15 @@ function AudioUploader({ voiceName, currentRefText, onUploaded }: AudioUploaderP
 
     try {
       setUploading(true);
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`/api/voices/${voiceName}/audio`, {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        headers,
       });
       if (!res.ok) {
         const err = await res.json();
