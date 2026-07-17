@@ -34,6 +34,7 @@ export const handledExportContentTypes = [
   ContentTypes.INPUT_AUDIO,
   ContentTypes.AGENT_UPDATE,
   ContentTypes.SUMMARY,
+  ContentTypes.STEER,
   ContentTypes.ERROR,
   ContentTypes.ELICITATION,
 ] satisfies readonly ContentTypes[];
@@ -56,6 +57,7 @@ const exportLabelKeys = {
   audio: 'com_ui_export_audio',
   video: 'com_ui_export_video',
   summary: 'com_ui_export_summary',
+  steer: 'com_ui_export_steer',
   retrieval: 'com_ui_export_retrieval',
   fileSearch: 'com_ui_export_file_search',
   agentUpdate: 'com_ui_export_agent_update',
@@ -194,6 +196,14 @@ export function formatMessageContent({
   // the raw payload/URL.
   if (content.type === ContentTypes.ELICITATION) {
     return [];
+  }
+
+  if (content.type === ContentTypes.STEER) {
+    const text = content.steer ?? '';
+    if (text.trim().length === 0) {
+      return [];
+    }
+    return [localize(exportLabelKeys.steer), text];
   }
 
   return [sender, stringify(content)];

@@ -17,6 +17,7 @@ import type {
   SummaryContentPart,
   TMessageContentParts,
   SubagentUpdateEvent,
+  SandboxStartingEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -26,7 +27,8 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
-import { subagentProgressByToolCallId } from '~/store';
+import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
+import { subagentProgressByToolCallId, sandboxStartingByToolCallId } from '~/store';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
@@ -56,7 +58,8 @@ type TStepEvent =
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
   | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
   | { event: StepEvents.ON_ELICITATION; data: Agents.ElicitationEvent }
-  | { event: StepEvents.ON_ELICITATION_RESOLVED; data: Agents.ElicitationResolvedEvent };
+  | { event: StepEvents.ON_ELICITATION_RESOLVED; data: Agents.ElicitationResolvedEvent }
+  | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -285,6 +288,41 @@ export default function useStepHandler({
     [],
   );
 
+  /** Tool-call ids whose sandbox-starting atom is set, so completion can clear them. */
+  const knownSandboxAtomKeys = useRef(new Set<string>());
+
+  const setSandboxStarting = useRecoilCallback(
+    ({ set }) =>
+      (toolCallId: string): void => {
+        knownSandboxAtomKeys.current.add(toolCallId);
+        set(sandboxStartingByToolCallId(toolCallId), true);
+      },
+    [],
+  );
+
+  const clearSandboxStarting = useRecoilCallback(
+    ({ reset }) =>
+      (toolCallId?: string | null): void => {
+        if (!toolCallId || !knownSandboxAtomKeys.current.has(toolCallId)) {
+          return;
+        }
+        knownSandboxAtomKeys.current.delete(toolCallId);
+        reset(sandboxStartingByToolCallId(toolCallId));
+      },
+    [],
+  );
+
+  const resetSandboxAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const toolCallId of knownSandboxAtomKeys.current) {
+          reset(sandboxStartingByToolCallId(toolCallId));
+        }
+        knownSandboxAtomKeys.current.clear();
+      },
+    [],
+  );
+
   /**
    * Calculate content index for a run step.
    * For edited content scenarios, offset by initialContent length.
@@ -339,6 +377,30 @@ export default function useStepHandler({
     const oauthPromptOccupiesSlot = isOAuthToolCallContent(updatedContent[index]);
     if (!incomingOAuthToolCall && oauthPromptOccupiesSlot) {
       updatedContent = updatedContent.filter((part) => !isOAuthToolCallContent(part));
+    }
+
+    /**
+     * The synthetic ask-user-question card is pause-scoped UI appended at the end
+     * of the content — exactly the ABSOLUTE index the resumed segment streams
+     * into. Once real content arrives for that slot the pause is over: displace
+     * the card (same displacement pattern as the OAuth prompt above) instead of
+     * dropping the incoming part as a type mismatch. Covers the streaming
+     * handler's own in-flight message copy, reconnecting tabs, and other devices
+     * — the store-level strip on answer submit can't reach those.
+     */
+    if (isAskUserQuestionPart(updatedContent[index])) {
+      updatedContent = updatedContent.filter((part) => !isAskUserQuestionPart(part));
+    } else if (updatedContent.some(isAnsweredAskUserQuestionPart)) {
+      /**
+       * An ALREADY-ANSWERED card the resumed segment streams around rather than
+       * into: the first event after the resume re-renders the ask tool_call at
+       * ITS OWN index, so the slot test above never fires and this handler's
+       * cached copy — which still holds the card the answer-submit stripped from
+       * the store — gets written back, reopening the popover with its options
+       * locked. Only cards the user actually answered are dropped, so an event
+       * racing a still-live pause can't take its card down.
+       */
+      updatedContent = updatedContent.filter((part) => !isAnsweredAskUserQuestionPart(part));
     }
 
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
@@ -441,6 +503,12 @@ export default function useStepHandler({
       if (finalUpdate) {
         newToolCall.progress = 1;
         newToolCall.output = contentPart.tool_call.output;
+        if (
+          'inputValidationError' in contentPart.tool_call &&
+          contentPart.tool_call.inputValidationError === true
+        ) {
+          Object.assign(newToolCall, { inputValidationError: true });
+        }
       }
 
       updatedContent[index] = {
@@ -922,6 +990,7 @@ export default function useStepHandler({
         const { result } = stepEvent.data;
 
         const { id: stepId } = result;
+        clearSandboxStarting(result.tool_call?.id);
 
         const runStep = stepMap.current.get(stepId);
         let responseMessageId = runStep?.runId ?? '';
@@ -965,6 +1034,8 @@ export default function useStepHandler({
             }),
           );
         }
+      } else if (stepEvent.event === StepEvents.ON_SANDBOX_STARTING) {
+        setSandboxStarting(stepEvent.data.tool_call_id);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_ELICITATION) {
@@ -1171,6 +1242,8 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
+      setSandboxStarting,
+      clearSandboxStarting,
       onSkillAuthoringComplete,
     ],
   );
@@ -1187,6 +1260,11 @@ export default function useStepHandler({
     subagentRunToToolCallId.current.clear();
     claimedSubagentToolCallIds.current.clear();
     pendingSubagentBuffer.current.clear();
+    /** Unlike subagent atoms below, sandbox-starting flags are transient
+     *  status with no audit value — reset them at this boundary so an
+     *  interrupted cold boot can't leak a stale "starting" label onto a
+     *  later tool call that reuses the same id (e.g. `call_0`). */
+    resetSandboxAtoms();
     /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
      *  to be able to reopen the SubagentCall dialog after completion to
      *  audit what the child did. `resetSubagentAtoms` is returned below
@@ -1195,7 +1273,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, []);
+  }, [resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.

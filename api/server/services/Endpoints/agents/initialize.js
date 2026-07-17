@@ -135,7 +135,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const collectedThoughtSignatures = {};
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
-  const { contentParts, aggregateContent } = createContentAggregator();
+  /** @type {Map<string, import('@librechat/api').ToolInputValidationError>} */
+  const toolInputValidationErrors = new Map();
+  const { contentParts, aggregateContent, stepMap } = createContentAggregator();
   const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
 
   /** Query accessible skill IDs once per run (shared across all agents).
@@ -149,6 +151,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+  const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
+  const statefulSessionsAvailable = enabledCapabilities.has(
+    AgentCapabilities.stateful_code_sessions,
+  );
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
   const skillDbMethods = getSkillDbMethods();
 
@@ -227,6 +233,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
+        backgroundToolNames: ctx.backgroundToolNames,
         mcpAvailableTools: ctx.mcpAvailableTools,
         requestScopedConnections: ctx.requestScopedConnections,
         userMCPAuthMap: ctx.userMCPAuthMap,
@@ -285,6 +292,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   const eventHandlers = getDefaultHandlers({
     res,
+    contentParts,
+    stepMap,
+    toolInputValidationErrors,
     toolExecuteOptions,
     summarizationOptions,
     aggregateContent,
@@ -405,6 +415,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       accessibleSkillIds: primaryScopedSkillIds,
       skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
+      backgroundToolsAvailable,
+      statefulSessionsAvailable,
       memoryAvailable,
       skillStates,
       defaultActiveOnShare,
@@ -481,6 +493,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       skillStates,
       defaultActiveOnShare,
       codeEnvAvailable,
+      backgroundToolsAvailable,
+      statefulSessionsAvailable,
       memoryAvailable,
     },
     {
@@ -553,6 +567,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     skillStates,
     defaultActiveOnShare,
     codeEnvAvailable,
+    backgroundToolsAvailable,
+    statefulSessionsAvailable,
     memoryAvailable,
   });
 
@@ -692,6 +708,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
            *  false`, so `bash_tool` / `read_file` sandbox fallback are
            *  silently gated off even though the seed walk found it. */
           codeEnvAvailable,
+          /* Background tool calls are intentionally NOT enabled for pure
+           * subagents (spawn-tool child graphs): their tools don't reach the
+           * host ON_TOOL_EXECUTE background interceptor, so injecting the
+           * schema would advertise a poll tool the host can't honor. Backgrounding
+           * subagent work is the durable follow-up. */
+          statefulSessionsAvailable,
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,
@@ -987,6 +1009,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
      *  them to persist the breakdown + usage rollup on the response message. */
     contextUsageSink,
     usageEmitSink,
+    toolInputValidationErrors,
   });
 
   if (streamId) {

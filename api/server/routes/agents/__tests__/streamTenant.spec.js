@@ -39,6 +39,7 @@ jest.mock('~/server/middleware', () => ({
     req.user = { id: mockUserId, tenantId: mockTenantId };
     next();
   },
+  moderateText: (req, res, next) => next(),
   messageIpLimiter: (req, res, next) => next(),
   configMiddleware: (req, res, next) => next(),
   messageUserLimiter: (req, res, next) => next(),

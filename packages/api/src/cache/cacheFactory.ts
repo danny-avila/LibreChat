@@ -16,6 +16,12 @@ import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
 import { keyvRedisClient, ioredisClient } from './redisClients';
 import { batchDeleteKeys, scanKeys } from './redisUtils';
+import {
+  instrumentIORedisClient,
+  instrumentRedisCache,
+  observeRedisOperation,
+  RedisUseCases,
+} from './redisTelemetry';
 import { cacheConfig } from './cacheConfig';
 import { violationFile } from './keyvFiles';
 
@@ -79,7 +85,7 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
         logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
       };
 
-      return cache;
+      return instrumentRedisCache(cache, namespace);
     } catch (err) {
       logger.error(`Failed to create Redis cache for namespace ${namespace}:`, err);
       throw err;
@@ -124,7 +130,10 @@ export const sessionCache = (namespace: string, ttl?: number): MemoryStore | Con
     const MemoryStore = createMemoryStore(session);
     return new MemoryStore({ ttl, checkPeriod: Time.ONE_DAY });
   }
-  const store = new ConnectRedis({ client: ioredisClient, ttl, prefix: namespace });
+  const redisClient = ioredisClient
+    ? instrumentIORedisClient(ioredisClient, namespace)
+    : ioredisClient;
+  const store = new ConnectRedis({ client: redisClient, ttl, prefix: namespace });
   if (ioredisClient) {
     ioredisClient.on('error', (err) => {
       logger.error(`Session store Redis error for namespace ${namespace}:`, err);
@@ -152,11 +161,14 @@ export const limiterCache = (prefix: string): RedisStore | undefined => {
 
   try {
     const sendCommand: SendCommandFn = (async (...args: string[]) => {
-      if (ioredisClient == null) {
+      const redisClient = ioredisClient;
+      if (redisClient == null) {
         throw new Error('Redis client not available');
       }
       try {
-        return await ioredisClient.call(args[0], ...args.slice(1));
+        return await observeRedisOperation('ioredis', RedisUseCases.RATE_LIMIT, args[0], () =>
+          redisClient.call(args[0], ...args.slice(1)),
+        );
       } catch (err) {
         logger.error('Redis command execution failed:', err);
         throw err;

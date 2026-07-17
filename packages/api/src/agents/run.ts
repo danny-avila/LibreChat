@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Run, Providers, Constants } from '@librechat/agents';
+import { Run, Providers, Constants, HookRegistry } from '@librechat/agents';
 import {
   KnownEndpoints,
   EModelEndpoint,
@@ -17,6 +17,7 @@ import type {
   StandardGraphConfig,
   LCToolRegistry,
   SubagentConfig,
+  HookCallback,
   AgentInputs,
   GenericTool,
   RunConfig,
@@ -25,6 +26,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  TAgentsEndpoint,
   AgentModelParameters,
   AgentSubagentsConfig,
   ReasoningResponseKey,
@@ -32,17 +34,29 @@ import type {
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
+import {
+  CHECK_BACKGROUND_TASK_NAME,
+  stripBackgroundFromToolRegistry,
+  stripBackgroundFromToolDefinitions,
+} from '~/agents/background';
+import {
+  ASK_USER_QUESTION_TOOL_NAME,
+  createAskUserQuestionTool,
+} from '~/agents/hitl/askUserQuestionTool';
+import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
-import { resolveToolApprovalPolicy } from '~/agents/hitl/policy';
+import { isSteeringSupported } from '~/agents/steering/runtime';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
+import { resolveSubagentMaxTurns } from '~/agents/config';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
@@ -325,6 +339,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
+  backgroundToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -333,6 +349,12 @@ type RunAgent = Omit<Agent, 'tools'> & {
    * is actually registered.
    */
   codeEnvAvailable?: boolean;
+  /**
+   * Per-agent stateful-session gate set by `initializeAgent`: the admin
+   * `stateful_code_sessions` capability AND the agent's builder opt-in AND
+   * `codeEnvAvailable`. Walked here to gate `toolExecution.sandbox`.
+   */
+  statefulCodeSessions?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -731,6 +753,81 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
 }
 
 /**
+ * Whether a single agent's tool surface includes the `ask_user_question` tool, in any
+ * of the three places a tool can live on a `RunAgent`: loaded instances (`tools`), the
+ * schema-only registry (`toolRegistry`), or serialized definitions (`toolDefinitions`).
+ * Checked against TOP-LEVEL agents only (not subagents — the tool is stripped from
+ * child configs in `buildAgentInput`, since a child graph executing outside the parent
+ * run's stream cannot pause the parent).
+ *
+ * Exported for AgentClient's pre-turn orphan-checkpoint prune gate: the prune must
+ * fire whenever THIS turn may attach a checkpointer, which since the ask tool is no
+ * longer coupled to `toolApproval.enabled` includes ask-capable runs.
+ */
+export function agentRequestsAskUserQuestion(agent: {
+  tools?: unknown[];
+  toolRegistry?: Map<string, unknown>;
+  toolDefinitions?: Array<{ name: string }>;
+}): boolean {
+  return (
+    agent.tools?.some(
+      (tool) => (tool as { name?: string } | undefined)?.name === ASK_USER_QUESTION_TOOL_NAME,
+    ) === true ||
+    agent.toolRegistry?.has(ASK_USER_QUESTION_TOOL_NAME) === true ||
+    agent.toolDefinitions?.some((def) => def.name === ASK_USER_QUESTION_TOOL_NAME) === true
+  );
+}
+
+/**
+ * Whether the admin tool filter (`includedTools` allowlist, else `filteredTools`
+ * exclude list — same precedence as `loadAndFormatTools`) disables
+ * `ask_user_question`. Enforced at RUN BUILD, not just in the tools-dialog listing:
+ * agents saved before an admin filtered the tool out would otherwise keep exposing
+ * it to the model, attaching checkpointers, and pausing runs — for a run-pausing
+ * tool the filter must be an actual kill switch.
+ */
+function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
+  const included = appConfig?.includedTools;
+  if (included != null && included.length > 0) {
+    return !included.includes(ASK_USER_QUESTION_TOOL_NAME);
+  }
+  return appConfig?.filteredTools?.includes(ASK_USER_QUESTION_TOOL_NAME) === true;
+}
+
+/**
+ * Whether any agent reachable in the run — primary, handoff/parallel, or a
+ * nested subagent — resolved `statefulCodeSessions` during initialization
+ * (admin `stateful_code_sessions` capability AND the agent's builder opt-in
+ * AND a working code env). Walks `subagentAgentConfigs` like
+ * {@link anyAgentHasCodeEnv}; when true, `createRun` opts the run's remote
+ * sandbox tools into stateful runtime sessions via `toolExecution.sandbox`.
+ * Off by default: the capability is absent from `defaultAgentCapabilities`,
+ * agents opt in individually, and the SDK derives the session hint from
+ * `thread_id` (= conversationId), so this is never a trust boundary.
+ */
+export function anyAgentHasStatefulSessions(agents: Array<RunAgent | null | undefined>): boolean {
+  const visited = new Set<string>();
+  const pending = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
+    if (agent == null || visited.has(agent.id)) {
+      continue;
+    }
+    visited.add(agent.id);
+    if (agent.statefulCodeSessions === true) {
+      return true;
+    }
+    for (const child of agent.subagentAgentConfigs ?? []) {
+      if (child != null && !visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Whether any agent reachable in the run — primary, handoff/parallel, or a
  * nested subagent — opts into cross-turn `reasoning_content` reconstruction.
  * Walks `subagentAgentConfigs` like {@link anyAgentHasCodeEnv}, since an
@@ -770,6 +867,7 @@ function buildSubagentConfigs(
   agentInput: AgentInputs,
   toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
   state: SubagentBuildState,
+  agentsEConfig: Partial<TAgentsEndpoint> | undefined,
   ancestors: Set<string> = new Set(),
   depth = 0,
 ): SubagentConfig[] {
@@ -783,11 +881,36 @@ function buildSubagentConfigs(
   if (allowSelf) {
     const selfName = agentInput.name ?? agent.name ?? 'self';
     countSubagentConfig(state);
+    /**
+     * Self-spawn reuses the parent's AgentInputs. When the parent has background
+     * tools, provide a sanitized copy so the isolated child — which runs the
+     * direct/child-graph path rather than the host background interceptor —
+     * doesn't advertise `run_in_background` / `check_background_task`. The
+     * resolver keeps a provided `agentInputs` even with `self: true`.
+     */
+    const hasBackground = (agent.backgroundToolNames?.length ?? 0) > 0;
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
       name: selfName,
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
+      /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
+      maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
+      ...(hasBackground
+        ? {
+            agentInputs: {
+              ...agentInput,
+              toolDefinitions: stripBackgroundFromToolDefinitions(
+                agentInput.toolDefinitions,
+                agent.backgroundToolNames,
+              ),
+              toolRegistry: stripBackgroundFromToolRegistry(
+                agentInput.toolRegistry,
+                agent.backgroundToolNames,
+              ),
+            },
+          }
+        : {}),
     });
   }
 
@@ -824,6 +947,24 @@ function buildSubagentConfigs(
      */
     const childInputs = toInput(child, { isSubagent: true });
     /**
+     * A child reachable as a top-level/handoff agent is initialized WITH the
+     * background capability, then reused here as a subagent. Isolated child
+     * graphs run subagent tools without the host background dispatch/poll
+     * behavior, so strip the injected `run_in_background` param + the
+     * `check_background_task` def (defs AND registry) so the child doesn't
+     * advertise a background contract it can't honor. Mirrors the self-spawn path.
+     */
+    if ((child.backgroundToolNames?.length ?? 0) > 0) {
+      childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
+        childInputs.toolDefinitions,
+        child.backgroundToolNames,
+      );
+      childInputs.toolRegistry = stripBackgroundFromToolRegistry(
+        childInputs.toolRegistry,
+        child.backgroundToolNames,
+      );
+    }
+    /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
      * `subagents.enabled` is true loses every explicit target when
@@ -836,6 +977,7 @@ function buildSubagentConfigs(
       childInputs,
       toInput,
       state,
+      agentsEConfig,
       nextAncestors,
       childDepth,
     );
@@ -849,6 +991,8 @@ function buildSubagentConfigs(
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
+      /** Honor each child agent's own resolved recursion limit. */
+      maxTurns: resolveSubagentMaxTurns(agentsEConfig, child),
     });
   }
 
@@ -879,6 +1023,7 @@ export async function createRun({
   requestBody,
   user,
   tenantId,
+  centralTraceExportEnabled,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -888,7 +1033,9 @@ export async function createRun({
   calibrationRatio,
   appConfig,
   subagentUsageSink,
+  steering,
   hitlCapable = false,
+  toolInputValidationErrors,
   streaming = true,
   streamUsage = true,
 }: {
@@ -900,6 +1047,11 @@ export async function createRun({
   requestBody?: t.RequestBody;
   user?: IUser;
   tenantId?: string;
+  /**
+   * Defaults to true. Set false to suppress central Langfuse export for this
+   * run. Tenant fanout can still export when tenant routing is available.
+   */
+  centralTraceExportEnabled?: boolean;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
   /**
@@ -932,6 +1084,15 @@ export async function createRun({
    */
   subagentUsageSink?: (event: SubagentUsageEvent) => void;
   /**
+   * The run-scoped steer-drain hook (a `PostToolBatch` callback built via
+   * `createSteerDrainHook`). Registered on the run's hook registry independent
+   * of the tool-approval policy — steering needs neither HITL nor a
+   * checkpointer (injection merges via the messages reducer inside the tool
+   * node). Only the resumable agents controller passes this; the
+   * OpenAI-compatible and Responses controllers have no job/SSE surface.
+   */
+  steering?: { hook: HookCallback<'PostToolBatch'> };
+  /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
    * tool-approval wiring: only AgentClient (chat + resume) sets this. The OpenAI-compatible
@@ -940,6 +1101,8 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /** Request-scoped tool input failures consumed by the completion handler. */
+  toolInputValidationErrors?: Map<string, ToolInputValidationError>;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -970,6 +1133,9 @@ export async function createRun({
       }
     }
   }
+
+  /** Admin kill switch for the ask tool — see {@link isAskUserQuestionAdminDisabled}. */
+  const askToolAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
 
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     const isSubagent = opts.isSubagent === true;
@@ -1092,6 +1258,40 @@ export async function createRun({
       toolDefinitions = toolDefinitions.map((def) => ({ ...def }));
     }
 
+    /**
+     * `ask_user_question` pauses via a LangGraph `interrupt()` raised from its own
+     * tool body, so it must execute IN-PROCESS inside the graph's ToolNode — the
+     * event-dispatched path runs tool bodies in the host handler outside the Pregel
+     * task frame, where `interrupt()` throws and becomes an error ToolMessage. The
+     * tool therefore never rides the schema-only `toolDefinitions`/`toolRegistry`
+     * surfaces: on every path it is REMOVED from them (clone-before-mutate,
+     * matching the registry-clone discipline above), and on the one path where it
+     * can actually work — an HITL-capable caller's top-level agent, with the admin
+     * filter allowing it — a real instance is supplied via `graphTools`, the SDK's
+     * in-graph direct-tool seam (bound to the model, executed inside the task
+     * frame; requires `@librechat/agents` > 3.2.57, older versions ignore the
+     * field). Everywhere else (OpenAI-compatible + Responses controllers with no
+     * resume surface, subagent child graphs that compile without a checkpointer,
+     * admin-disabled) it is stripped fail-closed with no replacement.
+     */
+    let tools = agent.tools;
+    let askGraphTools: GenericTool[] | undefined;
+    if (agentRequestsAskUserQuestion(agent)) {
+      tools = tools?.filter(
+        (tool) => (tool as { name?: string } | undefined)?.name !== ASK_USER_QUESTION_TOOL_NAME,
+      );
+      toolDefinitions = toolDefinitions.filter((def) => def.name !== ASK_USER_QUESTION_TOOL_NAME);
+      if (toolRegistry?.has(ASK_USER_QUESTION_TOOL_NAME)) {
+        toolRegistry = new Map(toolRegistry);
+        toolRegistry.delete(ASK_USER_QUESTION_TOOL_NAME);
+      }
+      if (hitlCapable && !isSubagent && !askToolAdminDisabled) {
+        askGraphTools = [
+          createAskUserQuestionTool(toolInputValidationErrors) as unknown as GenericTool,
+        ];
+      }
+    }
+
     const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
       summarization.reserveRatio,
       agent.baseContextTokens,
@@ -1099,12 +1299,12 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
-    return {
+    const agentInput: AgentInputs = {
       provider,
       reasoningKey,
       toolDefinitions,
       agentId: agent.id,
-      tools: agent.tools,
+      tools,
       clientOptions: llmConfig,
       instructions: systemContent,
       additional_instructions: additionalInstructions || undefined,
@@ -1120,7 +1320,19 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
+    if (askGraphTools) {
+      /**
+       * Typed structurally — not as `AgentInputs['graphTools']` — because the
+       * field ships in `@librechat/agents` > 3.2.57 (agents#289); older SDK
+       * versions ignore it at runtime (the tool is then simply absent, never
+       * broken). Inline the field in the literal once the dependency is bumped.
+       */
+      (agentInput as AgentInputs & { graphTools?: GenericTool[] }).graphTools = askGraphTools;
+    }
+    return agentInput;
   };
+
+  const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
 
   const agentInputs: AgentInputs[] = [];
   const subagentBuildState: SubagentBuildState = {
@@ -1134,6 +1346,7 @@ export async function createRun({
       agentInput,
       buildAgentInput,
       subagentBuildState,
+      agentsEndpointConfig,
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
@@ -1180,7 +1393,9 @@ export async function createRun({
    * and the resume route). When disabled, nothing attaches and the run is identical
    * to before this feature shipped.
    */
-  const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+  // Per-agent truth resolved by initializeAgent (admin capability AND builder
+  // opt-in AND code env) — the run opts in when any reachable agent did.
+  const statefulCodeSessions = anyAgentHasStatefulSessions(agents);
   // Resolve the effective policy through the single seam so per-agent / per-skill
   // sources can layer in later without touching this call site (see
   // `resolveToolApprovalPolicy`). Only the endpoint layer is wired today, so this
@@ -1195,16 +1410,48 @@ export async function createRun({
   // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
   // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
   const hitl = hitlCapable
-    ? buildHITLRunWiring(toolApprovalPolicy, {
-        userId: user?.id,
-        conversationId: requestBody?.conversationId,
-        tenantId: tenantId ?? user?.tenantId,
-        appConfig,
-      })
+    ? buildHITLRunWiring(
+        // The ask tool is exempt from the approval prompt (unless explicitly
+        // listed by the admin) — approving the right to ask a question is a
+        // pure double-pause; the tool has no side effects to gate.
+        exemptAskUserQuestionFromApproval(toolApprovalPolicy, ASK_USER_QUESTION_TOOL_NAME),
+        {
+          userId: user?.id,
+          conversationId: requestBody?.conversationId,
+          tenantId: tenantId ?? user?.tenantId,
+          appConfig,
+        },
+      )
     : undefined;
-  if (hitl) {
+  /**
+   * The `ask_user_question` tool pauses via LangGraph `interrupt()` from inside its own
+   * body, which needs only a durable checkpointer — NOT the tool-approval policy
+   * (`humanInTheLoop`/hooks stay off unless approval is separately enabled; verified
+   * end-to-end in `api/.../agents/__tests__/askUserQuestion.e2e.spec.js`). Top-level
+   * check only: subagent copies of the tool are stripped in `buildAgentInput`. Gated on
+   * `hitlCapable` like approval, and the tool itself was stripped from non-HITL callers
+   * above, so a checkpointer here always has a resume surface. The LazyMongoSaver only
+   * persists when a run actually pauses, so attaching it is near-zero overhead.
+   */
+  const asksUserQuestions =
+    hitlCapable && !askToolAdminDisabled && agents.some(agentRequestsAskUserQuestion);
+  if (hitl || asksUserQuestions) {
     const checkpointer = await getAgentCheckpointer(agentsEndpointConfig?.checkpointer);
     graphConfig.compileOptions = { ...graphConfig.compileOptions, checkpointer };
+  }
+
+  /**
+   * The run's hook registry: the HITL policy hooks (when approval is enabled)
+   * plus the steer-drain PostToolBatch hook. Steering registers independently
+   * of the approval policy and requires no checkpointer, but is hard-gated on
+   * SDK support — draining on an SDK that ignores `injectedMessages` would
+   * silently drop the user's words (the steer controller 501s in that case;
+   * this guard is defense in depth).
+   */
+  let hooks = hitl?.hooks;
+  if (steering != null && isSteeringSupported()) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [steering.hook] });
   }
 
   /**
@@ -1231,7 +1478,9 @@ export async function createRun({
     // commits. create_file/edit_file write files; execute_code/bash_tool run
     // code with large `code`/`command` args. `excludeToolNames` requires
     // @librechat/agents with the eager-exclusion support (agents#281); older
-    // versions ignore the field.
+    // versions ignore the field. ask_user_question raises a LangGraph
+    // `interrupt()` from its tool body, which must run inside the Pregel task
+    // frame — a speculative eager execution could never pause the run.
     eagerEventToolExecution: {
       enabled: true,
       excludeToolNames: [
@@ -1239,27 +1488,59 @@ export async function createRun({
         EDIT_FILE_TOOL_NAME,
         Constants.EXECUTE_CODE,
         Constants.BASH_TOOL,
+        ASK_USER_QUESTION_TOOL_NAME,
+        /**
+         * Background-capable tools: eager execution could launch the detached
+         * task with speculative/partial args before the final tool call, and a
+         * background side effect (unlike a foreground eager mismatch) can't be
+         * canceled once dispatched. The poll tool is excluded for the same
+         * reason: collecting a task's artifact is a one-shot claim that must
+         * not fire from a speculative snapshot the SDK may later discard.
+         */
+        CHECK_BACKGROUND_TASK_NAME,
+        ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
       ],
     },
-    // Let host file-authoring tools share the code-execution sandbox session so
-    // a file created with create_file/edit_file is visible to later
+    // Let host file tools share the code-execution sandbox session so a file
+    // created with create_file/edit_file is visible to later
     // execute_code/bash_tool calls (and vice versa). The SDK folds these tools'
     // returned exec session/files into the shared code session and injects the
-    // existing session into their requests. Requires @librechat/agents with
-    // codeSessionToolNames support (agents#283); older versions ignore it.
-    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME],
+    // existing session into their requests. Membership here also stamps the
+    // stateful `runtimeSessionHint` and excludes the tool from eager execution
+    // — read_file needs both, or its sandbox `cat` runs hintless on the Code
+    // API's per-user default runtime session and cannot see files bash_tool
+    // just wrote in the conversation's session. Requires @librechat/agents
+    // with codeSessionToolNames support (agents#283); older versions ignore it.
+    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, Constants.READ_FILE],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
-    langfuse: buildLangfuseConfig({ appConfig, tenantId: tenantId ?? user?.tenantId }),
+    langfuse: buildLangfuseConfig({
+      appConfig,
+      tenantId: tenantId ?? user?.tenantId,
+      centralTraceExportEnabled,
+    }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
+    }),
+    // Best-effort stateful runtime sessions on the remote Code API. The SDK
+    // stamps a per-conversation session hint on execute_code/bash requests and
+    // hedges those tools' descriptions; the transport is otherwise unchanged.
+    // `engine` is omitted (defaults to `sandbox`) and the hint defaults to
+    // thread_id. Requires @librechat/agents with `toolExecution.sandbox`;
+    // older versions ignore the field.
+    ...(statefulCodeSessions && {
+      toolExecution: { sandbox: { statefulSessions: true } },
     }),
     // HITL opt-in: the `humanInTheLoop` switch + the PreToolUse policy hook. Spread
     // here (not just `compileOptions.checkpointer` above) so an `ask` decision raises
     // a real interrupt — without these the run would never pause. Absent when disabled.
-    ...(hitl && { humanInTheLoop: hitl.humanInTheLoop, hooks: hitl.hooks }),
+    // The steer-drain hook rides the same registry but independently of the approval
+    // policy: a PostToolBatch-only registry keeps the SDK's eager execution fast paths
+    // (it gates on result-altering hooks, not registry presence).
+    ...(hitl && { humanInTheLoop: hitl.humanInTheLoop }),
+    ...(hooks && { hooks }),
   };
   const run = await Run.create(runConfig);
 

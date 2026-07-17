@@ -16,16 +16,31 @@ import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
 import {
+  backgroundTaskRegistry,
+  runCheckBackgroundTask,
+  claimBackgroundArtifact,
+  restoreBackgroundArtifact,
+  isBackgroundRequested,
+  hasRunInBackgroundArg,
+  stripRunInBackgroundArg,
+  buildBackgroundHandleContent,
+  buildBackgroundCapacityContent,
+  stripBackgroundFromToolDefinitions,
+  CHECK_BACKGROUND_TASK_NAME,
+  RUN_IN_BACKGROUND_ARG,
+} from './background';
+import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
-import { logAxiosError, runOutsideTracing } from '~/utils';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
   output: {
@@ -232,8 +247,32 @@ export interface ToolExecuteOptions {
     file_path: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** Per-conversation stateful runtime-session hint (thread_id); forwarded so a
+     *  host file op that is the first sandbox call joins the same runtime session
+     *  as bash_tool instead of the Code API's default session. */
+    runtime_session_hint?: string;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
+  /**
+   * Reads a small image file out of the code-execution sandbox as base64 so
+   * `read_file` can surface it to vision-capable models. The `readSandboxFile`
+   * `cat` path round-trips stdout through codeapi's JSON transport, which
+   * lossily replaces non-UTF-8 bytes and mangles image data — this reader
+   * base64-encodes the bytes IN the sandbox (ASCII-safe over JSON) after an
+   * in-sandbox size guard so an oversize image never crosses the wire.
+   * Returns `null` when codeapi is unavailable; throws on transport / read
+   * errors so the handler can fall back to an instructive message.
+   */
+  readSandboxImage?: (params: {
+    file_path: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** @see readSandboxFile.runtime_session_hint */
+    runtime_session_hint?: string;
+    /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
+    maxBytes?: number;
+    req?: ServerRequest;
+  }) => Promise<{ base64: string; bytes: number } | { tooLarge: true; bytes: number } | null>;
   /**
    * Writes a UTF-8 text file into the code-execution sandbox via the
    * sandbox `/exec` endpoint. Mirrors `readSandboxFile` session forwarding
@@ -245,6 +284,8 @@ export interface ToolExecuteOptions {
     content: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    /** @see readSandboxFile.runtime_session_hint */
+    runtime_session_hint?: string;
     req?: ServerRequest;
   }) => Promise<{
     stdout?: string;
@@ -256,6 +297,19 @@ export interface ToolExecuteOptions {
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
+/**
+ * Inline ceiling for images pulled out of the code-execution sandbox —
+ * deliberately tighter than {@link MAX_BINARY_BYTES}, which governs the
+ * skill-file path. The two differ because their transports differ: skill
+ * files stream from storage, while sandbox bytes come back base64 over
+ * `/exec` stdout, which the runner caps (`SANDBOX_OUTPUT_MAX_SIZE`). The
+ * reader therefore windows the file, so cost scales in round-trips —
+ * ~32 at this limit vs ~160 at 5MB. Nothing is lost by stopping here:
+ * vision providers downsample to ~1.5-2k px regardless, so multi-MB
+ * originals buy no fidelity, and anything larger degrades to the
+ * `bash_tool` hint below.
+ */
+const MAX_SANDBOX_INLINE_IMAGE_BYTES = 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
@@ -268,22 +322,6 @@ type ToolInputSchemaKind = {
   object: boolean;
   string: boolean;
 };
-
-function truncateMiddle(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-
-  const indicator = `\n\n... [truncated: ${value.length} chars exceeded ${maxChars} limit] ...\n\n`;
-  const available = maxChars - indicator.length;
-  if (available <= 0) {
-    return value.slice(0, maxChars);
-  }
-
-  const headSize = Math.ceil(available * 0.7);
-  const tailSize = available - headSize;
-  return value.slice(0, headSize) + indicator + value.slice(value.length - tailSize);
-}
 
 function stringifyThrownValue(error: unknown): string {
   try {
@@ -1186,15 +1224,129 @@ function lowercaseExtension(filePath: string): string {
  * Builds the model-visible error returned when `read_file` is invoked on
  * a binary path. Phrasing is tuned for the LLM: states the fact (file is
  * binary, can't be read as text), points at the correct affordance for
- * each common case (image already in the chat; bash for everything else),
- * and includes the path verbatim so the model can copy-paste into its
- * next call.
+ * each common case (image via bash bytes; bash for everything else), and
+ * includes the path verbatim so the model can copy-paste into its next
+ * call. Supported raster images take the inline-attachment path first (see
+ * `handleSandboxImageRead`); this image branch is only reached when that
+ * read is unavailable (codeapi off) or fails.
  */
 function buildBinaryFileError(filePath: string, ext: string): string {
   if (IMAGE_EXTENSIONS_FOR_HINT.has(ext)) {
-    return `"${filePath}" is an image file (${ext}) and cannot be read as text. The image is already attached to the conversation and visible to the user. To process it programmatically, use \`bash_tool\` (e.g. \`file ${filePath}\` for metadata, or \`python3 -c '...'\` to operate on the bytes).`;
+    return `"${filePath}" is an image file (${ext}) and cannot be read as text. To process it programmatically, use \`bash_tool\` (e.g. \`file ${filePath}\` for metadata, or \`python3 -c '...'\` to operate on the bytes).`;
   }
   return `"${filePath}" is a binary file (${ext}) and cannot be read as text by \`read_file\`. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata, or a runtime-appropriate command for the format).`;
+}
+
+/**
+ * Sandbox file extensions `read_file` attempts to inline as visual content.
+ * The extension only decides ROUTING (try the base64 image read vs the text
+ * / bash path); the emitted MIME comes from the magic-byte sniff so the
+ * declared type always matches the actual bytes. Scoped to the four raster
+ * formats the providers accept in tool results (`IMAGE_MIMES`); other image
+ * extensions (`.bmp`, `.tiff`, `.svg`, ...) stay on the text / bash path.
+ */
+const SANDBOX_IMAGE_EXTENSIONS = new Set<string>(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+
+/**
+ * Magic-byte sniff for the raster formats we inline. Preferred over the
+ * extension so a mislabelled `.png` that is really a JPEG is declared with
+ * the MIME the provider will actually validate the bytes against. Returns
+ * `undefined` when the header matches none of the supported formats.
+ */
+function sniffImageMime(buffer: Buffer): string | undefined {
+  if (buffer.length < 4) return undefined;
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return 'image/png';
+  }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    buffer.length >= 6 &&
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38
+  ) {
+    return 'image/gif';
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return undefined;
+}
+
+/**
+ * Cheap structural check that the image bytes are complete, not just that the
+ * header sniffed valid — a truncated/interrupted write can keep a valid magic
+ * prefix while the body is missing, which would then fail `saveBase64Image`
+ * resizing or the next provider request instead of the intended bash-hint
+ * fallback. Only png (fixed 8-byte IEND trailer) and webp (self-describing
+ * RIFF size) have a false-positive-free end marker; jpeg/gif can legitimately
+ * carry trailing metadata, so those stay at header-level sniffing rather than
+ * risk rejecting a valid file.
+ */
+function isCompleteImage(buffer: Buffer, mime: string): boolean {
+  if (mime === 'image/png') {
+    if (buffer.length < 8) return false;
+    const iend = buffer.subarray(buffer.length - 8);
+    return (
+      iend[0] === 0x49 &&
+      iend[1] === 0x45 &&
+      iend[2] === 0x4e &&
+      iend[3] === 0x44 &&
+      iend[4] === 0xae &&
+      iend[5] === 0x42 &&
+      iend[6] === 0x60 &&
+      iend[7] === 0x82
+    );
+  }
+  if (mime === 'image/webp') {
+    if (buffer.length < 12) return false;
+    return buffer.readUInt32LE(4) === buffer.length - 8;
+  }
+  return true;
+}
+
+/**
+ * Builds the `read_file` success result for an image: a short text line the
+ * model reads plus the `image_url` block in `artifact.content`. The SDK
+ * folds `artifact.content` into what the model sees (Anthropic tool_result
+ * or a trailing Human message for OpenAI/Google), and the host tool-end
+ * callback saves the same data URL as a viewable attachment. Shared by the
+ * skill-file and sandbox read paths so both surface images identically.
+ */
+function buildImageArtifactResult(
+  toolCallId: string,
+  displayPath: string,
+  mimeType: string,
+  bytes: number,
+  base64: string,
+): ToolExecuteResult {
+  return {
+    toolCallId,
+    status: 'success',
+    content: `Image: ${displayPath} (${bytes} bytes, ${mimeType})`,
+    artifact: {
+      content: [{ type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }],
+    },
+  };
 }
 
 /**
@@ -1214,6 +1366,81 @@ function looksBinary(content: string): boolean {
 }
 
 /**
+ * Reads a sandbox image as a viewable artifact so `read_file` can hand the
+ * bytes to vision-capable models instead of refusing them. Fetches the file
+ * base64-encoded from the sandbox (`readSandboxImage`), verifies the decoded
+ * length matches the size the sandbox reported (guards against codeapi
+ * truncating a large `/exec` stdout into a corrupt image), sniffs the real
+ * MIME, and returns the shared image-artifact result. Degrades to the
+ * text-oriented binary hint when the reader is unavailable, the image is
+ * over the inline cap, or the read fails — never throws.
+ */
+async function handleSandboxImageRead(
+  tc: ToolCallRequest,
+  filePath: string,
+  ext: string,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+): Promise<ToolExecuteResult> {
+  const { readSandboxImage } = options;
+  const binaryHint = (): ToolExecuteResult => ({
+    toolCallId: tc.id,
+    status: 'error',
+    content: '',
+    errorMessage: buildBinaryFileError(filePath, ext),
+  });
+  if (!readSandboxImage) {
+    return binaryHint();
+  }
+
+  const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
+  let read: { base64: string; bytes: number } | { tooLarge: true; bytes: number } | null;
+  try {
+    read = await readSandboxImage({
+      file_path: filePath,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+      maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
+      ...(req ? { req } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`[handleReadFileCall] Sandbox image read failed for "${filePath}": ${message}`);
+    return binaryHint();
+  }
+
+  if (!read) {
+    return binaryHint();
+  }
+  if ('tooLarge' in read) {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `Image "${filePath}" is ${read.bytes} bytes, over the ${MAX_SANDBOX_INLINE_IMAGE_BYTES}-byte inline limit. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata).`,
+    };
+  }
+
+  const buffer = Buffer.from(read.base64, 'base64');
+  if (buffer.length !== read.bytes) {
+    logger.warn(
+      `[handleReadFileCall] Sandbox image byte mismatch for "${filePath}" (decoded ${buffer.length} != reported ${read.bytes})`,
+    );
+    return binaryHint();
+  }
+  // Resolve the MIME from the actual bytes, never the extension: a file
+  // routed here by its `.png`/`.jpg`/... name whose header matches none of
+  // the supported formats is a mislabeled non-image (a renamed .txt/.pdf).
+  // Refuse it (and any truncated/incomplete image) with the bash hint
+  // instead of shipping bytes the provider would reject as a corrupt image.
+  const mimeType = sniffImageMime(buffer);
+  if (!mimeType || !isCompleteImage(buffer, mimeType)) {
+    return binaryHint();
+  }
+  return buildImageArtifactResult(tc.id, filePath, mimeType, buffer.length, read.base64);
+}
+
+/**
  * Routes a `read_file` call to the code-execution sandbox via the
  * host-provided `readSandboxFile` callback. The sandbox session id and
  * primed file refs come from `tc.codeSessionContext` (emitted by ToolNode
@@ -1223,13 +1450,15 @@ function looksBinary(content: string): boolean {
  * or an instructive error pointing the model at `bash_tool` when the
  * sandbox isn't reachable from this configuration.
  *
- * Two binary guards keep `cat`-on-a-PNG-style mojibake out of the LLM
- * context: (1) an extension precheck that short-circuits known binary
- * types BEFORE any network call, and (2) a NUL-byte content sniff after
- * the read for unknown extensions. The codeapi `/exec` transport is JSON,
- * which already lossily down-converts non-UTF-8 stdout to replacement
- * characters — the bytes are unrecoverable here, so the goal is to fail
- * fast with an instructive message rather than ship garbage.
+ * Supported raster images (`.png/.jpg/.jpeg/.gif/.webp`) take a dedicated
+ * base64 read path (`handleSandboxImageRead`) so the model can actually see
+ * them. Two binary guards then keep `cat`-on-a-PNG-style mojibake out of the
+ * LLM context for everything else: (1) an extension precheck that short-
+ * circuits known binary types BEFORE any network call, and (2) a NUL-byte
+ * content sniff after the read for unknown extensions. The codeapi `/exec`
+ * transport is JSON, which lossily down-converts non-UTF-8 `cat` stdout to
+ * replacement characters — text bytes are unrecoverable there, so the goal
+ * is to fail fast with an instructive message rather than ship garbage.
  */
 async function handleSandboxFileFallback(
   tc: ToolCallRequest,
@@ -1238,6 +1467,9 @@ async function handleSandboxFileFallback(
   req?: ServerRequest,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
+  if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
+    return handleSandboxImageRead(tc, filePath, ext, options, req);
+  }
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
     return {
       toolCallId: tc.id,
@@ -1263,6 +1495,7 @@ async function handleSandboxFileFallback(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1431,6 +1664,7 @@ async function loadSandboxTextForAuthoring({
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1505,6 +1739,7 @@ async function writeSandboxTextForAuthoring({
       content,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
       ...(req ? { req } : {}),
     });
   } catch (error) {
@@ -1710,6 +1945,64 @@ function mergeActiveSkillNames(
     }
   }
   return names.size > 0 ? names : undefined;
+}
+
+/**
+ * True for MCP tools on an ephemeral request-scoped connection (runtime body
+ * placeholders), tagged in `createToolInstance`. Their connection is torn down
+ * at request end, so they must run in the foreground rather than be backgrounded.
+ */
+function toolRequiresEphemeralConnection(tool: StructuredToolInterface | undefined): boolean {
+  return (
+    (tool as (StructuredToolInterface & { mcpRequiresEphemeralConnection?: boolean }) | undefined)
+      ?.mcpRequiresEphemeralConnection === true
+  );
+}
+
+const EMPTY_BACKGROUND_TOOL_SET: ReadonlySet<string> = new Set();
+
+/**
+ * Authenticated user id for background-task scoping. The in-repo routes merge
+ * `req` into the tool-execute configurable, but external hosts of the exported
+ * OpenAI-compatible service inject their own `loadTools` and may not — fall
+ * back to the run configurable's user identity so tasks are never registered
+ * under an empty user id (which would collapse isolation to conversationId).
+ */
+function resolveBackgroundUserId(configurable: Record<string, unknown> | undefined): string {
+  const req = configurable?.req as ServerRequest | undefined;
+  if (req?.user?.id) {
+    return req.user.id;
+  }
+  const userId = configurable?.user_id;
+  if (typeof userId === 'string' && userId !== '') {
+    return userId;
+  }
+  const user = configurable?.user;
+  if (typeof user === 'string') {
+    return user;
+  }
+  const idFromUser = (user as { id?: string } | undefined)?.id;
+  return typeof idFromUser === 'string' ? idFromUser : '';
+}
+
+/**
+ * True when the tool's own schema declares `run_in_background` (zod shape or
+ * raw JSON schema), i.e. the parameter belongs to the tool rather than being
+ * host-injected — such a tool must receive the argument untouched.
+ */
+function toolDeclaresRunInBackgroundParam(tool: StructuredToolInterface): boolean {
+  const schema = (
+    tool as StructuredToolInterface & {
+      schema?: { shape?: Record<string, unknown>; properties?: Record<string, unknown> };
+    }
+  ).schema;
+  if (schema == null) {
+    return false;
+  }
+  return (
+    schema.shape?.[RUN_IN_BACKGROUND_ARG] != null ||
+    schema.properties?.[RUN_IN_BACKGROUND_ARG] != null
+  );
 }
 
 function mergeToolConfigurables(
@@ -2928,17 +3221,13 @@ async function handleReadFileCall(
 
       // Return images/PDFs as artifacts
       if (IMAGE_MIMES.has(file.mimeType) && buffer.length <= MAX_BINARY_BYTES) {
-        const base64 = buffer.toString('base64');
-        return {
-          toolCallId: tc.id,
-          status: 'success',
-          content: `Image: ${args.path} (${buffer.length} bytes, ${file.mimeType})`,
-          artifact: {
-            content: [
-              { type: 'image_url', image_url: { url: `data:${file.mimeType};base64,${base64}` } },
-            ],
-          },
-        };
+        return buildImageArtifactResult(
+          tc.id,
+          args.path,
+          file.mimeType,
+          buffer.length,
+          buffer.toString('base64'),
+        );
       }
 
       // TODO: PDF artifact support requires a document content block path
@@ -3217,8 +3506,181 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
+            /**
+             * Background tool calls. The set of tools that received the injected
+             * `run_in_background` param is threaded per-agent from `initializeAgent`
+             * via `configurable.backgroundToolNames` (a reliable channel, unlike
+             * `toolRegistry` which only reaches the executor for PTC/tool_search).
+             * A non-empty set is the exact condition under which the run registered
+             * the poll tool and the model could have been shown the param, so it
+             * also gates the `check_background_task` interception and enforces the
+             * per-tool opt-in (a tool not in the set never had the param).
+             */
+            const backgroundToolNames = mergedConfigurable?.backgroundToolNames as
+              | string[]
+              | undefined;
+            const backgroundEnabledForRun = (backgroundToolNames?.length ?? 0) > 0;
+            const backgroundToolSet: ReadonlySet<string> = backgroundEnabledForRun
+              ? new Set(backgroundToolNames)
+              : EMPTY_BACKGROUND_TOOL_SET;
+            const backgroundReq = backgroundEnabledForRun
+              ? (mergedConfigurable?.req as ServerRequest | undefined)
+              : undefined;
+            const backgroundUserId = backgroundEnabledForRun
+              ? resolveBackgroundUserId(mergedConfigurable)
+              : '';
+            const backgroundConversationId = backgroundEnabledForRun
+              ? (((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+                (mergedConfigurable?.thread_id as string | undefined) ??
+                (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
+                '')
+              : '';
+
+            /**
+             * Registers the task, returns a synthetic handle immediately, and
+             * runs the real tool as a floating promise whose result lands in the
+             * registry for `check_background_task` to collect. Idempotent by
+             * `toolCallId` so graph re-execution (resume/replay) never double-fires.
+             */
+            const backgroundRunId = (metadata as Record<string, unknown>)?.run_id as
+              | string
+              | undefined;
+            const dispatchBackgroundToolCall = (tc: ToolCallRequest): ToolExecuteResult => {
+              /** A tool that failed to load must error immediately (matching the
+               *  foreground path) — a synthetic "started" handle would tell the
+               *  model a side effect is in flight that never executed. */
+              const tool = toolMap.get(tc.name);
+              if (!tool) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'error' as const,
+                  content: '',
+                  errorMessage: `Tool ${tc.name} not found`,
+                };
+              }
+              const created = backgroundTaskRegistry.create({
+                userId: backgroundUserId,
+                conversationId: backgroundConversationId,
+                toolCallId: tc.id,
+                toolName: tc.name,
+                /** Scope idempotency to the agent + run + turn so a later turn's
+                 *  or a second agent's repeated provider id (e.g. `call_0`)
+                 *  starts a fresh task instead of colliding. */
+                agentId,
+                runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+              });
+              if ('atCapacity' in created) {
+                return {
+                  toolCallId: tc.id,
+                  status: 'success' as const,
+                  content: buildBackgroundCapacityContent(tc.name),
+                };
+              }
+              const { task, isNew } = created;
+              if (isNew) {
+                const strippedArgs = stripRunInBackgroundArg(tc.args);
+                void (async () => {
+                  try {
+                    const result = (await tool.invoke(normalizeToolInvokeArgs(strippedArgs, tool), {
+                      toolCall: { id: tc.id, stepId: tc.stepId, turn: tc.turn },
+                      configurable: mergedConfigurable,
+                      metadata,
+                    } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
+                    /** Hold any artifact (images, files, UI resources,
+                     *  citations) on the task instead of routing it through
+                     *  this dispatch turn's callback: a slow background call
+                     *  resolves after the turn finalized, when its
+                     *  artifactPromises are already awaited and the stream is
+                     *  closed, so that push would be silently dropped. The poll
+                     *  turn delivers it live in `check_background_task`. */
+                    backgroundTaskRegistry.complete(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      { content: result.content, artifact: result.artifact },
+                    );
+                  } catch (toolError) {
+                    const { message } = getSafeToolError(toolError);
+                    backgroundTaskRegistry.fail(
+                      backgroundUserId,
+                      backgroundConversationId,
+                      task.id,
+                      message,
+                    );
+                  }
+                })();
+              }
+              return {
+                toolCallId: tc.id,
+                status: 'success' as const,
+                content: buildBackgroundHandleContent(task),
+              };
+            };
+
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
+                if (backgroundEnabledForRun && tc.name === CHECK_BACKGROUND_TASK_NAME) {
+                  const pollContent = runCheckBackgroundTask({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  /** Deliver a completed task's artifact through THIS live poll
+                   *  turn's callback (once): the tool's own turn finalized before
+                   *  the artifact resolved, so this is where it can be persisted. */
+                  if (toolEndCallback) {
+                    const pending = claimBackgroundArtifact({
+                      userId: backgroundUserId,
+                      conversationId: backgroundConversationId,
+                      args: tc.args,
+                    });
+                    if (pending) {
+                      try {
+                        await toolEndCallback(
+                          {
+                            output: {
+                              name: pending.toolName,
+                              tool_call_id: tc.id,
+                              content: pending.content,
+                              artifact: pending.artifact,
+                            },
+                          },
+                          (metadata ?? {}) as ToolEndCallbackMetadata,
+                        );
+                      } catch (callbackError) {
+                        /** Only synchronous callback throws land here (e.g. a
+                         *  malformed artifact shape); the callback's downstream
+                         *  persistence is fire-and-forget, so a storage failure
+                         *  is at-most-once — the same semantics as a foreground
+                         *  artifact. */
+                        restoreBackgroundArtifact({
+                          userId: backgroundUserId,
+                          conversationId: backgroundConversationId,
+                          taskId: pending.taskId,
+                          artifact: pending.artifact,
+                        });
+                        logger.warn(
+                          '[background] toolEndCallback error delivering artifact on poll:',
+                          callbackError,
+                        );
+                      }
+                    }
+                  }
+                  return reportResult({
+                    toolCallId: tc.id,
+                    status: 'success' as const,
+                    content: pollContent,
+                  });
+                }
+
+                if (
+                  backgroundToolSet.has(tc.name) &&
+                  isBackgroundRequested(tc.args) &&
+                  !toolRequiresEphemeralConnection(toolMap.get(tc.name))
+                ) {
+                  return reportResult(dispatchBackgroundToolCall(tc));
+                }
+
                 const execute = async (
                   sandboxContext?: SandboxSessionContext,
                 ): Promise<ToolExecuteResult> => {
@@ -3316,6 +3778,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     }
 
+                    /* Sandbox-routed create_file/edit_file return before the
+                     * generic invoke path's marker below, so refresh the warm
+                     * window here. Gated on `isSandboxFileAuthoringCall`:
+                     * skill-path writes and skill/read_file calls on this
+                     * branch may resolve without touching the Code API, and
+                     * under-marking only costs a redundant cold-boot label. */
+                    if (
+                      isSandboxFileAuthoringCall &&
+                      handlerResult.status === 'success' &&
+                      tc.runtimeSessionHint != null &&
+                      tc.runtimeSessionHint !== ''
+                    ) {
+                      void markSandboxReady(tc.runtimeSessionHint);
+                    }
+
                     return handlerResult;
                   }
 
@@ -3339,6 +3816,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       stepId: tc.stepId,
                       turn: tc.turn,
                     };
+
+                    /* Stateful runtime-session hint: the SDK resolves it onto
+                     * the request for execute_code/bash (orthogonal to the
+                     * transient exec-session below — a first call has a hint but
+                     * no session yet). The remote executors read it off
+                     * `config.toolCall._runtime_session_hint`; without this the
+                     * event-driven ON_TOOL_EXECUTE path drops it and every
+                     * conversation collapses onto the Code API's `default`
+                     * session (no per-conversation isolation). */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
+                    }
 
                     if (
                       tc.codeSessionContext &&
@@ -3425,23 +3914,55 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       if (toolRegistry) {
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
-                        const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                        const filteredToolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
                           (t) =>
                             t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.TOOL_SEARCH &&
+                            /* Host-only poll tool: implemented by the ON_TOOL_EXECUTE
+                             * shortcut, not callable from PTC-generated code. */
+                            t.name !== CHECK_BACKGROUND_TASK_NAME &&
                             !fileAuthoringToolNames.has(t.name),
+                        );
+                        /* PTC-generated calls don't go through the host background
+                         * interceptor, so strip the injected `run_in_background`
+                         * param from target schemas (the registry entries were
+                         * mutated to include it) — mirrors the self-spawn path. */
+                        const toolDefs = stripBackgroundFromToolDefinitions(
+                          filteredToolDefs,
+                          mergedConfigurable?.backgroundToolNames as string[] | undefined,
                         );
                         toolCallConfig.toolDefs = toolDefs;
                         toolCallConfig.toolMap = ptcToolMap ?? toolMap;
                       }
                     }
 
-                    const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
-                      toolCall: toolCallConfig,
-                      configurable: mergedConfigurable,
-                      metadata,
-                    } as Record<string, unknown>);
+                    /** Strip the host-only `run_in_background` flag on foreground
+                     *  calls (the model may emit it as `false`, or imitate it from
+                     *  another agent's history on a tool this agent never opted
+                     *  in), so a strict MCP/action schema doesn't reject an
+                     *  undeclared argument. Only a tool whose own schema declares
+                     *  the parameter receives it. */
+                    const foregroundArgs =
+                      backgroundToolSet.has(tc.name) ||
+                      (hasRunInBackgroundArg(tc.args) && !toolDeclaresRunInBackgroundParam(tool))
+                        ? stripRunInBackgroundArg(tc.args)
+                        : tc.args;
+                    const result = await tool.invoke(
+                      normalizeToolInvokeArgs(foregroundArgs, tool),
+                      {
+                        toolCall: toolCallConfig,
+                        configurable: mergedConfigurable,
+                        metadata,
+                      } as Record<string, unknown>,
+                    );
+
+                    /* Only sandbox-bound calls carry a runtime session hint, so
+                     * this refreshes the prewarm module's warm window without
+                     * inspecting tool names. */
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      void markSandboxReady(tc.runtimeSessionHint);
+                    }
 
                     // Code-execution tools emit per-call boilerplate
                     // ("Note: ..." paragraphs and `| <annotation>` per-file

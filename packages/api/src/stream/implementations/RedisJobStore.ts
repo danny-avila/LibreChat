@@ -1,16 +1,23 @@
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
+import type { Agents, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import type {
   SerializableJobData,
+  SteerQueueItem,
   UsageMetadata,
   IJobStore,
   JobStatus,
   JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
-import { isPendingActionStale } from '~/stream/interfaces/IJobStore';
+import {
+  STEER_ENQUEUE_NOT_RUNNING,
+  STEER_QUEUE_MAX_DEPTH,
+  isPendingActionStale,
+} from '~/stream/interfaces/IJobStore';
+import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
+import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
@@ -36,6 +43,30 @@ const JOB_CAS_LUA =
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
+  'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'return 1';
+
+/**
+ * Atomic job (re)creation for the two same-slot keys: reset the steer queue
+ * and write the job hash in ONE script. A `/chat/steer` request can then
+ * never interleave between the queue reset and the hash write — the enqueue
+ * script observes either the old hash (its status guards apply and its list
+ * dies with it) or the fully initialized replacement with an empty queue, so
+ * a steer accepted against one run can never be drained into another.
+ *
+ *   KEYS: [job, steers, parkedSteers]
+ *   ARGV: [ttl, hdelCount, ...hdelFields, ...hsetPairs]
+ */
+const JOB_CREATE_LUA =
+  'redis.call("DEL", KEYS[2]) ' +
+  'redis.call("DEL", KEYS[3]) ' +
+  'local ttl = tonumber(ARGV[1]) ' +
+  'local hdelCount = tonumber(ARGV[2]) ' +
+  'local idx = 3 ' +
+  'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
+  'local hset = {} ' +
+  'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'redis.call("HSET", KEYS[1], unpack(hset)) ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'return 1';
 
@@ -104,8 +135,121 @@ const RUNSTEPS_SAVE_LUA =
   'redis.call("EXPIRE", KEYS[1], target) ' +
   'return 1';
 
+/**
+ * Atomically append a steer, guarded on the job hash still being `running`
+ * AND the queue not being closed by a terminal drain (`steersClosed` field,
+ * set by {@link STEER_CLOSE_DRAIN_LUA}, cleared on createJob). Both keys share
+ * the {streamId} hash tag (single slot), so the script is atomic on cluster
+ * too — a steer can never land on a completed/aborted/finalizing job, and the
+ * depth cap can't be raced past by concurrent enqueues.
+ *
+ *   KEYS: [job, steers]
+ *   ARGV: [itemJson, ttl, maxDepth]
+ *   Returns: new depth, -1 (not running / closed), or -2 (queue full)
+ */
+const STEER_ENQUEUE_LUA =
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
+  'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
+  'redis.call("RPUSH", KEYS[2], ARGV[1]) ' +
+  'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
+  'return redis.call("LLEN", KEYS[2])';
+
+/**
+ * Atomic take-all: read the whole queue FIFO and delete the key in one step,
+ * so two concurrent drains can never both deliver the same steer. When an
+ * expected `createdAt` is supplied, the drain is additionally guarded against
+ * job replacement INSIDE the script — a stale run's hook can never consume a
+ * replacement job's queue (the check-then-drain would otherwise race
+ * `createJob`).
+ *
+ *   KEYS: [job, steers]
+ *   ARGV: [expectedCreatedAt or ""]
+ *   Returns: array of item JSON strings (possibly empty)
+ */
+const STEER_DRAIN_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'redis.call("DEL", KEYS[2]) ' +
+  'return items';
+
+/**
+ * Remove ONE queued steer by id without disturbing the rest: the list is
+ * rebuilt atomically, so a concurrent drain either delivers the steer or the
+ * cancel wins — never a torn queue. ARGV[1] is the JSON fragment
+ * `"steerId":"<id>"` matched as a plain substring against each serialized
+ * item (ids are server-generated UUIDs, no escaping ambiguity). The list TTL
+ * survives the rebuild.
+ *
+ *   KEYS: [steers]
+ *   ARGV: [steerIdFragment]
+ *   Returns: 1 when removed, 0 when not found
+ */
+const STEER_REMOVE_LUA =
+  'local items = redis.call("LRANGE", KEYS[1], 0, -1) ' +
+  'if #items == 0 then return 0 end ' +
+  'local kept = {} ' +
+  'local removed = 0 ' +
+  'for i = 1, #items do ' +
+  'if removed == 0 and string.find(items[i], ARGV[1], 1, true) then removed = 1 ' +
+  'else kept[#kept + 1] = items[i] end ' +
+  'end ' +
+  'if removed == 0 then return 0 end ' +
+  'local ttl = redis.call("PTTL", KEYS[1]) ' +
+  'redis.call("DEL", KEYS[1]) ' +
+  'if #kept > 0 then ' +
+  'redis.call("RPUSH", KEYS[1], unpack(kept)) ' +
+  'if ttl > 0 then redis.call("PEXPIRE", KEYS[1], ttl) end ' +
+  'end ' +
+  'return 1';
+
+/**
+ * Claim-on-read for parked steers: return AND delete in one atomic step so a
+ * second reload cannot re-mint chips the user already dismissed. The owner
+ * gate runs INSIDE the same step — a payload not containing the requester's
+ * `"userId":"…"` fragment (ARGV[1], plain-substring match) returns the empty
+ * sentinel WITHOUT deleting, so a non-owner probe can never destroy the
+ * owner's recovery, even transiently. Single key (cluster-safe); GETDEL is
+ * avoided only for older-Redis compatibility.
+ *
+ *   KEYS: [parkedSteers]
+ *   ARGV: [ownerFragment]
+ *   Returns: the parked payload JSON, '' when not the owner, or nil
+ */
+const CLAIM_PARKED_LUA =
+  'local v = redis.call("GET", KEYS[1]) ' +
+  'if not v then return v end ' +
+  'if not string.find(v, ARGV[1], 1, true) then return "" end ' +
+  'redis.call("DEL", KEYS[1]) ' +
+  'return v';
+
+/**
+ * Terminal close-then-drain in one atomic step: mark the queue closed on the
+ * job hash (only when the hash still exists — a bare HSET would resurrect a
+ * deleted job as a stray hash), then take the whole queue. Once closed,
+ * {@link STEER_ENQUEUE_LUA} rejects, so a steer POST racing finalization can
+ * never be ACKed after the last drain and then silently cleared. The same
+ * expected-`createdAt` guard as {@link STEER_DRAIN_LUA} keeps a stale run's
+ * finalization from closing (and stealing) a replacement job's queue.
+ *
+ *   KEYS: [job, steers]
+ *   ARGV: [expectedCreatedAt or ""]
+ *   Returns: array of item JSON strings (possibly empty)
+ */
+const STEER_CLOSE_DRAIN_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
+  'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], "steersClosed", "1") end ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'redis.call("DEL", KEYS[2]) ' +
+  'return items';
+
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
 const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
+
+/** Recovery window (seconds) for parked steers when `completedTtl` is
+ *  configured to 0 — Redis rejects `EX 0`, which would silently kill
+ *  park-based recovery. */
+const PARKED_RECOVERY_TTL_S: number = 300;
 
 /**
  * Key prefixes for Redis storage.
@@ -124,6 +268,11 @@ const KEYS = {
   chunks: (streamId: string) => `stream:{${streamId}}:chunks`,
   /** Run steps: stream:{streamId}:runsteps */
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
+  /** Pending steer messages (FIFO list): stream:{streamId}:steers */
+  steers: (streamId: string) => `stream:{${streamId}}:steers`,
+  /** Parked terminally-drained steers (own TTL — must outlive the job hash,
+   *  which the default completeJob path deletes immediately) */
+  parkedSteers: (streamId: string) => `stream:{${streamId}}:parked`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
@@ -215,12 +364,16 @@ export class RedisJobStore implements IJobStore {
    * For cross-replica abort, the abort handler falls back to text-based token counting.
    */
   private localCollectedUsageCache = new Map<string, UsageMetadata[]>();
+  /** Same-instance HOST content view (includes host-authored parts like
+   *  steers, which the SDK graph never sees). Preferred over the graph cache
+   *  on local reads; cross-instance reads reconstruct from chunks. */
+  private localContentParts = new Map<string, WeakRef<Agents.MessageContentComplex[]>>();
 
   /** Cleanup interval in ms (1 minute) */
   private cleanupIntervalMs = 60000;
 
   constructor(redis: Redis | Cluster, options?: RedisJobStoreOptions) {
-    this.redis = redis;
+    this.redis = instrumentIORedisClient(redis, RedisUseCases.GENERATION_STREAM);
     this.ttl = {
       completed: options?.completedTtl ?? DEFAULT_TTL.completed,
       running: options?.runningTtl ?? DEFAULT_TTL.running,
@@ -292,14 +445,32 @@ export class RedisJobStore implements IJobStore {
       // its own discovery would otherwise inherit the prior run's tool names and force-load
       // deferred tools it never discovered on resume.
       'discoveredTools',
+      // A replacement must start with an open steer channel — the closed flag
+      // belongs to the finalized run this hash is being reused from.
+      'steersClosed',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
+    // Steer-queue reset + job-hash write happen ATOMICALLY (same-slot Lua):
+    // a steer POST can never land between them, so a replacement can neither
+    // inherit the replaced run's undrained steers nor lose/steal a steer
+    // 202-accepted against either run (see JOB_CREATE_LUA).
+    const hsetPairs = Object.entries(this.serializeJob(job)).flat();
+    await this.redis.eval(
+      JOB_CREATE_LUA,
+      3,
+      key,
+      KEYS.steers(streamId),
+      KEYS.parkedSteers(streamId),
+      String(this.ttl.running),
+      String(staleHitlFields.length),
+      ...staleHitlFields,
+      ...hsetPairs,
+    );
+    // Set-membership bookkeeping lives on other slots; ordering after the
+    // atomic hash write is safe (scanners tolerate momentary lag).
     if (this.isCluster) {
-      await this.redis.hset(key, this.serializeJob(job));
-      await this.redis.hdel(key, ...staleHitlFields);
-      await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
@@ -308,9 +479,6 @@ export class RedisJobStore implements IJobStore {
       }
     } else {
       const pipeline = this.redis.pipeline();
-      pipeline.hset(key, this.serializeJob(job));
-      pipeline.hdel(key, ...staleHitlFields);
-      pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);
@@ -373,6 +541,7 @@ export class RedisJobStore implements IJobStore {
       await this.redis.expire(key, this.ttl.completed);
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
+      await this.redis.del(KEYS.steers(streamId));
 
       if (this.ttl.chunksAfterComplete === 0) {
         await this.redis.del(KEYS.chunks(streamId));
@@ -394,6 +563,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.expire(key, this.ttl.completed);
       pipeline.srem(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
+      pipeline.del(KEYS.steers(streamId));
 
       if (this.ttl.chunksAfterComplete === 0) {
         pipeline.del(KEYS.chunks(streamId));
@@ -501,6 +671,10 @@ export class RedisJobStore implements IJobStore {
       }
       await this.redis.expire(KEYS.chunks(streamId), ttl);
       await this.redis.expire(KEYS.runSteps(streamId), ttl);
+      // Steers queued before a pause must survive the whole approval window
+      // (they inject at the first tool boundary after resume). EXPIRE on a
+      // missing key is a no-op.
+      await this.redis.expire(KEYS.steers(streamId), ttl);
     } else {
       const pipeline = this.redis.pipeline();
       if (remSet) {
@@ -511,6 +685,7 @@ export class RedisJobStore implements IJobStore {
       }
       pipeline.expire(KEYS.chunks(streamId), ttl);
       pipeline.expire(KEYS.runSteps(streamId), ttl);
+      pipeline.expire(KEYS.steers(streamId), ttl);
       await pipeline.exec();
     }
     return true;
@@ -528,6 +703,7 @@ export class RedisJobStore implements IJobStore {
 
   async deleteJob(streamId: string): Promise<void> {
     this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
     const job = await this.getJob(streamId);
     const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
@@ -536,6 +712,7 @@ export class RedisJobStore implements IJobStore {
 
   private async deleteJobInternal(streamId: string, userJobsKey: string | null): Promise<void> {
     this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
 
     if (this.isCluster) {
@@ -543,6 +720,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.job(streamId));
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
+      pipeline.del(KEYS.steers(streamId));
       await pipeline.exec();
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
@@ -554,6 +732,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.job(streamId));
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
+      pipeline.del(KEYS.steers(streamId));
       pipeline.srem(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
@@ -610,6 +789,7 @@ export class RedisJobStore implements IJobStore {
             await this.redis.srem(KEYS.runningJobs, streamId);
             await this.redis.srem(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -618,6 +798,7 @@ export class RedisJobStore implements IJobStore {
             await this.redis.srem(KEYS.runningJobs, streamId);
             await this.redis.sadd(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -632,6 +813,7 @@ export class RedisJobStore implements IJobStore {
               await this.redis.srem(KEYS.userJobs(job.userId, job.tenantId), streamId);
             }
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -642,6 +824,14 @@ export class RedisJobStore implements IJobStore {
           const liveSince = job.lastActiveAt ?? job.createdAt;
           if (now - liveSince > this.ttl.running * 1000) {
             logger.warn(`[RedisJobStore] Cleaning up stale job: ${streamId}`);
+            // A crashed/hung run never reached a finalization drain — park the
+            // 202-accepted queue before the delete drops it, so the owner can
+            // still recover the words via /chat/status.
+            await this.parkSteerSnapshot(
+              streamId,
+              job,
+              await this.snapshotParkableSteers(streamId),
+            );
             const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
             await this.deleteJobInternal(streamId, userJobsKey);
             return 1;
@@ -682,6 +872,7 @@ export class RedisJobStore implements IJobStore {
           if (!job) {
             await this.redis.srem(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
+            this.localContentParts.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
@@ -700,7 +891,12 @@ export class RedisJobStore implements IJobStore {
           // transitionStatus runs the terminal content cleanup (sets, chunks,
           // run-steps, userJobs, completed TTL).
           if (isPendingActionStale(job)) {
-            await this.transitionStatus(streamId, {
+            // Snapshot 202-accepted steers BEFORE the terminal cleanup DELs the
+            // queue key; enqueue is frozen while paused, so this is exact.
+            // Parked only if the CAS wins — a lost CAS means the run resumed
+            // and the live queue must stay untouched.
+            const parkableSteers = await this.snapshotParkableSteers(streamId);
+            const expired = await this.transitionStatus(streamId, {
               from: 'requires_action',
               to: 'aborted',
               clear: ['pendingAction', 'pendingActionId'],
@@ -715,6 +911,9 @@ export class RedisJobStore implements IJobStore {
               // to protect — so it falls back to the status-only check.)
               expectActionId: job.pendingAction?.actionId,
             });
+            if (expired) {
+              await this.parkSteerSnapshot(streamId, job, parkableSteers);
+            }
             return 1;
           }
 
@@ -853,13 +1052,47 @@ export class RedisJobStore implements IJobStore {
     this.localGraphCache.set(streamId, new WeakRef(graph));
   }
 
+  /** Splice-inserts host-authored steer parts (from `on_steer_applied`
+   *  chunks) into an SDK-graph content view, ascending by recorded index so
+   *  each host-view position lands exactly where live clients saw it. */
+  private async overlayHostSteerParts(
+    streamId: string,
+    parts: Agents.MessageContentComplex[],
+  ): Promise<Agents.MessageContentComplex[]> {
+    const chunks = await this.getChunks(streamId);
+    if (chunks.length === 0) {
+      return parts;
+    }
+    const steers: Array<{ index: number; part: Agents.MessageContentComplex }> = [];
+    for (const chunk of chunks) {
+      const event = chunk as { event?: string; data?: unknown };
+      if (event.event !== 'on_steer_applied') {
+        continue;
+      }
+      const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+      if (typeof steerData.index === 'number' && steerData.part != null) {
+        steers.push({ index: steerData.index, part: steerData.part });
+      }
+    }
+    if (steers.length === 0) {
+      return parts;
+    }
+    steers.sort((a, b) => a.index - b.index);
+    const merged = [...parts];
+    for (const steer of steers) {
+      merged.splice(Math.min(steer.index, merged.length), 0, steer.part);
+    }
+    return merged;
+  }
+
   /**
-   * No-op for Redis - content parts are reconstructed from chunks.
-   * Metadata (agentId, groupId) is embedded directly on content parts by the agent runtime.
+   * Cache the HOST-authored content array (WeakRef; owned by the run closure).
+   * This is the authoritative same-instance view: host-only parts (steers)
+   * live here but never inside the SDK graph, so preferring it over the graph
+   * cache keeps same-instance reconnect/abort/status reads steer-complete.
    */
-  setContentParts(): void {
-    // Content parts are reconstructed from chunks during getContentParts
-    // No separate storage needed
+  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
+    this.localContentParts.set(streamId, new WeakRef(contentParts));
   }
 
   /**
@@ -889,18 +1122,63 @@ export class RedisJobStore implements IJobStore {
    * @param streamId - The stream identifier
    * @returns Content parts array or null if not found
    */
+  /**
+   * Read from a cached {@link StandardGraph}, tolerating one disposed after a HITL
+   * pause. When a paused turn's client is disposed, `disposeClient`
+   * (api/server/cleanup.js `graphPropsToClean`) NULLS the graph's internal arrays
+   * (`messages`, `contentData`) for GC — but this store still holds a WeakRef to
+   * that object. Calling `getContentParts()` (`this.messages.slice()`) or
+   * `getRunSteps()` (`[...this.contentData]`) on it then throws
+   * ("Cannot read properties of null (reading 'slice')" / "not iterable"), which
+   * aborts the resume (#14247). Swallow it, drop the stale entry, and let the
+   * caller fall back to durable chunk reconstruction. (The SDK-side null guard in
+   * `StandardGraph` is a separate agents fix.)
+   */
+  private readCachedGraph<T>(
+    streamId: string,
+    graph: StandardGraph,
+    read: (graph: StandardGraph) => T,
+  ): T | null {
+    try {
+      return read(graph);
+    } catch (err) {
+      logger.debug(
+        `[RedisJobStore] Cached graph for ${streamId} is unusable (likely disposed); falling back to reconstruction:`,
+        err instanceof Error ? err.message : err,
+      );
+      this.localGraphCache.delete(streamId);
+      return null;
+    }
+  }
+
   async getContentParts(streamId: string): Promise<{
     content: Agents.MessageContentComplex[];
   } | null> {
-    // 1. Try local graph cache first (fast path for same-instance reconnect)
+    // 1. Prefer the HOST content array (same-instance fast path): it already
+    // contains host-authored steer parts the SDK graph never sees.
+    const hostRef = this.localContentParts.get(streamId);
+    if (hostRef) {
+      const hostParts = hostRef.deref();
+      if (hostParts && hostParts.length > 0) {
+        return { content: hostParts };
+      }
+      if (!hostParts) {
+        this.localContentParts.delete(streamId);
+      }
+    }
+
+    // 2. Local graph cache (runs wired before setContentParts): the SDK view
+    // lacks host-authored steer parts, so overlay them from the chunk log —
+    // insert (not assign): the graph array is UNSHIFTED, while recorded steer
+    // indices are host-view positions that already account for prior steers.
     const graphRef = this.localGraphCache.get(streamId);
     if (graphRef) {
       const graph = graphRef.deref();
       if (graph) {
-        const localParts = graph.getContentParts();
+        const localParts = this.readCachedGraph(streamId, graph, (g) => g.getContentParts());
         if (localParts && localParts.length > 0) {
           return {
-            content: localParts,
+            content: await this.overlayHostSteerParts(streamId, localParts),
           };
         }
       } else {
@@ -930,7 +1208,23 @@ export class RedisJobStore implements IJobStore {
 
     for (const chunk of chunks) {
       const event = chunk as { event?: string; data?: unknown };
-      if (!event.event || !event.data || !validEvents.has(event.event)) {
+      if (!event.event || !event.data) {
+        continue;
+      }
+
+      // Steer parts are host-authored (the SDK aggregator doesn't know the
+      // event), so splice them at their recorded index — SDK events after the
+      // injection were emitted with already-shifted indices, so both sources
+      // land disjoint.
+      if (event.event === 'on_steer_applied') {
+        const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof steerData.index === 'number' && steerData.part != null) {
+          contentParts[steerData.index] = steerData.part;
+        }
+        continue;
+      }
+
+      if (!validEvents.has(event.event)) {
         continue;
       }
 
@@ -967,7 +1261,7 @@ export class RedisJobStore implements IJobStore {
     if (graphRef) {
       const graph = graphRef.deref();
       if (graph) {
-        const localSteps = graph.getRunSteps();
+        const localSteps = this.readCachedGraph(streamId, graph, (g) => g.getRunSteps());
         if (localSteps && localSteps.length > 0) {
           return localSteps;
         }
@@ -996,6 +1290,7 @@ export class RedisJobStore implements IJobStore {
   clearContentState(streamId: string): void {
     // Clear local caches immediately
     this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
 
     // Fire and forget - async cleanup for Redis
@@ -1012,6 +1307,140 @@ export class RedisJobStore implements IJobStore {
     pipeline.del(KEYS.chunks(streamId));
     pipeline.del(KEYS.runSteps(streamId));
     await pipeline.exec();
+  }
+
+  // ===== Steering Queue Methods =====
+
+  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+    const result = await this.redis.eval(
+      STEER_ENQUEUE_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      JSON.stringify(item),
+      String(this.ttl.running),
+      String(STEER_QUEUE_MAX_DEPTH),
+    );
+    if (typeof result !== 'number') {
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+    return result;
+  }
+
+  async drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.eval(
+      STEER_DRAIN_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
+    return this.parseSteerItems(raw);
+  }
+
+  async closeAndDrainSteers(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.eval(
+      STEER_CLOSE_DRAIN_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
+    return this.parseSteerItems(raw);
+  }
+
+  async peekSteers(streamId: string): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.lrange(KEYS.steers(streamId), 0, -1);
+    return this.parseSteerItems(raw);
+  }
+
+  async clearSteers(streamId: string): Promise<void> {
+    await this.redis.del(KEYS.steers(streamId));
+  }
+
+  async removeSteer(streamId: string, steerId: string): Promise<boolean> {
+    const removed = (await this.redis.eval(
+      STEER_REMOVE_LUA,
+      1,
+      KEYS.steers(streamId),
+      `"steerId":"${steerId}"`,
+    )) as number;
+    return removed === 1;
+  }
+
+  async parkSteers(streamId: string, payload: string): Promise<void> {
+    const ttl = this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S;
+    await this.redis.set(KEYS.parkedSteers(streamId), payload, 'EX', ttl);
+  }
+
+  /** Best-effort FIFO snapshot of the queued steers as client projections. */
+  private async snapshotParkableSteers(streamId: string): Promise<TPendingSteer[]> {
+    try {
+      return (await this.peekSteers(streamId)).map(toPendingSteer);
+    } catch (err) {
+      logger.warn(`[RedisJobStore] Failed to snapshot steers for parking ${streamId}:`, err);
+      return [];
+    }
+  }
+
+  /**
+   * Parks an owner-carrying snapshot so /chat/status can recover 202-accepted
+   * steers after the job record is gone (approval expiry, stale-running reap).
+   * Best-effort: a park failure must not block the cleanup path that called it.
+   */
+  private async parkSteerSnapshot(
+    streamId: string,
+    job: SerializableJobData,
+    steers: TPendingSteer[],
+  ): Promise<void> {
+    if (steers.length === 0) {
+      return;
+    }
+    try {
+      await this.parkSteers(
+        streamId,
+        JSON.stringify({
+          userId: job.userId,
+          ...(job.tenantId != null && { tenantId: job.tenantId }),
+          steers,
+        }),
+      );
+    } catch (err) {
+      logger.warn(`[RedisJobStore] Failed to park steers ${streamId}:`, err);
+    }
+  }
+
+  async claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined> {
+    const claimed = (await this.redis.eval(
+      CLAIM_PARKED_LUA,
+      1,
+      KEYS.parkedSteers(streamId),
+      ownerFragment,
+    )) as string | null;
+    // '' is the non-owner sentinel (payload left in place) — reads as "nothing".
+    return claimed ? claimed : undefined;
+  }
+
+  /** A malformed entry is dropped (logged) rather than poisoning the drain. */
+  private parseSteerItems(raw: unknown): SteerQueueItem[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const items: SteerQueueItem[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') {
+        continue;
+      }
+      try {
+        items.push(JSON.parse(entry) as SteerQueueItem);
+      } catch {
+        logger.warn('[RedisJobStore] Dropping malformed steer queue entry');
+      }
+    }
+    return items;
   }
 
   /**

@@ -543,6 +543,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         id: agent.id,
         name: agent.name,
         description: agent.description,
+        conversation_starters: agent.conversation_starters,
         avatar: agent.avatar,
         author: agent.author,
         provider: agent.provider,

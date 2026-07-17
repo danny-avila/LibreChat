@@ -1372,6 +1372,89 @@ describe('bedrockInputParser', () => {
     });
   });
 
+  // Regression for #14029: `system` is a reserved top-level Converse field, so a
+  // copy left inside additionalModelRequestFields makes Bedrock reject the request
+  // ("The additional field system conflicts with an existing field").
+  describe('system field (issue #14029)', () => {
+    test('promotes system to root without duplicating it in additionalModelRequestFields', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'some-other-model',
+        system: 'You are a helpful assistant.',
+      }) as Record<string, unknown>;
+      expect((parsed.additionalModelRequestFields as Record<string, unknown>).system).toBe(
+        'You are a helpful assistant.',
+      );
+
+      const output = bedrockOutputParser(parsed);
+      expect(output.system).toBe('You are a helpful assistant.');
+      expect(output.additionalModelRequestFields).toBeUndefined();
+    });
+
+    test('strips system from additionalModelRequestFields while preserving other fields', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-7-sonnet',
+        system: 'You are a helpful assistant.',
+      }) as Record<string, unknown>;
+
+      const output = bedrockOutputParser(parsed);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(output.system).toBe('You are a helpful assistant.');
+      expect(amrf?.system).toBeUndefined();
+      expect(amrf?.thinking).toBeDefined();
+    });
+
+    // DocumentType permits scalars, so a saved preset can carry a non-object
+    // additionalModelRequestFields; the `system` cleanup must not throw on it.
+    test.each([['a-scalar-string'], [42], [true]])(
+      'tolerates a scalar additionalModelRequestFields (%p) without throwing',
+      (scalar) => {
+        expect(() =>
+          bedrockOutputParser({
+            model: 'some-other-model',
+            additionalModelRequestFields: scalar,
+          }),
+        ).not.toThrow();
+      },
+    );
+
+    // `system` is not the only reserved name: the input parser's catch-all routes
+    // ANY unknown preset key into additionalModelRequestFields, and each reserved
+    // Converse field collides the same way when the request sends it top-level.
+    test.each([['messages'], ['modelId'], ['toolConfig'], ['inferenceConfig']])(
+      'strips reserved Converse field %p from additionalModelRequestFields',
+      (reserved) => {
+        const parsed = bedrockInputParser.parse({
+          model: 'some-other-model',
+          [reserved]: { some: 'value' },
+        }) as Record<string, unknown>;
+        expect(
+          (parsed.additionalModelRequestFields as Record<string, unknown>)[reserved],
+        ).toBeDefined();
+
+        const output = bedrockOutputParser(parsed);
+        const amrf = output.additionalModelRequestFields as Record<string, unknown> | undefined;
+        expect(amrf?.[reserved]).toBeUndefined();
+      },
+    );
+
+    test('keeps non-reserved passthrough fields intact while stripping reserved ones', () => {
+      const output = bedrockOutputParser({
+        model: 'some-other-model',
+        additionalModelRequestFields: {
+          system: 'dup',
+          messages: [],
+          anthropic_beta: ['context-1m-2025-08-07'],
+          top_k: 40,
+        },
+      });
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.system).toBeUndefined();
+      expect(amrf.messages).toBeUndefined();
+      expect(amrf.anthropic_beta).toEqual(['context-1m-2025-08-07']);
+      expect(amrf.top_k).toBe(40);
+    });
+  });
+
   describe('Model switching cleanup', () => {
     test('should strip anthropic_beta when switching from Anthropic to non-Anthropic model', () => {
       const staleConversationData = {
