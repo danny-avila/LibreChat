@@ -634,8 +634,17 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
 
-      fileStream.on('error', (streamError) => {
+      fileStream.once('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+        if (res.headersSent || res.writableEnded) {
+          return res.destroy(streamError);
+        }
+
+        if (streamError.code === 'ENOENT') {
+          return res.status(404).send('File not found');
+        }
+
+        return res.status(500).send('Error downloading file');
       });
 
       setHeaders();

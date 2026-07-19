@@ -819,6 +819,34 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
+    it('returns 404 when the download stream cannot find the file', async () => {
+      const userFileId = uuidv4();
+      const streamError = Object.assign(new Error('file not found'), { code: 'ENOENT' });
+      const getDownloadStream = jest.fn().mockResolvedValue(
+        new Readable({
+          read() {
+            this.destroy(streamError);
+          },
+        }),
+      );
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'missing.txt',
+        filepath: '/uploads/missing.txt',
+        bytes: 1,
+        type: 'text/plain',
+        source: FileSources.local,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(404);
+      expect(response.body.toString()).toBe('File not found');
+    });
+
     it('streams proxied downloads by default when a direct URL is available', async () => {
       const userFileId = uuidv4();
       const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
