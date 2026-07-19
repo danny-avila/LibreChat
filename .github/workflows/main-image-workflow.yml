@@ -21,9 +21,9 @@ jobs:
           - target: api-build
             file: Dockerfile.multi
             image_name: librechat-api
-          - target: node
-            file: Dockerfile
-            image_name: librechat
+#          - target: node
+#            file: Dockerfile
+#            image_name: librechat
 
     steps:
       - name: Checkout
