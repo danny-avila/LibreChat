@@ -593,6 +593,7 @@ const createResponse = async (req, res) => {
           logger,
           mcpManager,
           configServers,
+          user: req.user,
           sharedRunContext: agentScopedContext.get(runAgent.id) ?? '',
         }),
       ),
