@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "update": "node config/update.js",
+    "sync:upstream": "node config/sync.js",
     "add-balance": "node config/add-balance.js",
     "set-balance": "node config/set-balance.js",
     "list-balances": "node config/list-balances.js",
