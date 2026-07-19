@@ -2298,6 +2298,70 @@ describe('normalizeJsonSchema', () => {
     expect(result.properties.name).toEqual({ type: 'string' });
   });
 
+  it('should strip the spec-compliant $schema keyword (MongoDB rejects $-prefixed keys)', () => {
+    const schema = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+      },
+      required: ['title'],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result).not.toHaveProperty('$schema');
+    expect(result.type).toBe('object');
+    expect(result.properties.title).toEqual({ type: 'string' });
+    expect(result.required).toEqual(['title']);
+    // Nothing left behind that MongoDB would reject.
+    expect(Object.keys(result).some((k) => k.startsWith('$'))).toBe(false);
+  });
+
+  it('should strip $-prefixed annotation keywords at all nesting levels', () => {
+    const schema = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      $id: 'urn:tool:create_citation',
+      $comment: 'root comment',
+      type: 'object',
+      properties: {
+        note: {
+          type: 'string',
+          $comment: 'nested comment',
+          $anchor: 'note',
+        },
+        items: {
+          type: 'array',
+          items: { type: 'string', $id: 'urn:item' },
+        },
+      },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result).not.toHaveProperty('$schema');
+    expect(result).not.toHaveProperty('$id');
+    expect(result).not.toHaveProperty('$comment');
+    expect(result.properties.note).toEqual({ type: 'string' });
+    expect(result.properties.items.items).toEqual({ type: 'string' });
+  });
+
+  it('should preserve property names that begin with $', () => {
+    const schema = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        $ref: { type: 'string', description: 'a property literally named $ref' },
+      },
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result).not.toHaveProperty('$schema');
+    // A `$`-prefixed name under `properties` is a data field, not a keyword.
+    expect(result.properties.$ref).toEqual({
+      type: 'string',
+      description: 'a property literally named $ref',
+    });
+  });
+
   it('should strip x-* fields inside oneOf/anyOf/allOf', () => {
     const schema = {
       type: 'object',
