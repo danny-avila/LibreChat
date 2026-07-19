@@ -49,7 +49,15 @@ jobs:
             echo "::error::Tag $LATEST_TAG does not exist"
             exit 1
           fi
+          NEWEST_TAG=$(git tag --list 'v[0-9]*' --sort=-v:refname | { grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' || true; } | head -n 1)
+          if [ "$LATEST_TAG" = "$NEWEST_TAG" ]; then
+            PUSH_LATEST=true
+          else
+            PUSH_LATEST=false
+            echo "::notice::$LATEST_TAG is not the newest stable tag ($NEWEST_TAG); the :latest tag will not be moved"
+          fi
           printf 'LATEST_TAG=%s\n' "$LATEST_TAG" >> "$GITHUB_ENV"
+          printf 'PUSH_LATEST=%s\n' "$PUSH_LATEST" >> "$GITHUB_ENV"
 
       - name: Check out the release tag
         run: |
@@ -59,9 +67,19 @@ jobs:
 
       - name: Compute build metadata
         run: |
+          set -euo pipefail
           printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           printf 'BUILD_BRANCH=%s\n' "$LATEST_TAG" >> "$GITHUB_ENV"
           printf 'BUILD_DATE=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+          IMAGE='ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}'
+          {
+            echo 'IMAGE_TAGS<<IMAGE_TAGS_EOF'
+            printf '%s:%s\n' "$IMAGE" "$LATEST_TAG"
+            if [ "$PUSH_LATEST" = 'true' ]; then
+              printf '%s:latest\n' "$IMAGE"
+            fi
+            echo 'IMAGE_TAGS_EOF'
+          } >> "$GITHUB_ENV"
 
       # Set up QEMU
       - name: Set up QEMU
@@ -91,9 +109,7 @@ jobs:
           context: .
           file: ${{ matrix.file }}
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ env.LATEST_TAG }}
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:latest
+          tags: ${{ env.IMAGE_TAGS }}
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
           build-args: |
