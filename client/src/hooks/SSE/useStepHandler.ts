@@ -403,6 +403,24 @@ export default function useStepHandler({
       updatedContent = updatedContent.filter((part) => !isAnsweredAskUserQuestionPart(part));
     }
 
+    /**
+     * Elicitation cards are a standalone, pause-scoped UI part (see ON_ELICITATION
+     * below), not an indexed content slot — a tool-call+elicitation+final-text
+     * sequence can collide on the same server index once the run resumes with
+     * real content. Rather than let the type-mismatch guard below drop the
+     * incoming part (silently discarding the final assistant text), displace the
+     * card to the tail instead — same displacement pattern as the OAuth prompt
+     * and ask-user-question card above.
+     */
+    if (
+      contentType !== ContentTypes.ELICITATION &&
+      updatedContent[index]?.type === ContentTypes.ELICITATION
+    ) {
+      const displaced = updatedContent[index];
+      updatedContent[index] = undefined;
+      updatedContent.push(displaced);
+    }
+
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
       updatedContent[index] = { type: contentPart.type as AllContentTypes };
     }

@@ -462,23 +462,56 @@ function getElicitationFlowContext(flowId) {
  * Emits the `on_elicitation_resolved` SSE event back onto the stream that
  * originally rendered the card, so a resumed/replayed session reconstructs the
  * resolved state instead of a stale pending card, then drops the flow's context
- * entry. No-op (returns `false`) when the originating stream context is gone —
- * already resolved, TTL-evicted, or the completion landed on a different process
- * than the run: the live client still patches its own copy from the POST
- * response, and full reloads rely on the persisted content part.
+ * entry.
+ *
+ * When this process never held the flow's context — most likely because a
+ * different replica served the originating tool call than the one handling
+ * this completion request — falls back to `fallbackStreamId`/`fallbackStepId`
+ * (sourced by the caller from the flow's persisted `FlowStateManager`
+ * metadata). This process has no runtime state for that stream, so it first
+ * hydrates it via `GenerationJobManager.getJob` before emitting; if the job no
+ * longer exists there, or the fallback stream/step is unusable, resolution is
+ * a no-op (returns `false`) — the live client still patches its own copy from
+ * the POST response, and full reloads rely on the persisted content part.
  * @param {object} params
  * @param {string} params.flowId
  * @param {import('librechat-data-provider').Agents.ElicitationAction} params.action
  * @param {Record<string, string | number | boolean>} [params.content]
+ * @param {string | null} [params.fallbackStreamId] - Stream id from the flow's persisted
+ *   metadata, used when this process holds no local context for the flow.
+ * @param {string} [params.fallbackStepId] - Step id paired with `fallbackStreamId`.
  * @returns {Promise<boolean>}
  */
-async function resolveElicitationFlow({ flowId, action, content }) {
-  const context = elicitationFlowContext.get(flowId);
-  if (!context) {
-    return false;
+async function resolveElicitationFlow({
+  flowId,
+  action,
+  content,
+  fallbackStreamId = null,
+  fallbackStepId,
+}) {
+  let context = elicitationFlowContext.get(flowId);
+  if (context) {
+    clearTimeout(context.cleanupTimer);
+    elicitationFlowContext.delete(flowId);
+  } else {
+    const streamId = fallbackStreamId;
+    const stepId = fallbackStepId;
+    if (streamId && !stepId) {
+      return false;
+    }
+    if (!streamId || !stepId) {
+      return false;
+    }
+    // This process never ran the originating stream, so it has no runtime
+    // state for it yet — hydrate before emitChunk can target it.
+    // GenerationJobManager.getJob returns falsy when the job no longer exists
+    // (e.g. already cleaned up), in which case there's nothing to resolve onto.
+    const job = await GenerationJobManager.getJob(streamId);
+    if (!job) {
+      return false;
+    }
+    context = { streamId, stepId };
   }
-  clearTimeout(context.cleanupTimer);
-  elicitationFlowContext.delete(flowId);
 
   const eventData = {
     event: 'on_elicitation_resolved',
@@ -981,6 +1014,8 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
         elicitationStart,
+        elicitationStreamId: streamId,
+        elicitationStepId: stepId,
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),

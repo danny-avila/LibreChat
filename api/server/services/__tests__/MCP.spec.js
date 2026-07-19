@@ -29,7 +29,7 @@ jest.mock('@librechat/api', () => ({
   isMCPDomainAllowed: jest.fn(),
   normalizeServerName: jest.fn((name) => name),
   normalizeJsonSchema: jest.fn((schema) => schema),
-  GenerationJobManager: { emitChunk: jest.fn() },
+  GenerationJobManager: { emitChunk: jest.fn(), getJob: jest.fn() },
   resolveJsonSchemaRefs: jest.fn((schema) => schema),
   buildOAuthToolCallName: jest.fn((name) => name),
 }));
@@ -302,16 +302,19 @@ describe('resolveElicitationFlow', () => {
         }),
       }),
     );
+    // Local-context fast path never needs to hydrate cross-process job state.
+    expect(GenerationJobManager.getJob).not.toHaveBeenCalled();
 
     // Context is single-use: a second resolution is a no-op.
     expect(await resolveElicitationFlow({ flowId: 'flow-resolve', action: 'cancel' })).toBe(false);
     expect(getElicitationFlowContext('flow-resolve')).toBeUndefined();
   });
 
-  it('returns false when no context exists for the flow', async () => {
+  it('returns false when no context exists for the flow and no fallback is given', async () => {
     expect(await resolveElicitationFlow({ flowId: 'never-started', action: 'complete' })).toBe(
       false,
     );
+    expect(GenerationJobManager.getJob).not.toHaveBeenCalled();
   });
 
   it('emits via sendEvent for a non-resumable (no streamId) stream', async () => {
@@ -327,5 +330,61 @@ describe('resolveElicitationFlow', () => {
       res,
       expect.objectContaining({ event: 'on_elicitation_resolved' }),
     );
+    expect(GenerationJobManager.getJob).not.toHaveBeenCalled();
+  });
+
+  describe('cross-process fallback (no local context)', () => {
+    it('hydrates the job via getJob, then emits on_elicitation_resolved onto the fallback stream', async () => {
+      GenerationJobManager.getJob.mockResolvedValue({ streamId: 'stream-fallback' });
+
+      const emitted = await resolveElicitationFlow({
+        flowId: 'flow-fallback',
+        action: 'complete',
+        fallbackStreamId: 'stream-fallback',
+        fallbackStepId: 'step-fallback',
+      });
+
+      expect(GenerationJobManager.getJob).toHaveBeenCalledWith('stream-fallback');
+      expect(emitted).toBe(true);
+      expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+        'stream-fallback',
+        expect.objectContaining({
+          event: 'on_elicitation_resolved',
+          data: expect.objectContaining({
+            id: 'step-fallback',
+            flowId: 'flow-fallback',
+            action: 'complete',
+          }),
+        }),
+      );
+    });
+
+    it('returns false without emitting when the fallback job no longer exists', async () => {
+      GenerationJobManager.getJob.mockResolvedValue(undefined);
+
+      const emitted = await resolveElicitationFlow({
+        flowId: 'flow-fallback-missing',
+        action: 'complete',
+        fallbackStreamId: 'stream-missing',
+        fallbackStepId: 'step-missing',
+      });
+
+      expect(GenerationJobManager.getJob).toHaveBeenCalledWith('stream-missing');
+      expect(emitted).toBe(false);
+      expect(GenerationJobManager.emitChunk).not.toHaveBeenCalled();
+    });
+
+    it('returns false without calling getJob when fallbackStreamId is present but fallbackStepId is missing', async () => {
+      const emitted = await resolveElicitationFlow({
+        flowId: 'flow-fallback-no-step',
+        action: 'complete',
+        fallbackStreamId: 'stream-only',
+        fallbackStepId: undefined,
+      });
+
+      expect(emitted).toBe(false);
+      expect(GenerationJobManager.getJob).not.toHaveBeenCalled();
+      expect(GenerationJobManager.emitChunk).not.toHaveBeenCalled();
+    });
   });
 });

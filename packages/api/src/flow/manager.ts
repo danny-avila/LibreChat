@@ -18,6 +18,17 @@ export const PENDING_STALE_MS: number = math(
 const SECONDS_THRESHOLD = 1e10;
 
 /**
+ * A Keyv store that may optionally expose distributed lock helpers (see
+ * `flowsCache` in `packages/api/src/cache/flows.ts`). Structurally typed here
+ * rather than imported to avoid coupling the flow manager to the cache
+ * package's Redis-detection internals.
+ */
+type LockableKeyv = Keyv & {
+  acquireLock?: (key: string) => Promise<string | null>;
+  releaseLock?: (key: string, token: string) => Promise<void>;
+};
+
+/**
  * Normalizes an expiration timestamp to milliseconds.
  * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
  */
@@ -29,6 +40,15 @@ export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
   private intervals: Set<NodeJS.Timeout>;
+  /**
+   * Per-flowKey in-process mutex used by `completeFlowIfPending` as a fallback
+   * when the store has no distributed `acquireLock`/`releaseLock` (in-memory
+   * Keyv, or a Redis store without lock helpers attached). Guards against two
+   * callers within the SAME process racing the PENDING->COMPLETED read-modify-
+   * write; it does nothing to protect against a second process, which is why
+   * the distributed lock is preferred whenever the store provides one.
+   */
+  private localLocks: Map<string, Promise<unknown>>;
 
   constructor(store: Keyv, options?: FlowManagerOptions) {
     if (!options) {
@@ -43,9 +63,29 @@ export class FlowStateManager<T = unknown> {
     this.ttl = ttl;
     this.keyv = store;
     this.intervals = new Set();
+    this.localLocks = new Map();
 
     if (!ci) {
       this.setupCleanupHandlers();
+    }
+  }
+
+  /**
+   * Serializes callers keyed by `key` within this process: each call waits for
+   * the previous call (for the same key) to settle before running `fn`, so
+   * concurrent callers never interleave their read-modify-write.
+   */
+  private async withLocalLock<R>(key: string, fn: () => Promise<R>): Promise<R> {
+    const prior = this.localLocks.get(key) ?? Promise.resolve();
+    const run = prior.then(fn, fn);
+    const tracked = run.catch(() => undefined);
+    this.localLocks.set(key, tracked);
+    try {
+      return await run;
+    } finally {
+      if (this.localLocks.get(key) === tracked) {
+        this.localLocks.delete(key);
+      }
     }
   }
 
@@ -301,6 +341,64 @@ export class FlowStateManager<T = unknown> {
     });
 
     return true;
+  }
+
+  /**
+   * Atomically transitions a flow from PENDING to COMPLETED, for callers that
+   * need to know whether THEY won a completion race (unlike `completeFlow`,
+   * which is last-write-wins and returns true for any caller as long as the
+   * flow ends up COMPLETED — the right behavior for OAuth/token flows, but not
+   * for e.g. two concurrent submissions of the same URL-mode elicitation).
+   *
+   * Acquires the store's distributed lock when available (`acquireLock`/
+   * `releaseLock` on the underlying Keyv, see `flowsCache`), falling back to
+   * an in-process mutex otherwise.
+   *
+   * @returns true ONLY for the caller that performed the PENDING->COMPLETED
+   * transition; false if the flow is missing, already COMPLETED/FAILED, or
+   * the caller lost the race to another concurrent caller.
+   */
+  async completeFlowIfPending(flowId: string, type: string, result: T): Promise<boolean> {
+    const flowKey = this.getFlowKey(flowId, type);
+
+    const transition = async (): Promise<boolean> => {
+      const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+      if (!flowState || flowState.status !== 'PENDING') {
+        return false;
+      }
+
+      const updatedState: FlowState<T> = {
+        ...flowState,
+        status: 'COMPLETED',
+        result,
+        completedAt: Date.now(),
+      };
+
+      await this.keyv.set(flowKey, updatedState, this.ttl);
+
+      logger.debug('[FlowStateManager] Flow completed successfully (atomic)', {
+        flowId,
+        type,
+      });
+
+      return true;
+    };
+
+    const lockableStore = this.keyv as LockableKeyv;
+    if (lockableStore.acquireLock && lockableStore.releaseLock) {
+      const lockKey = `lock:${flowKey}`;
+      const token = await lockableStore.acquireLock(lockKey);
+      if (!token) {
+        return false;
+      }
+      try {
+        return await transition();
+      } finally {
+        await lockableStore.releaseLock(lockKey, token);
+      }
+    }
+
+    return this.withLocalLock(flowKey, transition);
   }
 
   /**

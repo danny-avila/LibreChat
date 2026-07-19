@@ -84,6 +84,8 @@ function callGetSecret(
   opts: {
     flowManager: FlowStateManager<never>;
     elicitationStart?: jest.Mock;
+    elicitationStreamId?: string | null;
+    elicitationStepId?: string;
   },
 ) {
   return manager.callTool({
@@ -94,6 +96,8 @@ function callGetSecret(
     provider: 'openai',
     flowManager: opts.flowManager as never,
     elicitationStart: opts.elicitationStart as never,
+    elicitationStreamId: opts.elicitationStreamId,
+    elicitationStepId: opts.elicitationStepId,
   });
 }
 
@@ -190,6 +194,57 @@ describe('URL elicitation (-32042) integration', () => {
     expect(elicitationStart).not.toHaveBeenCalled();
     expect(createFlow).not.toHaveBeenCalled();
     expect(server.state.callCounts['get_secret']).toBe(1);
+  });
+
+  it('threads elicitationStreamId/elicitationStepId into the mcp_elicit flow metadata', async () => {
+    server.reset({ authorized: false, wireShape: 'http-401' });
+    const built = await connectToMock(server);
+    connection = built.connection;
+
+    const elicitationStart = jest.fn(async () => undefined);
+    const { manager: flowManager, createFlow } = consentingFlowManager(server);
+
+    await callGetSecret(built.manager, server, built.serverName, {
+      flowManager,
+      elicitationStart,
+      elicitationStreamId: 'stream-123',
+      elicitationStepId: 'step-abc',
+    });
+
+    expect(createFlow).toHaveBeenCalledTimes(1);
+    const [, flowType, metadata] = createFlow.mock.calls[0] as unknown as [
+      string,
+      string,
+      Record<string, unknown>,
+      AbortSignal?,
+    ];
+    expect(flowType).toBe('mcp_elicit');
+    expect(metadata).toEqual(
+      expect.objectContaining({ streamId: 'stream-123', stepId: 'step-abc' }),
+    );
+  });
+
+  it('defaults the mcp_elicit flow metadata streamId to null when not supplied', async () => {
+    server.reset({ authorized: false, wireShape: 'http-401' });
+    const built = await connectToMock(server);
+    connection = built.connection;
+
+    const elicitationStart = jest.fn(async () => undefined);
+    const { manager: flowManager, createFlow } = consentingFlowManager(server);
+
+    await callGetSecret(built.manager, server, built.serverName, {
+      flowManager,
+      elicitationStart,
+    });
+
+    expect(createFlow).toHaveBeenCalledTimes(1);
+    const [, , metadata] = createFlow.mock.calls[0] as unknown as [
+      string,
+      string,
+      Record<string, unknown>,
+      AbortSignal?,
+    ];
+    expect(metadata).toEqual(expect.objectContaining({ streamId: null }));
   });
 
   describe.each(WIRE_SHAPES)('wire shape: %s', (wireShape) => {

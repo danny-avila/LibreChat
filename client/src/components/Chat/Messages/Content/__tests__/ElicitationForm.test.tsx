@@ -168,4 +168,19 @@ describe('ElicitationForm - url mode', () => {
     // The card is still interactive for a retry.
     expect(screen.getByText("I've authorized — continue")).toBeInTheDocument();
   });
+
+  it('treats a 409 as already-resolved and shows the resolved status instead of the retry error', async () => {
+    const conflictError = Object.assign(new Error('Conflict'), {
+      response: { status: 409 },
+    });
+    (dataService.respondToElicitation as jest.Mock).mockRejectedValueOnce(conflictError);
+    renderUrlForm();
+    fireEvent.click(screen.getByText('Open authorization page'));
+    fireEvent.click(screen.getByText("I've authorized — continue"));
+
+    expect((await screen.findAllByText('Authorization confirmed')).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(screen.queryByText("Couldn't send your response — try again.")).not.toBeInTheDocument();
+  });
 });

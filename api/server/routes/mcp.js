@@ -1042,29 +1042,32 @@ router.post('/elicitation/:flowId', requireJwtAuth, async (req, res) => {
     if (!flowState) {
       return res.status(404).json({ error: 'Flow not found' });
     }
-    if (flowState.status !== 'PENDING') {
-      // Already resolved (e.g. the same card open in a second tab, or a retried
-      // request). `completeFlow` returns ok for a COMPLETED flow without changing
-      // the stored result, so a late/second action would mislead that client
-      // while the waiting tool call already used the first action. Reject instead.
-      return res.status(409).json({ error: 'Elicitation already resolved' });
-    }
 
-    const ok = await flowManager.completeFlow(flowId, 'mcp_elicit', { action, content });
-    if (!ok) {
-      return res.status(404).json({ error: 'Flow not found' });
-    }
-
-    // completeFlow returns true even for an already-completed flow, so re-read and
-    // reject if a concurrent submit's action (e.g. from a second tab) won the race.
-    const settledState = await flowManager.getFlowState(flowId, 'mcp_elicit');
-    if (settledState?.result?.action !== action) {
+    // Atomic PENDING->COMPLETED: exactly one concurrent submit wins even if both
+    // requests read PENDING first.
+    const won = await flowManager.completeFlowIfPending(flowId, 'mcp_elicit', {
+      action,
+      content,
+    });
+    if (!won) {
+      // Lost the race, already resolved, or gone entirely — tell the two apart so
+      // a genuinely missing flow still reports 404 instead of 409.
+      const settledState = await flowManager.getFlowState(flowId, 'mcp_elicit');
+      if (!settledState) {
+        return res.status(404).json({ error: 'Flow not found' });
+      }
       return res.status(409).json({ error: 'Elicitation already resolved' });
     }
 
     /** Notify the originating stream so a resumed/replayed session renders the
      *  resolved card instead of a stale pending one. */
-    await resolveElicitationFlow({ flowId, action, content });
+    await resolveElicitationFlow({
+      flowId,
+      action,
+      content,
+      fallbackStreamId: flowState.metadata?.streamId ?? null,
+      fallbackStepId: flowState.metadata?.stepId,
+    });
 
     return res.json({ ok: true });
   } catch (error) {

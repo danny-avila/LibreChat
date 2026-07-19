@@ -208,10 +208,20 @@ export default function ElicitationForm({
       await dataService.respondToElicitation(flowId, { action });
       setResolvedAction(action);
       patchResolvedElicitation(action);
-    } catch {
-      // Surface an inline retry affordance; the server-side flow keeps waiting
-      // (or times out on its own), so the card stays interactive for a retry.
-      setSendFailed(true);
+    } catch (error) {
+      // A 409 means the completion route atomically lost the race (e.g. the
+      // same card acted on in another tab, or a double-submit) — the flow IS
+      // resolved, just not by this request. Treat it like the success path
+      // instead of a misleading "try again".
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 409) {
+        setResolvedAction(action);
+        patchResolvedElicitation(action);
+      } else {
+        // Surface an inline retry affordance; the server-side flow keeps waiting
+        // (or times out on its own), so the card stays interactive for a retry.
+        setSendFailed(true);
+      }
     } finally {
       setPendingAction(undefined);
     }

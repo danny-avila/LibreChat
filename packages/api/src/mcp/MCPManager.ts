@@ -408,6 +408,8 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver,
     oboTokenResolver,
     oboTrustChecker,
+    elicitationStreamId,
+    elicitationStepId,
   }: {
     user?: IUser;
     serverName: string;
@@ -448,6 +450,15 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
+    /** Resumable-stream id capturing the elicitation's SSE context, so the
+     *  out-of-band completion route (a different process/request) can resolve
+     *  it via {@link FlowStateManager.completeFlowIfPending} even when the
+     *  originating stream's in-memory context is gone. `null`/undefined when
+     *  the run isn't resumable. */
+    elicitationStreamId?: string | null;
+    /** Run-step id paired with {@link elicitationStreamId}, needed to emit
+     *  `on_elicitation_resolved` onto the right step from the completion route. */
+    elicitationStepId?: string;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -668,7 +679,11 @@ Please follow these instructions when using tools from the respective MCP server
             flowResult = await elicitationFlowManager.createFlow(
               flowId,
               'mcp_elicit',
-              { elicitationId: first.elicitationId },
+              {
+                elicitationId: first.elicitationId,
+                streamId: elicitationStreamId ?? null,
+                stepId: elicitationStepId,
+              },
               options?.signal,
             );
           } catch (flowError) {

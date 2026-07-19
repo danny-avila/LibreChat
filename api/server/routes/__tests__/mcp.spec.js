@@ -3337,7 +3337,7 @@ describe('MCP Routes', () => {
 
     const mockFlowManager = () => ({
       getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', metadata: {} }),
-      completeFlow: jest.fn().mockResolvedValue(true),
+      completeFlowIfPending: jest.fn().mockResolvedValue(true),
     });
 
     beforeEach(() => {
@@ -3388,12 +3388,17 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(404);
       expect(response.body).toEqual({ error: 'Flow not found' });
-      expect(flowManager.completeFlow).not.toHaveBeenCalled();
+      expect(flowManager.completeFlowIfPending).not.toHaveBeenCalled();
     });
 
-    it('should return 404 when completeFlow reports the flow is gone', async () => {
+    it('should return 404 when completeFlowIfPending reports the flow is gone', async () => {
       const flowManager = mockFlowManager();
-      flowManager.completeFlow.mockResolvedValue(false);
+      // Initial check passes (PENDING); the loser re-read finds nothing stored.
+      flowManager.getFlowState
+        .mockReset()
+        .mockResolvedValueOnce({ status: 'PENDING', metadata: {} })
+        .mockResolvedValue(null);
+      flowManager.completeFlowIfPending.mockResolvedValue(false);
       require('~/config').getFlowStateManager.mockReturnValue(flowManager);
 
       const response = await request(app)
@@ -3407,11 +3412,7 @@ describe('MCP Routes', () => {
 
     it('should accept a URL-mode complete with no schema and emit resolution', async () => {
       const flowManager = mockFlowManager();
-      // PENDING on the initial check, then the stored COMPLETED result on re-read.
-      flowManager.getFlowState
-        .mockReset()
-        .mockResolvedValueOnce({ status: 'PENDING', metadata: {} })
-        .mockResolvedValue({ status: 'COMPLETED', metadata: {}, result: { action: 'complete' } });
+      flowManager.getFlowState.mockResolvedValue({ status: 'PENDING', metadata: {} });
       require('~/config').getFlowStateManager.mockReturnValue(flowManager);
 
       const response = await request(app)
@@ -3420,7 +3421,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ ok: true });
-      expect(flowManager.completeFlow).toHaveBeenCalledWith(ownedFlowId, 'mcp_elicit', {
+      expect(flowManager.completeFlowIfPending).toHaveBeenCalledWith(ownedFlowId, 'mcp_elicit', {
         action: 'complete',
         content: undefined,
       });
@@ -3428,16 +3429,42 @@ describe('MCP Routes', () => {
         flowId: ownedFlowId,
         action: 'complete',
         content: undefined,
+        fallbackStreamId: null,
+        fallbackStepId: undefined,
       });
     });
 
-    it('rejects the loser of a concurrent submit whose action lost the race', async () => {
+    it('passes the flow metadata through as the resolution fallback', async () => {
       const flowManager = mockFlowManager();
-      // Initial check passes (PENDING); by re-read, a concurrent 'cancel' has won.
+      flowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        metadata: { streamId: 's1', stepId: 'st1' },
+      });
+      require('~/config').getFlowStateManager.mockReturnValue(flowManager);
+
+      const response = await request(app)
+        .post(`/api/mcp/elicitation/${encodeURIComponent(ownedFlowId)}`)
+        .send({ action: 'complete' });
+
+      expect(response.status).toBe(200);
+      expect(mockResolveElicitationFlow).toHaveBeenCalledWith({
+        flowId: ownedFlowId,
+        action: 'complete',
+        content: undefined,
+        fallbackStreamId: 's1',
+        fallbackStepId: 'st1',
+      });
+    });
+
+    it('rejects the loser of a concurrent submit that lost the race', async () => {
+      const flowManager = mockFlowManager();
+      // Initial check passes (PENDING); completeFlowIfPending loses to a concurrent
+      // submit, and the re-read finds the winner's settled result.
       flowManager.getFlowState
         .mockReset()
         .mockResolvedValueOnce({ status: 'PENDING', metadata: {} })
         .mockResolvedValue({ status: 'COMPLETED', metadata: {}, result: { action: 'cancel' } });
+      flowManager.completeFlowIfPending.mockResolvedValue(false);
       require('~/config').getFlowStateManager.mockReturnValue(flowManager);
 
       const response = await request(app)
@@ -3449,9 +3476,9 @@ describe('MCP Routes', () => {
       expect(mockResolveElicitationFlow).not.toHaveBeenCalled();
     });
 
-    it('should return 500 when completeFlow throws', async () => {
+    it('should return 500 when completeFlowIfPending throws', async () => {
       const flowManager = mockFlowManager();
-      flowManager.completeFlow.mockRejectedValue(new Error('keyv down'));
+      flowManager.completeFlowIfPending.mockRejectedValue(new Error('keyv down'));
       require('~/config').getFlowStateManager.mockReturnValue(flowManager);
 
       const response = await request(app)

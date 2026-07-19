@@ -196,6 +196,50 @@ describe('FlowStateManager', () => {
     });
   });
 
+  describe('completeFlowIfPending', () => {
+    const flowId = 'atomic-flow';
+    const type = 'mcp_elicit';
+    const flowKey = `${type}:${flowId}`;
+
+    it('lets exactly one of two concurrent callers win', async () => {
+      await flowManager.initFlow(flowId, type);
+
+      const [resultA, resultB] = await Promise.all([
+        flowManager.completeFlowIfPending(flowId, type, 'result-A'),
+        flowManager.completeFlowIfPending(flowId, type, 'result-B'),
+      ]);
+
+      // Exactly one of the two calls won the race.
+      expect([resultA, resultB].filter((won) => won === true)).toHaveLength(1);
+
+      const state = await store.get(flowKey);
+      expect(state!.status).toBe('COMPLETED');
+      const winningResult = resultA ? 'result-A' : 'result-B';
+      expect(state!.result).toBe(winningResult);
+    });
+
+    it('returns false for an already-COMPLETED flow and leaves result untouched', async () => {
+      await flowManager.initFlow(flowId, type);
+      await flowManager.completeFlow(flowId, type, 'original-result');
+
+      const won = await flowManager.completeFlowIfPending(flowId, type, 'late-result');
+
+      expect(won).toBe(false);
+      const state = await store.get(flowKey);
+      expect(state!.status).toBe('COMPLETED');
+      expect(state!.result).toBe('original-result');
+    });
+
+    it('returns false for a missing flow', async () => {
+      expect(await store.get(flowKey)).toBeUndefined();
+
+      const won = await flowManager.completeFlowIfPending(flowId, type, 'result');
+
+      expect(won).toBe(false);
+      expect(await store.get(flowKey)).toBeUndefined();
+    });
+  });
+
   describe('initFlow', () => {
     const flowId = 'init-test-flow';
     const type = 'test-type';
