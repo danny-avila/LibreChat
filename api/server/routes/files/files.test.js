@@ -799,6 +799,26 @@ describe('File Routes - Delete with Agent Access', () => {
   });
 
   describe('GET /files/download/:userId/:file_id', () => {
+    it('streams persisted text instead of the deleted upload temporary file', async () => {
+      const userFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.md',
+        filepath: `/uploads/temp/${otherUserId}/file.md`,
+        bytes: 22,
+        type: 'text/markdown',
+        source: FileSources.text,
+        text: '# Stored markdown content',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe('# Stored markdown content');
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
     it('streams proxied downloads by default when a direct URL is available', async () => {
       const userFileId = uuidv4();
       const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
