@@ -1,7 +1,12 @@
-name: Docker Compose Build Latest Main Image Tag (Manual Dispatch)
+name: Docker Compose Build Release Image (Manual Dispatch)
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to build (e.g. v0.8.7). Leave empty for the latest stable tag.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -24,24 +29,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
 
-      - name: Fetch tags and set the latest tag
+      - name: Resolve release tag
         run: |
           set -euo pipefail
           git fetch --tags --force
-          LATEST_TAG=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)
+          REQUESTED='${{ inputs.version }}'
+          if [ -n "$REQUESTED" ]; then
+            LATEST_TAG="$REQUESTED"
+          else
+            LATEST_TAG=$(git tag --list 'v[0-9]*' --sort=-v:refname | { grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' || true; } | head -n 1)
+          fi
           if [ -z "$LATEST_TAG" ]; then
             echo "::error::No stable v<semver> tag found"
             exit 1
           fi
+          if ! git rev-parse -q --verify "refs/tags/$LATEST_TAG" >/dev/null; then
+            echo "::error::Tag $LATEST_TAG does not exist"
+            exit 1
+          fi
           printf 'LATEST_TAG=%s\n' "$LATEST_TAG" >> "$GITHUB_ENV"
+
+      - name: Check out the release tag
+        run: |
+          set -euo pipefail
+          git checkout --detach "refs/tags/$LATEST_TAG"
+          git log -1 --format='Building %H (%d)'
 
       - name: Compute build metadata
         run: |
           printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-          printf 'BUILD_BRANCH=main\n' >> "$GITHUB_ENV"
+          printf 'BUILD_BRANCH=%s\n' "$LATEST_TAG" >> "$GITHUB_ENV"
           printf 'BUILD_DATE=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
 
       # Set up QEMU
@@ -60,13 +79,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Login to Docker Hub
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       # Prepare the environment
       - name: Prepare environment
         run: |
@@ -82,8 +94,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ env.LATEST_TAG }}
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:${{ env.LATEST_TAG }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:latest
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
           build-args: |
