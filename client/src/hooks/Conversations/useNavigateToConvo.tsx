@@ -128,10 +128,16 @@ const useNavigateToConvo = (index = 0) => {
      * Invalidate (not remove) the departing conversation's messages so
      * switching back renders the warm cache instantly while a background
      * refetch reconciles; the NEW_CONVO cache still resets for immediate
-     * optimistic messages.
+     * optimistic messages. `refetchType: 'none'` because this observer is
+     * still mounted mid-switch — the default would immediately refetch the
+     * chat being LEFT; marking stale defers the fetch to the next mount.
      */
     if (currentConvoId != null && currentConvoId !== Constants.NEW_CONVO) {
-      queryClient.invalidateQueries([QueryKeys.messages, currentConvoId], { exact: true });
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.messages, currentConvoId],
+        exact: true,
+        refetchType: 'none',
+      });
     }
     queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {

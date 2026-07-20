@@ -50,7 +50,11 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   const fileMap = useFileMapContext();
 
-  const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(
+  const {
+    data: messagesTree = null,
+    isLoading,
+    isFetching,
+  } = useGetMessagesByConvoId(
     conversationId ?? '',
     {
       select: useCallback(
@@ -74,9 +78,11 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
-  // Auto-resume if navigating back to conversation with active job
-  // Wait for messages to load before resuming to avoid race condition
-  useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading);
+  // Auto-resume if navigating back to conversation with active job.
+  // Wait for messages to load AND the warm-cache background revalidation to
+  // settle: a stale invalidated cache mounts with isLoading false while the
+  // refetch is in flight, and resume must not build from (or race) it.
+  useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading && !isFetching);
 
   // Auto-send queued follow-up messages once a run finishes cleanly.
   useQueueDrain(index, conversationId, chatHelpers.ask);
