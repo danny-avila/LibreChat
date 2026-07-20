@@ -262,29 +262,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       if (claim.claimed) {
         ownsIdempotencyClaim = true;
       } else if (claim.existing) {
-        // Duplicate of an in-flight submission: attach to the original stream. Wait briefly
-        // for the winner to write the job record (it does so a few ms after claiming) — the
-        // client subscribes with resume=true and a stream with no job 404s terminally.
+        // Duplicate of an in-flight submission: attach to the original stream. Give the
+        // winner a moment to write the job record (it does so a few ms after claiming) so a
+        // still-live stream isn't handed back before its job exists. If it never appears —
+        // the original already completed and was cleaned up, or the winner died — return the
+        // stream regardless; the client's subscribe 404 handler refetches persisted messages,
+        // so a missing job recovers instead of being treated as indefinitely starting.
         const existingStreamId = claim.existing.streamId;
-        if (await waitForJobRecord(existingStreamId)) {
-          logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
-            userId,
-            clientRequestId,
-            streamId: existingStreamId,
-          });
-          return res.json({
-            streamId: existingStreamId,
-            conversationId: claim.existing.conversationId,
-            status: 'resumed',
-          });
-        }
-        // The winner claimed but has not created the job yet (racing us, or died in the
-        // claim→createJob gap). Ask the client to retry via the readiness path instead of
-        // handing back a stream that would 404; never release a claim we don't own.
-        res.set('Retry-After', '1');
-        return res.status(503).json({
-          code: 'SERVER_NOT_READY',
-          error: 'Generation is still starting. Please retry shortly.',
+        await waitForJobRecord(existingStreamId);
+        logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
+          userId,
+          clientRequestId,
+          streamId: existingStreamId,
+        });
+        return res.json({
+          streamId: existingStreamId,
+          conversationId: claim.existing.conversationId,
+          status: 'resumed',
         });
       }
     } catch (err) {

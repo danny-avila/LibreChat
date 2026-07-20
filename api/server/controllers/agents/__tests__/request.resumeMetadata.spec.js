@@ -663,7 +663,9 @@ describe('ResumableAgentController resume metadata', () => {
     expect(initializeClient).not.toHaveBeenCalled();
   });
 
-  it('returns 503 SERVER_NOT_READY when the winner has not created the job yet', async () => {
+  it('still returns the resumed stream when the job record is missing so the client 404 handler recovers', async () => {
+    // The original may have completed and been cleaned up (or the winner died) before the
+    // retry arrives; the deduped response must not be trapped in a readiness-retry loop.
     mockGenerationJobManager.claimGeneration.mockResolvedValue({
       claimed: false,
       existing: { streamId: 'orig-stream', conversationId: 'orig-convo' },
@@ -672,7 +674,7 @@ describe('ResumableAgentController resume metadata', () => {
     const req = {
       user: { id: 'user-123' },
       body: {
-        text: 'Concurrent duplicate.',
+        text: 'Retry after a fast, already-cleaned-up generation.',
         messageId: 'user-msg',
         clientRequestId: 'req-abc',
         conversationId: 'conversation-123',
@@ -684,9 +686,12 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), jest.fn(), null);
 
-    expect(res.set).toHaveBeenCalledWith('Retry-After', '1');
-    expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVER_NOT_READY' }));
+    expect(res.json).toHaveBeenCalledWith({
+      streamId: 'orig-stream',
+      conversationId: 'orig-convo',
+      status: 'resumed',
+    });
+    expect(res.status).not.toHaveBeenCalledWith(503);
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 
