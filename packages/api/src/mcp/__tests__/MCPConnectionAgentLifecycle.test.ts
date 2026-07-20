@@ -23,6 +23,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { Server as McpServerCore } from '@modelcontextprotocol/sdk/server/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Socket } from 'net';
 import { MCPConnection } from '~/mcp/connection';
@@ -95,6 +96,10 @@ afterAll(async () => {
 interface TestServer {
   url: string;
   close: () => Promise<void>;
+}
+
+function createStreamableClientTransport(sessionId?: string) {
+  return new StreamableHTTPClientTransport(new URL('http://127.0.0.1:1/mcp'), { sessionId });
 }
 
 function getFreePort(): Promise<number> {
@@ -589,7 +594,7 @@ describe('Regression: old per-request Agent pattern leaks agents', () => {
   });
 });
 
-describe('MCPConnection SSE 404 handling – session-aware', () => {
+describe('MCPConnection pre-session SSE failure handling', () => {
   function makeTransportStub(sessionId?: string) {
     return {
       ...(sessionId != null ? { sessionId } : {}),
@@ -612,7 +617,7 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
 
   function fireSSEError(
     conn: MCPConnection,
-    transport: ReturnType<typeof makeTransportStub>,
+    transport: ReturnType<typeof makeTransportStub> | StreamableHTTPClientTransport,
     code = 404,
   ) {
     (
@@ -683,7 +688,7 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
 
   it('does not suppress an OAuth challenge before a session is established', () => {
     const conn = makeConn();
-    const transport = makeTransportStub();
+    const transport = createStreamableClientTransport();
     const emitSpy = jest.spyOn(conn, 'emit');
 
     fireSSEError(conn, transport, 401);
@@ -694,7 +699,7 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
 
   it('still reconnects when a 502 SSE failure belongs to an active session', () => {
     const conn = makeConn();
-    const transport = makeTransportStub('existing-session-id');
+    const transport = createStreamableClientTransport('existing-session-id');
     const emitSpy = jest.spyOn(conn, 'emit');
 
     fireSSEError(conn, transport, 502);
@@ -733,7 +738,18 @@ describe('MCPConnection SSE stream disconnect handling', () => {
     });
   }
 
-  function bindErrorHandler(conn: MCPConnection, transport: ReturnType<typeof makeTransportStub>) {
+  function makeStreamableConn() {
+    return new MCPConnection({
+      serverName: 'test-streamable-post-failure',
+      serverConfig: { url: 'http://127.0.0.1:1/mcp', type: 'streamable-http' },
+      useSSRFProtection: false,
+    });
+  }
+
+  function bindErrorHandler(
+    conn: MCPConnection,
+    transport: ReturnType<typeof makeTransportStub> | StreamableHTTPClientTransport,
+  ) {
     (
       conn as unknown as { setupTransportErrorHandlers: (t: unknown) => void }
     ).setupTransportErrorHandlers(transport);
@@ -786,8 +802,8 @@ describe('MCPConnection SSE stream disconnect handling', () => {
   });
 
   it('still escalates non-SSE-stream errors (e.g. POST failures)', () => {
-    const conn = makeConn();
-    const transport = makeTransportStub();
+    const conn = makeStreamableConn();
+    const transport = createStreamableClientTransport();
     const emitSpy = jest.spyOn(conn, 'emit');
     bindErrorHandler(conn, transport);
 
