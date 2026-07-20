@@ -1243,6 +1243,55 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('flushPendingDeltas applies queued tokens synchronously and voids the frame', () => {
+      const rafQueue: FrameRequestCallback[] = [];
+      (window.requestAnimationFrame as jest.Mock).mockImplementation((cb: FrameRequestCallback) => {
+        rafQueue.push(cb);
+        return rafQueue.length;
+      });
+
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+      mockSetMessages.mockClear();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Hello ') },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'World') },
+          submission,
+        );
+      });
+      expect(mockSetMessages).not.toHaveBeenCalled();
+
+      act(() => {
+        result.current.flushPendingDeltas();
+      });
+
+      expect(mockSetMessages).toHaveBeenCalledTimes(1);
+      const flushed = mockSetMessages.mock.calls[0][0];
+      const responseMsg = flushed[flushed.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({ type: ContentTypes.TEXT, text: 'Hello World' }),
+      );
+
+      act(() => {
+        rafQueue.forEach((cb) => cb(0));
+      });
+      expect(mockSetMessages).toHaveBeenCalledTimes(1);
+    });
+
     it('should return early when contentPart is null', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);

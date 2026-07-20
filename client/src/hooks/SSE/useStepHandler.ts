@@ -133,6 +133,7 @@ export default function useStepHandler({
   const messageDeltaRaf = useRef<number | null>(null);
   const deltaFlushScheduled = useRef(false);
   const pendingDeltaFlushIds = useRef(new Set<string>());
+  const pendingDeltaFlushRef = useRef<(() => void) | null>(null);
   /**
    * Maps `SubagentUpdateEvent.subagentRunId` → parent `tool_call_id`.
    * Preferred source is `payload.parentToolCallId` (threaded through by the
@@ -659,13 +660,10 @@ export default function useStepHandler({
        */
       const scheduleCoalescedMessagesFlush = (responseMessageId: string) => {
         pendingDeltaFlushIds.current.add(responseMessageId);
-        if (deltaFlushScheduled.current) {
-          return;
-        }
-        deltaFlushScheduled.current = true;
-        messageDeltaRaf.current = requestAnimationFrame(() => {
+        const flush = () => {
           deltaFlushScheduled.current = false;
           messageDeltaRaf.current = null;
+          pendingDeltaFlushRef.current = null;
           const ids = pendingDeltaFlushIds.current;
           pendingDeltaFlushIds.current = new Set();
           let candidate = messages;
@@ -677,7 +675,15 @@ export default function useStepHandler({
             candidate = mergeResponseMessage(candidate, latest, id, { ensureUserMessage: true });
             setMessages(candidate);
           }
-        });
+        };
+        /** Exposed so terminal/read boundaries (abort, error, pending-action)
+         * can apply the queued tokens synchronously via `flushPendingDeltas`. */
+        pendingDeltaFlushRef.current = flush;
+        if (deltaFlushScheduled.current) {
+          return;
+        }
+        deltaFlushScheduled.current = true;
+        messageDeltaRaf.current = requestAnimationFrame(flush);
       };
       let parentMessageId =
         submission.isRegenerate && submission.initialResponse?.parentMessageId
@@ -1175,16 +1181,34 @@ export default function useStepHandler({
   );
 
   /** Cancels a queued delta flush so it can't overwrite a terminal write:
-   * once a final/error/abort handler has written the server's authoritative
-   * message, a trailing frame reading the older streaming copy from
-   * `messageMap` must never land on top of it. */
+   * once a final handler has written the server's authoritative message, a
+   * trailing frame reading the older streaming copy from `messageMap` must
+   * never land on top of it. */
   const cancelPendingDeltaFlush = useCallback(() => {
     if (messageDeltaRaf.current != null) {
       cancelAnimationFrame(messageDeltaRaf.current);
       messageDeltaRaf.current = null;
     }
     deltaFlushScheduled.current = false;
+    pendingDeltaFlushRef.current = null;
     pendingDeltaFlushIds.current.clear();
+  }, []);
+
+  /** Applies a queued delta flush synchronously (then cancels the frame).
+   * For boundaries that READ the cache or synthesize from it — abort's
+   * partial-response capture, error cards, pending-action application — the
+   * queued tokens must land first or the stopped/errored message loses them. */
+  const flushPendingDeltas = useCallback(() => {
+    if (messageDeltaRaf.current != null) {
+      cancelAnimationFrame(messageDeltaRaf.current);
+      messageDeltaRaf.current = null;
+    }
+    const flush = pendingDeltaFlushRef.current;
+    pendingDeltaFlushRef.current = null;
+    deltaFlushScheduled.current = false;
+    if (flush) {
+      flush();
+    }
   }, []);
 
   const clearStepMaps = useCallback(() => {
@@ -1232,5 +1256,6 @@ export default function useStepHandler({
     resetSubagentAtoms,
     syncStepMessage,
     cancelPendingDeltaFlush,
+    flushPendingDeltas,
   };
 }
