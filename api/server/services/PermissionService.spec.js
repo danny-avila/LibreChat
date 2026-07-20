@@ -894,6 +894,45 @@ describe('PermissionService', () => {
       expect(remainingEntries[0].principalId.toString()).toBe(userId.toString());
     });
 
+    test('grant wins over revoke when a principal is in both lists (prevents owner lockout, #14316)', async () => {
+      // Simulates the share dialog sending the owner in both updatedPrincipals (grant OWNER) and
+      // revokedPrincipals (e.g. from a client id/idOnTheSource mismatch). Grants flush before
+      // deletes, so without the guard the owner would be upserted and then deleted. The owner
+      // must keep access.
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+            accessRoleId: AccessRoleIds.AGENT_OWNER,
+          },
+        ],
+        revokedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      expect(results.granted).toHaveLength(1);
+      // The revoke for the same principal is skipped, not applied, so it is absent from results.
+      expect(results.revoked).toHaveLength(0);
+      expect(results.errors).toHaveLength(0);
+
+      const userEntry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      }).populate('roleId', 'accessRoleId');
+      expect(userEntry).not.toBeNull();
+      expect(userEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_OWNER);
+    });
+
     test('should handle mixed operations (grant, update, revoke)', async () => {
       const updatedPrincipals = [
         {
