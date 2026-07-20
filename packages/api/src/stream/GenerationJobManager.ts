@@ -709,7 +709,7 @@ class GenerationJobManagerClass {
   ): Promise<IdempotencyClaimResult> {
     return this.jobStore.claimIdempotencyKey(
       `${userId}:${clientRequestId}`,
-      { streamId, conversationId },
+      { streamId, conversationId, claimedAt: Date.now() },
       IDEMPOTENCY_TTL_SECONDS,
     );
   }

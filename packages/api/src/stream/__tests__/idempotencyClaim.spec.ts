@@ -116,10 +116,11 @@ describe('GenerationJobManager start-generation claim', () => {
     expect(first).toEqual({ claimed: true });
 
     const retry = await manager.claimGeneration('user-1', 'req-1', 'stream-b', 'convo-b');
-    expect(retry).toEqual({
-      claimed: false,
-      existing: { streamId: 'stream-a', conversationId: 'convo-a' },
-    });
+    expect(retry.claimed).toBe(false);
+    expect(retry.existing).toEqual(
+      expect.objectContaining({ streamId: 'stream-a', conversationId: 'convo-a' }),
+    );
+    expect(typeof retry.existing?.claimedAt).toBe('number');
   });
 
   it('does NOT dedup a distinct submission (e.g. regenerate reuses the user message id)', async () => {

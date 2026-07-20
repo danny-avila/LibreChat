@@ -195,6 +195,10 @@ export interface JobStatusTransition {
 export interface IdempotencyClaimValue {
   streamId: string;
   conversationId: string;
+  /** Epoch ms the claim was written — lets a losing duplicate tell a winner that is still
+   *  starting (recent, no job yet → retry) from one that already finished and was cleaned
+   *  up (old, no job → attach and let the client refetch). */
+  claimedAt?: number;
 }
 
 /** Result of an atomic {@link IJobStore.claimIdempotencyKey} attempt. */

@@ -663,12 +663,16 @@ describe('ResumableAgentController resume metadata', () => {
     expect(initializeClient).not.toHaveBeenCalled();
   });
 
-  it('still returns the resumed stream when the job record is missing so the client 404 handler recovers', async () => {
-    // The original may have completed and been cleaned up (or the winner died) before the
-    // retry arrives; the deduped response must not be trapped in a readiness-retry loop.
+  it('resumes when the job is missing but the claim is old (original completed and was cleaned up)', async () => {
+    // An old claim with no job means the original already ran and was cleaned up; the deduped
+    // response must attach (client 404 handler refetches) rather than loop on readiness.
     mockGenerationJobManager.claimGeneration.mockResolvedValue({
       claimed: false,
-      existing: { streamId: 'orig-stream', conversationId: 'orig-convo' },
+      existing: {
+        streamId: 'orig-stream',
+        conversationId: 'orig-convo',
+        claimedAt: Date.now() - 60000,
+      },
     });
     mockGenerationJobManager.hasJob.mockResolvedValue(false);
     const req = {
@@ -692,6 +696,37 @@ describe('ResumableAgentController resume metadata', () => {
       status: 'resumed',
     });
     expect(res.status).not.toHaveBeenCalledWith(503);
+    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 SERVER_NOT_READY when a fresh claim still has no job (winner is between claim and createJob)', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({
+      claimed: false,
+      existing: {
+        streamId: 'orig-stream',
+        conversationId: 'orig-convo',
+        claimedAt: Date.now(),
+      },
+    });
+    mockGenerationJobManager.hasJob.mockResolvedValue(false);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Concurrent duplicate before the winner wrote its job.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '1');
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVER_NOT_READY' }));
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 

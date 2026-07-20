@@ -179,6 +179,12 @@ async function finishResumableRequest(req, userId) {
 const JOB_RECORD_WAIT_ATTEMPTS = 5;
 const JOB_RECORD_WAIT_DELAY_MS = 60;
 
+// A winner writes its job record within a few ms of claiming; if a losing duplicate still
+// sees no job within this window of the claim, the winner is still starting (retry rather
+// than hand back a stream that would 404). Past it, a missing job means the original
+// already completed and was cleaned up (attach and let the client refetch).
+const IDEMPOTENCY_STARTUP_GRACE_MS = 5000;
+
 /**
  * Poll briefly for a job record to appear. A deduped retry that loses the idempotency
  * claim must not be handed the winner's stream until its job exists, or the client's
@@ -262,14 +268,26 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       if (claim.claimed) {
         ownsIdempotencyClaim = true;
       } else if (claim.existing) {
-        // Duplicate of an in-flight submission: attach to the original stream. Give the
-        // winner a moment to write the job record (it does so a few ms after claiming) so a
-        // still-live stream isn't handed back before its job exists. If it never appears —
-        // the original already completed and was cleaned up, or the winner died — return the
-        // stream regardless; the client's subscribe 404 handler refetches persisted messages,
-        // so a missing job recovers instead of being treated as indefinitely starting.
+        // Duplicate of an in-flight submission: attach to the original stream. Wait briefly
+        // for the winner to write the job record (it does so a few ms after claiming).
         const existingStreamId = claim.existing.streamId;
-        await waitForJobRecord(existingStreamId);
+        const jobExists = await waitForJobRecord(existingStreamId);
+        const claimAgeMs = Date.now() - (claim.existing.claimedAt ?? 0);
+        if (!jobExists && claimAgeMs < IDEMPOTENCY_STARTUP_GRACE_MS) {
+          // The winner claimed but has not written the job yet (still between claim and
+          // createJob). Handing back the stream now would 404 and tear down the client while
+          // the winner goes on to generate and bill with no UI attached — ask the client to
+          // retry via the readiness path instead.
+          res.set('Retry-After', '1');
+          return res.status(503).json({
+            code: 'SERVER_NOT_READY',
+            error: 'Generation is still starting. Please retry shortly.',
+          });
+        }
+        // Job exists (live), or the grace elapsed with none (the original already completed
+        // and was cleaned up, or the winner died): attach. A then-missing job recovers via
+        // the client's subscribe 404 handler (refetch persisted messages) rather than an
+        // indefinite readiness loop.
         logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
           userId,
           clientRequestId,
