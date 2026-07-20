@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
+const { applyModelSettings } = require('~/server/services/bklAppSettings');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -32,6 +33,9 @@ async function loadModels(req) {
   const customModelsConfig = await loadConfigModels(req);
 
   const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
+
+  /** BKL (항목 7): 어드민 설정(bkl_app_settings)이 있으면 yaml 목록 대신 적용 */
+  await applyModelSettings(modelConfig);
 
   await cache.set(CacheKeys.MODELS_CONFIG, modelConfig);
   return modelConfig;

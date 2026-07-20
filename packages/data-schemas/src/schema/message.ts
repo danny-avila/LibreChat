@@ -144,6 +144,17 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: Boolean,
       default: undefined,
     },
+    /** BKL: set on messages produced by fork/duplicate so clones are
+     * distinguishable from original queries in messages-based views. */
+    bkl_cloned: {
+      type: Boolean,
+      default: undefined,
+    },
+    /** BKL: original messageId this message was cloned from */
+    bkl_cloned_from: {
+      type: String,
+      default: undefined,
+    },
   },
   { timestamps: true },
 );

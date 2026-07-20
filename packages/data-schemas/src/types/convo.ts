@@ -54,6 +54,8 @@ export interface IConversation extends Document {
   // Additional fields
   files?: string[];
   expiredAt?: Date;
+  /** BKL: soft-delete marker */
+  bklDeletedAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Trans } from 'react-i18next';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Button,
   Spinner,
+  Checkbox,
   OGDialog,
   OGDialogClose,
   OGDialogTitle,
@@ -47,6 +48,7 @@ export function DeleteConversationDialog({
   const { showToast } = useToastContext();
   const { newConversation } = useNewConvo();
   const { conversationId: currentConvoId } = useParams();
+  const [deleteFiles, setDeleteFiles] = useState(false);
 
   const deleteMutation = useDeleteConversationMutation({
     onSuccess: () => {
@@ -77,8 +79,8 @@ export function DeleteConversationDialog({
     const thread_id = messages?.[messages.length - 1]?.thread_id;
     const endpoint = messages?.[messages.length - 1]?.endpoint;
 
-    deleteMutation.mutate({ conversationId, thread_id, endpoint, source: 'button' });
-  }, [conversationId, deleteMutation, queryClient]);
+    deleteMutation.mutate({ conversationId, thread_id, endpoint, source: 'button', deleteFiles });
+  }, [conversationId, deleteMutation, queryClient, deleteFiles]);
 
   return (
     <OGDialogContent
@@ -96,6 +98,21 @@ export function DeleteConversationDialog({
           components={{ strong: <strong /> }}
         />
       </div>
+      {/* BKL: 이 대화 전용 첨부 파일 함께 삭제 옵션 */}
+      <label className="flex cursor-pointer items-start gap-2 pt-2 text-sm text-text-primary">
+        <Checkbox
+          aria-label="이 채팅에 업로드된 파일도 함께 삭제"
+          checked={deleteFiles}
+          onCheckedChange={(checked) => setDeleteFiles(checked === true)}
+          className="mt-0.5"
+        />
+        <span>
+          이 채팅에 업로드된 파일도 함께 삭제
+          <span className="block text-xs text-text-secondary">
+            다른 채팅에서 사용 중인 파일은 유지됩니다.
+          </span>
+        </span>
+      </label>
       <div className="flex justify-end gap-4 pt-4">
         <OGDialogClose asChild>
           <Button aria-label="cancel" variant="outline">

@@ -24,7 +24,7 @@ export default function useSubmitMessage() {
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
-    (data?: { text: string }) => {
+    (data?: { text: string; overrideQueryEnhance?: boolean }) => {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
@@ -47,7 +47,10 @@ export default function useSubmitMessage() {
         filterDocLabels,
       );
       const referenceTag = buildBklReferenceTag(referenceMatterUids);
-      const enhanceTag = buildBklQueryEnhanceTag(queryEnhance);
+      /* BKL 항목 8: 쿼리 강화 버튼 즉시 실행 — 버튼 클릭 시 입력창에 텍스트가
+       * 있으면 토글 대신 overrideQueryEnhance 로 바로 강화 제출된다. */
+      const enhanceOn = queryEnhance || data.overrideQueryEnhance === true;
+      const enhanceTag = buildBklQueryEnhanceTag(enhanceOn);
       const text = `${enhanceTag}${filterTag}${referenceTag}${data.text}`;
 
       ask(

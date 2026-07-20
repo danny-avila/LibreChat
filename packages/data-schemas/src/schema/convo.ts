@@ -37,6 +37,12 @@ const convoSchema: Schema<IConversation> = new Schema(
     expiredAt: {
       type: Date,
     },
+    /** BKL: soft-delete marker — set when the user deletes a chat; hidden from
+     * user-facing queries but kept for admin review until retention purge. */
+    bklDeletedAt: {
+      type: Date,
+      index: true,
+    },
   },
   { timestamps: true },
 );

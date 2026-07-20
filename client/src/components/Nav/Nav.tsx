@@ -25,7 +25,7 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
-import SearchBar from './SearchBar';
+import BklChatSearch from './BklChatSearch';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -168,7 +168,8 @@ const Nav = memo(
     const subHeaders = useMemo(
       () => (
         <>
-          {search.enabled === true && <SearchBar isSmallScreen={isSmallScreen} />}
+          {/* BKL: ChatGPT 스타일 채팅 검색 다이얼로그 (제목 + 본문 검색) */}
+          {search.enabled === true && <BklChatSearch isSmallScreen={isSmallScreen} />}
         </>
       ),
       [search.enabled, isSmallScreen],

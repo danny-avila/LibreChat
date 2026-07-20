@@ -974,6 +974,8 @@
   "com_ui_download_error": "Error downloading file. The file may have been deleted.",
   "com_ui_download_error_logs": "Download error logs",
   "com_ui_drag_drop": "Drop any file here to add it to the conversation",
+  "com_ui_drop_here_title": "Add anything",
+  "com_ui_drop_here_subtitle": "Drop any file here to add it to the conversation",
   "com_ui_dropdown_variables": "Dropdown variables:",
   "com_ui_dropdown_variables_info": "Create custom dropdown menus for your prompts: `{{variable_name:option1|option2|option3}}`",
   "com_ui_duplicate": "Duplicate",

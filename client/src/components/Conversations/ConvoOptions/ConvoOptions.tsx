@@ -16,6 +16,7 @@ import {
 import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
+import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
@@ -53,8 +54,10 @@ function ConvoOptions({
   const menuId = useId();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const archiveButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
   const archiveConvoMutation = useArchiveConvoMutation();
@@ -214,13 +217,18 @@ function ConvoOptions({
       },
       {
         label: localize('com_ui_archive'),
-        onClick: handleArchiveClick,
+        /** BKL: 파일 함께 삭제 옵션을 위해 확인 다이얼로그를 띄운다 */
+        onClick: () => setShowArchiveDialog(true),
         hideOnClick: false,
         icon: isArchiveLoading ? (
           <Spinner className="size-4" />
         ) : (
           <Archive className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
         ),
+        ariaHasPopup: 'dialog' as const,
+        ariaControls: 'archive-conversation-dialog',
+        ref: archiveButtonRef,
+        render: (props) => <button {...props} />,
       },
       {
         label: localize('com_ui_delete'),
@@ -340,6 +348,16 @@ function ConvoOptions({
           showDeleteDialog={showDeleteDialog}
           conversationId={conversationId ?? ''}
           setShowDeleteDialog={setShowDeleteDialog}
+        />
+      )}
+      {showArchiveDialog && (
+        <ArchiveButton
+          retainView={retainView}
+          triggerRef={archiveButtonRef}
+          setMenuOpen={setIsPopoverActive}
+          showArchiveDialog={showArchiveDialog}
+          conversationId={conversationId ?? ''}
+          setShowArchiveDialog={setShowArchiveDialog}
         />
       )}
     </>
