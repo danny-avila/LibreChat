@@ -130,11 +130,16 @@ const file: Schema<IMongoFile> = new Schema(
             storage_session_id: { type: String, required: true },
             file_id: { type: String, required: true },
             version: { type: Number },
+            provisionedAt: { type: Number },
           },
           { _id: false },
         ),
         default: undefined,
       },
+    },
+    llmDeliveryPath: {
+      type: String,
+      enum: ['provider', 'text', 'none'],
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from

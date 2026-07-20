@@ -5,6 +5,60 @@ import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { Request as ServerRequest } from 'express';
 
+/** Deferred DB update from provisioning (batched after all files are provisioned) */
+export type TFileUpdate = {
+  file_id: string;
+  metadata?: Record<string, unknown>;
+  embedded?: boolean;
+};
+
+/**
+ * Function type for provisioning a file to the code execution environment.
+ * @returns The codeEnvRef and a deferred DB update object
+ */
+export type TProvisionToCodeEnv = (params: {
+  req: ServerRequest & { user?: IUser };
+  file: TFile;
+  entity_id?: string;
+}) => Promise<{ codeEnvRef: Record<string, unknown>; fileUpdate: TFileUpdate }>;
+
+/**
+ * Function type for provisioning a file to the vector DB for file_search.
+ * @returns Object with embedded status and a deferred DB update object
+ */
+export type TProvisionToVectorDB = (params: {
+  req: ServerRequest & { user?: IUser };
+  file: TFile;
+  entity_id?: string;
+  existingStream?: unknown;
+}) => Promise<{ embedded: boolean; fileUpdate: TFileUpdate | null }>;
+
+/**
+ * Function type for batch-checking code env file liveness.
+ * Groups files by session, makes one API call per session.
+ * @returns Set of file_ids that are confirmed alive
+ */
+export type TCheckSessionsAlive = (params: {
+  files: TFile[];
+  apiKey: string;
+  staleSafeWindowMs?: number;
+}) => Promise<Set<string>>;
+
+/** Loads CODE_API_KEY for a user. Call once per request. */
+export type TLoadCodeApiKey = (userId: string) => Promise<string>;
+
+/** State computed during primeResources for lazy provisioning at tool invocation time */
+export type ProvisionState = {
+  /** Files that need uploading to the code execution environment */
+  codeEnvFiles: TFile[];
+  /** Files that need embedding into the vector DB for file_search */
+  vectorDBFiles: TFile[];
+  /** Pre-loaded CODE_API_KEY to avoid redundant credential fetches */
+  codeApiKey?: string;
+  /** Set of file_ids confirmed alive in code env (from staleness check) */
+  aliveFileIds: Set<string>;
+};
+
 /**
  * Function type for retrieving files from the database
  * @param filter - MongoDB filter query for files
@@ -39,7 +93,7 @@ export type TFilterFilesByAgentAccess = (params: {
  * @param params.tool_resources - The agent's tool resources object to update
  * @param params.processedResourceFiles - Set tracking processed files per resource type
  */
-const addFileToResource = ({
+export const addFileToResource = ({
   file,
   resourceType,
   tool_resources,
@@ -107,7 +161,6 @@ const categorizeFileForToolResources = ({
       tool_resources,
       processedResourceFiles,
     });
-    return;
   }
 
   if (file.embedded === true) {
@@ -117,7 +170,6 @@ const categorizeFileForToolResources = ({
       tool_resources,
       processedResourceFiles,
     });
-    return;
   }
 
   if (
@@ -163,6 +215,9 @@ export const primeResources = async ({
   attachments: _attachments,
   tool_resources: _tool_resources,
   agentId,
+  enabledToolResources,
+  checkSessionsAlive,
+  loadCodeApiKey,
 }: {
   req: ServerRequest & { user?: IUser };
   appConfig?: AppConfig;
@@ -172,11 +227,19 @@ export const primeResources = async ({
   getFiles: TGetFiles;
   filterFiles?: TFilterFilesByAgentAccess;
   agentId?: string;
+  /** Set of tool resource types the agent has enabled (e.g., execute_code, file_search) */
+  enabledToolResources?: Set<EToolResources>;
+  /** Optional callback to batch-check code env file liveness by session */
+  checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional callback to load CODE_API_KEY once per request */
+  loadCodeApiKey?: TLoadCodeApiKey;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   requestAttachments: Array<TFile | undefined> | undefined;
   agentContextAttachments: Array<TFile | undefined> | undefined;
   tool_resources: AgentToolResources | undefined;
+  provisionState?: ProvisionState;
+  warnings: string[];
 }> => {
   const requestAttachments: Array<TFile> = [];
   const agentContextAttachments: Array<TFile> = [];
@@ -268,21 +331,18 @@ export const primeResources = async ({
           continue;
         }
 
-        // Clear from attachmentFileIds if it was pre-added
         attachmentFileIds.delete(file.file_id);
 
-        // Add to attachments
-        attachments.push(file);
-        agentContextAttachments.push(file);
-        attachmentFileIds.add(file.file_id);
-
-        // Categorize for tool resources
         categorizeFileForToolResources({
           file,
           tool_resources,
           requestFileSet,
           processedResourceFiles,
         });
+
+        attachments.push(file);
+        agentContextAttachments.push(file);
+        attachmentFileIds.add(file.file_id);
       }
     }
 
@@ -293,6 +353,7 @@ export const primeResources = async ({
         agentContextAttachments:
           agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
         tool_resources,
+        warnings: [],
       };
     }
 
@@ -329,12 +390,104 @@ export const primeResources = async ({
       }
     }
 
+    /**
+     * Lazy provisioning: instead of provisioning files now, compute which files
+     * need provisioning and return that state. Actual provisioning happens at
+     * tool invocation time via the ON_TOOL_EXECUTE handler.
+     */
+    const warnings: string[] = [];
+    let provisionState: ProvisionState | undefined;
+
+    if (enabledToolResources && enabledToolResources.size > 0 && attachments.length > 0) {
+      const needsCodeEnv = enabledToolResources.has(EToolResources.execute_code);
+      const needsVectorDB = enabledToolResources.has(EToolResources.file_search);
+
+      if (needsCodeEnv || needsVectorDB) {
+        let codeApiKey: string | undefined;
+        if (needsCodeEnv && loadCodeApiKey && req.user?.id) {
+          try {
+            codeApiKey = await loadCodeApiKey(req.user.id);
+          } catch (error) {
+            logger.error('[primeResources] Failed to load CODE_API_KEY', error);
+            warnings.push('Code execution file provisioning unavailable');
+          }
+        }
+
+        // Batch staleness check: identify which code env files are still alive
+        let aliveFileIds: Set<string> = new Set();
+        if (needsCodeEnv && codeApiKey && checkSessionsAlive) {
+          const filesWithIdentifiers = attachments.filter(
+            (f) => f?.metadata?.codeEnvRef && f.file_id,
+          );
+          if (filesWithIdentifiers.length > 0) {
+            aliveFileIds = await checkSessionsAlive({
+              files: filesWithIdentifiers as TFile[],
+              apiKey: codeApiKey,
+            });
+          }
+        }
+
+        // Compute which files need provisioning (don't actually provision yet)
+        const codeEnvFiles: TFile[] = [];
+        const vectorDBFiles: TFile[] = [];
+
+        for (const file of attachments) {
+          if (!file?.file_id) {
+            continue;
+          }
+
+          if (
+            needsCodeEnv &&
+            codeApiKey &&
+            !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
+          ) {
+            const hasCodeEnvRef = !!file.metadata?.codeEnvRef;
+            const isStale = hasCodeEnvRef && !aliveFileIds.has(file.file_id);
+
+            if (!hasCodeEnvRef || isStale) {
+              if (isStale) {
+                logger.info(
+                  `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
+                );
+                file.metadata = { ...file.metadata, codeEnvRef: undefined };
+              }
+              codeEnvFiles.push(file);
+            } else {
+              // File is alive, categorize it now
+              addFileToResource({
+                file,
+                resourceType: EToolResources.execute_code,
+                tool_resources,
+                processedResourceFiles,
+              });
+            }
+          }
+
+          const isImage = file.type?.startsWith('image') ?? false;
+          if (
+            needsVectorDB &&
+            !isImage &&
+            file.embedded !== true &&
+            !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
+          ) {
+            vectorDBFiles.push(file);
+          }
+        }
+
+        if (codeEnvFiles.length > 0 || vectorDBFiles.length > 0) {
+          provisionState = { codeEnvFiles, vectorDBFiles, codeApiKey, aliveFileIds };
+        }
+      }
+    }
+
     return {
       attachments: attachments.length > 0 ? attachments : [],
       requestAttachments,
       agentContextAttachments:
         agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
       tool_resources,
+      provisionState,
+      warnings,
     };
   } catch (error) {
     logger.error('Error priming resources', error);
@@ -358,6 +511,8 @@ export const primeResources = async ({
       agentContextAttachments:
         agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
       tool_resources: _tool_resources,
+      provisionState: undefined,
+      warnings: [],
     };
   }
 };

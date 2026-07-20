@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { Constants, createContentAggregator } = require('@librechat/agents');
 const {
   checkAccess,
   loadSkillStates,
@@ -17,9 +17,11 @@ const {
   buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
+  FileContext,
   Permissions,
   ResourceType,
   EModelEndpoint,
+  EToolResources,
   PermissionBits,
   PermissionTypes,
   MAX_SUBAGENT_DEPTH,
@@ -43,6 +45,12 @@ const {
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
+const {
+  loadCodeApiKey,
+  provisionToCodeEnv,
+  provisionToVectorDB,
+  checkSessionsAlive,
+} = require('~/server/services/Files/provision');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -255,6 +263,118 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     },
     toolEndCallback,
     ...getSkillToolDeps(),
+    provisionFiles: async (toolNames, agentId) => {
+      const ctx = agentToolContexts.get(agentId);
+      if (!ctx?.provisionState) {
+        return;
+      }
+
+      const { provisionState } = ctx;
+      /** Code execution expands into bash_tool/read_file (+ their PTC variants);
+       *  the legacy execute_code/run_tools_with_code names are kept for back-compat. */
+      const needsCode =
+        toolNames.includes(Constants.EXECUTE_CODE) ||
+        toolNames.includes(Constants.PROGRAMMATIC_TOOL_CALLING) ||
+        toolNames.includes(Constants.BASH_TOOL) ||
+        toolNames.includes(Constants.READ_FILE) ||
+        toolNames.includes(Constants.BASH_PROGRAMMATIC_TOOL_CALLING);
+      const needsSearch = toolNames.includes('file_search');
+
+      if (!needsCode && !needsSearch) {
+        return;
+      }
+
+      /** Current-message chat attachments stay in the user's sandbox / unscoped vector
+       *  index (matching the direct message_file upload path); only agent setup files
+       *  are scoped to the agent. */
+      const entityIdForFile = (file) =>
+        file.context === FileContext.message_attachment ? undefined : agentId;
+
+      /** Surface a just-provisioned file to the tool loaded immediately after: the code
+       *  and file_search primers read `tool_resources.<resource>.files`. */
+      if (!ctx.tool_resources) {
+        ctx.tool_resources = {};
+      }
+      const addProvisionedFile = (file, resourceType, agentScoped) => {
+        if (!file.file_id) {
+          return;
+        }
+        const resource = ctx.tool_resources[resourceType] ?? {};
+        /** Agent-scoped file_search files are embedded under `entity_id: agentId`, so
+         *  they must be queried by `file_ids` (primeFiles marks those `fromAgent` and
+         *  passes `entity_id`); user chat attachments and code files live in `files`. */
+        if (agentScoped && resourceType === EToolResources.file_search) {
+          const fileIds = resource.file_ids ? [...resource.file_ids] : [];
+          if (!fileIds.includes(file.file_id)) {
+            fileIds.push(file.file_id);
+          }
+          ctx.tool_resources[resourceType] = { ...resource, file_ids: fileIds };
+          return;
+        }
+        const files = resource.files ? [...resource.files] : [];
+        if (!files.some((existing) => existing.file_id === file.file_id)) {
+          files.push(file);
+        }
+        ctx.tool_resources[resourceType] = { ...resource, files };
+      };
+
+      /** @type {import('@librechat/api').TFileUpdate[]} */
+      const pendingUpdates = [];
+
+      if (needsCode && provisionState.codeEnvFiles.length > 0 && provisionState.codeApiKey) {
+        const results = await Promise.allSettled(
+          provisionState.codeEnvFiles.map(async (file) => {
+            const { codeEnvRef, fileUpdate } = await provisionToCodeEnv({
+              req,
+              file,
+              entity_id: entityIdForFile(file),
+            });
+            file.metadata = { ...file.metadata, codeEnvRef };
+            addProvisionedFile(file, EToolResources.execute_code);
+            pendingUpdates.push(fileUpdate);
+          }),
+        );
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            logger.error('[provisionFiles] Code env provisioning failed', result.reason);
+          }
+        }
+        provisionState.codeEnvFiles = [];
+      }
+
+      if (needsSearch && provisionState.vectorDBFiles.length > 0) {
+        const results = await Promise.allSettled(
+          provisionState.vectorDBFiles.map(async (file) => {
+            const result = await provisionToVectorDB({
+              req,
+              file,
+              entity_id: entityIdForFile(file),
+            });
+            if (result.embedded) {
+              file.embedded = true;
+              addProvisionedFile(
+                file,
+                EToolResources.file_search,
+                entityIdForFile(file) !== undefined,
+              );
+              if (result.fileUpdate) {
+                pendingUpdates.push(result.fileUpdate);
+              }
+            }
+          }),
+        );
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            logger.error('[provisionFiles] Vector DB provisioning failed', result.reason);
+          }
+        }
+        provisionState.vectorDBFiles = [];
+      }
+
+      if (pendingUpdates.length > 0) {
+        await Promise.allSettled(pendingUpdates.map((update) => db.updateFile(update)));
+      }
+    },
   };
 
   const summarizationOptions =
@@ -436,6 +556,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       listSkillsByAccess: skillDbMethods.listSkillsByAccess,
       listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
       getSkillByName: skillDbMethods.getSkillByName,
+      provisionToCodeEnv,
+      provisionToVectorDB,
+      checkSessionsAlive,
+      loadCodeApiKey,
+      updateFile: db.updateFile,
     },
   );
 
@@ -515,6 +640,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        provisionToCodeEnv,
+        provisionToVectorDB,
+        checkSessionsAlive,
+        loadCodeApiKey,
+        updateFile: db.updateFile,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -732,6 +862,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           listSkillsByAccess: skillDbMethods.listSkillsByAccess,
           listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
           getSkillByName: skillDbMethods.getSkillByName,
+          provisionToCodeEnv,
+          provisionToVectorDB,
+          checkSessionsAlive,
+          loadCodeApiKey,
+          updateFile: db.updateFile,
         },
       );
       agentConfigs.set(agentId, config);

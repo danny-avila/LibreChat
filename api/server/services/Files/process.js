@@ -16,6 +16,7 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  resolveDefaultLLMDeliveryPath,
   documentParserMimeTypes,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
@@ -437,6 +438,19 @@ const processFileURL = async ({
   }
 };
 
+const resolveDefaultUploadLLMDeliveryPath = ({ file, endpointConfig, fileConfig }) => {
+  const isLegacyFileUploadUX = endpointConfig?.legacyFileUploadUX === true;
+  if (isLegacyFileUploadUX) {
+    return 'provider';
+  }
+
+  return resolveDefaultLLMDeliveryPath(
+    file.mimetype,
+    endpointConfig?.defaultLLMDeliveryPath,
+    fileConfig?.defaultLLMDeliveryPath,
+  );
+};
+
 /**
  * Applies the current strategy for image uploads.
  * Saves file metadata to the database with an expiry TTL.
@@ -454,6 +468,9 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+  const llmDeliveryPath = resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
@@ -479,6 +496,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       width,
       height,
       tenantId: req.user.tenantId,
+      llmDeliveryPath,
     },
     true,
   );
@@ -651,6 +669,21 @@ const processFileUpload = async ({ req, res, metadata }) => {
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 
+const resolveUploadLLMDeliveryPath = ({ tool_resource, file, endpointConfig, fileConfig }) => {
+  if (tool_resource === EToolResources.context || tool_resource === EToolResources.ocr) {
+    return 'text';
+  }
+
+  if (
+    tool_resource === EToolResources.file_search ||
+    tool_resource === EToolResources.execute_code
+  ) {
+    return 'none';
+  }
+
+  return resolveDefaultUploadLLMDeliveryPath({ file, endpointConfig, fileConfig });
+};
+
 /**
  * Applies the current strategy for file uploads.
  * Saves file metadata to the database with an expiry TTL.
@@ -663,17 +696,46 @@ const processFileUpload = async ({ req, res, metadata }) => {
  * @returns {Promise<void>}
  */
 const processAgentFileUpload = async ({ req, res, metadata }) => {
+  // TODO: check and potentially fix — deferred/provider files may be orphaned if effectiveToolResource is undefined
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
 
   let messageAttachment = !!metadata.message_file;
 
+  let effectiveToolResource =
+    tool_resource === EToolResources.ocr ? EToolResources.context : tool_resource;
+
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+  // An agent upload carries endpoint=agents; resolve the file config from the agent's
+  // own provider so provider-specific defaultLLMDeliveryPath overrides are honored.
+  let endpoint = req.body?.endpoint;
+  if (agent_id) {
+    const uploadAgent = await db.getAgent({ id: agent_id });
+    if (uploadAgent?.provider) {
+      endpoint = uploadAgent.provider;
+    }
+  }
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+
   if (agent_id && !tool_resource && !messageAttachment) {
-    throw new Error('No tool resource provided for agent file upload');
+    if (endpointConfig?.legacyFileUploadUX === true) {
+      throw new Error('No tool resource provided for agent file upload');
+    }
   }
 
-  if (tool_resource === EToolResources.file_search && file.mimetype.startsWith('image')) {
+  const llmDeliveryPath = resolveUploadLLMDeliveryPath({
+    tool_resource,
+    file,
+    endpointConfig,
+    fileConfig,
+  });
+
+  if (!tool_resource && llmDeliveryPath === 'text') {
+    effectiveToolResource = EToolResources.context;
+  }
+
+  if (effectiveToolResource === EToolResources.file_search && file.mimetype.startsWith('image')) {
     throw new Error('Image uploads are not supported for file search tool resources');
   }
 
@@ -685,7 +747,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
-  if (tool_resource === EToolResources.execute_code) {
+  if (effectiveToolResource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
@@ -728,37 +790,49 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         id: codeId,
         storage_session_id: uploaded.storage_session_id,
         file_id: uploaded.file_id,
+        provisionedAt: Date.now(),
       },
     };
-  } else if (tool_resource === EToolResources.file_search) {
+  } else if (effectiveToolResource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
     // Note: File search processing continues to dual storage logic below
-  } else if (tool_resource === EToolResources.context) {
+  } else if (effectiveToolResource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
 
     /**
      * @param {object} params
      * @param {string} params.text
-     * @param {number} params.bytes
-     * @param {string} params.filepath
-     * @param {string} params.type
      * @return {Promise<void>}
      */
-    const createTextFile = async ({ text, bytes, filepath, type = 'text/plain' }) => {
+    const createTextFile = async ({ text }) => {
       const textBytes = Buffer.byteLength(text, 'utf8');
       if (textBytes > 15 * megabyte) {
         throw new Error(
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
+      const isImageFile = file.mimetype.startsWith('image');
+      const source = getFileStrategy(appConfig, { isImage: isImageFile });
+      const { handleFileUpload } = getStrategyFunctions(source);
+      const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+      const storageResult = await sanitizedUploadFn({
+        req,
+        file,
+        file_id,
+        basePath,
+        entity_id,
+      });
+      const { bytes, filename, filepath, embedded, height, width } = storageResult;
+
       const retentionExpiry = await getAgentFileRetentionExpiry({
         req,
         messageAttachment,
         tool_resource,
       });
+
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -766,22 +840,26 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           file_id,
           temp_file_id,
           user: req.user.id,
-          type,
-          filepath: filepath ?? file.path,
-          source: FileSources.text,
-          filename: file.originalname,
+          type: file.mimetype,
+          filepath,
+          source,
+          filename: filename ?? sanitizeFilename(file.originalname),
           model: messageAttachment ? undefined : req.body.model,
           context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
           tenantId: req.user.tenantId,
+          embedded,
+          height,
+          width,
+          llmDeliveryPath: 'text',
         }),
         ...retentionExpiry,
       };
 
-      if (!messageAttachment && tool_resource) {
+      if (!messageAttachment && effectiveToolResource) {
         await db.addAgentResourceFile({
           file_id,
           agent_id,
-          tool_resource,
+          tool_resource: effectiveToolResource,
           updatingUserId: req?.user?.id,
         });
       }
@@ -833,8 +911,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     if (shouldUseOCR) {
       const ocrResult = await resolveDocumentText();
       if (ocrResult) {
-        const { text, bytes, filepath: ocrFileURL } = ocrResult;
-        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+        const { text } = ocrResult;
+        return await createTextFile({ text });
       }
       throw new Error(
         `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
@@ -848,8 +926,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
-      const { text, bytes } = await processAudioFile({ req, file, sttService });
-      return await createTextFile({ text, bytes });
+      const { text } = await processAudioFile({ req, file, sttService });
+      return await createTextFile({ text });
     }
 
     const shouldUseText = fileConfig.checkType(
@@ -861,8 +939,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
     }
 
-    const { text, bytes } = await parseText({ req, file, file_id });
-    return await createTextFile({ text, bytes, type: file.mimetype });
+    const { text } = await parseText({ req, file, file_id });
+    return await createTextFile({ text });
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB
@@ -870,7 +948,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
-  if (tool_resource === EToolResources.file_search) {
+  if (effectiveToolResource === EToolResources.file_search) {
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
     const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
@@ -918,7 +996,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   } = storageResult;
   // For RAG files, use embedding result; for others, use storage result
   let embedded = storageResult.embedded;
-  if (tool_resource === EToolResources.file_search) {
+  if (effectiveToolResource === EToolResources.file_search) {
     embedded = embeddingResult?.embedded;
     filename = embeddingResult?.filename || filename;
   }
@@ -931,11 +1009,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     storageRegion: _storageRegion,
   });
 
-  if (!messageAttachment && tool_resource) {
+  if (!messageAttachment && effectiveToolResource) {
     await db.addAgentResourceFile({
       file_id,
       agent_id,
-      tool_resource,
+      tool_resource: effectiveToolResource,
       updatingUserId: req?.user?.id,
     });
   }
@@ -979,6 +1057,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       height,
       width,
       tenantId: req.user.tenantId,
+      llmDeliveryPath,
     }),
     ...retentionExpiry,
   };
