@@ -127,6 +127,7 @@ jobs:
             DOMAIN_CLIENT=${{ secrets.DOMAIN_CLIENT }}
             DOMAIN_SERVER=${{ secrets.DOMAIN_SERVER }}
             ENDPOINTS=${{ secrets.ENDPOINTS }}
+            FEEDBACK_ENFORCEMENT_ENABLED=${{ secrets.FEEDBACK_ENFORCEMENT_ENABLED }}
             FILE_UPLOAD_VIOLATION_SCORE=${{ secrets.FILE_UPLOAD_VIOLATION_SCORE }}
             FORK_VIOLATION_SCORE=${{ secrets.FORK_VIOLATION_SCORE }}
             GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL }}
@@ -139,6 +140,8 @@ jobs:
             IMPORT_VIOLATION_SCORE=${{ secrets.IMPORT_VIOLATION_SCORE }}
             JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
+            LANGGRAPH_API_PORT=${{ secrets.LANGGRAPH_API_PORT }}
+            LANGGRAPH_API_HOST=${{ secrets.LANGGRAPH_API_HOST }}
             LGD_API_KEY=${{ secrets.LGD_API_KEY }}
             LGD_DISTRICTS_API_URL=${{ secrets.LGD_DISTRICTS_API_URL }}
             LGD_STATES_API_URL=${{ secrets.LGD_STATES_API_URL }}
