@@ -154,7 +154,7 @@ export function buildLangfuseConfig({
     langfuse.tags = tags;
   }
 
-  const tenantLangfuseEnabled = normalizeBoolean(config?.enabled) !== false;
+  const tenantLangfuseEnabled = normalizeBoolean(config?.enabled) === true;
   if (!centralTraceExportEnabled) {
     disableCentralExport(langfuse);
   }

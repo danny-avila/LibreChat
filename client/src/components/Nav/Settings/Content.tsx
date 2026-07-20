@@ -64,7 +64,12 @@ export default function Content({ activeTab, query, ctx }: ContentProps) {
           return null;
         }
         return (
-          <Section key={section.id} heading={localize(section.labelKey)} danger={section.danger}>
+          <Section
+            key={section.id}
+            heading={localize(section.labelKey)}
+            icon={section.icon}
+            danger={section.danger}
+          >
             {entries.map((e) => {
               const Cmp = e.Component;
               return (

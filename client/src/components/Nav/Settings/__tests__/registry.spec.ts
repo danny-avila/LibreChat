@@ -1,4 +1,5 @@
 import { isValidElementType } from 'react-is';
+import { SettingsTabValues } from 'librechat-data-provider';
 import type { SettingsContextValue } from '../types';
 import en from '~/locales/en/translation.json';
 import { registry } from '../registry';
@@ -51,6 +52,13 @@ describe('settings registry', () => {
 
   describe('Langfuse connection visibility', () => {
     const langfuseEntry = registry.find((entry) => entry.id === 'langfuseConnection');
+
+    it('places the connection in the Langfuse tab', () => {
+      expect(langfuseEntry).toMatchObject({
+        tab: SettingsTabValues.LANGFUSE,
+        section: 'langfuse',
+      });
+    });
 
     it('shows the connection when fanout is enabled and the user can manage it', () => {
       expect(

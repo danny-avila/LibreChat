@@ -66,6 +66,7 @@ function baseConfigDoc(langfuse: Record<string, unknown>) {
     principalType: 'role',
     principalId: '__base__',
     priority: 10,
+    isActive: true,
     overrides: { langfuse },
     updatedAt: new Date('2026-06-29T00:00:00.000Z'),
   };
@@ -79,6 +80,12 @@ function createHandlers(overrides = {}) {
       .mockImplementation((_pt, _pid, _pm, fields) =>
         Promise.resolve(baseConfigDoc(rehydrate(fields))),
       ),
+    toggleConfigActive: jest.fn().mockImplementation((_pt, _pid, isActive) =>
+      Promise.resolve({
+        ...baseConfigDoc({}),
+        isActive,
+      }),
+    ),
     invalidateConfigCaches: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -195,6 +202,33 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.body?.secretKey).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain('sk-lf-secret');
       expect(JSON.stringify(res.body)).not.toContain('v3:');
+    });
+
+    it('reports configured connections without an enabled field as disabled', async () => {
+      const { handlers } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(
+          baseConfigDoc({
+            destination: 'eu',
+            publicKey: 'pk-lf-1',
+            secretKey: encryptV3('sk-lf-secret'),
+          }),
+        ),
+      });
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(res.body).toMatchObject({ configured: true, enabled: false });
+    });
+
+    it('reads only active base configs', async () => {
+      const findConfigByPrincipal = jest.fn().mockResolvedValue(null);
+      const { handlers } = createHandlers({ findConfigByPrincipal });
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__');
     });
   });
 
@@ -348,6 +382,40 @@ describe('createAdminLangfuseHandlers', () => {
       expect(global.fetch).not.toHaveBeenCalled();
       expect(deps.patchConfigFields).toHaveBeenCalledTimes(1);
       expect(deps.patchConfigFields.mock.calls[0][3]['langfuse.enabled']).toBe(true);
+    });
+
+    it('reactivates an inactive base config updated by the field patch', async () => {
+      const inactiveUpdated = {
+        ...baseConfigDoc({
+          enabled: true,
+          destination: 'eu',
+          publicKey: 'pk-lf-1',
+          secretKey: encryptV3('sk-lf-secret'),
+        }),
+        isActive: false,
+      };
+      const activeUpdated = { ...inactiveUpdated, isActive: true };
+      const { handlers, deps } = createHandlers({
+        patchConfigFields: jest.fn().mockResolvedValue(inactiveUpdated),
+        toggleConfigActive: jest.fn().mockResolvedValue(activeUpdated),
+      });
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'eu',
+            publicKey: 'pk-lf-1',
+            secretKey: 'sk-lf-secret',
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.toggleConfigActive).toHaveBeenCalledWith('role', '__base__', true);
+      expect(res.body).toMatchObject({ configured: true, enabled: true });
     });
   });
 

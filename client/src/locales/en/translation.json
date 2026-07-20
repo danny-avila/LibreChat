@@ -1760,6 +1760,8 @@
   "com_ui_settings_section_sending": "Sending",
   "com_ui_settings_section_stt": "Speech to text",
   "com_ui_settings_section_tts": "Text to speech",
+  "com_ui_settings_section_langfuse": "Langfuse",
+  "com_ui_settings_tab_langfuse": "Langfuse",
   "com_ui_settings_tab_data": "Data & Privacy",
   "com_ui_share": "Share",
   "com_ui_share_create_message": "Your name and any messages you add after sharing stay private.",

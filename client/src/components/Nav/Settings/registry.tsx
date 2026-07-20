@@ -501,11 +501,11 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_revoke_keys',
     Component: RevokeKeys,
   },
-  // Data controls · Integrations
+  // Langfuse
   {
     id: 'langfuseConnection',
-    tab: DATA,
-    section: 'integrations',
+    tab: SettingsTabValues.LANGFUSE,
+    section: 'langfuse',
     labelKey: 'com_ui_langfuse_title',
     keywords: ['langfuse', 'observability', 'tracing', 'telemetry', 'traces'],
     show: (ctx) => ctx.langfuseConnectionAccess && ctx.langfuseFanoutEnabled,

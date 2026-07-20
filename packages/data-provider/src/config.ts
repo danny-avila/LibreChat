@@ -2609,6 +2609,10 @@ export enum SettingsTabValues {
    */
   SPEECH = 'speech',
   /**
+   * Tab for Langfuse Settings
+   */
+  LANGFUSE = 'langfuse',
+  /**
    * Tab for Beta Features
    */
   BETA = 'beta',

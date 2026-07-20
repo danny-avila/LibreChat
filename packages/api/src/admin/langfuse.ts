@@ -39,6 +39,12 @@ export interface AdminLangfuseDeps {
     priority: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
+  toggleConfigActive: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    isActive: boolean,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
 }
 
@@ -53,9 +59,10 @@ function readStoredLangfuse(config: IConfig | null): LangfuseConfig | undefined 
 
 function buildStatus(config: IConfig | null): TLangfuseConnectionStatus {
   const stored = readStoredLangfuse(config);
+  const configured = Boolean(stored?.publicKey && stored?.secretKey);
   return {
-    configured: Boolean(stored?.publicKey && stored?.secretKey),
-    enabled: stored?.enabled === true,
+    configured,
+    enabled: configured && stored?.enabled === true,
     destinations: getLangfuseTenantDestinations(),
     destination: stored?.destination,
     publicKey: stored?.publicKey,
@@ -155,12 +162,11 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   updateConnection: (req: ServerRequest, res: Response) => Promise<Response>;
   testConnection: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
-  const { findConfigByPrincipal, patchConfigFields, invalidateConfigCaches } = deps;
+  const { findConfigByPrincipal, patchConfigFields, toggleConfigActive, invalidateConfigCaches } =
+    deps;
 
   function findBaseConfig(): Promise<IConfig | null> {
-    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
-      includeInactive: true,
-    });
+    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
   }
 
   async function getConnection(req: ServerRequest, res: Response): Promise<Response> {
@@ -244,13 +250,16 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         fields['langfuse.secretKey'] = secretKey;
       }
 
-      const updated = await patchConfigFields(
+      let updated = await patchConfigFields(
         PrincipalType.ROLE,
         BASE_CONFIG_PRINCIPAL_ID,
         PrincipalModel.ROLE,
         encryptConfigSecretFields(fields),
         existing?.priority ?? DEFAULT_PRIORITY,
       );
+      if (updated?.isActive === false) {
+        updated = await toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, true);
+      }
 
       invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>
         logger.error('[adminLangfuse] Cache invalidation failed after update:', err),

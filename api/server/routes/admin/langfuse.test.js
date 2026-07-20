@@ -2,7 +2,9 @@ const express = require('express');
 const request = require('supertest');
 
 let deniedCapability;
+let canManageLangfuse;
 const middlewareCalls = [];
+const mockHasConfigCapability = jest.fn(() => Promise.resolve(canManageLangfuse));
 const mockRequireJwtAuth = jest.fn((req, _res, next) => {
   req.user = { id: 'user-1', role: 'DELEGATED_ADMIN', tenantId: 'tenant-a' };
   middlewareCalls.push('jwt');
@@ -23,7 +25,6 @@ const mockHandlers = {
 
 jest.mock('@librechat/data-schemas', () => ({
   SystemCapabilities: { ACCESS_ADMIN: 'access:admin' },
-  configCapability: (section) => `manage:configs:${section}`,
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -32,6 +33,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: mockRequireCapability,
+  hasConfigCapability: mockHasConfigCapability,
 }));
 
 jest.mock('~/server/middleware', () => ({
@@ -45,6 +47,7 @@ jest.mock('~/server/services/Config', () => ({
 jest.mock('~/models', () => ({
   findConfigByPrincipal: jest.fn(),
   patchConfigFields: jest.fn(),
+  toggleConfigActive: jest.fn(),
 }));
 
 describe('admin Langfuse routes', () => {
@@ -59,6 +62,7 @@ describe('admin Langfuse routes', () => {
 
   beforeEach(() => {
     deniedCapability = undefined;
+    canManageLangfuse = true;
     middlewareCalls.length = 0;
     jest.clearAllMocks();
   });
@@ -67,7 +71,16 @@ describe('admin Langfuse routes', () => {
     const response = await request(createApp()).get('/api/admin/langfuse/connection').expect(200);
 
     expect(response.body).toEqual({ handler: 'get' });
-    expect(middlewareCalls).toEqual(['jwt', 'access:admin', 'manage:configs:langfuse']);
+    expect(middlewareCalls).toEqual(['jwt', 'access:admin']);
+    expect(mockHasConfigCapability).toHaveBeenCalledWith(
+      {
+        id: 'user-1',
+        role: 'DELEGATED_ADMIN',
+        tenantId: 'tenant-a',
+        idOnTheSource: null,
+      },
+      'langfuse',
+    );
     expect(mockHandlers.getConnection).toHaveBeenCalledTimes(1);
   });
 
@@ -81,12 +94,12 @@ describe('admin Langfuse routes', () => {
     expect(response.body).toEqual({
       handler: handlerName === 'updateConnection' ? 'update' : 'test',
     });
-    expect(middlewareCalls).toEqual(['jwt', 'access:admin', 'manage:configs:langfuse']);
+    expect(middlewareCalls).toEqual(['jwt', 'access:admin']);
     expect(mockHandlers[handlerName]).toHaveBeenCalledTimes(1);
   });
 
   it('blocks updates when the user lacks Langfuse manage access', async () => {
-    deniedCapability = 'manage:configs:langfuse';
+    canManageLangfuse = false;
 
     await request(createApp()).put('/api/admin/langfuse/connection').send({}).expect(403);
 

@@ -1203,6 +1203,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1233,6 +1234,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1261,6 +1263,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
         },
@@ -1283,6 +1286,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'us',
@@ -1310,6 +1314,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1332,6 +1337,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -1364,6 +1370,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'eu',
@@ -1393,6 +1400,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1421,6 +1429,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1450,6 +1459,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'unconfigured',
@@ -1475,7 +1485,7 @@ describe('Langfuse run config', () => {
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
-        langfuse: {},
+        langfuse: { enabled: true },
       } as AppConfig,
     });
 
@@ -1518,6 +1528,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
         },
@@ -1543,6 +1554,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1577,6 +1589,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'eu',
@@ -1606,6 +1619,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'eu',

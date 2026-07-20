@@ -10,8 +10,10 @@ jest.mock('~/server/services/Config/ldap', () => ({
 }));
 
 const mockHasCapability = jest.fn();
+const mockHasConfigCapability = jest.fn();
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   hasCapability: (...args) => mockHasCapability(...args),
+  hasConfigCapability: (...args) => mockHasConfigCapability(...args),
 }));
 
 const mockGetTenantId = jest.fn(() => undefined);
@@ -390,6 +392,7 @@ describe('GET /api/config', () => {
     it('should advertise Langfuse fanout only when the toggle and collector URL are configured', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
       process.env.LANGFUSE_FANOUT_ENABLED = 'true';
       const app = createApp(mockUser);
 
@@ -414,15 +417,14 @@ describe('GET /api/config', () => {
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
       const app = createApp({ ...mockUser, role: 'DELEGATED_ADMIN' });
 
-      mockHasCapability.mockImplementation(async (_user, capability) =>
-        ['access:admin', 'manage:configs:langfuse'].includes(capability),
-      );
-      let response = await request(app).get('/api/config');
-      expect(response.body.langfuseConnectionAccess).toBe(true);
-
       mockHasCapability.mockImplementation(
         async (_user, capability) => capability === 'access:admin',
       );
+      mockHasConfigCapability.mockResolvedValue(true);
+      let response = await request(app).get('/api/config');
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+
+      mockHasConfigCapability.mockResolvedValue(false);
       response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(true);
       expect(response.body.langfuseConnectionAccess).toBe(false);

@@ -54,6 +54,7 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -81,6 +82,7 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: 'v3:not-valid-ciphertext',
           destination: 'eu',
@@ -105,6 +107,7 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
           destination: 'eu',
@@ -193,6 +196,7 @@ describe('buildLangfuseConfig', () => {
         centralTraceExportEnabled: false,
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -227,6 +231,7 @@ describe('buildLangfuseConfig', () => {
         centralTraceExportEnabled: false,
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -256,6 +261,31 @@ describe('buildLangfuseConfig', () => {
         appConfig: {
           langfuse: {
             enabled: false,
+            publicKey: 'pk-tenant-1',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('keeps central collector export when tenant enabled is missing', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',

@@ -71,7 +71,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   }
 
   const config = appConfig?.langfuse;
-  if (normalizeBoolean(config?.enabled) === false) {
+  if (normalizeBoolean(config?.enabled) !== true) {
     return undefined;
   }
   if (!isLangfuseFanoutEnabled()) {
