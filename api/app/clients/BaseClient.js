@@ -32,6 +32,7 @@ const {
   getFiles,
 } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { logUserQuery } = require('~/server/services/bklQueryLog');
 const { checkBalance } = require('~/models/balanceMethods');
 const { truncateToolCallOutputs } = require('./prompts');
 const TextStream = require('./TextStream');
@@ -976,6 +977,16 @@ class BaseClient {
       },
       { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
     );
+
+    /** BKL: append-only query log — new user messages only, idempotent by messageId */
+    if (message.isCreatedByUser === true) {
+      logUserQuery({
+        message: savedMessage ?? message,
+        user: user ?? this.user,
+        endpoint: this.options.endpoint,
+        model: this.modelOptions?.model ?? endpointOptions?.model,
+      });
+    }
 
     if (this.skipSaveConvo) {
       return { message: savedMessage };

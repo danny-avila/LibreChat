@@ -55,7 +55,15 @@ export default function ExistingFilesImportModal({
   const attachedIds = useMemo(() => new Set(currentFiles.keys()), [currentFiles]);
   const { data: files = [], isLoading } = useGetFiles<TFile[]>({
     enabled: open,
-    select: (files) => files.filter(isBklOcrReadyFile),
+    /**
+     * 업로드만 하고 한 번도 채팅에 사용하지 않은 파일(usage 0, TTL 대기)은
+     * 임포트 목록에서 제외한다. 이런 파일은 서버에서 자동 만료되며,
+     * '내 파일'에서 수동 삭제도 가능하다.
+     */
+    select: (files) =>
+      files.filter(
+        (file) => isBklOcrReadyFile(file) && (file.usage ?? 0) > 0 && file.expiresAt == null,
+      ),
   });
 
   const filteredFiles = useMemo(() => {

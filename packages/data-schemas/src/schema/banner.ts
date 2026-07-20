@@ -8,6 +8,8 @@ export interface IBanner extends Document {
   type: 'banner' | 'popup';
   isPublic: boolean;
   persistable: boolean;
+  /** BKL: 공지 팝업 제목 (type='popup' 용) */
+  title?: string;
 }
 
 const bannerSchema = new Schema<IBanner>(
@@ -40,6 +42,10 @@ const bannerSchema = new Schema<IBanner>(
     persistable: {
       type: Boolean,
       default: false,
+    },
+    /** BKL: 공지 팝업 제목 */
+    title: {
+      type: String,
     },
   },
   { timestamps: true },

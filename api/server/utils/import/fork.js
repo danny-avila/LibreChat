@@ -62,6 +62,10 @@ function cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder) {
       messageId: newMessageId,
       parentMessageId: parentId,
       createdAt,
+      /** BKL: mark clones so they are excluded from query statistics and
+       * identifiable in messages-based views (원본 messageId 보존) */
+      bkl_cloned: true,
+      bkl_cloned_from: message.messageId,
     };
 
     importBatchBuilder.saveMessage(clonedMessage);

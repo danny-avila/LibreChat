@@ -38,6 +38,9 @@ export interface IMessage extends Document {
   thread_id?: string;
   iconURL?: string;
   addedConvo?: boolean;
+  /** BKL: clone markers (fork/duplicate) */
+  bkl_cloned?: boolean;
+  bkl_cloned_from?: string;
   metadata?: Record<string, unknown>;
   attachments?: unknown[];
   expiredAt?: Date;

@@ -582,7 +582,18 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           tool_resource,
         });
       }
-      const result = await createFile(fileInfo, true);
+      /**
+       * BKL: 채팅 첨부 업로드는 메시지 전송 없이 방치되면 자동 만료되도록 TTL 을 유지한다.
+       * 메시지를 전송하면 updateFileUsage 가 expiresAt 을 제거해 영구 보존된다.
+       * BKL_UNUSED_FILE_TTL_HOURS=0 으로 비활성화 (업스트림 기본 동작: TTL 없음).
+       */
+      const unusedTTLHours = parseFloat(process.env.BKL_UNUSED_FILE_TTL_HOURS ?? '24');
+      const keepUnusedTTL =
+        messageAttachment && Number.isFinite(unusedTTLHours) && unusedTTLHours > 0;
+      if (keepUnusedTTL) {
+        fileInfo.expiresAt = new Date(Date.now() + unusedTTLHours * 3600 * 1000);
+      }
+      const result = await createFile(fileInfo, !keepUnusedTTL);
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });

@@ -8,6 +8,10 @@ export interface ISharedLink extends Document {
   shareId?: string;
   targetMessageId?: string;
   isPublic: boolean;
+  /** BKL: link expiry (null/undefined = no expiry) */
+  expiresAt?: Date | null;
+  /** BKL: total view count */
+  viewCount?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -39,6 +43,16 @@ const shareSchema: Schema<ISharedLink> = new Schema(
     isPublic: {
       type: Boolean,
       default: true,
+    },
+    /** BKL: 공유 링크 만료 시각 (없으면 무제한) */
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
+    /** BKL: 조회수 */
+    viewCount: {
+      type: Number,
+      default: 0,
     },
   },
   { timestamps: true },

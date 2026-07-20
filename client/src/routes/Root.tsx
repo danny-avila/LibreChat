@@ -21,6 +21,7 @@ import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import BklNoticePopup from '~/components/Chat/BklNoticePopup';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -73,6 +74,7 @@ export default function Root() {
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
               <Banner onHeightChange={setBannerHeight} />
+              <BklNoticePopup />
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
                   <Nav navVisible={navVisible} setNavVisible={setNavVisible} />

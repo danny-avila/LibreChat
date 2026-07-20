@@ -144,10 +144,18 @@ const startServer = async () => {
   app.use('/bkl', bklProxy);
   if (process.env.BKL_ADMIN_API_DISABLE !== '1' && !isEnabled(process.env.BKL_ADMIN_API_DISABLE)) {
     app.use('/admin-api', bklAdmin);
+    /* BKL 어드민 대시보드 정적 서빙 — 이미지에 포함 (mount-elimination).
+     * 정적 셸만 공개되며 모든 데이터 API 는 BKL_ADMIN_TOKEN Bearer 인증 필요. */
+    const bklAdminDir = path.join(__dirname, 'admin');
+    app.use('/admin', express.static(bklAdminDir));
+    app.use(/^\/admin(?:\/.*)?$/, (_req, res) => {
+      res.sendFile(path.join(bklAdminDir, 'index.html'));
+    });
+  } else {
+    app.use(/^\/admin(?:\/.*)?$/, (_req, res) => {
+      res.status(404).type('text').send('BKL admin dashboard is disabled.');
+    });
   }
-  app.use(/^\/admin(?:\/.*)?$/, (_req, res) => {
-    res.status(404).type('text').send('BKL admin dashboard is not bundled in this image.');
-  });
 
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
@@ -178,6 +186,7 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/bkl-survey', require('./routes/bklSurvey'));
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
@@ -233,6 +242,9 @@ const startServer = async () => {
     await initializeMCPs();
     await initializeOAuthReconnectManager();
     await checkMigrations();
+
+    /* BKL: soft-delete 보존기간 자동 삭제 (일 1회) */
+    require('./services/bklRetention').startRetentionPurge();
 
     // Configure stream services (auto-detects Redis from USE_REDIS env var)
     const streamServices = createStreamServices();

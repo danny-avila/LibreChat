@@ -1,14 +1,14 @@
 import { memo, useRef, useState } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { Archive, LogOut } from 'lucide-react';
+import { Archive, FileText, LogOut } from 'lucide-react';
 import { DropdownMenuSeparator, OGDialog, OGDialogTemplate, Avatar } from '@librechat/client';
+import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import ArchivedChatsTable from './SettingsTabs/General/ArchivedChatsTable';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 
-// BKL: 마이메뉴는 '로그아웃' 하나만 노출. 내 파일 / 도움말 / 설정 항목은 제거.
-// 관련 import (FileText, LinkIcon, GearIcon, MyFilesModal, Settings) 도 삭제.
+// BKL: 마이메뉴는 내 파일(라이브러리) / 보관된 채팅 / 로그아웃만 노출. 도움말 / 설정 항목은 제거.
 function AccountSettings() {
   const localize = useLocalize();
   const { user, isAuthenticated, logout } = useAuthContext();
@@ -18,6 +18,7 @@ function AccountSettings() {
   });
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [isFilesOpen, setIsFilesOpen] = useState(false);
 
   return (
     <Menu.MenuProvider>
@@ -59,7 +60,15 @@ function AccountSettings() {
             <DropdownMenuSeparator />
           </>
         )}
-        {/* BKL: 내 파일 / 도움말 / 설정 메뉴 항목 제거. 보관된 채팅 관리와 로그아웃만 노출. */}
+        {/* BKL: 내 파일(업로드 파일 라이브러리) / 보관된 채팅 / 로그아웃 노출. 도움말 / 설정은 제거. */}
+        <Menu.MenuItem
+          onClick={() => setIsFilesOpen(true)}
+          className="select-item text-sm"
+          aria-label={localize('com_nav_my_files')}
+        >
+          <FileText className="icon-md" aria-hidden="true" />
+          {localize('com_nav_my_files')}
+        </Menu.MenuItem>
         <Menu.MenuItem
           onClick={() => setIsArchiveOpen(true)}
           className="select-item text-sm"
@@ -82,6 +91,7 @@ function AccountSettings() {
           main={<ArchivedChatsTable onOpenChange={setIsArchiveOpen} />}
         />
       </OGDialog>
+      {isFilesOpen && <MyFilesModal open={isFilesOpen} onOpenChange={setIsFilesOpen} />}
     </Menu.MenuProvider>
   );
 }

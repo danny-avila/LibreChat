@@ -10,13 +10,19 @@ const {
   createForkLimiters,
   configMiddleware,
 } = require('~/server/middleware');
-const { getConvosByCursor, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const {
+  getConvosByCursor,
+  deleteConvos,
+  softDeleteConvos,
+  getConvo,
+  saveConvo,
+} = require('~/models/Conversation');
+const { deleteConvoFiles } = require('~/server/services/Files/bklConvoFiles');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
-const { deleteToolCalls } = require('~/models/ToolCall');
 const getLogStores = require('~/cache/getLogStores');
 
 const assistantClients = {
@@ -98,7 +104,13 @@ router.get('/gen_title/:conversationId', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   let filter = {};
-  const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
+  const {
+    conversationId,
+    source,
+    thread_id,
+    endpoint,
+    deleteFiles: shouldDeleteFiles,
+  } = req.body?.arg ?? {};
 
   // Prevent deletion of all conversations
   if (!conversationId && !source && !thread_id && !endpoint) {
@@ -128,9 +140,20 @@ router.delete('/', async (req, res) => {
   }
 
   try {
-    const dbResponse = await deleteConvos(req.user.id, filter);
+    /** BKL: 메시지 삭제 전에 이 대화 전용 첨부 파일을 정리 (다른 대화에서 참조 중인 파일은 보존) */
+    if (filter.conversationId && shouldDeleteFiles === true) {
+      try {
+        await deleteConvoFiles({ req, conversationId: filter.conversationId });
+      } catch (fileError) {
+        logger.error('[convos.delete] Error deleting conversation files', fileError);
+      }
+    }
+    /** BKL: 사용자 삭제는 soft-delete (bklDeletedAt 마킹). 메시지는 보존되고
+     * 어드민 "삭제된 채팅" 관리에서 최종 삭제/복원 가능. 보존기간 경과 시
+     * 자동 hard delete (BKL_CHAT_RETENTION_DAYS). */
+    const dbResponse = await softDeleteConvos(req.user.id, filter);
     if (filter.conversationId) {
-      await deleteToolCalls(req.user.id, filter.conversationId);
+      /* 공유 링크는 즉시 무효화. tool call 은 복원 대비 hard delete 시점에 정리. */
       await deleteConvoSharedLink(req.user.id, filter.conversationId);
     }
     res.status(201).json(dbResponse);
@@ -142,8 +165,8 @@ router.delete('/', async (req, res) => {
 
 router.delete('/all', async (req, res) => {
   try {
-    const dbResponse = await deleteConvos(req.user.id, {});
-    await deleteToolCalls(req.user.id);
+    /** BKL: 전체 삭제도 soft-delete 로 통일 */
+    const dbResponse = await softDeleteConvos(req.user.id, {});
     await deleteAllSharedLinks(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -160,7 +183,7 @@ router.delete('/all', async (req, res) => {
  * @returns {object} 200 - The updated conversation object.
  */
 router.post('/archive', validateConvoAccess, async (req, res) => {
-  const { conversationId, isArchived } = req.body?.arg ?? {};
+  const { conversationId, isArchived, deleteFiles: shouldDeleteFiles } = req.body?.arg ?? {};
 
   if (!conversationId) {
     return res.status(400).json({ error: 'conversationId is required' });
@@ -171,6 +194,14 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
   }
 
   try {
+    /** BKL: 아카이브 시 이 대화 전용 첨부 파일 정리 옵션 */
+    if (isArchived === true && shouldDeleteFiles === true) {
+      try {
+        await deleteConvoFiles({ req, conversationId });
+      } catch (fileError) {
+        logger.error('[convos.archive] Error deleting conversation files', fileError);
+      }
+    }
     const dbResponse = await saveConvo(
       req,
       { conversationId, isArchived },

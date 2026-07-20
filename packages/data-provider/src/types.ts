@@ -278,6 +278,8 @@ export type TDeleteConversationRequest = {
   thread_id?: string;
   endpoint?: string;
   source?: string;
+  /** BKL: 이 대화 전용 첨부 파일도 함께 삭제 */
+  deleteFiles?: boolean;
 };
 
 export type TDeleteConversationResponse = {
@@ -292,6 +294,8 @@ export type TDeleteConversationResponse = {
 export type TArchiveConversationRequest = {
   conversationId: string;
   isArchived: boolean;
+  /** BKL: 아카이브 시 이 대화 전용 첨부 파일도 함께 삭제 */
+  deleteFiles?: boolean;
 };
 
 export type TArchiveConversationResponse = TConversation;

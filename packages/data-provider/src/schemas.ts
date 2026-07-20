@@ -678,6 +678,8 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   attachments?: TAttachment[];
   clientTimestamp?: string;
   feedback?: TFeedback;
+  /** BKL: 채팅 검색 결과에서 매칭 지점 주변 스니펫 (하이라이트 마커 포함) */
+  searchSnippet?: string | null;
 };
 
 export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {

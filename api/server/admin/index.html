@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>bkl DB AI — 어드민</title>
+  <meta name="viewport" content="width=1280" />
+  <link rel="stylesheet" href="/admin/css/admin.css" />
+</head>
+<body>
+<!-- ── 토큰 인증 게이트 ── -->
+<div class="auth-overlay" id="auth-overlay" style="display:none;">
+  <div class="auth-card">
+    <div class="auth-title">bkl DB AI 어드민</div>
+    <div class="auth-sub">관리자 토큰을 입력하세요</div>
+    <input type="password" id="auth-token-input" class="auth-input" placeholder="BKL_ADMIN_TOKEN" autocomplete="off" />
+    <div class="auth-error" id="auth-error"></div>
+    <button class="auth-btn" id="auth-submit">확인</button>
+  </div>
+</div>
+
+<div class="app" id="app" style="display:none;">
+
+  <!-- ── 상단 헤더 ── -->
+  <header class="topbar">
+    <div class="topbar-brand">bkl DB AI <em>어드민</em></div>
+    <nav class="topbar-tabs">
+      <button class="tab-btn active" data-tab="analytics">통계</button>
+      <button class="tab-btn" data-tab="users">사용자</button>
+      <button class="tab-btn" data-tab="deleted">삭제된 채팅</button>
+      <button class="tab-btn" data-tab="shares">공유 링크</button>
+      <button class="tab-btn" data-tab="notices">공지</button>
+      <button class="tab-btn" data-tab="surveys">피드백·설문</button>
+      <button class="tab-btn" data-tab="settings">설정</button>
+    </nav>
+    <div class="topbar-right">
+      <label class="autorefresh-toggle" title="자동 새로고침 (통계 탭에서만 동작)">
+        <input type="checkbox" id="autorefresh-checkbox" />
+        <span>자동 새로고침</span>
+      </label>
+      <span class="updated-text" id="updated-text"></span>
+      <button class="btn-refresh" id="btn-refresh">↻ 새로고침</button>
+      <button class="btn-refresh" id="btn-logout" title="토큰 재입력">로그아웃</button>
+    </div>
+  </header>
+
+  <!-- ── 기간 선택 바 ── -->
+  <div class="range-bar">
+    <button class="preset-btn" data-preset="today">오늘</button>
+    <button class="preset-btn" data-preset="7d">최근 7일</button>
+    <button class="preset-btn active" data-preset="30d">최근 30일</button>
+    <button class="preset-btn" data-preset="365d">최근 1년</button>
+    <div class="custom-range-wrap" id="custom-range-wrap">
+      <button class="btn-custom-range" id="btn-custom-toggle">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+          <rect x="2" y="3" width="12" height="11" rx="2"/><path d="M5 1v3M11 1v3M2 7h12"/>
+        </svg>
+        <span id="custom-label">직접 지정</span>
+      </button>
+      <div class="custom-dropdown" id="custom-dropdown">
+        <div class="custom-dropdown-title">기간 직접 지정</div>
+        <div class="date-row"><label>시작</label><input type="date" id="date-from" /></div>
+        <div class="date-row"><label>종료</label><input type="date" id="date-to" /></div>
+        <div class="dropdown-actions">
+          <button class="btn-dd-cancel" id="btn-dd-cancel">취소</button>
+          <button class="btn-dd-apply" id="btn-dd-apply">적용</button>
+        </div>
+      </div>
+    </div>
+    <div id="user-search-wrap" class="search-wrap" style="margin-left:auto; display:none;">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6.5" cy="6.5" r="4"/><path d="M10 10l3 3"/></svg>
+      <input type="text" class="search-input" id="user-search" placeholder="이름 / 이메일 검색" style="width:220px;" />
+    </div>
+  </div>
+
+  <!-- ── 메인 콘텐츠 ── -->
+  <main class="main">
+
+    <!-- ════ 통계 탭 ════ -->
+    <div class="tab-panel active" id="panel-analytics">
+      <div class="page-header">
+        <div>
+          <div class="page-title">사용 통계</div>
+          <div class="page-sub" id="analytics-sub">마지막 업데이트: —</div>
+        </div>
+        <button class="btn-export" id="btn-export-analytics">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v8M5 7l3 3 3-3M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/></svg>
+          엑셀 내보내기
+        </button>
+      </div>
+
+      <!-- AI 통계 요약 (항목 6) -->
+      <div class="ai-summary-panel" id="ai-summary-panel">
+        <div class="ai-summary-header">
+          <span class="ai-summary-title">✨ AI 통계 요약</span>
+          <button class="btn-refresh" id="btn-ai-summary">생성</button>
+        </div>
+        <div class="ai-summary-body" id="ai-summary-body">「생성」을 누르면 선택한 기간의 사용 통계를 AI가 요약합니다.</div>
+      </div>
+
+      <div class="cards-row" id="summary-cards">
+        <div class="card"><div class="card-label">DAU</div><div class="card-value">—</div><div class="card-sub">오늘 활성 사용자</div></div>
+        <div class="card"><div class="card-label">WAU</div><div class="card-value">—</div><div class="card-sub">7일 활성 사용자</div></div>
+        <div class="card"><div class="card-label">MAU</div><div class="card-value">—</div><div class="card-sub">30일 활성 사용자</div></div>
+        <div class="card"><div class="card-label">기간 질의</div><div class="card-value">—</div><div class="card-sub" id="range-q-sub">—</div></div>
+        <div class="card"><div class="card-label">기간 강화</div><div class="card-value">—</div><div class="card-sub" id="range-e-sub">쿼리 강화 실행</div></div>
+        <div class="card"><div class="card-label">전체 사용자</div><div class="card-value">—</div><div class="card-sub" id="convo-sub">—</div></div>
+      </div>
+      <div class="charts-row cols-2">
+        <div class="chart-panel"><div class="chart-title">일별 질의 수 / 활성 사용자</div><div class="chart-canvas-wrap"><canvas id="daily-chart"></canvas></div></div>
+        <div class="chart-panel"><div class="chart-title">시간대별 분포 (KST)</div><div class="chart-canvas-wrap"><canvas id="hourly-chart"></canvas></div></div>
+      </div>
+      <div class="charts-row cols-3">
+        <div class="chart-panel"><div class="chart-title">모델별 질의 수</div><div class="chart-canvas-wrap"><canvas id="model-chart"></canvas></div></div>
+        <div class="chart-panel"><div class="chart-title">질문 유형 분포</div><div class="chart-canvas-wrap"><canvas id="category-chart"></canvas></div></div>
+        <div class="chart-panel"><div class="chart-title">그룹별 사용량</div><div class="chart-canvas-wrap"><canvas id="group-chart"></canvas></div></div>
+      </div>
+      <div class="charts-row cols-2">
+        <div class="table-panel" style="margin-bottom:0;">
+          <div class="table-header"><span class="table-title">Top 문서</span><span class="table-sub">인용 질의 수 기준</span></div>
+          <div class="table-scroll" style="max-height:320px;">
+            <table>
+              <thead><tr><th>#</th><th>문서</th><th>질의</th><th>인용</th></tr></thead>
+              <tbody id="topdocs-tbody"><tr class="empty-row"><td colspan="4">로딩 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="table-panel" style="margin-bottom:0;">
+          <div class="table-header"><span class="table-title">Top 케이스</span><span class="table-sub">인용 질의 수 기준</span></div>
+          <div class="table-scroll" style="max-height:320px;">
+            <table>
+              <thead><tr><th>#</th><th>케이스</th><th>질의</th><th>문서 수</th></tr></thead>
+              <tbody id="topcases-tbody"><tr class="empty-row"><td colspan="4">로딩 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="table-panel" style="margin-top:14px;">
+        <div class="table-header"><span class="table-title">상위 사용자</span><span class="table-sub">클릭하면 모델별 분해</span></div>
+        <div class="table-scroll" style="max-height:380px;">
+          <table>
+            <thead><tr><th>사용자</th><th>그룹</th><th>질의</th><th>강화</th><th>활동일</th><th>모델별 분해</th></tr></thead>
+            <tbody id="topusers-tbody"><tr class="empty-row"><td colspan="6">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-panel">
+        <div class="table-header">
+          <span class="table-title">최근 질의</span>
+          <span class="table-sub">최근 50건 (강화 턴 별도 표기)</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>시간 (KST)</th><th>사용자</th><th>그룹</th><th>구분</th><th>질의 내용</th></tr></thead>
+            <tbody id="recent-tbody"><tr class="empty-row"><td colspan="5">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ 사용자 탭 ════ -->
+    <div class="tab-panel" id="panel-users">
+      <div class="users-toolbar">
+        <label class="toolbar-label">그룹</label>
+        <select id="group-filter" class="toolbar-select"><option value="all">전체</option></select>
+        <button class="btn-refresh" id="btn-group-insights">그룹 인사이트</button>
+      </div>
+      <div class="group-insights-panel" id="group-insights-panel" style="display:none;">
+        <div class="table-header"><span class="table-title">그룹 인사이트</span><span class="table-sub" id="group-insights-sub"></span>
+          <button class="btn-refresh" style="margin-left:auto;" id="btn-close-insights">닫기</button>
+        </div>
+        <div class="group-insights-body">
+          <div class="chart-panel"><div class="chart-title">시간대 패턴</div><div class="chart-canvas-wrap" style="height:180px;"><canvas id="gi-hourly-chart"></canvas></div></div>
+          <div class="chart-panel"><div class="chart-title">질문 유형</div><div class="chart-canvas-wrap" style="height:180px;"><canvas id="gi-category-chart"></canvas></div></div>
+          <div class="chart-panel">
+            <div class="chart-title">주요 키워드</div>
+            <div id="gi-keywords" class="gi-keywords"></div>
+          </div>
+        </div>
+      </div>
+      <div class="users-layout">
+        <div class="users-list-panel">
+          <div class="users-list-header" style="flex-wrap:nowrap; overflow:hidden;">
+            <span class="table-title" style="white-space:nowrap; flex-shrink:0;">사용자 목록</span>
+            <span class="table-sub" id="users-count" style="white-space:nowrap; flex-shrink:0;"></span>
+            <button class="btn-export" id="btn-export-users" style="margin-left:auto; flex-shrink:0;">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v8M5 7l3 3 3-3M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/></svg>
+              엑셀
+            </button>
+          </div>
+          <div class="users-list-scroll">
+            <table id="users-table">
+              <thead>
+                <tr>
+                  <th class="sortable" data-col="name" data-dir="asc">사용자 <span class="sort-icon">↕</span></th>
+                  <th class="sortable" data-col="active_days" data-dir="desc">활동일 <span class="sort-icon">↓</span></th>
+                  <th class="sortable" data-col="queries" data-dir="desc">질의 <span class="sort-icon">↕</span></th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody"><tr class="empty-row"><td colspan="3">로딩 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="session-panel" id="session-panel">
+          <div id="session-empty" class="session-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M8 10h8M8 14h4M4 4h16a2 2 0 012 2v10a2 2 0 01-2 2H6l-4 4V6a2 2 0 012-2z"/>
+            </svg>
+            <span>사용자를 클릭하면 대화 내역을 확인할 수 있습니다</span>
+          </div>
+          <div id="session-content" style="display:none;">
+            <div class="session-panel-header">
+              <div class="session-user-info">
+                <div class="session-user-name" id="session-user-name">—</div>
+                <div class="session-user-meta" id="session-user-meta">—</div>
+                <div class="session-user-models" id="session-user-models"></div>
+              </div>
+              <button class="btn-export" id="btn-export-sessions">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v8M5 7l3 3 3-3M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/></svg>
+                엑셀
+              </button>
+            </div>
+            <div class="session-list-scroll" id="session-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ 삭제된 채팅 탭 ════ -->
+    <div class="tab-panel" id="panel-deleted">
+      <div class="page-header">
+        <div>
+          <div class="page-title">삭제된 채팅 관리</div>
+          <div class="page-sub" id="deleted-sub">사용자가 삭제한 채팅 (보존기간 경과 시 자동 최종 삭제)</div>
+        </div>
+      </div>
+      <div class="table-panel">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>삭제 일시</th><th>사용자</th><th>제목</th><th>메시지</th><th>자동 삭제 예정</th><th>작업</th></tr></thead>
+            <tbody id="deleted-tbody"><tr class="empty-row"><td colspan="6">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ 공유 링크 탭 ════ -->
+    <div class="tab-panel" id="panel-shares">
+      <div class="page-header">
+        <div>
+          <div class="page-title">공유 링크 관리</div>
+          <div class="page-sub">전체 공유 링크 (만료·조회수·접속 로그)</div>
+        </div>
+      </div>
+      <div class="table-panel">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>생성</th><th>공유자</th><th>제목</th><th>상태</th><th>만료</th><th>조회수</th><th>작업</th></tr></thead>
+            <tbody id="shares-tbody"><tr class="empty-row"><td colspan="7">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-panel" id="share-views-panel" style="display:none;">
+        <div class="table-header"><span class="table-title">접속 로그</span><span class="table-sub" id="share-views-sub"></span></div>
+        <div class="table-scroll" style="max-height:300px;">
+          <table>
+            <thead><tr><th>시간 (KST)</th><th>조회자</th><th>IP</th><th>User-Agent</th></tr></thead>
+            <tbody id="share-views-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ 공지 탭 ════ -->
+    <div class="tab-panel" id="panel-notices">
+      <div class="page-header">
+        <div>
+          <div class="page-title">공지 / AI 정책 팝업</div>
+          <div class="page-sub">사용자 접속 시 팝업으로 노출됩니다 (마크다운 지원)</div>
+        </div>
+        <button class="btn-export" id="btn-new-notice">+ 새 공지</button>
+      </div>
+      <div class="form-panel" id="notice-form" style="display:none;">
+        <div class="form-row"><label>제목</label><input type="text" id="notice-title" /></div>
+        <div class="form-row"><label>유형</label>
+          <select id="notice-type"><option value="popup">팝업 공지</option><option value="banner">상단 배너</option></select>
+        </div>
+        <div class="form-row"><label>내용</label><textarea id="notice-message" rows="6" placeholder="마크다운 지원"></textarea></div>
+        <div class="form-row"><label>노출 시작</label><input type="datetime-local" id="notice-from" /></div>
+        <div class="form-row"><label>노출 종료</label><input type="datetime-local" id="notice-to" /></div>
+        <div class="form-row"><label>매번 노출</label><input type="checkbox" id="notice-persistable" /><span class="form-hint">체크 시 확인해도 접속마다 다시 노출</span></div>
+        <div class="form-actions">
+          <button class="btn-refresh" id="btn-notice-cancel">취소</button>
+          <button class="btn-export" id="btn-notice-save">저장</button>
+        </div>
+      </div>
+      <div class="table-panel">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>유형</th><th>제목</th><th>내용</th><th>노출 기간</th><th>매번</th><th>작업</th></tr></thead>
+            <tbody id="notices-tbody"><tr class="empty-row"><td colspan="6">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ 피드백·설문 탭 ════ -->
+    <div class="tab-panel" id="panel-surveys">
+      <div class="page-header">
+        <div>
+          <div class="page-title">피드백 · 설문</div>
+          <div class="page-sub">메시지 피드백(👍/👎) 집계와 설문 관리</div>
+        </div>
+        <button class="btn-export" id="btn-new-survey">+ 새 설문</button>
+      </div>
+      <div class="charts-row cols-2">
+        <div class="chart-panel"><div class="chart-title">모델별 피드백</div><div class="chart-canvas-wrap" style="height:200px;"><canvas id="feedback-chart"></canvas></div></div>
+        <div class="table-panel" style="margin-bottom:0;">
+          <div class="table-header"><span class="table-title">피드백 코멘트</span></div>
+          <div class="table-scroll" style="max-height:240px;">
+            <table>
+              <thead><tr><th>시간</th><th>사용자</th><th>평가</th><th>코멘트</th></tr></thead>
+              <tbody id="feedback-tbody"><tr class="empty-row"><td colspan="4">로딩 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="form-panel" id="survey-form" style="display:none;">
+        <div class="form-row"><label>제목</label><input type="text" id="survey-title" /></div>
+        <div class="form-row"><label>설명</label><input type="text" id="survey-description" /></div>
+        <div class="form-row"><label>노출 시작</label><input type="datetime-local" id="survey-from" /></div>
+        <div class="form-row"><label>노출 종료</label><input type="datetime-local" id="survey-to" /></div>
+        <div class="form-row" style="align-items:flex-start;"><label>문항</label>
+          <div style="flex:1;">
+            <div id="survey-questions"></div>
+            <button class="btn-refresh" id="btn-add-question" style="margin-top:6px;">+ 문항 추가</button>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-refresh" id="btn-survey-cancel">취소</button>
+          <button class="btn-export" id="btn-survey-save">저장</button>
+        </div>
+      </div>
+      <div class="table-panel" style="margin-top:14px;">
+        <div class="table-header"><span class="table-title">설문 목록</span></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>제목</th><th>노출 기간</th><th>상태</th><th>응답 수</th><th>작업</th></tr></thead>
+            <tbody id="surveys-tbody"><tr class="empty-row"><td colspan="5">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-panel" id="survey-results-panel" style="display:none;">
+        <div class="table-header"><span class="table-title">설문 결과</span><span class="table-sub" id="survey-results-sub"></span></div>
+        <div id="survey-results-body" style="padding:16px 18px;"></div>
+      </div>
+    </div>
+
+    <!-- ════ 설정 탭 ════ -->
+    <div class="tab-panel" id="panel-settings">
+      <div class="page-header">
+        <div>
+          <div class="page-title">설정 — 모델 관리</div>
+          <div class="page-sub">사용 가능 모델 목록과 기본 모델을 지정합니다. 비워두면 librechat.yaml 값이 사용됩니다.</div>
+        </div>
+      </div>
+      <div class="form-panel">
+        <div class="form-row"><label>엔드포인트</label><input type="text" id="settings-endpoint" value="BKL DB AI" /></div>
+        <div class="form-row" style="align-items:flex-start;"><label>모델 목록</label>
+          <div style="flex:1;">
+            <div id="settings-models"></div>
+            <button class="btn-refresh" id="btn-add-model" style="margin-top:6px;">+ 모델 추가</button>
+          </div>
+        </div>
+        <div class="form-row"><label>기본 모델</label><select id="settings-default-model"></select></div>
+        <div class="form-actions">
+          <button class="btn-refresh" id="btn-settings-reset">yaml 값으로 초기화</button>
+          <button class="btn-export" id="btn-settings-save">저장</button>
+        </div>
+        <div class="form-hint" id="settings-status" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="/admin/js/core.js"></script>
+<script src="/admin/js/analytics.js"></script>
+<script src="/admin/js/users.js"></script>
+<script src="/admin/js/deleted.js"></script>
+<script src="/admin/js/shares.js"></script>
+<script src="/admin/js/notices.js"></script>
+<script src="/admin/js/surveys.js"></script>
+<script src="/admin/js/settings.js"></script>
+<script>window.BklAdmin.boot();</script>
+</body>
+</html>

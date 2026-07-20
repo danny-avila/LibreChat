@@ -17,6 +17,36 @@ const searchConversation = async (conversationId) => {
   }
 };
 
+/** BKL: filter fragment that excludes soft-deleted conversations from user-facing queries */
+const notBklDeleted = { bklDeletedAt: { $exists: false } };
+
+/**
+ * BKL: removes soft-deleted conversations (and their messages) from the
+ * MeiliSearch indexes so chat search no longer surfaces them. Mongo documents
+ * are preserved; only the search index entries are dropped.
+ */
+async function removeConvosFromMeili(conversationIds) {
+  const searchEnabled = process.env.SEARCH != null && process.env.SEARCH.toLowerCase() === 'true';
+  if (!searchEnabled || !process.env.MEILI_HOST || !process.env.MEILI_MASTER_KEY) {
+    return;
+  }
+  try {
+    const { MeiliSearch } = require('meilisearch');
+    const client = new MeiliSearch({
+      host: process.env.MEILI_HOST,
+      apiKey: process.env.MEILI_MASTER_KEY,
+    });
+    await client.index('convos').deleteDocuments(conversationIds);
+    const messages = await getMessages({ conversationId: { $in: conversationIds } }, 'messageId');
+    const messageIds = (messages ?? []).map((m) => m.messageId).filter(Boolean);
+    if (messageIds.length) {
+      await client.index('messages').deleteDocuments(messageIds);
+    }
+  } catch (error) {
+    logger.warn('[removeConvosFromMeili] Failed to remove soft-deleted convos from search index', error);
+  }
+}
+
 /**
  * Retrieves a single conversation for a given user and conversation ID.
  * @param {string} user - The user's ID.
@@ -25,7 +55,11 @@ const searchConversation = async (conversationId) => {
  */
 const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId }).lean();
+    return await Conversation.findOne({
+      user,
+      conversationId,
+      bklDeletedAt: { $exists: false },
+    }).lean();
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);
     throw new Error('Error getting single conversation');
@@ -172,7 +206,7 @@ module.exports = {
       sortDirection = 'desc',
     } = {},
   ) => {
-    const filters = [{ user }];
+    const filters = [{ user }, notBklDeleted];
     if (isArchived) {
       filters.push({ isArchived: true });
     } else {
@@ -283,6 +317,7 @@ module.exports = {
       const results = await Conversation.find({
         user,
         conversationId: { $in: conversationIds },
+        ...notBklDeleted,
         $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
       }).lean();
 
@@ -347,6 +382,38 @@ module.exports = {
    * const result = await deleteConvos(user, filter);
    * logger.error(result); // { n: 5, ok: 1, deletedCount: 5, messages: { n: 10, ok: 1, deletedCount: 10 } }
    */
+  /**
+   * BKL: soft-deletes conversations for a user (항목 11). Marks `bklDeletedAt`
+   * instead of removing documents so admins can review/restore before the
+   * retention purge hard-deletes them. Messages are preserved; search index
+   * entries are removed immediately.
+   *
+   * @param {string} user - The user's ID.
+   * @param {Object} filter - Additional filter criteria.
+   * @returns {Promise<{ deletedCount: number }>}
+   */
+  softDeleteConvos: async (user, filter) => {
+    try {
+      const userFilter = { ...filter, user, bklDeletedAt: { $exists: false } };
+      const conversations = await Conversation.find(userFilter).select('conversationId').lean();
+      const conversationIds = conversations.map((c) => c.conversationId);
+
+      if (!conversationIds.length) {
+        throw new Error('Conversation not found or already deleted.');
+      }
+
+      const result = await Conversation.updateMany(userFilter, {
+        $set: { bklDeletedAt: new Date() },
+      });
+
+      removeConvosFromMeili(conversationIds);
+
+      return { deletedCount: result.modifiedCount, conversationIds, messages: { deletedCount: 0 } };
+    } catch (error) {
+      logger.error('[softDeleteConvos] Error soft-deleting conversations', error);
+      throw error;
+    }
+  },
   deleteConvos: async (user, filter) => {
     try {
       const userFilter = { ...filter, user };

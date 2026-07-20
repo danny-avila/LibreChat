@@ -202,7 +202,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Creates a new file with a TTL of 1 hour.
-   * @param data - The file data to be created, must contain file_id
+   * @param data - The file data to be created, must contain file_id.
+   *   A caller-provided `expiresAt` takes precedence over the default 1-hour TTL.
    * @param disableTTL - Whether to disable the TTL
    * @returns A promise that resolves to the created file document
    */
@@ -213,7 +214,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     const File = mongoose.models.File as Model<IMongoFile>;
     const fileData: Partial<IMongoFile> = {
       ...data,
-      expiresAt: new Date(Date.now() + 3600 * 1000),
+      expiresAt: data.expiresAt ?? new Date(Date.now() + 3600 * 1000),
     };
 
     if (disableTTL) {

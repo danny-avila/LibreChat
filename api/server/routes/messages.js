@@ -63,7 +63,24 @@ router.get('/', async (req, res) => {
       }
       response = { messages, nextCursor };
     } else if (search) {
-      const searchResults = await Message.meiliSearch(search, { filter: `user = "${user}"` }, true);
+      /**
+       * BKL: attributesToCrop/Highlight 로 매칭 지점 주변 스니펫을 함께 받는다.
+       * 마커는 본문에 등장할 수 없는 유니코드 사설 영역 문자를 사용하고,
+       * 클라이언트(BklChatSearch)가 이를 <strong> 으로 렌더링한다.
+       */
+      const searchResults = await Message.meiliSearch(
+        search,
+        {
+          filter: `user = "${user}"`,
+          attributesToHighlight: ['text'],
+          highlightPreTag: '\ue000',
+          highlightPostTag: '\ue001',
+          attributesToCrop: ['text'],
+          cropLength: 30,
+          cropMarker: '…',
+        },
+        true,
+      );
 
       const messages = searchResults.hits || [];
 
@@ -102,6 +119,8 @@ router.get('/', async (req, res) => {
           isCreatedByUser: dbMessage?.isCreatedByUser,
           endpoint: dbMessage?.endpoint,
           iconURL: dbMessage?.iconURL,
+          /** BKL: 매칭 지점 주변 크롭 + 하이라이트 마커가 포함된 스니펫 */
+          searchSnippet: message._formatted?.text ?? null,
         });
       }
 
