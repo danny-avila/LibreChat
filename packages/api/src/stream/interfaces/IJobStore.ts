@@ -1,10 +1,14 @@
+import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
-import type { Agents } from 'librechat-data-provider';
 
 /**
- * Job status enum
+ * Job status enum.
+ *
+ * `requires_action` is non-terminal: the run has paused for human review
+ * (e.g. tool approval) and is expected to be resumed by an approval route.
+ * Stores must NOT cleanup `requires_action` jobs as if they were complete.
  */
-export type JobStatus = 'running' | 'complete' | 'error' | 'aborted';
+export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
@@ -25,10 +29,27 @@ export interface SerializableJobData {
     parentMessageId?: string;
     conversationId?: string;
     text?: string;
+    /** Quoted excerpts referenced on this turn, carried so resumable/aborted
+     *  reconstructions of the user message keep their `MessageQuotes`. */
+    quotes?: string[];
+    /** Skill selections, carried so a HITL-resumed turn's requestMessage keeps its pills. */
+    manualSkills?: string[];
+    alwaysAppliedSkills?: string[];
+    /** Uploaded files for the turn, carried so a HITL resume sources them from the job
+     *  rather than a user DB row whose save can still be racing the approval prompt. */
+    files?: unknown[];
   };
 
   /** Response message ID for reconnection */
   responseMessageId?: string;
+
+  /**
+   * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
+   * so a resume can replay them into `createRun` — the rebuilt graph uses `messages: []`
+   * (state comes from the checkpoint), so without these the paused deferred tool would be
+   * absent from the schema-only toolMap and resume would fail with "unknown tool".
+   */
+  discoveredTools?: string[];
 
   /** Whether the user-message created event has been emitted */
   createdEventEmitted?: boolean;
@@ -48,11 +69,126 @@ export interface SerializableJobData {
   /** Serialized replay-only stream events for active-stream resume */
   replayEvents?: string;
 
+  /** Serialized latest context usage snapshot for active-stream resume */
+  contextUsage?: string;
+
+  /** Serialized token usage events for active-stream resume (cross-replica safe) */
+  tokenUsage?: string;
+
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
   iconURL?: string;
   model?: string;
   promptTokens?: number;
+
+  /**
+   * Agent that initiated the run. Persisted so a HITL resume can verify it rebuilds
+   * the SAME agent that paused — resuming Agent A's checkpoint on Agent B's graph
+   * would mis-execute the paused tool calls.
+   */
+  agent_id?: string;
+
+  /**
+   * Whether the originating turn was a temporary (non-persisted) chat. Persisted so
+   * a HITL resume keeps the resumed response temporary instead of saving it — the
+   * resume request can't be trusted to re-send the flag.
+   */
+  isTemporary?: boolean;
+
+  /**
+   * Set when status is `requires_action`. Describes the human review the
+   * run is waiting on. Cleared by the resume path before the job returns to `running`.
+   */
+  pendingAction?: Agents.PendingAction;
+
+  /**
+   * Flat mirror of `pendingAction.actionId`, kept as a top-level field so an
+   * atomic status transition can guard on it (a nested JSON field can't be
+   * compared inside a Redis Lua CAS). Lets `resolve`/`expire` reject a stale
+   * decision that targets a different action than the one currently pending.
+   */
+  pendingActionId?: string;
+
+  /**
+   * Liveness basis for the stale-running failsafe, refreshed when a paused job
+   * is resumed. Without it, cleanup keys off `createdAt`, so an approval that
+   * sat in `requires_action` past the running window would be reaped on the
+   * next tick right after resuming. Falls back to `createdAt` when unset.
+   */
+  lastActiveAt?: number;
+
+  /**
+   * Flat flag set by the terminal close-and-drain (Redis: raw hash field the
+   * enqueue Lua guards on; in-memory: a parallel set). Once set, new steers
+   * are rejected until `createJob` reuses the stream id. Never written through
+   * `updateJob` — listed here so cleanup paths can reference the key name.
+   */
+  steersClosed?: boolean;
+}
+
+/**
+ * Whether a job's pending review has passed its `expiresAt`. Shared by the
+ * stores so an expired approval is kept out of active-job listings (the client
+ * stops polling; cleanup/expiry finalizes it).
+ */
+export function isPendingActionExpired(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
+  const exp = job.pendingAction?.expiresAt;
+  return exp != null && exp <= Date.now();
+}
+
+/**
+ * Whether a `requires_action` job has no live, resolvable prompt — either the
+ * pendingAction is missing/malformed (e.g. dropped on deserialize) or past its
+ * `expiresAt`. Such a job can't be rendered or resolved, so it must be kept out
+ * of active listings and finalized by cleanup rather than left stuck active.
+ */
+export function isPendingActionStale(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
+  return !job.pendingAction || isPendingActionExpired(job);
+}
+
+/**
+ * A user steering message queued for mid-run injection. Enqueued by the steer
+ * route on any instance; drained FIFO by the owning process's run-scoped
+ * PostToolBatch hook at the next tool-batch boundary.
+ */
+export interface SteerQueueItem {
+  steerId: string;
+  text: string;
+  userId: string;
+  createdAt: number;
+  /** Attachment refs steered with the message. Display metadata only — the
+   *  drain re-fetches each file by id scoped to the run's user and encodes
+   *  fresh, so nothing here is trusted beyond identifying the file. */
+  files?: Partial<TFile>[];
+}
+
+/** Maximum steers a single run can have queued at once. */
+export const STEER_QUEUE_MAX_DEPTH = 10;
+
+/** `enqueueSteer` rejection: the job is missing or not `running`. */
+export const STEER_ENQUEUE_NOT_RUNNING = -1;
+
+/** `enqueueSteer` rejection: the queue is at {@link STEER_QUEUE_MAX_DEPTH}. */
+export const STEER_ENQUEUE_QUEUE_FULL = -2;
+
+/**
+ * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
+ */
+export interface JobStatusTransition {
+  /** Only fire the transition if the job is currently in this status. */
+  from: JobStatus;
+  /** Status to move to when the `from` guard holds. */
+  to: JobStatus;
+  /** Fields written in the same atomic step as the status change. */
+  patch?: Partial<SerializableJobData>;
+  /** Field names removed in the same atomic step (e.g. `pendingAction`). */
+  clear?: Array<keyof SerializableJobData & string>;
+  /**
+   * Additional guard: only fire if the job's `pendingActionId` equals this.
+   * Checked atomically alongside the `from` status so a stale decision can't
+   * resolve a job that has since paused for a different action.
+   */
+  expectActionId?: string;
 }
 
 /**
@@ -76,7 +212,7 @@ export interface SerializableJobData {
  */
 export interface UsageMetadata {
   /** Logical usage bucket for accounting/reporting. Defaults to model response usage. */
-  usage_type?: 'message' | 'summarization';
+  usage_type?: 'message' | 'summarization' | 'subagent' | 'sequential';
   /** Total input tokens (prompt tokens) */
   input_tokens?: number;
   /** Total output tokens (completion tokens) */
@@ -87,6 +223,9 @@ export interface UsageMetadata {
   model?: string;
   /** Provider identifier that generated this usage */
   provider?: string;
+  /** Agent that produced this usage (graph agent id / subagent agent id). Lets
+   *  multi-endpoint graphs price each call with its own endpoint token config. */
+  agentId?: string;
   /**
    * OpenAI-style cache token details.
    * Present for OpenAI models (GPT-4, o1, etc.)
@@ -96,12 +235,20 @@ export interface UsageMetadata {
     cache_creation?: number;
     /** Tokens read from cache */
     cache_read?: number;
+    /** OpenAI GPT-5.6+ cache-write tokens (billed above the input rate) */
+    cache_write_tokens?: number;
   };
   /**
    * Anthropic-style cache creation tokens.
    * Present for Claude models. Mutually exclusive with input_token_details.
    */
   cache_creation_input_tokens?: number;
+  /**
+   * OpenAI GPT-5.6+ cache-write tokens, reported at the top level of
+   * `prompt_tokens_details`/`input_tokens_details`. Distinct from cached
+   * (read) tokens and billed at a premium over the input rate.
+   */
+  cache_write_tokens?: number;
   /**
    * Anthropic-style cache read tokens.
    * Present for Claude models. Mutually exclusive with input_token_details.
@@ -136,6 +283,8 @@ export interface AbortResult {
   text: string;
   /** Collected usage metadata from all models for token spending */
   collectedUsage: UsageMetadata[];
+  /** Steers drained at abort time (never injected); surfaced to the client for restore */
+  pendingSteers?: TPendingSteer[];
 }
 
 /**
@@ -191,6 +340,28 @@ export interface IJobStore {
 
   /** Update job data */
   updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void>;
+
+  /**
+   * Atomically transition a job's status, **only if** it is currently `from`.
+   * Returns `true` when the transition fired, `false` when the job was missing
+   * or no longer in `from` (lost a race / illegal transition).
+   *
+   * `patch` fields are written and `clear` fields removed in the same atomic
+   * step, and the running / requires_action membership sets plus live-key TTLs
+   * are reconciled to match `to`. This is the race-safe primitive behind the
+   * approval lifecycle — it prevents two concurrent resumes from both driving a
+   * paused run (a double-drive would re-execute tools / double-bill).
+   *
+   * Distinct from {@link updateJob}, which writes status unconditionally for
+   * callers that don't know the prior state. Reach for `transitionStatus`
+   * whenever the legal prior state is known.
+   *
+   * Atomicity: fully atomic on in-memory and single-node / sentinel Redis
+   * (Lua). On Redis Cluster the status guard is best-effort — the membership
+   * sets live on a different hash slot from the job hash — matching the store's
+   * existing cluster posture for status writes.
+   */
+  transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean>;
 
   /** Delete a job */
   deleteJob(streamId: string): Promise<void>;
@@ -332,6 +503,68 @@ export interface IJobStore {
    * @returns Array of usage metadata or empty array
    */
   getCollectedUsage(streamId: string): UsageMetadata[];
+
+  // ===== Steering Queue Methods =====
+  // FIFO queue of mid-run user messages, keyed by streamId. Writable from any
+  // instance (the steer route), drained only by the run's owning process.
+
+  /**
+   * Atomically append a steer, guarded on the job being `running` AND the
+   * queue not being closed by a terminal drain. Returns the new queue depth,
+   * {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing, not running,
+   * or closed, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
+   */
+  enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
+
+  /**
+   * Atomically take ALL queued steers, FIFO. Empty array when none. With
+   * `expectedCreatedAt`, the drain is refused (atomically, inside the store)
+   * when the live job's `createdAt` differs — a stale run's drain must never
+   * consume a replacement job's queue.
+   */
+  drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+
+  /**
+   * Atomically CLOSE the queue to new steers, then take all queued items
+   * FIFO. Used by the terminal paths (final event, abort) so a steer POST
+   * racing finalization can never be 202-ACKed after the last drain and then
+   * silently cleared — once closed, `enqueueSteer` rejects until the next
+   * `createJob` reopens the stream id. `expectedCreatedAt` guards exactly
+   * like {@link drainSteers}: a stale run's finalization can neither close
+   * nor steal a replacement job's queue.
+   */
+  closeAndDrainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+
+  /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
+  peekSteers(streamId: string): Promise<SteerQueueItem[]>;
+
+  /** Remove ONE queued steer by id (user-cancelled before injection).
+   *  False when it was no longer queued — already drained or run ended. */
+  removeSteer(streamId: string, steerId: string): Promise<boolean>;
+
+  /**
+   * Persist terminally-drained steers under their OWN bounded-TTL key so a
+   * client with no live subscriber can recover them via the status route.
+   * Deliberately independent of the job record — the default `completeJob`
+   * path deletes the job immediately, and recovery must survive that.
+   * Overwrites any prior payload; cleared by `createJob` (a replacement run
+   * invalidates recovery — a live client had to start it).
+   */
+  parkSteers(streamId: string, payload: string): Promise<void>;
+
+  /**
+   * Claim-on-read: atomically return AND remove the parked payload, so a
+   * second reload cannot re-mint chips the user already dismissed. The
+   * removal is gated on `ownerFragment` (an opaque substring of the
+   * serialized payload, e.g. `"userId":"u1"`) INSIDE the same atomic step —
+   * a non-owner probe returns nothing and leaves the payload untouched
+   * instead of deleting it ahead of the owner check. Stores stay
+   * schema-free: the caller parses and authorizes the returned payload.
+   */
+  claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined>;
+
+  /** Drop any queued steers (terminal cleanup backstop). */
+  clearSteers(streamId: string): Promise<void>;
 }
 
 /**

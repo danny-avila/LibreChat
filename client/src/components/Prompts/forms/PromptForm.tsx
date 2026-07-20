@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
-import { Menu, Rocket, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { Menu, Rocket, X } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Button, Skeleton, useToastContext } from '@librechat/client';
+import { Button, Skeleton, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Permissions,
   ResourceType,
@@ -30,8 +30,8 @@ import DeletePrompt from '../dialogs/DeletePrompt';
 import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptEditor from '../editor/PromptEditor';
 import SkeletonForm from '../utils/SkeletonForm';
-import Description from '../fields/Description';
 import SharePrompt from '../dialogs/SharePrompt';
+import Description from '../fields/Description';
 import PromptName from '../fields/PromptName';
 import { cn, findPromptGroup } from '~/utils';
 import { PromptsEditorMode } from '~/common';
@@ -187,6 +187,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   const promptId = promptIdProp || params.promptId || '';
 
   const editorMode = useRecoilValue(store.promptsEditorMode);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
 
   const prevIsEditingRef = useRef(false);
@@ -437,7 +438,16 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
     }
 
     if (fetchedPrompt || group) {
-      return <PromptDetails group={fetchedPrompt || group} showActions={false} />;
+      return (
+        <div className="flex h-full w-full flex-col">
+          {isSmallScreen && (
+            <div className="flex shrink-0 items-center px-4 pt-3">
+              <OpenSidebar />
+            </div>
+          )}
+          <PromptDetails group={fetchedPrompt || group} showActions={false} />
+        </div>
+      );
     }
   }
 
@@ -462,8 +472,8 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
             <div className="flex h-full">
               <div className="flex-1 overflow-hidden px-4">
                 {/* Mobile Actions Row */}
-                {!isLoadingGroup && group && (
-                  <div className="mb-3 mt-2 flex items-center justify-between gap-2 sm:hidden">
+                {!isLoadingGroup && group && isSmallScreen && (
+                  <div className="mb-3 mt-2 flex items-center justify-between gap-2">
                     <OpenSidebar />
                     <HeaderActions
                       group={group}
@@ -510,15 +520,17 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
                           </Button>
                         )}
                       </div>
-                      <div className="hidden shrink-0 sm:block">
-                        <HeaderActions
-                          group={group}
-                          canEdit={canEdit}
-                          canDelete={canDelete}
-                          selectedPromptId={selectedPromptId}
-                          onCategoryChange={handleCategoryChange}
-                        />
-                      </div>
+                      {!isSmallScreen && (
+                        <div className="shrink-0">
+                          <HeaderActions
+                            group={group}
+                            canEdit={canEdit}
+                            canDelete={canDelete}
+                            selectedPromptId={selectedPromptId}
+                            onCategoryChange={handleCategoryChange}
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

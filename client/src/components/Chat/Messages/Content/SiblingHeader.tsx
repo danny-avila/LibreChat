@@ -3,6 +3,7 @@ import { GitBranchPlus } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { EModelEndpoint, parseEphemeralAgentId, stripAgentIdSuffix } from 'librechat-data-provider';
 import type { TMessage, Agent } from 'librechat-data-provider';
+import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import { useBranchMessageMutation } from '~/data-provider/Messages';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
@@ -14,6 +15,8 @@ type SiblingHeaderProps = {
   agentId?: string;
   /** The messageId of the parent message */
   messageId?: string;
+  /** ISO timestamp of the parent message */
+  createdAt?: string | null;
   /** The conversationId */
   conversationId?: string | null;
   /** Whether a submission is in progress */
@@ -27,6 +30,7 @@ type SiblingHeaderProps = {
 export default function SiblingHeader({
   agentId,
   messageId,
+  createdAt,
   conversationId,
   isSubmitting,
 }: SiblingHeaderProps) {
@@ -117,6 +121,7 @@ export default function SiblingHeader({
           />
         </div>
         <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
+        <MessageTimestamp value={createdAt} />
       </div>
       <button
         type="button"

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { TRumConfig, TUser } from 'librechat-data-provider';
+import type { HyperDXActionClient } from './diagnostics';
+import {
+  discardEarlyRumQueue,
+  queueSpaRouteChange,
+  restoreRumEmitter,
+  startRumDiagnostics,
+} from './diagnostics';
 import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { normalizeRumPath } from './routes';
@@ -10,7 +17,7 @@ const PROXY_API_KEY = 'librechat-rum-proxy';
 let rumProxyToken: string | undefined;
 let rumProxyFetchPatched = false;
 
-type HyperDXBrowser = {
+type HyperDXBrowser = HyperDXActionClient & {
   init: (config: {
     advancedNetworkCapture: boolean;
     apiKey: string;
@@ -33,6 +40,21 @@ function shouldInitializeRum(config: TRumConfig | undefined, token: string | und
   }
 
   return config.authMode === 'proxy' && !!token && !config.publicToken;
+}
+
+function isProxyRumWaitingForToken(
+  config: TRumConfig | undefined,
+  token: string | undefined,
+): boolean {
+  return (
+    !!config?.enabled &&
+    config.provider === 'hyperdx' &&
+    !!config.url &&
+    !!config.serviceName &&
+    config.authMode === 'proxy' &&
+    !token &&
+    !config.publicToken
+  );
 }
 
 function getApiKey(config: TRumConfig, token: string | undefined): string {
@@ -113,7 +135,7 @@ async function loadHyperDX(): Promise<HyperDXBrowser> {
 }
 
 export default function useRum(): void {
-  const { data: startupConfig } = useGetStartupConfig();
+  const { data: startupConfig, isFetched: startupConfigFetched } = useGetStartupConfig();
   const { token, user } = useAuthContext();
   const location = useLocation();
   const initializedKeyRef = useRef<string | undefined>(undefined);
@@ -121,21 +143,33 @@ export default function useRum(): void {
   const sampledInRef = useRef<boolean>(true);
   const hyperDxRef = useRef<HyperDXBrowser | undefined>(undefined);
   const rumConfig = startupConfig?.rum;
+  const shouldBufferRoutes = !startupConfigFetched || !!rumConfig;
   const route = useMemo(() => normalizeRumPath(location.pathname), [location.pathname]);
   const routeRef = useRef<string>(route);
 
   useEffect(() => {
+    const previousRoute = routeRef.current;
+    if (previousRoute && previousRoute !== route && shouldBufferRoutes) {
+      queueSpaRouteChange(previousRoute, route);
+    }
+
     routeRef.current = route;
-  }, [route]);
+  }, [route, shouldBufferRoutes]);
 
   useEffect(() => {
     if (!rumConfig) {
+      if (startupConfigFetched) {
+        discardEarlyRumQueue();
+      }
       return;
     }
 
     if (!shouldInitializeRum(rumConfig, token)) {
       if (rumConfig?.authMode === 'proxy') {
         rumProxyToken = undefined;
+      }
+      if (!isProxyRumWaitingForToken(rumConfig, token)) {
+        discardEarlyRumQueue();
       }
       return;
     }
@@ -150,6 +184,9 @@ export default function useRum(): void {
     const initKey = [config.url, config.serviceName, config.authMode, apiKey].join(':');
 
     if (initializedKeyRef.current === initKey) {
+      if (hyperDxRef.current) {
+        restoreRumEmitter(hyperDxRef.current);
+      }
       return;
     }
 
@@ -160,6 +197,7 @@ export default function useRum(): void {
     }
 
     if (!sampledInRef.current) {
+      discardEarlyRumQueue();
       return;
     }
 
@@ -184,13 +222,14 @@ export default function useRum(): void {
         hyperDxRef.current = HyperDX;
         initializedKeyRef.current = initKey;
         HyperDX.setGlobalAttributes(buildGlobalAttributes(user, config, routeRef.current));
+        startRumDiagnostics(HyperDX, () => routeRef.current);
       })
       .catch(() => undefined);
 
     return () => {
       cancelled = true;
     };
-  }, [rumConfig, token, user]);
+  }, [rumConfig, startupConfigFetched, token, user]);
 
   useEffect(() => {
     hyperDxRef.current?.setGlobalAttributes(

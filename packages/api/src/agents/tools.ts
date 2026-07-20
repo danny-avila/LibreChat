@@ -94,6 +94,13 @@ export interface RegisterCodeExecutionToolsParams {
    * commands. Paired with `RunConfig.toolOutputReferences` in `createRun`.
    */
   enableToolOutputReferences?: boolean;
+  /**
+   * When `true`, the registered `bash_tool` description is the hedged
+   * stateful-session variant (workspace usually persists across calls, may
+   * reset at any time). Paired with `toolExecution.sandbox.statefulSessions`
+   * in `createRun`; resolved per-agent during initialization.
+   */
+  statefulSessions?: boolean;
 }
 
 export interface RegisterCodeExecutionToolsResult {
@@ -133,20 +140,20 @@ const READ_FILE_DEF: LCTool = Object.freeze({
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
 
-const CODE_READ_FILE_DESCRIPTION = `Read a known text file from the code-execution sandbox. Returns line-numbered text; large files may be truncated around 256KB.
+const CODE_READ_FILE_DESCRIPTION = `Read a known file from the code-execution sandbox. Text files return line-numbered content (large files truncate around 256KB); images (png, jpeg, gif, webp) return as visual content you can see.
 
-Use for text, CSV, JSON, Markdown, logs, and small source files at paths returned by tool output, just written, or under /mnt/data/. Do not run ls/find just to rediscover known paths. Use bash_tool for binary files, large files, transforms, metadata, or true filesystem discovery. /tmp is per-call scratch and unavailable later.`;
+Use for text, CSV, JSON, Markdown, logs, small source files, and images at paths returned by tool output, just written, or under /mnt/data/. Do not run ls/find just to rediscover known paths. Use bash_tool for other binary files, large files, transforms, metadata, or true filesystem discovery. /tmp is per-call scratch and unavailable later.`;
 
 const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to a file from code execution output, such as "/mnt/data/result.csv" or another path returned by the execution tool.',
     },
   },
-  required: ['file_path'],
+  required: ['path'],
 }) as LCTool['parameters'];
 
 const CODE_READ_FILE_DEF: LCTool = Object.freeze({
@@ -159,7 +166,7 @@ const CODE_READ_FILE_DEF: LCTool = Object.freeze({
 const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to write. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. For SKILL.md, the YAML frontmatter name must match {skillName}.',
@@ -174,13 +181,13 @@ const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       default: false,
     },
   },
-  required: ['file_path', 'content'],
+  required: ['path', 'content'],
 }) as LCTool['parameters'];
 
 const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to write in the code-execution sandbox, such as "/mnt/data/result.txt". Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.',
@@ -195,13 +202,13 @@ const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       default: false,
     },
   },
-  required: ['file_path', 'content'],
+  required: ['path', 'content'],
 }) as LCTool['parameters'];
 
 const SKILL_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description:
         'Path to edit. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. edit_file cannot rename skills; keep SKILL.md frontmatter name equal to {skillName}.',
@@ -227,13 +234,13 @@ const SKILL_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       },
     },
   },
-  required: ['file_path'],
+  required: ['path'],
 }) as LCTool['parameters'];
 
 const CODE_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
-    file_path: {
+    path: {
       type: 'string',
       description: 'Path to edit in the code-execution sandbox, such as "/mnt/data/result.txt".',
     },
@@ -258,7 +265,7 @@ const CODE_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       },
     },
   },
-  required: ['file_path'],
+  required: ['path'],
 }) as LCTool['parameters'];
 
 const SKILL_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
@@ -377,10 +384,14 @@ export function isFileAuthoringToolDefinition(def: LCTool | undefined): boolean 
  * intent of the original constant while keeping the per-agent gate
  * behavior introduced for tool-output references.
  */
-function createBashToolDef(enableToolOutputReferences: boolean): LCTool {
+function createBashToolDef(enableToolOutputReferences: boolean, statefulSessions = false): LCTool {
+  /* Passed as a variable (not an inline literal) so the extra
+   * `statefulSessions` key stays assignable against pinned SDK versions
+   * whose builder predates it (ignored at runtime there). */
+  const descriptionOpts = { enableToolOutputReferences, statefulSessions };
   return Object.freeze({
     name: BashExecutionToolDefinition.name,
-    description: buildBashExecutionToolDescription({ enableToolOutputReferences }),
+    description: buildBashExecutionToolDescription(descriptionOpts),
     parameters: BashExecutionToolDefinition.schema as unknown as LCTool['parameters'],
   }) as LCTool;
 }
@@ -388,7 +399,15 @@ function createBashToolDef(enableToolOutputReferences: boolean): LCTool {
 const BASH_TOOL_DEF_WITH_OUTPUT_REFS = createBashToolDef(true);
 const BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS = createBashToolDef(false);
 
-function buildBashToolDef(opts: { enableToolOutputReferences: boolean }): LCTool {
+function buildBashToolDef(opts: {
+  enableToolOutputReferences: boolean;
+  statefulSessions?: boolean;
+}): LCTool {
+  /* Stateful defs are built on demand: the stateless pair covers the
+   * default path, and per-run construction is negligible next to init. */
+  if (opts.statefulSessions === true) {
+    return createBashToolDef(opts.enableToolOutputReferences, true);
+  }
   return opts.enableToolOutputReferences
     ? BASH_TOOL_DEF_WITH_OUTPUT_REFS
     : BASH_TOOL_DEF_WITHOUT_OUTPUT_REFS;
@@ -417,11 +436,12 @@ export function registerCodeExecutionTools(
     includeBash,
     includeSkillFileInstructions = true,
     enableToolOutputReferences = false,
+    statefulSessions = false,
   } = params;
 
   const readFileDef = buildReadFileDef(includeSkillFileInstructions);
   const candidates: LCTool[] = includeBash
-    ? [readFileDef, buildBashToolDef({ enableToolOutputReferences })]
+    ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
     : [readFileDef];
 
   const inputDefinitions = toolDefinitions ?? [];

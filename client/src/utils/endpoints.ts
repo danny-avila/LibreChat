@@ -160,35 +160,6 @@ function parseStoredModelSelection(
   }
 }
 
-function hasStoredPrefixValue(prefix: string): boolean {
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key?.startsWith(prefix)) {
-      continue;
-    }
-
-    if (hasSelectionValue(localStorage.getItem(key))) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function hasStoredModelValue(): boolean {
-  const storedModelValue = localStorage.getItem(LocalStorageKeys.LAST_MODEL);
-  if (!storedModelValue) {
-    return false;
-  }
-
-  try {
-    const storedModels = JSON.parse(storedModelValue) as Record<string, string | null | undefined>;
-    return Object.values(storedModels).some(hasSelectionValue);
-  } catch {
-    return false;
-  }
-}
-
 export function hasModelSelection(selection?: Partial<StoredModelSelection> | null): boolean {
   if (!selection) {
     return false;
@@ -203,27 +174,42 @@ export function hasModelSelection(selection?: Partial<StoredModelSelection> | nu
   );
 }
 
-function hasStoredModelSelection(): boolean {
-  if (hasSelectionValue(localStorage.getItem(LocalStorageKeys.LAST_SPEC))) {
+/**
+ * Whether the selector offers any ephemeral endpoint → model options.
+ * False when the endpoints menu is hidden (`modelSelect` disabled) or only
+ * agents/assistants picks remain; an empty endpoints config means not loaded.
+ */
+function hasEphemeralModelOptions({
+  endpointsConfig,
+  addedEndpoints,
+  modelSelect,
+}: {
+  endpointsConfig?: t.TEndpointsConfig;
+  addedEndpoints?: Array<EModelEndpoint | string>;
+  modelSelect?: boolean;
+}): boolean {
+  if (!modelSelect) {
+    return false;
+  }
+  const included = new Set(addedEndpoints ?? []);
+  const includesEphemeral =
+    included.size === 0 ||
+    [...included].some(
+      (endpoint) => !isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint),
+    );
+  if (!includesEphemeral) {
+    return false;
+  }
+  if (endpointsConfig == null || Object.keys(endpointsConfig).length === 0) {
     return true;
   }
-
-  if (hasStoredModelValue()) {
-    return true;
-  }
-
-  if (
-    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX) ||
-    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX)
-  ) {
-    return true;
-  }
-
-  const lastConversationSetup = parseStoredModelSelection(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
+  return Object.entries(endpointsConfig).some(
+    ([endpoint, config]) =>
+      config != null &&
+      !isAgentsEndpoint(endpoint) &&
+      !isAssistantsEndpoint(endpoint) &&
+      (included.size === 0 || included.has(endpoint)),
   );
-
-  return hasModelSelection(lastConversationSetup);
 }
 
 /** Get the conditional logic for switching conversations */
@@ -315,6 +301,7 @@ export function applyModelSpecEphemeralAgent({
     web_search: modelSpec.webSearch ?? false,
     file_search: modelSpec.fileSearch ?? false,
     execute_code: modelSpec.executeCode ?? false,
+    memory: modelSpec.memory ?? false,
     artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
   };
 
@@ -327,6 +314,7 @@ export function applyModelSpecEphemeralAgent({
       ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],
       ['file_search', LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_],
       ['artifacts', LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_],
+      ['memory', LocalStorageKeys.LAST_MEMORY_TOGGLE_],
     ];
 
     for (const [toolKey, storagePrefix] of toolStorageMap) {
@@ -357,11 +345,21 @@ export function applyModelSpecEphemeralAgent({
 }
 
 /**
- * Gets default model spec from config and user preferences.
- * Priority: hard admin default → prior user selection → soft first-time default.
- * Legacy first-spec prioritization remains only when no soft default is configured.
+ * Resolves the default model spec for a new chat. Priority: hard admin default →
+ * the most recent conversation's own selection → soft default → legacy first spec.
+ *
+ * `LAST_CONVO_SETUP_0` is the single source of truth for prior intent: a setup naming
+ * the soft spec is the soft default re-arming, any other spec/agent/endpoint is a
+ * selection to carry forward, and an empty setup is a fresh start (clearing chats
+ * wipes the selection, so a new chat then falls to the soft default). The soft default
+ * also wins whenever the selector offers no ephemeral endpoint → model options, so a
+ * stale agent never strands it. The legacy first-spec fallback applies only when specs
+ * are prioritized (or the model menu is hidden) and no soft default is configured.
  */
-export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
+export function getDefaultModelSpec(
+  startupConfig?: t.TStartupConfig,
+  endpointsConfig?: t.TEndpointsConfig,
+):
   | {
       default?: t.TModelSpec;
       last?: t.TModelSpec;
@@ -369,39 +367,46 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     }
   | undefined {
   const { modelSpecs, interface: interfaceConfig } = startupConfig ?? {};
-  const { list, prioritize } = modelSpecs ?? {};
+  const { list, prioritize, addedEndpoints } = modelSpecs ?? {};
   if (!list) {
     return;
   }
-  const defaultSpec = list?.find((spec) => spec.default);
-  const softDefaultSpec = list?.find((spec) => spec.softDefault);
-  if (prioritize === true || !interfaceConfig?.modelSelect) {
-    const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
-    const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    if (defaultSpec) {
-      return { default: defaultSpec };
-    }
-    if (lastSelectedSpec) {
-      return { last: lastSelectedSpec };
-    }
-    if (softDefaultSpec) {
-      return hasStoredModelSelection() ? undefined : { softDefault: softDefaultSpec };
-    }
-    return { default: list?.[0] };
-  } else if (defaultSpec) {
+
+  const defaultSpec = list.find((spec) => spec.default);
+  if (defaultSpec) {
     return { default: defaultSpec };
   }
-  const lastConversationSetup = parseStoredModelSelection(
+
+  const softDefaultSpec = list.find((spec) => spec.softDefault);
+  const lastSetup = parseStoredModelSelection(
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
   );
-  const lastConversationSpecName = lastConversationSetup?.spec;
-  if (!hasSelectionValue(lastConversationSpecName)) {
-    if (softDefaultSpec && !hasStoredModelSelection()) {
+  const lastSpec = hasSelectionValue(lastSetup?.spec)
+    ? list.find((spec) => spec.name === lastSetup?.spec)
+    : undefined;
+
+  if (lastSpec && lastSpec.name !== softDefaultSpec?.name) {
+    return { last: lastSpec };
+  }
+
+  if (softDefaultSpec) {
+    if (lastSpec?.name === softDefaultSpec.name) {
       return { softDefault: softDefaultSpec };
     }
-    return;
+    const yieldsToSelection =
+      hasModelSelection(lastSetup) &&
+      hasEphemeralModelOptions({
+        endpointsConfig,
+        addedEndpoints,
+        modelSelect: interfaceConfig?.modelSelect,
+      });
+    return yieldsToSelection ? undefined : { softDefault: softDefaultSpec };
   }
-  return { last: list?.find((spec) => spec.name === lastConversationSpecName) };
+
+  if (prioritize === true || interfaceConfig?.modelSelect !== true) {
+    return { default: list[0] };
+  }
+  return;
 }
 
 export function getModelSpecPreset(modelSpec?: t.TModelSpec) {

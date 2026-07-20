@@ -7,6 +7,8 @@ import type { Endpoint } from '~/common';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { shouldRenderEndpointOption } from '../utils';
+import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 
@@ -81,9 +83,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                 )}
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="truncate text-left">{spec.label}</span>
-                  {spec.description && (
-                    <span className="break-words text-xs font-normal">{spec.description}</span>
-                  )}
+                  <SpecDescription description={spec.description} />
                 </div>
               </div>
               {selectedSpec === spec.name && (
@@ -103,6 +103,10 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
         } else {
           // For an endpoint item
           const endpoint = item as Endpoint;
+          if (!shouldRenderEndpointOption(endpoint)) {
+            return null;
+          }
+
           if (endpoint.hasModels) {
             const lowerQuery = searchValue.toLowerCase();
             const endpointMatches = endpoint.label.toLowerCase().includes(lowerQuery);

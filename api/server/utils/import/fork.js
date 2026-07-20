@@ -1,9 +1,11 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, tenantStorage } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, ForkOptions } = require('librechat-data-provider');
+const { getConvo, getMessages, getSharedMessages } = require('~/models');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
+const { getAppConfig } = require('~/server/services/Config');
+const { resolveImportDefaultEndpoint } = require('./defaults');
 const BaseClient = require('~/app/clients/BaseClient');
-const { getConvo, getMessages } = require('~/models');
 
 /**
  * Helper function to clone messages with proper parent-child relationships and timestamps
@@ -353,6 +355,146 @@ function splitAtTargetLevel(messages, targetMessageId) {
 }
 
 /**
+ * Strips file identifiers from a shared message's `files` and `attachments`.
+ * A shared fork is owned by the requesting user, but the underlying file records
+ * still belong to the original sharer. Persisting their `file_id`s would let the
+ * agents file-resend path collect them on the next turn and call `getUserCodeFiles`,
+ * which looks them up by `file_id` with no ownership filter, rehydrating the
+ * sharer's files into the viewer's run. Dropping the ids keeps a fork's file
+ * access no broader than viewing the read-only share, while leaving render-only
+ * metadata (e.g. `filepath`, `toolCallId`) intact.
+ * @param {TMessage} message - The shared message to sanitize.
+ * @returns {TMessage} The message with file identifiers removed.
+ */
+function stripSharedFileIds(message) {
+  const sanitized = { ...message };
+  if (Array.isArray(sanitized.files)) {
+    sanitized.files = sanitized.files.map(({ file_id: _fileId, ...file }) => file);
+  }
+  if (Array.isArray(sanitized.attachments)) {
+    sanitized.attachments = sanitized.attachments.map(
+      ({ file_id: _fileId, ...attachment }) => attachment,
+    );
+  }
+  return sanitized;
+}
+
+/**
+ * Forks a shared (sanitized) conversation into a fresh conversation owned by the requesting user.
+ * Only the anonymized, allowlisted message fields returned by `getSharedMessages` are cloned,
+ * so no private data from the original owner can leak into the new conversation.
+ * @param {object} params - The parameters for forking the shared conversation.
+ * @param {string} params.shareId - The ID of the shared link to fork from.
+ * @param {string} [params.shareResourceId] - The SharedLink resource ID set by `canAccessSharedLink`.
+ * @param {string} params.requestUserId - The ID of the user making the request.
+ * @param {string} [params.userRole] - The role of the requesting user, used to resolve the default model.
+ * @param {string} [params.userTenantId] - Tenant of the requesting user. `canAccessSharedLink` runs this handler under the share owner's tenant so the share resolves, so the copy must be persisted (and its config/retention resolved) under the requesting user's tenant or it would be invisible (404) when they open it normally.
+ * @param {number} [params.targetMessageIndex] - Index, within the shared payload, of the message at the tip of the branch the viewer has active. When set, only the direct path to that message is cloned so the fork continues the branch that was actually shown rather than the newest sibling. An index is used (not id or `createdAt`) because shared ids are re-anonymized per request while `getSharedMessages` returns a deterministic, stable order, so the same index resolves to the same message on the server.
+ * @param {boolean} [params.snapshotFiles] - When `false`, file/attachment metadata is omitted from the cloned messages, mirroring the GET share route so the global shared-file kill switch is honored.
+ * @param {(userId: string, interfaceConfig?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
+ * @param {(options: object) => Promise<object>} [params.loadAppConfig] - Resolves the app config; injectable for tests. Called inside the requesting user's tenant context so retention policy is read from the viewer's tenant, not the share owner's.
+ * @returns {Promise<TForkConvoResponse | null>} The new conversation and messages, or null when the share is missing or empty.
+ */
+async function forkSharedConversation({
+  shareId,
+  shareResourceId,
+  requestUserId,
+  userRole,
+  userTenantId,
+  targetMessageIndex,
+  snapshotFiles,
+  builderFactory = createImportBatchBuilder,
+  loadAppConfig = getAppConfig,
+}) {
+  // Mirror the GET share route: when the shared-file snapshot is globally
+  // disabled, omit file/attachment metadata so a fork can't persist filenames
+  // or share file URLs into the new conversation while file serving is off.
+  const share = await getSharedMessages(shareId, shareResourceId, { snapshotFiles });
+  if (!share?.messages?.length) {
+    return null;
+  }
+
+  /**
+   * The shared payload includes sibling branches. Reduce to the direct path of
+   * the viewer's active message so the fork continues exactly the branch that
+   * was shown; without this the default branch selection lands on the newest
+   * sibling. The active tip is located by its index in the shared payload, which
+   * `getSharedMessages` returns in a deterministic order (stored ref-array order)
+   * — unlike ids (re-anonymized per request) or `createdAt` (can collide). Falls
+   * back to the full set when the index is absent or out of range.
+   */
+  let sourceMessages = share.messages;
+  if (
+    Number.isInteger(targetMessageIndex) &&
+    targetMessageIndex >= 0 &&
+    targetMessageIndex < share.messages.length
+  ) {
+    const targetMessage = share.messages[targetMessageIndex];
+    const directPath = BaseClient.getMessagesForConversation({
+      messages: share.messages,
+      parentMessageId: targetMessage.messageId,
+    });
+    if (directPath.length > 0) {
+      sourceMessages = directPath;
+    }
+  }
+
+  const messageIds = new Set(sourceMessages.map((message) => message.messageId));
+  const messagesToClone = sourceMessages.map(({ model: _model, ...message }) =>
+    stripSharedFileIds({
+      ...message,
+      parentMessageId:
+        message.parentMessageId != null && messageIds.has(message.parentMessageId)
+          ? message.parentMessageId
+          : Constants.NO_PARENT,
+    }),
+  );
+
+  /**
+   * Persist and read back under the requesting user's tenant rather than the
+   * share owner's. The read above runs in the share owner's tenant (set by
+   * `canAccessSharedLink`); writing the copy there would leave it invisible to
+   * the user under their normal tenant context (the new conversation would 404
+   * when they navigate to it). Switching to the user's tenant only affects this
+   * deployment when tenant isolation is enabled; otherwise it is a no-op.
+   */
+  return tenantStorage.run({ tenantId: userTenantId, userId: requestUserId }, async () => {
+    // Resolve config inside the viewer's tenant so retention (e.g. all-data
+    // expiry) reflects the requesting user's tenant, not the share owner's.
+    const appConfig = await loadAppConfig({
+      role: userRole,
+      userId: requestUserId,
+      tenantId: userTenantId,
+    });
+    // The shared payload strips the original endpoint, so resolve one the viewer
+    // can actually use; hard-coding OpenAI breaks the first follow-up message on
+    // deployments that don't expose it.
+    const { endpoint, model } = await resolveImportDefaultEndpoint({ requestUserId, userRole });
+    const importBatchBuilder = builderFactory(requestUserId, appConfig?.interfaceConfig);
+    importBatchBuilder.startConversation(endpoint);
+
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+
+    const result = importBatchBuilder.finishConversation(share.title, new Date(), {}, model);
+    await importBatchBuilder.saveBatch();
+    logger.debug(
+      `user: ${requestUserId} | New conversation "${result.conversation.title}" forked from share ID ${shareId}`,
+    );
+
+    const conversation = await getConvo(requestUserId, result.conversation.conversationId);
+    const messages = await getMessages({
+      user: requestUserId,
+      conversationId: conversation.conversationId,
+    });
+
+    return {
+      conversation,
+      messages,
+    };
+  });
+}
+
+/**
  * Duplicates a conversation and all its messages.
  * @param {object} params - The parameters for duplicating the conversation.
  * @param {string} params.userId - The ID of the user duplicating the conversation.
@@ -404,6 +546,7 @@ module.exports = {
   forkConversation,
   splitAtTargetLevel,
   duplicateConversation,
+  forkSharedConversation,
   getAllMessagesUpToParent,
   getMessagesUpToTargetLevel,
   cloneMessagesWithTimestamps,

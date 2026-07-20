@@ -55,10 +55,16 @@ const openAIModels = {
   'gpt-5.1': 400000,
   'gpt-5.2': 400000,
   'gpt-5.3': 400000,
-  'gpt-5.4': 272000, // standard context; 1M experimental available via API opt-in (2x rate)
-  'gpt-5.4-pro': 272000, // same window as gpt-5.4
+  'gpt-5.4': 1050000, // >272K input prices at the long-context tier (2x input, 1.5x output)
+  'gpt-5.4-pro': 1050000,
+  'gpt-5.4-mini': 400000,
+  'gpt-5.4-nano': 400000,
   'gpt-5.5': 1050000,
   'gpt-5.5-pro': 1050000,
+  'gpt-5.6': 1050000,
+  'gpt-5.6-terra': 1050000,
+  'gpt-5.6-luna': 1050000,
+  'chat-latest': 400000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
   'gpt-5-pro': 400000,
@@ -153,10 +159,55 @@ const anthropicModels = {
   'claude-sonnet-4': 200000,
   'claude-sonnet-4-5': 200000,
   'claude-sonnet-4-6': 1000000,
+  'claude-sonnet-4.6': 1000000,
+  'claude-sonnet-4-7': 1000000,
+  'claude-sonnet-4.7': 1000000,
+  'claude-sonnet-4-8': 1000000,
+  'claude-sonnet-4.8': 1000000,
+  'claude-sonnet-4-9': 1000000,
+  'claude-sonnet-4.9': 1000000,
+  'claude-sonnet-5': 1000000,
   'claude-opus-4-6': 1000000,
   'claude-opus-4-7': 1000000,
   'claude-opus-4-8': 1000000,
+  'claude-fable-5': 1000000,
+  'claude-mythos-5': 1000000,
 };
+
+const ANTHROPIC_SONNET_4_6_PLUS_CONTEXT = 1000000;
+const ANTHROPIC_SONNET_4_6_PLUS_OUTPUT = 128000;
+const ANTHROPIC_SONNET_4_6_PLUS_PATTERN =
+  /(?:claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})|claude[-.]?4[-.]?(?:[6-9]|\d{2})[-.]?sonnet)(?=$|[^0-9])/;
+
+function usesAnthropicContextMap(endpoint: EModelEndpoint): boolean {
+  return (
+    endpoint === EModelEndpoint.anthropic ||
+    endpoint === EModelEndpoint.bedrock ||
+    endpoint === EModelEndpoint.openAI ||
+    endpoint === EModelEndpoint.agents ||
+    endpoint === EModelEndpoint.custom
+  );
+}
+
+function getAnthropicSonnet46PlusContext(
+  modelName: string,
+  endpoint: EModelEndpoint,
+): number | undefined {
+  if (!usesAnthropicContextMap(endpoint) || !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)) {
+    return undefined;
+  }
+  return ANTHROPIC_SONNET_4_6_PLUS_CONTEXT;
+}
+
+function getAnthropicSonnet46PlusOutput(
+  modelName: string,
+  endpoint: EModelEndpoint,
+): number | undefined {
+  if (endpoint !== EModelEndpoint.anthropic || !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)) {
+    return undefined;
+  }
+  return ANTHROPIC_SONNET_4_6_PLUS_OUTPUT;
+}
 
 const deepseekModels = {
   deepseek: 128000,
@@ -381,8 +432,14 @@ export const modelMaxOutputs = {
   'gpt-5.3': 128000,
   'gpt-5.4': 128000,
   'gpt-5.4-pro': 128000,
+  'gpt-5.4-mini': 128000,
+  'gpt-5.4-nano': 128000,
   'gpt-5.5': 128000,
   'gpt-5.5-pro': 128000,
+  'gpt-5.6': 128000,
+  'gpt-5.6-terra': 128000,
+  'gpt-5.6-luna': 128000,
+  'chat-latest': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
   'gpt-5-pro': 128000,
@@ -399,12 +456,22 @@ const anthropicMaxOutputs = {
   'claude-3-opus': 4096,
   'claude-haiku-4-5': 64000,
   'claude-sonnet-4': 64000,
-  'claude-sonnet-4-6': 64000,
+  'claude-sonnet-4-6': 128000,
+  'claude-sonnet-4.6': 128000,
+  'claude-sonnet-4-7': 128000,
+  'claude-sonnet-4.7': 128000,
+  'claude-sonnet-4-8': 128000,
+  'claude-sonnet-4.8': 128000,
+  'claude-sonnet-4-9': 128000,
+  'claude-sonnet-4.9': 128000,
+  'claude-sonnet-5': 128000,
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
   'claude-opus-4-7': 128000,
   'claude-opus-4-8': 128000,
+  'claude-fable-5': 128000,
+  'claude-mythos-5': 128000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,
@@ -509,8 +576,20 @@ export function getModelMaxTokens(
   endpoint: EModelEndpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
-  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint as keyof typeof maxTokensMap];
-  return getModelTokenValue(modelName, tokensMap);
+  /** A partial override only covers the models it lists; fall back to the
+   *  built-in map for unlisted models instead of dropping to the default
+   *  budget (matches buildTokenConfigMap and getMultiplier). */
+  if (endpointTokenConfig != null) {
+    const overrideValue = getModelTokenValue(modelName, endpointTokenConfig);
+    if (overrideValue != null) {
+      return overrideValue;
+    }
+  }
+  const sonnet46PlusValue = getAnthropicSonnet46PlusContext(modelName, endpoint);
+  if (sonnet46PlusValue != null) {
+    return sonnet46PlusValue;
+  }
+  return getModelTokenValue(modelName, maxTokensMap[endpoint as keyof typeof maxTokensMap]);
 }
 
 /**
@@ -526,9 +605,22 @@ export function getModelMaxOutputTokens(
   endpoint: EModelEndpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
-  const tokensMap =
-    endpointTokenConfig ?? maxOutputTokensMap[endpoint as keyof typeof maxOutputTokensMap];
-  return getModelTokenValue(modelName, tokensMap, 'output');
+  /** Partial override fallback — see getModelMaxTokens */
+  if (endpointTokenConfig != null) {
+    const overrideValue = getModelTokenValue(modelName, endpointTokenConfig, 'output');
+    if (overrideValue != null) {
+      return overrideValue;
+    }
+  }
+  const sonnet46PlusValue = getAnthropicSonnet46PlusOutput(modelName, endpoint);
+  if (sonnet46PlusValue != null) {
+    return sonnet46PlusValue;
+  }
+  return getModelTokenValue(
+    modelName,
+    maxOutputTokensMap[endpoint as keyof typeof maxOutputTokensMap],
+    'output',
+  );
 }
 
 /**
@@ -562,6 +654,12 @@ export function matchModelName(
   }
 
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
+  if (
+    (matchedPattern === 'claude-sonnet-4' || matchedPattern === 'claude-4') &&
+    getAnthropicSonnet46PlusContext(modelName, endpoint) != null
+  ) {
+    return modelName;
+  }
   return matchedPattern || modelName;
 }
 

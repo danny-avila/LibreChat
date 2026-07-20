@@ -1,16 +1,22 @@
 import {
   AnthropicEffort,
+  ReasoningEffort,
+  ReasoningMode,
+  ReasoningContext,
   googleSettings,
   anthropicSettings,
   compactGoogleSchema,
   eAnthropicEffortSchema,
+  eReasoningEffortSchema,
+  eReasoningModeSchema,
+  eReasoningContextSchema,
 } from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
     const { reset } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet models', () => {
+    describe('Claude Sonnet 4/4.5 models (64K limit)', () => {
       it('should return 64K for claude-sonnet-4', () => {
         expect(reset('claude-sonnet-4')).toBe(64000);
       });
@@ -19,12 +25,45 @@ describe('anthropicSettings', () => {
         expect(reset('claude-sonnet-4-5')).toBe(64000);
       });
 
-      it('should return 64K for claude-sonnet-5', () => {
-        expect(reset('claude-sonnet-5')).toBe(64000);
+      it('should return 64K for dated claude-sonnet-4', () => {
+        expect(reset('claude-sonnet-4-20250514')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 4.6+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-4-6', () => {
+        expect(reset('claude-sonnet-4-6')).toBe(128000);
       });
 
-      it('should return 64K for future versions like claude-sonnet-9', () => {
-        expect(reset('claude-sonnet-9')).toBe(64000);
+      it('should return 128K for claude-sonnet-4.6', () => {
+        expect(reset('claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-7', () => {
+        expect(reset('claude-sonnet-4-7')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-9', () => {
+        expect(reset('claude-sonnet-4-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(reset('claude-sonnet-4-10')).toBe(128000);
+        expect(reset('claude-sonnet-4.10')).toBe(128000);
+      });
+    });
+
+    describe('Claude Sonnet 5+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-5', () => {
+        expect(reset('claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should return 128K for future versions like claude-sonnet-9', () => {
+        expect(reset('claude-sonnet-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit minor versions like claude-sonnet-5-10', () => {
+        expect(reset('claude-sonnet-5-10')).toBe(128000);
       });
     });
 
@@ -251,9 +290,13 @@ describe('anthropicSettings', () => {
   describe('maxOutputTokens.set()', () => {
     const { set } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet and Haiku 4+ models (64K cap)', () => {
+    describe('Claude Sonnet 4/4.5 and Haiku 4+ models (64K cap)', () => {
       it('should cap at 64K for claude-sonnet-4 when value exceeds', () => {
         expect(set(100000, 'claude-sonnet-4')).toBe(64000);
+      });
+
+      it('should cap at 64K for dated claude-sonnet-4 when value exceeds', () => {
+        expect(set(100000, 'claude-sonnet-4-20250514')).toBe(64000);
       });
 
       it('should allow 50K for claude-sonnet-4', () => {
@@ -262,6 +305,41 @@ describe('anthropicSettings', () => {
 
       it('should cap at 64K for claude-haiku-4-5 when value exceeds', () => {
         expect(set(80000, 'claude-haiku-4-5')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 4.6+ models (128K cap)', () => {
+      it('should allow 100K for claude-sonnet-4-6', () => {
+        expect(set(100000, 'claude-sonnet-4-6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4-6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4-6')).toBe(128000);
+      });
+
+      it('should allow 100K for claude-sonnet-4.6', () => {
+        expect(set(100000, 'claude-sonnet-4.6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4.6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should cap at 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(set(100000, 'claude-sonnet-4-10')).toBe(100000);
+        expect(set(150000, 'claude-sonnet-4.10')).toBe(128000);
+      });
+
+      it('should allow 100K for claude-sonnet-5', () => {
+        expect(set(100000, 'claude-sonnet-5')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-5 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should cap at 128K for future versions like claude-sonnet-9', () => {
+        expect(set(150000, 'claude-sonnet-9')).toBe(128000);
       });
     });
 
@@ -493,5 +571,53 @@ describe('AnthropicEffort', () => {
 
   it('rejects unknown effort values', () => {
     expect(() => eAnthropicEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningEffort', () => {
+  it('exposes max as the highest OpenAI reasoning effort, after xhigh', () => {
+    expect(ReasoningEffort.max).toBe('max');
+    const keys = Object.keys(ReasoningEffort);
+    expect(keys.indexOf('max')).toBeGreaterThan(keys.indexOf('xhigh'));
+  });
+
+  it('accepts max through the zod schema', () => {
+    expect(eReasoningEffortSchema.parse('max')).toBe('max');
+    expect(eReasoningEffortSchema.parse(ReasoningEffort.max)).toBe('max');
+  });
+
+  it('still rejects unknown effort values', () => {
+    expect(() => eReasoningEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningMode', () => {
+  it('exposes standard and pro plus an unset sentinel', () => {
+    expect(ReasoningMode.unset).toBe('');
+    expect(ReasoningMode.standard).toBe('standard');
+    expect(ReasoningMode.pro).toBe('pro');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningModeSchema.parse('standard')).toBe('standard');
+    expect(eReasoningModeSchema.parse('pro')).toBe('pro');
+    expect(eReasoningModeSchema.parse('')).toBe('');
+    expect(() => eReasoningModeSchema.parse('turbo')).toThrow();
+  });
+});
+
+describe('ReasoningContext', () => {
+  it('exposes auto, current_turn, and all_turns plus an unset sentinel', () => {
+    expect(ReasoningContext.unset).toBe('');
+    expect(ReasoningContext.auto).toBe('auto');
+    expect(ReasoningContext.current_turn).toBe('current_turn');
+    expect(ReasoningContext.all_turns).toBe('all_turns');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningContextSchema.parse('auto')).toBe('auto');
+    expect(eReasoningContextSchema.parse('current_turn')).toBe('current_turn');
+    expect(eReasoningContextSchema.parse('all_turns')).toBe('all_turns');
+    expect(() => eReasoningContextSchema.parse('next_turn')).toThrow();
   });
 });

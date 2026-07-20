@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig } from 'tsdown';
 
 // Mirror the prior Rollup `@rollup/plugin-replace` substitutions: only these three are
@@ -26,7 +27,7 @@ export default defineConfig({
   // Externalize every third-party import (consumers provide the peers + react/jsx-runtime);
   // bundle only relative, `~`-aliased, and absolute sources.
   deps: {
-    neverBundle: (id) => !id.startsWith('.') && !id.startsWith('~') && !id.startsWith('/'),
+    neverBundle: (id) => !id.startsWith('.') && !id.startsWith('~') && !path.isAbsolute(id),
     onlyBundle: false,
   },
 });

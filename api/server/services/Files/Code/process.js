@@ -990,7 +990,7 @@ const primeFiles = async (options) => {
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @returns {Promise<{content: string} | null>}
  */
-async function readSandboxFile({ file_path, session_id, files, req }) {
+async function readSandboxFile({ file_path, session_id, files, runtime_session_hint, req }) {
   const baseURL = getCodeBaseURL();
   if (!baseURL) {
     return null;
@@ -1005,6 +1005,9 @@ async function readSandboxFile({ file_path, session_id, files, req }) {
   const postData = { lang: 'bash', code: `cat ${safePath}` };
   if (session_id) {
     postData.session_id = session_id;
+  }
+  if (runtime_session_hint) {
+    postData.runtime_session_hint = runtime_session_hint;
   }
   if (files && files.length > 0) {
     postData.files = files;
@@ -1043,6 +1046,235 @@ async function readSandboxFile({ file_path, session_id, files, req }) {
 }
 
 /**
+ * Reads a small image file out of the code-execution sandbox as base64 so
+ * `read_file` can surface it to vision-capable models. `readSandboxFile`'s
+ * `cat` round-trips stdout through codeapi's JSON transport, which lossily
+ * replaces non-UTF-8 bytes and corrupts image data. Here a tiny Python
+ * reader stats the file, refuses (without transferring) anything over
+ * `maxBytes`, and otherwise base64-encodes the bytes IN the sandbox so the
+ * payload stays ASCII-safe across the JSON `/exec` transport. Session
+ * forwarding mirrors `readSandboxFile` so the read lands in the same
+ * sandbox session that holds the agent's prior-turn artifacts.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path - Path inside the sandbox (e.g. `/mnt/data/chart.png`).
+ * @param {string} [params.session_id] - Sandbox session id from the seeded context.
+ * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
+ * @param {string} [params.runtime_session_hint] - Per-conversation stateful runtime-session hint.
+ * @param {number} [params.maxBytes] - In-sandbox size cap; larger files return `{ tooLarge, bytes }`.
+ * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
+ * @returns {Promise<{base64: string, bytes: number} | {tooLarge: true, bytes: number} | null>}
+ *   `null` when codeapi is unavailable; throws on transport / read errors.
+ */
+async function readSandboxImage({
+  file_path,
+  session_id,
+  files,
+  runtime_session_hint,
+  maxBytes,
+  req,
+}) {
+  const baseURL = getCodeBaseURL();
+  if (!baseURL) {
+    return null;
+  }
+
+  const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
+  const chunkBytes = getImageChunkBytes();
+  const maxChunks = Math.ceil(limit / chunkBytes) + 1;
+
+  /** @type {Buffer[]} */
+  const parts = [];
+  let offset = 0;
+  let total = null;
+
+  for (let i = 0; i < maxChunks; i++) {
+    const payload = Buffer.from(
+      JSON.stringify({ file_path, limit, offset, chunk: chunkBytes }),
+      'utf8',
+    ).toString('base64');
+    const code = [
+      "python3 - <<'PY'",
+      'import base64, json, os, stat',
+      `payload = ${JSON.stringify(payload)}`,
+      "data = json.loads(base64.b64decode(payload).decode('utf-8'))",
+      "p = data['file_path']",
+      "limit = data['limit']",
+      "offset = data['offset']",
+      "chunk = data['chunk']",
+      'try:',
+      '    st = os.stat(p)',
+      'except OSError as e:',
+      '    print(json.dumps({"error": str(e)}))',
+      '    raise SystemExit(0)',
+      // Reject FIFOs, sockets, and device files (e.g. a symlink to /dev/zero):
+      // os.stat can report a small/zero size while an unbounded read blocks or
+      // streams forever until the request times out.
+      'if not stat.S_ISREG(st.st_mode):',
+      '    print(json.dumps({"error": "not a regular file"}))',
+      '    raise SystemExit(0)',
+      'if st.st_size > limit:',
+      '    print(json.dumps({"too_large": True, "bytes": st.st_size}))',
+      '    raise SystemExit(0)',
+      // Read only this window. The whole base64 payload cannot be emitted in
+      // one shot: the runner caps stdout at SANDBOX_OUTPUT_MAX_SIZE (1024
+      // bytes by default) and SIGKILLs the job on overflow, which truncates
+      // the JSON mid-string. Windowing keeps every response under that cap.
+      "with open(p, 'rb') as f:",
+      '    f.seek(offset)',
+      '    raw = f.read(chunk)',
+      'print(json.dumps({"total": st.st_size, "n": len(raw), "b64": base64.b64encode(raw).decode("ascii")}))',
+      'PY',
+    ].join('\n');
+
+    const parsed = await execSandboxImageChunk({
+      baseURL,
+      code,
+      file_path,
+      session_id,
+      runtime_session_hint,
+      files,
+      req,
+      chunkBytes,
+    });
+
+    if (parsed.error) {
+      throw new Error(String(parsed.error));
+    }
+    if (parsed.too_large === true) {
+      return { tooLarge: true, bytes: Number(parsed.bytes) || 0 };
+    }
+    if (typeof parsed.b64 !== 'string' || typeof parsed.n !== 'number') {
+      return null;
+    }
+
+    if (total == null) {
+      total = Number(parsed.total) || 0;
+      if (total > limit) {
+        return { tooLarge: true, bytes: total };
+      }
+    } else if (Number(parsed.total) !== total) {
+      /* The file changed underneath us; a spliced-together buffer would be
+       * a mix of two versions rather than any real image. */
+      throw new Error(`"${file_path}" changed while being read from the sandbox`);
+    }
+
+    parts.push(Buffer.from(parsed.b64, 'base64'));
+    offset += parsed.n;
+
+    if (parsed.n === 0 || offset >= total) {
+      break;
+    }
+  }
+
+  const buffer = Buffer.concat(parts);
+  if (total == null) {
+    return null;
+  }
+  if (buffer.length !== total) {
+    /* Ran out of chunk budget (or short reads); returning a partial image
+     * would render as a corrupt file, so surface it as unreadable-inline. */
+    return { tooLarge: true, bytes: total };
+  }
+  return { base64: buffer.toString('base64'), bytes: buffer.length };
+}
+
+/**
+ * Raw bytes pulled per `/exec` round-trip when inlining a sandbox image.
+ * Each chunk is base64-encoded (~1.33x) into the response's stdout, which
+ * the runner truncates + SIGKILLs past `SANDBOX_OUTPUT_MAX_SIZE`. The
+ * default leaves headroom for a runner configured at 64KB; deployments
+ * with a smaller cap must lower this, and a larger cap can raise it to cut
+ * round-trips.
+ * @returns {number}
+ */
+function getImageChunkBytes() {
+  const parsed = Number(process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 32 * 1024;
+}
+
+/**
+ * Runs one image-chunk read over `/exec` and parses its JSON line.
+ * @returns {Promise<Record<string, unknown>>}
+ */
+async function execSandboxImageChunk({
+  baseURL,
+  code,
+  file_path,
+  session_id,
+  runtime_session_hint,
+  files,
+  req,
+  chunkBytes,
+}) {
+  /** @type {Record<string, unknown>} */
+  const postData = { lang: 'bash', code };
+  if (session_id) {
+    postData.session_id = session_id;
+  }
+  if (runtime_session_hint) {
+    postData.runtime_session_hint = runtime_session_hint;
+  }
+  if (files && files.length > 0) {
+    postData.files = files;
+  }
+
+  try {
+    const authHeaders = await getCodeApiAuthHeaders(req);
+    const response = await axios({
+      method: 'post',
+      url: `${baseURL}/exec`,
+      data: postData,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+    const result = response?.data ?? {};
+    /* The runner truncates stdout at SANDBOX_OUTPUT_MAX_SIZE and SIGKILLs the
+     * job (status `OL`). Detect that explicitly: the surviving stdout is a
+     * base64 string cut mid-flight, so parsing it yields a misleading
+     * "unexpected output" instead of naming the real, fixable cause. */
+    if (result.status === 'OL') {
+      throw new Error(
+        `Reading "${file_path}" exceeded the sandbox stdout limit (chunk ${chunkBytes} bytes). ` +
+          'Lower LIBRECHAT_CODE_IMAGE_CHUNK_BYTES or raise SANDBOX_OUTPUT_MAX_SIZE on the runner.',
+      );
+    }
+    if (result.stderr && (result.stdout == null || result.stdout === '')) {
+      throw new Error(String(result.stderr).trim());
+    }
+    if (result.stdout == null || String(result.stdout).trim() === '') {
+      return {};
+    }
+    /* Parse the LAST non-empty line: the reader's JSON is the final thing it
+     * prints, so anything a shell profile or library emitted ahead of it
+     * (banners, warnings) must not break the read. */
+    const lines = String(result.stdout)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    try {
+      return JSON.parse(lines[lines.length - 1]);
+    } catch {
+      throw new Error(
+        `Unexpected output while reading image bytes from the sandbox: ${String(result.stdout).slice(0, 120)}`,
+      );
+    }
+  } catch (error) {
+    logAxiosError({
+      message: `Error reading sandbox image "${file_path}"`,
+      error,
+    });
+    throw error;
+  }
+}
+
+/**
  * Writes a UTF-8 text file into the code-execution sandbox by running a
  * small Python writer through the sandbox `/exec` endpoint. The payload is
  * base64-encoded JSON so neither the file path nor the content is
@@ -1056,7 +1288,14 @@ async function readSandboxFile({ file_path, session_id, files, req }) {
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @returns {Promise<{stdout?: string, stderr?: string, session_id?: string, files?: Array<Object>} | null>}
  */
-async function writeSandboxFile({ file_path, content, session_id, files, req }) {
+async function writeSandboxFile({
+  file_path,
+  content,
+  session_id,
+  files,
+  runtime_session_hint,
+  req,
+}) {
   const baseURL = getCodeBaseURL();
   if (!baseURL) {
     return null;
@@ -1089,6 +1328,9 @@ async function writeSandboxFile({ file_path, content, session_id, files, req }) 
   const postData = { lang: 'bash', code };
   if (session_id) {
     postData.session_id = session_id;
+  }
+  if (runtime_session_hint) {
+    postData.runtime_session_hint = runtime_session_hint;
   }
   if (files && files.length > 0) {
     postData.files = files;
@@ -1137,6 +1379,7 @@ module.exports = {
   getSessionInfo,
   processCodeOutput,
   readSandboxFile,
+  readSandboxImage,
   writeSandboxFile,
   runPreviewFinalize,
 };

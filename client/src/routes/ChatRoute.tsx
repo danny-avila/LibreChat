@@ -166,7 +166,7 @@ export default function ChatRoute() {
     }
 
     const getNewConvoPreset = () => {
-      const result = getDefaultModelSpec(startupConfig);
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
       const spec = result?.default ?? result?.last ?? result?.softDefault;
       const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
@@ -212,7 +212,7 @@ export default function ChatRoute() {
       initialConvoQuery.isError &&
       isNotFoundError(initialConvoQuery.error)
     ) {
-      const result = getDefaultModelSpec(startupConfig);
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
       const spec = result?.default ?? result?.last ?? result?.softDefault;
       showToast({
         message: localize('com_ui_conversation_not_found'),

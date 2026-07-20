@@ -18,6 +18,7 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import { subagentProgressByToolCallId } from '~/store/subagents';
+import { resolveAskUserQuestionPart } from '~/utils/approval';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 
 /** `Constants` is a heterogeneous enum (`string | number`); annotate as
@@ -49,6 +50,7 @@ describe('useStepHandler', () => {
   const mockSetMessages = jest.fn();
   const mockGetMessages = jest.fn();
   const mockAnnouncePolite = jest.fn();
+  const mockOnSkillAuthoringComplete = jest.fn();
   const mockLastAnnouncementTimeRef = { current: 0 };
 
   const createHookParams = () => ({
@@ -56,6 +58,7 @@ describe('useStepHandler', () => {
     getMessages: mockGetMessages,
     announcePolite: mockAnnouncePolite,
     lastAnnouncementTimeRef: mockLastAnnouncementTimeRef,
+    onSkillAuthoringComplete: mockOnSkillAuthoringComplete,
   });
 
   const createUserMessage = (overrides: Partial<TMessage> = {}): TMessage => ({
@@ -1420,6 +1423,7 @@ describe('useStepHandler', () => {
             name: 'test_tool',
             args: '{}',
             output: 'Tool result output',
+            inputValidationError: true as const,
             type: ToolCallTypes.TOOL_CALL,
           },
         },
@@ -1443,6 +1447,87 @@ describe('useStepHandler', () => {
       );
       expect(toolCallContent?.tool_call?.output).toBe('Tool result output');
       expect(toolCallContent?.tool_call?.progress).toBe(1);
+      expect(toolCallContent?.tool_call?.inputValidationError).toBe(true);
+    });
+
+    it('signals skill authoring when a completed create_file call targets a skill path', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: 'skills/demo/SKILL.md', content: '# Demo' }),
+            output: 'Updated skills/demo/SKILL.md (6 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(mockOnSkillAuthoringComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not signal skill authoring for non-skill file authoring calls', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: '/mnt/data/report.md', content: '# Report' }),
+            output: 'Created /mnt/data/report.md (8 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(mockOnSkillAuthoringComplete).not.toHaveBeenCalled();
     });
 
     it('should warn when step not found for completed event', () => {
@@ -1766,6 +1851,166 @@ describe('useStepHandler', () => {
   });
 
   describe('content type mismatch handling', () => {
+    it('displaces a synthetic ask-user-question card when the resumed segment streams into its slot', () => {
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      /** The pause-scoped card is appended at the END of the content — exactly
+       *  the ABSOLUTE index the resumed run's first new part arrives at. */
+      const askPart = {
+        type: 'ask_user_question',
+        ask_user_question: { actionId: 'a1', question: { question: 'Which?' } },
+      } as unknown as TMessageContentParts;
+      const responseMessage = createResponseMessage({
+        content: [{ type: ContentTypes.TEXT, text: 'Pre-pause text' }, askPart],
+      });
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      act(() => {
+        result.current.syncStepMessage(responseMessage);
+      });
+
+      const runStep = createRunStep({ index: 1 });
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const textDelta: Agents.MessageDeltaEvent = {
+        id: 'step-1',
+        delta: { content: [{ type: ContentTypes.TEXT, text: 'Resumed answer' }] },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: textDelta },
+          submission,
+        );
+      });
+
+      expect(consoleSpy).not.toHaveBeenCalledWith('Content type mismatch', expect.anything());
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = lastCall[0][lastCall[0].length - 1] as TMessage;
+      const content = updated.content as Array<{ type?: string; text?: string }>;
+      expect(content.some((part) => part?.type === 'ask_user_question')).toBe(false);
+      expect(content[1]).toMatchObject({ type: ContentTypes.TEXT, text: 'Resumed answer' });
+      consoleSpy.mockRestore();
+    });
+
+    it('drops an answered ask card when the resumed segment streams AROUND its slot', () => {
+      /**
+       * The first event after a resume re-renders the ask tool_call at ITS OWN
+       * index, never the card's, so the slot displacement above cannot fire.
+       * This handler's cached copy still holds the card the answer-submit
+       * stripped from the store; writing it back reopened the popover over an
+       * answered question with its options locked.
+       */
+      const askPart = {
+        type: 'ask_user_question',
+        ask_user_question: { actionId: 'a2', question: { question: 'Which env?' } },
+      } as unknown as TMessageContentParts;
+      const askToolCall = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'ask-call-1',
+          name: 'ask_user_question',
+          args: '{"question":"Which env?"}',
+          type: ToolCallTypes.TOOL_CALL,
+        },
+      } as unknown as TMessageContentParts;
+      /** Card appended at the END (index 2), ask tool_call at index 1. */
+      const paused = createResponseMessage({
+        content: [{ type: ContentTypes.TEXT, text: 'Let me ask.' }, askToolCall, askPart],
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.syncStepMessage(paused);
+      });
+
+      /** The user answers: the store copy is stripped + stamped, and the action
+       *  is recorded as answered. The handler's cached copy is untouched. */
+      const answered = resolveAskUserQuestionPart(paused, 'a2', 'prod');
+      mockGetMessages.mockReturnValue([answered]);
+
+      /** Resume replays the ask tool_call's completion at index 1, not 2. */
+      const askCompletion = createToolCallRunStep({
+        id: 'step-ask',
+        index: 1,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'ask-call-1',
+              name: 'ask_user_question',
+              args: '{"question":"Which env?"}',
+              output: 'prod',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      } as Partial<Agents.RunStep>);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: askCompletion },
+          createSubmission(),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = (lastCall[0] as TMessage[]).find((m) => m.messageId === 'response-msg-1');
+      const content = (updated?.content ?? []) as Array<{ type?: string }>;
+      expect(content.some((part) => part?.type === 'ask_user_question')).toBe(false);
+      /** The real content is untouched: only the answered card is dropped. */
+      expect(content[1]).toMatchObject({ type: ContentTypes.TOOL_CALL });
+    });
+
+    it('keeps a still-live ask card when an event streams around its slot', () => {
+      /** Only ANSWERED cards are droppable — a late event racing a live pause
+       *  must not take the question away before the user can respond. */
+      const askPart = {
+        type: 'ask_user_question',
+        ask_user_question: { actionId: 'a3', question: { question: 'Live?' } },
+      } as unknown as TMessageContentParts;
+      const responseMessage = createResponseMessage({
+        content: [{ type: ContentTypes.TEXT, text: 'Pre-pause' }, askPart],
+      });
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.syncStepMessage(responseMessage);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: createRunStep({ index: 0 }) },
+          createSubmission(),
+        );
+      });
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_MESSAGE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: { content: [{ type: ContentTypes.TEXT, text: ' more' }] },
+            } as Agents.MessageDeltaEvent,
+          },
+          createSubmission(),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = (lastCall[0] as TMessage[]).find((m) => m.messageId === 'response-msg-1');
+      const content = (updated?.content ?? []) as Array<{ type?: string }>;
+      expect(content.some((part) => part?.type === 'ask_user_question')).toBe(true);
+    });
+
     it('should warn on content type mismatch and not overwrite', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 

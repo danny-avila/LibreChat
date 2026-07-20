@@ -1,7 +1,7 @@
+import { StandardGraph } from '@librechat/agents';
 import { StepTypes } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
-import { StandardGraph } from '@librechat/agents';
 
 /** Suppress winston Console transport output (survives jest.resetModules) */
 jest.spyOn(console, 'log').mockImplementation();
@@ -21,6 +21,19 @@ describe('RedisJobStore Integration Tests', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let ioredisClient: Redis | Cluster | null = null;
   const testPrefix = 'Stream-Integration-Test';
+
+  function buildPendingAction(streamId: string): Agents.PendingAction {
+    return {
+      actionId: `action-${streamId}`,
+      streamId,
+      conversationId: streamId,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Approve?' },
+      },
+      createdAt: Date.now(),
+    };
+  }
 
   beforeAll(async () => {
     originalEnv = { ...process.env };
@@ -152,6 +165,365 @@ describe('RedisJobStore Integration Tests', () => {
 
       const job = await store.getJob(streamId);
       expect(job).toBeNull();
+
+      await store.destroy();
+    });
+  });
+
+  describe('Requires Action Status Tracking', () => {
+    test('should count requires_action jobs and remove them from the running set', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `requires-action-user-${Date.now()}`;
+      const streamId = `requires-action-${Date.now()}`;
+      const beforeRunning = await store.getJobCountByStatus('running');
+      const beforePaused = await store.getJobCountByStatus('requires_action');
+      await store.createJob(streamId, userId, streamId);
+
+      expect(await store.getJobCountByStatus('running')).toBe(beforeRunning + 1);
+      expect(await store.getJobCountByStatus('requires_action')).toBe(beforePaused);
+
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      const runningMembers = await ioredisClient.smembers('stream:running');
+      const pausedMembers = await ioredisClient.smembers('stream:requires_action');
+      expect(runningMembers).not.toContain(streamId);
+      expect(pausedMembers).toContain(streamId);
+      expect(await store.getJobCountByStatus('running')).toBe(beforeRunning);
+      expect(await store.getJobCountByStatus('requires_action')).toBe(beforePaused + 1);
+      expect(await store.getActiveJobIdsByUser(userId)).toContain(streamId);
+
+      await store.destroy();
+    });
+
+    test('should return resumed requires_action jobs to the running index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `requires-action-resume-${Date.now()}`;
+      const beforeRunning = await store.getJobCountByStatus('running');
+      const beforePaused = await store.getJobCountByStatus('requires_action');
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      await store.transitionStatus(streamId, {
+        from: 'requires_action',
+        to: 'running',
+        clear: ['pendingAction'],
+      });
+
+      const job = await store.getJob(streamId);
+      expect(job?.status).toBe('running');
+      expect(job?.pendingAction).toBeUndefined();
+      expect(await store.getJobCountByStatus('running')).toBe(beforeRunning + 1);
+      expect(await store.getJobCountByStatus('requires_action')).toBe(beforePaused);
+
+      await store.destroy();
+    });
+
+    test('should refresh resume state TTLs when pausing and resuming a job', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 120 });
+      await store.initialize();
+
+      const streamId = `requires-action-ttl-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+      const runStepsKey = `stream:{${streamId}}:runsteps`;
+
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.appendChunk(streamId, { event: 'on_message_delta', data: { text: 'hello' } });
+      const runSteps: Partial<Agents.RunStep>[] = [
+        { id: 'step-1', runId: 'run-1', type: StepTypes.MESSAGE_CREATION, index: 0 },
+      ];
+      await store.saveRunSteps(streamId, runSteps as Agents.RunStep[]);
+
+      await ioredisClient.expire(chunkKey, 30);
+      await ioredisClient.expire(runStepsKey, 30);
+
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(30);
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(30);
+
+      await ioredisClient.expire(chunkKey, 30);
+      await ioredisClient.expire(runStepsKey, 30);
+
+      await store.transitionStatus(streamId, {
+        from: 'requires_action',
+        to: 'running',
+        clear: ['pendingAction'],
+      });
+
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(30);
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(30);
+
+      await store.destroy();
+    });
+
+    test('appendChunk preserves a paused job’s extended TTL (does not reset to running)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `paused-chunk-ttl-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.appendChunk(streamId, { event: 'on_message_delta', data: { text: 'hello' } });
+
+      // Pause: transitionStatus extends the chunk-key TTL to the long approval window.
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(60);
+
+      // The on_pending_action chunk is appended AFTER the pause. The bug Codex flagged was
+      // that appendChunk unconditionally reset the TTL back to the (short) running TTL,
+      // evicting the pre-pause content before resume. It must now leave the long TTL intact.
+      await store.appendChunk(streamId, {
+        event: 'on_pending_action',
+        data: buildPendingAction(streamId),
+      });
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(60);
+      // The chunk was still appended (XADD ran), so resume can read the full stream.
+      expect(await ioredisClient.xlen(chunkKey)).toBeGreaterThanOrEqual(2);
+
+      await store.destroy();
+    });
+
+    test('saveRunSteps preserves a paused job’s extended TTL (does not reset to running)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `paused-runsteps-ttl-${Date.now()}`;
+      const runStepsKey = `stream:{${streamId}}:runsteps`;
+
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.saveRunSteps!(streamId, [{ id: 'step-1', type: 'tool_call' }] as never);
+
+      // Pause: transitionStatus extends the run-steps key TTL to the long approval window.
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(60);
+
+      // A run-step save landing AFTER the pause must NOT reset the key to the running TTL,
+      // or a reload of the still-live approval after that window loses the tool timeline.
+      await store.saveRunSteps!(streamId, [
+        { id: 'step-1', type: 'tool_call' },
+        { id: 'step-2', type: 'tool_call' },
+      ] as never);
+      expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(60);
+      // The save still landed, so resume can read the full timeline.
+      const steps = await store.getRunSteps(streamId);
+      expect(steps.length).toBe(2);
+
+      await store.destroy();
+    });
+
+    test('appendChunk gives the approval TTL when the chunk key did not exist at pause time', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `paused-no-chunk-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+
+      // The job pauses BEFORE any chunk was persisted (ask-user pause with no prior
+      // delta, or the first appendChunk still in flight because emitChunk is
+      // fire-and-forget). The pause's `EXPIRE chunks` is a no-op because the key
+      // does not exist yet, so the chunk stream carries no extended TTL.
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(await ioredisClient.exists(chunkKey)).toBe(0);
+
+      // The first chunk lands AFTER the pause. The bug Codex re-raised: appendChunk
+      // would create the stream with only the short running TTL (60s), so the
+      // aggregated tool-call content is evicted before the 24h approval window ends.
+      // The fix reads the paused window from the job key and bumps the chunk TTL to it.
+      await store.appendChunk(streamId, {
+        event: 'on_pending_action',
+        data: buildPendingAction(streamId),
+      });
+
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(60);
+      expect(await ioredisClient.xlen(chunkKey)).toBeGreaterThanOrEqual(1);
+
+      await store.destroy();
+    });
+
+    test('appendChunk keeps a normally-running job on the short running TTL (no inflation)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `running-no-inflate-${Date.now()}`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+
+      // A normal running job: the job key carries the running TTL (set by createJob),
+      // NOT the long approval window. appendChunk must settle the chunk TTL on the
+      // short running TTL — never max it against the job key — so a live stream is
+      // not inflated to the 24h approval window.
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.appendChunk(streamId, {
+        event: 'on_message_delta',
+        data: { text: 'hello' },
+      });
+
+      const ttl = await ioredisClient.ttl(chunkKey);
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(60);
+
+      await store.destroy();
+    });
+
+    test('createJob clears stale per-turn identity (agent_id, isTemporary) from a reused hash', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `stale-agent-${Date.now()}`;
+      // Turn 1: a saved agent in a temporary chat that discovered a deferred tool.
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.updateJob(streamId, {
+        agent_id: 'saved-agent-1',
+        isTemporary: true,
+        discoveredTools: ['deep_tool'],
+      });
+      const turn1 = await store.getJob(streamId);
+      expect(turn1?.agent_id).toBe('saved-agent-1');
+      expect(turn1?.isTemporary).toBe(true);
+      expect(turn1?.discoveredTools).toEqual(['deep_tool']);
+
+      // Turn 2 on the SAME conversation switches to an ephemeral / non-temporary turn.
+      // The hash is keyed by conversationId, so without clearing, the old agent_id and
+      // isTemporary would survive — the resume guard would reject the valid pause as a
+      // different agent, and the resumed response would be saved as temporary. The stale
+      // discoveredTools would also force-load deferred tools this turn never discovered.
+      await store.createJob(streamId, 'user-1', streamId);
+      const turn2 = await store.getJob(streamId);
+      expect(turn2?.agent_id).toBeUndefined();
+      expect(turn2?.isTemporary).toBeUndefined();
+      expect(turn2?.discoveredTools).toBeUndefined();
+
+      await store.destroy();
+    });
+
+    test('should not drop paused jobs from user tracking when cleanup sees a stale running index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const userId = `requires-action-cleanup-user-${Date.now()}`;
+      const streamId = `requires-action-cleanup-${Date.now()}`;
+      await store.createJob(streamId, userId, streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      await ioredisClient.sadd('stream:running', streamId);
+
+      const cleaned = await store.cleanup();
+      const runningMembers = await ioredisClient.smembers('stream:running');
+      const pausedMembers = await ioredisClient.smembers('stream:requires_action');
+
+      expect(cleaned).toBeGreaterThanOrEqual(1);
+      expect(runningMembers).not.toContain(streamId);
+      expect(pausedMembers).toContain(streamId);
+      expect(await store.getActiveJobIdsByUser(userId)).toContain(streamId);
+
+      await store.destroy();
+    });
+
+    test('should prune expired requires_action IDs during cleanup', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `requires-action-expired-${Date.now()}`;
+      const jobKey = `stream:{${streamId}}:job`;
+      await store.createJob(streamId, 'user-1', streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+
+      expect(await ioredisClient.smembers('stream:requires_action')).toContain(streamId);
+
+      await ioredisClient.del(jobKey);
+
+      const cleaned = await store.cleanup();
+      const pausedMembers = await ioredisClient.smembers('stream:requires_action');
+
+      expect(cleaned).toBeGreaterThanOrEqual(1);
+      expect(pausedMembers).not.toContain(streamId);
 
       await store.destroy();
     });
@@ -1476,6 +1848,428 @@ describe('RedisJobStore Integration Tests', () => {
       const content = await store.getContentParts(streamId);
       expect(content).not.toBeNull();
       expect(content!.content.length).toBeGreaterThan(0);
+
+      await store.destroy();
+    });
+  });
+
+  describe('Steering Queue', () => {
+    function buildSteer(steerId: string, text: string) {
+      return { steerId, text, userId: 'steer-user', createdAt: Date.now() };
+    }
+
+    test('enqueue is status-guarded and FIFO drain is atomic take-all', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_NOT_RUNNING } = await import('../interfaces/IJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-fifo-${Date.now()}`;
+      expect(await store.enqueueSteer(streamId, buildSteer('s0', 'no job'))).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.enqueueSteer(streamId, buildSteer('s1', 'first'))).toBe(1);
+      expect(await store.enqueueSteer(streamId, buildSteer('s2', 'second'))).toBe(2);
+
+      expect((await store.peekSteers(streamId)).map((s) => s.text)).toEqual(['first', 'second']);
+      expect((await store.drainSteers(streamId)).map((s) => s.text)).toEqual(['first', 'second']);
+      expect(await store.drainSteers(streamId)).toEqual([]);
+
+      // Terminal job refuses new steers atomically (Lua status guard)
+      await store.updateJob(streamId, { status: 'complete', completedAt: Date.now() });
+      expect(await store.enqueueSteer(streamId, buildSteer('s3', 'late'))).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+
+      await store.destroy();
+    });
+
+    test('enforces the queue depth cap', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_QUEUE_FULL, STEER_QUEUE_MAX_DEPTH } = await import(
+        '../interfaces/IJobStore'
+      );
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-cap-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+
+      for (let i = 0; i < STEER_QUEUE_MAX_DEPTH; i++) {
+        expect(await store.enqueueSteer(streamId, buildSteer(`s${i}`, `text ${i}`))).toBe(i + 1);
+      }
+      expect(await store.enqueueSteer(streamId, buildSteer('overflow', 'too many'))).toBe(
+        STEER_ENQUEUE_QUEUE_FULL,
+      );
+
+      await store.destroy();
+    });
+
+    test('closeAndDrain atomically closes the queue; createJob reopens and clears it', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { STEER_ENQUEUE_NOT_RUNNING } = await import('../interfaces/IJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-close-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'drained'));
+
+      const drained = await store.closeAndDrainSteers(streamId);
+      expect(drained.map((s) => s.text)).toEqual(['drained']);
+
+      // Job hash still says `running`, but the closed flag rejects the race.
+      expect(await store.enqueueSteer(streamId, buildSteer('s2', 'raced'))).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+
+      // Replacement reopens the channel and starts with an empty queue.
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.peekSteers(streamId)).toEqual([]);
+      expect(await store.enqueueSteer(streamId, buildSteer('s3', 'fresh'))).toBe(1);
+
+      await store.destroy();
+    });
+
+    test('createJob clears steers inherited from a replaced job', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-replace-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'old run steer'));
+
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.peekSteers(streamId)).toEqual([]);
+
+      await store.destroy();
+    });
+
+    test('pausing for review extends the steers key TTL to the approval window', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-pause-ttl-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'kept across pause'));
+
+      const paused = await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
+      });
+      expect(paused).toBe(true);
+
+      // Running TTL is 1200s; the paused window is >= the 24h backstop.
+      const ttl = await ioredisClient.ttl(`stream:{${streamId}}:steers`);
+      expect(ttl).toBeGreaterThan(1200);
+
+      // The queued steer survives the pause for the resumed run to drain.
+      expect((await store.peekSteers(streamId)).map((s) => s.text)).toEqual(['kept across pause']);
+
+      await store.destroy();
+    });
+
+    test('terminal transitions and deleteJob remove the steers key', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-cleanup-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s1', 'leftover'));
+
+      await store.updateJob(streamId, { status: 'aborted', completedAt: Date.now() });
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      // Recreate + enqueue, then hard delete
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s2', 'leftover again'));
+      await store.deleteJob(streamId);
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      await store.destroy();
+    });
+
+    test('removeSteer takes one item, keeps order, and preserves the list TTL', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-remove-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('c1', 'keep me first'));
+      await store.enqueueSteer(streamId, buildSteer('c2', 'cancel me'));
+      await store.enqueueSteer(streamId, buildSteer('c3', 'keep me last'));
+
+      expect(await store.removeSteer(streamId, 'c2')).toBe(true);
+      expect(await store.removeSteer(streamId, 'c2')).toBe(false);
+      expect((await store.peekSteers(streamId)).map((s) => s.steerId)).toEqual(['c1', 'c3']);
+      expect(await ioredisClient.ttl(`stream:{${streamId}}:steers`)).toBeGreaterThan(0);
+
+      await store.destroy();
+    });
+
+    test('parked steers survive deleteJob, claim exactly once, and reset on createJob', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-parked-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+      const payload = JSON.stringify({
+        userId: 'steer-user',
+        steers: [{ steerId: 'p1', text: 'kept', createdAt: 1 }],
+      });
+      await store.parkSteers(streamId, payload);
+
+      // Survives full job deletion (the default completeJob path)…
+      await store.deleteJob(streamId);
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
+      // …under its own bounded TTL, not the job's lifecycle.
+      expect(await ioredisClient.ttl(`stream:{${streamId}}:parked`)).toBeGreaterThan(0);
+
+      // Claim-on-read: exactly once.
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBe(payload);
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBeUndefined();
+
+      // A replacement run resets any parked payload atomically with creation.
+      await store.parkSteers(streamId, payload);
+      await store.createJob(streamId, 'steer-user', streamId);
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBeUndefined();
+
+      await store.destroy();
+    });
+
+    test('a non-owner claim leaves the parked payload untouched (atomic owner gate)', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-parked-owner-${Date.now()}`;
+      const payload = JSON.stringify({
+        userId: 'steer-user',
+        steers: [{ steerId: 'p1', text: 'owner only', createdAt: 1 }],
+      });
+      await store.parkSteers(streamId, payload);
+
+      // The Lua gate rejects WITHOUT deleting: no delete-then-re-park window
+      // in which a concurrent owner claim would find nothing.
+      expect(await store.claimParkedSteers(streamId, '"userId":"intruder"')).toBeUndefined();
+      expect(await ioredisClient.get(`stream:{${streamId}}:parked`)).toBe(payload);
+
+      // The owner still claims exactly once.
+      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBe(payload);
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(0);
+
+      await store.destroy();
+    });
+
+    test('expiry cleanup parks queued steers before the terminal transition drops the queue', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-expiry-park-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId, 'tenant-1');
+      await store.enqueueSteer(streamId, buildSteer('s1', 'frozen across the pause'));
+
+      // Pause on an ALREADY-expired action so the next cleanup pass reaps it
+      // (mirrors how the requires_action index treats a lapsed approval).
+      const expiredAction = { ...buildPendingAction(streamId), expiresAt: Date.now() - 1000 };
+      const paused = await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: expiredAction, pendingActionId: expiredAction.actionId },
+      });
+      expect(paused).toBe(true);
+
+      await store.cleanup();
+
+      // The job finalized (aborted) and the queue key is gone…
+      const job = await store.getJob(streamId);
+      expect(job?.status).toBe('aborted');
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      // …but the 202-accepted steer is claimable by its owner.
+      const claimed = await store.claimParkedSteers(streamId, '"userId":"steer-user"');
+      expect(claimed).toBeDefined();
+      const parsed = JSON.parse(claimed as string) as {
+        userId: string;
+        tenantId?: string;
+        steers: Array<{ steerId: string; text: string }>;
+      };
+      expect(parsed.userId).toBe('steer-user');
+      expect(parsed.tenantId).toBe('tenant-1');
+      expect(parsed.steers.map((s) => s.text)).toEqual(['frozen across the pause']);
+
+      await store.destroy();
+    });
+
+    test('stale-running reap parks queued steers before deleting the job', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 1 });
+      await store.initialize();
+
+      const streamId = `steer-stale-park-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId, 'tenant-1');
+      await store.enqueueSteer(streamId, buildSteer('s1', 'crash survivor'));
+
+      // Backdate creation past the running TTL so the next cleanup pass reaps
+      // it via the stale-running branch (no finalization ever ran).
+      await ioredisClient.hset(
+        `stream:{${streamId}}:job`,
+        'createdAt',
+        String(Date.now() - 10_000),
+      );
+
+      const cleaned = await store.cleanup();
+      expect(cleaned).toBeGreaterThanOrEqual(1);
+      expect(await store.getJob(streamId)).toBeNull();
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      const claimed = await store.claimParkedSteers(streamId, '"userId":"steer-user"');
+      expect(claimed).toBeDefined();
+      const parsed = JSON.parse(claimed as string) as {
+        userId: string;
+        tenantId?: string;
+        steers: Array<{ steerId: string; text: string }>;
+      };
+      expect(parsed.userId).toBe('steer-user');
+      expect(parsed.tenantId).toBe('tenant-1');
+      expect(parsed.steers.map((s) => s.text)).toEqual(['crash survivor']);
+
+      await store.destroy();
+    });
+
+    test('parkSteers falls back to a positive recovery TTL when completedTtl is 0', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { completedTtl: 0 });
+      await store.initialize();
+
+      const streamId = `steer-park-zero-ttl-${Date.now()}`;
+      // `EX 0` would be rejected by Redis and silently kill recovery.
+      await store.parkSteers(
+        streamId,
+        JSON.stringify({ userId: 'steer-user', steers: [{ steerId: 'p1', text: 'kept' }] }),
+      );
+
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
+      expect(await ioredisClient.ttl(`stream:{${streamId}}:parked`)).toBeGreaterThan(0);
+
+      await store.destroy();
+    });
+
+    test('getContentParts splices on_steer_applied chunks at their recorded index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-recon-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId);
+
+      const chunks = [
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            index: 0,
+            stepDetails: { type: 'message_creation', message_creation: {} },
+          },
+        },
+        {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: 'Before steer.' } } },
+        },
+        {
+          event: 'on_steer_applied',
+          data: {
+            steerId: 'steer-1',
+            index: 1,
+            part: { type: 'steer', steer: 'change course', steerId: 'steer-1' },
+          },
+        },
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-2',
+            // Emitted with the already-shifted index (offset wrapper)
+            index: 2,
+            stepDetails: { type: 'message_creation', message_creation: {} },
+          },
+        },
+        {
+          event: 'on_message_delta',
+          data: { id: 'step-2', delta: { content: { type: 'text', text: 'After steer.' } } },
+        },
+      ];
+      for (const chunk of chunks) {
+        await store.appendChunk(streamId, chunk);
+      }
+
+      const result = await store.getContentParts(streamId);
+      expect(result).not.toBeNull();
+      const parts = result!.content as Array<{ type?: string; steer?: string; text?: unknown }>;
+      expect(parts).toHaveLength(3);
+      expect(parts[1]).toMatchObject({ type: 'steer', steer: 'change course' });
+      expect(parts[0]?.type).toBe('text');
+      expect(parts[2]?.type).toBe('text');
 
       await store.destroy();
     });

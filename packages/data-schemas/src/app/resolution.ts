@@ -1,4 +1,8 @@
-import { INTERFACE_PERMISSION_FIELDS, PERMISSION_SUB_KEYS } from 'librechat-data-provider';
+import {
+  BASE_ONLY_CONFIG_SECTIONS,
+  INTERFACE_PERMISSION_FIELDS,
+  PERMISSION_SUB_KEYS,
+} from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 
@@ -6,6 +10,7 @@ type AnyObject = { [key: string]: unknown };
 
 const MAX_MERGE_DEPTH = 10;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 
 /**
  * Paths within the config tree where arrays of objects should be merged by
@@ -199,6 +204,9 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       for (const [key, value] of Object.entries(config.overrides)) {
+        if (BASE_ONLY_OVERRIDE_SECTIONS.has(key)) {
+          continue;
+        }
         const mappedKey = OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key;
         if (
           key === 'interface' &&

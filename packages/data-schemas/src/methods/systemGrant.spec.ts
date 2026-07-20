@@ -1,8 +1,8 @@
 import mongoose, { Types } from 'mongoose';
-import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type * as t from '~/types';
+import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { SystemCapability } from '~/types/admin';
+import type * as t from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
 import { createSystemGrantMethods } from './systemGrant';
 import systemGrantSchema from '~/schema/systemGrant';
@@ -113,13 +113,14 @@ describe('systemGrant methods', () => {
   describe('grantCapability', () => {
     it('creates a grant and returns the document', async () => {
       const userId = new Types.ObjectId();
-      const doc = await methods.grantCapability({
+      const { grant: doc, created } = await methods.grantCapability({
         principalType: PrincipalType.USER,
         principalId: userId,
         capability: SystemCapabilities.READ_USERS,
       });
 
       expect(doc).toBeTruthy();
+      expect(created).toBe(true);
       expect(doc!.principalType).toBe(PrincipalType.USER);
       expect(doc!.capability).toBe(SystemCapabilities.READ_USERS);
       expect(doc!.grantedAt).toBeInstanceOf(Date);
@@ -255,7 +256,7 @@ describe('systemGrant methods', () => {
         capability: SystemCapabilities.READ_USERS as SystemCapability,
       };
 
-      const original = await methods.grantCapability(params);
+      const { grant: original } = await methods.grantCapability(params);
 
       // Simulate a race: findOneAndUpdate upserts but hits a duplicate key
       const model = mongoose.models.SystemGrant;
@@ -265,8 +266,10 @@ describe('systemGrant methods', () => {
           Object.assign(new Error('E11000 duplicate key error'), { code: 11000 }),
         );
 
-      const result = await methods.grantCapability(params);
+      const { grant: result, created } = await methods.grantCapability(params);
       expect(result).toBeTruthy();
+      // a lost upsert race is not a new creation, so it must not be audited
+      expect(created).toBe(false);
       expect(result!.capability).toBe(SystemCapabilities.READ_USERS);
       expect(result!.principalId.toString()).toBe(original!.principalId.toString());
     });
@@ -305,7 +308,7 @@ describe('systemGrant methods', () => {
     });
 
     it('accepts any string for ROLE principal without ObjectId validation', async () => {
-      const doc = await methods.grantCapability({
+      const { grant: doc } = await methods.grantCapability({
         principalType: PrincipalType.ROLE,
         principalId: 'ANY_STRING_HERE',
         capability: SystemCapabilities.READ_CONFIGS,

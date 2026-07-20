@@ -5,6 +5,7 @@ const {
   getSessionInfo,
   checkIfActive,
   readSandboxFile,
+  readSandboxImage,
   writeSandboxFile,
 } = require('~/server/services/Files/Code/process');
 const {
@@ -265,12 +266,22 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
  * @param {object} params
  * @param {object} params.agent
  * @param {object} params.config
+ * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.config.mcpAvailableTools]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.config.requestScopedConnections]
  * @returns {object}
  */
 function buildAgentToolContext({ agent, config }) {
   return {
     agent,
+    /** Per-agent resolved endpoint token/pricing config. Retained here because
+     *  `agentToolContexts` is the one map that holds every agent — including
+     *  pure subagents pruned from `agentConfigs` — so usage can be priced with
+     *  the producing agent's config in multi-endpoint graphs. */
+    endpointTokenConfig: config.endpointTokenConfig,
     toolRegistry: config.toolRegistry,
+    backgroundToolNames: config.backgroundToolNames,
+    mcpAvailableTools: config.mcpAvailableTools,
+    requestScopedConnections: config.requestScopedConnections,
     userMCPAuthMap: config.userMCPAuthMap,
     tool_resources: config.tool_resources,
     actionsEnabled: config.actionsEnabled,
@@ -348,6 +359,12 @@ const skillToolDeps = {
    * the agents-side `ToolNode` via `tc.codeSessionContext`.
    */
   readSandboxFile,
+  /**
+   * Companion to `readSandboxFile` for the raster-image case: pulls the
+   * bytes base64-encoded (size-guarded in-sandbox) so `read_file` can
+   * return an image the model can see instead of refusing it as binary.
+   */
+  readSandboxImage,
   writeSandboxFile,
 };
 

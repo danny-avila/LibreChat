@@ -11,8 +11,8 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { MessageContentComplex } from '@librechat/agents';
 import type { Agent, TMessage } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
+import { logAxiosError, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
-import { logAxiosError } from '~/utils';
 
 export const omitTitleOptions: Set<string> = new Set([
   'stream',
@@ -96,6 +96,44 @@ export function prependFileContext(
   }
 
   formattedMessage.content.unshift({ type: ContentTypes.TEXT, text: fileContext });
+}
+
+/**
+ * Prepends quoted excerpts (the "Add to chat" selections persisted on
+ * `message.quotes`) to a formatted message's content as Markdown blockquotes.
+ * Applied to every user message that carries quotes — current and historical —
+ * so the model durably receives the referenced context and the token count
+ * stays consistent with what was persisted. The stored `message.text` is left
+ * clean; the excerpts live on `message.quotes` for the UI.
+ */
+export function prependQuotes(
+  formattedMessage: FormattedMessageWithContent,
+  quotes?: string[] | null,
+): void {
+  if (quotes == null || quotes.length === 0) {
+    return;
+  }
+  const block = formatQuotesAsMarkdown(quotes);
+  if (block.length === 0) {
+    return;
+  }
+
+  if (typeof formattedMessage.content === 'string') {
+    formattedMessage.content = mergeQuotedText(formattedMessage.content, quotes);
+    return;
+  }
+
+  if (!Array.isArray(formattedMessage.content)) {
+    return;
+  }
+
+  const textPart = formattedMessage.content.find((part) => part.type === ContentTypes.TEXT);
+  if (textPart != null && typeof textPart.text === 'string') {
+    textPart.text = mergeQuotedText(textPart.text, quotes);
+    return;
+  }
+
+  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text: block });
 }
 
 function estimateImageDataTokens(data: string, isClaude: boolean): number {
@@ -320,6 +358,16 @@ export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getToke
 }
 
 export function logToolError(_graph: unknown, error: unknown, toolId: string): void {
+  /**
+   * A GraphInterrupt unwinding out of a tool body is the HITL pause working as
+   * designed (e.g. `ask_user_question` raising LangGraph `interrupt()`), not a
+   * tool failure — logging it as a Tool Error at error level is alarming noise.
+   * Name-based check: the class arrives from `@langchain/langgraph` inside
+   * `@librechat/agents`, so an instanceof against our own import can miss.
+   */
+  if ((error as Error | undefined)?.name === 'GraphInterrupt') {
+    return;
+  }
   logAxiosError({
     error,
     message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,

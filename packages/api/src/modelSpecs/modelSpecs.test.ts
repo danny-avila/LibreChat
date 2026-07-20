@@ -47,6 +47,32 @@ describe('modelSpecs helpers', () => {
     expect(sanitizedModelSpecs.list[0]).not.toHaveProperty('skills');
   });
 
+  it('should preserve conversation starters on model specs', () => {
+    const modelSpecs = {
+      enforce: false,
+      prioritize: true,
+      list: [
+        {
+          name: 'starter-spec',
+          label: 'Starter Spec',
+          conversation_starters: ['Summarize an article', 'Plan my week'],
+          preset: {
+            endpoint: EModelEndpoint.openAI,
+            model: 'gpt-4o',
+            promptPrefix: 'private prompt prefix',
+          },
+        },
+      ],
+    };
+
+    const sanitizedModelSpecs = sanitizeModelSpecs(modelSpecs);
+    expect(sanitizedModelSpecs.list[0].conversation_starters).toEqual([
+      'Summarize an article',
+      'Plan my week',
+    ]);
+    expect(sanitizedModelSpecs.list[0].preset).not.toHaveProperty('promptPrefix');
+  });
+
   it('should restore only private fields for non-enforced model specs', () => {
     const modelSpec: TModelSpec = {
       name: 'guarded-openai',

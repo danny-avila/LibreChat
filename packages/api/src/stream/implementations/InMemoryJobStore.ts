@@ -3,10 +3,22 @@ import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type {
   SerializableJobData,
+  SteerQueueItem,
   UsageMetadata,
   IJobStore,
   JobStatus,
+  JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
+import {
+  STEER_ENQUEUE_NOT_RUNNING,
+  STEER_ENQUEUE_QUEUE_FULL,
+  STEER_QUEUE_MAX_DEPTH,
+  isPendingActionStale,
+} from '~/stream/interfaces/IJobStore';
+import { toPendingSteer } from '~/stream/SteeringLifecycle';
+
+/** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
+export const PARKED_STEERS_TTL_MS: number = 5 * 60 * 1000;
 
 /**
  * Content state for a job - volatile, in-memory only.
@@ -41,6 +53,16 @@ export class InMemoryJobStore implements IJobStore {
    * inactivity (a hung generation) rather than age (a long but live stream).
    */
   private lastActivity = new Map<string, number>();
+
+  /** Maps streamId -> FIFO queue of pending steer messages. */
+  private steerQueues = new Map<string, SteerQueueItem[]>();
+
+  /** Stream ids whose steer queue was closed by a terminal drain. Reopened by createJob. */
+  private closedSteerQueues = new Set<string>();
+
+  /** Parked terminally-drained steers — lifecycle-independent of `jobs` (the
+   *  default completeJob path deletes the job record immediately). */
+  private parkedSteers = new Map<string, { payload: string; expiresAt: number }>();
 
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
@@ -110,6 +132,12 @@ export class InMemoryJobStore implements IJobStore {
     // (the controller handles job replacement) falls back to the fresh createdAt
     // and isn't reaped on the previous generation's stale last-activity time.
     this.lastActivity.delete(streamId);
+    // Steer queues are keyed by streamId only, so a replacement must not
+    // inherit the replaced run's undrained steers (or its closed flag), and
+    // parked recovery belongs to the replaced run (a live client started this).
+    this.steerQueues.delete(streamId);
+    this.closedSteerQueues.delete(streamId);
+    this.parkedSteers.delete(streamId);
 
     // Track job by userId (tenant-qualified when available) for efficient user-scoped queries
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
@@ -134,13 +162,41 @@ export class InMemoryJobStore implements IJobStore {
     if (!job) {
       return;
     }
+    // Plain field writer. Membership-aware status transitions
+    // (running ⇄ requires_action) go solely through transitionStatus.
     Object.assign(job, updates);
+  }
+
+  /**
+   * Atomic in-memory: the single-threaded event loop makes the
+   * read-check-write sequence indivisible, so the status guard is exact.
+   * Membership/counts derive from `job.status` directly, so there are no
+   * sets to reconcile here.
+   */
+  async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (!job || job.status !== args.from) {
+      return false;
+    }
+    if (args.expectActionId != null && job.pendingActionId !== args.expectActionId) {
+      return false;
+    }
+    job.status = args.to;
+    if (args.patch) {
+      Object.assign(job, args.patch);
+    }
+    for (const field of args.clear ?? []) {
+      delete job[field];
+    }
+    return true;
   }
 
   async deleteJob(streamId: string): Promise<void> {
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     this.lastActivity.delete(streamId);
+    this.steerQueues.delete(streamId);
+    this.closedSteerQueues.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
   }
 
@@ -174,6 +230,13 @@ export class InMemoryJobStore implements IJobStore {
     const toDelete: string[] = [];
     let staleRunning = 0;
 
+    // Expired parked steers are otherwise only purged by a claim.
+    for (const [streamId, parked] of this.parkedSteers) {
+      if (parked.expiresAt <= now) {
+        this.parkedSteers.delete(streamId);
+      }
+    }
+
     for (const [streamId, job] of this.jobs) {
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
       if (isFinished && job.completedAt) {
@@ -181,15 +244,39 @@ export class InMemoryJobStore implements IJobStore {
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
           toDelete.push(streamId);
         }
+      } else if (job.status === 'requires_action' && isPendingActionStale(job)) {
+        // Stale approval (expired, or missing/malformed pendingAction):
+        // finalize it (aborted) so it stops occupying the user slot and its
+        // content state is reclaimed, mirroring ApprovalLifecycle.expire().
+        // Skipping it (active-list filter) alone would leave it resident.
+        // 202-accepted steers frozen across the pause are parked first —
+        // deleting the job would silently drop them otherwise.
+        this.parkQueuedSteers(streamId, job, now);
+        job.status = 'aborted';
+        job.completedAt = now;
+        job.error = 'Approval expired before a decision was made';
+        delete job.pendingAction;
+        delete job.pendingActionId;
+        if (this.ttlAfterComplete === 0) {
+          toDelete.push(streamId);
+        }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
         // longer than the stale timeout. These are crashed/hung generations that
         // never reached a terminal state; without this they accumulate their
-        // content state in memory until the process OOMs. Reaping keys off last
-        // activity (not creation time) so a long but live stream is never reaped,
-        // mirroring RedisJobStore refreshing the running TTL on each chunk.
-        const lastActive = this.lastActivity.get(streamId) ?? job.createdAt;
+        // content state in memory until the process OOMs. Reaping keys off the
+        // most recent liveness signal (not creation time) so a long but live
+        // stream is never reaped, and a just-resumed approval (fresh
+        // `lastActiveAt`) wins over a stale per-chunk `lastActivity` entry.
+        const lastActive = Math.max(
+          this.lastActivity.get(streamId) ?? 0,
+          job.lastActiveAt ?? 0,
+          job.createdAt,
+        );
         if (now - lastActive > this.staleJobTimeout) {
+          // A crashed/hung run never reached a finalization drain — park the
+          // 202-accepted queue before the delete drops it.
+          this.parkQueuedSteers(streamId, job, now);
           toDelete.push(streamId);
           staleRunning++;
         }
@@ -276,6 +363,9 @@ export class InMemoryJobStore implements IJobStore {
     this.jobs.clear();
     this.contentState.clear();
     this.userJobMap.clear();
+    this.steerQueues.clear();
+    this.closedSteerQueues.clear();
+    this.parkedSteers.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
   }
 
@@ -295,8 +385,14 @@ export class InMemoryJobStore implements IJobStore {
 
     for (const streamId of trackedIds) {
       const job = this.jobs.get(streamId);
-      // Only include if job exists AND is still running
-      if (job && job.status === 'running') {
+      // Include running jobs and jobs paused for human review (e.g. tool approval).
+      // A pending-approval job still occupies the user's conversation slot — but
+      // only while its prompt is live: a past-`expiresAt` approval no longer
+      // counts as active (cleanup/expiry will finalize it).
+      if (job && (job.status === 'running' || job.status === 'requires_action')) {
+        if (job.status === 'requires_action' && isPendingActionStale(job)) {
+          continue;
+        }
         activeIds.push(streamId);
       } else {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - fix it now
@@ -406,5 +502,104 @@ export class InMemoryJobStore implements IJobStore {
    */
   clearContentState(streamId: string): void {
     this.contentState.delete(streamId);
+  }
+
+  // ===== Steering Queue Methods =====
+  // Single-threaded event loop makes each read-check-write indivisible, so
+  // the status guard and depth cap are exact without extra locking.
+
+  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+    const job = this.jobs.get(streamId);
+    if (!job || job.status !== 'running' || this.closedSteerQueues.has(streamId)) {
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+    let queue = this.steerQueues.get(streamId);
+    if (!queue) {
+      queue = [];
+      this.steerQueues.set(streamId, queue);
+    }
+    if (queue.length >= STEER_QUEUE_MAX_DEPTH) {
+      return STEER_ENQUEUE_QUEUE_FULL;
+    }
+    queue.push(item);
+    return queue.length;
+  }
+
+  /** With `expectedCreatedAt`, refuses when the job was replaced — a stale
+   *  run's drain must never consume (or close) a replacement job's queue. */
+  async drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
+    const queue = this.steerQueues.get(streamId);
+    if (!queue || queue.length === 0) {
+      return [];
+    }
+    return queue.splice(0);
+  }
+
+  async closeAndDrainSteers(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerQueueItem[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
+    this.closedSteerQueues.add(streamId);
+    return this.drainSteers(streamId);
+  }
+
+  async peekSteers(streamId: string): Promise<SteerQueueItem[]> {
+    const queue = this.steerQueues.get(streamId);
+    return queue ? [...queue] : [];
+  }
+
+  async clearSteers(streamId: string): Promise<void> {
+    this.steerQueues.delete(streamId);
+  }
+
+  async removeSteer(streamId: string, steerId: string): Promise<boolean> {
+    const queue = this.steerQueues.get(streamId);
+    const index = queue?.findIndex((item) => item.steerId === steerId) ?? -1;
+    if (queue == null || index < 0) {
+      return false;
+    }
+    queue.splice(index, 1);
+    return true;
+  }
+
+  async parkSteers(streamId: string, payload: string): Promise<void> {
+    this.parkedSteers.set(streamId, {
+      payload,
+      expiresAt: Date.now() + PARKED_STEERS_TTL_MS,
+    });
+  }
+
+  /** Non-owner fragments leave the payload untouched (mirrors the Redis Lua gate). */
+  async claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined> {
+    const parked = this.parkedSteers.get(streamId);
+    if (!parked || !parked.payload.includes(ownerFragment)) {
+      return undefined;
+    }
+    this.parkedSteers.delete(streamId);
+    return parked.expiresAt > Date.now() ? parked.payload : undefined;
+  }
+
+  /** Terminal cleanup (approval expiry, stale-running reap) must not drop
+   *  202-accepted steers with the job. */
+  private parkQueuedSteers(streamId: string, job: SerializableJobData, now: number): void {
+    const queue = this.steerQueues.get(streamId);
+    if (!queue || queue.length === 0) {
+      return;
+    }
+    this.parkedSteers.set(streamId, {
+      payload: JSON.stringify({
+        userId: job.userId,
+        ...(job.tenantId != null && { tenantId: job.tenantId }),
+        steers: queue.map(toPendingSteer),
+      }),
+      expiresAt: now + PARKED_STEERS_TTL_MS,
+    });
+    this.steerQueues.delete(streamId);
   }
 }

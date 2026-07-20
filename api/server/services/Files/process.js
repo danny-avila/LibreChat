@@ -1034,7 +1034,11 @@ const processOpenAIFile = async ({
     await db.createFile(file, true);
   } else if (updateUsage) {
     try {
-      await db.updateFileUsage({ file_id });
+      await db.updateFileUsage({
+        file_id,
+        user: userId,
+        tenantId: openai.req?.user?.tenantId,
+      });
     } catch (error) {
       logger.error('Error updating file usage', error);
     }

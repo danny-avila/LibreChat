@@ -7,15 +7,12 @@ import {
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
-import type {
-  Agent,
-  TConversation,
-  TModelSpec,
-  AgentSubagentsConfig,
-} from 'librechat-data-provider';
+import type { Agent, AgentToolOptions, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { synthesizeBackgroundToolOptions } from '~/agents/background';
+import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
-import { sanitizeRequestSubagents } from './subagents';
 
 const { mcp_all, mcp_delimiter } = Constants;
 
@@ -43,11 +40,9 @@ function applyModelSpecSkills(
 function applyModelSpecSubagents(
   result: Record<string, unknown>,
   modelSpec: Pick<TModelSpec, 'subagents'> | null | undefined,
-  ephemeralAgent?: { subagents?: AgentSubagentsConfig },
 ): void {
-  const subagents = modelSpec?.subagents ?? sanitizeRequestSubagents(ephemeralAgent?.subagents);
-  if (subagents) {
-    result.subagents = subagents;
+  if (modelSpec?.subagents) {
+    result.subagents = modelSpec.subagents;
   }
 }
 
@@ -105,7 +100,7 @@ export async function loadAddedAgent(
       file_search?: boolean;
       web_search?: boolean;
       artifacts?: unknown;
-      subagents?: AgentSubagentsConfig;
+      memory?: boolean;
     };
     [key: string]: unknown;
   };
@@ -123,7 +118,9 @@ export async function loadAddedAgent(
         file_search?: boolean;
         web_search?: boolean;
         artifacts?: unknown;
-        subagents?: AgentSubagentsConfig;
+        memory?: boolean;
+        ask_user_question?: boolean;
+        run_in_background?: boolean;
       }
     | undefined;
 
@@ -160,7 +157,12 @@ export async function loadAddedAgent(
       tools: [...primaryAgent.tools],
     };
     applyModelSpecSkills(result, modelSpec);
-    applyModelSpecSubagents(result, modelSpec, ephemeralAgent);
+    applyModelSpecSubagents(result, modelSpec);
+    const primaryBackgroundToolOptions: AgentToolOptions | undefined =
+      synthesizeBackgroundToolOptions(result.tools as string[], { ephemeralAgent, modelSpec });
+    if (primaryBackgroundToolOptions) {
+      result.tool_options = primaryBackgroundToolOptions;
+    }
     return result as unknown as Agent;
   }
 
@@ -188,13 +190,28 @@ export async function loadAddedAgent(
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
+  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+    tools.push(Tools.memory);
+  }
+  /** Mirror the primary ephemeral loader (`loadEphemeralAgent`) so a model
+   *  spec's Ask User flag equips the added top-level agent too; downstream
+   *  `createRun` gating (hitlCapable, non-subagent, admin filter) is uniform. */
+  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+    tools.push(ASK_USER_QUESTION_TOOL_NAME);
+  }
 
   const addedServers = new Set<string>();
   for (const mcpServer of mcpServers) {
     if (addedServers.has(mcpServer)) {
       continue;
     }
-    const serverTools = await deps.getMCPServerTools(userId, mcpServer);
+    /** Request-tier overlays are invisible to the cache service's registry
+     *  resolver — overlay-scoped servers expand fresh via `mcp_all` instead */
+    const overlayConfig = appConfig?.mcpConfig?.[mcpServer];
+    const serverTools =
+      overlayConfig && requiresEphemeralUserConnection(overlayConfig)
+        ? null
+        : await deps.getMCPServerTools(userId, mcpServer);
     if (!serverTools) {
       tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
       addedServers.add(mcpServer);
@@ -254,8 +271,16 @@ export async function loadAddedAgent(
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
-  applyModelSpecSubagents(result, modelSpec, ephemeralAgent);
+  applyModelSpecSubagents(result, modelSpec);
   applyModelSpecSkills(result, modelSpec);
+
+  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions(
+    tools,
+    { ephemeralAgent, modelSpec },
+  );
+  if (backgroundToolOptions) {
+    result.tool_options = backgroundToolOptions;
+  }
 
   return result as unknown as Agent;
 }

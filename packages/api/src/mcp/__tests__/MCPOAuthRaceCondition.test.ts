@@ -36,6 +36,10 @@ jest.mock('~/auth', () => ({
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
+jest.mock('~/auth/domain', () => ({
+  isMCPDomainAllowed: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('~/mcp/mcpConfig', () => ({
   mcpConfig: { CONNECTION_CHECK_TTL: 0, USER_CONNECTION_IDLE_TIMEOUT: 30 * 60 * 1000 },
 }));
@@ -89,6 +93,11 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          resolveAllowlists: jest.fn().mockResolvedValue({
+            allowedDomains: null,
+            allowedAddresses: null,
+            useSSRFProtection: false,
+          }),
         });
 
       const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');
@@ -161,6 +170,11 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          resolveAllowlists: jest.fn().mockResolvedValue({
+            allowedDomains: null,
+            allowedAddresses: null,
+            useSSRFProtection: false,
+          }),
         });
 
       const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');
@@ -242,6 +256,11 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          resolveAllowlists: jest.fn().mockResolvedValue({
+            allowedDomains: null,
+            allowedAddresses: null,
+            useSSRFProtection: false,
+          }),
         });
 
       let releaseConnection: () => void = () => undefined;
@@ -342,6 +361,11 @@ describe('MCP OAuth Race Condition Fixes', () => {
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
           getAllowedAddresses: jest.fn().mockReturnValue(null),
+          resolveAllowlists: jest.fn().mockResolvedValue({
+            allowedDomains: null,
+            allowedAddresses: null,
+            useSSRFProtection: false,
+          }),
         });
 
       const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');

@@ -84,7 +84,7 @@ export const useEndpoints = ({
   );
 
   const mappedEndpoints: Endpoint[] = useMemo(() => {
-    return filteredEndpoints.map((ep) => {
+    return filteredEndpoints.reduce<Endpoint[]>((acc, ep) => {
       const endpointType = getEndpointField(endpointsConfig, ep, 'type');
       const iconKey = getIconKey({ endpoint: ep, endpointsConfig, endpointType });
       const Icon = icons[iconKey];
@@ -95,6 +95,10 @@ export const useEndpoints = ({
         (ep !== EModelEndpoint.assistants &&
           ep !== EModelEndpoint.agents &&
           (modelsQuery.data?.[ep]?.length ?? 0) > 0);
+
+      if (ep === EModelEndpoint.agents && !hasModels) {
+        return acc;
+      }
 
       // Base result object with formatted default icon
       const result: Endpoint = {
@@ -185,8 +189,9 @@ export const useEndpoints = ({
         }));
       }
 
-      return result;
-    });
+      acc.push(result);
+      return acc;
+    }, []);
   }, [
     agents,
     assistants,

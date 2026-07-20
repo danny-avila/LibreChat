@@ -32,6 +32,7 @@ import {
   createDualMessageContent,
   getRouteChatProjectId,
 } from '~/utils';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
@@ -69,6 +70,14 @@ const getAppendParentMessageId = ({
 
   return failedUserMessage.parentMessageId ?? Constants.NO_PARENT;
 };
+
+const hasPendingAssistantParent = (message: TMessage | null) =>
+  !!message?.messageId &&
+  message.isCreatedByUser !== true &&
+  message.messageId.endsWith('_') &&
+  message.createdAt == null &&
+  message.updatedAt == null &&
+  !hasStreamStartFailed(message);
 
 type RegenerateTargetResponseArgs = {
   messages: TMessage[];
@@ -141,12 +150,32 @@ export function getRegenerateSubmissionMessages({
   initialResponseId?: string | null;
 }): TMessage[] {
   if (targetResponseMessage?.messageId) {
-    const targetIndex = messages.findIndex(
-      (message) => message.messageId === targetResponseMessage.messageId,
-    );
-    if (targetIndex >= 0) {
-      return messages.slice(0, targetIndex);
+    /**
+     * Remove the response being regenerated and its descendants only — NOT a
+     * flat `slice(0, targetIndex)`, which also drops unrelated sibling branches
+     * that merely sit later in the array. That collapse made the optimistic
+     * render briefly lose other branches mid-regenerate (visible flash, and the
+     * scroll jumping to the shrunken content). Keeping them holds the thread —
+     * and scroll — steady. This array is render-only; the server regenerates
+     * from `parentMessageId`, so removing by subtree never affects the payload.
+     */
+    const removed = new Set<string>([targetResponseMessage.messageId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const message of messages) {
+        const parentMessageId = message.parentMessageId;
+        if (
+          parentMessageId != null &&
+          removed.has(parentMessageId) &&
+          !removed.has(message.messageId)
+        ) {
+          removed.add(message.messageId);
+          grew = true;
+        }
+      }
     }
+    return messages.filter((message) => !removed.has(message.messageId));
   }
 
   return messages.filter((msg) => msg.messageId !== initialResponseId);
@@ -168,7 +197,7 @@ export default function useChatFunctions({
   paramId?: string | undefined;
   conversation: TConversation | null;
   latestMessage: TMessage | null;
-  getMessages: () => TMessage[] | undefined;
+  getMessages: (conversationId?: string | null) => TMessage[] | undefined;
   setMessages: (messages: TMessage[]) => void;
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
@@ -184,6 +213,7 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -209,6 +239,25 @@ export default function useChatFunctions({
     [],
   );
 
+  /**
+   * Atomically read + reset the per-conversation queue of quoted excerpts the
+   * user added via the "Add to chat" selection popup. Mirrors
+   * `drainPendingManualSkills`: a single snapshot read + reset so excerpts
+   * added between here and submission are never lost into a reset atom.
+   */
+  const drainPendingQuotes = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (convoId: string): string[] => {
+        const loadable = snapshot.getLoadable(store.pendingQuotesByConvoId(convoId));
+        const quotes = loadable.state === 'hasValue' ? (loadable.contents as string[]) : [];
+        if (quotes.length > 0) {
+          reset(store.pendingQuotesByConvoId(convoId));
+        }
+        return quotes;
+      },
+    [],
+  );
+
   const ask: TAskFunction = (
     {
       text,
@@ -228,6 +277,7 @@ export default function useChatFunctions({
       overrideFiles,
       targetResponseMessageId,
       overrideManualSkills,
+      overrideQuotes,
       addedConvo,
     } = {},
   ) => {
@@ -252,9 +302,24 @@ export default function useChatFunctions({
       return;
     }
 
+    const cachedMessages = getMessages(conversationId);
+    const isExistingConversation = conversationId != null && conversationId !== Constants.NEW_CONVO;
+    if (isExistingConversation && overrideMessages == null && cachedMessages == null) {
+      logger.warn('[useChatFunctions] Refusing to send before existing conversation history loads');
+      return false;
+    }
+
     if (isContinued && !latestMessage) {
       console.error('cannot continue AI message without latestMessage!');
       return;
+    }
+
+    if (parentMessageId == null && hasPendingAssistantParent(latestMessage)) {
+      logger.warn(
+        '[useChatFunctions] Refusing to append to a preliminary assistant message',
+        latestMessage,
+      );
+      return false;
     }
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
@@ -276,9 +341,30 @@ export default function useChatFunctions({
           ? []
           : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
     }
+    /**
+     * Quoted-excerpt resolution mirrors manual skills, but is skipped entirely
+     * for Assistants endpoints: those bypass the `BaseClient` merge, so the
+     * quote UI is hidden there and a selection queued on another endpoint must
+     * not silently ride along on a fresh submit. The pending atom is left
+     * untouched so the queue survives if the user switches back.
+     *  - Explicit `overrideQuotes` wins (regenerate / resubmit replay the
+     *    original user message's persisted quotes so the same context is sent).
+     *  - Regenerate / continue / edit without an override → empty (those flows
+     *    replay a prior turn; the compose-time atom is left untouched).
+     *  - Fresh submit → drain the per-convo atom into the message.
+     */
+    const quotesSupported = !isAssistantsEndpoint(endpoint);
+    let quotes: string[] = [];
+    if (quotesSupported) {
+      if (overrideQuotes != null) {
+        quotes = overrideQuotes;
+      } else if (!isRegenerate && !isContinued && !isEdited) {
+        quotes = drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
+      }
+    }
     const isEditOrContinue = isEdited || isContinued;
 
-    let currentMessages: TMessage[] = overrideMessages ?? getMessages() ?? [];
+    let currentMessages: TMessage[] = overrideMessages ?? cachedMessages ?? [];
 
     if (conversation?.promptPrefix) {
       conversation.promptPrefix = replaceSpecialVars({
@@ -297,8 +383,9 @@ export default function useChatFunctions({
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId =
-      parentMessageId ?? getAppendParentMessageId({ latestMessage, currentMessages });
+    if (parentMessageId == null) {
+      parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
+    }
 
     logChatRequest({
       index,
@@ -392,6 +479,13 @@ export default function useChatFunctions({
        * skill resolution reads the top-level `manualSkills` payload field.
        */
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
+      /**
+       * Quoted excerpts the user referenced this turn. Persisted on the
+       * message (backend echoes it back on `req.body.quotes`) so `MessageQuotes`
+       * renders the references on the user bubble after reload. The backend
+       * also merges these into the model-facing user text at request time.
+       */
+      quotes: quotes.length > 0 ? quotes : undefined,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
@@ -402,9 +496,17 @@ export default function useChatFunctions({
 
     if (setFiles && reuseFiles === true) {
       currentMsg.files = [...submissionFiles];
-      setFiles(new Map());
-      setFilesToDelete({});
-    } else if (setFiles && files && files.size > 0) {
+      // Caller-supplied overrideFiles were consumed elsewhere (queued
+      // during-run messages take theirs out of the composer at queue time) —
+      // clearing here would eat attachments staged for the user's NEXT send.
+      if (isRegenerate) {
+        setFiles(new Map());
+        setFilesToDelete({});
+      }
+    } else if (setFiles && files && files.size > 0 && overrideFiles == null) {
+      // `overrideFiles` (even empty) is authoritative for the submission:
+      // auto-drained queued messages must never vacuum up attachments the
+      // user has staged in the composer for their NEXT message.
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
@@ -537,6 +639,7 @@ export default function useChatFunctions({
 
     if (isRegenerate) {
       setMessages([...submissionMessages, initialResponse]);
+      focusRegeneratedResponse(initialResponse.parentMessageId);
     } else {
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
@@ -569,6 +672,9 @@ export default function useChatFunctions({
            *  this the model sees an unprimed turn even though the pills
            *  still show on the user bubble. */
           overrideManualSkills: parentMessage.manualSkills,
+          /** Carry the original user message's quoted excerpts forward so the
+           *  regenerated response is sent the same referenced context. */
+          overrideQuotes: parentMessage.quotes,
         },
       );
     } else {

@@ -16,6 +16,7 @@ import type {
   ISkillFileDocument,
   ISkillSummary,
 } from '~/types/skill';
+import type { IAgent } from '~/types/agent';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { stripYamlTrailingComment } from '~/utils/yaml';
@@ -260,6 +261,7 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'hooks',
   'version',
   'license',
+  'compatibility',
   'metadata',
 ]);
 
@@ -288,6 +290,7 @@ const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
   shell: 'string',
   version: 'string',
   license: 'string',
+  compatibility: 'string',
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -498,6 +501,8 @@ export type UpdateSkillInput = {
   frontmatter?: Record<string, unknown>;
   category?: string;
   alwaysApply?: boolean;
+  source?: 'inline' | 'github' | 'notion';
+  sourceMetadata?: Record<string, unknown>;
 };
 
 export type GetAuthorSkillByNameParams = {
@@ -622,6 +627,7 @@ export type UpsertSkillFileInput = {
   storageKey?: string;
   storageRegion?: string;
   source: string;
+  sourceMetadata?: Record<string, unknown>;
   mimeType: string;
   bytes: number;
   isExecutable?: boolean;
@@ -832,6 +838,35 @@ function resolveAlwaysApplyFromInput(
 }
 
 /**
+ * Narrows candidate skill ids to those backed by an existing Skill doc.
+ * Existence-only check (no ACL) so pruning an agent allowlist never drops
+ * skills the saving user merely can't view. Preserves input order, dedupes,
+ * and drops malformed ids — they can't reference anything. Candidates are
+ * lowercased before comparison: `isValidObjectIdString` accepts uppercase
+ * hex, but `_id.toString()` is always lowercase, and a casing mismatch
+ * would silently drop a valid id (and an emptied allowlist means the full
+ * catalog — the opposite of the configured scope).
+ */
+export async function filterExistingSkillIds(
+  mongoose: typeof import('mongoose'),
+  skillIds: string[],
+): Promise<string[]> {
+  const candidates = [
+    ...new Set(skillIds.filter(isValidObjectIdString).map((id) => id.toLowerCase())),
+  ];
+  if (candidates.length === 0) {
+    return [];
+  }
+  const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+  const docs = await Skill.find(
+    { _id: { $in: candidates.map((id) => new mongoose.Types.ObjectId(id)) } },
+    { _id: 1 },
+  ).lean<Array<{ _id: Types.ObjectId }>>();
+  const existing = new Set(docs.map((doc) => doc._id.toString()));
+  return candidates.filter((id) => existing.has(id));
+}
+
+/**
  * Validate the `always-apply` value that would be derived from the
  * SKILL.md body's inline frontmatter. Only reports an issue when the
  * key is present with an unparseable value — absent / valid / empty
@@ -902,6 +937,15 @@ export function createSkillMethods(
   }) => Promise<UpdateSkillResult>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
+  findSkillBySourceIdentity: (params: {
+    source: 'github' | 'notion';
+    upstreamId: string;
+    tenantId?: string;
+  }) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  listSkillsBySource: (params: {
+    source: 'github' | 'notion';
+    sourceId: string;
+  }) => Promise<Array<ISkill & { _id: Types.ObjectId }>>;
   listSkillFiles: (
     skillId: Types.ObjectId | string,
   ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
@@ -1349,6 +1393,8 @@ export function createSkillMethods(
     if (update.displayTitle !== undefined) setPayload.displayTitle = update.displayTitle;
     if (update.description !== undefined) setPayload.description = update.description;
     if (update.body !== undefined) setPayload.body = update.body;
+    if (update.source !== undefined) setPayload.source = update.source;
+    if (update.sourceMetadata !== undefined) setPayload.sourceMetadata = update.sourceMetadata;
     if (update.frontmatter !== undefined) {
       setPayload.frontmatter = update.frontmatter;
       /**
@@ -1455,6 +1501,48 @@ export function createSkillMethods(
     };
   }
 
+  /**
+   * Removes deleted skill ids from every agent's `skills` allowlist. A dangling
+   * id is invisible in the builder yet keeps the allowlist non-empty, so the
+   * runtime scopes the catalog to an empty intersection and the agent silently
+   * loses all skills. Direct `updateMany` on purpose: hygiene, not an authored
+   * edit — no version entry, timestamps untouched.
+   *
+   * Ids are lowercased first: allowlists store canonical `_id.toString()`
+   * values, and an uppercase-but-valid id would delete the Skill doc yet
+   * leave the dangling entry behind.
+   *
+   * Agents whose ENTIRE allowlist is being deleted fail closed instead:
+   * an emptied allowlist with `skills_enabled: true` means the full
+   * accessible catalog at runtime, so a plain `$pull` would silently widen
+   * a deliberately restricted agent. Disabling skills preserves the
+   * restriction until an author makes a new explicit choice.
+   */
+  async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
+    if (skillIds.length === 0) {
+      return;
+    }
+    const ids = skillIds.map((id) => id.toLowerCase());
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    try {
+      await Agent.updateMany(
+        { skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } } },
+        { $set: { skills: [], skills_enabled: false } },
+        { timestamps: false },
+      );
+      await Agent.updateMany(
+        { skills: { $in: ids } },
+        { $pull: { skills: { $in: ids } } },
+        { timestamps: false },
+      );
+    } catch (error) {
+      logger.error(
+        '[removeSkillsFromAgentAllowlists] Error pruning agent skill allowlists:',
+        error,
+      );
+    }
+  }
+
   async function deleteSkill(id: string): Promise<{ deleted: boolean }> {
     if (!isValidObjectIdString(id)) {
       return { deleted: false };
@@ -1466,6 +1554,10 @@ export function createSkillMethods(
     if (!res.deletedCount) {
       return { deleted: false };
     }
+    /** Prune allowlists immediately after the Skill row is gone: if the
+     *  SkillFile cleanup below throws, a retry exits early on
+     *  `deletedCount === 0` and would never reach a later prune. */
+    await removeSkillsFromAgentAllowlists([id]);
     await SkillFile.deleteMany({ skillId: objectId });
     try {
       await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
@@ -1485,6 +1577,7 @@ export function createSkillMethods(
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     await SkillFile.deleteMany({ skillId: { $in: soleOwned } });
     const res = await Skill.deleteMany({ _id: { $in: soleOwned } });
+    await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString()));
     await Promise.allSettled(
       soleOwned.map((rid) =>
         deps
@@ -1498,6 +1591,35 @@ export function createSkillMethods(
       ),
     );
     return res.deletedCount ?? 0;
+  }
+
+  async function findSkillBySourceIdentity(params: {
+    source: 'github' | 'notion';
+    upstreamId: string;
+    tenantId?: string;
+  }): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const tenantFilter: FilterQuery<ISkillDocument> = params.tenantId
+      ? { tenantId: params.tenantId }
+      : { $or: [{ tenantId: { $exists: false } }, { tenantId: null }] };
+    const doc = await Skill.findOne({
+      source: params.source,
+      'sourceMetadata.upstreamId': params.upstreamId,
+      ...tenantFilter,
+    }).lean();
+    return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
+  }
+
+  async function listSkillsBySource(params: {
+    source: 'github' | 'notion';
+    sourceId: string;
+  }): Promise<Array<ISkill & { _id: Types.ObjectId }>> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const rows = await Skill.find({
+      source: params.source,
+      'sourceMetadata.sourceId': params.sourceId,
+    }).lean();
+    return rows as unknown as Array<ISkill & { _id: Types.ObjectId }>;
   }
 
   /**
@@ -1568,6 +1690,7 @@ export function createSkillMethods(
           storageKey: row.storageKey,
           storageRegion: row.storageRegion,
           source: row.source,
+          sourceMetadata: row.sourceMetadata,
           mimeType: row.mimeType,
           bytes: row.bytes,
           category,
@@ -1664,6 +1787,8 @@ export function createSkillMethods(
     updateSkill,
     deleteSkill,
     deleteUserSkills,
+    findSkillBySourceIdentity,
+    listSkillsBySource,
     listSkillFiles,
     upsertSkillFile,
     deleteSkillFile,

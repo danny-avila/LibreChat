@@ -1,20 +1,32 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
+  BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
-import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
+import type { AppConfig, ConfigSection, IConfig, SystemCapability } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
 import type { ServerRequest } from '~/types/http';
+import {
+  encryptConfigSecretFields,
+  encryptConfigSecrets,
+  getConfigSecretMutationPaths,
+  getConfigSecretInputError,
+  isConfigSecretAncestorPath,
+  isConfigSecretDescendantPath,
+  preserveConfigSecrets,
+  redactConfigSecrets,
+} from './secrets';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
+const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -29,6 +41,10 @@ export function isValidFieldPath(path: string): boolean {
 
 export function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
+}
+
+function isBaseOnlyFieldPath(fieldPath: string): boolean {
+  return BASE_ONLY_OVERRIDE_SECTIONS.has(getTopLevelSection(fieldPath));
 }
 
 /**
@@ -73,6 +89,7 @@ export interface AdminConfigDeps {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean; preservePriority?: boolean },
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -100,18 +117,21 @@ export interface AdminConfigDeps {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   toggleConfigActive: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     isActive: boolean,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   hasConfigCapability: (
     user: CapabilityUser,
     section: ConfigSection | null,
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
+  hasCapability?: (user: CapabilityUser, capability: SystemCapability) => Promise<boolean>;
   getAppConfig?: (options?: {
     role?: string;
     userId?: string;
@@ -163,6 +183,45 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   };
 }
 
+function redactConfigForResponse(config: IConfig): IConfig {
+  const safeConfig = JSON.parse(JSON.stringify(config)) as IConfig;
+  if (safeConfig.overrides) {
+    redactConfigSecrets(safeConfig.overrides);
+  }
+  return safeConfig;
+}
+
+function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
+  const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
+  redactConfigSecrets(safeConfig);
+  if (safeConfig.config != null && typeof safeConfig.config === 'object') {
+    redactConfigSecrets(safeConfig.config);
+  }
+  return safeConfig;
+}
+
+function isObjectValuedLangfusePatch(fieldPath: string, value: unknown): boolean {
+  return (
+    isConfigSecretAncestorPath(fieldPath) &&
+    value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  );
+}
+
+function preservePatchedConfigSecretFields(
+  fields: Record<string, unknown>,
+  existingOverrides?: unknown,
+): Record<string, unknown> {
+  const result = { ...fields };
+  for (const [fieldPath, value] of Object.entries(result)) {
+    if (isObjectValuedLangfusePatch(fieldPath, value)) {
+      result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
+    }
+  }
+  return result;
+}
+
 // ── Handler factory ──────────────────────────────────────────────────
 
 export function createAdminConfigHandlers(deps: AdminConfigDeps): {
@@ -186,6 +245,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfig,
     toggleConfigActive,
     hasConfigCapability,
+    hasCapability = async () => false,
     getAppConfig,
     invalidateConfigCaches,
   } = deps;
@@ -205,7 +265,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const configs = await listAllConfigs();
-      return res.status(200).json({ configs });
+      const safeConfigs = configs.map(redactConfigForResponse);
+      return res.status(200).json({ configs: safeConfigs });
     } catch (error) {
       logger.error('[adminConfig] listConfigs error:', error);
       return res.status(500).json({ error: 'Failed to list configs' });
@@ -236,7 +297,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         tenantId: user.tenantId,
         baseOnly,
       });
-      return res.status(200).json({ config: appConfig });
+      return res.status(200).json({ config: redactAppConfigForResponse(appConfig) });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', error);
       return res.status(500).json({ error: 'Failed to get base config' });
@@ -273,7 +334,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
       logger.error('[adminConfig] getConfig error:', error);
       return res.status(500).json({ error: 'Failed to get config' });
@@ -312,11 +373,31 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      let filteredOverrides = overrides;
+      const hasAssignConfigs =
+        hasBroadManage ||
+        (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
+
+      if (!hasAssignConfigs) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const filteredOverrides = {
+        ...(overrides as Record<string, unknown>),
+      } as Partial<TCustomConfig>;
+      for (const section of BASE_ONLY_OVERRIDE_SECTIONS) {
+        if (section in filteredOverrides) {
+          delete (filteredOverrides as Record<string, unknown>)[section];
+          logger.warn(
+            `[adminConfig] Stripping base-only config section "${section}" - configure it in librechat.yaml instead`,
+          );
+        }
+      }
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
@@ -345,7 +426,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             );
           }
         }
-        filteredOverrides = { ...(overrides as Record<string, unknown>) } as Partial<TCustomConfig>;
         if (Object.keys(filteredIface).length > 0) {
           (filteredOverrides as Record<string, unknown>).interface = filteredIface;
         } else {
@@ -359,30 +439,59 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable override sections provided' });
       }
 
-      if (overrideSections.length > 0) {
-        const allowed = await Promise.all(
-          overrideSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
-        );
-        const denied = overrideSections.find((_, i) => !allowed[i]);
-        if (denied) {
-          return res.status(403).json({
-            error: `Insufficient permissions for config section: ${denied}`,
-          });
-        }
+      if (overrideSections.length > 0 && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
+      if (priority != null && !hasBroadManage) {
+        logger.warn(
+          `[adminConfig] Ignoring caller-supplied priority on assign-only scope lifecycle upsert to ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
+        );
+      }
+
+      const requestedPriority = hasBroadManage ? (priority ?? DEFAULT_PRIORITY) : DEFAULT_PRIORITY;
+      const upsertOptions = hasBroadManage
+        ? { expectEmpty: false }
+        : { expectEmpty: true, preservePriority: true };
+
+      const langfuseInputError = getConfigSecretInputError(
+        'langfuse',
+        (filteredOverrides as Record<string, unknown>).langfuse,
+      );
+      if (langfuseInputError) {
+        return res.status(400).json({ error: langfuseInputError });
+      }
+
+      const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
+      const existingForSecrets = isObjectValuedLangfusePatch(
+        'langfuse',
+        (filteredOverrides as Record<string, unknown>).langfuse,
+      )
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : null;
+      const preservedOverrides = preserveConfigSecrets(
+        encryptedOverrides,
+        existingForSecrets?.overrides,
+      );
       const config = await upsertConfig(
         principalType,
         principalId,
         principalModel(principalType),
-        filteredOverrides,
-        priority ?? DEFAULT_PRIORITY,
+        preservedOverrides,
+        requestedPriority,
+        undefined,
+        upsertOptions,
       );
+      if (!config && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after upsert:', err),
       );
-      return res.status(config?.configVersion === 1 ? 201 : 200).json({ config });
+      return res.status(config?.configVersion === 1 ? 201 : 200).json({
+        config: config ? redactConfigForResponse(config) : config,
+      });
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', error);
       return res.status(500).json({ error: 'Failed to upsert config' });
@@ -428,6 +537,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             .status(400)
             .json({ error: `Invalid or unsafe field path: ${entry.fieldPath}` });
         }
+        if (isConfigSecretDescendantPath(entry.fieldPath)) {
+          return res
+            .status(400)
+            .json({ error: `Cannot patch inside protected secret path: ${entry.fieldPath}` });
+        }
+        const secretInputError = getConfigSecretInputError(entry.fieldPath, entry.value);
+        if (secretInputError) {
+          return res.status(400).json({ error: secretInputError });
+        }
+        if (Array.isArray(entry.value) && isConfigSecretAncestorPath(entry.fieldPath)) {
+          return res.status(400).json({
+            error: `Cannot patch protected secret ancestor as an array: ${entry.fieldPath}`,
+          });
+        }
       }
 
       const user = getCapabilityUser(req);
@@ -436,6 +559,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const validEntries = entries.filter((entry) => {
+        if (isBaseOnlyFieldPath(entry.fieldPath)) {
+          logger.warn(
+            `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
+          );
+          return false;
+        }
         if (isInterfacePermissionPath(entry.fieldPath)) {
           logger.warn(
             `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
@@ -445,14 +574,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return true;
       });
 
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
       if (validEntries.length === 0) {
-        if (!(await hasConfigCapability(user, null, 'manage'))) {
+        if (!hasBroadManage) {
           return res.status(403).json({ error: 'Insufficient permissions' });
         }
         return res.status(200).json({ message: 'No actionable field entries provided' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      if (!hasBroadManage) {
         const sections = [...new Set(validEntries.map((e) => getTopLevelSection(e.fieldPath)))];
         const allowed = await Promise.all(
           sections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
@@ -475,23 +606,38 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         fields[entry.fieldPath] = entry.value;
       }
 
+      if (priority != null && !hasBroadManage) {
+        logger.warn(
+          `[adminConfig] Ignoring caller-supplied priority on section-scoped patch to ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
+        );
+      }
+      const requestedPriority = hasBroadManage ? priority : undefined;
+
+      const hasObjectValuedLangfusePatch = Object.entries(fields).some(([fieldPath, value]) =>
+        isObjectValuedLangfusePatch(fieldPath, value),
+      );
       const existing =
-        priority == null
+        requestedPriority == null || hasObjectValuedLangfusePatch
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
+      const encryptedFields = encryptConfigSecretFields(fields);
+      const preservedFields = preservePatchedConfigSecretFields(
+        encryptedFields,
+        existing?.overrides,
+      );
 
       const config = await patchConfigFields(
         principalType,
         principalId,
         principalModel(principalType),
-        fields,
-        priority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        preservedFields,
+        requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after patch:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
     } catch (error) {
       logger.error('[adminConfig] patchConfigField error:', error);
       return res.status(500).json({ error: 'Failed to patch config fields' });
@@ -528,6 +674,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (!isValidFieldPath(fieldPath)) {
         return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
       }
+      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
+      if (secretInputError) {
+        return res.status(400).json({ error: secretInputError });
+      }
 
       const user = getCapabilityUser(req);
       if (!user) {
@@ -536,7 +686,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const section = getTopLevelSection(fieldPath);
 
-      if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+      if (
+        !hasBroadManage &&
+        !(await hasConfigCapability(user, section as ConfigSection, 'manage'))
+      ) {
         return res.status(403).json({
           error: `Insufficient permissions for config section: ${section}`,
         });
@@ -549,23 +703,36 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
+      if (priority != null && !hasBroadManage) {
+        logger.warn(
+          `[adminConfig] Ignoring caller-supplied priority on section-scoped tombstone for ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
+        );
+      }
+      const requestedPriority = hasBroadManage ? priority : undefined;
+
       const existing =
-        priority == null
+        requestedPriority == null
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
 
-      const config = await writeConfigTombstone(
-        principalType,
-        principalId,
-        principalModel(principalType),
-        fieldPath,
-        priority ?? existing?.priority ?? DEFAULT_PRIORITY,
-      );
+      let config: IConfig | null = null;
+      for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const fieldConfig = await writeConfigTombstone(
+          principalType,
+          principalId,
+          principalModel(principalType),
+          path,
+          requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        );
+        if (fieldConfig) {
+          config = fieldConfig;
+        }
+      }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after field tombstone:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
     } catch (error) {
       logger.error('[adminConfig] tombstoneConfigField error:', error);
       return res.status(500).json({ error: 'Failed to tombstone config field' });
@@ -594,6 +761,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (!isValidFieldPath(fieldPath)) {
         return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
       }
+      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
+      if (secretInputError) {
+        return res.status(400).json({ error: secretInputError });
+      }
 
       const user = getCapabilityUser(req);
       if (!user) {
@@ -608,6 +779,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
+      if (isBaseOnlyFieldPath(fieldPath)) {
+        logger.warn(
+          `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
       if (isInterfacePermissionPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring delete for interface permission field "${fieldPath}" — use role permissions instead`,
@@ -615,7 +793,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
-      const config = await unsetConfigField(principalType, principalId, fieldPath);
+      let config: IConfig | null = null;
+      for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const fieldConfig = await unsetConfigField(principalType, principalId, path);
+        if (fieldConfig) {
+          config = fieldConfig;
+        }
+      }
       if (!config) {
         return res.status(404).json({ error: 'Config not found' });
       }
@@ -623,7 +807,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after field delete:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', error);
       return res.status(500).json({ error: 'Failed to delete config field' });
@@ -649,12 +833,31 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const config = await deleteConfig(principalType, principalId);
+      const allowed =
+        hasBroadManage ||
+        (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
+      if (!allowed) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const config = await deleteConfig(principalType, principalId, undefined, {
+        expectEmpty: !hasBroadManage,
+      });
       if (!config) {
+        if (!hasBroadManage) {
+          const exists = await findConfigByPrincipal(principalType, principalId, {
+            includeInactive: true,
+          });
+          if (exists) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+          }
+        }
         return res.status(404).json({ error: 'Config not found' });
       }
 
@@ -692,19 +895,38 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const config = await toggleConfigActive(principalType, principalId, isActive);
+      const allowed =
+        hasBroadManage ||
+        (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
+      if (!allowed) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const config = await toggleConfigActive(principalType, principalId, isActive, undefined, {
+        expectEmpty: !hasBroadManage,
+      });
       if (!config) {
+        if (!hasBroadManage) {
+          const exists = await findConfigByPrincipal(principalType, principalId, {
+            includeInactive: true,
+          });
+          if (exists) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+          }
+        }
         return res.status(404).json({ error: 'Config not found' });
       }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after toggle:', err),
       );
-      return res.status(200).json({ config });
+      return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
       logger.error('[adminConfig] toggleConfig error:', error);
       return res.status(500).json({ error: 'Failed to toggle config' });

@@ -23,8 +23,10 @@ const {
   extractManualSkills,
   createErrorResponse,
   recordCollectedUsage,
+  createSubagentUsageSink,
   getTransactionsConfig,
   resolveRecursionLimit,
+  findPiiMatchInMessages,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
@@ -177,6 +179,17 @@ const OpenAIChatCompletionController = async (req, res) => {
     );
   }
 
+  const piiHit = findPiiMatchInMessages(request.messages, appConfig?.messageFilter?.pii);
+  if (piiHit != null) {
+    return sendErrorResponse(
+      res,
+      400,
+      `Message contains a ${piiHit.label}. Remove it and try again.`,
+      'invalid_request_error',
+      'message_filter_pii_block',
+    );
+  }
+
   const responseId = `chatcmpl-${nanoid()}`;
   const created = Math.floor(Date.now() / 1000);
 
@@ -322,6 +335,10 @@ const OpenAIChatCompletionController = async (req, res) => {
           ephemeralSkillsToggle,
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        statefulSessionsAvailable: enabledCapabilities.has(
+          AgentCapabilities.stateful_code_sessions,
+        ),
         skillStates,
         defaultActiveOnShare,
         manualSkills,
@@ -336,6 +353,7 @@ const OpenAIChatCompletionController = async (req, res) => {
      * @type {Map<string, {
      *   agent: object,
      *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
+     *   requestScopedConnections?: import('@librechat/api').RequestScopedMCPConnectionStore,
      *   userMCPAuthMap?: Record<string, Record<string, string>>,
      *   tool_resources?: object,
      *   actionsEnabled?: boolean,
@@ -398,6 +416,10 @@ const OpenAIChatCompletionController = async (req, res) => {
           defaultActiveOnShare,
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+          backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+          statefulSessionsAvailable: enabledCapabilities.has(
+            AgentCapabilities.stateful_code_sessions,
+          ),
         },
         {
           getAgent: db.getAgent,
@@ -480,6 +502,9 @@ const OpenAIChatCompletionController = async (req, res) => {
           agent: ctx.agent ?? agent,
           signal: abortController.signal,
           toolRegistry: ctx.toolRegistry,
+          backgroundToolNames: ctx.backgroundToolNames,
+          mcpAvailableTools: ctx.mcpAvailableTools,
+          requestScopedConnections: ctx.requestScopedConnections,
           userMCPAuthMap: ctx.userMCPAuthMap,
           tool_resources: ctx.tool_resources,
           actionsEnabled: ctx.actionsEnabled,
@@ -727,6 +752,10 @@ const OpenAIChatCompletionController = async (req, res) => {
         conversationId,
       },
       user: { id: userId },
+      tenantId: req.user?.tenantId,
+      /** Bills subagent child-run model calls (reported outside the
+       *  streamEvents loop) into the same collectedUsage array. */
+      subagentUsageSink: createSubagentUsageSink(collectedUsage),
     });
 
     if (!run) {

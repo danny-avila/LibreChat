@@ -7,10 +7,10 @@ import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem, CustomMenuSeparator } from '../CustomMenu';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
+import { filterModels, shouldRenderEndpointOption } from '../utils';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
 import { ModelSpecItem } from './ModelSpecItem';
-import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -181,6 +181,10 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
   );
 
   const isEndpointSelected = !selectedSpec && selectedEndpoint === endpoint.value;
+
+  if (!shouldRenderEndpointOption(endpoint)) {
+    return null;
+  }
 
   if (endpoint.hasModels) {
     const placeholder =

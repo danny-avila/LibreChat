@@ -49,6 +49,9 @@ const convoSchema: Schema<IConversation> = new Schema(
       type: String,
       index: true,
     },
+    pinned: {
+      type: Boolean,
+    },
   },
   { timestamps: true },
 );

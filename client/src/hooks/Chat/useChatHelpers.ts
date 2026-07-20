@@ -1,14 +1,17 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useSetRecoilState } from 'recoil';
+import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useRecoilState, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
-import useChatFunctions from '~/hooks/Chat/useChatFunctions';
-import { useAbortStreamMutation } from '~/data-provider';
-import useNewConvo from '~/hooks/useNewConvo';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import useChatFunctions from '~/hooks/Chat/useChatFunctions';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { useAbortStreamMutation } from '~/data-provider';
+import { resolveAbortSteerTarget } from '~/utils';
+import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
+import { useAbortCleanup } from './abort';
 import store from '~/store';
 
 // this to be set somewhere else
@@ -19,6 +22,34 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
   const queryClient = useQueryClient();
   const abortMutation = useAbortStreamMutation();
+  const convertSteersToQueued = useSteerConvert();
+  const { captureSubmission, clearSubmissionsUnlessReplaced } = useAbortCleanup(index);
+
+  /**
+   * Interrupt & send fallback: clearing submissions below can tear down the
+   * SSE before its aborted-final event is processed, and only that event
+   * writes the run-end signal the queue drain consumes. When the one-shot
+   * interrupt flag is armed and no run-end has landed yet, write it here from
+   * the abort response so the queued follow-up still auto-sends. If the SSE
+   * final DOES arrive later, its signal finds the flag already consumed and
+   * an `aborted` outcome drains nothing — no double fire.
+   */
+  const signalInterruptDrain = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string) => {
+        const armed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
+        const runEnd = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
+        if (!armed || runEnd != null) {
+          return;
+        }
+        set(store.runEndByIndex(index), {
+          conversationId: convoId,
+          outcome: 'aborted',
+          endedAt: Date.now(),
+        });
+      },
+    [index],
+  );
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -51,9 +82,15 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     [queryParam, queryClient, conversationId],
   );
 
-  const getMessages = useCallback(() => {
-    return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
-  }, [queryParam, queryClient]);
+  const getMessages = useCallback(
+    (targetConversationId?: string | null) => {
+      return queryClient.getQueryData<TMessage[]>([
+        QueryKeys.messages,
+        targetConversationId ?? queryParam,
+      ]);
+    },
+    [queryParam, queryClient],
+  );
 
   /* Conversation */
   // const setActiveConvos = useSetRecoilState(store.activeConversations);
@@ -144,24 +181,63 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         activeJobIds: (old?.activeJobIds ?? []).filter((id) => id !== conversationId),
       }));
 
+      // The aborted run's final SSE can land (and the interrupt drain can
+      // start the NEXT submission) while the abort response is in flight —
+      // the fallback clear below must not tear down that new run.
+      const submissionAtAbort = captureSubmission();
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
-        await abortMutation.mutateAsync({ conversationId });
+        const response = await abortMutation.mutateAsync({ conversationId });
         console.log('[useChatHelpers] Abort mutation succeeded');
+        // The response's `aborted` field is the RESOLVED job id — authoritative
+        // when this turn still holds the `new` placeholder. Chips and the drain
+        // signal land where the mounted composer's queue machinery looks, while
+        // the parked-copy claim uses the resolved id the server keyed it under.
+        const { chipConvoId, claimConvoId } = resolveAbortSteerTarget({
+          conversationId,
+          resolvedId: response?.aborted,
+        });
+        // Steers the run never injected ride the abort response. Consume them
+        // here as well as on the SSE final event — clearing submissions below
+        // can close the stream before that event lands, and conversion
+        // dedupes by steer id so double delivery is a no-op. `claimParked`
+        // clears the parked server copy so a reload can't re-mint the chips.
+        if (Array.isArray(response?.pendingSteers)) {
+          convertSteersToQueued(chipConvoId, response.pendingSteers, {
+            claimParked: true,
+            claimConversationId: claimConvoId,
+          });
+        }
+        signalInterruptDrain(chipConvoId);
         // The SSE will receive a `done` event with `aborted: true` and clean up
         // We still clear submissions as a fallback
-        clearAllSubmissions();
+        clearSubmissionsUnlessReplaced(submissionAtAbort);
       } catch (error) {
         console.error('[useChatHelpers] Abort failed:', error);
+        // An abort that 404s (run completed first) still needs the interrupt
+        // fallback: without a run-end signal the queued interrupt message
+        // strands and the armed flag would leak onto a later run.
+        signalInterruptDrain(conversationId);
         // Fall back to clearing submissions
-        clearAllSubmissions();
+        clearSubmissionsUnlessReplaced(submissionAtAbort);
       }
     } else {
       // For assistants endpoints, just clear submissions (existing behavior)
       console.log('[useChatHelpers] Assistants endpoint, just clearing submissions');
       clearAllSubmissions();
     }
-  }, [conversationId, endpoint, endpointType, abortMutation, clearAllSubmissions, queryClient]);
+  }, [
+    conversationId,
+    endpoint,
+    endpointType,
+    abortMutation,
+    captureSubmission,
+    convertSteersToQueued,
+    signalInterruptDrain,
+    clearSubmissionsUnlessReplaced,
+    clearAllSubmissions,
+    queryClient,
+  ]);
 
   const handleStopGenerating = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {

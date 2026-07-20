@@ -1,5 +1,6 @@
 import {
   EModelEndpoint,
+  ReasoningEffort,
   ReasoningParameterFormat,
   removeNullishValues,
   supportsAdaptiveThinking,
@@ -77,27 +78,39 @@ export const knownOpenAIParams: Set<string> = new Set([
 function hasReasoningParams({
   reasoning_effort,
   reasoning_summary,
+  reasoning_mode,
+  reasoning_context,
 }: {
   reasoning_effort?: string | null;
   reasoning_summary?: string | null;
+  reasoning_mode?: string | null;
+  reasoning_context?: string | null;
 }): boolean {
   return (
     (reasoning_effort != null && reasoning_effort !== '') ||
-    (reasoning_summary != null && reasoning_summary !== '')
+    (reasoning_summary != null && reasoning_summary !== '') ||
+    (reasoning_mode != null && reasoning_mode !== '') ||
+    (reasoning_context != null && reasoning_context !== '')
   );
 }
 
 function getReasoningObject({
   reasoningEffort,
   reasoningSummary,
+  reasoningMode,
+  reasoningContext,
 }: {
   reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
   reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+  reasoningMode?: OpenAILLMConfig['reasoning_mode'];
+  reasoningContext?: OpenAILLMConfig['reasoning_context'];
 }): OpenAI.Reasoning {
   return removeNullishValues(
     {
       effort: reasoningEffort,
       summary: reasoningSummary,
+      mode: reasoningMode,
+      context: reasoningContext,
     },
     true,
   ) as OpenAI.Reasoning;
@@ -107,14 +120,56 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
   return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
 }
 
-function removeReasoningSummary(target: Record<string, unknown>) {
+/**
+ * GPT-5.6 models reject function tools combined with `reasoning_effort` in
+ * `/v1/chat/completions` (400: "To use function tools, use /v1/responses or
+ * set reasoning_effort to 'none'"). Reasoning without tools still works on
+ * Chat Completions, but tools are bound after config time, so GPT-5.6
+ * reasoning requests default to the Responses API to avoid tool failures.
+ */
+const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
+
+function requiresResponsesApiForReasoning({
+  model,
+  reasoningEffort,
+}: {
+  model?: string;
+  reasoningEffort?: string | null;
+}): boolean {
+  if (typeof model !== 'string' || !responsesApiRequiredPattern.test(model)) {
+    return false;
+  }
+  return (
+    reasoningEffort != null &&
+    reasoningEffort !== ReasoningEffort.unset &&
+    reasoningEffort !== ReasoningEffort.none
+  );
+}
+
+/**
+ * The GPT-5.6 Responses API default is first-party OpenAI only. A
+ * `reverseProxyUrl`/`directEndpoint` gateway sets a custom base URL and may
+ * expose only `/v1/chat/completions`, so it keeps its configured path.
+ */
+function isCanonicalOpenAIBaseURL(baseURL?: string | null): boolean {
+  if (!baseURL) {
+    return true;
+  }
+  try {
+    return /(^|\.)api\.openai\.com$/i.test(new URL(baseURL).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function removeReasoningField(target: Record<string, unknown>, field: string) {
   const { reasoning } = target;
   if (reasoning == null || typeof reasoning !== 'object' || Array.isArray(reasoning)) {
     return;
   }
 
   const rest = { ...(reasoning as Record<string, unknown>) };
-  delete rest.summary;
+  delete rest[field];
   if (Object.keys(rest).length === 0) {
     delete target.reasoning;
     return;
@@ -146,8 +201,24 @@ function deleteConfigParam({
   if (param === 'reasoning_summary') {
     delete (llmConfig as Record<string, unknown>).reasoning_summary;
     delete modelKwargs.reasoning_summary;
-    removeReasoningSummary(llmConfig as Record<string, unknown>);
-    removeReasoningSummary(modelKwargs);
+    removeReasoningField(llmConfig as Record<string, unknown>, 'summary');
+    removeReasoningField(modelKwargs, 'summary');
+    return;
+  }
+
+  if (param === 'reasoning_mode') {
+    delete (llmConfig as Record<string, unknown>).reasoning_mode;
+    delete modelKwargs.reasoning_mode;
+    removeReasoningField(llmConfig as Record<string, unknown>, 'mode');
+    removeReasoningField(modelKwargs, 'mode');
+    return;
+  }
+
+  if (param === 'reasoning_context') {
+    delete (llmConfig as Record<string, unknown>).reasoning_context;
+    delete modelKwargs.reasoning_context;
+    removeReasoningField(llmConfig as Record<string, unknown>, 'context');
+    removeReasoningField(modelKwargs, 'context');
     return;
   }
 
@@ -168,6 +239,7 @@ const openRouterAnthropicVerbosityByEffort: Record<
   medium: 'medium',
   high: 'high',
   xhigh: 'xhigh',
+  max: 'max',
 };
 
 function isStringVerbosity(value: unknown): value is string {
@@ -284,6 +356,8 @@ function applyReasoningConfig({
   reasoningEffort,
   reasoningFormat,
   reasoningSummary,
+  reasoningMode,
+  reasoningContext,
 }: {
   endpoint?: EModelEndpoint | string | null;
   llmConfig: OpenAILLMConfig;
@@ -291,17 +365,26 @@ function applyReasoningConfig({
   reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
   reasoningFormat?: ReasoningParameterFormat;
   reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+  reasoningMode?: OpenAILLMConfig['reasoning_mode'];
+  reasoningContext?: OpenAILLMConfig['reasoning_context'];
 }): boolean {
   if (
     !hasReasoningParams({
       reasoning_effort: reasoningEffort,
       reasoning_summary: reasoningSummary,
+      reasoning_mode: reasoningMode,
+      reasoning_context: reasoningContext,
     })
   ) {
     return false;
   }
 
-  const reasoning = getReasoningObject({ reasoningEffort, reasoningSummary });
+  const reasoning = getReasoningObject({
+    reasoningEffort,
+    reasoningSummary,
+    reasoningMode,
+    reasoningContext,
+  });
   if (reasoningFormat === ReasoningParameterFormat.disabled) {
     return false;
   }
@@ -451,13 +534,18 @@ export function getOpenAILLMConfig({
   const {
     reasoning_effort,
     reasoning_summary,
+    reasoning_mode,
+    reasoning_context,
     verbosity,
     web_search,
     promptCache,
+    promptCacheTtl,
     frequency_penalty,
     presence_penalty,
     ...modelOptions
-  } = cleanedModelOptions as Partial<t.OpenAIParameters & { promptCache?: boolean }>;
+  } = cleanedModelOptions as Partial<
+    t.OpenAIParameters & { promptCache?: boolean; promptCacheTtl?: '5m' | '1h' }
+  >;
 
   const llmConfig = Object.assign(
     {
@@ -478,6 +566,8 @@ export function getOpenAILLMConfig({
   let hasModelKwargs = false;
   let reasoningEffort = reasoning_effort;
   let reasoningSummary = reasoning_summary;
+  let reasoningMode = reasoning_mode;
+  let reasoningContext = reasoning_context;
 
   if (verbosity != null && verbosity !== '' && useOpenRouter) {
     llmConfig.verbosity = verbosity;
@@ -488,6 +578,7 @@ export function getOpenAILLMConfig({
 
   let enableWebSearch = web_search;
   let enablePromptCache = promptCache;
+  let promptCacheTtlValue = promptCacheTtl;
 
   /** Apply defaultParams first - only if fields are undefined */
   if (defaultParams && typeof defaultParams === 'object') {
@@ -504,6 +595,12 @@ export function getOpenAILLMConfig({
         }
         continue;
       }
+      if (key === 'promptCacheTtl') {
+        if (promptCacheTtlValue === undefined && (value === '5m' || value === '1h')) {
+          promptCacheTtlValue = value;
+        }
+        continue;
+      }
       if (key === 'reasoning_effort') {
         if (!reasoningEffort && typeof value === 'string') {
           reasoningEffort = value as OpenAILLMConfig['reasoning_effort'];
@@ -513,6 +610,18 @@ export function getOpenAILLMConfig({
       if (key === 'reasoning_summary') {
         if (!reasoningSummary && typeof value === 'string') {
           reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_mode') {
+        if (!reasoningMode && typeof value === 'string') {
+          reasoningMode = value as OpenAILLMConfig['reasoning_mode'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_context') {
+        if (!reasoningContext && typeof value === 'string') {
+          reasoningContext = value as OpenAILLMConfig['reasoning_context'];
         }
         continue;
       }
@@ -555,6 +664,12 @@ export function getOpenAILLMConfig({
         }
         continue;
       }
+      if (key === 'promptCacheTtl') {
+        if (value === '5m' || value === '1h') {
+          promptCacheTtlValue = value;
+        }
+        continue;
+      }
       if (key === 'reasoning_effort') {
         if (typeof value === 'string' || value == null) {
           reasoningEffort = value as OpenAILLMConfig['reasoning_effort'];
@@ -564,6 +679,18 @@ export function getOpenAILLMConfig({
       if (key === 'reasoning_summary') {
         if (typeof value === 'string' || value == null) {
           reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_mode') {
+        if (typeof value === 'string' || value == null) {
+          reasoningMode = value as OpenAILLMConfig['reasoning_mode'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_context') {
+        if (typeof value === 'string' || value == null) {
+          reasoningContext = value as OpenAILLMConfig['reasoning_context'];
         }
         continue;
       }
@@ -617,6 +744,9 @@ export function getOpenAILLMConfig({
   if (dropParams && dropParams.includes('promptCache')) {
     enablePromptCache = false;
   }
+  if (dropParams && dropParams.includes('promptCacheTtl')) {
+    promptCacheTtlValue = undefined;
+  }
 
   if (useOpenRouter && enableWebSearch) {
     /** OpenRouter expects web search as a plugins parameter */
@@ -629,6 +759,34 @@ export function getOpenAILLMConfig({
   }
   if (useOpenRouter && enablePromptCache === true) {
     llmConfig.promptCache = true;
+    /** Pass an explicit TTL when configured; otherwise the agents SDK defaults to 1h */
+    if (promptCacheTtlValue != null) {
+      llmConfig.promptCacheTtl = promptCacheTtlValue;
+    }
+  }
+
+  /**
+   * Default GPT-5.6 reasoning requests to the Responses API unless explicitly set.
+   * Reads `llmConfig.model` (reflects `addParams` overrides) and skips when
+   * `dropParams` removes `reasoning_effort` later anyway (`'reasoning'` only
+   * drops the nested object, not the flat param) or opts out of the Responses
+   * API entirely. Limited to first-party OpenAI: OpenRouter, custom gateways
+   * (non-canonical base URL), and `reasoningFormat: 'disabled'` (no reasoning
+   * payload is sent) keep their existing Chat Completions path.
+   */
+  const responsesApiOptedOut =
+    dropParams != null &&
+    (dropParams.includes('reasoning_effort') || dropParams.includes('useResponsesApi'));
+  if (
+    !useOpenRouter &&
+    endpoint === EModelEndpoint.openAI &&
+    isCanonicalOpenAIBaseURL(baseURL) &&
+    reasoningFormat !== ReasoningParameterFormat.disabled &&
+    llmConfig.useResponsesApi == null &&
+    !responsesApiOptedOut &&
+    requiresResponsesApiForReasoning({ model: llmConfig.model, reasoningEffort })
+  ) {
+    llmConfig.useResponsesApi = true;
   }
 
   if (!useOpenRouter) {
@@ -640,14 +798,16 @@ export function getOpenAILLMConfig({
         reasoningFormat,
         reasoningEffort,
         reasoningSummary,
+        reasoningMode,
+        reasoningContext,
       }) || hasModelKwargs;
   }
 
   /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
-  if (
+  const isDeepSeekModel =
     typeof modelOptions.model === 'string' &&
-    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
-  ) {
+    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''));
+  if (isDeepSeekModel) {
     llmConfig.includeReasoningContent = true;
   }
 

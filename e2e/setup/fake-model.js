@@ -10,6 +10,8 @@
  * from the conversation and the agents' advertised tools.
  */
 const { FakeChatModel } = require('@librechat/agents');
+const { ChatGenerationChunk } = require('@langchain/core/outputs');
+const { AIMessageChunk } = require('@langchain/core/messages');
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -18,15 +20,26 @@ const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
 const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
+const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
+const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
+const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
+const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
+const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
+const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
+const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
+const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
+const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const SLOW_REPLY_CHUNKS = 160;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
@@ -37,6 +50,10 @@ const BASH_TOOL_NAME = 'bash_tool';
 const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
+const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
+const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
+const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
+const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
 const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
 const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
@@ -46,6 +63,7 @@ const SKILL_DESCRIPTION =
 const EDITED_SKILL_DESCRIPTION =
   'Use this edited skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const countedReplies = new Map();
+const slowCountedReplies = new Map();
 
 function messageType(message) {
   if (typeof message.getType === 'function') {
@@ -156,6 +174,32 @@ function collectAdditionalInstructions(agents) {
     .join('\n');
 }
 
+function collectPromptText(value, parts = []) {
+  if (value == null) {
+    return parts;
+  }
+
+  if (typeof value === 'string') {
+    parts.push(value);
+    return parts;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectPromptText(item, parts);
+    }
+    return parts;
+  }
+
+  if (typeof value === 'object') {
+    for (const child of Object.values(value)) {
+      collectPromptText(child, parts);
+    }
+  }
+
+  return parts;
+}
+
 function collectSkillPrimeMessages(messages) {
   return (messages ?? [])
     .filter((message) => message?.additional_kwargs?.source === 'skill')
@@ -227,7 +271,78 @@ function providerFileAssertionResponses({ messages, text }) {
   };
 }
 
+function agentContextAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_AGENT_CONTEXT_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const promptText = collectPromptText(messages).join('\n');
+  if (promptText.includes(expected)) {
+    return {
+      responses: [`${AGENT_CONTEXT_ASSERTION_FINAL_TEXT}: ${expected}`],
+    };
+  }
+
+  return {
+    responses: [
+      `E2E agent context assertion failed: expected ${expected}; saw ${
+        promptText ? 'prompt context without marker' : 'no prompt context'
+      }`,
+    ],
+  };
+}
+
+/**
+ * Verifies the quote feature end to end: scans every user message in the prompt
+ * the model actually received for a Markdown blockquote line containing the
+ * expected token. Passing proves the excerpt was merged into the model-facing
+ * turn — covering both the current turn and durable re-merge of a prior quoted
+ * turn from history (the merge runs in `AgentClient.buildMessages`).
+ */
+function quoteAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_QUOTE_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const found = (messages ?? []).some((message) => {
+    const type = messageType(message);
+    if (type !== 'human' && type !== 'user') {
+      return false;
+    }
+    return getContentText(message.content)
+      .split('\n')
+      .some((line) => line.startsWith('> ') && line.includes(expected));
+  });
+
+  if (found) {
+    return { responses: [`${QUOTE_ASSERTION_FINAL_TEXT}: ${expected}`] };
+  }
+  return {
+    responses: [`E2E quote assertion failed: no blockquote containing "${expected}" in the prompt`],
+  };
+}
+
 function replyResponses(text) {
+  if (text.includes(MARKDOWN_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          '## E2E markdown heading',
+          '',
+          '**E2E bold text**',
+          '',
+          '- E2E list item',
+          '',
+          '```javascript',
+          'const e2eSyntaxHighlight = "ok";',
+          '```',
+        ].join('\n'),
+      ],
+    };
+  }
+
   const errorName = getMarkerValue(text, FORCED_ERROR_MARKER);
   if (errorName) {
     return {
@@ -264,6 +379,20 @@ function replyResponses(text) {
     };
   }
 
+  const slowCountedName = getMarkerValue(text, SLOW_COUNTED_REPLY_MARKER);
+  if (slowCountedName) {
+    const count = (slowCountedReplies.get(slowCountedName) ?? 0) + 1;
+    slowCountedReplies.set(slowCountedName, count);
+    const chunks = Array.from(
+      { length: SLOW_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E slow counted reply ${slowCountedName} #${count} ${chunks}`],
+      sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
+
   const resumeIconName = getMarkerValue(text, RESUME_ICON_REPLY_MARKER);
   if (resumeIconName) {
     const chunks = Array.from(
@@ -279,9 +408,79 @@ function replyResponses(text) {
   return null;
 }
 
-function overrideModel({ graph, responses, sleep, toolCalls, thrownError }) {
+/**
+ * Attaches synthetic usage_metadata on a final empty chunk (the OpenAI
+ * streaming pattern) so token-usage SSE events flow end to end in mock runs.
+ */
+class UsageEmittingFakeChatModel extends FakeChatModel {
+  constructor({ resolveOnStream, sleep, ...options }) {
+    super({ ...options, sleep });
+    this.resolveOnStream = resolveOnStream;
+    this.streamSleep = sleep ?? CHUNK_DELAY_MS;
+  }
+
+  async *streamDynamicResponseChunks({ responses, options, runManager }) {
+    if (this.emitCustomEvent) {
+      await runManager?.handleCustomEvent('some_test_event', {
+        someval: true,
+      });
+    }
+
+    const response = responses[0] ?? '';
+    const chunks = response.split(/(?<=\s+)|(?=\s+)/);
+    for await (const chunk of chunks) {
+      await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+
+      if (options.thrownErrorString != null && options.thrownErrorString) {
+        throw new Error(options.thrownErrorString);
+      }
+
+      const responseChunk = this._createResponseChunk(chunk);
+      yield responseChunk;
+      void runManager?.handleLLMNewToken(chunk);
+    }
+  }
+
+  async *_streamResponseChunks(messages, options, runManager) {
+    let outputChars = 0;
+    const dynamicResponse = this.resolveOnStream?.(messages);
+    const chunkStream = dynamicResponse
+      ? this.streamDynamicResponseChunks({
+          responses: dynamicResponse.responses,
+          options,
+          runManager,
+        })
+      : super._streamResponseChunks(messages, options, runManager);
+
+    for await (const chunk of chunkStream) {
+      outputChars += typeof chunk.text === 'string' ? chunk.text.length : 0;
+      yield chunk;
+    }
+    const inputChars = (messages ?? []).reduce(
+      (sum, message) => sum + getContentText(message?.content).length,
+      0,
+    );
+    const input_tokens = Math.max(1, Math.ceil(inputChars / 4));
+    const output_tokens = Math.max(1, Math.ceil(outputChars / 4));
+    yield new ChatGenerationChunk({
+      text: '',
+      message: new AIMessageChunk({
+        content: '',
+        usage_metadata: { input_tokens, output_tokens, total_tokens: input_tokens + output_tokens },
+      }),
+    });
+  }
+}
+
+function overrideModel({ graph, responses, sleep, toolCalls, thrownError, resolveOnStream }) {
   if (!thrownError) {
-    graph.overrideTestModel(responses, sleep ?? CHUNK_DELAY_MS, toolCalls);
+    graph.overrideModel = new UsageEmittingFakeChatModel({
+      responses,
+      sleep: sleep ?? CHUNK_DELAY_MS,
+      emitCustomEvent: true,
+      toolCalls,
+      resolveOnStream,
+    });
     return;
   }
 
@@ -358,7 +557,7 @@ Created by the Playwright mock e2e suite to verify host file authoring without c
 
 function buildCreateSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     content: buildSkillBody(skillName),
     overwrite: false,
   };
@@ -366,7 +565,7 @@ function buildCreateSkillArgs(skillName) {
 
 function buildEditSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     old_text: `description: ${SKILL_DESCRIPTION}`,
     new_text: `description: ${EDITED_SKILL_DESCRIPTION}`,
   };
@@ -403,15 +602,171 @@ function fileAuthoringResponses(operation, toolNames) {
   };
 }
 
+/**
+ * Slow two-turn run with a real MCP tool boundary for the steering e2e: turn 1
+ * streams a slow preamble then calls the advertised `remember_fact` MCP tool
+ * (steers drain at the PostToolBatch boundary), turn 2 streams the final text.
+ */
+function steerToolReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E steer tool reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  const chunks = Array.from(
+    { length: SLOW_REPLY_CHUNKS },
+    (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+  ).join(' ');
+  return {
+    responses: [`E2E steer tool preamble ${label} ${chunks}`, `${STEER_TOOL_FINAL_TEXT} ${label}`],
+    sleep: SLOW_CHUNK_DELAY_MS,
+    toolCalls: [
+      {
+        id: `call_e2e_steer_${label}`,
+        name: toolName,
+        args: { fact: `steer boundary ${label}` },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+function findLastToolMessageText(messages, requiredToken) {
+  for (let index = (messages ?? []).length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (!message || messageType(message) !== 'tool') {
+      continue;
+    }
+    const content = getContentText(message.content);
+    if (content.includes(requiredToken)) {
+      return content;
+    }
+  }
+  return '';
+}
+
+/**
+ * Turn 1 of the background e2e: emit the MCP tool call with the injected
+ * `run_in_background: true` arg, then (second model invocation, after the
+ * executor returned the synthetic handle) acknowledge the handle. Streaming
+ * `status=running` from the handle proves the dispatch returned before the
+ * tool finished — the non-blocking contract — without timing assertions.
+ */
+function backgroundDispatchResponses(name, toolNames) {
+  if (!toolNames.has(BACKGROUND_TOOL_NAME)) {
+    return {
+      responses: [`E2E background unavailable: ${BACKGROUND_TOOL_NAME} was not advertised.`],
+    };
+  }
+  if (!toolNames.has(CHECK_BACKGROUND_TASK_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E background unavailable: ${CHECK_BACKGROUND_TASK_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: BACKGROUND_DISPATCH_TOOL_CALL_ID,
+        name: BACKGROUND_TOOL_NAME,
+        args: { text: `bg-${name}`, delay_ms: 1500, run_in_background: true },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const handleText = findLastToolMessageText(streamMessages, 'background_task_id');
+      if (!handleText) {
+        return null;
+      }
+      const taskId = handleText.match(/"background_task_id":"([^"]+)"/)?.[1] ?? 'missing';
+      const status = handleText.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+      return { responses: [`E2E background dispatched id=${taskId} status=${status}`] };
+    },
+  };
+}
+
+/**
+ * Turn 2 of the background e2e: recover the task id from the replayed turn-1
+ * handle in history, poll `check_background_task` with it, and stream the
+ * collected status + echoed text — proving the detached result survived turn
+ * end and was retrieved cross-turn.
+ */
+function backgroundCollectResponses(messages, toolNames) {
+  if (!toolNames.has(CHECK_BACKGROUND_TASK_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E background unavailable: ${CHECK_BACKGROUND_TASK_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  const historyText = collectPromptText((messages ?? []).map((message) => message?.content)).join(
+    '\n',
+  );
+  const taskIds = [...historyText.matchAll(/"background_task_id":"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  const taskId = taskIds[taskIds.length - 1];
+  if (!taskId) {
+    return {
+      responses: ['E2E background collect failed: no background_task_id found in history.'],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: BACKGROUND_COLLECT_TOOL_CALL_ID,
+        name: CHECK_BACKGROUND_TASK_TOOL_NAME,
+        args: { background_task_id: taskId },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      /** Only the poll result (`serializeTask`) carries a `progress` key — the
+       *  replayed dispatch handle in history does not. */
+      const pollText = findLastToolMessageText(streamMessages, '"progress"');
+      if (!pollText) {
+        return null;
+      }
+      const status = pollText.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+      const echo = pollText.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
+      return { responses: [`E2E background collected status=${status} echo=${echo}`] };
+    },
+  };
+}
+
 function resolveResponses({ agents, messages, text, toolNames }) {
   const reply = replyResponses(text);
   if (reply) {
     return reply;
   }
 
+  const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
+  if (steerToolLabel) {
+    return steerToolReplyResponses(steerToolLabel, toolNames);
+  }
+
+  if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: (streamMessages) =>
+        agentContextAssertionResponses({ messages: streamMessages, text }),
+    };
+  }
+
   const providerFileAssertion = providerFileAssertionResponses({ messages, text });
   if (providerFileAssertion) {
     return providerFileAssertion;
+  }
+
+  const quoteAssertion = quoteAssertionResponses({ messages, text });
+  if (quoteAssertion) {
+    return quoteAssertion;
   }
 
   if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {
@@ -430,6 +785,15 @@ function resolveResponses({ agents, messages, text, toolNames }) {
       },
       toolNames,
     );
+  }
+
+  const backgroundDispatchName = getMarkerValue(text, BACKGROUND_DISPATCH_MARKER);
+  if (backgroundDispatchName) {
+    return backgroundDispatchResponses(backgroundDispatchName, toolNames);
+  }
+
+  if (text.includes(BACKGROUND_COLLECT_MARKER)) {
+    return backgroundCollectResponses(messages, toolNames);
   }
 
   const editSkillName = getRequestedSkillName(text, EDIT_SKILL_MARKER);
@@ -459,11 +823,11 @@ module.exports = function fakeModelHook(run, context) {
 
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
-  const { responses, sleep, toolCalls, thrownError } = resolveResponses({
+  const { responses, sleep, toolCalls, thrownError, resolveOnStream } = resolveResponses({
     agents: context?.agents,
     messages: context?.messages,
     text,
     toolNames,
   });
-  overrideModel({ graph, responses, sleep, toolCalls, thrownError });
+  overrideModel({ graph, responses, sleep, toolCalls, thrownError, resolveOnStream });
 };

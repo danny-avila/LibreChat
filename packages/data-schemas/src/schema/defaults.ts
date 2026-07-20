@@ -87,6 +87,9 @@ export const conversationPreset: {
   promptCache: {
     type: BooleanConstructor;
   };
+  promptCacheTtl: {
+    type: StringConstructor;
+  };
   thinking: {
     type: BooleanConstructor;
   };
@@ -163,6 +166,10 @@ export const conversationPreset: {
   web_search: {
     type: BooleanConstructor;
   };
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
+    type: BooleanConstructor;
+  };
   disableStreaming: {
     type: BooleanConstructor;
   };
@@ -174,6 +181,13 @@ export const conversationPreset: {
     type: StringConstructor;
   };
   reasoning_summary: {
+    type: StringConstructor;
+  };
+  /** Responses API reasoning mode (standard/pro) + context */
+  reasoning_mode: {
+    type: StringConstructor;
+  };
+  reasoning_context: {
     type: StringConstructor;
   };
   /** Verbosity control */
@@ -256,6 +270,9 @@ export const conversationPreset: {
   promptCache: {
     type: Boolean,
   },
+  promptCacheTtl: {
+    type: String,
+  },
   thinking: {
     type: Boolean,
   },
@@ -322,6 +339,10 @@ export const conversationPreset: {
   web_search: {
     type: Boolean,
   },
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
+    type: Boolean,
+  },
   disableStreaming: {
     type: Boolean,
   },
@@ -333,6 +354,13 @@ export const conversationPreset: {
     type: String,
   },
   reasoning_summary: {
+    type: String,
+  },
+  /** Responses API reasoning mode (standard/pro) + context */
+  reasoning_mode: {
+    type: String,
+  },
+  reasoning_context: {
     type: String,
   },
   /** Verbosity control */

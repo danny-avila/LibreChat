@@ -22,9 +22,15 @@ import type {
   TUser,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
+import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
-import type { IMongoFile } from '@librechat/data-schemas';
-import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
+import type {
+  ServerRequest,
+  EndpointDbMethods,
+  EndpointTokenConfig,
+  InitializeResultBase,
+} from '~/types';
+import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
 import {
@@ -45,6 +51,9 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import { normalizeServerName, requiresEphemeralUserConnection } from '~/mcp/utils';
+import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -242,16 +251,35 @@ export type InitializedAgent = Agent & {
   toolMap?: ToolMap;
   /** Tool registry for PTC and tool search (only present when MCP tools with env classification exist) */
   toolRegistry?: LCToolRegistry;
+  /** Run-scoped MCP tool definitions for request-scoped servers. */
+  mcpAvailableTools?: Record<string, LCAvailableTools>;
+  /** Run-scoped MCP connections for request-scoped servers. */
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
   /** Serializable tool definitions for event-driven execution */
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
+  /**
+   * Names of this agent's tools that were injected with the `run_in_background`
+   * param (capability enabled AND per-tool opt-in AND eligible). Threaded to the
+   * tool executor via `configurable` so it can enforce the per-tool background
+   * opt-in and gate the `check_background_task` poll tool at execution time.
+   */
+  backgroundToolNames?: string[];
+  /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
+   *  registered for this agent. Authoritative LibreChat-only signal of the
+   *  inline memory opt-in for the execution path, since some contexts hold the
+   *  initialized config (the `memory` marker already expanded out of `tools`)
+   *  rather than the raw agent document. */
+  memoryToolsRegistered?: boolean;
   /** Whether the actions capability is enabled (resolved during tool loading) */
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
   reasoningKey?: ReasoningResponseKey;
+  /** Whether to reconstruct `reasoning_content` from persisted history across turns (custom endpoint opt-in). */
+  includeReasoningHistory?: boolean;
   /**
    * Whether the code-execution environment is available *for this agent*.
    * Narrower than the incoming `params.codeEnvAvailable` admin flag — this
@@ -264,6 +292,14 @@ export type InitializedAgent = Agent & {
    * (`packages/api/src/agents/added.ts`), so the check is uniform.
    */
   codeEnvAvailable: boolean;
+  /**
+   * Whether stateful code sessions are active *for this agent*: the admin
+   * `stateful_code_sessions` capability AND the agent's builder opt-in
+   * (`agent.stateful_code_sessions`) AND `codeEnvAvailable`. Resolved once
+   * here; `createRun` walks this per-agent value to gate the run-level
+   * `toolExecution.sandbox` config.
+   */
+  statefulCodeSessions: boolean;
   /** Whether host-side skill file authoring is available for this agent/run. */
   skillAuthoringAvailable: boolean;
   /** Host-side file authoring tool names registered for this run. */
@@ -307,6 +343,13 @@ export type InitializedAgent = Agent & {
    * call #1 the sandbox can't see the files at all.
    */
   primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
+  /**
+   * Resolved token/pricing config for this agent's endpoint (admin static
+   * `tokenConfig` and/or fetched custom-endpoint config). Surfaced from the
+   * provider `getOptions` result so the AgentClient bills, prices, and resolves
+   * context limits with the same numbers the UI shows — not default rates.
+   */
+  endpointTokenConfig?: EndpointTokenConfig;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -345,6 +388,8 @@ export interface InitializeAgentParams {
     dynamicToolContextMap?: Record<string, unknown>;
     userMCPAuthMap?: Record<string, Record<string, string>>;
     toolRegistry?: LCToolRegistry;
+    mcpAvailableTools?: Record<string, LCAvailableTools>;
+    requestScopedConnections?: RequestScopedMCPConnectionStore;
     /** Serializable tool definitions for event-driven mode */
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
@@ -370,6 +415,19 @@ export interface InitializeAgentParams {
   skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether the `run_in_background` capability is enabled for this run. When
+   * true, tools the agent opted in via `tool_options[name].run_in_background`
+   * get a `run_in_background` schema param and the `check_background_task` poll
+   * tool is registered.
+   */
+  backgroundToolsAvailable?: boolean;
+  /** Whether stateful code sessions are available (stateful_code_sessions capability enabled) */
+  statefulSessionsAvailable?: boolean;
+  /** Whether inline memory tools are available (memory capability enabled, memory
+   *  configured, and the user permitted). When true and the agent lists the `memory`
+   *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
+  memoryAvailable?: boolean;
   /** Per-user skill active/inactive overrides for filtering the skill catalog. */
   skillStates?: Record<string, boolean>;
   /** Admin-configured default for shared skills (`true` = shared skills auto-activate). */
@@ -393,22 +451,30 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
     fileIds?: string[],
-    options?: { user?: string },
+    options?: { user?: string; tenantId?: string | null },
   ) => Promise<unknown[]>;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
   /** Filter files by agent access permissions (ownership or agent attachment) */
   filterFilesByAgentAccess?: TFilterFilesByAgentAccess;
   /** Get tool files by IDs (user-uploaded files only, code files handled separately) */
-  getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
+  getToolFilesByIds: (
+    fileIds: string[],
+    toolSet: Set<EToolResources>,
+    ownerScope?: FileOwnerScope,
+  ) => Promise<unknown[]>;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
   /** Get code-generated files by conversation ID and the file_ids
    *  referenced from messages in the current thread (collected via
    *  `messages.files[].file_id` during thread walk). */
-  getCodeGeneratedFiles?: (conversationId: string, threadFileIds?: string[]) => Promise<unknown[]>;
+  getCodeGeneratedFiles?: (
+    conversationId: string,
+    threadFileIds?: string[],
+    ownerScope?: FileOwnerScope,
+  ) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
-  getUserCodeFiles?: (fileIds: string[]) => Promise<unknown[]>;
+  getUserCodeFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
   getMessages?: (
     filter: { conversationId: string },
@@ -545,6 +611,9 @@ export async function initializeAgent(
     isInitialAgent = false,
   } = params;
   const requestFileOwnerId = req.user?.id;
+  const requestFileOwnerScope: FileOwnerScope | undefined = requestFileOwnerId
+    ? { userId: requestFileOwnerId, tenantId: req.user?.tenantId }
+    : undefined;
 
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
@@ -592,7 +661,13 @@ export async function initializeAgent(
       }
     }
 
-    const toolFiles = (await db.getToolFilesByIds(fileIds, toolResourceSet)) as IMongoFile[];
+    const toolFiles = requestFileOwnerScope
+      ? ((await db.getToolFilesByIds(
+          fileIds,
+          toolResourceSet,
+          requestFileOwnerScope,
+        )) as IMongoFile[])
+      : [];
 
     /**
      * Retrieve execute_code files filtered to the current thread.
@@ -633,14 +708,25 @@ export async function initializeAgent(
        *  which sibling first generated them — see `getCodeGeneratedFiles`
        *  for the branched-conversation rationale. */
       if (db.getCodeGeneratedFiles) {
-        codeGeneratedFiles = (await db.getCodeGeneratedFiles(
-          conversationId,
-          threadFileIds,
-        )) as IMongoFile[];
+        codeGeneratedFiles = requestFileOwnerScope
+          ? ((await db.getCodeGeneratedFiles(
+              conversationId,
+              threadFileIds,
+              requestFileOwnerScope,
+            )) as IMongoFile[])
+          : [];
       }
 
-      if (db.getUserCodeFiles && threadFileIds && threadFileIds.length > 0) {
-        userCodeFiles = (await db.getUserCodeFiles(threadFileIds)) as IMongoFile[];
+      if (
+        db.getUserCodeFiles &&
+        requestFileOwnerScope &&
+        threadFileIds &&
+        threadFileIds.length > 0
+      ) {
+        userCodeFiles = (await db.getUserCodeFiles(
+          threadFileIds,
+          requestFileOwnerScope,
+        )) as IMongoFile[];
       }
     }
 
@@ -650,21 +736,27 @@ export async function initializeAgent(
         requestFiles.length && requestFileOwnerId
           ? ((await db.updateFilesUsage(requestFiles, undefined, {
               user: requestFileOwnerId,
+              tenantId: req.user?.tenantId,
             })) as IMongoFile[])
           : [];
       const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
       const trustedToolFiles = allToolFiles.filter(
         (file) => !requestUsageFileIds.has(file.file_id),
       );
-      const toolUsageFiles = trustedToolFiles.length
-        ? ((await db.updateFilesUsage(trustedToolFiles)) as IMongoFile[])
-        : [];
+      let toolUsageFiles: IMongoFile[] = [];
+      if (trustedToolFiles.length > 0 && requestFileOwnerId) {
+        toolUsageFiles = (await db.updateFilesUsage(trustedToolFiles, undefined, {
+          user: requestFileOwnerId,
+          tenantId: req.user?.tenantId,
+        })) as IMongoFile[];
+      }
       currentFiles = requestUsageFiles.concat(toolUsageFiles);
     }
   } else if (requestFiles.length) {
     currentFiles = requestFileOwnerId
       ? ((await db.updateFilesUsage(requestFiles, undefined, {
           user: requestFileOwnerId,
+          tenantId: req.user?.tenantId,
         })) as IMongoFile[])
       : [];
   }
@@ -876,6 +968,8 @@ export async function initializeAgent(
     dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions: loadedToolDefinitions,
+    mcpAvailableTools,
+    requestScopedConnections,
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
@@ -886,6 +980,8 @@ export async function initializeAgent(
     dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
+    mcpAvailableTools: undefined,
+    requestScopedConnections: undefined,
     toolDefinitions: [],
     hasDeferredTools: false,
     actionsEnabled: undefined,
@@ -1000,6 +1096,14 @@ export async function initializeAgent(
    */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
   const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  /** Per-agent stateful-session truth: the admin capability AND the agent's
+   *  own builder opt-in AND a working code env. Resolved once here so the
+   *  registered bash description, the tool factories, and `createRun`'s
+   *  `toolExecution.sandbox` gate all agree for this agent. */
+  const effectiveStatefulSessions =
+    effectiveCodeEnvAvailable &&
+    params.statefulSessionsAvailable === true &&
+    agent.stateful_code_sessions === true;
   if (effectiveCodeEnvAvailable) {
     const codeExecResult = registerCodeExecutionTools({
       toolRegistry,
@@ -1007,6 +1111,7 @@ export async function initializeAgent(
       includeBash: true,
       includeSkillFileInstructions: false,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
+      statefulSessions: effectiveStatefulSessions,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
   } else if (agentRequestsCodeExec) {
@@ -1020,6 +1125,29 @@ export async function initializeAgent(
      */
     logger.debug(
       `[initializeAgent] Agent "${agent.id}" requests execute_code but codeEnvAvailable=${String(params.codeEnvAvailable)}; skipping bash_tool + read_file registration.`,
+    );
+  }
+
+  /**
+   * Expand the `memory` capability marker into the inline `set_memory` +
+   * `delete_memory` tool pair, mirroring the `execute_code` expansion above.
+   * `params.memoryAvailable` is the full run-level gate (capability enabled,
+   * memory configured, user permitted); the marker on `agent.tools` is the
+   * per-agent opt-in. The runtime instances are created in the tool service.
+   */
+  const agentRequestsMemory = (agent.tools ?? []).includes(Tools.memory);
+  const inlineMemoryRegistered = params.memoryAvailable === true && agentRequestsMemory;
+  if (inlineMemoryRegistered) {
+    const memoryResult = registerMemoryTools({
+      toolRegistry,
+      toolDefinitions,
+      validKeys: req.config?.memory?.validKeys,
+    });
+    toolDefinitions = memoryResult.toolDefinitions;
+    appendAdditionalInstructions(agent, memoryToolUsageGuard);
+  } else if (agentRequestsMemory) {
+    logger.debug(
+      `[initializeAgent] Agent "${agent.id}" requests memory but memoryAvailable=${String(params.memoryAvailable)}; skipping set_memory + delete_memory registration.`,
     );
   }
 
@@ -1041,6 +1169,48 @@ export async function initializeAgent(
       includeSkillFileInstructions: skillAuthoringAvailable,
     });
     toolDefinitions = fileAuthoringResult.toolDefinitions;
+  }
+
+  /**
+   * Inject the `run_in_background` param into eligible opted-in tools and
+   * register the `check_background_task` poll tool. Runs after all built-in
+   * tool registration so the full, final `toolDefinitions` set is considered.
+   * Opt-in is per-tool via `tool_options` for both saved and ephemeral agents.
+   */
+  let backgroundToolNames: string[] | undefined;
+  if (params.backgroundToolsAvailable === true) {
+    /** Tool names embed `normalizeServerName(server)` (see MCP.js tool keys)
+     *  while `mcpConfig` keys the original name, so index the ephemeral
+     *  servers by their normalized form. */
+    const ephemeralServerNames = new Set<string>();
+    for (const [serverName, serverConfig] of Object.entries(req.config?.mcpConfig ?? {})) {
+      if (serverConfig != null && requiresEphemeralUserConnection(serverConfig)) {
+        ephemeralServerNames.add(normalizeServerName(serverName));
+      }
+    }
+    const backgroundResult = applyBackgroundToolCalls({
+      toolDefinitions,
+      toolRegistry,
+      toolOptions: agent.tool_options,
+      /** Tools of ephemeral request-scoped MCP servers (runtime body
+       *  placeholders) never get the param: their connection dies at request
+       *  end, so the executor would only downgrade the call to foreground.
+       *  Unknown servers stay eligible — the executor's per-instance tag is
+       *  the fail-safe for those. */
+      excludeTool: (toolName) => {
+        const delimiterIndex = toolName.indexOf(Constants.mcp_delimiter);
+        if (delimiterIndex < 0) {
+          return false;
+        }
+        return ephemeralServerNames.has(
+          toolName.slice(delimiterIndex + Constants.mcp_delimiter.length),
+        );
+      },
+    });
+    toolDefinitions = backgroundResult.toolDefinitions;
+    if (backgroundResult.backgroundToolNames.length > 0) {
+      backgroundToolNames = backgroundResult.backgroundToolNames;
+    }
   }
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
@@ -1090,6 +1260,7 @@ export async function initializeAgent(
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
       now: req.conversationCreatedAt,
+      timezone: req.body?.timezone,
     });
     if (endpointOption?.customVariables) {
       resolvedInstructions = replaceCustomVars({
@@ -1132,6 +1303,7 @@ export async function initializeAgent(
       contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
       listSkillsByAccess: db?.listSkillsByAccess,
       codeEnvAvailable: effectiveCodeEnvAvailable,
+      statefulSessions: effectiveStatefulSessions,
       userId: req.user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
@@ -1196,14 +1368,20 @@ export async function initializeAgent(
     ...agent,
     resendFiles,
     toolRegistry,
+    mcpAvailableTools,
+    requestScopedConnections,
     tool_resources,
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    backgroundToolNames,
     actionsEnabled,
     baseContextTokens,
+    memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
+    statefulCodeSessions: effectiveStatefulSessions,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
+    includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
     skillAuthoringAvailable,
     fileAuthoringToolNames: fileAuthoringToolNames.size > 0 ? fileAuthoringToolNames : undefined,
     skillCount,
@@ -1224,6 +1402,7 @@ export async function initializeAgent(
         ? maxContextTokens
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
     primedCodeFiles,
+    endpointTokenConfig: options.endpointTokenConfig,
   };
 
   return initializedAgent;

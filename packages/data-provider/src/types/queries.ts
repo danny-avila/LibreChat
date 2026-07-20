@@ -150,6 +150,10 @@ export type TUserMemory = {
   value: string;
   updated_at: string;
   tokenCount?: number;
+  /** Agent partition this memory belongs to; absent = shared personal pool */
+  agentId?: string;
+  /** Display name of the partition's agent, resolved server-side when available */
+  agentName?: string;
 };
 
 export type MemoriesResponse = {
@@ -201,6 +205,8 @@ export interface MCPServerStatus {
 export interface MCPConnectionStatusResponse {
   success: boolean;
   connectionStatus: Record<string, MCPServerStatus>;
+  /** Server-configured OAuth completion window in ms (`MCP_OAUTH_HANDLING_TIMEOUT`) */
+  oauthTimeout?: number;
 }
 
 export interface MCPServerConnectionStatusResponse {
@@ -226,8 +232,18 @@ export type TUserFavorite = {
   model?: string;
   endpoint?: string;
   spec?: string;
-  /** Phase 2 — skill favoriting isn't persisted yet, but the shape is reserved. */
-  skillId?: string;
+};
+
+/**
+ * Tool favorites — starred marketplace items (built-in capabilities, plugin
+ * tools, MCP servers, skills). Identity is the compound (itemType, itemId)
+ * pair, matching the marketplace `itemKey` format `itemType:itemId`.
+ */
+export type TToolFavoriteType = 'builtin' | 'tool' | 'mcp' | 'skill';
+
+export type TToolFavorite = {
+  itemType: TToolFavoriteType;
+  itemId: string;
 };
 
 /* SharePoint Graph API Token */

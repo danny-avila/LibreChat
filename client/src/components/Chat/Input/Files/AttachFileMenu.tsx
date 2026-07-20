@@ -19,12 +19,17 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
-  isPermissiveMimeConfig,
+  getConfiguredMimeAccept,
+  bedrockDocumentMimeTypes,
   defaultAgentCapabilities,
   bedrockDocumentExtensions,
   isDocumentSupportedProvider,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
+import type {
+  TConversation,
+  EndpointFileConfig,
+  MimeUploadCapability,
+} from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useAgentToolPermissions,
@@ -34,6 +39,7 @@ import {
   useLocalize,
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -46,6 +52,22 @@ type FileUploadType =
   | 'image_document'
   | 'image_document_extended'
   | 'image_document_video_audio';
+
+/** What each provider upload path can actually send, used to scope the picker filter to selectable files. */
+const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
+  image: { categories: ['image'] },
+  document: { categories: ['document'] },
+  image_document: { categories: ['image', 'document'] },
+  image_document_extended: {
+    categories: ['image', 'document'],
+    documentMimeTypes: bedrockDocumentMimeTypes,
+  },
+  /** Google/Vertex/OpenRouter media path: documents are limited to PDF (see isProviderAttachType). */
+  image_document_video_audio: {
+    categories: ['image', 'document', 'audio', 'video'],
+    documentMimeTypes: ['application/pdf'],
+  },
+};
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -78,6 +100,8 @@ const AttachFileMenu = ({
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const uploadFileTooltip = useShortcutHint('uploadFile', localize('com_sidepanel_attach_files'));
+  const uploadFileAriaKey = useShortcutAriaKey('uploadFile');
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
     ephemeralAgentByConvoId(conversationId),
   );
@@ -117,11 +141,15 @@ const AttachFileMenu = ({
         return;
       }
       inputRef.current.value = '';
-      if (
-        fileType !== undefined &&
-        isPermissiveMimeConfig(endpointFileConfig?.supportedMimeTypes)
-      ) {
-        inputRef.current.accept = '';
+      const configuredAccept =
+        fileType !== undefined
+          ? getConfiguredMimeAccept(
+              endpointFileConfig?.supportedMimeTypes,
+              fileTypeCapabilities[fileType],
+            )
+          : undefined;
+      if (configuredAccept != null) {
+        inputRef.current.accept = configuredAccept;
       } else if (fileType === 'image') {
         inputRef.current.accept = 'image/*,.heif,.heic';
       } else if (fileType === 'document') {
@@ -277,6 +305,7 @@ const AttachFileMenu = ({
           disabled={isUploadDisabled}
           id="attach-file-menu-button"
           aria-label="Attach File Options"
+          aria-keyshortcuts={uploadFileAriaKey}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
             isPopoverActive && 'bg-surface-hover',
@@ -288,7 +317,7 @@ const AttachFileMenu = ({
         </Ariakit.MenuButton>
       }
       id="attach-file-menu-button"
-      description={localize('com_sidepanel_attach_files')}
+      description={uploadFileTooltip}
       disabled={isUploadDisabled}
     />
   );

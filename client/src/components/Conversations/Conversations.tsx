@@ -4,7 +4,7 @@ import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import { Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import {
@@ -13,6 +13,7 @@ import {
   useFavorites,
   useShowMarketplace,
   useNewConvo,
+  useElementSize,
 } from '~/hooks';
 import { groupConversationsByDate, clearMessagesCache, cn } from '~/utils';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
@@ -57,7 +58,12 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-3">
+        <div
+          ref={registerChild as React.LegacyRef<HTMLDivElement>}
+          style={style}
+          className="px-3"
+          data-testid="convo-list-row"
+        >
           {children}
         </div>
       )}
@@ -137,6 +143,17 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
 
 ChatsHeader.displayName = 'ChatsHeader';
 
+const PinnedHeader: FC = memo(() => {
+  const localize = useLocalize();
+  return (
+    <h2 className="pl-1 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
+      {localize('com_ui_pinned')}
+    </h2>
+  );
+});
+
+PinnedHeader.displayName = 'PinnedHeader';
+
 const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupName, isFirst }) => {
   const localize = useLocalize();
   return (
@@ -156,6 +173,8 @@ DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
   | { type: 'favorites' }
+  | { type: 'pinned-header' }
+  | { type: 'pinned-convo'; convo: TConversation }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
@@ -178,6 +197,11 @@ const Conversations: FC<ConversationsProps> = ({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+  const {
+    ref: listContainerRef,
+    width: listWidth,
+    height: listHeight,
+  } = useElementSize<HTMLDivElement>();
 
   const favoritesContentKeyRef = useRef('');
 
@@ -201,6 +225,11 @@ const Conversations: FC<ConversationsProps> = ({
     [rawConversations],
   );
 
+  const pinnedConversations = useMemo(
+    () => filteredConversations.filter((c) => c.pinned),
+    [filteredConversations],
+  );
+
   const groupedConversations = useMemo(
     () => groupConversationsByDate(filteredConversations),
     [filteredConversations],
@@ -214,6 +243,13 @@ const Conversations: FC<ConversationsProps> = ({
     }
 
     if (isChatsExpanded) {
+      if (!search.query && pinnedConversations.length > 0) {
+        items.push({ type: 'pinned-header' });
+        items.push(
+          ...pinnedConversations.map((convo) => ({ type: 'pinned-convo' as const, convo })),
+        );
+      }
+
       groupedConversations.forEach(([groupName, convos]) => {
         items.push({ type: 'header', groupName });
         items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
@@ -224,7 +260,14 @@ const Conversations: FC<ConversationsProps> = ({
       }
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
+  }, [
+    groupedConversations,
+    pinnedConversations,
+    isLoading,
+    isChatsExpanded,
+    shouldShowFavorites,
+    search.query,
+  ]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -244,8 +287,15 @@ const Conversations: FC<ConversationsProps> = ({
           if (item.type === 'favorites') {
             return `favorites-${favoritesContentKeyRef.current}`;
           }
+          if (item.type === 'pinned-header') {
+            return 'pinned-header';
+          }
+          if (item.type === 'pinned-convo') {
+            return `pinned-${item.convo.conversationId}`;
+          }
           if (item.type === 'header') {
-            return `header-${item.groupName}`;
+            const firstHeaderIndex = flattenedItemsRef.current[0]?.type === 'favorites' ? 1 : 0;
+            return `header-${item.groupName}-${index === firstHeaderIndex ? 'first' : 'sub'}`;
           }
           if (item.type === 'convo') {
             return `convo-${item.convo.conversationId}`;
@@ -285,6 +335,35 @@ const Conversations: FC<ConversationsProps> = ({
     return () => cancelAnimationFrame(frameId);
   }, [search.query, cache, containerRef]);
 
+  /** Grid only re-derives row offsets when the row count changes; reorders that
+   *  keep the count (e.g. a convo bumped across date groups) need an explicit recompute. */
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [flattenedItems, containerRef]);
+
+  /** CellMeasurerCache(fixedWidth) keys heights by row, not width. Rows first measured
+   *  at a narrow width (e.g. mid expand-animation from a collapsed sidebar) would
+   *  otherwise persist their wrapped heights — re-measure when the width changes. */
+  const measuredWidthRef = useRef(0);
+  useEffect(() => {
+    if (listWidth === 0 || listWidth === measuredWidthRef.current) {
+      return;
+    }
+    measuredWidthRef.current = listWidth;
+    const frameId = requestAnimationFrame(() => {
+      cache.clearAll();
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [listWidth, cache, containerRef]);
+
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
       const item = flattenedItems[index];
@@ -306,9 +385,33 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
 
+      if (item.type === 'pinned-header') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <PinnedHeader />
+          </MeasuredRow>
+        );
+      }
+
+      if (item.type === 'pinned-convo') {
+        const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <Convo
+              conversation={item.convo}
+              retainView={moveToTop}
+              toggleNav={toggleNav}
+              isGenerating={isGenerating}
+            />
+          </MeasuredRow>
+        );
+      }
+
       if (item.type === 'header') {
-        // First date header index depends on whether the favorites row is included
-        const firstHeaderIndex = shouldShowFavorites ? 1 : 0;
+        // First date header index depends on favorites row, pinned header, and pinned convos
+        // At most: [favorites, pinned-header, # pinned-convos] → first-header
+        const pinnedOffset = pinnedConversations.length > 0 ? pinnedConversations.length + 1 : 0;
+        const firstHeaderIndex = (flattenedItems[0]?.type === 'favorites' ? 1 : 0) + pinnedOffset;
         return (
           <MeasuredRow key={key} {...rowProps}>
             <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
@@ -332,7 +435,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       return null;
     },
-    [cache, flattenedItems, moveToTop, toggleNav, isSmallScreen, shouldShowFavorites, activeJobIds],
+    [cache, flattenedItems, moveToTop, toggleNav, isSmallScreen, pinnedConversations, activeJobIds],
   );
 
   const getRowHeight = useCallback(
@@ -368,28 +471,24 @@ const Conversations: FC<ConversationsProps> = ({
           <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
-        <div className="flex-1">
-          <AutoSizer>
-            {({ width, height }) => (
-              <List
-                ref={containerRef}
-                width={width}
-                height={height}
-                deferredMeasurementCache={cache}
-                rowCount={flattenedItems.length}
-                rowHeight={getRowHeight}
-                rowRenderer={rowRenderer}
-                overscanRowCount={10}
-                aria-readonly={false}
-                className="outline-none"
-                aria-label="Conversations"
-                onRowsRendered={handleRowsRendered}
-                tabIndex={-1}
-                style={{ outline: 'none' }}
-                containerRole="rowgroup"
-              />
-            )}
-          </AutoSizer>
+        <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+          <List
+            ref={containerRef}
+            width={listWidth}
+            height={listHeight}
+            deferredMeasurementCache={cache}
+            rowCount={flattenedItems.length}
+            rowHeight={getRowHeight}
+            rowRenderer={rowRenderer}
+            overscanRowCount={10}
+            aria-readonly={false}
+            className="outline-none"
+            aria-label="Conversations"
+            onRowsRendered={handleRowsRendered}
+            tabIndex={-1}
+            style={{ outline: 'none' }}
+            containerRole="rowgroup"
+          />
         </div>
       )}
     </div>

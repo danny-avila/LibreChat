@@ -6,19 +6,20 @@ import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject, TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
-import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import {
   useAddedResponse,
   useResumeOnLoad,
   useAdaptiveSSE,
   useChatHelpers,
+  useQueueDrain,
   useLocalize,
 } from '~/hooks';
+import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import ProjectLandingChip from './ProjectLandingChip';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
-import ProjectLandingChip from './ProjectLandingChip';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
@@ -59,7 +60,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
         },
         [fileMap],
       ),
-      enabled: !!fileMap,
+      enabled: !!conversationId && conversationId !== Constants.SEARCH,
     },
     { isStreaming: isSubmitting },
   );
@@ -72,6 +73,9 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   // Auto-resume if navigating back to conversation with active job
   // Wait for messages to load before resuming to avoid race condition
   useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading);
+
+  // Auto-send queued follow-up messages once a run finishes cleanly.
+  useQueueDrain(index, conversationId, chatHelpers.ask);
 
   let content: JSX.Element | null | undefined;
   const isLandingPage =
@@ -119,8 +123,9 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                     )}
                   >
                     {isProjectLandingPage && project && <ProjectLandingChip project={project} />}
+                    {isLandingPage && <ConversationStarters />}
                     <ChatForm index={index} placeholder={chatFormPlaceholder} />
-                    {isLandingPage ? <ConversationStarters /> : <Footer />}
+                    {!isLandingPage && <Footer />}
                   </div>
                 </div>
                 {isLandingPage && <Footer />}

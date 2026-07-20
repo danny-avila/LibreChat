@@ -16,7 +16,12 @@ import {
   useReinitializeMCPServerMutation,
   useGetAllEffectivePermissionsQuery,
 } from 'librechat-data-provider/react-query';
-import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-data-provider';
+import type {
+  TUpdateUserPlugins,
+  TPlugin,
+  MCPServersResponse,
+  MCPConnectionStatusResponse,
+} from 'librechat-data-provider';
 import type { MCPServerInitState } from '~/store/mcp';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
@@ -197,29 +202,39 @@ export function useMCPServerManager({
       let pollAttempts = 0;
       let timeoutId: NodeJS.Timeout | null = null;
 
-      /** OAuth typically completes in 5 seconds to 3 minutes
-       * We enforce a strict 3-minute timeout with gradual backoff
+      /** OAuth can take several minutes if the user steps away from the consent screen.
+       * Poll for the full server-side handling window (MCP_OAUTH_HANDLING_TIMEOUT
+       * default = 10 minutes) with gradual backoff, so the button stays usable as long
+       * as the server will accept the callback.
        */
       const getPollInterval = (attempt: number): number => {
         if (attempt < 12) return 5000; // First minute: every 5s (12 polls)
         if (attempt < 22) return 6000; // Second minute: every 6s (10 polls)
-        return 7500; // Final minute: every 7.5s (8 polls)
+        return 7500; // Thereafter: every 7.5s
       };
 
-      const maxAttempts = 30; // Exactly 3 minutes (180 seconds) total
-      const OAUTH_TIMEOUT_MS = 180000; // 3 minutes in milliseconds
+      /** Honor the server's configured MCP_OAUTH_HANDLING_TIMEOUT (surfaced on the
+       * connection-status response) so a tuned deadline isn't capped at the default.
+       * The cache may be empty at start, so this is refreshed from the first status
+       * refetch below rather than captured once. */
+      const connectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
+        QueryKeys.mcpConnectionStatus,
+      ]);
+      let oauthTimeoutMs = connectionData?.oauthTimeout ?? 600000; // default 10 minutes
+      // Backstop only; the elapsed-time guard governs. Sized above the worst-case poll count.
+      let maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
 
       const pollOnce = async () => {
         try {
           pollAttempts++;
           const state = getServerInitState(serverInitStates, serverName);
 
-          /** Stop polling after 3 minutes or max attempts */
+          /** Stop polling once the handling window or max attempts is exceeded */
           const elapsedTime = state?.oauthStartTime
             ? Date.now() - state.oauthStartTime
             : pollAttempts * 5000; // Rough estimate if no start time
 
-          if (pollAttempts > maxAttempts || elapsedTime > OAUTH_TIMEOUT_MS) {
+          if (pollAttempts > maxAttempts || elapsedTime > oauthTimeoutMs) {
             console.warn(
               `[MCP Manager] OAuth timeout for ${serverName} after ${(elapsedTime / 1000).toFixed(0)}s (attempt ${pollAttempts})`,
             );
@@ -236,9 +251,15 @@ export function useMCPServerManager({
 
           await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
 
-          const freshConnectionData = queryClient.getQueryData([
+          const freshConnectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
             QueryKeys.mcpConnectionStatus,
-          ]) as any;
+          ]);
+          // Pick up the configured timeout once the status response lands (cache may have
+          // been empty when polling started), so a tuned deadline is honored mid-flight.
+          if (typeof freshConnectionData?.oauthTimeout === 'number') {
+            oauthTimeoutMs = freshConnectionData.oauthTimeout;
+            maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
+          }
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
           const serverStatus = freshConnectionStatus[serverName];
@@ -269,7 +290,7 @@ export function useMCPServerManager({
           }
 
           // Check for OAuth timeout (should align with maxAttempts)
-          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > OAUTH_TIMEOUT_MS) {
+          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > oauthTimeoutMs) {
             showToast({
               message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
@@ -324,9 +345,17 @@ export function useMCPServerManager({
 
   const initializeServer = useCallback(
     async (serverName: string, autoOpenOAuth: boolean = true) => {
-      updateServerInitState(serverName, { isInitializing: true });
+      /** connectionDeferred is reset up front so a stale value from a previous
+       * attempt can never be mistaken for this attempt's outcome. */
+      updateServerInitState(serverName, { isInitializing: true, connectionDeferred: false });
       try {
         const response = await reinitializeMutation.mutateAsync(serverName);
+        /** Record whether this attempt deferred to a chat turn (request-scoped
+         * server) so consumers that didn't await this call — e.g. the agent
+         * builder behind the customUserVars config dialog — can react to it. */
+        updateServerInitState(serverName, {
+          connectionDeferred: Boolean(response.connectionDeferred),
+        });
         if (!response.success) {
           showToast({
             message: localize('com_ui_mcp_init_failed', { 0: serverName }),
@@ -433,6 +462,23 @@ export function useMCPServerManager({
       return getServerInitState(serverInitStates, serverName).isCancellable;
     },
     [serverInitStates],
+  );
+
+  const isConnectionDeferred = useCallback(
+    (serverName: string) => {
+      return getServerInitState(serverInitStates, serverName).connectionDeferred;
+    },
+    [serverInitStates],
+  );
+
+  /** Clear a recorded deferred outcome without starting a new attempt — used
+   * before routing into the customUserVars config dialog so a stale flag from
+   * an earlier attempt can't trigger consumers while the dialog is open. */
+  const resetConnectionDeferred = useCallback(
+    (serverName: string) => {
+      updateServerInitState(serverName, { connectionDeferred: false });
+    },
+    [updateServerInitState],
   );
 
   const getOAuthUrl = useCallback(
@@ -657,6 +703,8 @@ export function useMCPServerManager({
     cancelOAuthFlow,
     isInitializing,
     isCancellable,
+    isConnectionDeferred,
+    resetConnectionDeferred,
     getOAuthUrl,
     mcpValues,
     setMCPValues,

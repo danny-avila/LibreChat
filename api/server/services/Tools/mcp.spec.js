@@ -1,9 +1,15 @@
 const { Constants } = require('librechat-data-provider');
 
 const mockGetConnection = jest.fn();
+const mockDiscoverServerTools = jest.fn();
+const mockGetGraphApiToken = jest.fn();
+const mockUpdateMCPServerTools = jest.fn();
 
 jest.mock('~/config', () => ({
-  getMCPManager: jest.fn(() => ({ getConnection: mockGetConnection })),
+  getMCPManager: jest.fn(() => ({
+    getConnection: mockGetConnection,
+    discoverServerTools: mockDiscoverServerTools,
+  })),
   getMCPServersRegistry: jest.fn(() => ({ getServerConfig: jest.fn() })),
   getFlowStateManager: jest.fn(() => ({})),
 }));
@@ -14,7 +20,10 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
 }));
 jest.mock('~/server/services/Config', () => ({
-  updateMCPServerTools: jest.fn(),
+  updateMCPServerTools: mockUpdateMCPServerTools,
+}));
+jest.mock('~/server/services/GraphTokenService', () => ({
+  getGraphApiToken: mockGetGraphApiToken,
 }));
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
@@ -35,6 +44,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUpdateMCPServerTools.mockResolvedValue({});
   });
 
   it('does not connect and exposes no tools when a required customUserVar is unset', async () => {
@@ -90,6 +100,77 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
   });
 
+  it('passes request body and Graph resolver into connection creation', async () => {
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+    const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      requestBody,
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockGetConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody,
+        graphTokenResolver: mockGetGraphApiToken,
+      }),
+    );
+  });
+
+  it('passes request body and Graph resolver into OAuth discovery fallback', async () => {
+    mockGetConnection.mockRejectedValue(new Error('OAuth authentication required'));
+    mockDiscoverServerTools.mockResolvedValue({ tools: [], oauthRequired: true, oauthUrl: null });
+    const requestBody = { conversationId: 'conv-456', messageId: 'msg-456' };
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      requestBody,
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockDiscoverServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody,
+        graphTokenResolver: mockGetGraphApiToken,
+      }),
+    );
+  });
+
+  it('disconnects ephemeral BODY-scoped connections after loading tools', async () => {
+    const disconnect = jest.fn().mockResolvedValue(undefined);
+    const tools = [{ name: 'search', inputSchema: { type: 'object', properties: {} } }];
+    const serverConfig = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      source: 'yaml',
+    };
+    mockGetConnection.mockResolvedValue({
+      disconnect,
+      fetchTools: jest.fn().mockResolvedValue(tools),
+    });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig,
+      requestBody: { messageId: 'msg-789' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools,
+        serverConfig,
+      }),
+    );
+  });
+
   it('proceeds to connect when the server declares no customUserVars', async () => {
     mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
 
@@ -101,5 +182,104 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     });
 
     expect(mockGetConnection).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)', () => {
+  const user = { id: 'user-123' };
+  const serverName = 'Thingy';
+  const serverConfig = {
+    type: 'streamable-http',
+    url: 'https://thingy.example.com/mcp',
+    source: 'yaml',
+    headers: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpdateMCPServerTools.mockResolvedValue({});
+  });
+
+  it('defers connection without failing when body placeholders cannot resolve outside a chat turn', async () => {
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig,
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(mockDiscoverServerTools).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      availableTools: null,
+      success: true,
+      connectionDeferred: true,
+      tools: null,
+      oauthRequired: false,
+      serverName,
+    });
+    expect(result.message).toContain('first use in a chat turn');
+  });
+
+  it('treats an empty-string body field as missing', async () => {
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig,
+      requestBody: { conversationId: '  ' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockGetConnection).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  it('connects normally when the request body provides the placeholder fields', async () => {
+    const disconnect = jest.fn().mockResolvedValue(undefined);
+    mockGetConnection.mockResolvedValue({
+      disconnect,
+      fetchTools: jest.fn().mockResolvedValue([]),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig,
+      requestBody: { conversationId: 'convo-1' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
+    expect(result.connectionDeferred).toBeUndefined();
+  });
+
+  it('reports missing customUserVars before deferring on body placeholders', async () => {
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: {
+        ...serverConfig,
+        customUserVars: { THINGY_TOKEN: { title: 'Thingy Access Token' } },
+      },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('THINGY_TOKEN');
+  });
+
+  it('still treats unrelated connection errors as real failures', async () => {
+    mockGetConnection.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockDiscoverServerTools).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.message).toBe(`Failed to reinitialize MCP server '${serverName}'`);
   });
 });

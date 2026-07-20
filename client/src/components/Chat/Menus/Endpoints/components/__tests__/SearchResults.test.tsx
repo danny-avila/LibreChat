@@ -70,6 +70,13 @@ const agentsMarketplaceEndpoint: Endpoint = {
   icon: null,
 };
 
+const disabledAgentsEndpoint: Endpoint = {
+  value: 'agents',
+  label: 'My Agents',
+  hasModels: false,
+  icon: null,
+};
+
 describe('SearchResults', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -139,5 +146,19 @@ describe('SearchResults', () => {
     fireEvent.click(item);
     expect(mockNavigate).toHaveBeenCalledWith('/agents');
     expect(mockHandleSelectModel).not.toHaveBeenCalled();
+  });
+
+  it('does not render agents as a selectable endpoint when marketplace and agent rows are unavailable', () => {
+    mockSelectedValues = { endpoint: '', model: '', modelSpec: '' };
+    render(
+      <SearchResults
+        results={[disabledAgentsEndpoint]}
+        localize={localize}
+        searchValue="my agents"
+      />,
+    );
+
+    expect(screen.queryByRole('menuitem', { name: 'My Agents' })).not.toBeInTheDocument();
+    expect(mockHandleSelectEndpoint).not.toHaveBeenCalled();
   });
 });

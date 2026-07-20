@@ -118,6 +118,31 @@ export const useFileDownload = (
   );
 };
 
+/**
+ * Blob download for a snapshotted file served through a shared link. Authorized
+ * by shared-link view permission (public/ACL) rather than the owner's file ACL.
+ * Idle by default; call `refetch` to download.
+ */
+export const useSharedFileDownload = (
+  shareId?: string,
+  file_id?: string,
+): QueryObserverResult<string> => {
+  return useQuery(
+    [QueryKeys.fileDownload, 'share', shareId ?? '', file_id ?? ''],
+    async () => {
+      if (!shareId || !file_id) {
+        return;
+      }
+      const response = await dataService.getSharedFileDownload(shareId, file_id);
+      return window.URL.createObjectURL(response.data);
+    },
+    {
+      enabled: false,
+      retry: false,
+    },
+  );
+};
+
 export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => {
   return useQuery(
     [QueryKeys.fileDownload, url],
@@ -149,6 +174,21 @@ const consecutivePreviewErrors = new Map<string, number>();
 export const fetchFilePreview = async (fileId: string): Promise<t.TFilePreview> => {
   try {
     const data = await dataService.getFilePreview(fileId);
+    consecutivePreviewErrors.delete(fileId);
+    return data;
+  } catch (err) {
+    consecutivePreviewErrors.set(fileId, (consecutivePreviewErrors.get(fileId) ?? 0) + 1);
+    throw err;
+  }
+};
+
+/** Preview fetch for a snapshotted file served through a shared link. */
+export const fetchSharedFilePreview = async (
+  shareId: string,
+  fileId: string,
+): Promise<t.TFilePreview> => {
+  try {
+    const data = await dataService.getSharedFilePreview(shareId, fileId);
     consecutivePreviewErrors.delete(fileId);
     return data;
   } catch (err) {
@@ -194,10 +234,12 @@ export const _resetPreviewErrorCounter = (fileId?: string): void => {
 export const useFilePreview = (
   file_id: string | undefined,
   config?: UseQueryOptions<t.TFilePreview, unknown, t.TFilePreview>,
+  shareId?: string,
 ): QueryObserverResult<t.TFilePreview, unknown> => {
   return useQuery<t.TFilePreview, unknown, t.TFilePreview>(
-    [QueryKeys.filePreview, file_id],
-    () => fetchFilePreview(file_id ?? ''),
+    shareId ? [QueryKeys.filePreview, file_id, shareId] : [QueryKeys.filePreview, file_id],
+    () =>
+      shareId ? fetchSharedFilePreview(shareId, file_id ?? '') : fetchFilePreview(file_id ?? ''),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

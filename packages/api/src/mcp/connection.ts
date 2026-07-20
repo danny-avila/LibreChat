@@ -30,12 +30,36 @@ import { mcpConfig } from './mcpConfig';
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 type ManagedDispatcher = Agent | ProxyAgent;
 type ParsedIP = { version: 4 | 6; bits: 32 | 128; value: bigint };
+type MCPTool = MCPListToolsResult['tools'][number];
 
 const BIGINT_ZERO = BigInt(0);
 const BIGINT_ONE = BigInt(1);
 const BIGINT_EIGHT = BigInt(8);
 const BIGINT_SIXTEEN = BigInt(16);
 const UINT16_MASK = BigInt(0xffff);
+
+function getApproximateToolBytes(tool: MCPTool): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(tool), 'utf8');
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function getToolsListBudgetExceededReason(
+  toolCount: number,
+  totalBytes: number,
+  maxTools: number,
+  maxBytes: number,
+): string | null {
+  if (toolCount >= maxTools) {
+    return 'tool count';
+  }
+  if (totalBytes >= maxBytes) {
+    return 'size';
+  }
+  return null;
+}
 
 type MCPProxyConfig =
   | {
@@ -95,6 +119,8 @@ const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
 const DEFAULT_INIT_TIMEOUT = 30000;
+/** Upper bound on the spec-mandated Streamable HTTP session DELETE so teardown never blocks on a hung server */
+const SESSION_TERMINATION_TIMEOUT = 5000;
 /** Max 307/308 redirects to follow per request (prevents redirect loops) */
 const MAX_REDIRECTS = 5;
 const DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -1092,7 +1118,11 @@ interface MCPConnectionParams {
   oauthTokens?: MCPOAuthTokens | null;
   useSSRFProtection?: boolean;
   allowedAddresses?: string[] | null;
+  ephemeralConnection?: boolean;
 }
+
+/** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
+type MCPListToolsResult = Awaited<ReturnType<Client['listTools']>>;
 
 export class MCPConnection extends EventEmitter {
   public client: Client;
@@ -1116,6 +1146,7 @@ export class MCPConnection extends EventEmitter {
   private oauthRecovery = false;
   private readonly useSSRFProtection: boolean;
   private readonly allowedAddresses?: string[] | null;
+  private readonly ephemeralConnection: boolean;
   private readonly proxyConfig?: MCPProxyConfig;
   iconPath?: string;
   timeout?: number;
@@ -1232,6 +1263,7 @@ export class MCPConnection extends EventEmitter {
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
+    this.ephemeralConnection = params.ephemeralConnection === true;
     this.proxyConfig = getMCPProxyConfig(params.serverConfig);
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
@@ -1627,8 +1659,11 @@ export class MCPConnection extends EventEmitter {
                   this.allowedAddresses,
                 );
                 /** Merge headers: SSE defaults < init headers < user headers (user wins) */
-                const fetchHeaders = new Headers(
-                  Object.assign({}, SSE_REQUEST_HEADERS, resolvedInit?.headers, headers),
+                const fetchHeaders = Object.assign(
+                  {},
+                  SSE_REQUEST_HEADERS,
+                  resolvedInit?.headers,
+                  headers,
                 );
                 return undiciFetch(urlString, {
                   ...resolvedInit,
@@ -1844,6 +1879,7 @@ export class MCPConnection extends EventEmitter {
       try {
         if (this.transport) {
           try {
+            await this.terminateStreamableSession();
             await this.client.close();
           } catch (error) {
             logger.warn(`${this.getLogPrefix()} Error closing connection:`, error);
@@ -1905,7 +1941,7 @@ export class MCPConnection extends EventEmitter {
             `${this.getLogPrefix()} Server URL for OAuth: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
           );
 
-          const oauthTimeout = this.options.initTimeout ?? 60000 * 2;
+          const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
           /** Promise that will resolve when OAuth is handled */
           const oauthHandledPromise = new Promise<void>((resolve, reject) => {
             let timeoutId: NodeJS.Timeout | null = null;
@@ -2026,8 +2062,13 @@ export class MCPConnection extends EventEmitter {
 
   async connect(): Promise<void> {
     try {
-      // preserve cycle tracking across reconnects so the circuit breaker can detect rapid cycling
-      await this.disconnect(false);
+      /**
+       * Persistent connections preserve cycle tracking across reconnects so the
+       * circuit breaker can detect storms. Request-scoped connections are
+       * intentionally short-lived per tool call, so their clean lifecycle should
+       * not consume the reconnect-storm cycle budget.
+       */
+      await this.disconnect(this.ephemeralConnection);
       await this.connectClient();
       if (!(await this.isConnected())) {
         throw new Error('Connection not established');
@@ -2153,9 +2194,46 @@ export class MCPConnection extends EventEmitter {
     await Promise.all(closing);
   }
 
+  /**
+   * Ends a Streamable HTTP session with the spec-mandated `HTTP DELETE` before
+   * the transport is discarded. Stateful MCP servers (the SDK default) keep each
+   * session's transport, tasks, and buffers in memory with no TTL, so without an
+   * explicit DELETE every idle eviction, reconnect, or restart leaks one
+   * server-side session. Must run before `client.close()`, which aborts the
+   * transport's controller and would cancel the in-flight DELETE.
+   *
+   * `terminateSession()` no-ops when there is no session id and already tolerates
+   * a 405 (server opts out of termination). Any other failure is non-fatal to
+   * teardown, so it is bounded by a timeout and swallowed.
+   *
+   * The transport's `onerror` is detached first: on any non-405 failure (the
+   * session already expired, a network error, or `client.close()` aborting the
+   * request after the timeout) `terminateSession()` invokes `onerror` before
+   * rejecting. Left attached, our handler would emit `connectionChange('error')`
+   * and trigger `handleReconnection()`, reopening the connection we are tearing
+   * down and re-leaking the session. The transport is discarded right after, so
+   * clearing the handler is safe.
+   */
+  private async terminateStreamableSession(): Promise<void> {
+    if (!(this.transport instanceof StreamableHTTPClientTransport)) {
+      return;
+    }
+    this.transport.onerror = undefined;
+    try {
+      await withTimeout(
+        this.transport.terminateSession(),
+        SESSION_TERMINATION_TIMEOUT,
+        `Streamable HTTP session termination timed out after ${SESSION_TERMINATION_TIMEOUT}ms`,
+      );
+    } catch (error) {
+      logger.debug(`${this.getLogPrefix()} Error terminating streamable HTTP session:`, error);
+    }
+  }
+
   public async disconnect(resetCycleTracking = true): Promise<void> {
     try {
       if (this.transport) {
+        await this.terminateStreamableSession();
         await this.client.close();
         this.transport = null;
       }
@@ -2183,56 +2261,118 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchTools(): Promise<
-    {
-      inputSchema: {
-        [x: string]: unknown;
-        type: 'object';
-        properties?: Record<string, object> | undefined;
-        required?: string[] | undefined;
-      };
-      name: string;
-      description?: string | undefined;
-      outputSchema?:
-        | {
-            [x: string]: unknown;
-            type: 'object';
-            properties?: Record<string, object> | undefined;
-            required?: string[] | undefined;
-          }
-        | undefined;
-      annotations?:
-        | {
-            title?: string | undefined;
-            readOnlyHint?: boolean | undefined;
-            destructiveHint?: boolean | undefined;
-            idempotentHint?: boolean | undefined;
-            openWorldHint?: boolean | undefined;
-          }
-        | undefined;
-      execution?:
-        | {
-            taskSupport?: 'optional' | 'required' | 'forbidden' | undefined;
-          }
-        | undefined;
-      _meta?: Record<string, unknown> | undefined;
-      icons?:
-        | {
-            src: string;
-            mimeType?: string | undefined;
-            sizes?: string[] | undefined;
-            theme?: 'light' | 'dark' | undefined;
-          }[]
-        | undefined;
-      title?: string | undefined;
-    }[]
-  > {
+  /**
+   * Fetches the server's tools, following MCP `tools/list` cursor pagination so a
+   * server that spans multiple pages (e.g. an aggregating gateway exposing many
+   * tools) is loaded in full instead of being truncated to the first page.
+   *
+   * Pagination is bounded by {@link mcpConfig.TOOLS_LIST_MAX_PAGES}, aggregate
+   * tool count, approximate serialized size, elapsed time, and a repeated-cursor
+   * guard. On error, the tools already fetched are returned rather than discarded,
+   * and the method never throws.
+   */
+  async fetchTools(): Promise<MCPListToolsResult['tools']> {
+    const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
+    const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
+    const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
+    const deadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+    const allTools: MCPListToolsResult['tools'] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    let totalBytes = 0;
+
+    for (let page = 1; page <= maxPages; page++) {
+      const exhaustedBudget = getToolsListBudgetExceededReason(
+        allTools.length,
+        totalBytes,
+        maxTools,
+        maxBytes,
+      );
+      if (exhaustedBudget != null) {
+        this.warnToolsListBudgetExceeded(exhaustedBudget, allTools.length);
+        return allTools;
+      }
+
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        this.warnToolsListBudgetExceeded('time', allTools.length);
+        return allTools;
+      }
+
+      const result = await this.listToolsPage(cursor, remainingMs);
+      if (result == null) {
+        /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
+        return allTools;
+      }
+
+      for (const tool of result.tools) {
+        if (allTools.length >= maxTools) {
+          this.warnToolsListBudgetExceeded('tool count', allTools.length);
+          return allTools;
+        }
+
+        const toolBytes = getApproximateToolBytes(tool);
+        if (totalBytes + toolBytes > maxBytes) {
+          this.warnToolsListBudgetExceeded('size', allTools.length);
+          return allTools;
+        }
+
+        allTools.push(tool);
+        totalBytes += toolBytes;
+      }
+
+      const { nextCursor } = result;
+      if (nextCursor == null) {
+        return allTools;
+      }
+
+      const nextPageBudget = getToolsListBudgetExceededReason(
+        allTools.length,
+        totalBytes,
+        maxTools,
+        maxBytes,
+      );
+      if (nextPageBudget != null) {
+        this.warnToolsListBudgetExceeded(nextPageBudget, allTools.length);
+        return allTools;
+      }
+
+      if (seenCursors.has(nextCursor)) {
+        logger.warn(
+          `${this.getLogPrefix()} MCP server returned a repeated tools/list cursor; stopping pagination after ${page} page(s).`,
+        );
+        return allTools;
+      }
+
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+
+    logger.warn(
+      `${this.getLogPrefix()} Reached the tools/list pagination limit of ${maxPages} page(s); some tools may be omitted. Set MCP_TOOLS_LIST_MAX_PAGES higher if this server legitimately exposes more.`,
+    );
+    return allTools;
+  }
+
+  private warnToolsListBudgetExceeded(reason: string, toolCount: number): void {
+    logger.warn(
+      `${this.getLogPrefix()} Stopping tools/list pagination because the ${reason} budget was reached after ${toolCount} tool(s).`,
+    );
+  }
+
+  /** Fetches a single `tools/list` page, returning null (and logging) on failure so pagination can stop gracefully. */
+  private async listToolsPage(
+    cursor: string | undefined,
+    timeoutMs: number,
+  ): Promise<MCPListToolsResult | null> {
     try {
-      const { tools } = await this.client.listTools();
-      return tools;
+      return await this.client.listTools(cursor != null ? { cursor } : undefined, {
+        timeout: timeoutMs,
+        maxTotalTimeout: timeoutMs,
+      });
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
-      return [];
+      return null;
     }
   }
 

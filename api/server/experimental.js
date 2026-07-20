@@ -10,21 +10,28 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   apiNotFound,
   ErrorController,
+  GenerationJobManager,
+  QUERY_DEVTOOLS_HEADER,
   performStartupChecks,
   handleJsonParseError,
+  deleteAgentCheckpoint,
   initializeFileStorage,
+  loadToolApprovalHooks,
+  maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
+const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -36,6 +43,7 @@ const {
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
+const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
@@ -294,6 +302,33 @@ if (cluster.isMaster) {
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
+    initializeGitHubSkillSync(appConfig);
+    // Register configured tool-approval policy hooks (mirrors the standard startup path).
+    // Honors the `enabled` kill switch; hooks are base-config-only, registered process-wide.
+    // Read from the BASE config specifically — `appConfig` above (getAppConfig() with no
+    // principal) still merges DB `__base__` overrides, which must not drive which hook
+    // modules load in every worker (matches api/server/index.js's baseOnly usage).
+    const baseAppConfig = await getAppConfig({ baseOnly: true });
+    const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
+    await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
+      basePath: path.resolve(__dirname, '../..'),
+    });
+    // Prune the paused run's durable checkpoint when its approval EXPIRES (a stale submit —
+    // this startup never runs the periodic sweeper) instead of leaving it until the Mongo
+    // TTL. Mirrors api/server/index.js's configureGenerationStreams wiring; safe here even
+    // though this startup runs the manager on constructor defaults (the setter never resets
+    // services). streamId === conversationId === the LangGraph thread_id.
+    GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
+      // Resolve config in the PAUSED JOB's tenant/user scope (mirrors index.js): enter the
+      // tenant ALS context — getAppConfig args alone only key the cache.
+      await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
+        const currentConfig = await getAppConfig({
+          userId: job?.userId,
+          tenantId: job?.tenantId,
+        });
+        await deleteAgentCheckpoint(conversationId, currentConfig?.endpoints?.agents?.checkpointer);
+      });
+    });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
@@ -314,6 +349,23 @@ if (cluster.isMaster) {
         indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
       }
     }
+
+    const sendIndexHtml = (req, res) => {
+      res.set({
+        'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+        Pragma: process.env.INDEX_PRAGMA || 'no-cache',
+        Expires: process.env.INDEX_EXPIRES || '0',
+      });
+      res.vary(QUERY_DEVTOOLS_HEADER);
+
+      const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+      const saneLang = lang.replace(/"/g, '&quot;');
+      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+      updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
+
+      res.type('html');
+      res.send(updatedIndexHtml);
+    };
 
     /** Health check endpoint */
     app.get('/health', (_req, res) => res.status(200).send('OK'));
@@ -348,6 +400,7 @@ if (cluster.isMaster) {
       logger.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
     }
 
+    app.get('/index.html', sendIndexHtml);
     app.use(staticCache(appConfig.paths.dist));
     app.use(staticCache(appConfig.paths.fonts));
     app.use(staticCache(appConfig.paths.assets));
@@ -370,10 +423,13 @@ if (cluster.isMaster) {
       await configureSocialLogins(app);
     }
 
+    app.use(capabilityContextMiddleware);
+
     /** Routes */
     app.use('/oauth', routes.oauth);
     app.use('/api/auth', routes.auth);
     app.use('/api/admin', routes.adminAuth);
+    app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);
@@ -406,20 +462,7 @@ if (cluster.isMaster) {
     app.use('/api', apiNotFound);
 
     /** SPA fallback - serve index.html for all unmatched routes */
-    app.use((req, res) => {
-      res.set({
-        'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-        Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-        Expires: process.env.INDEX_EXPIRES || '0',
-      });
-
-      const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-      const saneLang = lang.replace(/"/g, '&quot;');
-      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-
-      res.type('html');
-      res.send(updatedIndexHtml);
-    });
+    app.use(createSpaFallback(sendIndexHtml));
 
     /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
     app.use(ErrorController);

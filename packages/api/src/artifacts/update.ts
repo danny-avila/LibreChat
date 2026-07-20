@@ -213,6 +213,9 @@ const replaceRange = (
   return originalText.substring(0, start) + updated + separator + endText;
 };
 
+const normalizeBeforeClosingArtifactFence = (text: string): string =>
+  text.replace(/\n+(?=(?:`{3,}|~{3,})\s*\n\s*:::)/g, '\n');
+
 export const findAllArtifacts = (message: ArtifactMessage): ArtifactBoundary[] => {
   const artifacts: ArtifactBoundary[] = [];
 
@@ -287,10 +290,7 @@ export const replaceArtifactContent = (
   }
 
   const absoluteIndex = artifact.start + searchStart + relativeIndex;
-  return replaceRange(
-    originalText,
-    absoluteIndex,
-    absoluteIndex + originalTrimmed.length,
-    updated,
-  ).replace(/\n+(?=```\n:::)/g, '\n');
+  return normalizeBeforeClosingArtifactFence(
+    replaceRange(originalText, absoluteIndex, absoluteIndex + originalTrimmed.length, updated),
+  );
 };
