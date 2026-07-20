@@ -34,25 +34,39 @@ function isMarkdownFile(file: Express.Multer.File): boolean {
 }
 
 /**
- * Attempts to parse text using RAG API, falls back to native text parsing
+ * Attempts to parse text using RAG API, falls back to native text parsing.
  * @param params - The parameters object
  * @param params.req - The Express request object
  * @param params.file - The uploaded file
  * @param params.file_id - The file ID
+ * @param params.allowNativeFallback - When false, throw instead of falling back to native parsing
+ *   if the RAG API is unavailable. Callers handling document types (docx/pdf/etc.) set this so a
+ *   RAG outage can be routed to the built-in document parser rather than degraded to raw bytes.
  * @returns
  */
 export async function parseText({
   req,
   file,
   file_id,
+  allowNativeFallback = true,
 }: {
   req: ServerRequest;
   file: Express.Multer.File;
   file_id: string;
+  allowNativeFallback?: boolean;
 }): Promise<{ text: string; bytes: number; source: string }> {
-  if (!process.env.RAG_API_URL) {
-    logger.debug('[parseText] RAG_API_URL not defined, falling back to native text parsing');
+  const nativeFallback = (): Promise<{ text: string; bytes: number; source: string }> => {
+    if (!allowNativeFallback) {
+      throw new Error(
+        `[parseText] RAG text extraction unavailable for "${file.originalname}" and native fallback is disabled`,
+      );
+    }
     return parseTextNative(file);
+  };
+
+  if (!process.env.RAG_API_URL) {
+    logger.debug('[parseText] RAG_API_URL not defined');
+    return nativeFallback();
   }
 
   if (isMarkdownFile(file)) {
@@ -64,8 +78,8 @@ export async function parseText({
 
   const userId = req.user?.id;
   if (!userId) {
-    logger.debug('[parseText] No user ID provided, falling back to native text parsing');
-    return parseTextNative(file);
+    logger.debug('[parseText] No user ID provided');
+    return nativeFallback();
   }
 
   try {
@@ -73,15 +87,15 @@ export async function parseText({
       timeout: 10000,
     });
     if (healthResponse?.statusText !== 'OK' && healthResponse?.status !== 200) {
-      logger.debug('[parseText] RAG API health check failed, falling back to native parsing');
-      return parseTextNative(file);
+      logger.debug('[parseText] RAG API health check failed');
+      return nativeFallback();
     }
   } catch (healthError) {
     logAxiosError({
-      message: '[parseText] RAG API health check failed, falling back to native parsing:',
+      message: '[parseText] RAG API health check failed:',
       error: healthError,
     });
-    return parseTextNative(file);
+    return nativeFallback();
   }
 
   try {
@@ -115,10 +129,10 @@ export async function parseText({
     };
   } catch (error) {
     logAxiosError({
-      message: '[parseText] RAG API text parsing failed, falling back to native parsing',
+      message: '[parseText] RAG API text parsing failed',
       error,
     });
-    return parseTextNative(file);
+    return nativeFallback();
   }
 }
 
