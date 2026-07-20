@@ -757,6 +757,36 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 
+  it('finalizes the failed job before releasing the idempotency claim', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
+    const initializeClient = jest.fn().mockRejectedValue(new Error('init boom after res.json'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Start fails after the initial JSON.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      expect.any(String),
+    );
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
+    // completeJob must finalize the failed job BEFORE the claim is released, or a racing
+    // retry could win the key, createJob the same streamId, and be aborted by this completeJob.
+    expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGenerationJobManager.releaseGeneration.mock.invocationCallOrder[0],
+    );
+  });
+
   it('proceeds to create the job when it wins the idempotency claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));

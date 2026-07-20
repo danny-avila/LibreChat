@@ -1042,20 +1042,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
-    // Start failed before generation began (no tokens spent yet): release the
-    // idempotency claim so the client's retry can start a fresh generation
-    // instead of deduping to a stream that never produced a response. Only release
-    // a claim this request actually won.
-    if (ownsIdempotencyClaim) {
-      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
-    }
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to start generation' });
     } else {
       // JSON already sent, emit error to stream so client can receive it
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
-    GenerationJobManager.completeJob(streamId, error.message);
+    // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
+    // let the client's retry win the same key and createJob() the same streamId while we are
+    // still here — and completeJob() below is not guarded by the original createdAt, so it
+    // would abort/error that replacement. Once the job is finalized, release the claim so the
+    // retry can start a fresh generation (no tokens were spent on this failed start).
+    await GenerationJobManager.completeJob(streamId, error.message);
+    if (ownsIdempotencyClaim) {
+      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+    }
     await finishResumableRequest(req, userId);
     if (client) {
       disposeClient(client);
