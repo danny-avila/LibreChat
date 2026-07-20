@@ -7,11 +7,11 @@ import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSte
 import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
-import { RowMenu, useDefaultToggleEntry, ICON_BTN_CLASS } from './SteerMenu';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
+import { RowMenu, useDefaultToggleEntry } from './SteerMenu';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
@@ -157,6 +157,15 @@ const InFlightSteer = memo(function InFlightSteer({
         });
       },
     },
+    {
+      /* Cancel needs no reclaim gate — it drops the words, so there is nothing
+       * to re-home; the optimistic hook removes the chip and restores it only
+       * if the server would still inject it. */
+      key: 'cancel',
+      label: localize('com_ui_steer_cancel'),
+      icon: <X className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => void cancelSteer(steer),
+    },
     toggleEntry,
   ];
 
@@ -218,24 +227,11 @@ const InFlightSteer = memo(function InFlightSteer({
           </div>
         </div>
         {!sending && (
-          /* Hidden-at-rest only on hover-capable pointers: a hover-revealed
-           * control is unreachable on touch until a first tap. The open menu
-           * pins the cluster visible — its portaled items hold focus outside
-           * this subtree, so `focus-within` alone would let it vanish
-           * mid-interaction. */
-          <div
-            data-testid="steer-controls"
-            className="flex shrink-0 items-center gap-0.5 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 [&:has([aria-expanded='true'])]:opacity-100 [@media(hover:hover)]:opacity-0"
-          >
-            <button
-              type="button"
-              aria-label={localize('com_ui_steer_cancel')}
-              onClick={() => void cancelSteer(steer)}
-              data-testid="steer-cancel"
-              className={ICON_BTN_CLASS}
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
+          /* One always-visible affordance: a label-less menu hidden until hover
+           * is undiscoverable, and edit/queue/cancel all live inside it now, so
+           * the menu shows at rest on every pointer (matching the always-on
+           * controls on the queued rows). */
+          <div data-testid="steer-controls" className="flex shrink-0 items-center">
             <RowMenu label={localize('com_ui_more_options')} entries={entries} />
           </div>
         )}

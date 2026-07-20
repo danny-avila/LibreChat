@@ -138,45 +138,33 @@ describe('InFlightSteers', () => {
     expect(screen.queryByTestId('in-flight-steers')).toBeNull();
   });
 
-  it('keeps the controls reachable on touch, hover-revealed on hover-capable pointers', () => {
+  it('shows the menu at rest on every pointer, without hover-gating', () => {
     renderSteers([
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
     ]);
-    // A plain `opacity-0` reveal would make the bubble hover-dependent, so on
-    // touch the controls would need a first tap to appear (the #14272 pattern).
+    // The menu is the single control now (Cancel folded in), so a label-less ⋯
+    // hidden until hover would be undiscoverable — and unreachable on touch,
+    // where there is no hover. It must be visible at rest.
     const controls = screen.getByTestId('steer-controls');
-    expect(controls.className).toContain('[@media(hover:hover)]:opacity-0');
-    expect(controls.className).toContain('group-hover:opacity-100');
-    expect(controls.className).toContain('focus-within:opacity-100');
+    expect(controls.className).not.toContain('opacity-0');
+    expect(screen.getByLabelText('com_ui_more_options')).toBeInTheDocument();
   });
 
-  it('pins the controls visible while the menu is open', () => {
-    renderSteers([
-      { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
-    ]);
-    // The menu portals its items out of this subtree and takes focus with them,
-    // so `focus-within` alone would drop the cluster mid-interaction.
-    expect(screen.getByTestId('steer-controls').className).toContain(
-      "[&:has([aria-expanded='true'])]:opacity-100",
-    );
-  });
-
-  it('only offers controls once the steer is acknowledged', () => {
+  it('only offers the menu once the steer is acknowledged', () => {
     renderSteers([
       { steerId: 'local-1', text: 'still posting', status: 'sending', createdAt: 1 },
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 2 },
     ]);
-    // A 'sending' entry has no server id yet, so there is nothing to reclaim
-    // with — neither cancel nor the re-homing actions can hold the words back.
-    expect(screen.getAllByTestId('steer-cancel')).toHaveLength(1);
+    // A 'sending' entry has no server id yet, so there is nothing to act on —
+    // cancel and the re-homing actions all need to reclaim it first.
     expect(screen.getAllByLabelText('com_ui_more_options')).toHaveLength(1);
   });
 
-  it('cancels a pending steer server-side and drops the bubble', async () => {
+  it('cancels a pending steer from the menu and drops the bubble', async () => {
     renderSteers([
       { steerId: 's-ack', text: 'waiting on boundary', status: 'pending', createdAt: 1 },
     ]);
-    fireEvent.click(screen.getByTestId('steer-cancel'));
+    await clickMenuItem('com_ui_steer_cancel');
 
     expect(mockCancelMutateAsync).toHaveBeenCalledWith({
       conversationId: CONVO_ID,
@@ -189,10 +177,8 @@ describe('InFlightSteers', () => {
   it('restores the bubble when the cancel POST fails', async () => {
     mockCancelMutateAsync.mockRejectedValue(new Error('network'));
     renderSteers([{ steerId: 's-err', text: 'network flake', status: 'pending', createdAt: 1 }]);
-    fireEvent.click(screen.getByTestId('steer-cancel'));
-    // Optimistic: the bubble leaves before the POST resolves.
-    expect(screen.queryByText('network flake')).toBeNull();
-
+    await clickMenuItem('com_ui_steer_cancel');
+    // Optimistic remove, then the reject restores it.
     await act(async () => {});
     expect(screen.getByText('network flake')).toBeInTheDocument();
   });
@@ -207,7 +193,7 @@ describe('InFlightSteers', () => {
       [{ steerId: 's-settled', text: 'already queued', status: 'pending', createdAt: 1 }],
       { appliedSteerIds: ['s-settled'] },
     );
-    fireEvent.click(screen.getByTestId('steer-cancel'));
+    await clickMenuItem('com_ui_steer_cancel');
     await act(async () => {});
     expect(screen.queryByText('already queued')).toBeNull();
   });
