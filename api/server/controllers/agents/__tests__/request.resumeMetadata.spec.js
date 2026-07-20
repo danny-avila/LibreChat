@@ -730,6 +730,33 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 
+  it('never starts a second generation when the job lookup fails for a confirmed duplicate', async () => {
+    // A store hiccup while checking an existing claim must not fail open into createJob.
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({
+      claimed: false,
+      existing: { streamId: 'orig-stream', conversationId: 'orig-convo', claimedAt: Date.now() },
+    });
+    mockGenerationJobManager.hasJob.mockRejectedValue(new Error('redis down'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Duplicate during a Redis hiccup.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVER_NOT_READY' }));
+    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+  });
+
   it('proceeds to create the job when it wins the idempotency claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
