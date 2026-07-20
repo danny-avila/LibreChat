@@ -278,6 +278,18 @@ const ChatForm = memo(function ChatForm({
   /** Same reason: the run can pause on `ask_user_question` mid-reclaim. */
   const liveAnswerModeRef = useRef(answerMode.active);
   liveAnswerModeRef.current = answerMode.active;
+  /** A reclaim can resolve after this form unmounts (left the route, closed the
+   *  pane). Its refs still hold the origin chat, so the restore would pass its
+   *  checks and write into a dead form — reporting success and making the caller
+   *  drop the steer, losing the text. Track mount so the restore refuses and the
+   *  caller queues it instead. */
+  const composerMountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      composerMountedRef.current = false;
+    },
+    [],
+  );
 
   /** A draft is anything the user has staged, not just typed: `editToComposer`
    *  MERGES the steer's attachments into the composer's file map and its quotes
@@ -305,6 +317,9 @@ const ChatForm = memo(function ChatForm({
       context: QueuedMessageContext,
       originConversationId: string,
     ): boolean => {
+      if (!composerMountedRef.current) {
+        return false;
+      }
       const liveConversationId = liveConversationIdRef.current;
       if (originConversationId !== liveConversationId) {
         return false;
