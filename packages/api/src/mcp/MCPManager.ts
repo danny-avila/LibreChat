@@ -385,8 +385,6 @@ Please follow these instructions when using tools from the respective MCP server
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
     try {
-      if (userId && user) this.updateUserLastActivity(userId);
-
       connection = await this.getConnection({
         serverName,
         user,
@@ -421,8 +419,8 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
       const isDbSourced = isUserSourced(rawConfig);
-      disconnectAfterCall =
-        !!userId && requiresEphemeralUserConnection(rawConfig) && !requestScopedConnections;
+      const ephemeralConnection = !!userId && requiresEphemeralUserConnection(rawConfig);
+      disconnectAfterCall = ephemeralConnection && !requestScopedConnections;
 
       /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
       const graphProcessedConfig = isDbSourced
@@ -528,7 +526,9 @@ Please follow these instructions when using tools from the respective MCP server
           ...options,
         },
       );
-      if (userId) {
+      const hasPersistentUserConnections =
+        !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
+      if (!ephemeralConnection && hasPersistentUserConnections) {
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
