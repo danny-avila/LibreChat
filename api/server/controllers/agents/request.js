@@ -176,6 +176,24 @@ async function finishResumableRequest(req, userId) {
   }
 }
 
+const JOB_RECORD_WAIT_ATTEMPTS = 5;
+const JOB_RECORD_WAIT_DELAY_MS = 60;
+
+/**
+ * Poll briefly for a job record to appear. A deduped retry that loses the idempotency
+ * claim must not be handed the winner's stream until its job exists, or the client's
+ * subscribe 404s terminally. The winner writes the record a few ms after claiming.
+ */
+async function waitForJobRecord(streamId) {
+  for (let attempt = 0; attempt < JOB_RECORD_WAIT_ATTEMPTS; attempt++) {
+    if (await GenerationJobManager.hasJob(streamId)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, JOB_RECORD_WAIT_DELAY_MS));
+  }
+  return GenerationJobManager.hasJob(streamId);
+}
+
 function rejectPreliminaryParentMessageId(res) {
   return res.status(409).json({
     error:
@@ -232,6 +250,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // to the original stream instead of spawning a duplicate. Runs before the concurrency
   // check so a deduped retry is never counted against the limiter. Fail-open on errors.
   const clientRequestId = req.body?.clientRequestId;
+  let ownsIdempotencyClaim = false;
   if (clientRequestId) {
     try {
       const claim = await GenerationJobManager.claimGeneration(
@@ -240,16 +259,32 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         streamId,
         conversationId,
       );
-      if (!claim.claimed && claim.existing) {
-        logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
-          userId,
-          clientRequestId,
-          streamId: claim.existing.streamId,
-        });
-        return res.json({
-          streamId: claim.existing.streamId,
-          conversationId: claim.existing.conversationId,
-          status: 'resumed',
+      if (claim.claimed) {
+        ownsIdempotencyClaim = true;
+      } else if (claim.existing) {
+        // Duplicate of an in-flight submission: attach to the original stream. Wait briefly
+        // for the winner to write the job record (it does so a few ms after claiming) — the
+        // client subscribes with resume=true and a stream with no job 404s terminally.
+        const existingStreamId = claim.existing.streamId;
+        if (await waitForJobRecord(existingStreamId)) {
+          logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
+            userId,
+            clientRequestId,
+            streamId: existingStreamId,
+          });
+          return res.json({
+            streamId: existingStreamId,
+            conversationId: claim.existing.conversationId,
+            status: 'resumed',
+          });
+        }
+        // The winner claimed but has not created the job yet (racing us, or died in the
+        // claim→createJob gap). Ask the client to retry via the readiness path instead of
+        // handing back a stream that would 404; never release a claim we don't own.
+        res.set('Retry-After', '1');
+        return res.status(503).json({
+          code: 'SERVER_NOT_READY',
+          error: 'Generation is still starting. Please retry shortly.',
         });
       }
     } catch (err) {
@@ -262,7 +297,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
   const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
   if (!allowed) {
-    if (clientRequestId) {
+    if (ownsIdempotencyClaim) {
       await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
     }
     const violationInfo = getViolationInfo(pendingRequests, limit);
@@ -974,8 +1009,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     logger.error('[ResumableAgentController] Initialization error:', error);
     // Start failed before generation began (no tokens spent yet): release the
     // idempotency claim so the client's retry can start a fresh generation
-    // instead of deduping to a stream that never produced a response.
-    if (clientRequestId) {
+    // instead of deduping to a stream that never produced a response. Only release
+    // a claim this request actually won.
+    if (ownsIdempotencyClaim) {
       await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
     }
     if (!res.headersSent) {

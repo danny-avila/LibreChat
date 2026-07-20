@@ -90,6 +90,12 @@ const getStartGenerationStreamId = (data: unknown): string | null => {
   return typeof streamId === 'string' && streamId.length > 0 ? streamId : null;
 };
 
+/** The server returns `status: 'resumed'` when a duplicate start request was deduped to an
+ *  already-running stream — the client must subscribe with resume=true to replay its state
+ *  (prior content and any pending-action) rather than only receiving live events. */
+const isResumedStartResponse = (data: unknown): boolean =>
+  data != null && typeof data === 'object' && (data as { status?: unknown }).status === 'resumed';
+
 const parseSSEErrorData = (body: string): unknown | null => {
   const blocks = body.split(/\r?\n\r?\n/);
   for (const block of blocks) {
@@ -1508,7 +1514,10 @@ export default function useResumableSSE(
    * Readiness retries honor Retry-After until cleanup or the readiness window expires.
    */
   const startGeneration = useCallback(
-    async (currentSubmission: TSubmission, signal?: AbortSignal): Promise<string | null> => {
+    async (
+      currentSubmission: TSubmission,
+      signal?: AbortSignal,
+    ): Promise<{ streamId: string; resumed: boolean } | null> => {
       const payloadData = createPayload(currentSubmission);
       let { payload } = payloadData;
       payload = removeNullishValues(payload) as TPayload;
@@ -1533,8 +1542,9 @@ export default function useResumableSSE(
           }
           const streamId = getStartGenerationStreamId(data);
           if (streamId) {
-            logger.log('ResumableSSE', 'Generation started:', { streamId });
-            return streamId;
+            const resumed = isResumedStartResponse(data);
+            logger.log('ResumableSSE', 'Generation started:', { streamId, resumed });
+            return { streamId, resumed };
           }
 
           lastError = { response: { data } };
@@ -1651,11 +1661,12 @@ export default function useResumableSSE(
       } else {
         // New generation: start and then subscribe
         logger.log('ResumableSSE', 'Starting NEW generation');
-        const newStreamId = await startGeneration(submission, signal);
+        const startResult = await startGeneration(submission, signal);
         if (signal.aborted) {
           return;
         }
-        if (newStreamId) {
+        if (startResult) {
+          const { streamId: newStreamId, resumed } = startResult;
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
@@ -1672,7 +1683,9 @@ export default function useResumableSSE(
           }
           const streamSubmission = addOptimisticConversation(newStreamId, submission);
           submissionRef.current = streamSubmission;
-          subscribeToStream(newStreamId, streamSubmission);
+          // A deduped retry (status: 'resumed') attaches to an already-running stream, so
+          // subscribe with resume=true to replay its state instead of only live events.
+          subscribeToStream(newStreamId, streamSubmission, resumed);
         } else {
           logger.error('ResumableSSE', 'Failed to get streamId from startGeneration');
         }
