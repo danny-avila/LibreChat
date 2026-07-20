@@ -116,8 +116,10 @@ export default function useSteering({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const setFilesToDelete = useSetFilesToDelete();
-  const steerMutation = useSteerMessageMutation();
-  const markFilesUsage = useMarkFilesUsageMutation();
+  /** `mutate` is a stable callback; the mutation result objects are fresh
+   * every render and would defeat the memoized return value below. */
+  const { mutate: steerMessage } = useSteerMessageMutation();
+  const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
 
@@ -238,7 +240,7 @@ export default function useSteering({
         }
       }
       if (file_ids.length > 0) {
-        markFilesUsage.mutate({ file_ids });
+        markFilesUsage({ file_ids });
       }
     },
     [markFilesUsage],
@@ -410,7 +412,7 @@ export default function useSteering({
         ...(files && { files }),
         ...carried,
       });
-      steerMutation.mutate(
+      steerMessage(
         { conversationId, text: trimmed, ...(files && { files }) },
         {
           onSuccess: (response) => {
@@ -479,7 +481,7 @@ export default function useSteering({
       upsertSteerChip,
       replaceSteerChip,
       acknowledgeSteer,
-      steerMutation,
+      steerMessage,
       sendNow,
       enqueue,
       showToast,
@@ -643,27 +645,52 @@ export default function useSteering({
     [duringRunActive, effectiveAction, steerFromComposer, queueFromComposer],
   );
 
-  return {
-    enabled,
-    queueKey,
-    canSteer,
-    duringRunActive,
-    effectiveAction,
-    defaultAction,
-    pausedOnApproval,
-    setDefaultAction,
-    submitDuringRun,
-    steerFromComposer,
-    queueFromComposer,
-    submitSteer,
-    retrySteer,
-    removeSteer,
-    convertSteerToQueue,
-    enqueue,
-    removeQueued,
-    sendQueuedNow,
-    interruptAndSend,
-  };
+  /** Memoized so consumers like `memo(PendingSteerChips)` can bail on the
+   * `steering` prop; a fresh literal here would defeat them every render. */
+  return useMemo(
+    () => ({
+      enabled,
+      queueKey,
+      canSteer,
+      duringRunActive,
+      effectiveAction,
+      defaultAction,
+      pausedOnApproval,
+      setDefaultAction,
+      submitDuringRun,
+      steerFromComposer,
+      queueFromComposer,
+      submitSteer,
+      retrySteer,
+      removeSteer,
+      convertSteerToQueue,
+      enqueue,
+      removeQueued,
+      sendQueuedNow,
+      interruptAndSend,
+    }),
+    [
+      enabled,
+      queueKey,
+      canSteer,
+      duringRunActive,
+      effectiveAction,
+      defaultAction,
+      pausedOnApproval,
+      setDefaultAction,
+      submitDuringRun,
+      steerFromComposer,
+      queueFromComposer,
+      submitSteer,
+      retrySteer,
+      removeSteer,
+      convertSteerToQueue,
+      enqueue,
+      removeQueued,
+      sendQueuedNow,
+      interruptAndSend,
+    ],
+  );
 }
 
 export type SteeringControls = ReturnType<typeof useSteering>;
