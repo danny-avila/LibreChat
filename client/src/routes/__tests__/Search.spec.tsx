@@ -1,6 +1,6 @@
 import React from 'react';
 import { useRecoilValue } from 'recoil';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { useMessagesInfiniteQuery } from '~/data-provider';
 import Search from '../Search';
 
@@ -68,6 +68,26 @@ jest.mock('~/components/Chat/Messages/SearchMessage', () => ({
 }));
 jest.mock('~/utils', () => ({ cn: (...a: unknown[]) => a.filter(Boolean).join(' ') }));
 
+type NavEntry = { id: string; index: number; isUser: boolean; isEnd: boolean; preview: string };
+type NavProps = {
+  entries: NavEntry[];
+  currentIndex: number | null;
+  visibleIndices: Set<number>;
+  onJump: (index: number, smooth: boolean) => void;
+};
+let mockNavProps: NavProps | null = null;
+jest.mock('~/components/Chat/Messages/SearchNav', () => ({
+  __esModule: true,
+  default: (props: NavProps) => {
+    mockNavProps = props;
+    return <div data-testid="search-nav" data-count={props.entries.length} />;
+  },
+}));
+jest.mock('~/components/Chat/Messages/MessageNav', () => ({
+  __esModule: true,
+  extractPreviewFromContent: () => '',
+}));
+
 const mockUseRecoilValue = useRecoilValue as jest.Mock;
 const mockUseQuery = useMessagesInfiniteQuery as jest.Mock;
 
@@ -91,7 +111,10 @@ const queryResult = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('Search route', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockNavProps = null;
+  });
 
   it('renders result rows when data is present', () => {
     mockUseRecoilValue.mockReturnValue(searchState());
@@ -138,7 +161,61 @@ describe('Search route', () => {
     mockUseRecoilValue.mockReturnValue(searchState());
     mockUseQuery.mockReturnValue(queryResult({ hasNextPage: true, fetchNextPage }));
     render(<Search />);
-    (globalThis as Record<string, () => void>).__triggerRowsRendered();
+    act(() => {
+      (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
+    });
     expect(fetchNextPage).toHaveBeenCalled();
+  });
+
+  it('passes an entry per result (plus a trailing end marker) to the nav rail', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({
+        data: {
+          pages: [
+            {
+              messages: [
+                { messageId: 'a', text: 'one', isCreatedByUser: true },
+                { messageId: 'b', text: 'two', isCreatedByUser: false },
+                { messageId: 'c', text: 'three', isCreatedByUser: true },
+              ],
+              nextCursor: null,
+            },
+          ],
+        },
+      }),
+    );
+    render(<Search />);
+    expect(mockNavProps).not.toBeNull();
+    expect(mockNavProps?.entries).toHaveLength(4);
+    expect(mockNavProps?.entries[0]).toMatchObject({ id: 'a', index: 0, isUser: true });
+    expect(mockNavProps?.entries[3]).toMatchObject({ isEnd: true });
+  });
+
+  it('updates the visible range when the list reports rendered rows', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({
+        data: {
+          pages: [
+            {
+              messages: [
+                { messageId: 'a', text: 'one' },
+                { messageId: 'b', text: 'two' },
+                { messageId: 'c', text: 'three' },
+              ],
+              nextCursor: null,
+            },
+          ],
+        },
+      }),
+    );
+    render(<Search />);
+    act(() => {
+      (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
+    });
+    expect(mockNavProps?.currentIndex).toBe(0);
+    expect(mockNavProps?.visibleIndices.has(0)).toBe(true);
+    expect(mockNavProps?.visibleIndices.has(2)).toBe(true);
   });
 });

@@ -1675,6 +1675,7 @@
   "com_ui_search_agent_category": "Search categories...",
   "com_ui_search_default_placeholder": "Search by name or email (min 2 chars)",
   "com_ui_search_language": "Search languages...",
+  "com_ui_search_nav": "Search result navigation",
   "com_ui_search_people_placeholder": "Search for people or groups by name or email",
   "com_ui_search_projects": "Search projects",
   "com_ui_search_result_count": "{{count}} result found",
