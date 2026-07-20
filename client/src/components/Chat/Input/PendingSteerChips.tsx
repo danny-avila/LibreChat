@@ -4,6 +4,7 @@ import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucid
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
+import type { RestoreToComposer } from './InFlightSteers';
 import type { MenuEntry } from './SteerMenu';
 import { RowMenu, useDefaultToggleEntry, ICON_BTN_CLASS, PRIMARY_BTN_CLASS } from './SteerMenu';
 import { useLocalize } from '~/hooks';
@@ -29,15 +30,19 @@ function AttachmentCount({ count, label }: { count: number; label: string }) {
 function QueuedRow({
   message,
   steering,
+  conversationId,
   onEditToComposer,
+  onRestoreToComposer,
 }: {
   message: QueuedMessage;
   steering: SteeringControls;
+  conversationId: string;
   onEditToComposer: (
     text: string,
     files?: TMessage['files'],
     context?: QueuedMessageContext,
   ) => void;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
@@ -93,7 +98,18 @@ function QueuedRow({
       <button
         type="button"
         aria-label={localize('com_ui_remove_queued')}
-        onClick={() => steering.removeQueued(message.id)}
+        onClick={() => {
+          /* Same safety net as the in-flight cancel: return the words to the
+           * composer when it is free (the gated restore refuses rather than
+           * clobber a draft), then remove either way. */
+          onRestoreToComposer(
+            message.text,
+            message.files,
+            { quotes: message.quotes, manualSkills: message.manualSkills },
+            conversationId,
+          );
+          steering.removeQueued(message.id);
+        }}
         className={ICON_BTN_CLASS}
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -196,6 +212,7 @@ function PendingSteerChips({
   conversationId,
   steering,
   onEditToComposer,
+  onRestoreToComposer,
 }: {
   conversationId: string;
   steering: SteeringControls;
@@ -204,6 +221,7 @@ function PendingSteerChips({
     files?: TMessage['files'],
     context?: QueuedMessageContext,
   ) => void;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
@@ -234,7 +252,9 @@ function PendingSteerChips({
           key={message.id}
           message={message}
           steering={steering}
+          conversationId={conversationId}
           onEditToComposer={onEditToComposer}
+          onRestoreToComposer={onRestoreToComposer}
         />
       ))}
     </div>

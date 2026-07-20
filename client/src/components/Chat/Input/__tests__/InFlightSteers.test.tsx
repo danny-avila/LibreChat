@@ -174,6 +174,27 @@ describe('InFlightSteers', () => {
     expect(screen.queryByText('waiting on boundary')).toBeNull();
   });
 
+  it('hands the words back to the composer when cancelling (safety net)', async () => {
+    // Cancel is non-destructive: the gated restore returns the text to the
+    // composer (it refuses on its own when the composer is occupied), so the
+    // words are not gone forever.
+    renderSteers([{ steerId: 's-ack', text: 'second thoughts', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_steer_cancel');
+    expect(mockRestoreToComposer).toHaveBeenCalledWith('second thoughts', undefined, {}, CONVO_ID);
+  });
+
+  it('skips the composer safety net once the steer has applied', async () => {
+    // Its words are already in the response; restoring them would drop a
+    // confusing duplicate into the composer.
+    renderSteers([{ steerId: 's-ack', text: 'already in', status: 'pending', createdAt: 1 }], {
+      appliedSteerIds: ['s-ack'],
+    });
+    await clickMenuItem('com_ui_steer_cancel');
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    // Still cancelled server-side.
+    expect(mockCancelMutateAsync).toHaveBeenCalled();
+  });
+
   it('restores the bubble when the cancel POST fails', async () => {
     mockCancelMutateAsync.mockRejectedValue(new Error('network'));
     renderSteers([{ steerId: 's-err', text: 'network flake', status: 'pending', createdAt: 1 }]);

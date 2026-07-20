@@ -528,6 +528,7 @@ const ChatForm = memo(function ChatForm({
                   conversationId={conversationId}
                   steering={steering}
                   onEditToComposer={editToComposer}
+                  onRestoreToComposer={restoreReclaimedSteer}
                 />
               )}
               {/* WIP */}

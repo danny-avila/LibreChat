@@ -15,9 +15,10 @@ import { RowMenu, useDefaultToggleEntry } from './SteerMenu';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
-/** Restores a reclaimed steer into the composer, or refuses (false) when the
- *  composer has moved on — see `restoreReclaimedSteer` in `ChatForm`. */
-type RestoreToComposer = (
+/** Restores a message's text into the composer, or refuses (false) when the
+ *  composer is occupied / on another chat — see `restoreReclaimedSteer` in
+ *  `ChatForm`. Shared by the in-flight cancel and the queued trash safety net. */
+export type RestoreToComposer = (
   text: string,
   files: TMessage['files'],
   context: QueuedMessageContext,
@@ -158,13 +159,19 @@ const InFlightSteer = memo(function InFlightSteer({
       },
     },
     {
-      /* Cancel needs no reclaim gate — it drops the words, so there is nothing
-       * to re-home; the optimistic hook removes the chip and restores it only
-       * if the server would still inject it. */
+      /* Non-destructive: hand the words back to the composer when it is free
+       * (skipped once applied — they are already in the response, and the
+       * gated restore refuses rather than clobber a draft or cross chats), then
+       * cancel reliably either way so an unwanted steer is always killable. */
       key: 'cancel',
       label: localize('com_ui_steer_cancel'),
       icon: <X className="h-4 w-4" aria-hidden="true" />,
-      onClick: () => void cancelSteer(steer),
+      onClick: () => {
+        if (!hasSettled(steer.steerId)) {
+          onRestoreToComposer(steer.text, steer.files, carriedSteerContext(steer), conversationId);
+        }
+        void cancelSteer(steer);
+      },
     },
     toggleEntry,
   ];
