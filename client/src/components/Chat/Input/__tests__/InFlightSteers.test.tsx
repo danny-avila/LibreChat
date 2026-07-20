@@ -185,6 +185,27 @@ describe('InFlightSteers', () => {
     expect(mockRestoreToComposer).toHaveBeenCalledWith('second thoughts', undefined, {}, CONVO_ID);
   });
 
+  it('queues the words when cancel reclaims but the composer refuses the restore', async () => {
+    // Reclaimed (removed:true) yet the composer moved on, so the gated restore
+    // refuses. The chip is already gone — queue the words like Edit rather than
+    // drop them.
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+    mockRestoreToComposer.mockReturnValue(false);
+    const steer: PendingSteer = {
+      steerId: 's-ack',
+      text: 'keep me',
+      status: 'pending',
+      createdAt: 1,
+    };
+    renderSteers([steer]);
+    await clickMenuItem('com_ui_steer_cancel');
+    await act(async () => {});
+    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(steer);
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_edit_queued' }),
+    );
+  });
+
   it('does not restore when the cancel loses its race (steer already reached the run)', async () => {
     // removed:false → the steer will still inject; restoring would put the same
     // words in the composer alongside the copy in the response.

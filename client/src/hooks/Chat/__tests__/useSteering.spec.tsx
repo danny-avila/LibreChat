@@ -564,6 +564,27 @@ describe('useSteering', () => {
       ]);
     });
 
+    it('carries the submit time through the ACK so the pending chip is not re-timestamped', () => {
+      // A draft queued during the 202 round-trip must not drain ahead of a
+      // steer submitted before it — so the ACK'd chip keeps its SUBMIT time,
+      // not the (later) ACK time.
+      const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValue(9_000);
+      try {
+        mockMutate.mockImplementation((_params, { onSuccess }) => {
+          onSuccess({ steerId: 'srv-t', status: 'queued', position: 1, conversationId: CONVO_ID });
+        });
+        const { result } = setupWithState();
+        act(() => {
+          result.current.steering.submitSteer('submitted first');
+        });
+        expect(result.current.chips).toEqual([
+          expect.objectContaining({ steerId: 'srv-t', status: 'pending', createdAt: 1_000 }),
+        ]);
+      } finally {
+        now.mockRestore();
+      }
+    });
+
     it('does not duplicate a chip already reseeded under the server id (SSE reconnect)', () => {
       mockMutate.mockImplementation((_params, { onSuccess }) => {
         onSuccess({ steerId: 'srv-3', status: 'queued', position: 1, conversationId: CONVO_ID });

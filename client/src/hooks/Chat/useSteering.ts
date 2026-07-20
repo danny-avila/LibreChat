@@ -453,11 +453,16 @@ export default function useSteering({
        *  leftover report) can restore the queued item's full context. */
       const carried = carriedSteerContext(context);
       const localId = `local-${v4()}`;
+      /** The true submission time, carried through the ACK and failure chips so
+       *  a later conversion sorts this steer by when it was SENT, not when its
+       *  202 landed — otherwise a draft queued during the round-trip would drain
+       *  ahead of a steer submitted before it. */
+      const createdAt = Date.now();
       upsertSteerChip(conversationId, {
         steerId: localId,
         text: trimmed,
         status: 'sending',
-        createdAt: Date.now(),
+        createdAt,
         ...(files && { files }),
         ...carried,
       });
@@ -469,7 +474,7 @@ export default function useSteering({
               steerId: response.steerId,
               text: trimmed,
               status: 'pending',
-              createdAt: Date.now(),
+              createdAt,
               ...(files && { files }),
               ...carried,
             });
@@ -515,7 +520,7 @@ export default function useSteering({
               steerId: localId,
               text: trimmed,
               status: 'failed',
-              createdAt: Date.now(),
+              createdAt,
               ...(files && { files }),
               ...carried,
             });

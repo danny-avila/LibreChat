@@ -171,13 +171,21 @@ const InFlightSteer = memo(function InFlightSteer({
       icon: <X className="h-4 w-4" aria-hidden="true" />,
       onClick: () => {
         void cancelSteer(steer).then((outcome) => {
-          if (outcome === 'reclaimed') {
-            onRestoreToComposer(
-              steer.text,
-              steer.files,
-              carriedSteerContext(steer),
-              conversationId,
-            );
+          if (outcome !== 'reclaimed') {
+            return;
+          }
+          const restored = onRestoreToComposer(
+            steer.text,
+            steer.files,
+            carriedSteerContext(steer),
+            conversationId,
+          );
+          if (!restored) {
+            /* Reclaimed, but the composer moved on (draft typed, answer mode,
+             * navigated). The chip is already gone, so queue the words as Edit
+             * does rather than drop them — never lost, just re-homed. */
+            steering.queueReclaimedSteer(steer);
+            showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
           }
         });
       },
