@@ -526,7 +526,9 @@ Please follow these instructions when using tools from the respective MCP server
           ...options,
         },
       );
-      if (userId && this.userConnections.get(userId)?.get(serverName) === connection) {
+      const hasPersistentUserConnections =
+        !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
+      if (!ephemeralConnection && hasPersistentUserConnections) {
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
