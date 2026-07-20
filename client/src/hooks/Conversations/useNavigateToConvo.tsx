@@ -71,6 +71,10 @@ const useNavigateToConvo = (index = 0) => {
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);
       if (conversation) {
+        /** The conversation fetch failed (deleted convo, lost access): drop the
+         * warm message cache so stale contents can't render as current when the
+         * background revalidation fails too. */
+        queryClient.removeQueries([QueryKeys.messages, conversationId]);
         setConversation(conversation as TConversation);
         requestChatFocus();
         navigate(`/c/${conversationId}`);
