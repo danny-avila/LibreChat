@@ -59,6 +59,7 @@ export default function useSSE(
     titleHandler,
     attachmentHandler,
     abortConversation,
+    cancelPendingDeltaFlush,
   } = useEventHandlers({
     setMessages,
     getMessages,
@@ -116,6 +117,9 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
+        /** A queued delta flush reading the older streaming copy must never
+         * land on top of the server-final write. */
+        cancelPendingDeltaFlush();
         clearAllDrafts(submission.conversation?.conversationId);
         try {
           finalHandler(data, submission as EventSubmission);
@@ -201,6 +205,7 @@ export default function useSSE(
     });
 
     sse.addEventListener('cancel', async () => {
+      cancelPendingDeltaFlush();
       const streamKey = (submission as TSubmission | null)?.['initialResponse']?.messageId;
       if (completed.has(streamKey)) {
         setIsSubmitting(false);
@@ -274,6 +279,7 @@ export default function useSSE(
         setIsSubmitting(false);
       }
 
+      cancelPendingDeltaFlush();
       errorHandler({ data, submission: { ...submission, userMessage } as EventSubmission });
     });
 

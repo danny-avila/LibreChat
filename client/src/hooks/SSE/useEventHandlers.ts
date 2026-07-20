@@ -310,7 +310,13 @@ export default function useEventHandlers({
       queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
     }
   }, [queryClient]);
-  const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
+  const {
+    stepHandler,
+    clearStepMaps,
+    resetSubagentAtoms,
+    syncStepMessage,
+    cancelPendingDeltaFlush,
+  } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -1119,6 +1125,7 @@ export default function useEventHandlers({
     createdHandler,
     titleHandler,
     syncStepMessage,
+    cancelPendingDeltaFlush,
     attachmentHandler,
     abortConversation,
     resetContentHandler,

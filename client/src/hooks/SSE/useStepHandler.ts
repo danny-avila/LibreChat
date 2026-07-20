@@ -1174,17 +1174,25 @@ export default function useStepHandler({
     ],
   );
 
-  const clearStepMaps = useCallback(() => {
-    if (summarizeDeltaRaf.current != null) {
-      cancelAnimationFrame(summarizeDeltaRaf.current);
-      summarizeDeltaRaf.current = null;
-    }
+  /** Cancels a queued delta flush so it can't overwrite a terminal write:
+   * once a final/error/abort handler has written the server's authoritative
+   * message, a trailing frame reading the older streaming copy from
+   * `messageMap` must never land on top of it. */
+  const cancelPendingDeltaFlush = useCallback(() => {
     if (messageDeltaRaf.current != null) {
       cancelAnimationFrame(messageDeltaRaf.current);
       messageDeltaRaf.current = null;
     }
     deltaFlushScheduled.current = false;
     pendingDeltaFlushIds.current.clear();
+  }, []);
+
+  const clearStepMaps = useCallback(() => {
+    if (summarizeDeltaRaf.current != null) {
+      cancelAnimationFrame(summarizeDeltaRaf.current);
+      summarizeDeltaRaf.current = null;
+    }
+    cancelPendingDeltaFlush();
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
@@ -1205,7 +1213,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, [resetSandboxAtoms]);
+  }, [cancelPendingDeltaFlush, resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.
@@ -1218,5 +1226,11 @@ export default function useStepHandler({
     }
   }, []);
 
-  return { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage };
+  return {
+    stepHandler,
+    clearStepMaps,
+    resetSubagentAtoms,
+    syncStepMessage,
+    cancelPendingDeltaFlush,
+  };
 }
