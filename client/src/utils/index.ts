@@ -20,6 +20,7 @@ export * from './convos';
 export * from './routes';
 export * from './presets';
 export * from './prompts';
+export * from './voices';
 export * from './textarea';
 export * from './messages';
 export * from './tokens';
