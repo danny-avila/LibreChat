@@ -159,18 +159,27 @@ const InFlightSteer = memo(function InFlightSteer({
       },
     },
     {
-      /* Non-destructive: hand the words back to the composer when it is free
-       * (skipped once applied — they are already in the response, and the
-       * gated restore refuses rather than clobber a draft or cross chats), then
-       * cancel reliably either way so an unwanted steer is always killable. */
+      /* Non-destructive, but only when it is safe: cancel reliably first (the
+       * optimistic hook removes the chip and restores it if the server would
+       * still inject), then hand the words back to the composer ONLY on a
+       * `reclaimed` outcome. On `applied` (cancel lost the race) or `failed`
+       * the steer may still reach the run, so restoring would duplicate the
+       * text — in the response, or beside the restored bubble. The gated
+       * restore also refuses rather than clobber a draft typed meanwhile. */
       key: 'cancel',
       label: localize('com_ui_steer_cancel'),
       icon: <X className="h-4 w-4" aria-hidden="true" />,
       onClick: () => {
-        if (!hasSettled(steer.steerId)) {
-          onRestoreToComposer(steer.text, steer.files, carriedSteerContext(steer), conversationId);
-        }
-        void cancelSteer(steer);
+        void cancelSteer(steer).then((outcome) => {
+          if (outcome === 'reclaimed') {
+            onRestoreToComposer(
+              steer.text,
+              steer.files,
+              carriedSteerContext(steer),
+              conversationId,
+            );
+          }
+        });
       },
     },
     toggleEntry,

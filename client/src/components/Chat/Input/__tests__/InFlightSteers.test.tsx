@@ -174,25 +174,37 @@ describe('InFlightSteers', () => {
     expect(screen.queryByText('waiting on boundary')).toBeNull();
   });
 
-  it('hands the words back to the composer when cancelling (safety net)', async () => {
-    // Cancel is non-destructive: the gated restore returns the text to the
-    // composer (it refuses on its own when the composer is occupied), so the
-    // words are not gone forever.
+  it('hands the words back to the composer once the cancel reclaims them', async () => {
+    // Cancel is non-destructive: on a `reclaimed` outcome (removed:true) the
+    // steer never reached the run, so its words return to the composer (the
+    // gated restore refuses on its own when the composer is occupied).
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
     renderSteers([{ steerId: 's-ack', text: 'second thoughts', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_steer_cancel');
+    await act(async () => {});
     expect(mockRestoreToComposer).toHaveBeenCalledWith('second thoughts', undefined, {}, CONVO_ID);
   });
 
-  it('skips the composer safety net once the steer has applied', async () => {
-    // Its words are already in the response; restoring them would drop a
-    // confusing duplicate into the composer.
-    renderSteers([{ steerId: 's-ack', text: 'already in', status: 'pending', createdAt: 1 }], {
-      appliedSteerIds: ['s-ack'],
-    });
+  it('does not restore when the cancel loses its race (steer already reached the run)', async () => {
+    // removed:false → the steer will still inject; restoring would put the same
+    // words in the composer alongside the copy in the response.
+    mockCancelMutateAsync.mockResolvedValue({ removed: false });
+    renderSteers([{ steerId: 's-ack', text: 'too late', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_steer_cancel');
+    await act(async () => {});
     expect(mockRestoreToComposer).not.toHaveBeenCalled();
-    // Still cancelled server-side.
+    // The chip still left optimistically; the events own the outcome.
     expect(mockCancelMutateAsync).toHaveBeenCalled();
+  });
+
+  it('does not restore when the cancel POST fails', async () => {
+    // The POST failed, so the server may still inject it and the bubble is
+    // restored — restoring to the composer too would duplicate the words.
+    mockCancelMutateAsync.mockRejectedValue(new Error('network'));
+    renderSteers([{ steerId: 's-ack', text: 'unknown fate', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_steer_cancel');
+    await act(async () => {});
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
   });
 
   it('restores the bubble when the cancel POST fails', async () => {
