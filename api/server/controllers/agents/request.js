@@ -219,19 +219,56 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
    *  Resolved from the agent's actual endpoint once the client is initialized. */
   let titleTiming = 'immediate';
 
-  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
-  if (!allowed) {
-    const violationInfo = getViolationInfo(pendingRequests, limit);
-    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
-    return res.status(429).json(violationInfo);
-  }
-
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
   const isNewConvo = !reqConversationId || reqConversationId === 'new';
   const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
   req.body.conversationId = conversationId;
+
+  // Idempotency: a lost/reset start-generation response makes the client re-POST the
+  // identical payload, which would otherwise start a second fully-billed generation.
+  // Claim the submission's clientRequestId before creating the job so a retry attaches
+  // to the original stream instead of spawning a duplicate. Runs before the concurrency
+  // check so a deduped retry is never counted against the limiter. Fail-open on errors.
+  const clientRequestId = req.body?.clientRequestId;
+  if (clientRequestId) {
+    try {
+      const claim = await GenerationJobManager.claimGeneration(
+        userId,
+        clientRequestId,
+        streamId,
+        conversationId,
+      );
+      if (!claim.claimed && claim.existing) {
+        logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
+          userId,
+          clientRequestId,
+          streamId: claim.existing.streamId,
+        });
+        return res.json({
+          streamId: claim.existing.streamId,
+          conversationId: claim.existing.conversationId,
+          status: 'resumed',
+        });
+      }
+    } catch (err) {
+      logger.error(
+        '[ResumableAgentController] Idempotency claim failed; proceeding without dedup',
+        err,
+      );
+    }
+  }
+
+  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
+  if (!allowed) {
+    if (clientRequestId) {
+      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+    }
+    const violationInfo = getViolationInfo(pendingRequests, limit);
+    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
+    return res.status(429).json(violationInfo);
+  }
 
   let client = null;
 
@@ -935,6 +972,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
+    // Start failed before generation began (no tokens spent yet): release the
+    // idempotency claim so the client's retry can start a fresh generation
+    // instead of deduping to a stream that never produced a response.
+    if (clientRequestId) {
+      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+    }
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to start generation' });
     } else {

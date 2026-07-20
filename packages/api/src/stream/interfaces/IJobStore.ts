@@ -191,6 +191,20 @@ export interface JobStatusTransition {
   expectActionId?: string;
 }
 
+/** Value stored under an idempotency claim: the stream a retried request should attach to. */
+export interface IdempotencyClaimValue {
+  streamId: string;
+  conversationId: string;
+}
+
+/** Result of an atomic {@link IJobStore.claimIdempotencyKey} attempt. */
+export interface IdempotencyClaimResult {
+  /** True when this caller won the claim and should create the job. */
+  claimed: boolean;
+  /** When `claimed` is false, the stream the original request is already driving. */
+  existing?: IdempotencyClaimValue;
+}
+
 /**
  * Usage metadata for token spending across different LLM providers.
  *
@@ -362,6 +376,32 @@ export interface IJobStore {
    * existing cluster posture for status writes.
    */
   transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean>;
+
+  /**
+   * Atomically claim an idempotency key so a retried start-generation request
+   * attaches to the original stream instead of starting a second billed
+   * generation. The first caller gets `{ claimed: true }` and should create the
+   * job; a later caller for the same key gets `{ claimed: false, existing }`
+   * carrying the stream the original request is already driving.
+   *
+   * Atomicity: single-key `SET NX` on Redis (one hash slot, cluster-safe) /
+   * check-and-set on the single-threaded in-memory store.
+   *
+   * @param key - Caller-scoped key, e.g. `${userId}:${clientRequestId}`.
+   * @param value - The stream a duplicate request should attach to.
+   * @param ttlSeconds - Claim lifetime; outlive the generation so a late retry still dedups.
+   */
+  claimIdempotencyKey(
+    key: string,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<IdempotencyClaimResult>;
+
+  /**
+   * Release a previously-claimed idempotency key so the submission can be retried
+   * (e.g. the start failed before generation began). No-op if the key is absent.
+   */
+  releaseIdempotencyKey(key: string): Promise<void>;
 
   /** Delete a job */
   deleteJob(streamId: string): Promise<void>;

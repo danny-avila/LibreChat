@@ -139,6 +139,13 @@ export type TPayload = Partial<TMessage> &
     manualSkills?: string[];
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
     timezone?: string;
+    /**
+     * Stable per-submission idempotency key (uuid) generated once per `ask()`. Identical
+     * across the client's start-generation network retries, unique per user action (including
+     * regenerate). The server dedups retried start requests on it so a lost/reset response
+     * cannot trigger a second billed generation.
+     */
+    clientRequestId?: string;
   };
 
 export type TEditedContent =
@@ -172,6 +179,8 @@ export type TSubmission = {
   addedConvo?: TConversation;
   /** Skills the user invoked via the `$` popover for this submission. */
   manualSkills?: string[];
+  /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
+  clientRequestId?: string;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
