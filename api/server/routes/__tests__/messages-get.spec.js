@@ -244,4 +244,77 @@ describe('message route conversation ownership filters', () => {
       '-_id -__v -user',
     );
   });
+
+  describe('search pagination', () => {
+    const { searchMessages, getConvosQueried } = require('~/models');
+
+    const primeSearch = ({ hits, totalPages }) => {
+      searchMessages.mockResolvedValue({ hits, totalPages });
+      const convoMap = {};
+      hits.forEach((h) => {
+        convoMap[h.conversationId] = { title: 'T', model: 'gpt' };
+      });
+      getConvosQueried.mockResolvedValue({ convoMap, conversations: [], nextCursor: null });
+      getMessages.mockResolvedValue(
+        hits.map((h) => ({ ...h, isCreatedByUser: false, endpoint: 'openAI' })),
+      );
+    };
+
+    it('requests Meili in page mode (page + hitsPerPage) and defaults to page 1', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 3 });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(response.status).toBe(200);
+      expect(searchMessages).toHaveBeenCalledWith(
+        'beacon',
+        expect.objectContaining({ page: 1, hitsPerPage: 25 }),
+        true,
+      );
+    });
+
+    it('returns a real nextCursor when more pages remain', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 3 });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(response.body.nextCursor).toBe('2');
+      expect(response.body.messages).toHaveLength(1);
+    });
+
+    it('advances the page from the incoming cursor', async () => {
+      primeSearch({ hits: [{ messageId: 'm2', conversationId: 'c1' }], totalPages: 3 });
+
+      const response = await request(app).get('/api/messages?search=beacon&cursor=2');
+
+      expect(searchMessages).toHaveBeenCalledWith(
+        'beacon',
+        expect.objectContaining({ page: 2 }),
+        true,
+      );
+      expect(response.body.nextCursor).toBe('3');
+    });
+
+    it('returns nextCursor null on the last page', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 1 });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(response.body.nextCursor).toBeNull();
+    });
+
+    it('never passes the numeric page cursor to getConvosQueried as a date', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 3 });
+
+      await request(app).get('/api/messages?search=beacon&cursor=2');
+
+      // 3rd arg (cursor) must be null, not "2" — getConvosQueried treats it as a date.
+      expect(getConvosQueried).toHaveBeenCalledWith(
+        authenticatedUserId,
+        expect.any(Array),
+        null,
+        1,
+      );
+    });
+  });
 });

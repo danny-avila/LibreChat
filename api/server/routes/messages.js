@@ -51,11 +51,28 @@ router.get('/', async (req, res) => {
         { sortField, sortOrder, limit: pageSize, cursor },
       );
     } else if (search) {
-      const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
+      /**
+       * Meili paginates in page mode (`page` + `hitsPerPage`), which returns an
+       * exact `totalPages`. The frontend's opaque `cursor` carries the 1-based
+       * page number; an absent cursor is the first page.
+       */
+      const page = Math.max(1, parseInt(cursor, 10) || 1);
+      const searchResults = await db.searchMessages(
+        search,
+        { filter: `user = "${user}"`, page, hitsPerPage: pageSize },
+        true,
+      );
 
       const messages = searchResults.hits || [];
 
-      const result = await db.getConvosQueried(req.user.id, messages, cursor);
+      /**
+       * `getConvosQueried` is only a hydration/`convoMap` helper for THIS page's
+       * hits. Its `cursor` arg is a date (for the conversation-list feature), so
+       * the numeric page cursor must NOT be passed to it, and its default limit
+       * (25) would truncate conversations out of a page — pass a limit covering
+       * every conversation the page's hits could belong to.
+       */
+      const result = await db.getConvosQueried(req.user.id, messages, null, messages.length || 1);
 
       const messageIds = [];
       const cleanedMessages = [];
@@ -93,7 +110,20 @@ router.get('/', async (req, res) => {
         });
       }
 
-      response = { messages: activeMessages, nextCursor: null };
+      /**
+       * Page from Meili's raw hit paging, NOT the post-`convoMap`-filter count:
+       * a page can render fewer rows than `hitsPerPage` when some hits belong to
+       * deleted/inaccessible conversations, but there may still be more pages, so
+       * the cursor must keep advancing. Prefer Meili's exact `totalPages`; fall
+       * back to "a full raw page implies there may be more".
+       */
+      const totalPages = Number.isFinite(searchResults.totalPages)
+        ? searchResults.totalPages
+        : null;
+      const hasNextPage = totalPages != null ? page < totalPages : messages.length >= pageSize;
+      const nextCursor = hasNextPage ? String(page + 1) : null;
+
+      response = { messages: activeMessages, nextCursor };
     } else {
       response = { messages: [], nextCursor: null };
     }
