@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
@@ -130,13 +130,16 @@ export default function useSteering({
   const duringRunActive = enabled && isSubmitting && !answerModeActive;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
 
-  const { data: messages } = useGetMessagesByConvoId(hasRealConvoId ? conversationId : '', {
-    enabled: hasRealConvoId,
-  });
-  const pausedOnApproval = useMemo(
-    () => (duringRunActive ? hasLiveToolApproval(messages) : false),
-    [duringRunActive, messages],
+  /** Boolean `select` so streaming deltas don't notify this subscription:
+   * structural sharing only re-renders the composer when the flag flips. */
+  const { data: liveToolApproval } = useGetMessagesByConvoId<boolean>(
+    hasRealConvoId ? conversationId : '',
+    {
+      enabled: hasRealConvoId,
+      select: hasLiveToolApproval,
+    },
   );
+  const pausedOnApproval = duringRunActive ? (liveToolApproval ?? false) : false;
 
   /** Whether a steer can reach the live run right now — independent of the
    *  user's default action, so the per-send menu can always override to

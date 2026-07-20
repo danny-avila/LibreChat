@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
-import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
+import { useGetLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useSubmitMessage from '../useSubmitMessage';
 
@@ -27,7 +27,7 @@ jest.mock('~/hooks/AuthContext', () => ({
 }));
 
 jest.mock('~/hooks/Messages/useLatestMessage', () => ({
-  useLatestMessage: jest.fn(),
+  useGetLatestMessage: jest.fn(),
 }));
 
 jest.mock('~/store', () => ({
@@ -44,7 +44,7 @@ const mockUseChatContext = useChatContext as jest.Mock;
 const mockUseChatFormContext = useChatFormContext as jest.Mock;
 const mockUseAddedChatContext = useAddedChatContext as jest.Mock;
 const mockUseAuthContext = useAuthContext as jest.Mock;
-const mockUseLatestMessage = useLatestMessage as jest.Mock;
+const mockUseGetLatestMessage = useGetLatestMessage as jest.Mock;
 
 describe('useSubmitMessage', () => {
   const ask = jest.fn();
@@ -59,7 +59,7 @@ describe('useSubmitMessage', () => {
     mockUseAuthContext.mockReturnValue({ user: { id: 'user-1' } });
     mockUseAddedChatContext.mockReturnValue({ conversation: null });
     mockUseChatFormContext.mockReturnValue({ reset, getValues: jest.fn(() => '') });
-    mockUseLatestMessage.mockReturnValue({ messageId: 'assistant-message' });
+    mockUseGetLatestMessage.mockReturnValue(() => ({ messageId: 'assistant-message' }));
     getMessages.mockReturnValue([{ messageId: 'assistant-message' }]);
     mockUseChatContext.mockReturnValue({
       ask,

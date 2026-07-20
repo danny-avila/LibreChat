@@ -84,7 +84,7 @@ jest.mock('~/hooks/Agents/useAgentCapabilities', () =>
 );
 
 jest.mock('~/hooks/Messages/useLatestMessage', () => ({
-  useLatestMessage: jest.fn(() => null),
+  useGetLatestMessage: jest.fn(() => () => null),
 }));
 
 import React from 'react';

@@ -15,7 +15,9 @@ let mockMessages: TMessage[] | undefined;
 
 jest.mock('~/data-provider', () => ({
   useSteerMessageMutation: () => ({ mutate: mockMutate }),
-  useGetMessagesByConvoId: () => ({ data: mockMessages }),
+  useGetMessagesByConvoId: (_id: string, config?: { select?: (messages: unknown) => unknown }) => ({
+    data: config?.select ? config.select(mockMessages) : mockMessages,
+  }),
   useMarkFilesUsageMutation: () => ({ mutate: mockMarkUsage }),
 }));
 
