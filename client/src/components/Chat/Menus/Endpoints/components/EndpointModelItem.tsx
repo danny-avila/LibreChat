@@ -117,7 +117,12 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
           'rounded-md p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
           isFavorite
             ? 'visible'
-            : 'invisible group-focus-within:visible group-hover:visible group-data-[active-item]:visible',
+            : // Visible by default so it's tappable on touch (no hover to
+              // reveal it); only hidden-until-hover on hover-capable pointers.
+              // A hover-gated child would otherwise make the whole item
+              // hover-dependent, so the first tap only reveals it and a second
+              // tap is needed to select (the iOS double-tap).
+              'group-focus-within:visible group-hover:visible group-data-[active-item]:visible [@media(hover:hover)]:invisible',
         )}
       >
         {isFavorite ? (

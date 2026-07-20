@@ -1,6 +1,7 @@
-import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
+import type { Redis, Cluster } from 'ioredis';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
+import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 
 /**
  * Redis key prefixes for pub/sub channels
@@ -48,6 +49,32 @@ interface ReorderBuffer {
   /** Timeout handle for flushing stale messages */
   flushTimeout: ReturnType<typeof setTimeout> | null;
 }
+
+/**
+ * Allocate a sequence number and publish the event in a single round trip.
+ *
+ * The payload is spliced server-side rather than round-tripped through `cjson`: decoding and
+ * re-encoding arbitrary event data would coerce empty arrays to objects and alter float
+ * precision. The caller pre-serializes everything around the seq, so this only concatenates.
+ *
+ * The TTL is set once on the first INCR and never refreshed, so an active stream cannot have
+ * its counter reset mid-generation.
+ *
+ * The channel is passed as ARGV, not KEYS: ioredis applies `keyPrefix` to EVAL keys but never
+ * to a pub/sub channel, so keying it here would publish to a prefixed channel that no
+ * subscriber listens on. PUBLISH is broadcast cluster-wide rather than slot-routed, so it does
+ * not need to be a key for Cluster correctness.
+ *
+ *   KEYS: [sequence]
+ *   ARGV: [channel, payloadPrefix, payloadSuffix, sequenceTtlSeconds]
+ *   RETURNS: the 0-indexed seq assigned to this event
+ */
+const PUBLISH_SEQ_LUA =
+  'local val = redis.call("INCR", KEYS[1]) ' +
+  'if val == 1 then redis.call("EXPIRE", KEYS[1], tonumber(ARGV[4])) end ' +
+  'local seq = val - 1 ' +
+  'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) ' +
+  'return seq';
 
 /** Max time (ms) to wait for out-of-order messages before force-flushing */
 const REORDER_TIMEOUT_MS = 500;
@@ -112,8 +139,8 @@ export class RedisEventTransport implements IEventTransport {
    * @param subscriber - Redis client for subscribing (must be dedicated)
    */
   constructor(publisher: Redis | Cluster, subscriber: Redis | Cluster) {
-    this.publisher = publisher;
-    this.subscriber = subscriber;
+    this.publisher = instrumentIORedisClient(publisher, RedisUseCases.GENERATION_STREAM);
+    this.subscriber = instrumentIORedisClient(subscriber, RedisUseCases.GENERATION_STREAM);
 
     // Set up message handler for all subscriptions
     this.subscriber.on('message', (channel: string, message: string) => {
@@ -125,21 +152,40 @@ export class RedisEventTransport implements IEventTransport {
   private static readonly SEQUENCE_TTL_SECONDS = 86400;
 
   /**
-   * Get next sequence number for a stream (0-indexed, backed by Redis INCR).
-   * A 24-hour TTL is set on the first INCR only (val === 1) as a safety net
-   * for orphaned keys from crashed processes. It is never refreshed, so an
-   * active stream cannot have its counter reset mid-generation.
-   * Keys are also deleted explicitly by cleanup() on normal stream teardown.
+   * Split a seq-less message into the JSON fragments surrounding its `seq`, so the sequence
+   * can be spliced in by {@link PUBLISH_SEQ_LUA} without re-encoding the payload.
+   *
+   * Omitting a field (e.g. `data: undefined`) yields an empty tail, matching what
+   * `JSON.stringify` would have dropped from the whole-object encoding.
    */
-  private async getNextSequence(streamId: string): Promise<number> {
-    const key = KEYS.sequence(streamId);
-    const val = await this.publisher.incr(key);
-    if (val === 1) {
-      this.publisher.expire(key, RedisEventTransport.SEQUENCE_TTL_SECONDS).catch((err) => {
-        logger.warn(`[RedisEventTransport] Failed to set TTL on sequence key ${key}:`, err);
-      });
-    }
-    return val - 1;
+  private static buildPayloadParts(message: Omit<PubSubMessage, 'seq'>): [string, string] {
+    const { type, ...rest } = message;
+    const encodedRest = JSON.stringify(rest);
+    const inner = encodedRest.slice(1, -1);
+    return [`{"type":${JSON.stringify(type)},"seq":`, inner.length > 0 ? `,${inner}}` : '}'];
+  }
+
+  /**
+   * Allocate a sequence number and publish, in one Redis round trip.
+   *
+   * Keys are deleted explicitly by cleanup() on normal stream teardown; the TTL is a safety
+   * net for orphaned keys from crashed processes.
+   */
+  private async publishWithSequence(
+    streamId: string,
+    message: Omit<PubSubMessage, 'seq'>,
+  ): Promise<number> {
+    const [prefix, suffix] = RedisEventTransport.buildPayloadParts(message);
+    const seq = await this.publisher.eval(
+      PUBLISH_SEQ_LUA,
+      1,
+      KEYS.sequence(streamId),
+      CHANNELS.events(streamId),
+      prefix,
+      suffix,
+      String(RedisEventTransport.SEQUENCE_TTL_SECONDS),
+    );
+    return seq as number;
   }
 
   /** Reset subscriber reorder buffer state to initial values */
@@ -515,15 +561,12 @@ export class RedisEventTransport implements IEventTransport {
    * Publish a chunk event to all subscribers across all instances.
    * Includes sequence number for ordered delivery in Redis Cluster mode.
    *
-   * Performance: each emit requires two sequential Redis round-trips (INCR + PUBLISH).
-   * This is the unavoidable cost of cross-replica sequence coordination.
+   * Performance: sequence allocation and publish share one round trip. This runs per streamed
+   * delta, so the saved round trip is multiplied by the token count of every response.
    */
   async emitChunk(streamId: string, event: unknown): Promise<void> {
     try {
-      const channel = CHANNELS.events(streamId);
-      const seq = await this.getNextSequence(streamId);
-      const message: PubSubMessage = { type: EventTypes.CHUNK, seq, data: event };
-      await this.publisher.publish(channel, JSON.stringify(message));
+      await this.publishWithSequence(streamId, { type: EventTypes.CHUNK, data: event });
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
     }
@@ -534,12 +577,8 @@ export class RedisEventTransport implements IEventTransport {
    * Includes sequence number to ensure delivery after all chunks.
    */
   async emitDone(streamId: string, event: unknown): Promise<void> {
-    const channel = CHANNELS.events(streamId);
-    const seq = await this.getNextSequence(streamId);
-    const message: PubSubMessage = { type: EventTypes.DONE, seq, data: event };
-
     try {
-      await this.publisher.publish(channel, JSON.stringify(message));
+      await this.publishWithSequence(streamId, { type: EventTypes.DONE, data: event });
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
       throw err;
@@ -551,12 +590,8 @@ export class RedisEventTransport implements IEventTransport {
    * Includes sequence number to ensure delivery after all chunks.
    */
   async emitError(streamId: string, error: string): Promise<void> {
-    const channel = CHANNELS.events(streamId);
-    const seq = await this.getNextSequence(streamId);
-    const message: PubSubMessage = { type: EventTypes.ERROR, seq, error };
-
     try {
-      await this.publisher.publish(channel, JSON.stringify(message));
+      await this.publishWithSequence(streamId, { type: EventTypes.ERROR, error });
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish error:`, err);
       throw err;
