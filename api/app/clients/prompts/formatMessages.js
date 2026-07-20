@@ -201,7 +201,12 @@ const formatAgentMessages = (payload) => {
         }
 
         // Note: `tool_calls` list is defined when constructed by `AIMessage` class, and outputs should be excluded from it
-        const { output, args: _args, ...tool_call } = part.tool_call;
+        const {
+          output,
+          args: _args,
+          inputValidationError: _inputValidationError,
+          ...tool_call
+        } = part.tool_call;
         // TODO: investigate; args as dictionary may need to be provider-or-tool-specific
         let args = _args;
         try {

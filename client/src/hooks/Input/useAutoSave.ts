@@ -109,17 +109,18 @@ export const useAutoSave = ({
       return;
     }
 
+    /** Saves the composer's value AT FLUSH TIME rather than the value captured
+     *  when the event fired. A during-run steer/queue consumes the text and
+     *  clears the composer programmatically, so a write still in flight would
+     *  otherwise land after the submit and restore the just-sent text. */
+    const saveLatest = () =>
+      setDraft({ id: conversationId, value: textAreaRef?.current?.value ?? '' });
+
     /** Use shorter debounce for saving text (25ms) to capture rapid typing */
-    const handleInputFast = debounce(
-      (value: string) => setDraft({ id: conversationId, value }),
-      25,
-    );
+    const handleInputFast = debounce(saveLatest, 25);
 
     /** Use longer debounce for clearing empty values (850ms) to prevent accidental draft loss */
-    const handleInputSlow = debounce(
-      (value: string) => setDraft({ id: conversationId, value }),
-      850,
-    );
+    const handleInputSlow = debounce(saveLatest, 850);
 
     const eventListener = (e: Event) => {
       const target = e.target as HTMLTextAreaElement;
@@ -132,9 +133,9 @@ export const useAutoSave = ({
       /** If empty, use long delay to prevent accidental clearing
        * Otherwise use short delay to capture rapid typing */
       if (value === '') {
-        handleInputSlow(value);
+        handleInputSlow();
       } else {
-        handleInputFast(value);
+        handleInputFast();
       }
     };
 

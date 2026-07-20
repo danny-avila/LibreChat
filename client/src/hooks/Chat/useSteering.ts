@@ -11,8 +11,8 @@ import {
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
 } from '~/data-provider';
+import { carriedSteerContext, clearAllDrafts } from '~/utils';
 import { useSetFilesToDelete } from '~/hooks/Files';
-import { carriedSteerContext } from '~/utils';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
@@ -331,6 +331,18 @@ export default function useSteering({
     [conversationId],
   );
 
+  /** Consumes the composer's autosaved draft once its text has been taken into
+   *  a steer or queued item. The composer clears via the form's `reset()`,
+   *  which is programmatic and never fires the `input` event `useAutoSave`
+   *  listens on — so the draft would outlive the submit. It is keyed under
+   *  `PENDING_CONVO` here (every caller is gated on `duringRunActive`, which
+   *  requires `isSubmitting` and rules out the answer-mode draft key), and
+   *  run end migrates a surviving pending draft onto the conversation and
+   *  restores it — resurfacing text the user already sent. */
+  const takeComposerDraft = useCallback(() => {
+    clearAllDrafts(Constants.PENDING_CONVO);
+  }, []);
+
   const removeQueued = useRecoilCallback(
     ({ set }) =>
       (id: string) => {
@@ -484,9 +496,13 @@ export default function useSteering({
       if (trimmed.length === 0 || filesLoading || !hasRealConvoId) {
         return false;
       }
-      return submitSteer(trimmed, takeComposerFiles());
+      const consumed = submitSteer(trimmed, takeComposerFiles());
+      if (consumed) {
+        takeComposerDraft();
+      }
+      return consumed;
     },
-    [filesLoading, hasRealConvoId, takeComposerFiles, submitSteer],
+    [filesLoading, hasRealConvoId, takeComposerFiles, takeComposerDraft, submitSteer],
   );
 
   /** Composer-originated queue: carries the composer's attachments, quote
@@ -498,9 +514,10 @@ export default function useSteering({
         return false;
       }
       enqueue(trimmed, { files: takeComposerFiles(), ...takeComposerContext() });
+      takeComposerDraft();
       return true;
     },
-    [filesLoading, enqueue, takeComposerFiles, takeComposerContext],
+    [filesLoading, enqueue, takeComposerFiles, takeComposerContext, takeComposerDraft],
   );
 
   /** Retry a failed chip through the normal steer path. */
@@ -596,6 +613,7 @@ export default function useSteering({
         return false;
       }
       enqueue(trimmed, { front: true, files: takeComposerFiles(), ...takeComposerContext() });
+      takeComposerDraft();
       armDrainAfterAbort();
       stopGenerating();
       return true;
@@ -605,6 +623,7 @@ export default function useSteering({
       enqueue,
       takeComposerFiles,
       takeComposerContext,
+      takeComposerDraft,
       armDrainAfterAbort,
       stopGenerating,
     ],

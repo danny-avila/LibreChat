@@ -1,5 +1,5 @@
-import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
+import type { Redis, Cluster } from 'ioredis';
 import { createMockPublisher } from './helpers/publisher';
 
 logger.silent = true;
@@ -177,6 +177,88 @@ describe('RedisEventTransport Integration Tests', () => {
 
       sub1.unsubscribe();
       sub2.unsubscribe();
+      transport.destroy();
+      subscriber.disconnect();
+    });
+  });
+
+  describe('Payload fidelity through server-side seq splicing', () => {
+    /** The seq is spliced into the payload by Lua rather than encoded with it, so the
+     *  fragments either side must reassemble to exactly what JSON.stringify would emit.
+     *  Shapes here are the ones a naive cjson round-trip would corrupt. */
+    test('should round-trip payload shapes that cjson would coerce', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `payload-fidelity-${Date.now()}`;
+      const received: unknown[] = [];
+
+      transport.subscribe(streamId, {
+        onChunk: (event) => received.push(event),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const payloads: unknown[] = [
+        { empty: [], nestedEmpty: { inner: [] } },
+        { float: 0.1234567890123, negative: -273.15, zero: 0 },
+        { unicode: 'héllo 🌍 "quoted" \\ backslash\n newline' },
+        { nullish: null, emptyString: '', emptyObject: {} },
+        { text: 'ordinary delta' },
+      ];
+
+      for (const payload of payloads) {
+        await transport.emitChunk(streamId, payload);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(received).toEqual(payloads);
+
+      transport.destroy();
+      subscriber.disconnect();
+    });
+
+    test('should assign 0-indexed sequences and set a TTL on the counter only once', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `seq-alloc-${Date.now()}`;
+      /** Bare key: the client applies REDIS_KEY_PREFIX itself, and ioredis prefixes EVAL keys
+       *  the same way, so both sides land on the same prefixed key. */
+      const seqKey = `stream:{${streamId}}:seq`;
+
+      transport.subscribe(streamId, { onChunk: () => {} });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      await transport.emitChunk(streamId, { index: 0 });
+      /** First INCR arms the TTL; it must never be refreshed, or a long stream could
+       *  have its counter reset mid-generation. */
+      const ttlAfterFirst = await (ioredisClient as Redis).ttl(seqKey);
+      expect(ttlAfterFirst).toBeGreaterThan(0);
+
+      for (let i = 1; i < 5; i++) {
+        await transport.emitChunk(streamId, { index: i });
+      }
+
+      /** Counter is 1-based in Redis; seq is 0-based, so 5 emits => counter 5, last seq 4. */
+      expect(await (ioredisClient as Redis).get(seqKey)).toBe('5');
+      expect(await (ioredisClient as Redis).ttl(seqKey)).toBeLessThanOrEqual(ttlAfterFirst);
+
       transport.destroy();
       subscriber.disconnect();
     });

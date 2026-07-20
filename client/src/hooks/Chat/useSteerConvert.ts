@@ -46,6 +46,15 @@ export default function useSteerConvert() {
           .getValue();
         const chipById = new Map(localChips.map((chip) => [chip.steerId, chip]));
         const steerIds = new Set(steers.map((steer) => steer.steerId));
+        // Steers already settled (applied on the server OR converted here on an
+        // earlier delivery) must not re-enter the queue. Read BEFORE the append
+        // below so a first-time conversion still queues, but a redelivery whose
+        // item was already DRAINED out of the queue is a no-op — without this,
+        // the queue-only dedup below misses a message the run-end drain already
+        // submitted and re-mints it as a stranded queued chip.
+        const settledSteerIds = new Set(
+          snapshot.getLoadable(store.appliedSteerIdsByConvoId(conversationId)).getValue(),
+        );
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
           appendAppliedSteerIds(
             prev,
@@ -57,7 +66,11 @@ export default function useSteerConvert() {
         );
         set(store.queuedMessagesByConvoId(conversationId), (prev) => {
           const fresh = steers
-            .filter((steer) => !prev.some((queued) => queued.id === steer.steerId))
+            .filter(
+              (steer) =>
+                !settledSteerIds.has(steer.steerId) &&
+                !prev.some((queued) => queued.id === steer.steerId),
+            )
             .map((steer) => ({
               id: steer.steerId,
               text: steer.text,

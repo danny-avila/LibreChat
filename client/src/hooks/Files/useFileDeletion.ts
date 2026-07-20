@@ -1,8 +1,8 @@
+import { useCallback, useState, useEffect } from 'react';
 import debounce from 'lodash/debounce';
 import { FileSources, EToolResources, removeNullishValues } from 'librechat-data-provider';
-import { useCallback, useState, useEffect } from 'react';
-import type * as t from 'librechat-data-provider';
 import type { UseMutateAsyncFunction } from '@tanstack/react-query';
+import type * as t from 'librechat-data-provider';
 import type { ExtendedFile, GenericSetter } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
 import { deletePreview } from '~/utils';
@@ -51,8 +51,9 @@ const useFileDeletion = ({
   const debouncedDelete = useCallback(debounce(executeBatchDelete, 1000), []);
 
   useEffect(() => {
-    // Cleanup function for debouncedDelete when component unmounts or before re-render
-    return () => debouncedDelete.cancel();
+    /** Flush, don't cancel: unmount is a normal outcome of removing the last file,
+     * and a cancelled batch silently drops a delete the user already confirmed. */
+    return () => debouncedDelete.flush();
   }, [debouncedDelete]);
 
   const deleteFile = useCallback(

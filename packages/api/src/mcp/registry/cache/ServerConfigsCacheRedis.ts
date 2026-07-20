@@ -1,9 +1,9 @@
-import type Keyv from 'keyv';
 import { fromPairs } from 'lodash';
 import { logger } from '@librechat/data-schemas';
+import type Keyv from 'keyv';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
-import { standardCache, keyvRedisClient } from '~/cache';
+import { keyvRedisClient, observeRedisOperation, RedisUseCases, standardCache } from '~/cache';
 import { BaseRegistryCache } from './BaseRegistryCache';
 
 /**
@@ -69,17 +69,26 @@ export class ServerConfigsCacheRedis
   }
 
   public async getAll(): Promise<Record<string, ParsedServerConfig>> {
-    if (!keyvRedisClient || !('scanIterator' in keyvRedisClient)) {
+    const redisClient = keyvRedisClient;
+    if (!redisClient || !('scanIterator' in redisClient)) {
       throw new Error('Redis client with scanIterator not available.');
     }
 
     const startTime = Date.now();
     const pattern = `*${this.cache.namespace}:*`;
 
-    const keys: string[] = [];
-    for await (const key of keyvRedisClient.scanIterator({ MATCH: pattern })) {
-      keys.push(key);
-    }
+    const keys = await observeRedisOperation(
+      'keyv',
+      RedisUseCases.MCP_REGISTRY,
+      'scan',
+      async () => {
+        const scannedKeys: string[] = [];
+        for await (const key of redisClient.scanIterator({ MATCH: pattern })) {
+          scannedKeys.push(key);
+        }
+        return scannedKeys;
+      },
+    );
 
     if (keys.length === 0) {
       logger.debug(`[ServerConfigsCacheRedis] getAll(${this.namespace}): no keys found`);

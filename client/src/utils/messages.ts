@@ -312,6 +312,33 @@ export const clearMessagesCache = (
   queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
 };
 
+/** Removes a deleted conversation's message cache and any matching new-chat cache alias. */
+export const clearDeletedConversationMessagesCache = (
+  queryClient: QueryClient,
+  conversationId: string,
+): void => {
+  const deletedMessages = queryClient.getQueryData<TMessage[]>([
+    QueryKeys.messages,
+    conversationId,
+  ]);
+  const newConversationMessages = queryClient.getQueryData<TMessage[]>([
+    QueryKeys.messages,
+    Constants.NEW_CONVO,
+  ]);
+  const newConversationAliasesDeleted =
+    newConversationMessages != null &&
+    (newConversationMessages === deletedMessages ||
+      newConversationMessages.some((message) => message.conversationId === conversationId));
+
+  queryClient.removeQueries([QueryKeys.messages, conversationId], { exact: true });
+
+  if (!newConversationAliasesDeleted) {
+    return;
+  }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+};
+
 /** Returns a 1-based message number, or null if depth is absent or invalid. */
 const getMessageNumber = (message: TMessage): number | null => {
   if (message.depth == null || message.depth < 0) {

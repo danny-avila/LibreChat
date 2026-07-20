@@ -34,6 +34,7 @@ import type {
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
@@ -1034,6 +1035,7 @@ export async function createRun({
   subagentUsageSink,
   steering,
   hitlCapable = false,
+  toolInputValidationErrors,
   streaming = true,
   streamUsage = true,
 }: {
@@ -1099,6 +1101,8 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /** Request-scoped tool input failures consumed by the completion handler. */
+  toolInputValidationErrors?: Map<string, ToolInputValidationError>;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -1282,7 +1286,9 @@ export async function createRun({
         toolRegistry.delete(ASK_USER_QUESTION_TOOL_NAME);
       }
       if (hitlCapable && !isSubagent && !askToolAdminDisabled) {
-        askGraphTools = [createAskUserQuestionTool() as unknown as GenericTool];
+        askGraphTools = [
+          createAskUserQuestionTool(toolInputValidationErrors) as unknown as GenericTool,
+        ];
       }
     }
 

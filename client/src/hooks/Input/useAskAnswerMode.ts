@@ -94,8 +94,14 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    * suppressing it behind an open popover would strand the user at a locked
    * card with no explanation. (`error`, unlike `expired`, stays active: it is
    * retryable — see the composer-preserving submit path.)
+   *
+   * A `submitted` question is likewise done — the run has resumed and there is
+   * nothing left to answer. The chat card already self-hides on it; without the
+   * same test here a card that outlives its strip (a resurrected copy, or a
+   * submit whose store write couldn't run) holds the popover open over an
+   * answered question with every option greyed out.
    */
-  const active = liveAsk != null && !dismissed && status !== 'expired';
+  const active = liveAsk != null && !dismissed && status !== 'expired' && status !== 'submitted';
   const collapsed = active && collapsedIds.includes(liveAsk.actionId);
   /** The popover renders only while expanded; collapse keeps `active` (and the
    *  composer's answer role) but hands the question display to the chat card. */

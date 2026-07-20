@@ -5,6 +5,7 @@ const {
   getSessionInfo,
   checkIfActive,
   readSandboxFile,
+  readSandboxImage,
   writeSandboxFile,
 } = require('~/server/services/Files/Code/process');
 const {
@@ -358,6 +359,12 @@ const skillToolDeps = {
    * the agents-side `ToolNode` via `tc.codeSessionContext`.
    */
   readSandboxFile,
+  /**
+   * Companion to `readSandboxFile` for the raster-image case: pulls the
+   * bytes base64-encoded (size-guarded in-sandbox) so `read_file` can
+   * return an image the model can see instead of refusing it as binary.
+   */
+  readSandboxImage,
   writeSandboxFile,
 };
 

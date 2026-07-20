@@ -14,6 +14,7 @@ import {
   findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
+  clearDeletedConversationMessagesCache,
 } from '~/utils';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
@@ -544,6 +545,7 @@ export const useDeleteConversationMutation = (
 
         if (vars.conversationId) {
           removeConvoFromAllQueries(queryClient, vars.conversationId);
+          clearDeletedConversationMessagesCache(queryClient, vars.conversationId);
         }
 
         // Also remove from all archivedConversations caches

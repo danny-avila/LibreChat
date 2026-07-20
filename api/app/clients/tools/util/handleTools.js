@@ -372,7 +372,7 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
-      requestedTools[tool] = () => createAskUserQuestionTool();
+      requestedTools[tool] = async () => createAskUserQuestionTool();
       continue;
     } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {
       requestedTools[tool] = () =>
