@@ -3,11 +3,13 @@ import { logger } from '@librechat/data-schemas';
 import { CacheKeys } from 'librechat-data-provider';
 import {
   AUTH_USER_DOC_CACHE_TTL_MS,
+  AUTH_USER_DOC_PRIME_DEADLINE_MS,
   buildAuthUserDocCacheKey,
   buildAuthUserDocReverseIndexKey,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
   invalidateCachedAuthUserDoc,
+  primeCachedAuthUserDoc,
   setCachedAuthUserDoc,
 } from './userDocCache';
 import { cacheConfig } from '~/cache/cacheConfig';
@@ -183,6 +185,41 @@ describe('auth user document cache helpers', () => {
     expect(indexed).not.toContain('existing-key-0');
     expect(indexed).toContain('existing-key-10');
     expect(indexed).toContain('new-key');
+  });
+
+  it('waits for successful cache priming', async () => {
+    const store = makeStore();
+
+    await expect(
+      primeCachedAuthUserDoc(store, 'auth-user-doc:v1:key', {
+        _id: new Types.ObjectId(),
+        email: 'user@example.com',
+      }),
+    ).resolves.toBe('completed');
+
+    expect(store.values.has('auth-user-doc:v1:key')).toBe(true);
+  });
+
+  it('stops waiting when cache priming exceeds its deadline', async () => {
+    jest.useFakeTimers();
+    try {
+      const never = new Promise<never>(() => {});
+      const store = {
+        get: async <T = unknown>(): Promise<T | undefined> => undefined,
+        set: jest.fn(() => never),
+        delete: jest.fn(),
+      };
+
+      const result = primeCachedAuthUserDoc(store, 'auth-user-doc:v1:key', {
+        _id: new Types.ObjectId(),
+        email: 'user@example.com',
+      });
+      await jest.advanceTimersByTimeAsync(AUTH_USER_DOC_PRIME_DEADLINE_MS);
+
+      await expect(result).resolves.toBe('deadline');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('returns cached user documents only for the current cache version', async () => {

@@ -6,6 +6,7 @@ import { cacheConfig } from '~/cache/cacheConfig';
 
 const AUTH_USER_DOC_CACHE_VERSION = 1;
 export const AUTH_USER_DOC_CACHE_TTL_MS = 5000;
+export const AUTH_USER_DOC_PRIME_DEADLINE_MS = 25;
 
 export type AuthUserDocCacheMode = 'off' | 'on';
 
@@ -180,6 +181,29 @@ export async function setCachedAuthUserDoc(
     logger.warn('[authUserDocCache] Cache write failed', {
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+export async function primeCachedAuthUserDoc(
+  store: AuthUserDocCacheStore,
+  cacheKey: string,
+  user: Partial<IUser>,
+): Promise<'completed' | 'deadline'> {
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<'deadline'>((resolve) => {
+    deadlineTimer = setTimeout(() => resolve('deadline'), AUTH_USER_DOC_PRIME_DEADLINE_MS);
+    deadlineTimer.unref?.();
+  });
+
+  try {
+    return await Promise.race([
+      setCachedAuthUserDoc(store, cacheKey, user).then(() => 'completed' as const),
+      deadline,
+    ]);
+  } finally {
+    if (deadlineTimer) {
+      clearTimeout(deadlineTimer);
+    }
   }
 }
 

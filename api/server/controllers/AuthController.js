@@ -2,12 +2,16 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
+const { CacheKeys } = require('librechat-data-provider');
 const {
   math,
   isEnabled,
   findOpenIDUser,
   getOpenIdIssuer,
   buildOpenIDRefreshParams,
+  buildAuthUserDocCacheKey,
+  getAuthUserDocCacheMode,
+  primeCachedAuthUserDoc,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
@@ -26,6 +30,7 @@ const {
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
+const getLogStores = require('~/cache/getLogStores');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
@@ -41,6 +46,42 @@ const OPENID_REUSE_MAX_SESSION_AGE_MS = math(
   process.env.OPENID_REUSE_MAX_SESSION_AGE_MS,
   15 * 60 * 1000,
 );
+
+const primeOpenIDRefreshUser = async ({ user, claims, openidIssuer }) => {
+  try {
+    if (
+      !user ||
+      getAuthUserDocCacheMode() !== 'on' ||
+      typeof claims?.sub !== 'string' ||
+      user.openidId !== claims.sub
+    ) {
+      return;
+    }
+
+    const cacheKey = buildAuthUserDocCacheKey({
+      strategy: 'openid-jwt',
+      subject: claims.sub,
+      issuer: openidIssuer,
+    });
+    if (!cacheKey) {
+      return;
+    }
+
+    const cacheUser = typeof user.toObject === 'function' ? user.toObject() : user;
+    const result = await primeCachedAuthUserDoc(
+      getLogStores(CacheKeys.AUTH_USER_DOC),
+      cacheKey,
+      cacheUser,
+    );
+    if (result === 'deadline') {
+      logger.debug('[refreshController] Auth user cache priming exceeded deadline');
+    }
+  } catch (error) {
+    logger.warn('[refreshController] Auth user cache priming failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
 
 const registrationController = async (req, res) => {
   try {
@@ -175,6 +216,12 @@ const refreshController = async (req, res) => {
       if (reuseUserId) {
         const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
         if (user) {
+          const claims = jwt.decode(reusableSessionToken.token);
+          await primeOpenIDRefreshUser({
+            user,
+            claims,
+            openidIssuer: getOpenIdIssuer(claims),
+          });
           const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
           logger.debug('[refreshController] OpenID session token reused', {
             token_type: reusableSessionToken.type,
@@ -232,14 +279,20 @@ const refreshController = async (req, res) => {
       // Also handle case where user has mismatched openidId (e.g., after database switch)
       if (migration || user.openidId !== claims.sub) {
         const reason = migration ? 'migration' : 'openidId mismatch';
+        const previousOpenidId = user.openidId;
         await updateUser(user._id.toString(), {
           provider: 'openid',
           openidId: claims.sub,
           ...(openidIssuer ? { openidIssuer } : {}),
         });
         logger.info(
-          `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,
+          `[refreshController] Updated user ${user.email} openidId (${reason}): ${previousOpenidId ?? 'null'} -> ${claims.sub}`,
         );
+        user.provider = 'openid';
+        user.openidId = claims.sub;
+        if (openidIssuer) {
+          user.openidIssuer = openidIssuer;
+        }
       }
 
       const token = setOpenIDAuthTokens(tokenset, req, res, {
@@ -247,6 +300,8 @@ const refreshController = async (req, res) => {
         existingRefreshToken: refreshToken,
         tenantId: user.tenantId,
       });
+
+      await primeOpenIDRefreshUser({ user, claims, openidIssuer });
 
       return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     } catch (error) {

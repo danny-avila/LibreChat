@@ -14,6 +14,7 @@ jest.mock('~/server/services/AuthService', () => ({
 }));
 jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: jest.fn() }));
 jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
+jest.mock('~/cache/getLogStores', () => jest.fn());
 jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
   getUserById: jest.fn(),
@@ -26,6 +27,9 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(),
   findOpenIDUser: jest.fn(),
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
+  getAuthUserDocCacheMode: jest.fn(() => 'off'),
+  buildAuthUserDocCacheKey: jest.fn(),
+  primeCachedAuthUserDoc: jest.fn(),
   buildOpenIDRefreshParams: jest.fn(() => {
     const params = {};
     if (process.env.OPENID_SCOPE) {
@@ -41,7 +45,14 @@ jest.mock('@librechat/api', () => ({
 const openIdClient = require('openid-client');
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librechat/api');
+const {
+  isEnabled,
+  findOpenIDUser,
+  buildOpenIDRefreshParams,
+  getAuthUserDocCacheMode,
+  buildAuthUserDocCacheKey,
+  primeCachedAuthUserDoc,
+} = require('@librechat/api');
 const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
@@ -51,6 +62,7 @@ const {
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const { getUserById, findSession, updateUser } = require('~/models');
+const getLogStores = require('~/cache/getLogStores');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -243,6 +255,10 @@ describe('refreshController – OpenID path', () => {
       openidId: baseClaims.sub,
     });
     updateUser.mockResolvedValue({});
+    getAuthUserDocCacheMode.mockReturnValue('off');
+    buildAuthUserDocCacheKey.mockReturnValue('auth-cache-key');
+    primeCachedAuthUserDoc.mockResolvedValue('completed');
+    getLogStores.mockReturnValue({});
 
     req = {
       headers: { cookie: 'token_provider=openid; refreshToken=stored-refresh' },
@@ -302,6 +318,84 @@ describe('refreshController – OpenID path', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('primes the resolved OpenID user before returning the refresh response', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+
+    await refreshController(req, res);
+
+    expect(buildAuthUserDocCacheKey).toHaveBeenCalledWith({
+      strategy: 'openid-jwt',
+      subject: baseClaims.sub,
+      issuer: baseClaims.iss,
+    });
+    expect(primeCachedAuthUserDoc).toHaveBeenCalledWith({}, 'auth-cache-key', defaultUser);
+    expect(primeCachedAuthUserDoc.mock.invocationCallOrder[0]).toBeLessThan(
+      res.send.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('primes the updated subject after repairing an OpenID mismatch', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    findOpenIDUser.mockResolvedValue({
+      user: { ...defaultUser, openidId: 'different-subject' },
+      error: null,
+      migration: false,
+    });
+
+    await refreshController(req, res);
+
+    expect(primeCachedAuthUserDoc).toHaveBeenCalledWith(
+      {},
+      'auth-cache-key',
+      expect.objectContaining({ openidId: baseClaims.sub }),
+    );
+  });
+
+  it('does not prime a reused session user under a different OpenID subject', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    const reusableIdToken = makeSessionToken();
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: reusableIdToken,
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+    getUserById.mockResolvedValue({ ...defaultUser, openidId: 'different-subject' });
+
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(primeCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('continues authentication when cache priming setup fails', async () => {
+    getAuthUserDocCacheMode.mockImplementation(() => {
+      throw new Error('redis setup failed');
+    });
+
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(logger.warn).toHaveBeenCalledWith('[refreshController] Auth user cache priming failed', {
+      error: 'redis setup failed',
+    });
+  });
+
+  it('continues authentication when cache priming exceeds its deadline', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    primeCachedAuthUserDoc.mockResolvedValue('deadline');
+
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[refreshController] Auth user cache priming exceeded deadline',
+    );
   });
 
   it('reuses valid OpenID session tokens and refreshes CloudFront cookies', async () => {
