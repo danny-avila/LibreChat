@@ -20,6 +20,7 @@ jest.mock('react-router-dom', () => ({
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     getQueryData: mockGetQueryData,
+    getQueryState: jest.fn(() => undefined),
   }),
 }));
 

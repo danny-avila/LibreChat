@@ -41,6 +41,11 @@ import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
 
+/** A revalidating cache younger than this is locally authoritative (the run
+ * that just streamed wrote it) and stays sendable; older ones wait for the
+ * refetch so a send can't fork from an outdated tail. */
+const STALE_SEND_REVALIDATION_MS = 5_000;
+
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
   logger.dir(request);
@@ -308,6 +313,29 @@ export default function useChatFunctions({
     if (isExistingConversation && overrideMessages == null && cachedMessages == null) {
       logger.warn('[useChatFunctions] Refusing to send before existing conversation history loads');
       return false;
+    }
+
+    /**
+     * Warm-switch revalidation guard: a navigation invalidates the target's
+     * cache and renders it while a background refetch reconciles. Deriving
+     * parentMessageId from that cache could fork from an outdated tail, so
+     * refuse (composer keeps the text) until the refetch settles — but only
+     * when the cache is actually old: a just-streamed cache (fresh
+     * `dataUpdatedAt`) is locally authoritative, and gating it would block
+     * rapid follow-ups during the post-run reconcile.
+     */
+    if (isExistingConversation && overrideMessages == null) {
+      const messagesQueryState = queryClient.getQueryState<TMessage[]>([
+        QueryKeys.messages,
+        conversationId,
+      ]);
+      const isRevalidating =
+        messagesQueryState?.isInvalidated === true && messagesQueryState.fetchStatus === 'fetching';
+      const cacheAgeMs = Date.now() - (messagesQueryState?.dataUpdatedAt ?? 0);
+      if (isRevalidating && cacheAgeMs > STALE_SEND_REVALIDATION_MS) {
+        logger.warn('[useChatFunctions] Refusing to send while conversation history revalidates');
+        return false;
+      }
     }
 
     if (isContinued && !latestMessage) {

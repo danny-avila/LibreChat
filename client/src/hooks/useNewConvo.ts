@@ -262,7 +262,12 @@ const useNewConvo = (index = 0) => {
             document.title = appTitle;
           }
           const path = `/c/${Constants.NEW_CONVO}${getParams(conversation)}`;
-          requestChatFocus();
+          /** Honor disableFocus here too: the transient focus intent survives
+           * follow-up navigations (unlike the old location.state), so e.g.
+           * SearchBar's clear-search must not have focus stolen back. */
+          if (!disableFocus) {
+            requestChatFocus();
+          }
           navigate(path);
           return;
         }
