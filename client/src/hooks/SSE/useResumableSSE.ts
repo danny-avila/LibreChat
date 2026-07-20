@@ -1219,17 +1219,21 @@ export default function useResumableSSE(
             queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, convoId] });
             queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
           }
-          // A resumed subscribe attaches to an already-running/adopted stream (e.g. a deduped
-          // start request whose original completed and was cleaned up). A 404 there means the
-          // job is gone, not that an optimistic conversation never really started — so its
-          // persisted conversation must NOT be dropped from the sidebar. Only prune the
-          // never-started optimistic convo on a fresh (non-resume) subscribe.
           if (
-            !isResume &&
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
           ) {
-            removeConvoFromAllQueries(queryClient, currentStreamId);
+            if (isResume) {
+              // A resumed subscribe attaches to an already-adopted stream (e.g. a deduped
+              // start request). A 404 means the job is gone — but the conversation may be
+              // persisted (the original completed and was cleaned up) or may never have
+              // existed (the winner died before persisting). Don't guess: reconcile against
+              // the server so a real conversation stays and a phantom is dropped.
+              queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+            } else {
+              // Fresh optimistic stream that never started: prune immediately.
+              removeConvoFromAllQueries(queryClient, currentStreamId);
+            }
           }
           setIsSubmitting(false);
           setShowStopButton(false);
