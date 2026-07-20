@@ -153,10 +153,22 @@ describe('useStepHandler', () => {
     ...overrides,
   });
 
+  /** Delta cache flushes are rAF-coalesced; run them synchronously so the
+   * merged-output assertions below observe the flushed state. The dedicated
+   * coalescing test overrides this with a manual queue. */
   beforeEach(() => {
     jest.clearAllMocks();
     mockLastAnnouncementTimeRef.current = 0;
     mockGetMessages.mockReturnValue([]);
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('initialization', () => {
@@ -1180,6 +1192,52 @@ describe('useStepHandler', () => {
 
       const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
       const responseMsg = lastCall[lastCall.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({ type: ContentTypes.TEXT, text: 'Hello World' }),
+      );
+    });
+
+    it('coalesces multiple deltas into a single flush per animation frame', () => {
+      const rafQueue: FrameRequestCallback[] = [];
+      (window.requestAnimationFrame as jest.Mock).mockImplementation((cb: FrameRequestCallback) => {
+        rafQueue.push(cb);
+        return rafQueue.length;
+      });
+
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+      mockSetMessages.mockClear();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Hello ') },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'World') },
+          submission,
+        );
+      });
+
+      expect(mockSetMessages).not.toHaveBeenCalled();
+      expect(rafQueue).toHaveLength(1);
+
+      act(() => {
+        rafQueue.forEach((cb) => cb(0));
+      });
+
+      expect(mockSetMessages).toHaveBeenCalledTimes(1);
+      const flushed = mockSetMessages.mock.calls[0][0];
+      const responseMsg = flushed[flushed.length - 1];
       expect(responseMsg.content).toContainEqual(
         expect.objectContaining({ type: ContentTypes.TEXT, text: 'Hello World' }),
       );
