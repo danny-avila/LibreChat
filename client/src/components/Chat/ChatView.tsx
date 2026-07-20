@@ -61,6 +61,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
         [fileMap],
       ),
       enabled: !!conversationId && conversationId !== Constants.SEARCH,
+      /** Refetch stale caches on mount: navigation invalidates (not removes)
+       * messages now, so a warm conversation renders instantly from cache and
+       * reconciles in the background instead of unmounting into a spinner. */
+      refetchOnMount: true,
     },
     { isStreaming: isSubmitting },
   );

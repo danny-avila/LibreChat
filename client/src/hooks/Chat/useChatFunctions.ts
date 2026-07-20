@@ -28,6 +28,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
+  requestChatFocus,
   hasStreamStartFailed,
   createDualMessageContent,
   getRouteChatProjectId,
@@ -402,7 +403,8 @@ export default function useChatFunctions({
       currentMessages = [];
       conversationId = null;
       const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
-      navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
+      requestChatFocus();
+      navigate(`/c/new${projectSearch}`);
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;

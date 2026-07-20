@@ -22,6 +22,7 @@ export * from './presets';
 export * from './prompts';
 export * from './textarea';
 export * from './messages';
+export * from './focus';
 export * from './tokens';
 export * from './redirect';
 export * from './languages';

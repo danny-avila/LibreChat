@@ -63,6 +63,7 @@ jest.mock('~/utils', () => ({
   },
   createDualMessageContent: jest.fn(() => []),
   getRouteChatProjectId: jest.fn(() => null),
+  requestChatFocus: jest.fn(),
 }));
 
 const userMessage = (messageId: string, parentMessageId = '00000000-0000-0000-0000-000000000000') =>
