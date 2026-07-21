@@ -882,26 +882,33 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     /**
      * A document type the admin routed to configured text extraction: prefer RAG `/text`, but fall
      * back to the built-in document parser (not raw native text) when RAG is unavailable, so a
-     * transient outage doesn't degrade a docx/pdf to unreadable bytes.
+     * transient outage doesn't degrade a docx/pdf to unreadable bytes. Only the RAG extraction is
+     * inside the fallback catch: a downstream persistence failure (size guard, DB, agent-resource
+     * mutation) must surface as itself, not trigger a second extraction attempt.
      */
     if (shouldUseConfiguredText) {
+      let configuredText;
       try {
-        const { text, bytes } = await parseText({ req, file, file_id, allowNativeFallback: false });
-        return await createTextFile({ text, bytes, type: file.mimetype });
+        configuredText = await parseText({ req, file, file_id, allowNativeFallback: false });
       } catch (err) {
         logger.warn(
           `[processAgentFileUpload] Configured RAG text extraction unavailable for "${file.originalname}", using built-in document parser:`,
           err,
         );
         const documentText = await resolveDocumentText();
-        if (documentText) {
-          const { text, bytes, filepath: docFileURL } = documentText;
-          return await createTextFile({ text, bytes, filepath: docFileURL });
+        if (!documentText) {
+          throw new Error(
+            `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
+          );
         }
-        throw new Error(
-          `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
-        );
+        const { text, bytes, filepath: docFileURL } = documentText;
+        return await createTextFile({ text, bytes, filepath: docFileURL });
       }
+      return await createTextFile({
+        text: configuredText.text,
+        bytes: configuredText.bytes,
+        type: file.mimetype,
+      });
     }
 
     const { text, bytes } = await parseText({ req, file, file_id });

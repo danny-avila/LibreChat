@@ -468,6 +468,23 @@ describe('processAgentFileUpload', () => {
       );
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
     });
+
+    test('surfaces a persistence failure without retrying via the document parser', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'rag extracted', bytes: 13 });
+      // RAG extraction succeeds, but persisting the result fails.
+      db.createFile.mockRejectedValueOnce(new Error('DB down'));
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow('DB down');
+
+      // The persistence failure must not trigger a second extraction via the built-in parser.
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+    });
   });
 
   describe('text size guard', () => {
