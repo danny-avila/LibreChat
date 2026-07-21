@@ -1,0 +1,79 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: primetric-mcp-server
+  namespace: billechat
+  labels:
+    app: primetric-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: primetric-mcp-server
+  template:
+    metadata:
+      labels:
+        app: primetric-mcp-server
+    spec:
+      containers:
+        - name: primetric-mcp-server
+          image: billechatacr.azurecr.io/primetric-mcp-server:v1
+          ports:
+            - containerPort: 3092
+          env:
+            - name: MCP_TRANSPORT
+              value: http
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3092"
+            - name: PRIMETRIC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: primetric-mcp-secrets
+                  key: client-id
+            - name: PRIMETRIC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: primetric-mcp-secrets
+                  key: client-secret
+            - name: PRIMETRIC_API_BASE
+              value: "https://api.primetric.com/beta"
+            - name: PRIMETRIC_SCOPE
+              value: read
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3092
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3092
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: primetric-mcp-server
+  namespace: billechat
+  labels:
+    app: primetric-mcp-server
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3092
+      targetPort: 3092
+      protocol: TCP
+  selector:
+    app: primetric-mcp-server

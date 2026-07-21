@@ -102,10 +102,33 @@ librechat:
     mcpSettings:
       allowedDomains:
         - http://ms365-mcp-server.billechat.svc.cluster.local:3000
+        - http://primetric-mcp-server.billechat.svc.cluster.local:3092
+        - https://billedeck-app-2074.azurewebsites.net
         - https://mcp.atlassian.com
         - https://auth.atlassian.com
         - https://api.atlassian.com
     mcpServers:
+      # BilleDeck — Azure Web App MCP (Easy Auth / Entra). OBO exchanges the
+      # signed-in user's OpenID token for a token audience-scoped to the app.
+      # App registration: 0d2049c3-469c-4542-add2-8cdb5a1f874b
+      # Requires: API permission from OPENID_CLIENT_ID -> this app + admin consent.
+      billedeck:
+        type: streamable-http
+        url: https://billedeck-app-2074.azurewebsites.net/mcp-server
+        timeout: 120000
+        chatMenu: true
+        serverInstructions: true
+        obo:
+          scopes: "api://0d2049c3-469c-4542-add2-8cdb5a1f874b/.default"
+      # Primetric — read-only resource-planning MCP (people, projects, availability).
+      # Deployed in-cluster from michalszymanski-ai/primetric-mcp (HTTP mode).
+      # Manifests: deploy/azure/primetric-mcp/k8s-manifests.yaml
+      primetric:
+        type: streamable-http
+        url: http://primetric-mcp-server.billechat.svc.cluster.local:3092/mcp
+        timeout: 120000
+        chatMenu: true
+        serverInstructions: true
       # Microsoft 365 MCP — Outlook, Calendar, Teams, OneDrive, SharePoint, etc.
       # Uses OAuth 2.1 (browser-based login). Deployed as a sidecar service in the cluster.
       # Public URL: https://ms365-mcp.135-225-229-32.nip.io
