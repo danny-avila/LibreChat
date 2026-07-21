@@ -129,6 +129,19 @@ describe('Search route', () => {
     expect(screen.getAllByText('com_ui_nothing_found').length).toBeGreaterThan(0);
   });
 
+  it('shows the spinner (not a false nothing-found) when stale empty data is held during a refetch', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({
+        data: { pages: [{ messages: [], nextCursor: null }] },
+        isPreviousData: true,
+      }),
+    );
+    render(<Search />);
+    expect(screen.getByTestId('spinner')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_nothing_found')).not.toBeInTheDocument();
+  });
+
   it('renders nothing when there is no query and the user is idle', () => {
     mockUseRecoilValue.mockReturnValue(searchState({ debouncedQuery: '' }));
     mockUseQuery.mockReturnValue(queryResult({ data: undefined }));

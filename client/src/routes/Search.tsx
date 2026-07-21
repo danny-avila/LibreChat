@@ -293,10 +293,11 @@ export default function Search() {
 
   const hasResults = resultsCount > 0;
 
-  /** Only the FIRST load (no results yet) shows the full-screen spinner.
-   *  `keepPreviousData` on the query keeps prior results mounted across query
-   *  changes, so typing no longer unmounts + re-parses the whole list. */
-  if ((isLoading || search.isTyping) && !hasResults) {
+  /** Spinner while there is nothing to show AND we're loading or the current
+   *  results are stale — `showingStale` covers the case where the previous
+   *  search was empty and `keepPreviousData` holds those empty pages during the
+   *  new request, which would otherwise flash a false "nothing found". */
+  if ((isLoading || showingStale) && !hasResults) {
     return loadingSpinner;
   }
 
