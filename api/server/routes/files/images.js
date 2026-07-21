@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const {
-  isEnabled,
+  shouldUseUploadSse,
   startUploadSseStream,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
@@ -26,9 +26,9 @@ router.post('/', async (req, res) => {
   /** Opened only once auth/validation has passed, right before the potentially
    * long-running upload processing begins — see `startUploadSseStream`. */
   let sseStream = null;
-  const openSseStreamIfEnabled = () => {
-    if (isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED)) {
-      sseStream = startUploadSseStream(req, res);
+  const openSseStreamIfRequested = () => {
+    if (shouldUseUploadSse(req)) {
+      sseStream = startUploadSseStream(res);
     }
   };
 
@@ -49,11 +49,11 @@ router.post('/', async (req, res) => {
       if (denied) {
         return;
       }
-      openSseStreamIfEnabled();
+      openSseStreamIfRequested();
       return await processAgentFileUpload({ req, res, metadata, sseStream });
     }
 
-    openSseStreamIfEnabled();
+    openSseStreamIfRequested();
     await processImageFile({ req, res, metadata, sseStream });
   } catch (error) {
     // TODO: delete remote file if it exists
@@ -72,7 +72,13 @@ router.post('/', async (req, res) => {
       logger.error('[/files/images] Error deleting file:', error);
     }
     if (sseStream) {
-      sseStream.sendError({ message, display_to_user: true, ...metadata });
+      sseStream.sendError({
+        message,
+        code: 500,
+        temp_file_id: metadata.temp_file_id,
+        tool_resource: metadata.tool_resource,
+        display_to_user: true,
+      });
     } else {
       res.status(500).json({ message });
     }

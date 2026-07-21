@@ -2,10 +2,10 @@ const fs = require('fs').promises;
 const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
-  isEnabled,
   logAxiosError,
   refreshS3FileUrls,
   handleFilesUsageRequest,
+  shouldUseUploadSse,
   startUploadSseStream,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
@@ -638,9 +638,9 @@ router.post('/', async (req, res) => {
   /** Opened only once auth/validation has passed, right before the potentially
    * long-running upload processing begins — see `startUploadSseStream`. */
   let sseStream = null;
-  const openSseStreamIfEnabled = () => {
-    if (isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED)) {
-      sseStream = startUploadSseStream(req, res);
+  const openSseStreamIfRequested = () => {
+    if (shouldUseUploadSse(req)) {
+      sseStream = startUploadSseStream(res);
     }
   };
 
@@ -651,7 +651,7 @@ router.post('/', async (req, res) => {
     metadata.file_id = req.file_id;
 
     if (isAssistantsEndpoint(metadata.endpoint)) {
-      openSseStreamIfEnabled();
+      openSseStreamIfRequested();
       return await processFileUpload({ req, res, metadata, sseStream });
     }
 
@@ -675,7 +675,7 @@ router.post('/', async (req, res) => {
       }
     }
 
-    openSseStreamIfEnabled();
+    openSseStreamIfRequested();
     return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
     const message = resolveUploadErrorMessage(error);
@@ -694,7 +694,13 @@ router.post('/', async (req, res) => {
     }
 
     if (sseStream) {
-      sseStream.sendError({ message, display_to_user: true, ...metadata });
+      sseStream.sendError({
+        message,
+        code: errorStatusCode,
+        temp_file_id: metadata.temp_file_id,
+        tool_resource: metadata.tool_resource,
+        display_to_user: true,
+      });
     } else {
       res.status(errorStatusCode).json({ message });
     }

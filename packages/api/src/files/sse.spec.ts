@@ -1,17 +1,10 @@
 import { EventEmitter } from 'events';
-import type { Response } from 'express';
-import type { ServerRequest } from '~/types';
-import { sendUploadSuccess, startUploadSseStream } from './sse';
-
-jest.mock('@librechat/data-schemas', () => ({
-  ...jest.requireActual('@librechat/data-schemas'),
-  logger: {
-    debug: jest.fn(),
-  },
-}));
+import type { Request, Response } from 'express';
+import { sendUploadSuccess, shouldUseUploadSse, startUploadSseStream } from './sse';
 
 describe('sse', () => {
-  const createMockReq = (): ServerRequest => new EventEmitter() as unknown as ServerRequest;
+  const createMockReq = (accept?: string): Request =>
+    ({ headers: accept ? { accept } : {} }) as Request;
 
   const createMockRes = (): jest.Mocked<Response> => {
     const res = new EventEmitter() as unknown as jest.Mocked<Response>;
@@ -22,6 +15,7 @@ describe('sse', () => {
     res.status = jest.fn().mockReturnValue(res);
     res.json = jest.fn().mockReturnValue(res);
     Object.defineProperty(res, 'writableEnded', { value: false, writable: true });
+    Object.defineProperty(res, 'destroyed', { value: false, writable: true });
     return res;
   };
 
@@ -35,6 +29,34 @@ describe('sse', () => {
       };
     });
 
+  describe('shouldUseUploadSse', () => {
+    const originalValue = process.env.FILE_UPLOAD_SSE_ENABLED;
+
+    afterEach(() => {
+      if (originalValue === undefined) {
+        delete process.env.FILE_UPLOAD_SSE_ENABLED;
+        return;
+      }
+      process.env.FILE_UPLOAD_SSE_ENABLED = originalValue;
+    });
+
+    it('requires both the feature flag and an explicit event-stream accept value', () => {
+      process.env.FILE_UPLOAD_SSE_ENABLED = 'true';
+
+      expect(shouldUseUploadSse(createMockReq('application/json, text/event-stream'))).toBe(true);
+      expect(shouldUseUploadSse(createMockReq('text/event-stream; charset=utf-8'))).toBe(true);
+      expect(shouldUseUploadSse(createMockReq('application/json'))).toBe(false);
+      expect(shouldUseUploadSse(createMockReq('*/*'))).toBe(false);
+      expect(shouldUseUploadSse(createMockReq())).toBe(false);
+    });
+
+    it('keeps JSON responses when the server feature flag is disabled', () => {
+      process.env.FILE_UPLOAD_SSE_ENABLED = 'false';
+
+      expect(shouldUseUploadSse(createMockReq('text/event-stream'))).toBe(false);
+    });
+  });
+
   describe('startUploadSseStream', () => {
     beforeEach(() => {
       jest.useFakeTimers();
@@ -45,10 +67,8 @@ describe('sse', () => {
     });
 
     it('writes the SSE headers and flushes them immediately', () => {
-      const req = createMockReq();
       const res = createMockRes();
-
-      startUploadSseStream(req, res);
+      const stream = startUploadSseStream(res);
 
       expect(res.writeHead).toHaveBeenCalledWith(
         200,
@@ -58,17 +78,14 @@ describe('sse', () => {
         }),
       );
       expect(res.flushHeaders).toHaveBeenCalledTimes(1);
+      stream.close();
     });
 
     it('emits a heartbeat event on every interval tick', () => {
-      const req = createMockReq();
       const res = createMockRes();
+      const stream = startUploadSseStream(res);
 
-      startUploadSseStream(req, res);
-
-      jest.advanceTimersByTime(1000);
-      jest.advanceTimersByTime(1000);
-      jest.advanceTimersByTime(1000);
+      jest.advanceTimersByTime(3000);
 
       const heartbeats = parseEvents(res).filter((e) => e.event === 'heartbeat');
       expect(heartbeats).toHaveLength(3);
@@ -77,64 +94,55 @@ describe('sse', () => {
         { keepAlive: 2 },
         { keepAlive: 3 },
       ]);
+      stream.close();
     });
 
     it('stops the heartbeat once the response has already ended', () => {
-      const req = createMockReq();
       const res = createMockRes();
-
-      startUploadSseStream(req, res);
+      startUploadSseStream(res);
 
       jest.advanceTimersByTime(1000);
       Object.defineProperty(res, 'writableEnded', { value: true });
-      jest.advanceTimersByTime(1000);
-      jest.advanceTimersByTime(1000);
+      jest.advanceTimersByTime(2000);
 
       const heartbeats = parseEvents(res).filter((e) => e.event === 'heartbeat');
       expect(heartbeats).toHaveLength(1);
       expect(jest.getTimerCount()).toBe(0);
     });
 
-    it('clears the heartbeat interval when the client disconnects early', () => {
-      const req = createMockReq();
+    it('clears the heartbeat interval on response disconnect and stops writes', () => {
       const res = createMockRes();
-
-      startUploadSseStream(req, res);
+      const stream = startUploadSseStream(res);
       expect(jest.getTimerCount()).toBe(1);
 
-      req.emit('close');
+      Object.defineProperty(res, 'destroyed', { value: true });
+      res.emit('close');
+      stream.sendData({ file_id: 'ignored' });
 
       expect(jest.getTimerCount()).toBe(0);
+      expect(res.write).not.toHaveBeenCalled();
     });
 
-    it('sendData emits an event:data message with the payload', () => {
-      const req = createMockReq();
+    it('emits data and error events', () => {
       const res = createMockRes();
+      const stream = startUploadSseStream(res);
 
-      const stream = startUploadSseStream(req, res);
       stream.sendData({ file_id: 'abc' });
-
-      const [dataEvent] = parseEvents(res).filter((e) => e.event === 'data');
-      expect(dataEvent.data).toEqual({ file_id: 'abc' });
-    });
-
-    it('sendError emits an event:error message with the payload', () => {
-      const req = createMockReq();
-      const res = createMockRes();
-
-      const stream = startUploadSseStream(req, res);
       stream.sendError({ message: 'failed' });
 
-      const [errorEvent] = parseEvents(res).filter((e) => e.event === 'error');
-      expect(errorEvent.data).toEqual({ message: 'failed' });
+      const events = parseEvents(res);
+      expect(events.find((event) => event.event === 'data')?.data).toEqual({ file_id: 'abc' });
+      expect(events.find((event) => event.event === 'error')?.data).toEqual({
+        message: 'failed',
+      });
+      stream.close();
     });
 
     describe('close', () => {
       it('emits a close event, ends the response, and clears the heartbeat', () => {
-        const req = createMockReq();
         const res = createMockRes();
+        const stream = startUploadSseStream(res);
 
-        const stream = startUploadSseStream(req, res);
         stream.close();
 
         const closeEvents = parseEvents(res).filter((e) => e.event === 'close');
@@ -146,31 +154,26 @@ describe('sse', () => {
         expect(jest.getTimerCount()).toBe(0);
       });
 
-      it('is a no-op for the close-event write when the response already ended', () => {
-        const req = createMockReq();
+      it('does not write after the response already ended', () => {
         const res = createMockRes();
-
-        const stream = startUploadSseStream(req, res);
+        const stream = startUploadSseStream(res);
         Object.defineProperty(res, 'writableEnded', { value: true });
+
         stream.close();
 
-        const closeEvents = parseEvents(res).filter((e) => e.event === 'close');
-        expect(closeEvents).toHaveLength(0);
+        expect(parseEvents(res).filter((e) => e.event === 'close')).toHaveLength(0);
         expect(res.end).not.toHaveBeenCalled();
         expect(jest.getTimerCount()).toBe(0);
       });
 
       it('does not emit further heartbeats after close', () => {
-        const req = createMockReq();
         const res = createMockRes();
+        const stream = startUploadSseStream(res);
 
-        const stream = startUploadSseStream(req, res);
         stream.close();
-
         jest.advanceTimersByTime(5000);
 
-        const heartbeats = parseEvents(res).filter((e) => e.event === 'heartbeat');
-        expect(heartbeats).toHaveLength(0);
+        expect(parseEvents(res).filter((e) => e.event === 'heartbeat')).toHaveLength(0);
       });
     });
   });
