@@ -32,7 +32,7 @@ const useNavigateToConvo = (index = 0) => {
   const clearAllConversations = store.useClearConvoState();
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
-  const { hasSetConversation, setConversation: setConvo } = store.useCreateConversationAtom(index);
+  const { hasSetConversation, setConversation: setConvo } = store.useSetConversationAtom(index);
 
   const setConversation = useCallback(
     (conversation: TConversation) => {
