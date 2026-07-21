@@ -46,6 +46,18 @@ describe('areSearchMessagePropsEqual', () => {
     expect(areSearchMessagePropsEqual({ message: a }, { message: c })).toBe(false);
   });
 
+  it('is false when the conversation title changes (rename), even if text/id match', () => {
+    expect(
+      areSearchMessagePropsEqual({ message: msg() }, { message: msg({ title: 'Renamed' }) }),
+    ).toBe(false);
+  });
+
+  it('is false when the navigation target conversationId changes', () => {
+    expect(
+      areSearchMessagePropsEqual({ message: msg() }, { message: msg({ conversationId: 'c2' }) }),
+    ).toBe(false);
+  });
+
   it('is false when exactly one message is nullish', () => {
     expect(areSearchMessagePropsEqual({ message: undefined }, { message: msg() })).toBe(false);
     expect(areSearchMessagePropsEqual({ message: msg() }, { message: undefined })).toBe(false);

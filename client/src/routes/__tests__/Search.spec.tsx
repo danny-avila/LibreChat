@@ -67,6 +67,8 @@ jest.mock('~/components/Chat/Messages/SearchMessage', () => ({
   ),
 }));
 jest.mock('~/utils', () => ({ cn: (...a: unknown[]) => a.filter(Boolean).join(' ') }));
+jest.mock('jotai', () => ({ useAtomValue: () => 'text-base' }));
+jest.mock('~/store/fontSize', () => ({ fontSizeAtom: {} }));
 
 const mockUseRecoilValue = useRecoilValue as jest.Mock;
 const mockUseQuery = useMessagesInfiniteQuery as jest.Mock;
@@ -123,14 +125,32 @@ describe('Search route', () => {
       queryResult({ data: { pages: [{ messages: [], nextCursor: null }] } }),
     );
     render(<Search />);
-    expect(screen.getByText('com_ui_nothing_found')).toBeInTheDocument();
+    expect(screen.getAllByText('com_ui_nothing_found').length).toBeGreaterThan(0);
   });
 
-  it('renders nothing when there is no query', () => {
+  it('renders nothing when there is no query and the user is idle', () => {
     mockUseRecoilValue.mockReturnValue(searchState({ debouncedQuery: '' }));
     mockUseQuery.mockReturnValue(queryResult({ data: undefined }));
     const { container } = render(<Search />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows the spinner during the initial debounce (query typed, not yet debounced)', () => {
+    mockUseRecoilValue.mockReturnValue(
+      searchState({ query: 'zephyrine', debouncedQuery: '', isTyping: true }),
+    );
+    mockUseQuery.mockReturnValue(queryResult({ data: undefined }));
+    render(<Search />);
+    expect(screen.getByTestId('spinner')).toBeInTheDocument();
+  });
+
+  it('announces empty results through a live region', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({ data: { pages: [{ messages: [], nextCursor: null }] } }),
+    );
+    render(<Search />);
+    expect(screen.getByRole('alert')).toHaveTextContent('com_ui_nothing_found');
   });
 
   it('fetches the next page when scrolled near the bottom', () => {
@@ -140,5 +160,14 @@ describe('Search route', () => {
     render(<Search />);
     (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
     expect(fetchNextPage).toHaveBeenCalled();
+  });
+
+  it('does NOT paginate the outgoing query while the user is still typing', () => {
+    const fetchNextPage = jest.fn();
+    mockUseRecoilValue.mockReturnValue(searchState({ isTyping: true }));
+    mockUseQuery.mockReturnValue(queryResult({ hasNextPage: true, fetchNextPage }));
+    render(<Search />);
+    (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
+    expect(fetchNextPage).not.toHaveBeenCalled();
   });
 });

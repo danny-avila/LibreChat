@@ -80,6 +80,10 @@ export function areSearchMessagePropsEqual(
     a.model === b.model &&
     a.endpoint === b.endpoint &&
     a.iconURL === b.iconURL &&
+    /** `SearchButtons` renders `title` and navigates by `conversationId`, so a
+     *  rename/refetch that leaves the text and id intact must still re-render. */
+    a.title === b.title &&
+    a.conversationId === b.conversationId &&
     searchFilesEqual(a.files, b.files)
   );
 }

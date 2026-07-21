@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, type FC } from 'react';
+import { useAtomValue } from 'jotai';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
@@ -9,6 +10,7 @@ import { useElementSize, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
 import { useMessagesInfiniteQuery } from '~/data-provider';
 import { useFileMapContext } from '~/Providers';
+import { fontSizeAtom } from '~/store/fontSize';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -53,6 +55,7 @@ export default function Search() {
   const { showToast } = useToastContext();
   const { isAuthenticated } = useAuthContext();
   const search = useRecoilValue(store.search);
+  const fontSize = useAtomValue(fontSizeAtom);
   const searchQuery = search.debouncedQuery;
 
   const {
@@ -115,17 +118,22 @@ export default function Search() {
     [cache],
   );
 
-  /** New result set (query changed): drop measured heights and recompute. */
+  /** A new query or a font-size change invalidates every measured height. */
   useEffect(() => {
     const frameId = requestAnimationFrame(() => recompute(true));
     return () => cancelAnimationFrame(frameId);
-  }, [searchQuery, recompute]);
+  }, [searchQuery, fontSize, recompute]);
 
-  /** Appended page (row count grew): recompute offsets, keep existing measures. */
+  /** Appending a page keeps existing measures; any other content change at the
+   *  same row count (a file preview resolving, a refetch) can alter a row's
+   *  rendered height, so drop the stale heights and re-measure. */
+  const prevCountRef = useRef(0);
   useEffect(() => {
-    const frameId = requestAnimationFrame(() => recompute(false));
+    const grew = messages.length > prevCountRef.current;
+    prevCountRef.current = messages.length;
+    const frameId = requestAnimationFrame(() => recompute(!grew));
     return () => cancelAnimationFrame(frameId);
-  }, [messages.length, recompute]);
+  }, [messages, recompute]);
 
   /** fixedWidth cache keys heights by row, not width — re-measure on width change. */
   const measuredWidthRef = useRef(0);
@@ -145,25 +153,38 @@ export default function Search() {
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
-      if (hasNextPage && !isFetchingNextPage && stopIndex >= messages.length - 8) {
+      /** Prior results stay mounted while typing; don't page the outgoing query
+       *  before the debounce settles onto the new one. */
+      if (search.isTyping || !hasNextPage || isFetchingNextPage) {
+        return;
+      }
+      if (stopIndex >= messages.length - 8) {
         throttledFetchNext();
       }
     },
-    [hasNextPage, isFetchingNextPage, messages.length, throttledFetchNext],
+    [search.isTyping, hasNextPage, isFetchingNextPage, messages.length, throttledFetchNext],
   );
 
   const rowRenderer = useCallback(
-    ({ index, key, parent, style }: ListRowProps) => (
-      <MeasuredRow
-        cache={cache}
-        rowKey={key}
-        parent={parent as MeasuredCellParent}
-        index={index}
-        style={style}
-      >
-        <SearchMessage message={messages[index]} />
-      </MeasuredRow>
-    ),
+    ({ index, key, parent, style }: ListRowProps) => {
+      const message = messages[index];
+      /** react-virtualized's `key` is positional; key by messageId so React
+       *  reconciles rows by message, not slot — otherwise a scroll reuses a row
+       *  instance for a different result and re-parses/reruns its subtree. */
+      const rowKey = message?.messageId ?? key;
+      return (
+        <MeasuredRow
+          key={rowKey}
+          cache={cache}
+          rowKey={rowKey}
+          parent={parent as MeasuredCellParent}
+          index={index}
+          style={style}
+        >
+          <SearchMessage message={message} />
+        </MeasuredRow>
+      );
+    },
     [cache, messages],
   );
 
@@ -186,8 +207,16 @@ export default function Search() {
     return localize('com_ui_results_found', { count: resultsCount });
   }, [resultsCount, localize]);
 
+  const loadingSpinner = (
+    <div className="absolute inset-0 flex items-center justify-center">
+      <Spinner className="text-text-primary" />
+    </div>
+  );
+
   if (!searchQuery) {
-    return null;
+    /** A fresh query is typed but its debounce hasn't fired yet: show loading
+     *  rather than a blank route during that first delay. */
+    return search.query && search.isTyping ? loadingSpinner : null;
   }
 
   const hasResults = resultsCount > 0;
@@ -196,20 +225,21 @@ export default function Search() {
    *  `keepPreviousData` on the query keeps prior results mounted across query
    *  changes, so typing no longer unmounts + re-parses the whole list. */
   if ((isLoading || search.isTyping) && !hasResults) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <Spinner className="text-text-primary" />
-      </div>
-    );
+    return loadingSpinner;
   }
 
   if (!hasResults) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
-          {localize('com_ui_nothing_found')}
+      <>
+        <div className="sr-only" role="alert" aria-atomic="true">
+          {resultsAnnouncement}
         </div>
-      </div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
+            {localize('com_ui_nothing_found')}
+          </div>
+        </div>
+      </>
     );
   }
 
