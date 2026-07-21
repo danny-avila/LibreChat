@@ -27,6 +27,7 @@ import {
   logger,
   setDraft,
   scrollToEnd,
+  requestChatFocus,
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
@@ -751,7 +752,8 @@ export default function useEventHandlers({
           setDraft({ id: currentConvoId, value: requestMessage?.text });
           restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
-            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
+            requestChatFocus();
+            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
           return;
         }
