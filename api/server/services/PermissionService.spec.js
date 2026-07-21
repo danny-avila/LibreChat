@@ -933,6 +933,38 @@ describe('PermissionService', () => {
       expect(userEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_OWNER);
     });
 
+    test('revoke wins for PUBLIC so an explicit public disable is honored (#14316)', async () => {
+      // A contradictory payload that both grants public and disables it puts the public principal
+      // in both lists. Unlike user/group principals, disabling public access must win so the
+      // resource is never left public when the caller asked to make it private.
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.PUBLIC,
+            accessRoleId: AccessRoleIds.AGENT_VIEWER,
+          },
+        ],
+        revokedPrincipals: [
+          {
+            type: PrincipalType.PUBLIC,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      expect(results.revoked).toHaveLength(1);
+      expect(results.errors).toHaveLength(0);
+
+      const publicEntry = await AclEntry.findOne({
+        principalType: PrincipalType.PUBLIC,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(publicEntry).toBeNull();
+    });
+
     test('should handle mixed operations (grant, update, revoke)', async () => {
       const updatedPrincipals = [
         {

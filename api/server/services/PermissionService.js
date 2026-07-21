@@ -759,17 +759,18 @@ const bulkUpdateResourcePermissions = async ({
     const bulkWrites = [];
 
     /**
-     * Tracks principals granted in this same request so their revoke is skipped below. Grants are
-     * flushed before deletes, so a principal present in both `updatedPrincipals` and
+     * Tracks non-public principals granted in this same request so their revoke is skipped below.
+     * Grants are flushed before deletes, so a principal present in both `updatedPrincipals` and
      * `revokedPrincipals` would be upserted and then deleted, stripping access the caller just set
      * (e.g. a resource owner landing in both lists from a client `id`/`idOnTheSource` mismatch).
      * Granting wins to make owner lockout impossible regardless of the client-side diff (#14316).
+     *
+     * PUBLIC is deliberately excluded: an explicit `public: false` disable adds the public principal
+     * to the revoke list, and disabling public access must always win over a stale/contradictory
+     * grant so a resource is never left public when the caller asked to make it private.
      */
     const grantedPrincipalKeys = new Set();
-    const principalKey = (principal) =>
-      principal.type === PrincipalType.PUBLIC
-        ? PrincipalType.PUBLIC
-        : `${principal.type}:${principal.id}`;
+    const principalKey = (principal) => `${principal.type}:${principal.id}`;
 
     for (const principal of updatedPrincipals) {
       try {
@@ -851,7 +852,9 @@ const bulkUpdateResourcePermissions = async ({
           memberCount: principal.memberCount,
           memberIds: principal.memberIds,
         });
-        grantedPrincipalKeys.add(principalKey(principal));
+        if (principal.type !== PrincipalType.PUBLIC) {
+          grantedPrincipalKeys.add(principalKey(principal));
+        }
       } catch (error) {
         results.errors.push({
           principal,
@@ -866,7 +869,10 @@ const bulkUpdateResourcePermissions = async ({
 
     const deleteQueries = [];
     for (const principal of revokedPrincipals) {
-      if (grantedPrincipalKeys.has(principalKey(principal))) {
+      if (
+        principal.type !== PrincipalType.PUBLIC &&
+        grantedPrincipalKeys.has(principalKey(principal))
+      ) {
         continue;
       }
       try {
