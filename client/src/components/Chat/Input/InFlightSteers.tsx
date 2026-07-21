@@ -1,15 +1,29 @@
 import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { X, Zap } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
+import { useToastContext } from '@librechat/client';
+import { X, Zap, Clock, Pencil } from 'lucide-react';
+import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { TFile, TMessage } from 'librechat-data-provider';
+import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
+import type { MenuEntry } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
+import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { useSteerCancel, useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { RowMenu, useDefaultToggleEntry } from './SteerMenu';
+import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
+
+/** Restores a message's text into the composer, or refuses (false) when the
+ *  composer is occupied / on another chat — see `restoreReclaimedSteer` in
+ *  `ChatForm`. Shared by the in-flight cancel and the queued trash safety net. */
+export type RestoreToComposer = (
+  text: string,
+  files: TMessage['files'],
+  context: QueuedMessageContext,
+  originConversationId: string,
+) => boolean;
 
 const splitFiles = (files?: TMessage['files']) => {
   const images: NonNullable<TMessage['files']> = [];
@@ -33,17 +47,26 @@ const splitFiles = (files?: TMessage['files']) => {
  *
  * `sending` is still awaiting its 202 ACK (no server id yet, so nothing to
  * cancel); `pending` is acknowledged and waiting on the next tool-batch
- * boundary.
+ * boundary. Every control here reclaims the steer from the server queue first,
+ * so they are offered only once `pending` — while `sending` there is no id to
+ * reclaim with, and the words cannot be held back.
  */
 const InFlightSteer = memo(function InFlightSteer({
   steer,
+  steering,
   conversationId,
+  onRestoreToComposer,
 }: {
   steer: PendingSteer;
+  steering: SteeringControls;
   conversationId: string;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const cancelSteer = useSteerCancel(conversationId);
+  const reclaimSteer = useSteerReclaim(conversationId);
+  const toggleEntry = useDefaultToggleEntry(steering);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
   const handlePreviewClose = useCallback((open: boolean) => {
@@ -54,6 +77,121 @@ const InFlightSteer = memo(function InFlightSteer({
 
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
+
+  /** Whether the words have already been re-homed by a terminal conversion (a
+   *  run that ended/errored mid-reclaim queues the still-present chip). The
+   *  queue action is safe either way — the conversion dedupes by id — but a
+   *  composer restore would leave one copy queued and another in the draft. */
+  const hasSettled = useRecoilCallback(
+    ({ snapshot }) =>
+      (steerId: string) =>
+        snapshot
+          .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
+          .getValue()
+          .includes(steerId),
+    [conversationId],
+  );
+
+  /**
+   * Takes the steer back off the server queue so its words can be re-homed.
+   * The chip is left alone until the answer is known: only `reclaimed` proves
+   * the words never entered the run, and the re-homing callers below own the
+   * removal from there.
+   */
+  const reclaim = useCallback(async (): Promise<boolean> => {
+    const outcome = await reclaimSteer(steer);
+    if (outcome === 'reclaimed') {
+      return true;
+    }
+    showToast({
+      message: localize(
+        outcome === 'applied' ? 'com_ui_steer_already_applied' : 'com_ui_steer_cancel_failed',
+      ),
+      status: outcome === 'applied' ? 'info' : 'error',
+    });
+    return false;
+  }, [reclaimSteer, steer, showToast, localize]);
+
+  const entries: MenuEntry[] = [
+    {
+      key: 'edit',
+      label: localize('com_ui_edit_message'),
+      icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => {
+        void reclaim().then((reclaimed) => {
+          if (!reclaimed) {
+            return;
+          }
+          if (hasSettled(steer.steerId)) {
+            /* The run ended while the reclaim was in flight and its terminal
+             * conversion already queued these words. */
+            showToast({ message: localize('com_ui_steer_run_ended_queued'), status: 'info' });
+            return;
+          }
+          const restored = onRestoreToComposer(
+            steer.text,
+            steer.files,
+            carriedSteerContext(steer),
+            conversationId,
+          );
+          if (restored) {
+            steering.removeSteer(steer.steerId);
+            return;
+          }
+          /* The composer moved on while the reclaim was in flight. The words
+           * are already off the server, so queue them rather than overwrite a
+           * newer draft — neither text is the one to throw away. */
+          steering.queueReclaimedSteer(steer);
+          showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
+        });
+      },
+    },
+    {
+      key: 'queue',
+      label: localize('com_ui_convert_to_queue'),
+      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      onClick: () => {
+        void reclaim().then((reclaimed) => {
+          if (reclaimed) {
+            steering.queueReclaimedSteer(steer);
+          }
+        });
+      },
+    },
+    {
+      /* Non-destructive, but only when it is safe: cancel reliably first (the
+       * optimistic hook removes the chip and restores it if the server would
+       * still inject), then hand the words back to the composer ONLY on a
+       * `reclaimed` outcome. On `applied` (cancel lost the race) or `failed`
+       * the steer may still reach the run, so restoring would duplicate the
+       * text — in the response, or beside the restored bubble. The gated
+       * restore also refuses rather than clobber a draft typed meanwhile. */
+      key: 'cancel',
+      label: localize('com_ui_steer_cancel'),
+      icon: <X className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => {
+        void cancelSteer(steer).then((outcome) => {
+          if (outcome !== 'reclaimed') {
+            return;
+          }
+          const restored = onRestoreToComposer(
+            steer.text,
+            steer.files,
+            carriedSteerContext(steer),
+            conversationId,
+          );
+          if (!restored) {
+            /* Reclaimed, but the composer moved on (draft typed, answer mode,
+             * navigated). The chip is already gone, so queue the words as Edit
+             * does rather than drop them — never lost, just re-homed. */
+            steering.queueReclaimedSteer(steer);
+            showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
+          }
+        });
+      },
+    },
+    toggleEntry,
+  ];
 
   return (
     <div
@@ -113,17 +251,13 @@ const InFlightSteer = memo(function InFlightSteer({
           </div>
         </div>
         {!sending && (
-          /* Hidden-at-rest only on hover-capable pointers: a hover-revealed
-           * control is unreachable on touch until a first tap. */
-          <button
-            type="button"
-            aria-label={localize('com_ui_steer_cancel')}
-            onClick={() => cancelSteer(steer)}
-            data-testid="steer-cancel"
-            className="shrink-0 rounded-full p-1 text-text-secondary transition-opacity duration-200 hover:bg-surface-tertiary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
-          >
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          /* One always-visible affordance: a label-less menu hidden until hover
+           * is undiscoverable, and edit/queue/cancel all live inside it now, so
+           * the menu shows at rest on every pointer (matching the always-on
+           * controls on the queued rows). */
+          <div data-testid="steer-controls" className="flex shrink-0 items-center">
+            <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+          </div>
         )}
       </div>
       {others.length > 0 && (
@@ -148,9 +282,13 @@ const InFlightSteer = memo(function InFlightSteer({
  * committed, while the user still sees their words land somewhere stable.
  */
 const InFlightSteers = memo(function InFlightSteers({
+  steering,
   conversationId,
+  onRestoreToComposer,
 }: {
+  steering: SteeringControls;
   conversationId: string;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
@@ -184,7 +322,13 @@ const InFlightSteers = memo(function InFlightSteers({
       className="flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
     >
       {inFlight.map((steer) => (
-        <InFlightSteer key={steer.steerId} steer={steer} conversationId={conversationId} />
+        <InFlightSteer
+          key={steer.steerId}
+          steer={steer}
+          steering={steering}
+          conversationId={conversationId}
+          onRestoreToComposer={onRestoreToComposer}
+        />
       ))}
     </div>
   );
