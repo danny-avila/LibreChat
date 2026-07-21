@@ -1385,6 +1385,19 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    schedules: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          maxPerUser: z.number().int().min(0).optional(),
+          minIntervalMinutes: z.number().int().min(1).optional(),
+          autoDisableAfterFailures: z.number().int().min(1).optional(),
+          fireConcurrency: z.number().int().min(1).optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -1446,6 +1459,14 @@ export const interfaceSchema = z
       share: true,
       public: true,
       snapshotFiles: true,
+    },
+    schedules: {
+      use: true,
+      create: true,
+      maxPerUser: 10,
+      minIntervalMinutes: 60,
+      autoDisableAfterFailures: 5,
+      fireConcurrency: 5,
     },
   });
 

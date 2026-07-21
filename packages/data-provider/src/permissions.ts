@@ -68,6 +68,10 @@ export enum PermissionTypes {
    * Type for Shared Link Permissions
    */
   SHARED_LINKS = 'SHARED_LINKS',
+  /**
+   * Type for Scheduled Chats Permissions
+   */
+  SCHEDULES = 'SCHEDULES',
 }
 
 /**
@@ -92,6 +96,7 @@ export const PERMISSION_TYPE_INTERFACE_FIELDS: Record<PermissionTypes, string> =
   [PermissionTypes.REMOTE_AGENTS]: 'remoteAgents',
   [PermissionTypes.SKILLS]: 'skills',
   [PermissionTypes.SHARED_LINKS]: 'sharedLinks',
+  [PermissionTypes.SCHEDULES]: 'schedules',
 };
 
 /** Set of interface config field names that correspond to role permissions. */
@@ -245,6 +250,12 @@ export const skillPermissionsSchema = z.object({
 });
 export type TSkillPermissions = z.infer<typeof skillPermissionsSchema>;
 
+export const schedulesPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+  [Permissions.CREATE]: z.boolean().default(true),
+});
+export type TSchedulesPermissions = z.infer<typeof schedulesPermissionsSchema>;
+
 export const sharedLinksPermissionsSchema = z.object({
   [Permissions.CREATE]: z.boolean().default(true),
   [Permissions.SHARE]: z.boolean().default(true),
@@ -270,4 +281,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
   [PermissionTypes.SKILLS]: skillPermissionsSchema,
   [PermissionTypes.SHARED_LINKS]: sharedLinksPermissionsSchema,
+  [PermissionTypes.SCHEDULES]: schedulesPermissionsSchema,
 });

@@ -10,6 +10,7 @@ const {
   deleteAgentCheckpoint,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
+  isScheduleFireRequest,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -465,12 +466,21 @@ router.use('/', v1);
 const chatRouter = express.Router();
 chatRouter.use(configMiddleware);
 
+/**
+ * Scheduled fires are exempt from interactive message limiters (the token's
+ * scope claim is signature-verified): the scheduler's own caps govern them,
+ * and stacking both throttles would record legitimate fires as errors that
+ * walk schedules toward auto-disable.
+ */
+const skipScheduledFires = (limiter) => (req, res, next) =>
+  isScheduleFireRequest(req) ? next() : limiter(req, res, next);
+
 if (isEnabled(LIMIT_MESSAGE_IP)) {
-  chatRouter.use(messageIpLimiter);
+  chatRouter.use(skipScheduledFires(messageIpLimiter));
 }
 
 if (isEnabled(LIMIT_MESSAGE_USER)) {
-  chatRouter.use(messageUserLimiter);
+  chatRouter.use(skipScheduledFires(messageUserLimiter));
 }
 
 chatRouter.use('/', chat);

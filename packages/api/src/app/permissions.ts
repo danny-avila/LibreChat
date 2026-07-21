@@ -49,6 +49,8 @@ function hasExplicitConfig(
       return interfaceConfig?.skills !== undefined;
     case PermissionTypes.SHARED_LINKS:
       return interfaceConfig?.sharedLinks !== undefined;
+    case PermissionTypes.SCHEDULES:
+      return interfaceConfig?.schedules !== undefined;
     default:
       return false;
   }
@@ -199,6 +201,10 @@ export async function updateInterfacePermissions({
       typeof defaults.agents === 'object' ? defaults.agents?.public : undefined;
     const skillsDefaultPublic =
       typeof defaults.skills === 'object' ? defaults.skills?.public : undefined;
+    const schedulesDefaultUse =
+      typeof defaults.schedules === 'boolean' ? defaults.schedules : defaults.schedules?.use;
+    const schedulesDefaultCreate =
+      typeof defaults.schedules === 'object' ? defaults.schedules?.create : undefined;
     const sharedLinksDefaultCreate =
       typeof defaults.sharedLinks === 'boolean' ? undefined : defaults.sharedLinks?.create;
     const sharedLinksDefaultShare =
@@ -524,6 +530,24 @@ export async function updateInterfacePermissions({
                   : getConfigPublic(loadedInterface.sharedLinks),
                 defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE_PUBLIC],
                 sharedLinksDefaultPublic,
+              ),
+            }
+          : {}),
+      },
+      [PermissionTypes.SCHEDULES]: {
+        [Permissions.USE]: getPermissionValue(
+          getConfigUse(loadedInterface.schedules),
+          defaultPerms[PermissionTypes.SCHEDULES]?.[Permissions.USE],
+          schedulesDefaultUse,
+        ),
+        ...((typeof interfaceConfig?.schedules === 'object' &&
+          'create' in interfaceConfig.schedules) ||
+        !existingPermissions?.[PermissionTypes.SCHEDULES]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                getConfigCreate(loadedInterface.schedules),
+                defaultPerms[PermissionTypes.SCHEDULES]?.[Permissions.CREATE],
+                schedulesDefaultCreate ?? true,
               ),
             }
           : {}),

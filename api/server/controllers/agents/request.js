@@ -21,6 +21,7 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
+const { recordScheduleOutcome } = require('~/server/services/Schedules');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
@@ -222,6 +223,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     parentMessageId = null,
     overrideParentMessageId = null,
     responseMessageId: editedResponseMessageId = null,
+    scheduleId = null,
+    scheduledFor = null,
   } = req.body;
 
   const userId = req.user.id;
@@ -910,6 +913,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
+          if (scheduleId) {
+            await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'success',
+              conversationId: conversation?.conversationId,
+            });
+          }
           await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {
@@ -979,6 +990,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         // Check if this was an abort (not a real error)
         const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
+
+        if (scheduleId) {
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            status: wasAborted ? 'interrupted' : 'error',
+            conversationId: streamId,
+            error: wasAborted ? undefined : error.message,
+          });
+        }
 
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);

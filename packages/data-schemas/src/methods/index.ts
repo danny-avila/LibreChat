@@ -91,6 +91,7 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
 import type {
   SkillSyncStatusInput,
@@ -152,6 +153,7 @@ export type AllMethods = UserMethods &
   PromptMethods &
   SkillMethods &
   SkillSyncMethods &
+  ScheduleMethods &
   AgentMethods &
   ConfigMethods;
 
@@ -284,6 +286,7 @@ export function createMethods(
     ...promptMethods,
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
+    ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -339,6 +342,7 @@ export type {
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
+  ScheduleMethods,
   AgentMethods,
   ConfigMethods,
 };

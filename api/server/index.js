@@ -42,6 +42,7 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
+const { initializeScheduleEngine } = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
@@ -138,6 +139,7 @@ const startServer = async () => {
   initializeFileStorage(appConfig);
   await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   initializeGitHubSkillSync(appConfig);
+  initializeScheduleEngine();
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   // Register any programmatic tool-approval policy hooks declared in
   // `endpoints.agents.toolApproval.hooks`. Honor the `enabled` kill switch: when tool
@@ -294,6 +296,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
+  app.use('/api/schedules', routes.schedules);
   app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);

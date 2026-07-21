@@ -1,0 +1,132 @@
+const mongoose = require('mongoose');
+const { tenantStorage, logger } = require('@librechat/data-schemas');
+const {
+  fireSchedule,
+  startScheduleEngine,
+  generateShortLivedToken,
+  DEFAULT_SCHEDULE_LIMITS,
+  SCHEDULE_FIRE_TOKEN_TTL,
+  SCHEDULE_FIRE_SCOPE,
+} = require('@librechat/api');
+const { getAppConfig } = require('~/server/services/Config/app');
+const methods = require('~/models');
+
+/** @returns {Promise<import('@librechat/api').ScheduleLimits>} */
+async function getLimits() {
+  const appConfig = await getAppConfig();
+  const config = appConfig?.interfaceConfig?.schedules;
+  if (config == null || typeof config === 'boolean') {
+    return DEFAULT_SCHEDULE_LIMITS;
+  }
+  return {
+    maxPerUser: config.maxPerUser ?? DEFAULT_SCHEDULE_LIMITS.maxPerUser,
+    minIntervalMinutes: config.minIntervalMinutes ?? DEFAULT_SCHEDULE_LIMITS.minIntervalMinutes,
+    autoDisableAfterFailures:
+      config.autoDisableAfterFailures ?? DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
+    fireConcurrency: config.fireConcurrency ?? DEFAULT_SCHEDULE_LIMITS.fireConcurrency,
+  };
+}
+
+/** @type {import('@librechat/api').ScheduleEngineDeps} */
+const engineDeps = {
+  methods,
+  getLimits,
+  getUserContext: async (userId) => {
+    const user = await mongoose.models.User.findById(userId).select('_id tenantId').lean();
+    if (user == null) {
+      return null;
+    }
+    return { id: user._id.toString(), tenantId: user.tenantId };
+  },
+  isOutOfBalance: async (user) => {
+    const appConfig = await getAppConfig({ userId: user.id, tenantId: user.tenantId });
+    if (appConfig?.balance?.enabled !== true) {
+      return false;
+    }
+    const balance = await mongoose.models.Balance.findOne({ user: user.id })
+      .select('tokenCredits')
+      .lean();
+    return (balance?.tokenCredits ?? 0) <= 0;
+  },
+  agentExists: async (agentId) => {
+    const agent = await mongoose.models.Agent.findOne({ id: agentId }).select('_id').lean();
+    return agent != null;
+  },
+  resolveFiles: async (fileIds, user) => {
+    const files = await methods.getFiles(
+      { file_id: { $in: fileIds }, user: user.id },
+      null,
+      '-text',
+    );
+    return (files ?? []).map((file) => ({
+      file_id: file.file_id,
+      filepath: file.filepath,
+      filename: file.filename,
+      type: file.type,
+      height: file.height,
+      width: file.width,
+      source: file.source,
+    }));
+  },
+  mintFireToken: (userId) =>
+    generateShortLivedToken(userId, SCHEDULE_FIRE_TOKEN_TTL, { scope: SCHEDULE_FIRE_SCOPE }),
+  getSelfUrl: () =>
+    process.env.SCHEDULES_SELF_URL ?? `http://127.0.0.1:${process.env.PORT ?? 3080}`,
+  runInTenantContext: (user, fn) =>
+    tenantStorage.run({ tenantId: user.tenantId, userId: user.id }, fn),
+  getJobStatus: async (conversationId) => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const job = await GenerationJobManager.getJobStore()?.getJob(conversationId);
+    return job?.status ?? null;
+  },
+};
+
+/** @type {ReturnType<typeof startScheduleEngine> | undefined} */
+let engine;
+
+function initializeScheduleEngine() {
+  if (engine != null) {
+    return engine;
+  }
+  engine = startScheduleEngine(engineDeps);
+  return engine;
+}
+
+/**
+ * Manual run-now fire: bypasses the engine claim (no lease needed) and uses the
+ * click instant as `scheduledFor`, so it never collides with cron occurrences.
+ */
+async function fireScheduleNow(schedule, limits) {
+  return fireSchedule(engineDeps, schedule, limits, new Date());
+}
+
+/**
+ * Completion hook: called from the agents controller finalize paths when the
+ * request carried a scheduleId. One Mongo update; never throws into the caller.
+ */
+async function recordScheduleOutcome({ scheduleId, scheduledFor, status, conversationId, error }) {
+  if (!scheduleId || !scheduledFor) {
+    return;
+  }
+  try {
+    const limits = await getLimits();
+    await methods.recordRunOutcome({
+      scheduleId,
+      scheduledFor: new Date(scheduledFor),
+      status,
+      conversationId,
+      error,
+      autoDisableAfterFailures: limits.autoDisableAfterFailures,
+    });
+  } catch (err) {
+    logger.error('[schedules] failed to record run outcome:', err);
+  }
+}
+
+module.exports = {
+  getLimits,
+  engineDeps,
+  fireScheduleNow,
+  recordScheduleOutcome,
+  initializeScheduleEngine,
+};

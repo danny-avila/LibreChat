@@ -4,6 +4,7 @@ import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
 import * as mcp from './types/mcpServers';
+import * as sch from './types/schedules';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
 import * as ag from './types/agents';
@@ -1008,6 +1009,30 @@ export function getRandomPrompts(
 
 export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillListResponse> {
   return request.get(endpoints.listSkillsWithFilters(params ?? {}));
+}
+
+export function getSchedules(): Promise<sch.TSchedulesResponse> {
+  return request.get(endpoints.schedules());
+}
+
+export function getSchedule(id: string): Promise<sch.TSchedule> {
+  return request.get(endpoints.schedule(id));
+}
+
+export function createSchedule(payload: sch.TCreateSchedule): Promise<sch.TSchedule> {
+  return request.post(endpoints.schedules(), payload);
+}
+
+export function updateSchedule(id: string, payload: sch.TUpdateSchedule): Promise<sch.TSchedule> {
+  return request.patch(endpoints.schedule(id), payload);
+}
+
+export function deleteSchedule(id: string): Promise<{ id: string }> {
+  return request.delete(endpoints.schedule(id));
+}
+
+export function runScheduleNow(id: string): Promise<sch.TScheduleRunNowResponse> {
+  return request.post(endpoints.runSchedule(id), {});
 }
 
 export function getSkill(id: string): Promise<sk.TSkill> {
