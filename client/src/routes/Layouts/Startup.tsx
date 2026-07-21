@@ -7,6 +7,7 @@ import AuthLayout from '~/components/Auth/AuthLayout';
 import { REDIRECT_PARAM, SESSION_KEY } from '~/utils';
 
 const headerMap: Record<string, TranslationKeys> = {
+  '/login': 'com_auth_welcome_back',
   '/register': 'com_auth_create_account',
   '/forgot-password': 'com_auth_reset_password',
   '/reset-password': 'com_auth_reset_password',
@@ -51,8 +52,6 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     setHeaderText(null);
   }, [location.pathname]);
 
-  const mappedHeader = headerMap[location.pathname];
-
   const contextValue = {
     error,
     setError,
@@ -65,7 +64,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
 
   return (
     <AuthLayout
-      header={headerText ? localize(headerText) : mappedHeader ? localize(mappedHeader) : null}
+      header={headerText ? localize(headerText) : localize(headerMap[location.pathname])}
       isFetching={isFetching}
       startupConfig={startupConfig}
       startupConfigError={startupConfigError}
