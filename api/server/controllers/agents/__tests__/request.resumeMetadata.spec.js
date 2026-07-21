@@ -195,6 +195,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
+    mockGenerationJobManager.completeJob.mockResolvedValue(undefined);
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     mockGenerationJobManager.releaseGeneration.mockResolvedValue(undefined);
     mockGenerationJobManager.hasJob.mockResolvedValue(true);
@@ -785,6 +786,30 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockGenerationJobManager.releaseGeneration.mock.invocationCallOrder[0],
     );
+  });
+
+  it('still releases the claim and pending slot when completeJob fails during init-error cleanup', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
+    mockGenerationJobManager.completeJob.mockRejectedValue(new Error('store hiccup'));
+    const initializeClient = jest.fn().mockRejectedValue(new Error('init boom after res.json'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Start fails while the store is degraded.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    // A completeJob rejection must not wedge the retry behind the claim or leak the slot.
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
   });
 
   it('proceeds to create the job when it wins the idempotency claim', async () => {

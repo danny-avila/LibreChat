@@ -400,6 +400,7 @@ export class InMemoryJobStore implements IJobStore {
     this.steerQueues.clear();
     this.closedSteerQueues.clear();
     this.parkedSteers.clear();
+    this.idempotencyClaims.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
   }
 

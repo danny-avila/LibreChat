@@ -45,6 +45,17 @@ describe('InMemoryJobStore.claimIdempotencyKey', () => {
     expect(reclaimed).toEqual({ claimed: true });
   });
 
+  it('clears claims on destroy so a reused store does not falsely dedup', async () => {
+    await store.claimIdempotencyKey('user:req', { streamId: 's1', conversationId: 'c1' }, 1200);
+    await store.destroy();
+    const reclaimed = await store.claimIdempotencyKey(
+      'user:req',
+      { streamId: 's2', conversationId: 'c2' },
+      1200,
+    );
+    expect(reclaimed).toEqual({ claimed: true });
+  });
+
   it('treats distinct keys independently', async () => {
     const a = await store.claimIdempotencyKey(
       'user:reqA',

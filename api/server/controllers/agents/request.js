@@ -1050,10 +1050,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
     // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
     // let the client's retry win the same key and createJob() the same streamId while we are
-    // still here — and completeJob() below is not guarded by the original createdAt, so it
-    // would abort/error that replacement. Once the job is finalized, release the claim so the
-    // retry can start a fresh generation (no tokens were spent on this failed start).
-    await GenerationJobManager.completeJob(streamId, error.message);
+    // still here — and completeJob() is not guarded by the original createdAt, so it would
+    // abort/error that replacement. A completeJob() rejection (store hiccup) must NOT skip the
+    // release + pending-request decrement below, or the retry stays wedged behind the claim
+    // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
+    // finalize anything, so releasing afterward can't let it abort a later replacement.)
+    await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
+      logger.warn(
+        '[ResumableAgentController] completeJob failed during init-error cleanup',
+        completeErr,
+      );
+    });
     if (ownsIdempotencyClaim) {
       await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
     }
